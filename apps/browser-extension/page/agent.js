@@ -28,8 +28,12 @@
   const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
   const clip = (text, limit) => (text.length > limit ? text.slice(0, limit - 1) + '…' : text);
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  // A tab in the background draws no frames and Chrome slows its timers: there Nook acts at once, without the glide
+  // nobody sees, so it goes on at full speed while the user is in another tab.
+  const frame = () => (document.hidden ? Promise.resolve()
+    : new Promise((resolve) => { requestAnimationFrame(() => resolve()); setTimeout(resolve, 50); }));
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const still = () => reduced || document.hidden;
   const say = (key, sub) => {
     try {
       return chrome.i18n.getMessage(key, sub === undefined ? undefined : [String(sub)]) || '';
@@ -119,7 +123,7 @@
     cursor.badge.textContent = label;
     cursor.wrap.classList.add('on');
     const distance = Math.hypot(x - cursor.x, y - cursor.y);
-    const duration = reduced ? 0 : Math.round(Math.max(140, Math.min(460, 120 + distance * 0.35)));
+    const duration = still() ? 0 : Math.round(Math.max(140, Math.min(460, 120 + distance * 0.35)));
     cursor.wrap.style.transition = `opacity .2s ease-out, transform ${duration}ms cubic-bezier(.22,.8,.24,1)`;
     cursor.wrap.style.transform = `translate(${x}px, ${y}px)`;
     cursor.x = x;
@@ -450,8 +454,8 @@
     const { found, error } = element(params);
     if (error) return { ok: false, error };
     const field = found.tagName === 'LABEL' && found.control ? found.control : found;
-    if (field.type === 'password') {
-      return { ok: false, error: 'Nook does not type into password fields. Ask the user to sign in themselves.' };
+    if (field.type === 'password' || /one-time-code/.test(field.autocomplete || '')) {
+      return { ok: false, signIn: true, error: 'Nook does not type into password or sign-in code fields; the user signs in themselves.' };
     }
     if (field.disabled || field.readOnly) return { ok: false, error: `${describe(field)} cannot be edited.` };
     const value = String(params.value ?? '');
@@ -476,7 +480,7 @@
       document.execCommand('insertText', false, value);
     } else if ('value' in field) {
       const start = params.append ? String(field.value || '') : '';
-      if (!reduced && value.length > 1 && value.length <= 80) {
+      if (!still() && value.length > 1 && value.length <= 80) {
         const steps = Math.min(8, value.length);
         const size = Math.ceil(value.length / steps);
         for (let index = size; index < value.length + size; index += size) {
@@ -512,7 +516,7 @@
       const { found, error } = element(params);
       if (error) return { ok: false, error };
       await moveTo(innerWidth * 0.62, innerHeight * 0.5, `${say('cursorScroll')} · ${short(found)}`, params._from);
-      found.scrollIntoView({ block: 'center', behavior: reduced ? 'instant' : 'smooth' });
+      found.scrollIntoView({ block: 'center', behavior: still() ? 'instant' : 'smooth' });
       await scrolled();
       return { ok: true, cursor: where(), text: `Scrolled ${describe(found)} into view.\n\n${glance().text}` };
     }
@@ -520,7 +524,7 @@
     const step = innerHeight * 0.85 * screens;
     const up = params.direction === 'up' || params.direction === 'top';
     await moveTo(innerWidth * 0.62, innerHeight * 0.5, `${say('cursorScroll')} ${up ? '↑' : '↓'}`, params._from);
-    const behavior = reduced ? 'instant' : 'smooth';
+    const behavior = still() ? 'instant' : 'smooth';
     switch (params.direction) {
       case 'up': scrollBy({ top: -step, behavior }); break;
       case 'top': scrollTo({ top: 0, behavior }); break;
@@ -548,7 +552,7 @@
       addEventListener('scroll', onScroll, true);
       addEventListener('scrollend', finish, true);
       setTimeout(() => { if (!moved) finish(); }, 120);
-      setTimeout(finish, reduced ? 60 : 700);
+      setTimeout(finish, still() ? 60 : 700);
     });
   }
 
@@ -614,7 +618,8 @@
    * at most `limit` ms. So the next look sees what the action did, without a fixed wait.
    */
   function quiet(params = {}) {
-    const idle = Math.max(50, Math.min(Number(params.idle) || 160, 1000));
+    // In a background tab every timer waits about a second anyway: one wait is enough there.
+    const idle = document.hidden ? 0 : Math.max(50, Math.min(Number(params.idle) || 160, 1000));
     const limit = Math.max(idle, Math.min(Number(params.limit) || 1500, 5000));
     return new Promise((resolve) => {
       const started = Date.now();
@@ -648,13 +653,28 @@
     return { ok: true, text: `${head}\nIn view:\n${lines}` };
   }
 
+  /**
+   * Whether the page asks the user to sign in: a password field they can see, or a field for a one-time code. Nook
+   * never types there; it lets the user sign in and goes on after. Nothing of what is in those fields is read.
+   */
+  function signin() {
+    const fields = deepAll('input[type=password],input[autocomplete~="one-time-code"],input[name*=otp i],input[id*=otp i]')
+      .filter((field) => shown(field) && !field.disabled);
+    const site = location.hostname.replace(/^www\./, '');
+    return { ok: true, needed: fields.length > 0, site, url: location.href };
+  }
+
   async function run(method, params) {
+    const acting = ['click', 'type', 'key', 'scroll'].includes(method);
     try {
-      const handler = { find, read, click, type, scroll, key, condition, quiet, glance }[method];
+      const handler = { find, read, click, type, scroll, key, condition, quiet, glance, signin }[method];
       if (!handler) return { ok: false, error: `The page agent has no ${method}.` };
+      if (acting) globalThis.__nookPresence?.acting(true);
       return await handler(params || {});
     } catch (error) {
       return { ok: false, error: String(error?.message || error) };
+    } finally {
+      if (acting) globalThis.__nookPresence?.acting(false);
     }
   }
 

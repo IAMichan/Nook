@@ -64,6 +64,24 @@ under it says what it does, in your language: *Klikt · Verzenden*, *Typt · Lis
 Enter*. A click shows as a short press and a ripple. On the next page the cursor goes on from where it was. It is
 drawn in a closed shadow root, never takes a click itself, and does not glide when you asked for reduced motion.
 
+## Your hands and Nook's
+
+- **Nook is not in your way, and you are not in Nook's.** While Nook acts on a page, your own clicks, keys, typing,
+  pasting and mouse moves on that page wait (`page/presence.js` holds back trusted input in the capture phase; Nook's
+  own events come from a script and pass). Scrolling and looking stay free, and so does the strip's **Stop**. A click
+  you try anyway nudges the strip: *Nook is working here; your clicks wait until it is done.* Your hands are free again
+  12 seconds after Nook's last action, at once when its answer in the side panel is done, or when you press Stop.
+- **Work in another tab meanwhile.** Nook keeps working in its own tab while you use another: a command goes to the tab
+  Nook works in, not the one in front. In a tab in the background the cursor does not glide (nobody sees it, and the
+  browser draws nothing there), so every step is done at once. A page Nook opens while you are elsewhere opens beside
+  yours instead of taking your view, and a screenshot of a background tab is refused rather than switching your tab.
+- **Signing in is yours.** When a page asks to sign in (a password or one-time-code field you can see, after any of
+  Nook's actions, or when Nook would type into such a field), Nook steps aside: the tab comes to the front, the strip
+  says *Sign in on this page; Nook goes on by itself once you are in*, and your clicks and keys work as always. Once the
+  sign-in fields are gone and the page settled (or you press **Continue**), Nook goes on with its task by itself. It
+  waits up to 5 minutes and never sees what you type. Meanwhile the extension gives that command more time in Nook
+  (`{"kind": "extend"}` to `BrowserExtensionHub`, only for the browser that runs it, at most 6 minutes at a time).
+
 ## Quick, and sure of where it clicks
 
 - **One step at a time, no extra looks.** After every click, key and typing, the extension waits until the page has

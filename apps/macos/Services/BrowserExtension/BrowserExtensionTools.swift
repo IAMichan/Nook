@@ -95,7 +95,7 @@ enum BrowserExtensionTools {
             properties: target, required: [], timeout: 25),
         Definition(
             name: "chrome_type", method: "type", isAction: true,
-            description: "Types text into a field on the page in the user's own browser (replaces its text unless append: true; submit: true submits the form), or picks an option in a list. Never types into password fields: let the user sign in. The user approves the exact text first. Its result already says what the page shows now and what can be used in view (with refs): take the next step from that, without chrome_find first.",
+            description: "Types text into a field on the page in the user's own browser (replaces its text unless append: true; submit: true submits the form), or picks an option in a list. Never types into password or sign-in code fields: when a page asks to sign in (after any action), the extension lets the user sign in and the result comes once they are in, which can take a few minutes. The user approves the exact text first. Its result already says what the page shows now and what can be used in view (with refs): take the next step from that, without chrome_find first.",
             properties: target.merging([
                 "value": ["type": "string", "description": "The text to enter, or the option to pick."],
                 "append": ["type": "boolean", "description": "Add to the field's text instead of replacing it."],

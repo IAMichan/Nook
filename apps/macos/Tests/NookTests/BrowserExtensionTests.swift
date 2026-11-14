@@ -211,6 +211,38 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertNil(poll.object, "a command that timed out is not delivered later")
     }
 
+    /// While the user signs in on a page, the browser that runs the command gives it more time; no other browser can.
+    func testTheBrowserCanGiveACommandMoreTimeWhileTheUserSignsIn() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Google Chrome"])
+        send(hub, "c2", ["kind": "hello", "protocol": 1, "browser": "Brave"])
+        let lock = NSLock()
+        var outcome: BrowserExtensionOutcome?
+        hub.send("click", params: [:], browser: "c1", timeout: 0.2) { result in
+            lock.lock(); outcome = result; lock.unlock()
+        }
+        let id = send(hub, "c1", ["kind": "poll"]).object?["id"] as? String ?? ""
+        XCTAssertEqual(send(hub, "c2", ["kind": "extend", "id": id, "seconds": 30]).object?["ok"] as? Bool, false,
+                       "another browser cannot keep it waiting")
+        XCTAssertEqual(send(hub, "c1", ["kind": "extend", "id": id, "seconds": 2]).object?["ok"] as? Bool, true)
+        Thread.sleep(forTimeInterval: 0.5)
+        lock.lock(); XCTAssertNil(outcome, "still waiting after its first deadline"); lock.unlock()
+        send(hub, "c1", ["kind": "result", "id": id, "ok": true, "text": "Signed in; clicked."])
+        lock.lock(); XCTAssertEqual(outcome, BrowserExtensionOutcome(ok: true, text: "Signed in; clicked.")); lock.unlock()
+        XCTAssertEqual(send(hub, "c1", ["kind": "extend", "id": id, "seconds": 2]).object?["ok"] as? Bool, false, "done is done")
+    }
+
+    func testAnExtendedCommandStillTimesOutAtItsNewDeadline() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Arc"])
+        var outcome: BrowserExtensionOutcome?
+        hub.send("open", params: [:], browser: nil, timeout: 0.05) { outcome = $0 }
+        let id = send(hub, "c1", ["kind": "poll"]).object?["id"] as? String ?? ""
+        send(hub, "c1", ["kind": "extend", "id": id, "seconds": 0.3])
+        waitUntil { outcome != nil }
+        XCTAssertEqual(outcome?.ok, false)
+    }
+
     func testACommandGoesToTheBrowserNamedElseTheOneUsedLast() {
         var now = Date(timeIntervalSince1970: 1_000)
         let hub = BrowserExtensionHub(clock: { now })

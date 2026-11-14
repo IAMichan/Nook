@@ -63,6 +63,8 @@ final class BrowserExtensionHub: @unchecked Sendable {
     private var polls: [String: (reply: Reply, token: Int)] = [:]
     private var queued: [String: [Command]] = [:]
     private var waiting: [String: (BrowserExtensionOutcome) -> Void] = [:]
+    /// When each waiting command times out, and the browser it went to (only that one may give it more time).
+    private var deadlines: [String: (at: DispatchTime, client: String)] = [:]
     private var nextToken = 0
     private let timers: DispatchQueue
     private let clock: () -> Date
@@ -122,13 +124,15 @@ final class BrowserExtensionHub: @unchecked Sendable {
             _ = reply(Self.encode(["ok": false, "error": "Not a message Nook knows."]))
             return
         }
-        let seen = touch(client, active: kind != "poll" && kind != "result")
+        let seen = touch(client, active: !["poll", "result", "extend"].contains(kind))
         switch kind {
         case "poll":
             poll(client, reply)
         case "result":
             finish(message)
             _ = reply(Self.encode(["ok": true]))
+        case "extend":
+            _ = reply(Self.encode(["ok": extend(message, from: client)]))
         case "hello":
             _ = reply(Self.encode(hello(client, message)))
             onClientsChanged?()
@@ -216,6 +220,7 @@ final class BrowserExtensionHub: @unchecked Sendable {
         guard let id = message["id"] as? String else { return }
         lock.lock()
         let completion = waiting.removeValue(forKey: id)
+        deadlines[id] = nil
         lock.unlock()
         completion?(BrowserExtensionOutcome(ok: (message["ok"] as? Bool) ?? false, text: (message["text"] as? String) ?? "",
                                             error: (message["error"] as? String) ?? "", image: (message["image"] as? String) ?? ""))
@@ -243,20 +248,52 @@ final class BrowserExtensionHub: @unchecked Sendable {
             return
         }
         waiting[id] = completion
+        deadlines[id] = (.now() + timeout, client.id)
         queued[client.id, default: []].append(Command(id: id, line: line))
         lock.unlock()
         deliver(client.id)
-        timers.asyncAfter(deadline: .now() + timeout) { [weak self] in
+        expire(id, client: client.id, after: timeout, timeout: timeout)
+    }
+
+    /// Times a command out at its deadline, unless the browser moved the deadline on meanwhile (`extend`).
+    private func expire(_ id: String, client: String, after delay: TimeInterval, timeout: TimeInterval) {
+        timers.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             self.lock.lock()
+            guard let deadline = self.deadlines[id] else {
+                self.lock.unlock()
+                return
+            }
+            let now = DispatchTime.now()
+            if deadline.at > now {
+                self.lock.unlock()
+                let left = Double(deadline.at.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000_000
+                self.expire(id, client: client, after: left, timeout: timeout)
+                return
+            }
+            self.deadlines[id] = nil
             let expired = self.waiting.removeValue(forKey: id)
-            if var queue = self.queued[client.id] {
+            if var queue = self.queued[client] {
                 queue.removeAll { $0.id == id }
-                self.queued[client.id] = queue.isEmpty ? nil : queue
+                self.queued[client] = queue.isEmpty ? nil : queue
             }
             self.lock.unlock()
             expired?(.timedOut(after: Int(timeout)))
         }
+    }
+
+    /// The most a browser may give one command at a time: long enough for the user to sign in on a page.
+    static let longestExtension: TimeInterval = 6 * 60
+
+    /// A browser needs more time for a command it is working on (the user signs in on the page first): its deadline
+    /// moves to `seconds` from now. Only the browser the command went to may ask, for at most `longestExtension`.
+    private func extend(_ message: [String: Any], from client: String) -> Bool {
+        guard let id = message["id"] as? String, let seconds = (message["seconds"] as? NSNumber)?.doubleValue, seconds > 0 else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let deadline = deadlines[id], deadline.client == client, waiting[id] != nil else { return false }
+        deadlines[id] = (.now() + min(seconds, Self.longestExtension), client)
+        return true
     }
 
     // MARK: - Events to a browser

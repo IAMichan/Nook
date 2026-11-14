@@ -197,6 +197,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   says what it does ("Klikt · Verzenden", "Typt", "Scrolt"). Nook also clicks more surely and needs fewer steps: every
   action reports what the page shows now, a cookie banner or dialog in the way is named with its buttons, buttons in
   web components are found, and a link that opens a new tab takes Nook along.
+- While Nook works on a page, your own clicks and keys there wait, so you never get in each other's way (scrolling and
+  Stop stay free). Nook keeps working in its tab while you use another one, at full speed. When a page asks to sign
+  in, Nook lets you type and click, and goes on by itself once you are in; it never sees your password.
 - Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
   over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
   connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a

@@ -115,5 +115,14 @@
   },
   "cursorChoose": {
     "message": "Choisit"
+  },
+  "presenceBlocked": {
+    "message": "Nook travaille ici ; vos clics attendent qu’il ait fini."
+  },
+  "presenceSignIn": {
+    "message": "Connectez-vous sur cette page ; Nook reprend tout seul ensuite."
+  },
+  "presenceSignedIn": {
+    "message": "Continuer"
   }
 }

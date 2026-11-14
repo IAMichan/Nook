@@ -16,8 +16,9 @@ try {
 }
 
 const agentSource = readFileSync(new URL('../page/agent.js', import.meta.url), 'utf8');
+const presenceSource = readFileSync(new URL('../page/presence.js', import.meta.url), 'utf8');
 const page = fileURLToPath(new URL('./fixtures/checkout.html', import.meta.url));
-const texts = { cursorClick: 'Klikt', cursorType: 'Typt', cursorScroll: 'Scrolt', cursorKey: 'Drukt op $1', cursorChoose: 'Kiest' };
+const texts = { presenceWorking: 'Nook is hier bezig', presenceBlocked: 'Je klikken wachten', presenceStop: 'Stop', cursorClick: 'Klikt', cursorType: 'Typt', cursorScroll: 'Scrolt', cursorKey: 'Drukt op $1', cursorChoose: 'Kiest' };
 
 test('the page agent works on a real page and shows what it does', { skip: !chromium && 'Playwright is not installed' }, async () => {
   const browser = await chromium.launch();
@@ -69,3 +70,60 @@ test('the page agent works on a real page and shows what it does', { skip: !chro
     await browser.close();
   }
 });
+
+test('while Nook works the user\'s own clicks wait, Nook\'s own pass, and a sign-in page frees them',
+  { skip: !chromium && 'Playwright is not installed' }, async () => {
+    const browser = await chromium.launch();
+    try {
+      const tab = await browser.newPage({ viewport: { width: 900, height: 640 } });
+      await tab.goto('file://' + page);
+      await tab.evaluate((nl) => {
+        window.chrome = window.chrome || {};
+        window.chrome.i18n = { getMessage: (key, subs) => (nl[key] || '').replace('$1', (subs || [])[0] || '') };
+        window.chrome.runtime = { sendMessage: async () => ({}) };
+      }, texts);
+      await tab.addScriptTag({ content: presenceSource });
+      await tab.addScriptTag({ content: agentSource });
+      const run = (method, params = {}) => tab.evaluate(([m, p]) => window.__nookAgent.run(m, p), [method, params]);
+      await tab.click('#ok'); // the cookie banner, as the user would
+
+      await tab.evaluate(() => window.__nookPresence.busy(10_000));
+      await tab.click('#pay', { force: true }); // a real (trusted) click by the user
+      assert.equal(await tab.textContent('#out'), '', 'the user\'s click waited');
+      await tab.keyboard.press('KeyA');
+      await tab.click('#name', { force: true });
+      await tab.keyboard.type('xyz');
+      assert.equal(await tab.inputValue('#name'), '', 'the user\'s typing waited too');
+
+      assert.equal((await run('type', { text: 'Naam', value: 'Lisa' })).ok, true, 'Nook types');
+      assert.equal(await tab.inputValue('#name'), 'Lisa');
+      assert.equal((await run('click', { text: 'Betalen' })).ok, true, 'Nook clicks');
+      assert.equal(await tab.textContent('#out'), 'Betaald!');
+
+      await tab.evaluate(() => { document.getElementById('out').textContent = ''; window.__nookPresence.release(); });
+      await tab.click('#pay');
+      assert.equal(await tab.textContent('#out'), 'Betaald!', 'once Nook is done the user\'s clicks work again');
+
+      // A sign-in page: Nook sees that it asks to sign in, and the user's hands are free.
+      assert.equal((await run('signin')).needed, false);
+      await tab.evaluate(() => {
+        const field = document.createElement('input');
+        field.type = 'password';
+        field.id = 'secret';
+        document.querySelector('main').prepend(field);
+        window.__nookPresence.busy(10_000);
+        window.__nookPresence.signIn();
+      });
+      assert.equal((await run('signin')).needed, true);
+      await tab.click('#secret');
+      await tab.keyboard.type('hunter2');
+      assert.equal(await tab.inputValue('#secret'), 'hunter2', 'the user types their own password');
+      const refused = await run('type', { selector: '#secret', value: 'x' });
+      assert.equal(refused.ok, false);
+      assert.equal(refused.signIn, true, 'Nook never types a password: it waits for the user');
+      await tab.evaluate(() => document.getElementById('secret').remove());
+      assert.equal((await run('signin')).needed, false, 'signed in: Nook goes on');
+    } finally {
+      await browser.close();
+    }
+  });
