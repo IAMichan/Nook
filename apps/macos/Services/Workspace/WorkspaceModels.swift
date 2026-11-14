@@ -45,7 +45,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
                                         ultracode: true, stopsOneSubagent: true, effort: .launchFlag("--effort"),
                                         processChannel: .claudeStreamJSON, idleConnection: .parkedProcess, probesLaunchFlags: true,
-                                        promptSuggestions: .agentStream)
+                                        promptSuggestions: .agentStream, reportsContextBreakdown: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -199,6 +199,9 @@ struct ProviderCapabilities: Equatable, Sendable {
     var serverTransport: ServerTransport = .none
     /// Who writes the suggested next prompt in the empty composer (`PromptSuggestionSource`, `NextPromptSuggestion`).
     var promptSuggestions: PromptSuggestionSource = .generator
+    /// The agent says what fills its context window, part by part (Claude Code's `get_context_usage`, its `/context`).
+    /// Codex, Pi and the ACP agents report only how large the conversation is (`ContextUsage.estimate`).
+    var reportsContextBreakdown = false
 }
 
 /// See `ProviderCapabilities.promptSuggestions`. The agent's own prediction reads the whole conversation from its prompt

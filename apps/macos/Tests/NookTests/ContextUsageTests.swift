@@ -44,4 +44,12 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertEqual(usage.categories.map(\.tokens), [1_000_000, 0, 0])
         XCTAssertEqual(usage.inWindow.map(\.id), [ContextUsage.conversation])
     }
+
+    /// Only an agent that says its parts gets a skeleton while it has not yet; the others show their estimate.
+    func testOnlyClaudeCodeSaysWhatFillsItsWindow() {
+        for provider in RunProvider.allCases {
+            XCTAssertEqual(provider.capabilities.reportsContextBreakdown, provider == .claude, provider.rawValue)
+        }
+        XCTAssertNil(ContextUsage.estimate(used: 1, window: 10, autoCompactAt: nil).pending)
+    }
 }

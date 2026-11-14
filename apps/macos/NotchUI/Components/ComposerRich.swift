@@ -555,6 +555,38 @@ struct ContextUsageBreakdown: View {
     let usage: ContextUsage
 
     var body: some View {
+        if let pending = usage.pending {
+            skeleton(pending)
+        } else {
+            known
+        }
+    }
+
+    /// The agent has not said yet what fills the window it holds now: rows in the shape of the breakdown, no numbers.
+    private func skeleton(_ pending: ContextUsage.Pending) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(tr(pending == .afterTurn ? "compose.context.pendingTurn" : "compose.context.pendingLoading"))
+                .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                ForEach(Self.skeletonWidths.indices, id: \.self) { index in
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        NookSkeleton(width: Self.skeletonWidths[index], height: 10)
+                        Spacer(minLength: NookTheme.Spacing.md)
+                        NookSkeleton(width: 44, height: 10)
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tr("loading.label"))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// As many rows as Claude Code's breakdown usually has, of uneven length like its names.
+    private static let skeletonWidths: [CGFloat] = [110, 90, 130, 70, 110, 90, 60]
+
+    private var known: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 ForEach(usage.inWindow) { row($0) }

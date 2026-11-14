@@ -160,7 +160,8 @@ struct SessionUsageSection: View {
             if breakdownOpen {
                 ContextUsageBreakdown(usage: usage)
                     .transition(.opacity)
-                    .onAppear { refreshBreakdown() }
+                    // As it opens, and again once a running turn ends: the agent is asked for the context it holds now.
+                    .task(id: BreakdownKey(tokens: usage.usedTokens, pending: usage.pending)) { refreshBreakdown() }
             }
             if let compactFirst = snapshot.compactFirst {
                 HStack(spacing: NookTheme.Spacing.sm) {
@@ -200,7 +201,12 @@ struct SessionUsageSection: View {
         withAnimation(NookTheme.Motion.panel) { breakdownOpen.toggle() }
     }
 
-    /// Asks the agent again what fills its window, as the breakdown opens.
+    private struct BreakdownKey: Equatable {
+        var tokens: Int
+        var pending: ContextUsage.Pending?
+    }
+
+    /// Asks the agent again what fills its window (`WorkspaceManager.refreshContextUsage`).
     private func refreshBreakdown() {
         if let runID = source.runID { workspace.refreshContextUsage(runID) }
     }
