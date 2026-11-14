@@ -499,6 +499,14 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The turn that runs now, as an opaque id that changes with every turn; nil while none runs, and from an older Mac.
     /// The phone sends it back with a Stop or a steer (`CompanionRequest.turn`), so either reaches only this turn.
     var turn: String? = nil
+    /// The project the Mac's Agents list groups this session under (`InboxProject.key`): an agent's own worktree under
+    /// the repository it was made from, "" for none (a scratch folder, your home). nil from an older Mac: `folder` then.
+    var project: String? = nil
+}
+
+extension SessionDigest {
+    /// The project to group this session under on the phone (`ProjectGroups`): the Mac's own, else its folder.
+    var projectKey: String { project ?? folder }
 }
 
 extension LiveActivitySnapshot {

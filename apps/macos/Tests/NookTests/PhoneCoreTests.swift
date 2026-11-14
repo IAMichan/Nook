@@ -102,4 +102,30 @@ final class PhoneCoreTests: XCTestCase {
         XCTAssertEqual(DroppedText.merge(current: "Typed", dropped: "  "), "Typed")
         XCTAssertEqual(DroppedText.clip(String(repeating: "x", count: DroppedText.maxLength + 10)).count, DroppedText.maxLength)
     }
+
+    // MARK: Agents by project
+
+    func testProjectGroupsKeepTheNewestProjectFirstAndEachSessionsOrder() {
+        let sessions = [("a", "nook"), ("b", "site"), ("c", "nook"), ("d", ""), ("e", " site ")]
+        let groups = ProjectGroups.group(sessions) { $0.1 }
+        XCTAssertEqual(groups.map(\.folder), ["nook", "site", ""])
+        XCTAssertEqual(groups.map { $0.items.map { $0.0 } }, [["a", "c"], ["b", "e"], ["d"]])
+        XCTAssertTrue(ProjectGroups.group([(String, String)]()) { $0.1 }.isEmpty)
+    }
+
+    func testProjectPathPrefersTheNameTheMacOffersThenTheFolderName() {
+        let projects: [(name: String, path: String)] = [(name: "Nook", path: "/Users/me/code/nook"),
+                                                        (name: "site", path: "/Users/me/code/website"),
+                                                        (name: "Other", path: "/Users/me/code/site")]
+        XCTAssertEqual(ProjectGroups.path(forFolder: "site", in: projects), "/Users/me/code/website")
+        XCTAssertEqual(ProjectGroups.path(forFolder: "nook", in: projects), "/Users/me/code/nook")
+        XCTAssertNil(ProjectGroups.path(forFolder: "elsewhere", in: projects))
+        XCTAssertNil(ProjectGroups.path(forFolder: " ", in: projects))
+    }
+
+    func testFoldedProjectsSurviveBeingStored() {
+        let folded: Set<String> = ["nook", "site", ""]
+        XCTAssertEqual(ProjectGroups.decode(ProjectGroups.encode(folded)), ["nook", "site"])
+        XCTAssertEqual(ProjectGroups.decode(""), [])
+    }
 }

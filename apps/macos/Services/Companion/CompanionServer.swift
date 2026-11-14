@@ -45,12 +45,13 @@ final class CompanionServer: ObservableObject {
     func attach(app: AppModel) {
         self.app = app
         // Subscribed phones get the sessions when they change; streaming text changes the workspace many times a
-        // second, so at most one look a second, and only what changed is sent.
+        // second, so at most two looks a second (an agent's words reach the phone as they are written, not in
+        // one-second jumps), and only what changed is sent. Without a live phone `pushChanges` returns at once.
         // The chats follow too (`pushChats`): a new message, someone typing, or Nook writing in one of its conversations.
         watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange,
                                                      ChatCaptureService.shared.objectWillChange, ChatTypingCenter.shared.objectWillChange,
                                                      app.chat.objectWillChange)
-            .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
         apply()
         KeepAwake.shared.attach(app: app)
@@ -821,7 +822,8 @@ final class CompanionServer: ObservableObject {
                              canSteer: workspace.canSteer(run.id),
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970,
-                             turn: workspace.turnIdentity(run.id))
+                             turn: workspace.turnIdentity(run.id),
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
     }
 }
 
