@@ -560,10 +560,11 @@ final class WorkspaceManager: ObservableObject {
             let loaded = store.loadRuns()
             await self?.finishLoadingRuns(loaded)
         }
-        // Watched pull requests are looked at every half minute (each at most every two minutes).
+        // Watched pull requests are looked at every half minute (each at most every two minutes). Away from the Mac or
+        // saving power the tick comes less often, as `PullRequestSync`'s.
         Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(for: .seconds(30) * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()

@@ -241,3 +241,21 @@ extension SessionKeeperTests {
         XCTAssertFalse(KeptTransport.stop(folder: folder))
     }
 }
+
+extension SessionKeeperTests {
+    /// A new keeper's "ready" is read with a deadline: one that never answers cannot hold the thread that starts a session.
+    func testTheReadyAnswerHasADeadline() throws {
+        let pipe = Pipe()
+        defer {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+        }
+        let started = Date()
+        let silent = KeptTransport.readReady(pipe.fileHandleForReading.fileDescriptor, until: Date().addingTimeInterval(0.3))
+        XCTAssertTrue(silent.isEmpty)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        pipe.fileHandleForWriting.write(Data("ready\nmore".utf8))
+        let answer = KeptTransport.readReady(pipe.fileHandleForReading.fileDescriptor, until: Date().addingTimeInterval(5))
+        XCTAssertEqual(String(decoding: answer, as: UTF8.self), "ready\n")
+    }
+}

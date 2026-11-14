@@ -244,24 +244,37 @@ final class AgentHub: ObservableObject {
             let covered = SessionLiveness.claimed(Self.scanned(found),
                                                   by: records.values.map { (agent: $0.agent, cwd: $0.cwd, pid: $0.pid) })
             let now = Date()
-            let newDetected: [AgentSession] = found.sorted { $0.pid < $1.pid }.compactMap { agent in
-                guard !covered.contains(agent.pid) else { return nil }
-                // Already connected? If so, this session was started before integration and just needs a restart.
-                let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
+            let uncovered = found.sorted { $0.pid < $1.pid }.filter { !covered.contains($0.pid) }
+            // Each agent's account home, and the key its connected state is kept under.
+            let accounts = Dictionary(uncovered.map { agent -> (Int32, (home: String, key: String)) in
                 let kind = AgentKind(agentName: agent.name)
                 let accountHome = kind.flatMap { kind in
                     kind.homeVariable.map { Self.accountHome([$0: kind.homeValue(agent.home)], agentID: kind.hookAgentID) }
                 } ?? ""
-                let cacheKey = "\(agent.name)|\(accountHome)"
-                let linked: Bool
-                if let cached = linkedStateCache[cacheKey], now.timeIntervalSince(cached.checkedAt) < 20 {
-                    linked = cached.linked
-                } else {
-                    let computed = AgentConfigInstaller.Target.forAgent(named: agent.name)
-                        .map { AgentConfigInstaller.state(of: $0, home: accountHome.isEmpty ? nil : home) == .installed } ?? false
-                    linkedStateCache[cacheKey] = (computed, now)
-                    linked = computed
-                }
+                return (agent.pid, (home: accountHome, key: "\(agent.name)|\(accountHome)"))
+            }, uniquingKeysWith: { first, _ in first })
+            // Whether each agent is connected: its settings file is read and parsed, at most every 20 seconds per agent
+            // and account, and off the main thread (this runs with every scan).
+            var checks: [String: (target: AgentConfigInstaller.Target?, home: URL?)] = [:]
+            for agent in uncovered {
+                guard let account = accounts[agent.pid], checks[account.key] == nil else { continue }
+                if let cached = linkedStateCache[account.key], now.timeIntervalSince(cached.checkedAt) < 20 { continue }
+                let home = account.home.isEmpty || agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
+                checks[account.key] = (AgentConfigInstaller.Target.forAgent(named: agent.name), home)
+            }
+            if !checks.isEmpty {
+                let pending = checks.map { (key: $0.key, target: $0.value.target, home: $0.value.home) }
+                let states = await Task.detached(priority: .utility) {
+                    pending.map { check in
+                        (check.key, check.target.map { AgentConfigInstaller.state(of: $0, home: check.home) == .installed } ?? false)
+                    }
+                }.value
+                for (key, linked) in states { linkedStateCache[key] = (linked, now) }
+            }
+            let newDetected: [AgentSession] = uncovered.map { agent in
+                // Already connected? If so, this session was started before integration and just needs a restart.
+                let accountHome = accounts[agent.pid]?.home ?? ""
+                let linked = accounts[agent.pid].flatMap { linkedStateCache[$0.key]?.linked } ?? false
                 let steps: [AgentStep] = linked ? [
                     AgentStep(mark: .blocked, text: "Started before integration: Nook cannot monitor"),
                     AgentStep(mark: .todo, text: "Quit and restart \(agent.name)")

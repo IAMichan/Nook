@@ -348,9 +348,13 @@ final class OpenCodeEventStream: NSObject, URLSessionDataDelegate, @unchecked Se
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        // What waits in `pending` holds no newline, so only the new bytes are searched: rescanning a multi-megabyte
+        // event from its start for every chunk was quadratic in its size (as `AgentProcess.consume`).
+        let waiting = pending.count
         pending.append(data)
         // Only whole lines: a character cut in two waits for its other half.
-        guard let last = pending.lastIndex(of: 0x0A) else { return }
+        guard let newline = data.lastIndex(of: 0x0A) else { return }
+        let last = pending.index(pending.startIndex, offsetBy: waiting + data.distance(from: data.startIndex, to: newline))
         let chunk = pending[pending.startIndex...last]
         pending = Data(pending[pending.index(after: last)...])
         let events = parser.feed(String(decoding: chunk, as: UTF8.self)).compactMap { OpenCodeEvent.decode($0.data) }

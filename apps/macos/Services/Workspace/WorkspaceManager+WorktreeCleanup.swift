@@ -405,7 +405,17 @@ extension WorkspaceManager {
     func watchDiskSpace(now: Date = Date()) {
         if let last = diskSpaceCheckedAt, now.timeIntervalSince(last) < Self.diskSpaceInterval { return }
         diskSpaceCheckedAt = now
-        guard let available = DiskSpace.available() else { return }
+        // Reading the "important usage" capacity asks CacheDelete, which can take hundreds of milliseconds: read it
+        // off the main thread and act on it here.
+        Task { [weak self] in
+            let available = await Task.detached(priority: .utility) { DiskSpace.available() }.value
+            guard let self, let available else { return }
+            self.applyDiskSpace(available, now: now)
+        }
+    }
+
+    /// Acts on a free-space reading from `watchDiskSpace`.
+    private func applyDiskSpace(_ available: Int64, now: Date) {
         let wasLow = diskSpaceLow
         diskSpaceLow = DiskSpace.isLow(available: available, wasLow: wasLow)
         guard diskSpaceLow, !wasLow else { return }
@@ -414,9 +424,11 @@ extension WorkspaceManager {
         let root = (settings.worktreeRoot as NSString).expandingTildeInPath
         sweepBuildLeftovers(now: now, force: true) { [weak self] freed in
             Task { [weak self] in
-                let worktrees = await Task.detached(priority: .utility) { DiskUsage.allocatedSize(of: root) }.value
+                let (worktrees, freeNow) = await Task.detached(priority: .utility) {
+                    (DiskUsage.allocatedSize(of: root), DiskSpace.available())
+                }.value
                 guard let self else { return }
-                let free = DiskSpace.available() ?? available
+                let free = freeNow ?? available
                 self.onAudit?("disk_space", "\(DiskUsage.format(free)) free", "freed \(DiskUsage.format(freed))")
                 // Freeing lifted it above the limit: nothing to say, and the next drop says it.
                 guard free < DiskSpace.lowBytes else { self.diskSpaceLow = false; return }
