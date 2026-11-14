@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Keeps the session list tidy whether or not a list is on screen: the auto-settle rules
@@ -16,6 +17,7 @@ final class SessionTidier {
 
     private weak var app: AppModel?
     private var loop: Task<Void, Never>?
+    private var landed: AnyCancellable?
 
     func start(app: AppModel) {
         self.app = app
@@ -34,6 +36,14 @@ final class SessionTidier {
         }
         store.settled = { [weak app] items in app?.applySettleActions(items) }
         guard loop == nil else { return }
+        // A pull request that merged or closed (seen by the branch sync, a watch, the page, or a merge from Nook) settles
+        // its session at once, as its badge turns, not at the next round.
+        landed = PullRequestStatusStore.shared.$statuses
+            .map { statuses in Set(statuses.filter { $0.value.glyph == .merged || $0.value.glyph == .closed }.keys) }
+            .removeDuplicates()
+            .dropFirst()
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.settleNow() } }
         loop = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.firstRound))
             while !Task.isCancelled {
@@ -50,6 +60,13 @@ final class SessionTidier {
         let items = entries.running + entries.earlier
         PullRequestSync.shared.follow(workspace: app.workspace, folders: Self.folders(items, now: now), now: now)
         autoSettle(items, workspace: app.workspace, now: now)
+    }
+
+    /// Only the settle rules, without asking the forges again: for a pull request that just landed.
+    func settleNow(now: Date = Date()) {
+        guard let app, !app.demoMode else { return }
+        let entries = app.agentListEntries(selected: app.viewModel.selectedAgentID)
+        autoSettle(entries.running + entries.earlier, workspace: app.workspace, now: now)
     }
 
     private func autoSettle(_ items: [AgentListItem], workspace: WorkspaceManager, now: Date) {

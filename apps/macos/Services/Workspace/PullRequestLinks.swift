@@ -558,6 +558,18 @@ enum PullRequestSettlement {
         }
     }
 
+    /// The kept links with the state of the newest read (`fresh`, the same links through `PullRequestStatusStore`): a
+    /// watch or the pull request page can see a merge minutes before the branch sync does, and the badge already shows
+    /// it. A request that landed since it was kept has no known landing moment, so its update time goes (it counts).
+    static func freshest(kept: [PullRequestLink], fresh: [PullRequestLink]) -> [PullRequestLink] {
+        zip(kept, fresh).map { kept, fresh in
+            guard fresh.state != kept.state, !fresh.state.isOpen else { return fresh }
+            var landed = fresh
+            landed.updatedAt = nil
+            return landed
+        }
+    }
+
     /// After this long a merged or closed request, or a session without any, has settled.
     static let settledAfter: TimeInterval = 24 * 60 * 60
 
