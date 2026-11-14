@@ -817,12 +817,10 @@ struct TranscriptPromptRail: View {
             let layout = TranscriptPresentation.railLayout(count: marks.count, height: geometry.size.height, pitch: Self.pitch)
             let shown = Array(marks.suffix(layout.fit))
             let lit = hovered.flatMap { id in shown.firstIndex { $0.id == id } }
+            // From the first message on: one prompt already has a mark to jump back to.
             VStack(spacing: 0) {
-                // One message needs no map: the rail shows from the second on.
-                if marks.count > 1 {
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, mark in
-                        markButton(mark, pitch: layout.pitch, distance: lit.map { abs($0 - index) })
-                    }
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, mark in
+                    markButton(mark, pitch: layout.pitch, distance: lit.map { abs($0 - index) })
                 }
             }
             .frame(width: Self.width, height: geometry.size.height)
