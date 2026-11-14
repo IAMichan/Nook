@@ -750,7 +750,8 @@ struct WorkspaceSettingsSection: View {
     }
 
     /// Nook's browser: the search engine of its address bar, whether an agent's links open there or in your own, its
-    /// sign-ins (kept, imported from another browser), and Nook as the Mac's default browser.
+    /// sign-ins (kept, imported from another browser), the pages it remembers, its saved passwords, its extensions, and
+    /// Nook as the Mac's default browser.
     @ViewBuilder
     private var browser: some View {
         Section(tr("settings.browser.title")) {
@@ -768,8 +769,11 @@ struct WorkspaceSettingsSection: View {
             }
             .help(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
+            BrowserHistoryRow()
+            BrowserPasswordsRow()
             TrustedCertificatesRow()
         }
+        BrowserExtensionsSettings()
         DefaultBrowserSection()
         BrowserExtensionSection()
     }
