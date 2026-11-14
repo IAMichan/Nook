@@ -51,9 +51,11 @@ extension AppModel {
         var onNotch = false
         if case .card(let shown) = viewModel.state { onNotch = shown.id == id }
         let key = pace ?? id
-        guard onNotch || noticePacer.allow(key: key, urgent: urgent) else {
+        // What you keep turning away from this source and app keeps a longer distance (`AttentionFeedback`).
+        let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: source.rawValue, app: app)
+        guard onNotch || noticePacer.allow(key: key, urgent: urgent, gapFactor: gapFactor) else {
             if let stillNew {
-                holdNotice(key: key, stillNew: stillNew) { [weak self] in
+                holdNotice(key: key, gapFactor: gapFactor, stillNew: stillNew) { [weak self] in
                     _ = self?.deliverNotice(source, app: app, id: id, pace: pace, urgent: urgent, title: title, subtitle: subtitle,
                                             body: body, sound: sound, watching: watching, kind: kind, card: card, strip: strip,
                                             open: open, window: window, banner: banner, stillNew: stillNew)
@@ -63,6 +65,9 @@ extension AppModel {
         }
         // Shown now: a pop-up still held for the same thing has nothing left to say.
         Self.heldNotices.removeValue(forKey: key)?.cancel()
+        // An offer spends the day's budget it shares with the moments; every pop-up counts as shown for the feedback.
+        if source == .suggestions, !onNotch { spendInterruption(.suggestion) }
+        AttentionFeedbackStore.shared.record(.shown, source: source.rawValue, app: app)
         if let sound { NookSound.play(sound) }
         if style != .system, WorkspaceWindowController.shared.isOpen {
             let detail = [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -92,9 +97,9 @@ extension AppModel {
     /// only, as before: a pop-up ten minutes after the message would be news to no one.
     static let heldNoticeLimit: TimeInterval = NoticePacer.sameKeyGap
 
-    private func holdNotice(key: String, stillNew: @escaping () -> Bool, deliver: @escaping () -> Void) {
+    private func holdNotice(key: String, gapFactor: Double, stillNew: @escaping () -> Bool, deliver: @escaping () -> Void) {
         Self.heldNotices.removeValue(forKey: key)?.cancel()
-        let wait = noticePacer.nextPermitted(key: key).timeIntervalSinceNow
+        let wait = noticePacer.nextPermitted(key: key, gapFactor: gapFactor).timeIntervalSinceNow
         guard wait <= Self.heldNoticeLimit else { return }
         Self.heldNotices[key] = Task { @MainActor in
             // A moment past the time itself, so the pacer's own comparison lets it through.
@@ -104,6 +109,13 @@ extension AppModel {
             guard stillNew() else { return }
             deliver()
         }
+    }
+
+    /// Counts an offer or a moment against the day's budget (`InterruptionBudget`) and keeps the budget for the next
+    /// launch. Written only when something went out, never on a timer.
+    func spendInterruption(_ kind: InterruptionClass, now: Date = Date()) {
+        noticePacer.budget.spend(kind, now: now)
+        UserDefaults.standard.set(noticePacer.budget.stored, forKey: InterruptionBudget.storageKey)
     }
 
     /// Whether a notice may take the notch now: it rests (or shows something passing, a nudge or a moment), or shows an

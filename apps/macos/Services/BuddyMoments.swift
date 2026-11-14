@@ -3,7 +3,8 @@ import Foundation
 /// The small, friendly moments Nook shares on his own: a good morning, a welcome back, a nudge to take a break.
 ///
 /// A friend knows when to be quiet, so moments are rare by design:
-/// - a few a day at most (`dailyBudget`), each kind only once or twice, and never two within `minimumGap`;
+/// - a few a day at most, each kind only once or twice, and never two close together: the day's budget and the gaps are
+///   shared with Think Along's offers (`InterruptionBudget`, asked by `AppModel.buddyTick` before the planner);
 /// - never while an event in your calendar is going on, while Nook shows something else, or while you are away;
 /// - nothing here ever guilt-trips you about being away. Coming back is only ever welcomed.
 ///
@@ -157,10 +158,6 @@ struct BuddyLedger: Codable, Equatable {
 
 /// Decides which moment, if any, Nook shares now.
 enum BuddyPlanner {
-    /// Moments per day, whatever kind.
-    static let dailyBudget = 4
-    /// Never two moments closer together than this.
-    static let minimumGap: TimeInterval = 20 * 60
     /// A break is suggested after this long without one.
     static let breakAfter: TimeInterval = 90 * 60
     /// Round numbers of finished agent sessions worth celebrating.
@@ -195,8 +192,6 @@ enum BuddyPlanner {
         let day = BuddyActivity.dayKey(s.now, calendar: s.calendar)
         var ledger = ledger
         ledger.roll(to: day)
-        guard ledger.shownToday.count < dailyBudget else { return nil }
-        if let last = ledger.lastShown, s.now.timeIntervalSince(last) < minimumGap { return nil }
 
         let parts = s.calendar.dateComponents([.hour, .minute, .weekday], from: s.now)
         let hour = parts.hour ?? 12

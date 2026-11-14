@@ -393,6 +393,7 @@ targets:
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
       - path: Services/NoticePacer.swift
+      - path: Services/ThinkAlongBackoff.swift
       - path: Core/DecayedCounter.swift
       - path: Services/Attention/AttentionFeedback.swift
       - path: Services/Attention/AttentionContext.swift

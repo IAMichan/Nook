@@ -39,8 +39,14 @@ extension AppModel {
         signals.finishedTotal = buddy.finishedTotal
         signals.birthday = NookMonthDay(stored: settings.birthday)
 
-        guard let moment = BuddyPlanner.next(signals, ledger: buddy.ledger),
+        // The day's budget and gaps are shared with Think Along's offers, and a moment keeps the notices' distance
+        // (`NoticePacer`): it never comes right after something else popped up.
+        let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: Self.momentSource)
+        guard noticePacer.permits(.moment, key: Self.momentSource, gapFactor: gapFactor, now: now),
+              let moment = BuddyPlanner.next(signals, ledger: buddy.ledger),
               viewModel.offerMoment(nookMoment(for: moment)) else { return }
+        noticePacer.record(key: Self.momentSource, now: now)
+        spendInterruption(.moment, now: now)
         buddy.ledger.roll(to: BuddyActivity.dayKey(now))
         buddy.ledger.record(moment, at: now)
         if moment.kind == .breakTime { buddy.activity.restartStretch(at: now) }
@@ -102,8 +108,12 @@ extension AppModel {
         return result
     }
 
+    /// The moments' name in the pacer and the feedback.
+    static let momentSource = "moments"
+
     /// The button on a moment.
     func performMomentAction(_ moment: NookMoment) {
+        if moment.action != nil { AttentionFeedbackStore.shared.record(.opened, source: Self.momentSource) }
         switch moment.action {
         case .breathe:
             buddy.activity.restartStretch(at: Date())
