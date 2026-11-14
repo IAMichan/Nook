@@ -405,6 +405,20 @@ extension Array where Element == WAReaction {
 }
 
 extension WAMedia {
+    /// The file as every app's (`ChatMedia`), from this Mac once the link fetched it (`path`); nil for what is no file
+    /// (a location, a contact card, anything else).
+    func chatMedia(path: String? = nil) -> ChatMedia? {
+        switch self {
+        case .image: return ChatMedia(kind: .photo, path: path)
+        case .video: return ChatMedia(kind: .video, path: path)
+        case .audio(let seconds): return ChatMedia(kind: .audio, path: path, seconds: seconds.map(Double.init))
+        case .voice(let seconds): return ChatMedia(kind: .voice, path: path, seconds: seconds.map(Double.init))
+        case .document(let name): return ChatMedia(kind: .file, name: name, path: path)
+        case .sticker: return ChatMedia(kind: .sticker, path: path)
+        case .none, .location, .contact, .other: return nil
+        }
+    }
+
     /// A file Nook can fetch from the gateway and open on this Mac.
     var isOpenable: Bool {
         switch self {
@@ -2515,17 +2529,15 @@ enum WhatsAppRecipients {
                             isID: { asked, chat in asked.contains("@") && WAJID.normalized(chat.jid) == WAJID.normalized(asked) }).found
     }
 
+    /// What stands for a message's file in the text: every app's placeholder (`ChatMedia.placeholder`), and WhatsApp's
+    /// own for what is no file.
     static func label(_ media: WAMedia) -> String? {
         switch media {
         case .none: return nil
-        case .image: return "[photo]"
-        case .video: return "[video]"
-        case .audio, .voice: return "[voice message]"
-        case .document(let name): return "[document\(name.map { ": \($0)" } ?? "")]"
-        case .sticker: return "[sticker]"
         case .location: return "[location]"
         case .contact: return "[contact]"
         case .other: return "[attachment]"
+        case .image, .video, .audio, .voice, .document, .sticker: return media.chatMedia()?.placeholder
         }
     }
 

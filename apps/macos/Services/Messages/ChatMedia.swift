@@ -58,14 +58,36 @@ struct ChatMedia: Codable, Equatable, Sendable {
         if gif || type == "image/gif" || ext == "gif" { return .gif }
         if voice { return .voice }
         if type.hasPrefix("image/") || Self.pictureExtensions.contains(ext) { return .photo }
-        if type.hasPrefix("video/") || ["mp4", "mov", "m4v"].contains(ext) { return .video }
-        if type.hasPrefix("audio/") || ["m4a", "mp3", "aac", "caf", "wav", "ogg", "opus", "amr"].contains(ext) { return .audio }
+        if type.hasPrefix("video/") || Self.videoExtensions.contains(ext) { return .video }
+        if type.hasPrefix("audio/") || Self.audioExtensions.contains(ext) { return .audio }
         return .file
     }
 
-    /// The names a photo ends in, also when its app sends it as a document.
-    private static let pictureExtensions: Set<String> = ["jpg", "jpeg", "jfif", "png", "heic", "heif", "webp", "tif", "tiff",
-                                                         "bmp", "avif"]
+    /// The kind of a file by its name alone (a link, a document's name): what `kind(mimeType:name:)` says of it.
+    static func kind(name: String) -> Kind { kind(mimeType: nil, name: name) }
+
+    /// The names a photo ends in, also when its app sends it as a document, and a link to one. One list for every app
+    /// and every link (`ChatFormat.linkKind`).
+    static let pictureExtensions: Set<String> = ["jpg", "jpeg", "jfif", "png", "heic", "heif", "webp", "tif", "tiff",
+                                                 "bmp", "avif"]
+    /// The names a video ends in that this Mac plays.
+    static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
+    /// The names a sound ends in.
+    static let audioExtensions: Set<String> = ["m4a", "mp3", "aac", "caf", "wav", "ogg", "opus", "amr", "flac"]
+
+    /// What stands for the file in a text Nook reads (a chat's lines for its answers), in English like the rest of that
+    /// text: "[photo]", "[voice message]", "[document: plan.pdf]". The same for every app.
+    var placeholder: String {
+        switch kind {
+        case .photo: return "[photo]"
+        case .video: return "[video]"
+        case .gif: return "[GIF]"
+        case .sticker: return "[sticker]"
+        case .audio: return "[audio]"
+        case .voice: return "[voice message]"
+        case .file: return "[document\(name.flatMap { $0.isEmpty ? nil : ": " + $0 } ?? "")]"
+        }
+    }
 
     /// How the chat shows the file: as its kind, except a document that is a photo, a GIF, a video or a sound by its
     /// name (a photo sent "as a document" in WhatsApp, a picture attached to a Slack or Teams message), which shows as

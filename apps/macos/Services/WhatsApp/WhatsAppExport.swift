@@ -158,15 +158,7 @@ enum WhatsAppExport {
 
     /// The file that came with a message, the same for every app, from this Mac once the link fetched it (`path`).
     static func media(_ message: WAMessage, path: String?) -> ChatMedia? {
-        switch message.media {
-        case .image: return ChatMedia(kind: .photo, path: path)
-        case .video: return ChatMedia(kind: .video, path: path)
-        case .audio(let seconds): return ChatMedia(kind: .audio, path: path, seconds: seconds.map(Double.init))
-        case .voice(let seconds): return ChatMedia(kind: .voice, path: path, seconds: seconds.map(Double.init))
-        case .document(let name): return ChatMedia(kind: .file, name: name, path: path)
-        case .sticker: return ChatMedia(kind: .sticker, path: path)
-        case .none, .location, .contact, .other: return nil
-        }
+        message.media.chatMedia(path: path)
     }
 
     /// Your own message's readers: in a private chat the other person (whom the chat names), in a group every member

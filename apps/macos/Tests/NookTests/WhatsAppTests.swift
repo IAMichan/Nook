@@ -887,6 +887,13 @@ final class WhatsAppTests: XCTestCase {
         var voice = message("3", chat: "c", text: "")
         voice.media = .voice(seconds: 12)
         XCTAssertTrue(WhatsAppRecipients.lines([voice], chatName: "Lisa", calendar: calendar).hasSuffix("Lisa: [voice message]"))
+        // Every file is named as every app's (`ChatMedia.placeholder`); what is no file keeps WhatsApp's own word.
+        XCTAssertEqual(WhatsAppRecipients.label(.document(name: "plan.pdf")), ChatMedia(kind: .file, name: "plan.pdf").placeholder)
+        XCTAssertEqual(WhatsAppRecipients.label(.audio(seconds: nil)), "[audio]")
+        XCTAssertEqual(WhatsAppRecipients.label(.location), "[location]")
+        XCTAssertNil(WhatsAppRecipients.label(.none))
+        XCTAssertEqual(WAMedia.voice(seconds: 3).chatMedia(path: "/x.ogg"), ChatMedia(kind: .voice, path: "/x.ogg", seconds: 3))
+        XCTAssertNil(WAMedia.contact.chatMedia())
     }
 
     func testAChatReadsTheGatewayHistoryTogetherWithWhatCameInLive() {

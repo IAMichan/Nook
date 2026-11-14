@@ -304,11 +304,14 @@ enum ChatFormat {
 
     /// The kind of a link by its file's extension; anything without a known one is a page.
     static func linkKind(_ url: URL) -> LinkKind {
-        switch url.pathExtension.lowercased() {
-        case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp": return .image
-        case "mp4", "mov", "m4v", "webm": return .video
-        case "mp3", "m4a", "aac", "wav", "ogg", "opus", "flac": return .audio
-        default: return .page
+        // The same file names as a file in a chat (`ChatMedia.kind`): one list for both.
+        let ext = url.pathExtension
+        guard !ext.isEmpty else { return .page }
+        switch ChatMedia.kind(name: "link." + ext) {
+        case .photo, .gif, .sticker: return .image
+        case .video: return .video
+        case .audio, .voice: return .audio
+        case .file: return .page
         }
     }
 
