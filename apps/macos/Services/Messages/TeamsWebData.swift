@@ -354,8 +354,14 @@ enum TeamsWebData {
         return horizons
     }
 
+    /// Your messages among `messages` that not everyone read yet, the newest 20: their ticks can still move.
+    static func unseen(_ messages: [InboxMessage]) -> [InboxMessage] {
+        Array(messages.filter { $0.isMine && !$0.isDeleted && $0.receipt != .read }.suffix(20))
+    }
+
     /// Your messages read as far as each member says (`horizons`): who read each, by name in a group, and two ticks
     /// once everyone did. Teams keeps read receipts only where they are on (and in chats of up to 20 people).
+
     static func read(_ messages: [InboxMessage], horizons: [String: Int64], group: Bool, names: [String: String]) -> [InboxMessage] {
         guard !horizons.isEmpty else { return messages }
         return messages.map { message in

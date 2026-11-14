@@ -1988,6 +1988,13 @@ enum WAAvatar {
 }
 
 enum WAGOWA {
+    /// The webhook events Nook asks GOWA for: messages, their ticks and emoji, who is typing, a message edited or
+    /// deleted for everyone, and people coming and going in a group (newer GOWA versions send the last three only when
+    /// asked by name). `webhookEventsBefore` is what a GOWA that refuses one of those names is asked for instead; it
+    /// still says edits and deletions inside `message`.
+    static let webhookEvents = "message,message.ack,message.reaction,chat_presence,message.edited,message.revoked,message.deleted,group.participants"
+    static let webhookEventsBefore = "message,message.ack,message.reaction,chat_presence"
+
     /// Removes the files under `statics/media` and `statics/senditems` not modified within `age`, and the folders that
     /// leaves empty. Returns how many files went.
     @discardableResult
@@ -2338,6 +2345,15 @@ enum WAGOWARelease {
 }
 
 enum WAOpenWA {
+    /// The webhook events Nook asks OpenWA for: messages and their ticks (a failed send among them), emoji, who is
+    /// typing, a message edited or deleted for everyone, and the group's changes. `webhookEventsBefore` is asked for
+    /// instead when OpenWA refuses one of those names (an older version).
+    static let webhookEvents = ["message.received", "message.sent", "message.ack", "message.receipt", "message.failed",
+                                "message.edited", "message.revoked", "message.reaction", "presence.update",
+                                "group.join", "group.leave", "group.update"]
+    static let webhookEventsBefore = ["message.received", "message.sent", "message.ack", "message.receipt",
+                                      "message.reaction", "presence.update", "group.join", "group.leave", "group.update"]
+
     /// `GET /contacts/{id}` → `{name, pushName, number, isMyContact, isBlocked}`: the name they gave themselves and
     /// whether you blocked them.
     static func person(_ obj: [String: Any]) -> ChatProfile {

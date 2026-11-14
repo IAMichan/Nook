@@ -229,6 +229,11 @@ final class ChatCaptureService: ObservableObject {
             guard let self else { return }
             self.bridgeDue[self.serviceBridge.app] = nil
         }
+        // Slack's real-time line said a conversation changed: Slack is read now (or right after the read going on).
+        slackBridge.onChange = { [weak self] in
+            guard let self else { return }
+            self.readLive(self.slackBridge)
+        }
         // A change from the last moment before quitting is still written.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flushSave(wait: true) }
@@ -456,6 +461,7 @@ final class ChatCaptureService: ObservableObject {
         generation += 1
         telegramBridge.stop()
         serviceBridge.stop()
+        slackBridge.stop()
         status = .off
     }
 
@@ -629,6 +635,14 @@ final class ChatCaptureService: ObservableObject {
         }
         reading.insert(bridge.bridgeID)
         Task { await read(bridge) }
+    }
+
+    /// A bridge's app said this moment that something changed (Slack's real-time line, an update from TDLib): it reads
+    /// now, the same rule for every app, while its app is on and it can read. Several changes at once make one read, and
+    /// one more after it (`readNow`).
+    func readLive(_ bridge: ChatBridge) {
+        guard (enabled && sources.isOn(bridge.app)) || bridge.alwaysOn, bridge.isReady else { return }
+        readNow(bridge)
     }
 
     /// Bridges told to read again while they were reading.

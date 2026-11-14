@@ -1253,4 +1253,15 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: sending.path))
         XCTAssertTrue(fm.fileExists(atPath: recent.path))
     }
+
+    /// The webhook asks the gateway by name for what the parser reads: a message edited or deleted for everyone comes in
+    /// live, also from a GOWA or OpenWA version that only sends those when asked; an older one gets what it always had.
+    func testTheWebhookAsksForEditsAndDeletions() {
+        let gowa = Set(WAGOWA.webhookEvents.split(separator: ",").map(String.init))
+        XCTAssertTrue(gowa.isSuperset(of: ["message.edited", "message.revoked", "message.deleted", "group.participants"]))
+        XCTAssertTrue(gowa.isSuperset(of: WAGOWA.webhookEventsBefore.split(separator: ",").map(String.init)),
+                      "nothing that was asked before is left out")
+        XCTAssertTrue(Set(WAOpenWA.webhookEvents).isSuperset(of: ["message.edited", "message.revoked", "message.failed"]))
+        XCTAssertTrue(Set(WAOpenWA.webhookEvents).isSuperset(of: WAOpenWA.webhookEventsBefore))
+    }
 }

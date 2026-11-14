@@ -2,7 +2,8 @@ import Foundation
 
 /// What Slack's Web API answers, turned into chats for the Chats tab: your direct messages and group messages with their
 /// newest messages. Foundation only, so it can be tested anywhere; `SlackBridge` makes the calls.
-/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history; and to write, after
+/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history, client.counts, and
+/// rtm.connect for the real-time line (`SlackLiveStream`); and to write, after
 /// your own click: chat.postMessage, chat.update, chat.delete, reactions.add, reactions.remove, conversations.mark,
 /// files.getUploadURLExternal and files.completeUploadExternal.
 enum SlackData {
@@ -259,6 +260,20 @@ enum SlackData {
             }
         }
         return marks
+    }
+
+    /// The newest message in each direct conversation as `client.counts` lists it (`latest`, a `ts` in seconds), by the
+    /// conversation's id: a conversation whose newest message is newer than the one Nook read last has news, and is read
+    /// before the others, however quiet it was before. Empty for an answer without it.
+    static func latest(_ json: [String: Any]) -> [String: Double] {
+        var latest: [String: Double] = [:]
+        for key in ["ims", "mpims"] {
+            for conversation in json[key] as? [[String: Any]] ?? [] {
+                guard let id = conversation["id"] as? String, let ts = ChatJSON.number(conversation["latest"]), ts > 0 else { continue }
+                latest[id] = ts
+            }
+        }
+        return latest
     }
 
     /// The newest message you read in one conversation (`last_read`), from `conversations.info`; nil without it.
@@ -660,4 +675,89 @@ enum SlackData {
     🐶 dog
     🐱 cat
     """
+}
+
+// MARK: The live line
+
+extension SlackData {
+    /// What one frame of Slack's real-time line (the socket `rtm.connect` hands out, as Slack's own clients hold) says,
+    /// for the direct and group conversations Nook reads. What changed is read the usual way (`conversations.history`),
+    /// so only which conversation and which message are taken from it.
+    enum LiveEvent: Equatable {
+        /// The line is up.
+        case hello
+        /// Something new or changed in a conversation: a message (`user` wrote it), an edit, an answer in a thread or an
+        /// emoji on the message at `ts` (nil for a new message, which a read of the newer messages brings).
+        case changed(conversation: String, ts: String?, user: String?)
+        /// The message at `ts` was deleted for everyone, by whoever wrote it.
+        case deleted(conversation: String, ts: String)
+        /// `user` is typing in the conversation.
+        case typing(conversation: String, user: String)
+        /// The conversation was read up to `ts` (in Slack, on the phone, or from Nook).
+        case read(conversation: String, ts: String)
+        /// A conversation was opened, made or closed: the list of conversations is read again.
+        case listChanged
+        /// Slack is about to close the line (a server move): it is opened again.
+        case goodbye
+        case other
+    }
+
+    static func liveEvent(_ json: [String: Any]) -> LiveEvent {
+        let channel = (json["channel"] as? String) ?? ""
+        switch json["type"] as? String {
+        case "hello":
+            return .hello
+        case "goodbye":
+            return .goodbye
+        case "message":
+            guard !channel.isEmpty else { return .other }
+            switch json["subtype"] as? String {
+            case "message_deleted":
+                guard let ts = (json["deleted_ts"] as? String) ?? ((json["previous_message"] as? [String: Any])?["ts"] as? String)
+                else { return .other }
+                return .deleted(conversation: channel, ts: ts)
+            case "message_changed":
+                let message = json["message"] as? [String: Any] ?? [:]
+                // What stays of a deleted message with answers comes as a change to a tombstone.
+                if message["subtype"] as? String == "tombstone", let ts = message["ts"] as? String {
+                    return .deleted(conversation: channel, ts: ts)
+                }
+                return .changed(conversation: channel, ts: message["ts"] as? String, user: nil)
+            case "message_replied":
+                // A new answer in a thread: its first message (with its count of answers) changed.
+                let message = json["message"] as? [String: Any] ?? [:]
+                return .changed(conversation: channel, ts: (message["thread_ts"] as? String) ?? (message["ts"] as? String),
+                                user: nil)
+            default:
+                return .changed(conversation: channel, ts: nil, user: json["user"] as? String)
+            }
+        case "reaction_added", "reaction_removed":
+            let item = json["item"] as? [String: Any] ?? [:]
+            guard item["type"] as? String == "message", let conversation = item["channel"] as? String,
+                  let ts = item["ts"] as? String else { return .other }
+            return .changed(conversation: conversation, ts: ts, user: nil)
+        case "user_typing":
+            guard !channel.isEmpty, let user = json["user"] as? String, !user.isEmpty else { return .other }
+            return .typing(conversation: channel, user: user)
+        case "im_marked", "mpim_marked", "group_marked", "channel_marked":
+            guard !channel.isEmpty, let ts = json["ts"] as? String, Double(ts) != nil else { return .other }
+            return .read(conversation: channel, ts: ts)
+        case "im_created", "im_open", "im_close", "mpim_open", "mpim_close", "mpim_joined", "group_joined", "group_left":
+            return .listChanged
+        default:
+            return .other
+        }
+    }
+
+    /// The address of the real-time line in `rtm.connect`'s answer; nil when Slack does not hand one out (a pasted
+    /// token of a newer Slack app, which only reads through the Web API).
+    static func liveURL(_ json: [String: Any]) -> URL? {
+        guard (json["ok"] as? Bool) == true, let address = json["url"] as? String,
+              let url = URL(string: address), url.scheme == "wss" else { return nil }
+        return url
+    }
+
+    /// How long a typing word from Slack lasts: Slack repeats `user_typing` every few seconds while someone types and
+    /// says nothing when they stop.
+    static let typingHold: TimeInterval = 6
 }

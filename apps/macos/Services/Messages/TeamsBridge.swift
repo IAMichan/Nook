@@ -75,7 +75,21 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         var seen: [String: Date] = [:]
         var retries: [String: Int] = [:]
         var names: [String: String] = [:]
+        /// Chats (by their id) whose newest messages of yours not everyone read yet: how far the others read is asked
+        /// again at each read, also while the chat does not move, so the ticks turn the moment they read it.
+        var unseen: [String: Unseen] = [:]
     }
+
+    /// Your messages of a chat not everyone read yet, with what their ticks need: whether it is a group, and the names
+    /// of its people by their id.
+    private struct Unseen {
+        var messages: [InboxMessage]
+        var group: Bool
+        var names: [String: String]
+    }
+
+    /// Chats whose ticks are asked again per read at most, the most recently written first.
+    private static let unseenChecks = 4
     private var web: [String: WebState] = [:]
     private(set) var isWorking = false
 
@@ -453,7 +467,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 messages = TeamsWebData.read(messages, horizons: TeamsWebData.horizons(horizons, me: session.me), group: named.isGroup,
                                              names: TeamsWebData.displayNames(json))
             }
-            return .answered(WebRead(answer: json, messages: messages))
+            return .answered(WebRead(answer: json, messages: messages, names: TeamsWebData.displayNames(json)))
         }
         for (var chat, reply) in zip(moved, asked) {
             guard case .answered(let read)? = reply else { continue }
@@ -483,6 +497,25 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                                       deleted: TeamsWebData.deleted(answer))
             bridged.profile = chat.profile
             result.append(bridged)
+            let waiting = TeamsWebData.unseen(messages)
+            state.unseen[chat.id] = waiting.isEmpty ? nil : Unseen(messages: waiting, group: chat.isGroup, names: read.names)
+        }
+        // Chats that did not move but whose messages of yours not everyone read yet: how far the others read is asked
+        // again, and the messages whose ticks moved go to the chat.
+        let checks = chats.filter { !fetched.contains($0.id) && !$0.name.isEmpty && state.unseen[$0.id] != nil }
+            .sorted { (state.unseen[$0.id]?.messages.last?.date ?? .distantPast) > (state.unseen[$1.id]?.messages.last?.date ?? .distantPast) }
+            .prefix(Self.unseenChecks)
+        for chat in checks {
+            guard let waiting = state.unseen[chat.id], let horizons = try? await webGet(
+                session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token,
+                account: account.id) else { continue }
+            let now = TeamsWebData.read(waiting.messages, horizons: TeamsWebData.horizons(horizons, me: session.me),
+                                        group: waiting.group, names: waiting.names)
+            let moved = zip(waiting.messages, now).filter { $0.0.receipt != $0.1.receipt || $0.0.readers != $0.1.readers }.map(\.1)
+            let still = TeamsWebData.unseen(now)
+            state.unseen[chat.id] = still.isEmpty ? nil : Unseen(messages: still, group: waiting.group, names: waiting.names)
+            guard !moved.isEmpty else { continue }
+            result.append(BridgedChat(app: app, name: chat.name, messages: moved, unread: nil, listed: true))
         }
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
@@ -500,6 +533,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     private struct WebRead {
         var answer: [String: Any]
         var messages: [InboxMessage]
+        var names: [String: String] = [:]
     }
 
     /// A bubble in view waits for its picture: the chat's history (with its pictures) is read again at the next read,
