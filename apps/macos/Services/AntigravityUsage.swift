@@ -301,10 +301,7 @@ final class AntigravityUsage: ObservableObject {
         return nil
     }
 
-    private nonisolated static func number(_ value: Any?) -> Double? {
-        let result = (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap(Double.init)
-        return result?.isFinite == true ? result : nil
-    }
+    private nonisolated static func number(_ value: Any?) -> Double? { JSONNumber.double(value) }
 
     private nonisolated static func resetDate(_ quota: [String: Any]) -> Date? {
         let value = quota["resetTime"] ?? quota["reset_time"]

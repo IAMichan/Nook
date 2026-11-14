@@ -1238,11 +1238,10 @@ private final class HistoryScanner: @unchecked Sendable {
                 if !text.isEmpty { session.lastReply = text }
                 if let model = message["model"] as? String, !model.isEmpty { session.model = model }
                 if let raw = message["tokens"] as? [String: Any] {
-                    // Gemini counts cached tokens inside its input; keep them apart like the other agents do.
-                    let cached = Self.int(raw["cached"])
-                    let tally = TokenTally(input: max(0, Self.int(raw["input"]) - cached),
-                                           output: Self.int(raw["output"]) + Self.int(raw["thoughts"]),
-                                           cacheRead: cached, cacheWrite: 0)
+                    // Gemini counts cached tokens inside its input, and thoughts as output, as it does live
+                    // (`TokenUsageSplit.gemini`).
+                    let counts = TokenUsageSplit.gemini(raw)
+                    let tally = TokenTally(input: counts.input, output: counts.output, cacheRead: counts.cacheRead, cacheWrite: 0)
                     session.tokens += tally
                     let when = (message["timestamp"] as? String).flatMap { date($0) } ?? session.ended
                     let id = (message["id"] as? String) ?? "\(entries.count)"
@@ -1773,13 +1772,9 @@ private final class HistoryScanner: @unchecked Sendable {
                 // Cumulative session total so far; the delta with the previous line is the incremental usage.
                 guard let info = payload["info"] as? [String: Any],
                       let total = info["total_token_usage"] as? [String: Any] else { return }
-                let cached = Self.int(total["cached_input_tokens"])
-                let current = TokenTally(
-                    input: max(0, Self.int(total["input_tokens"]) - cached),
-                    output: Self.int(total["output_tokens"]),
-                    cacheRead: cached,
-                    cacheWrite: 0
-                )
+                // Codex counts cached input inside its input, as it does live (`TokenUsageSplit.codex`).
+                let counts = TokenUsageSplit.codex(total)
+                let current = TokenTally(input: counts.input, output: counts.output, cacheRead: counts.cacheRead, cacheWrite: 0)
                 guard current.total > state.previous.total else { return }
                 let delta = TokenTally(
                     input: max(0, current.input - state.previous.input),
@@ -1875,7 +1870,7 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private static func int(_ value: Any?) -> Int {
-        (value as? NSNumber)?.intValue ?? 0
+        JSONNumber.int(value) ?? 0
     }
 
     /// Text extracted from a message: either a direct string or concatenated text blocks from an array.

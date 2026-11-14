@@ -79,9 +79,5 @@ struct ContextUsage: Equatable, Sendable {
         ], usedTokens: used, window: window, detailed: false)
     }
 
-    private static func int(_ value: Any?) -> Int? {
-        if let number = value as? NSNumber { return number.intValue }
-        if let text = value as? String { return Int(text) }
-        return nil
-    }
+    private static func int(_ value: Any?) -> Int? { JSONNumber.int(value) }
 }

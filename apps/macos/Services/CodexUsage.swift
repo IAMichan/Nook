@@ -376,23 +376,8 @@ final class CodexUsage: ObservableObject {
             let payload = (object["payload"] as? [String: Any]) ?? object
             guard let limits = payload["rate_limits"] as? [String: Any] else { continue }
             let lineDate = (object["timestamp"] as? String).flatMap(parseTimestamp) ?? fileDate
-            var snapshot = CodexUsageSnapshot(
-                fiveHour: nil, weekly: nil,
-                planType: (limits["plan_type"] as? String) ?? (limits["planType"] as? String),
-                updatedAt: lineDate, source: .sessionLog
-            )
-            for (index, key) in ["primary", "secondary"].enumerated() {
-                guard let raw = limits[key] as? [String: Any], let percent = number(raw["used_percent"]) else { continue }
-                let minutes = number(raw["window_minutes"]).map { Int($0) }
-                var resetsAt: Date?
-                if let absolute = number(raw["resets_at"]) {
-                    resetsAt = Date(timeIntervalSince1970: absolute)
-                } else if let relative = number(raw["resets_in_seconds"]) {
-                    resetsAt = lineDate.addingTimeInterval(relative)
-                }
-                let window = CodexUsageSnapshot.Window(usedPercent: percent, resetsAt: resetsAt, windowMinutes: minutes)
-                CodexRateLimits.assign(window, minutes: minutes, isPrimary: index == 0, to: &snapshot)
-            }
+            // The same tolerant reading as the app server's snapshots (`CodexRateLimits.windows`).
+            let snapshot = CodexRateLimits.windows(limits, at: lineDate, source: .sessionLog)
             if snapshot.fiveHour != nil || snapshot.weekly != nil { return snapshot }
         }
         return nil
@@ -400,11 +385,7 @@ final class CodexUsage: ObservableObject {
 
     // MARK: Helpers
 
-    private nonisolated static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
+    private nonisolated static func number(_ value: Any?) -> Double? { JSONNumber.double(value) }
 
     private nonisolated static func parseTimestamp(_ string: String) -> Date? {
         NookDates.isoFractional.date(from: string) ?? NookDates.isoPlain.date(from: string)

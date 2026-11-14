@@ -140,11 +140,7 @@ enum AutoCompactMark {
         return nil
     }
 
-    private static func number(_ value: Any?) -> Int? {
-        if let number = value as? NSNumber { return number.intValue }
-        if let text = value as? String { return Int(text.trimmingCharacters(in: .whitespaces)) }
-        return nil
-    }
+    private static func number(_ value: Any?) -> Int? { JSONNumber.int(value) }
 }
 
 /// Summarizing a session once its context grows past a size, whether or not it goes idle. Every request rereads the
