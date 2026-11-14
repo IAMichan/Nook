@@ -169,12 +169,13 @@ enum ScreenBrain {
         matches(pageAction, text)
     }
 
-    /// Whether a question from the browser's side panel is about the page in front. One asked there that names no other
-    /// source (the calendar, mail, a chat…) is about the page; so is a follow-up on an answer that read it.
-    static func handlesPage(_ text: String, afterPage: Bool) -> Bool {
-        if matches(plainCue, withoutPeriods(text)) || refersToScreen(text) || actsOnPage(text) { return true }
-        if afterPage && followsUp(text) { return true }
-        return ChatIntent.detect(text).kinds.allSatisfy { $0 == .screen }
+    /// Whether a question from the browser's side panel is about the page in front. "Hier", "deze pagina" or a request to
+    /// act on it always is. Otherwise one asked there that names no other source (the calendar, mail, a chat…) is: "vat
+    /// samen", "wat kost dit?", "en de tweede?". One that does name another source ("wat staat er morgen in mijn
+    /// agenda?") is not, even when words such as "er" look like they point at the screen.
+    static func handlesPage(_ text: String) -> Bool {
+        if matches(plainCue, withoutPeriods(text)) || actsOnPage(text) { return true }
+        return ChatIntent.detect(text).kinds.allSatisfy { $0 == .screen || $0 == .browser }
     }
 
     /// Whether this chat question is screen work. The screen brain is usually far smaller than the chosen brain, so a

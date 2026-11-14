@@ -150,10 +150,12 @@ final class ScreenBrainTests: XCTestCase {
     }
 
     func testAQuestionFromTheSidePanelIsAboutThePageUnlessItNamesAnotherSource() {
-        XCTAssertTrue(ScreenBrain.handlesPage("Vat samen", afterPage: false))
-        XCTAssertTrue(ScreenBrain.handlesPage("Wat staat hier over de prijs?", afterPage: false))
-        XCTAssertTrue(ScreenBrain.handlesPage("Fill in my name", afterPage: false))
-        XCTAssertFalse(ScreenBrain.handlesPage("Wat staat er morgen in mijn agenda?", afterPage: false),
-                       "the calendar is no page: the chosen brain answers")
+        for text in ["Vat samen", "Wat staat hier over de prijs?", "Fill in my name", "Wat kost dit?",
+                     "Waar gaat dit artikel over?", "Summarize this page", "En de tweede?", "Wie is de schrijver?"] {
+            XCTAssertTrue(ScreenBrain.handlesPage(text), text)
+        }
+        for text in ["Wat staat er morgen in mijn agenda?", "Stuur een mail naar Lisa"] {
+            XCTAssertFalse(ScreenBrain.handlesPage(text), "\(text): another source, the chosen brain answers")
+        }
     }
 }

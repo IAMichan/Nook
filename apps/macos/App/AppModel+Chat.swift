@@ -234,10 +234,7 @@ extension AppModel {
     /// the question is about something else.
     private func pageWorker(for text: String, in conversation: UUID) -> BrainSelection? {
         guard let worker = settings.pageWorker else { return nil }
-        let messages = chat.conversation(conversation)?.messages ?? []
-        let last = messages.last { $0.role == .nook }
-        let afterPage = last?.used(anyOf: [SourceCatalog.browserExtension]) == true || last?.privateBrief.isEmpty == false
-        return ScreenBrain.handlesPage(text, afterPage: afterPage) ? worker : nil
+        return ScreenBrain.handlesPage(text) ? worker : nil
     }
 
     /// The model on this Mac reads what stays here and writes a filtered note; the chosen brain answers from that note,
