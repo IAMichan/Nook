@@ -11,6 +11,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook in your browser: an extension for Chrome, Brave, Edge, Arc and Vivaldi. Click Nook's icon to ask Nook about the
+  page you are on in the browser's side panel. Nook Chat and every coding agent can also read your tabs as you see them
+  and open, click, type and press keys there (`chrome_*` tools), always after your approval. You can switch Nook off per
+  site or pause it in the whole browser, and a strip with Stop shows while Nook acts on a page. Set it up in Settings ›
+  Editor & browser › Nook in your browser (see docs/BROWSER-EXTENSION.md).
+
 - CLIProxyAPI hubs as a source of limits: add a hub in Settings › Usage & costs (its address and management key, kept
   in the Keychain) and its accounts show in the usage modal and in Settings with their state, cooldowns, request
   counts and the Claude and Codex limits the hub saw on its requests. Nook only reads what the hub reports about its

@@ -1,0 +1,104 @@
+{
+  "appName": {
+    "message": "Nook"
+  },
+  "appDesc": {
+    "message": "Nook, votre assistant sur le Mac, dans votre navigateur : posez une question sur la page ouverte, et laissez Nook lire vos onglets et y agir après votre accord."
+  },
+  "actionTitle": {
+    "message": "Ouvrir Nook"
+  },
+  "statusConnected": {
+    "message": "Connecté"
+  },
+  "statusConnecting": {
+    "message": "Connexion…"
+  },
+  "statusOffline": {
+    "message": "Nook n’est pas lancé"
+  },
+  "statusMissing": {
+    "message": "Non configuré"
+  },
+  "setupTitle": {
+    "message": "Connecter ce navigateur à Nook"
+  },
+  "setupStep1": {
+    "message": "Ouvrez Nook sur votre Mac."
+  },
+  "setupStep2": {
+    "message": "Allez dans Réglages › Éditeur et navigateur › Nook dans votre navigateur et cliquez sur Connecter."
+  },
+  "setupStep3": {
+    "message": "Revenez ici : le panneau se connecte tout seul."
+  },
+  "setupDetail": {
+    "message": "ID de l’extension : $1"
+  },
+  "siteNone": {
+    "message": "Aucune page"
+  },
+  "siteRestricted": {
+    "message": "Le navigateur garde ses propres pages pour lui ; Nook ne peut ni les lire ni les utiliser."
+  },
+  "siteAllowed": {
+    "message": "Nook peut lire ce site et y agir quand vous le demandez, après votre accord sur le Mac."
+  },
+  "siteBlocked": {
+    "message": "Désactivé pour ce site : Nook ne le lit pas et n’y touche pas."
+  },
+  "siteSwitch": {
+    "message": "Nook sur $1"
+  },
+  "activeNote": {
+    "message": "Nook peut utiliser ce navigateur."
+  },
+  "pausedNote": {
+    "message": "En pause : Nook ne lit rien et n’agit pas dans ce navigateur tant que vous ne reprenez pas."
+  },
+  "pause": {
+    "message": "Pause"
+  },
+  "resume": {
+    "message": "Reprendre"
+  },
+  "activityTitle": {
+    "message": "Ce que Nook a fait ici"
+  },
+  "activityEmpty": {
+    "message": "Rien pour l’instant."
+  },
+  "intro": {
+    "message": "Posez une question à Nook sur cette page, ou demandez-lui d’y faire quelque chose. Nook vous demande sur le Mac avant de cliquer, saisir ou ouvrir quoi que ce soit."
+  },
+  "askPlaceholder": {
+    "message": "Demandez à Nook…"
+  },
+  "send": {
+    "message": "Envoyer"
+  },
+  "newChat": {
+    "message": "Nouvelle discussion"
+  },
+  "stopAnswer": {
+    "message": "Arrêter"
+  },
+  "thinking": {
+    "message": "Nook réfléchit"
+  },
+  "onMacNote": {
+    "message": "Vous attend dans Nook sur votre Mac."
+  },
+  "noBrain": {
+    "message": "Nook n’a pas encore de modèle. Choisissez-en un dans Nook › Réglages › Assistant."
+  },
+  "errorGeneric": {
+    "message": "Nook n’a pas pu répondre. Nook est-il lancé sur votre Mac ?"
+  },
+  "presenceWorking": {
+    "message": "Nook travaille dans cet onglet"
+  },
+  "presenceStop": {
+    "message": "Arrêter"
+  }
+}

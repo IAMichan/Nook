@@ -770,6 +770,7 @@ struct WorkspaceSettingsSection: View {
             TrustedCertificatesRow()
         }
         DefaultBrowserSection()
+        BrowserExtensionSection()
     }
 
     /// How a choice for browser sign-ins reads in a picker.

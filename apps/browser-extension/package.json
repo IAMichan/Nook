@@ -1,0 +1,9 @@
+{
+  "name": "nook-browser-extension",
+  "private": true,
+  "type": "module",
+  "description": "Nook's browser extension (Chrome, Brave, Edge, Arc, Vivaldi). Loaded unpacked from Nook › Settings › Editor & browser.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

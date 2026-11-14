@@ -55,6 +55,9 @@ enum SourceCatalog {
         SourceDescriptor(id: memory, title: "Geheugen", kind: .nook),
         SourceDescriptor(id: "mail", title: "Mail", kind: .builtIn),
         SourceDescriptor(id: "browser", title: "Browser", kind: .builtIn),
+        // The user's own browser through Nook's extension (BrowserExtensionConnector), known before it registers so it can
+        // be kept on this Mac like the other personal sources.
+        SourceDescriptor(id: "browser_extension", title: "Browser extension", kind: .builtIn),
         SourceDescriptor(id: "terminal", title: "Terminal", kind: .builtIn),
         SourceDescriptor(id: "agents", title: "Agents", kind: .nook),
         SourceDescriptor(id: "files", title: "Bestanden", kind: .builtIn),
@@ -123,7 +126,7 @@ enum SourceCatalog {
     /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
     static let personal: Set<String> = [
         "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail", "callnotes",
-        "browser", "files", "contacts", "clipboard", screen, memory
+        "browser", "browser_extension", "files", "contacts", "clipboard", screen, memory
     ]
 
     static func descriptor(_ id: String) -> SourceDescriptor? {

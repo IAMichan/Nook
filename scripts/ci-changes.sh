@@ -11,7 +11,7 @@
 # builds from a new directory, add it here and to the `paths` of its verified-check step.
 set -euo pipefail
 
-AREAS=(macos ios packages relay tauri chatd core_tests workflows github_scripts docs dependencies)
+AREAS=(macos ios packages relay browser_extension tauri chatd core_tests workflows github_scripts docs dependencies)
 
 # Patterns whose change needs the area: a directory ends in /, a pattern with * is a glob over the whole path
 # (* also matches /), anything else is one file.
@@ -23,6 +23,8 @@ paths_for() {
     ios) echo "apps/ios/ packages/protocol/ apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/Services/Workspace/ComposerQuotes.swift apps/macos/NotchUI/Components/BrandLogo.swift apps/macos/NotchUI/Shared/ apps/macos/NotchUI/Theme/NookIcon.swift apps/macos/NotchUI/Theme/NookPalette.swift apps/macos/NotchUI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets/ apps/macos/Resources/katex/ apps/macos/Resources/mermaid/ .github/workflows/ios.yml .github/actions/" ;;
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
     relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
+    # Nook's browser extension; its tests also read the Mac app's side of it (the host and the protocol version).
+    browser_extension) echo "apps/browser-extension/ apps/macos/Services/BrowserExtension/ .github/workflows/browser-extension.yml" ;;
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
     chatd) echo "apps/chatd/ .github/workflows/chatd.yml .github/actions/" ;;
     # scripts/core-tests.sh on Linux: the portable half of NookTests that contributors without a Mac can run.
