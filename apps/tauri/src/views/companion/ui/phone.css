@@ -1,0 +1,41 @@
+/* The companion's look: Nook's dark palette (`NookPalette.nookDark`) and the phone's type scale (the Mac's ×16/14), as
+   the iPhone app draws them. The phone is always dark, so every color is set here, whatever the app's own theme. */
+.phone {
+  color-scheme: dark;
+  --canvas: #000000; --well: #0a0a0a; --surface: #111111; --field: #0d0d0d; --graphite: #191a1d; --smoke: #242424;
+  --line: #1a1a1a; --line2: #262626; --hairline: #171717; --border: #1a1a1a; --separator: #1f1f1f; --field-stroke: #262626;
+  --row-rest: #0a0a0a; --row-hover: #141415; --row-selected: #1c1c1e; --paper: #f5f5f5; --text-strong: #e5e5e5;
+  --text2: #a1a1a1; --text3: #8f8f8f; --ink: #0b0b0d; --iris: #f4f3f7; --on-iris: #0b0b0d; --bubble: #1e1e1e;
+  --chat-mine: #17493a; --chat-theirs: #1e1e1e; --chat-stamp: #a3b0ab; --composer: #111111; --composer-tray: #0d0d0d;
+  --menu: #171717; --coral: #ff6467; --mint-soft: #5ee9b5; --coral-soft: #fca5a5;
+  /* The state colors of nookDark. */
+  --mint: #55d2a3; --amber: #f0b65a; --blue: #5daacc; --violet: #b0a2e6; --music: #e6a660;
+  /* The phone's text styles. */
+  --pt-caption: 500 12px/1.35 var(--font);
+  --pt-detail: 400 13.71px/1.42 var(--font);
+  --pt-label: 500 13.14px/1.35 var(--font);
+  --pt-body: 400 16px/1.42 var(--font);
+  --pt-strong: 500 16px/1.38 var(--font);
+  --pt-control: 500 14.86px/1.35 var(--font);
+  --pt-title: 600 17.14px/1.3 var(--font);
+  --pt-heading: 600 20.57px/1.25 var(--font);
+  --pt-display: 600 25.14px/1.2 var(--font);
+  --pt-code: 400 14.86px/1.5 var(--mono);
+  --reveal: 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: var(--canvas);
+  color: var(--paper);
+  font: var(--pt-body);
+  -webkit-tap-highlight-color: transparent;
+}
+.phone button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+.phone button:disabled { opacity: 0.45; cursor: default; }
+.phone .press:active { opacity: 0.6; }
+.phone .row-press { border-radius: 10px; }
+.phone .row-press:active { background: var(--row-hover); }
+.phone input, .phone textarea { font: var(--pt-body); color: var(--paper); background: transparent; border: none; outline: none; padding: 0; }
+.phone ::placeholder { color: var(--text3); }
+.phone .breathe { animation: phone-breathe 0.9s ease-in-out infinite alternate; }
+@keyframes phone-breathe { from { opacity: 1; } to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .phone .breathe { animation: none; } }
+.phone input:focus, .phone textarea:focus, .phone input:focus-visible, .phone textarea:focus-visible { border-color: transparent; box-shadow: none; outline: none; }
+.phone input:not([class]), .phone textarea:not([class]) { border: none; border-radius: 0; }

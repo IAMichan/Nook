@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  attentionWord, canStop, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyTimeline, attentionWord, canStop, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -82,5 +82,15 @@ describe("companion", () => {
     expect(resetsIn(now / 1000 + 30 * 60, now)).toBe("in 30 min");
     expect(resetsIn(now / 1000 + 5 * 3600, now)).toBe("in 5 h");
     expect(resetsIn(now / 1000 - 10, now)).toBe("reset");
+  });
+
+  it("applies a live update to the conversation as TimelineDelta does", () => {
+    const e = (id: string, text = id) => ({ id, kind: "assistant" as const, text, date: 0, failed: false });
+    const old = [e("1"), e("2"), e("3", "partial")];
+    expect(applyTimeline(old, [e("3", "whole"), e("4")], "2")?.map((x) => x.text)).toEqual(["1", "2", "whole", "4"]);
+    expect(applyTimeline(old, [e("9")], undefined)?.map((x) => x.id)).toEqual(["9"]);
+    expect(applyTimeline(old, [e("4")], "missing")).toBeNull();
+    expect(applyTimeline(null, [e("4")], "2")).toBeNull();
+    expect(applyTimeline(old, [e("4")], "3", 2)?.map((x) => x.id)).toEqual(["3", "4"]);
   });
 });

@@ -3,6 +3,15 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "Checking…": { de: "Wird geprüft…", fr: "Vérification…", es: "Comprobando…" },
+  "Nook on this phone": { de: "Nook auf diesem Telefon", fr: "Nook sur ce téléphone", es: "Nook en este teléfono" },
+  "Nook's own brain on your phone, without your Mac.": { de: "Nooks eigenes Gehirn auf deinem Telefon, ohne deinen Mac.", fr: "Le propre cerveau de Nook sur votre téléphone, sans votre Mac.", es: "El propio cerebro de Nook en tu teléfono, sin tu Mac." },
+  "Tabs": { de: "Tabs", fr: "Onglets", es: "Pestañas" },
+  "This Mac cannot start sessions from the phone yet. Update Nook on your Mac.": { de: "Dieser Mac kann noch keine Sitzungen vom Telefon aus starten. Aktualisiere Nook auf deinem Mac.", fr: "Ce Mac ne peut pas encore lancer de sessions depuis le téléphone. Mettez Nook à jour sur votre Mac.", es: "Este Mac aún no puede iniciar sesiones desde el teléfono. Actualiza Nook en tu Mac." },
+  "To a session": { de: "An eine Sitzung", fr: "Vers une session", es: "A una sesión" },
+  "What should we build in {project}?": { de: "Was bauen wir in {project}?", fr: "Que construisons-nous dans {project} ?", es: "¿Qué construimos en {project}?" },
+  "and {n} more": { de: "und {n} weitere", fr: "et {n} de plus", es: "y {n} más" },
+  "searched 1 time": { de: "1-mal gesucht", fr: "1 recherche", es: "buscó 1 vez" },
   "After this turn": { de: "Nach diesem Zug", fr: "Après ce tour", es: "Después de este turno" },
   "Agenda": { de: "Termine", fr: "Agenda", es: "Agenda" },
   "As a main thread": { de: "Als Hauptstrang", fr: "Comme fil principal", es: "Como hilo principal" },

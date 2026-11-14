@@ -1,22 +1,23 @@
 <script lang="ts">
-  // Koppelen met een Mac of pc: de QR-code scannen (camera) of de link plakken.
+  // Pairing, as the iPhone's first screen (`PairingView`): Nook's face, three steps, Scan the code, or paste the link.
   import { companion, looksLikePairingLink, type ClientView } from "../../lib/companion";
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { haptic } from "../../lib/haptics";
+  import NookMark from "./ui/NookMark.svelte";
+  import Ico from "./ui/Ico.svelte";
 
   let { view, onchange }: { view: ClientView; onchange: (v: ClientView) => void } = $props();
   let text = $state("");
-  let name = $state("");
+  let pasting = $state(false);
   let scanError = $state<string | null>(null);
   const android = $derived(nook.info?.capabilities.os === "android");
 
-  $effect(() => {
-    if (!name && view.deviceName) name = view.deviceName;
-  });
-
   async function pair(link: string) {
     onchange({ ...view, phase: "pairing", notice: null });
-    onchange({ ...(await companion.pair(link.trim(), name)), deviceName: view.deviceName });
+    const v = await companion.pair(link.trim(), view.deviceName ?? "");
+    haptic(v.phase === "connected" ? "success" : "warning");
+    onchange({ ...v, deviceName: view.deviceName });
   }
 
   async function scan() {
@@ -27,6 +28,7 @@
       if (permission !== "granted") permission = await scanner.requestPermissions();
       if (permission !== "granted") {
         scanError = tr("Zonder toegang tot de camera kun je de link plakken.", "Without camera access you can paste the link.");
+        pasting = true;
         return;
       }
       const result = await scanner.scan({ formats: [scanner.Format.QRCode], windowed: false });
@@ -36,36 +38,54 @@
       scanError = tr("Scannen lukte niet: {error}", "Scanning didn't work: {error}", { error: String(e) });
     }
   }
+  const steps = [
+    tr("Open op je Mac Nook › Instellingen › iPhone-companion en zet hem aan.", "On your Mac, open Nook › Settings › iPhone companion and turn it on."),
+    tr("Kies ‘Koppel een iPhone’: Nook toont vijf minuten een code.", "Choose ‘Pair an iPhone’: Nook shows a code for five minutes."),
+    tr("Scan hem hier. Je telefoon en Mac moeten op hetzelfde wifi zitten.", "Scan it here. Your phone and Mac need to be on the same Wi‑Fi."),
+  ];
 </script>
 
 <div class="pairing">
-  <h2>{tr("Koppel met je computer", "Pair with your computer")}</h2>
-  <p class="muted">
-    {tr("Zet op je Mac of pc in Nook › Instellingen de companion aan (op de Mac: iPhone-metgezel) en kies ‘Koppel een telefoon’. Scan dan de code, of plak de link. Je telefoon en computer moeten op hetzelfde wifi zitten.", "On your Mac or PC, turn on the companion in Nook › Settings (on the Mac: iPhone companion) and choose ‘Pair a phone’. Then scan the code, or paste the link. Your phone and computer must be on the same Wi-Fi.")}
-  </p>
-  {#if android}
-    <button class="primary big" onclick={scan} disabled={view.phase === "pairing"}>{tr("Scan de code", "Scan the code")}</button>
+  <div class="hero">
+    <span class="aura"><NookMark size={72} /></span>
+    <h1>{tr("Nook op je telefoon", "Nook on your phone")}</h1>
+    <p>{tr("Volg je agents, keur goed wat ze vragen, start nieuw werk en chat met Nook.", "Follow your agents, approve what they ask, start new work, and chat with Nook.")}</p>
+  </div>
+  <ol class="steps">
+    {#each steps as step, i (i)}
+      <li><span class="num">{i + 1}</span><span>{step}</span></li>
+    {/each}
+  </ol>
+  <div class="actions">
+    {#if android}
+      <button class="primary press" onclick={scan} disabled={view.phase === "pairing"}><Ico name="scan-qr-code" size={18} />{tr("Scan de code", "Scan the code")}</button>
+    {/if}
     {#if scanError}<p class="err">{scanError}</p>{/if}
-  {/if}
-  <label class="field">
-    <span class="faint">{tr("Link", "Link")}</span>
-    <textarea bind:value={text} rows="3" placeholder="nook://pair?…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
-  </label>
-  <label class="field">
-    <span class="faint">{tr("Naam van deze telefoon", "Name of this phone")}</span>
-    <input bind:value={name} maxlength="60" />
-  </label>
-  <button class="big" disabled={!text.trim() || view.phase === "pairing"} onclick={() => pair(text)}>
-    {view.phase === "pairing" ? tr("Koppelen…", "Pairing…") : tr("Koppel", "Pair")}
-  </button>
+    {#if pasting || !android}
+      <textarea class="link" bind:value={text} rows="3" placeholder="nook://pair?…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+      <button class="primary press" disabled={!text.trim() || view.phase === "pairing"} onclick={() => pair(text)}>{view.phase === "pairing" ? tr("Koppelen…", "Pairing…") : tr("Koppel", "Pair")}</button>
+    {:else}
+      <button class="ghost press" onclick={() => (pasting = true)}>{tr("Plak liever de link", "Paste the link instead")}</button>
+    {/if}
+  </div>
+  <p class="foot"><Ico name="shield" size={13} />{tr("Alles tussen je iPhone en je Mac is end-to-end versleuteld.", "Everything between your phone and your Mac is encrypted end to end.")}</p>
 </div>
 
 <style>
-  .pairing { padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; max-width: 560px; }
-  h2 { margin: 0; font-size: 19px; }
-  p { margin: 0; line-height: 1.45; }
-  .field { display: flex; flex-direction: column; gap: 6px; }
-  textarea { resize: none; font-family: var(--mono); font-size: 12px; }
-  .big { min-height: 48px; font-size: 15px; }
-  .err { color: var(--coral); }
+  .pairing { flex: 1; overflow-y: auto; padding: 56px 24px 32px; display: flex; flex-direction: column; gap: 24px; }
+  .hero { display: flex; flex-direction: column; gap: 12px; }
+  .aura { width: 72px; height: 72px; display: inline-flex; align-items: center; justify-content: center; position: relative; }
+  .aura::before { content: ""; position: absolute; width: 240px; height: 240px; left: -84px; top: -84px; border-radius: 50%; background: radial-gradient(rgba(244, 243, 247, 0.22), rgba(244, 243, 247, 0.06) 40%, transparent 70%); pointer-events: none; }
+  h1 { margin: 0; font: var(--pt-display); position: relative; }
+  .hero p { margin: 0; font: var(--pt-body); color: var(--text2); position: relative; }
+  .steps { list-style: none; margin: 0; padding: 16px; background: var(--surface); border-radius: 12px; display: flex; flex-direction: column; gap: 16px; position: relative; }
+  .steps li { display: flex; gap: 12px; align-items: flex-start; font: var(--pt-body); color: var(--text-strong); position: relative; }
+  .steps li:not(:last-child)::after { content: ""; position: absolute; left: 14px; top: 30px; bottom: -16px; width: 1px; background: var(--line2); }
+  .num { width: 28px; height: 28px; border-radius: 50%; background: var(--smoke); border: 0.5px solid var(--hairline); display: inline-flex; align-items: center; justify-content: center; font: 700 13px ui-rounded, var(--font); flex: none; }
+  .actions { display: flex; flex-direction: column; gap: 12px; }
+  .primary { height: 50px; border-radius: 999px; background: var(--iris) !important; color: var(--on-iris) !important; font: 600 17px var(--font) !important; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .ghost { height: 44px; color: var(--text2) !important; font: var(--pt-control) !important; }
+  .link { resize: none; padding: 10px !important; background: var(--well) !important; border-radius: 8px; font: var(--pt-code) !important; font-size: 13px !important; }
+  .err { margin: 0; font: var(--pt-detail); color: var(--coral); }
+  .foot { margin: 0; display: flex; align-items: baseline; gap: 6px; font: var(--pt-detail); color: var(--text3); }
 </style>

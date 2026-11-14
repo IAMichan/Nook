@@ -104,6 +104,8 @@ export const companion = {
   clearNotice: () => invoke<void>("companion_client_clear_notice"),
   visible: (visible: boolean) => invoke<void>("companion_client_visible", { visible }),
   onClient: (cb: (v: ClientView) => void): Promise<UnlistenFn> => listen<ClientView>("companion-client", (e) => cb(e.payload)),
+  /** What the computer sends over the kept connection: the open session's conversation, the chats, Nook's chats. */
+  onLive: (cb: (r: CompanionResponse) => void): Promise<UnlistenFn> => listen<CompanionResponse>("companion-live", (e) => cb(e.payload)),
 };
 
 const rank: Record<string, number> = { approval: 0, input: 1, failed: 2, limited: 3, working: 4, ready: 5, idle: 6, finished: 7 };
@@ -129,15 +131,35 @@ export function attentionWord(attention: string): string {
   }
 }
 
-/** De kleur bij een toestand: amber wacht op jou, coral is fout, mint is klaar. */
+/** The color of a state, as the iPhone draws it (`Theme.color`): amber waits on you, coral failed, blue works, mint is done. */
 export function attentionColor(attention: string): string {
   switch (attention) {
     case "approval": case "input": case "limited": return "var(--amber)";
     case "failed": return "var(--coral)";
-    case "working": return "var(--paper)";
+    case "working": return "var(--blue)";
     case "ready": return "var(--mint)";
     default: return "var(--text3)";
   }
+}
+
+export const attentionTint = attentionColor;
+
+/** One word for a row's corner, where the row's title says the rest (`Theme.shortWord`). */
+export function shortAttentionWord(attention: string): string {
+  switch (attention) {
+    case "approval": return tr("Toestemming", "Approval");
+    case "input": return tr("Vraag", "Question");
+    case "failed": return tr("Mislukt", "Failed");
+    case "limited": return tr("Limiet", "Limit");
+    case "working": return tr("Aan het werk", "Working");
+    case "ready": return tr("Klaar", "Done");
+    default: return attentionWord(attention);
+  }
+}
+
+/** Approval, a question, a failure or a limit: what you have to act on (`Theme.needsYou`). */
+export function needsYouState(attention: string): boolean {
+  return ["approval", "input", "failed", "limited"].includes(attention);
 }
 
 /** Stoppen heeft alleen zin als de sessie bezig is of op jou wacht. */
@@ -154,6 +176,7 @@ export function looksLikePairingLink(text: string): boolean {
 // phone only offers what the computer lists in `features`, and what its `scopes` allow.
 
 export type Op =
+  | "watch" | "watchChat"
   | "list" | "decide" | "answer" | "send" | "stop" | "options" | "start" | "timeline" | "chats" | "chat" | "ask" | "chatStop"
   | "home" | "usage" | "music" | "inbox" | "inboxChat" | "inboxSend" | "inboxMark" | "manage";
 
@@ -261,12 +284,17 @@ export interface CompanionResponse {
   inbox?: InboxChatDigest[];
   inboxLines?: InboxLine[];
   inboxTyping?: InboxTypist[];
+  timelineSession?: string;
+  timelineAfter?: string;
+  inboxChat?: string;
+  revoked?: boolean;
 }
 
 export interface CallResult { view: ClientView; response: CompanionResponse | null }
 
 /** `CompanionFeature` names this phone reads. */
 export const Feature = {
+  stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
 } as const;
 
@@ -310,7 +338,7 @@ export function matchesSession(session: SessionDigest, query: string): boolean {
 
 /** Sessions waiting on you: the count on the Agents tab. */
 export function needingYou(sessions: SessionDigest[]): number {
-  return sessions.filter((s) => s.items.length > 0).length;
+  return sessions.filter((s) => s.items.length > 0 || needsYouState(s.attention)).length;
 }
 
 /** Chats with something unread: the count on the Chats tab. */
@@ -327,12 +355,82 @@ export function filterInbox(chats: InboxChatDigest[], query: string, unreadOnly:
     .sort((a, b) => b.last - a.last);
 }
 
-/** A greeting for the time of day, as Nook's home says it. */
+/** A greeting for the time of day, as the iPhone's Nook tab says it. */
 export function greeting(hour: number): string {
-  if (hour < 6) return tr("Goedenacht", "Good night");
-  if (hour < 12) return tr("Goedemorgen", "Good morning");
-  if (hour < 18) return tr("Goedemiddag", "Good afternoon");
-  return tr("Goedenavond", "Good evening");
+  if (hour >= 5 && hour < 12) return tr("Goedemorgen", "Good morning");
+  if (hour >= 12 && hour < 18) return tr("Goedemiddag", "Good afternoon");
+  if (hour >= 18 && hour < 23) return tr("Goedenavond", "Good evening");
+  return tr("Nog laat bezig?", "Working late?");
+}
+
+/** A chat app's color (`ChatAppBadge`). */
+export function appColor(app: string): string {
+  const colors: Record<string, string> = {
+    whatsapp: "#25D366", telegram: "#2AABEE", messages: "#34C759", signal: "#3A76F0", instagram: "#E1306C", messenger: "#0084FF",
+    snapchat: "#F5C400", slack: "#E01E5A", discord: "#5865F2", teams: "#6264A7", linkedin: "#0A66C2", mail: "#1A8CFF",
+    outlook: "#0078D4", gmail: "#EA4335",
+  };
+  return colors[app.toLowerCase()] ?? "var(--text2)";
+}
+
+/** Up to two initials of a name; "#" for a name without letters (`ChatInitialsFace`). */
+export function initials(name: string): string {
+  const words = name.split(/\s+/).map((w) => [...w].find((c) => /\p{L}|\p{N}/u.test(c)) ?? "").filter(Boolean);
+  return words.slice(0, 2).join("").toUpperCase() || "#";
+}
+
+/** A person's tint, the same on every phone for the same name (`ChatPersonTint`: FNV-1a over the lowercased name). */
+export function personTint(name: string): string {
+  let h = 2166136261;
+  for (const b of new TextEncoder().encode(name.toLowerCase())) {
+    h ^= b;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return ["var(--mint)", "var(--blue)", "var(--violet)", "var(--music)"][h % 4];
+}
+
+/** A row's age: "now", "5 min", "3 h", "2 d". */
+export function age(seconds: number, now = Date.now()): string {
+  const minutes = Math.floor((now / 1000 - seconds) / 60);
+  if (minutes < 1) return tr("nu", "now");
+  if (minutes < 60) return tr("{n} min", "{n} min", { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return tr("{n} u", "{n} h", { n: hours });
+  return tr("{n} d", "{n} d", { n: Math.floor(hours / 24) });
+}
+
+/** A message's time: today "14:03", another day "12 Oct 14:03". */
+export function messageTime(seconds: number, now = Date.now()): string {
+  const d = new Date(seconds * 1000);
+  const time = d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === new Date(now).toDateString()) return time;
+  return `${d.toLocaleDateString(locale(), { day: "numeric", month: "short" })} ${time}`;
+}
+
+/** A chat's time in the list: today the clock, then Yesterday, the weekday within a week, the date. */
+export function chatTime(seconds: number, now = Date.now()): string {
+  const d = new Date(seconds * 1000);
+  const today = new Date(now);
+  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  const yesterday = new Date(now - 86_400_000);
+  if (d.toDateString() === yesterday.toDateString()) return tr("Gisteren", "Yesterday");
+  if (now - d.getTime() < 6 * 86_400_000) return d.toLocaleDateString(locale(), { weekday: "long" });
+  return d.toLocaleDateString(locale(), d.getFullYear() === today.getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** A relative time for a list ("5 min. ago"). */
+export function relative(seconds: number, now = Date.now()): string {
+  try {
+    const diff = Math.round(seconds - now / 1000);
+    const f = new Intl.RelativeTimeFormat(locale(), { numeric: "always", style: "short" });
+    const a = Math.abs(diff);
+    if (a < 60) return f.format(diff, "second");
+    if (a < 3600) return f.format(Math.round(diff / 60), "minute");
+    if (a < 86400) return f.format(Math.round(diff / 3600), "hour");
+    return f.format(Math.round(diff / 86400), "day");
+  } catch {
+    return shortTime(seconds, now);
+  }
 }
 
 /** The session actions the phone offers, in the order of the Mac's menu; `snoozeUntil` needs a time picker it lacks. */
@@ -404,3 +502,33 @@ export function resetsIn(resetsAt: number | undefined, now = Date.now()): string
   if (hours < 48) return tr("over {n} u", "in {n} h", { n: hours });
   return tr("over {n} dagen", "in {n} days", { n: Math.round(hours / 24) });
 }
+
+/** The open session follows live: the computer keeps a connection and sends its conversation as it changes. */
+export function followsLive(view: Pick<ClientView, "features"> | null | undefined, feature: string): boolean {
+  return has(view, Feature.stream) && has(view, feature);
+}
+
+/**
+ * The conversation after a live update (`TimelineDelta.apply`): the entries after `after`, or the update whole when it
+ * names none. Null when the phone lacks the entry it builds on: then it asks for the whole conversation again.
+ */
+export function applyTimeline(old: TimelineEntry[] | null, entries: TimelineEntry[], after: string | undefined, limit = 400): TimelineEntry[] | null {
+  if (!after) return entries;
+  if (!old) return null;
+  let index = -1;
+  for (let i = old.length - 1; i >= 0; i--) if (old[i].id === after) { index = i; break; }
+  if (index < 0) return null;
+  return [...old.slice(0, index + 1), ...entries].slice(-limit);
+}
+
+/** Who is typing, as the iPhone says it (`InboxTypist`). */
+export function typingText(t: InboxTypist[] | undefined): string | null {
+  if (!t?.length) return null;
+  if (t.length > 2) return tr("{n} mensen typen…", "{n} people are typing…", { n: t.length });
+  if (t.length === 2) return tr("{a} en {b} typen…", "{a} and {b} are typing…", { a: t[0].name, b: t[1].name });
+  const who = t[0];
+  if (who.kind === "recording") return who.name ? tr("{name} neemt audio op…", "{name} is recording audio…", { name: who.name }) : tr("neemt audio op…", "recording audio…");
+  if (who.kind === "uploading") return who.name ? tr("{name} stuurt een bestand…", "{name} is sending a file…", { name: who.name }) : tr("stuurt een bestand…", "sending a file…");
+  return who.name ? tr("{name} typt…", "{name} is typing…", { name: who.name }) : tr("typt…", "typing…");
+}
+

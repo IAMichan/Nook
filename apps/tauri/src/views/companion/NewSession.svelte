@@ -1,13 +1,19 @@
 <script lang="ts">
-  // New session, as on the iPhone: type a task, pick a connected agent and one of the folders you recently worked in on
-  // the computer, and optionally plan first, work on its own branch (worktree) or start it as a main thread. Account,
-  // model and effort come from the computer's remembered choices unless you pick a model it offers.
+  // New session, as the iPhone's sheet (`NewSessionView`): "What should we build in {project}?", the task in a composer
+  // with the agent, model, Plan first and Main thread in its row, Current checkout or New worktree under it, and a note
+  // that anything risky still waits for your approval. Defaults come from the computer.
   import { untrack } from "svelte";
   import { companion, type ClientView, type LaunchOptions } from "../../lib/companion";
-  import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
-  import Icon from "../../components/Icon.svelte";
-  import OnOffSwitch from "../../components/OnOffSwitch.svelte";
+  import { haptic } from "../../lib/haptics";
+  import NookMark from "./ui/NookMark.svelte";
+  import SessionComposer from "./ui/SessionComposer.svelte";
+  import ComposerPill from "./ui/ComposerPill.svelte";
+  import AgentMark from "./ui/AgentMark.svelte";
+  import EmptyState from "./ui/EmptyState.svelte";
+  import Banner from "./ui/Banner.svelte";
+  import Ico from "./ui/Ico.svelte";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
 
   let { view, task: initial = "", onback, took, onstarted }: {
     view: ClientView;
@@ -19,6 +25,7 @@
 
   let options = $state<LaunchOptions | null>(null);
   let failed = $state(false);
+  let refused = $state<string | null>(null);
   let task = $state(untrack(() => initial));
   let agent = $state("");
   let project = $state("");
@@ -27,6 +34,7 @@
   let worktree = $state(false);
   let mainThread = $state(false);
   let starting = $state(false);
+  let menu = $state<{ anchor: DOMRect; sections: MenuItem[][] } | null>(null);
 
   $effect(() => {
     companion.call({ op: "options" }).then((r) => {
@@ -38,100 +46,116 @@
       project = o.defaultProject && o.projects.some((p) => p.path === o.defaultProject) ? o.defaultProject : (o.projects[0]?.path ?? "");
       plan = o.defaultPlan;
       worktree = o.defaultWorktree;
+      model = o.agents.find((a) => a.id === agent)?.defaultModel ?? "";
     });
   });
 
-  $effect(() => onBack(() => (onback(), true)));
-
   const chosenAgent = $derived(options?.agents.find((a) => a.id === agent));
   const chosenProject = $derived(options?.projects.find((p) => p.path === project));
-  const ready = $derived(!!task.trim() && !!chosenAgent && !!chosenProject && !starting);
+  const modelName = $derived(chosenAgent?.models?.find((m) => m.id === model)?.name ?? tr("Model", "Model"));
+  const headingParts = $derived(tr("Wat bouwen we in {project}?", "What should we build in {project}?", { project: "\u0000" }).split("\u0000"));
+  // The path with the home folder as ~, cut at its start when long (the end says the most).
+  const shortPath = (p: string) => {
+    const short = p.replace(/^\/(Users|home)\/[^/]+\//, "~/");
+    return short.length > 34 ? "…" + short.slice(-33) : short;
+  };
 
-  async function start() {
-    if (!ready || !chosenAgent || !chosenProject) return;
+  function pick(e: MouseEvent, sections: MenuItem[][]) {
+    menu = { anchor: (e.currentTarget as HTMLElement).getBoundingClientRect(), sections };
+  }
+
+  async function start(text: string) {
+    if (!chosenAgent || !chosenProject || starting) return;
     starting = true;
+    refused = null;
     const r = await companion.call({
       op: "start",
       launch: {
-        agent: chosenAgent.id,
-        project: chosenProject.path,
-        task: task.trim(),
-        plan: chosenAgent.canPlan && plan,
-        worktree: chosenProject.canWorktree && worktree,
-        model: model || undefined,
-        mainThread: chosenAgent.canMainThread ? mainThread : undefined,
+        agent: chosenAgent.id, project: chosenProject.path, task: text,
+        plan: chosenAgent.canPlan && plan, worktree: chosenProject.canWorktree && worktree,
+        model: model || undefined, mainThread: chosenAgent.canMainThread ? mainThread : undefined,
       },
     });
     starting = false;
-    took(r.view);
-    if (r.response) onstarted(r.response.created ?? null);
+    if (r.response) {
+      haptic("success");
+      took(r.view);
+      onstarted(r.response.created ?? null);
+    } else {
+      haptic("warning");
+      refused = r.view.notice || tr("Je Mac weigerde dit.", "Your Mac refused this.");
+      took({ ...r.view, notice: null });
+      companion.clearNotice();
+    }
   }
 </script>
 
 <div class="new">
-  <header>
-    <button class="ghost back" onclick={onback} aria-label={tr("Terug", "Back")}><Icon name="back" size={20} /></button>
-    <h2>{tr("Nieuwe sessie", "New session")}</h2>
-    <button class="primary" disabled={!ready} onclick={start}>{starting ? tr("Starten…", "Starting…") : tr("Start", "Start")}</button>
-  </header>
-  <div class="body">
+  <div class="bar"><button class="cancel" onclick={onback}>{tr("Annuleer", "Cancel")}</button></div>
+  <div class="scroll">
     {#if failed}
-      <p class="faint">{tr("Je computer gaf geen keuzes door. Probeer het zo opnieuw.", "Your computer sent no choices. Try again in a moment.")}</p>
+      <EmptyState icon="wifi-off" title={tr("Je Mac antwoordt niet.", "Your Mac does not answer.")} text={tr("Staat de companion aan, en zit je op hetzelfde wifi?", "Is the companion on, and are you on the same Wi‑Fi?")} />
     {:else if !options}
-      <p class="faint">{tr("Laden…", "Loading…")}</p>
-    {:else if !options.agents.length || !options.projects.length}
-      <p class="faint">{tr("Koppel eerst een agent en werk in een map op je computer; dan kun je hier een sessie starten.", "First connect an agent and work in a folder on your computer; then you can start a session here.")}</p>
+      <div class="spinner"></div>
+    {:else if !options.agents.length}
+      <EmptyState icon="layers" title={tr("Er is geen agent klaar op je Mac.", "No agent is ready on your Mac.")} text={tr("Koppel er een in Nook › Instellingen › Agents.", "Connect one in Nook › Settings › Agents.")} />
+    {:else if !options.projects.length}
+      <EmptyState icon="folder" title={tr("Nog geen mappen.", "No folders yet.")} text={tr("Start één keer een sessie op je Mac: de map verschijnt daarna hier.", "Start a session on your Mac once: its folder then shows up here.")} />
     {:else}
-      <textarea rows="5" placeholder={tr("Wat moet er gebeuren?", "What needs doing?")} bind:value={task}></textarea>
-      <label class="field">
-        <span class="faint">{tr("Agent", "Agent")}</span>
-        <select bind:value={agent} onchange={() => (model = "")}>
-          {#each options.agents as a (a.id)}<option value={a.id}>{a.name}</option>{/each}
-        </select>
-      </label>
-      <label class="field">
-        <span class="faint">{tr("Map", "Folder")}</span>
-        <select bind:value={project}>
-          {#each options.projects as p (p.path)}<option value={p.path}>{p.name}</option>{/each}
-        </select>
-      </label>
-      {#if chosenAgent?.models?.length}
-        <label class="field">
-          <span class="faint">{tr("Model", "Model")}</span>
-          <select bind:value={model}>
-            <option value="">{tr("Standaard", "Default")}</option>
-            {#each chosenAgent.models as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
-          </select>
-        </label>
-      {/if}
-      {#if chosenAgent?.canPlan}
-        <div class="toggle"><span>{tr("Eerst plannen", "Plan first")}</span><OnOffSwitch on={plan} onchange={(v) => (plan = v)} label={tr("Eerst plannen", "Plan first")} /></div>
-      {/if}
-      {#if chosenProject?.canWorktree}
-        <div class="toggle"><span>{tr("Op een eigen branch (worktree)", "On its own branch (worktree)")}</span><OnOffSwitch on={worktree} onchange={(v) => (worktree = v)} label={tr("Op een eigen branch (worktree)", "On its own branch (worktree)")} /></div>
-      {/if}
-      {#if chosenAgent?.canMainThread}
-        <div class="toggle">
-          <span>{tr("Als hoofdlijn", "As a main thread")}<small class="faint">{tr("De agent geeft werk aan sublijnen die terugmelden.", "The agent hands work to sub-threads that report back.")}</small></span>
-          <OnOffSwitch on={mainThread} onchange={(v) => (mainThread = v)} label={tr("Als hoofdlijn", "As a main thread")} />
+      <NookMark size={44} />
+      <button class="heading" onclick={(e) => pick(e, [options!.projects.map((p) => ({ label: p.name, checked: p.path === project, onselect: () => (project = p.path) }))])}>
+        {headingParts[0]}<span class="project">{chosenProject?.name}</span>{headingParts[1] ?? ""}
+      </button>
+      <div class="composer">
+        <SessionComposer bind:value={task} placeholder={tr("Wat moet de agent doen?", "What should the agent do?")} minHeight={88} onsend={start} sending={starting} autofocus>
+          {#snippet controls()}
+            <ComposerPill label={chosenAgent?.name ?? ""} onclick={(e) => pick(e, [options!.agents.map((a) => ({ label: a.name, checked: a.id === agent, onselect: () => { agent = a.id; model = a.defaultModel ?? ""; } }))])}>
+              {#snippet lead()}<AgentMark agent={chosenAgent?.name ?? ""} size={16} />{/snippet}
+            </ComposerPill>
+            {#if (chosenAgent?.models?.length ?? 0) > 1}
+              <span class="div"></span>
+              <ComposerPill label={modelName} icon="cpu" onclick={(e) => pick(e, [chosenAgent!.models!.map((m) => ({ label: m.name, checked: m.id === model, onselect: () => (model = m.id) }))])} />
+            {/if}
+            {#if chosenAgent?.canPlan}
+              <span class="div"></span>
+              <ComposerPill label={tr("Eerst plannen", "Plan first")} icon="clipboard-list" chevron={false} on={plan} onclick={() => { haptic(); plan = !plan; }} />
+            {/if}
+            {#if chosenAgent?.canMainThread}
+              <span class="div"></span>
+              <ComposerPill label={tr("Hoofdthread", "Main thread")} icon="git-branch" chevron={false} on={mainThread} onclick={() => { haptic(); mainThread = !mainThread; }} />
+            {/if}
+          {/snippet}
+        </SessionComposer>
+        <div class="tray">
+          {#if chosenProject?.canWorktree}
+            <ComposerPill label={worktree ? tr("Nieuwe worktree", "New worktree") : tr("Huidige map", "Current checkout")} icon={worktree ? "layers" : "folder"}
+              onclick={(e) => pick(e, [[{ label: tr("Huidige map", "Current checkout"), icon: "folder", checked: !worktree, onselect: () => (worktree = false) }, { label: tr("Nieuwe worktree", "New worktree"), icon: "layers", checked: worktree, onselect: () => (worktree = true) }]])} />
+          {:else}
+            <ComposerPill label={tr("Huidige map", "Current checkout")} icon="folder" chevron={false} onclick={() => {}} />
+          {/if}
+          <span class="path">{chosenProject ? shortPath(chosenProject.path) : ""}</span>
         </div>
-      {/if}
+      </div>
+      <p class="note"><Ico name="shield" size={13} />{tr("Nook gebruikt je account, model en rechten voor deze agent. Alles wat riskant is wacht nog steeds op je goedkeuring.", "Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval.")}</p>
+      {#if refused}<Banner icon="triangle-alert" tint="var(--coral)">{refused}</Banner>{/if}
     {/if}
   </div>
 </div>
+{#if menu}<Menu sections={menu.sections} anchor={menu.anchor} onclose={() => (menu = null)} />{/if}
 
 <style>
   .new { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  header { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-4) var(--space-12) var(--space-4) var(--space-4); border-bottom: 1px solid var(--line); }
-  header h2 { flex: 1; margin: 0; font: var(--text-title); }
-  header .primary { min-height: 40px; }
-  .back { min-width: 44px; min-height: 44px; }
-  .body { flex: 1; overflow-y: auto; padding: var(--space-16); display: flex; flex-direction: column; gap: var(--space-12); }
-  textarea { resize: none; min-height: 120px; font: var(--text-body); }
-  .field { display: flex; flex-direction: column; gap: var(--space-6); font: var(--text-detail); }
-  select { min-height: 44px; }
-  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); min-height: 44px; font: var(--text-body); }
-  .toggle span { display: flex; flex-direction: column; gap: var(--space-2); }
-  small { font: var(--text-detail); }
-  p { margin: 0; }
+  .bar { display: flex; padding: 14px 16px 4px; }
+  .cancel { font: 400 17px var(--font) !important; color: var(--paper) !important; min-height: 32px; }
+  .scroll { flex: 1; overflow-y: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .heading { text-align: left; font: var(--pt-display) !important; color: var(--paper) !important; }
+  .project { text-decoration: underline dotted var(--text3); text-underline-offset: 5px; }
+  .composer { position: relative; display: flex; flex-direction: column; }
+  .composer > :global(.box) { position: relative; z-index: 1; }
+  .div { width: 4px; height: 16px; }
+  .tray { display: flex; align-items: center; gap: 8px; margin: -16px 6px 0; padding: 22px 12px 6px; background: var(--composer-tray); border: 1px solid var(--field-stroke); border-top: none; border-radius: 0 0 16px 16px; min-width: 0; }
+  .path { flex: 1; min-width: 0; text-align: right; font: var(--pt-caption); color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { margin: 0; padding: 0 4px; display: flex; align-items: baseline; gap: 6px; font: var(--pt-detail); color: var(--text3); }
+  .spinner { align-self: center; margin-top: 60px; width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--smoke); border-top-color: var(--text2); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

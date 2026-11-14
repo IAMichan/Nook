@@ -1,17 +1,28 @@
 <script lang="ts">
-  // One session as the iPhone app opens it: the whole conversation (with a computer that lists `timeline`), what waits
-  // on you docked right above the composer, and a field to send the next message. While it works the composer offers
-  // Steer now or After this turn (remembered). The title opens what you can do with the session: stop, snooze, rename,
-  // archive. A computer that lists none of this shows the latest reply, approve, answer, send and stop, as before.
+  // One session as the iPhone app opens it (`SessionDetailView`): "folder / title ⌄" opening what you can do with it, the
+  // conversation (live with a computer that keeps a connection, else asked every few seconds), "Working for 12s"
+  // floating over its end, what waits on you in the composer's place (deny with a reason in its own field), and the
+  // composer, which offers Steer now or After this turn while the agent works.
+  import { onDestroy, untrack } from "svelte";
   import {
-    actionLabel, attentionColor, attentionWord, canStop, companion, has, may, sendNotice, sessionActions, Feature,
+    applyTimeline, canStop, companion, followsLive, has, may, Feature,
     type ClientView, type DigestItem, type TimelineEntry,
   } from "../../lib/companion";
   import { renderMarkdown } from "../../lib/markdown";
   import { tr } from "../../lib/i18n.svelte";
-  import Icon from "../../components/Icon.svelte";
+  import { haptic } from "../../lib/haptics";
+  import { duration } from "../../lib/transcript";
+  import NavBar from "./ui/NavBar.svelte";
+  import Ico from "./ui/Ico.svelte";
+  import PulseDot from "./ui/PulseDot.svelte";
+  import DecisionButton from "./ui/DecisionButton.svelte";
+  import SessionComposer from "./ui/SessionComposer.svelte";
+  import ComposerPill from "./ui/ComposerPill.svelte";
+  import EmptyState from "./ui/EmptyState.svelte";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import Dialog from "./ui/Dialog.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
-  import TimelineView from "./TimelineView.svelte";
+  import TranscriptView from "./TranscriptView.svelte";
 
   let { view, id, onback, act, took }: {
     view: ClientView;
@@ -22,245 +33,289 @@
   } = $props();
 
   const session = $derived(view.sessions.find((s) => s.id === id) ?? null);
-  const live = $derived(has(view, Feature.timeline));
-  const canOperate = $derived(may(view, "operate") && session?.canSend !== false);
+  const hasTimeline = $derived(has(view, Feature.timeline));
+  const live = $derived(followsLive(view, Feature.liveTimeline));
+  const canOperate = $derived(may(view, "operate"));
   const canApprove = $derived(may(view, "approve"));
+  const working = $derived(session?.attention === "working");
   const steerable = $derived(has(view, Feature.steer) && session?.canSteer === true);
-  const actions = $derived(session && has(view, Feature.manage) && may(view, "operate") ? sessionActions(session) : []);
+  const item = $derived(session?.items[0] ?? null);
 
   let entries = $state<TimelineEntry[]>([]);
   let loaded = $state(false);
   let message = $state("");
-  let answers = $state<Record<string, string>>({});
-  let reasons = $state<Record<string, string>>({});
-  let menu = $state(false);
-  let confirmStop = $state(false);
-  let renaming = $state<string | null>(null);
+  let reason = $state("");
+  let answer = $state("");
   let sending = $state(false);
   let steer = $state(readSteer());
+  let menu = $state<DOMRect | null>(null);
+  let steerMenu = $state<DOMRect | null>(null);
+  let dialog = $state<null | { kind: "stop" | "end" | "archive" } | { kind: "rename"; name: string }>(null);
+  let now = $state(Date.now() / 1000);
+  let titleEl = $state<HTMLButtonElement | null>(null);
 
   function readSteer(): boolean {
-    try { return localStorage.getItem("companion.steer") !== "0"; } catch { return true; }
+    try { return localStorage.getItem("companion.steer") === "1"; } catch { return false; }
   }
   function setSteer(on: boolean) {
     steer = on;
-    try { localStorage.setItem("companion.steer", on ? "1" : "0"); } catch { /* remembered for this visit only */ }
+    try { localStorage.setItem("companion.steer", on ? "1" : "0"); } catch { /* remembered for this visit */ }
   }
 
-  // The conversation, asked every few seconds while it is on screen (the Mac's live updates need a kept connection,
-  // which this app does not hold yet).
-  async function loadTimeline() {
-    if (!live || document.visibilityState !== "visible") return;
-    const r = await companion.call({ op: "timeline", session: id });
-    if (r.response?.timeline) entries = r.response.timeline;
+  // The conversation: watched live (the computer sends what changes), or asked every three seconds.
+  async function watch() {
+    const r = await companion.call(live ? { op: "watch", session: id } : { op: "timeline", session: id });
+    if (r.response?.timeline) entries = applyTimeline(entries, r.response.timeline, r.response.timelineAfter) ?? r.response.timeline;
     loaded = true;
   }
   $effect(() => {
-    if (!live) return;
+    if (!hasTimeline) return;
     void id;
-    loadTimeline();
-    const timer = setInterval(loadTimeline, 3000);
+    untrack(watch);
+    if (live) {
+      const un = companion.onLive((r) => {
+        if (!r.timeline || r.timelineSession !== id) return;
+        const next = applyTimeline(entries, r.timeline, r.timelineAfter);
+        if (next) entries = next;
+        else untrack(watch);
+      });
+      return () => un.then((f) => f());
+    }
+    const timer = setInterval(() => document.visibilityState === "visible" && watch(), 3000);
     return () => clearInterval(timer);
   });
+  onDestroy(() => {
+    if (untrack(() => live)) companion.call({ op: "watch" });
+  });
+  $effect(() => {
+    if (!working) return;
+    const timer = setInterval(() => (now = Date.now() / 1000), 1000);
+    return () => clearInterval(timer);
+  });
+  const turnStart = $derived([...entries].reverse().find((e) => e.kind === "user")?.date ?? null);
 
-  async function send() {
-    if (!session) return;
-    const text = message.trim();
-    if (!text || sending) return;
+  async function send(text: string) {
+    if (!session || sending) return;
     sending = true;
+    haptic();
     const steering = steerable && steer;
     const r = await companion.call({ op: "send", session: session.id, text, steer: steering || undefined, turn: steering ? session.turn : undefined });
     sending = false;
     took(r.view);
-    // A message the computer refused stays in the field, to edit and send again.
     if (r.response) {
       message = "";
-      const notice = sendNotice(r.response.message);
-      if (notice) took({ ...r.view, notice });
-      loadTimeline();
+      haptic("success");
+      if (!live) watch();
     }
   }
 
-  function answer(item: DigestItem, text: string) {
-    if (!session || !text.trim()) return;
-    answers[item.id] = "";
-    act(() => companion.answer(session.id, item.id, text.trim()));
-  }
-
-  function deny(item: DigestItem) {
+  function decide(target: DigestItem, allow: boolean) {
     if (!session) return;
-    const reason = (reasons[item.id] ?? "").trim();
-    reasons[item.id] = "";
-    act(() => (reason ? companion.deny(session.id, item.id, reason) : companion.decide(session.id, item.id, false)));
+    haptic(allow ? "success" : "warning");
+    act(() => companion.decide(session.id, target.id, allow));
+  }
+  function denyWithReason(text: string) {
+    if (!session || !item) return;
+    reason = "";
+    haptic("warning");
+    act(() => companion.deny(session.id, item.id, text));
+  }
+  function answerWith(text: string) {
+    if (!session || !item) return;
+    answer = "";
+    haptic("success");
+    act(() => companion.answer(session.id, item.id, text));
   }
 
   async function stop() {
     if (!session) return;
-    confirmStop = false;
-    menu = false;
     const r = await companion.call({ op: "stop", session: session.id, turn: session.turn });
-    took(r.response?.message === "stale" ? { ...r.view, notice: sendNotice("stale") } : r.view);
+    took(r.view);
   }
-
   async function manage(action: string, text?: string) {
     if (!session) return;
-    menu = false;
-    if (action === "rename" && text === undefined) {
-      renaming = session.title;
-      return;
-    }
+    haptic();
     const r = await companion.call({ op: "manage", session: session.id, item: action, text });
     took(r.view);
-    if (r.response && action === "archive") onback();
+    if (r.response && (action === "archive" || action === "end")) onback();
   }
+
+  const actions = $derived(new Set(session && has(view, Feature.manage) && canOperate ? (session.actions ?? []) : []));
+  const canStopIt = $derived(!!session && canOperate && session.canSend !== false && canStop(session.attention));
+  const menuSections = $derived.by<MenuItem[][]>(() => {
+    if (!session) return [];
+    const snooze: MenuItem[] = actions.has("unsnooze")
+      ? [{ label: tr("Snooze opheffen", "Cancel snooze"), icon: "alarm-clock", onselect: () => manage("unsnooze") }]
+      : [
+          ...(actions.has("snoozeHour") ? [{ label: tr("Een uur", "One hour"), icon: "clock", onselect: () => manage("snoozeHour") }] : []),
+          ...(actions.has("snoozeEvening") ? [{ label: tr("Vanavond", "This evening"), icon: "clock", onselect: () => manage("snoozeEvening") }] : []),
+          ...(actions.has("snoozeTomorrow") ? [{ label: tr("Morgenochtend", "Tomorrow morning"), icon: "clock", onselect: () => manage("snoozeTomorrow") }] : []),
+          ...(actions.has("snoozeLimitReset") && session.limitResetsAt ? [{ label: tr("Tot de limiet reset", "Until the limit resets"), icon: "gauge", onselect: () => manage("snoozeLimitReset") }] : []),
+        ];
+    return [
+      [
+        ...(canStopIt ? [{ label: tr("Stop", "Stop"), icon: "circle-stop", destructive: true, onselect: () => (dialog = { kind: "stop" }) }] : []),
+        ...(actions.has("end") ? [{ label: tr("Beëindig sessie", "End session"), icon: "circle-x", destructive: true, onselect: () => (dialog = { kind: "end" }) }] : []),
+      ],
+      snooze,
+      [
+        ...(actions.has("mainThreadOn") ? [{ label: tr("Hoofdthread maken", "Make main thread"), icon: "git-branch", onselect: () => manage("mainThreadOn") }] : []),
+        ...(actions.has("mainThreadOff") ? [{ label: tr("Hoofdthread uitzetten", "Stop main thread"), icon: "git-branch", onselect: () => manage("mainThreadOff") }] : []),
+        ...(actions.has("rename") ? [{ label: tr("Hernoem", "Rename"), icon: "pencil", onselect: () => (dialog = { kind: "rename", name: session.title }) }] : []),
+      ],
+      actions.has("archive") ? [{ label: tr("Archiveer", "Archive"), icon: "archive", destructive: true, onselect: () => (dialog = { kind: "archive" }) }] : [],
+    ];
+  });
+  const hasMenu = $derived(menuSections.some((s) => s.length));
 </script>
 
-<div class="detail">
-  <header>
-    <button class="ghost back" onclick={onback} aria-label={tr("Terug", "Back")}><Icon name="back" size={20} /></button>
-    <button class="ghost title" onclick={() => (menu = !menu)} aria-expanded={menu} disabled={!session}>
-      <span class="name">{#if session}<span class="faint">{session.folder} /</span> {session.title}{:else}{tr("Sessie", "Session")}{/if}</span>
-      {#if session}
-        <span class="sub faint"><span class="dot" style="background:{attentionColor(session.attention)}"></span>{attentionWord(session.attention)} · {session.agent}{session.branch ? ` · ${session.branch}` : ""}</span>
-      {/if}
-    </button>
-  </header>
-
-  {#if menu && session}
-    <div class="menu">
-      {#each actions as action (action)}
-        <button onclick={() => manage(action)}>{actionLabel(action)}</button>
-      {/each}
-      {#if canOperate && canStop(session.attention)}
-        {#if confirmStop}
-          <div class="row">
-            <button onclick={() => (confirmStop = false)}>{tr("Annuleer", "Cancel")}</button>
-            <button class="danger" onclick={stop}>{tr("Stop de sessie", "Stop the session")}</button>
-          </div>
-        {:else}
-          <button class="danger" onclick={() => (confirmStop = true)}>{tr("Stop", "Stop")}</button>
+<div class="session">
+  <NavBar onback={onback}>
+    {#snippet center()}
+      <button bind:this={titleEl} class="title" disabled={!hasMenu} onclick={() => titleEl && (menu = titleEl.getBoundingClientRect())}>
+        {#if session}
+          <span class="l1"><span class="folder">{session.folder} /</span> <span class="name">{session.title}</span>{#if hasMenu}<span class="chev"><Ico name="chevron-down" size={10} stroke={3} /></span>{/if}</span>
+          <span class="l2">{session.agent}{session.branch ? ` · ${session.branch}` : ""}</span>
         {/if}
-      {/if}
-      {#if !actions.length && !(canOperate && canStop(session.attention))}
-        <p class="faint small">{tr("Hier valt vanaf de telefoon niets te beheren.", "Nothing to manage here from the phone.")}</p>
-      {/if}
-    </div>
-  {/if}
-
-  {#if renaming !== null && session}
-    <div class="menu">
-      <input bind:value={renaming} maxlength="120" aria-label={tr("Nieuwe naam", "New name")} />
-      <div class="row">
-        <button onclick={() => (renaming = null)}>{tr("Annuleer", "Cancel")}</button>
-        <button class="primary" disabled={!renaming.trim()} onclick={() => { const name = renaming?.trim() ?? ""; renaming = null; manage("rename", name); }}>{tr("Bewaar", "Save")}</button>
-      </div>
-    </div>
-  {/if}
+      </button>
+    {/snippet}
+  </NavBar>
 
   {#if !session}
-    <p class="faint pad">{tr("Deze sessie is er niet meer.", "This session no longer exists.")}</p>
+    <EmptyState icon="inbox" title={tr("Deze sessie is er niet meer.", "This session is gone.")} text={tr("Hij is op je Mac gesloten of gearchiveerd.", "It was closed or archived on your Mac.")} />
   {:else}
-    <ConversationScroll version={[entries.length, entries[entries.length - 1]?.text.length, session.excerpt]}>
-      {#if live}
-        {#if !loaded}<p class="faint">{tr("Gesprek laden…", "Loading the conversation…")}</p>{/if}
-        <TimelineView {entries} />
-        {#if loaded && !entries.length}<p class="faint">{tr("Nog geen berichten.", "No messages yet.")}</p>{/if}
-      {:else if session.excerpt}
-        <h3>{tr("Laatste antwoord", "Latest reply")}</h3>
-        <div class="markdown reply">{@html renderMarkdown(session.excerpt)}</div>
-      {/if}
-      {#if session.attention === "working"}<p class="working faint">● {tr("Aan het werk…", "Working…")}</p>{/if}
-    </ConversationScroll>
+    <div class="body">
+      <ConversationScroll version={[entries.length, entries[entries.length - 1]?.text.length, session.attention, session.excerpt]} reserve={working ? 56 : 0}>
+        {#if hasTimeline}
+          {#if !loaded}
+            <div class="loading breathe"><span style:width="90%"></span><span style:width="70%"></span><span style:width="80%"></span></div>
+          {:else}
+            <TranscriptView {entries} {working} onreply={canOperate && session.canSend !== false ? (t) => (message = "> " + t.split("\n").slice(0, 4).join("\n> ") + "\n\n" + message) : undefined} />
+          {/if}
+        {:else if session.excerpt}
+          <h3 class="section">{tr("Laatste antwoord", "Latest reply")}</h3>
+          <div class="markdown reply">{@html renderMarkdown(session.excerpt)}</div>
+        {/if}
+        {#snippet floating()}
+          {#if working}
+            <div class="floating"><PulseDot size={7} />{turnStart ? tr("Werkt al {d}", "Working for {d}", { d: duration(Math.max(0, now - turnStart)) }) : tr("Aan het werk", "Working")}</div>
+          {/if}
+        {/snippet}
+      </ConversationScroll>
+    </div>
 
-    <div class="dock">
-      {#each session.items as item (item.id)}
-        <section class="item">
-          <h3>{item.kind === "approval" ? tr("Toestemming", "Permission") : tr("Vraag", "Question")}</h3>
+    {#if item}
+      <div class="pending">
+        <div class="card">
+          <span class="kind"><Ico name={item.kind === "approval" ? "hand" : "message-circle-question"} size={12} stroke={2.4} />{item.kind === "approval" ? tr("Goedkeuring nodig", "Approval needed") : tr("Wacht op je antwoord", "Waiting for your answer")}</span>
           <p class="ask">{item.title}</p>
-          {#if item.detail}<p class="faint small">{item.detail}</p>{/if}
+          {#if item.detail}<code class="detail">{item.detail}</code>{/if}
           {#if !canApprove}
-            <p class="warn small">{tr("Deze telefoon mag dit niet beslissen; doe het op je computer.", "This phone may not decide this; do it on your computer.")}</p>
+            <span class="note muted"><Ico name="lock" size={12} />{tr("Goedkeuren staat uit voor deze iPhone in Nook op je Mac.", "Approving is turned off for this phone in Nook on your Mac.")}</span>
           {:else if item.kind === "approval"}
-            <input class="reason" placeholder={tr("Waarom niet? (optioneel, bij weigeren)", "Why not? (optional, when denying)")} bind:value={reasons[item.id]} />
-            <div class="row">
-              <button class="danger" onclick={() => deny(item)}>{reasons[item.id]?.trim() ? tr("Weiger met reden", "Deny with reason") : tr("Weiger", "Deny")}</button>
-              {#if item.canAllow}
-                <button class="primary" onclick={() => act(() => companion.decide(session.id, item.id, true))}>{tr("Sta toe", "Allow")}</button>
-              {/if}
+            <div class="decide">
+              <DecisionButton kind="deny" label={tr("Weiger", "Deny")} onclick={() => decide(item, false)} />
+              {#if item.canAllow}<DecisionButton kind="allow" label={tr("Sta toe", "Allow")} onclick={() => decide(item, true)} />{/if}
             </div>
-            {#if !item.canAllow}<p class="warn small">{tr("Dit is riskant of onbekend: toestaan kan alleen op je computer.", "This is risky or unknown: you can only allow it on your computer.")}</p>{/if}
+            {#if !item.canAllow}<span class="note"><Ico name="lock" size={12} />{tr("Dit is riskant of onbekend: toestaan kan alleen op je Mac.", "This is risky or unknown: it can only be allowed on your Mac.")}</span>{/if}
+            <SessionComposer bind:value={reason} placeholder={tr("Of weiger met een reden", "Or deny with a reason")} onsend={denyWithReason} />
           {:else if item.canAllow}
             <div class="options">
               {#each item.options as option, i (option)}
-                <button onclick={() => answer(item, option)}>
-                  <span>{option}</span>
-                  {#if item.optionPreviews?.[i]}<pre>{item.optionPreviews[i]}</pre>{/if}
+                <button class="option press" onclick={() => answerWith(option)}>
+                  <span class="key">{i < 9 ? i + 1 : "·"}</span>
+                  <span class="otext"><span>{option}</span>{#if item.optionPreviews?.[i]}<pre>{item.optionPreviews[i]}</pre>{/if}</span>
                 </button>
               {/each}
             </div>
-            <div class="row">
-              <input placeholder={tr("Eigen antwoord", "Your own answer")} bind:value={answers[item.id]} onkeydown={(e) => e.key === "Enter" && answer(item, answers[item.id] ?? "")} />
-              <button disabled={!answers[item.id]?.trim()} onclick={() => answer(item, answers[item.id] ?? "")}>{tr("Stuur", "Send")}</button>
-            </div>
+            <SessionComposer bind:value={answer} placeholder={tr("Je eigen antwoord", "Your own answer")} onsend={answerWith} />
           {:else}
-            <p class="warn small">{tr("Meerdere vragen tegelijk: beantwoord ze op je computer.", "Several questions at once: answer them on your computer.")}</p>
+            <span class="note"><Ico name="laptop" size={12} />{tr("Meerdere vragen tegelijk: beantwoord ze op je Mac.", "Several questions at once: answer them on your Mac.")}</span>
           {/if}
-        </section>
-      {/each}
-
-      {#if canOperate}
-        <div class="composer">
-          {#if steerable}
-            <div class="steer" role="radiogroup" aria-label={tr("Wanneer", "When")}>
-              <button role="radio" aria-checked={steer} class:on={steer} onclick={() => setSteer(true)}>{tr("Nu bijsturen", "Steer now")}</button>
-              <button role="radio" aria-checked={!steer} class:on={!steer} onclick={() => setSteer(false)}>{tr("Na deze beurt", "After this turn")}</button>
-            </div>
-          {/if}
-          <div class="field">
-            <textarea rows="1" placeholder={tr("Bericht aan de agent", "Message to the agent")} bind:value={message}></textarea>
-            <button class="primary send" disabled={!message.trim() || sending} onclick={send} aria-label={tr("Verstuur", "Send")}><Icon name="arrow" size={18} /></button>
-          </div>
         </div>
-      {:else if session.canSend === false}
-        <p class="faint small foot">{tr("Deze agent draait in een terminal op je computer: antwoord hem daar.", "This agent runs in a terminal on your computer: answer it there.")}</p>
-      {/if}
-    </div>
+        {#if session.items.length > 1}<span class="morewait">{tr("Hierna wachten er nog {n}", "{n} more wait after this one", { n: session.items.length - 1 })}</span>{/if}
+      </div>
+    {:else}
+      <div class="dock">
+        {#if !canOperate}
+          <div class="fieldcard"><Ico name="lock" size={12} />{tr("Berichten sturen staat uit voor deze iPhone in Nook op je Mac.", "Sending messages is turned off for this phone in Nook on your Mac.")}</div>
+        {:else if session.canSend === false}
+          <div class="fieldcard"><Ico name="terminal" size={12} />{tr("Deze agent draait in een terminal op je Mac; beantwoord hem daar.", "This agent runs in a terminal on your Mac; answer it there.")}</div>
+        {:else if steerable}
+          <SessionComposer bind:value={message} placeholder={steer ? tr("Stuur de agent bij", "Steer the agent") : tr("Bericht voor na deze beurt", "Message for after this turn")} onsend={send} {sending}
+            onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
+            {#snippet controls()}
+              <ComposerPill label={steer ? tr("Nu bijsturen", "Steer now") : tr("Na deze beurt", "After this turn")} icon={steer ? "corner-down-right" : "list"} onclick={(e) => (steerMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />
+            {/snippet}
+          </SessionComposer>
+        {:else}
+          <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending}
+            onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined} />
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
+{#if menu}<Menu sections={menuSections} anchor={menu} onclose={() => (menu = null)} />{/if}
+{#if steerMenu}
+  <Menu title={tr("Terwijl de agent werkt", "While the agent works")} anchor={steerMenu} onclose={() => (steerMenu = null)} sections={[[
+    { label: tr("Nu bijsturen", "Steer now"), icon: "corner-down-right", checked: steer, onselect: () => setSteer(true) },
+    { label: tr("Na deze beurt", "After this turn"), icon: "list", checked: !steer, onselect: () => setSteer(false) },
+  ]]} />
+{/if}
+{#if dialog?.kind === "stop"}
+  <Dialog title={tr("Deze sessie stoppen?", "Stop this session?")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Stop de sessie", "Stop the session"), destructive: true, onselect: stop },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "end"}
+  <Dialog title={tr("Deze sessie beëindigen?", "End this session?")} message={tr("De agent bewaart het gesprek, dus je kunt het in Nook voortzetten.", "The agent saves its conversation, so you can continue it in Nook.")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Beëindig sessie", "End session"), destructive: true, onselect: () => manage("end") },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "archive"}
+  <Dialog title={tr("Deze sessie archiveren?", "Archive this session?")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Archiveer", "Archive"), destructive: true, onselect: () => manage("archive") },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "rename"}
+  {@const d = dialog}
+  <Dialog title={tr("Hernoem", "Rename")} bind:field={d.name} placeholder={tr("Naam", "Name")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Bewaar", "Save"), bold: true, onselect: () => d.name.trim() && manage("rename", d.name.trim()) },
+    { label: tr("Annuleer", "Cancel"), onselect: () => {} },
+  ]} />
+{/if}
+
 <style>
-  .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8) var(--space-4) var(--space-4); border-bottom: 1px solid var(--line); }
-  .back { min-width: 44px; min-height: 44px; }
-  .title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); text-align: left; padding: var(--space-4) var(--space-8); min-height: 44px; }
-  .name { font: var(--text-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .sub { font: var(--text-detail); display: flex; align-items: center; gap: var(--space-6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .menu { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8) var(--space-12); border-bottom: 1px solid var(--line); }
-  .menu button { min-height: 44px; text-align: left; }
-  .row { display: flex; gap: var(--space-8); }
-  .row > * { flex: 1; min-height: 44px; min-width: 0; }
-  .reply { font: var(--text-body); overflow-wrap: anywhere; }
-  .working { font: var(--text-detail); margin: 0; animation: breathe 2s ease-in-out infinite; }
-  @keyframes breathe { 50% { opacity: 0.45; } }
-  .dock { border-top: 1px solid var(--line); padding: var(--space-8) var(--space-12) var(--space-12); display: flex; flex-direction: column; gap: var(--space-8); max-height: 60%; overflow-y: auto; }
-  .item { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8) var(--space-12); border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--amber); }
-  h3 { margin: 0; font: var(--text-label); color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
-  .ask { margin: 0; font: var(--text-body); user-select: text; overflow-wrap: anywhere; }
-  p { margin: 0; }
-  .small { font: var(--text-detail); }
-  .warn { color: var(--amber); }
-  .reason { min-height: 40px; }
-  .options { display: flex; flex-direction: column; gap: var(--space-6); }
-  .options button { min-height: 44px; text-align: left; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4); }
-  .options pre { margin: 0; font: var(--text-code); white-space: pre; overflow-x: auto; color: var(--text2); }
-  .composer { display: flex; flex-direction: column; gap: var(--space-6); }
-  .steer { display: flex; gap: var(--space-4); }
-  .steer button { flex: 1; min-height: 34px; border-radius: var(--radius-pill); font: var(--text-label); background: transparent; color: var(--text2); }
-  .steer button.on { background: var(--smoke); color: var(--paper); }
-  .field { display: flex; gap: var(--space-8); align-items: flex-end; background: var(--composer); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); }
-  .field textarea { flex: 1; resize: none; min-height: 36px; max-height: 160px; border: none; background: transparent; padding: var(--space-8) 0; field-sizing: content; }
-  .send { width: 40px; height: 40px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; flex: none; }
-  .foot { text-align: center; padding: var(--space-4); }
-  .pad { padding: var(--space-16); }
+  .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .title { max-width: 260px; display: flex; flex-direction: column; align-items: center; min-width: 0; opacity: 1 !important; }
+  .l1 { display: flex; align-items: center; gap: 4px; max-width: 100%; font: var(--pt-strong); white-space: nowrap; }
+  .folder { color: var(--text3); flex: none; }
+  .name { color: var(--paper); overflow: hidden; text-overflow: ellipsis; }
+  .chev { color: var(--text3); display: inline-flex; }
+  .l2 { font: var(--pt-caption); color: var(--text3); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .loading { display: flex; flex-direction: column; gap: 8px; padding-top: 24px; }
+  .loading span { height: 12px; border-radius: 999px; background: var(--smoke); }
+  .section { margin: 16px 0 4px; font: var(--pt-label); color: var(--text3); }
+  .reply { font: var(--pt-body); color: var(--text-strong); }
+  .floating { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border-radius: 999px; background: rgba(30, 30, 30, 0.72); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.08); font: var(--pt-label); color: var(--text-strong); }
+  .pending { padding: 0 16px 8px; display: flex; flex-direction: column; gap: 6px; animation: rise var(--reveal); }
+  .card { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid rgba(240, 182, 90, 0.35); border-radius: 12px; max-height: 360px; overflow-y: auto; }
+  .kind { text-transform: uppercase; display: flex; align-items: center; gap: 6px; font: var(--pt-caption); letter-spacing: 1.1px; color: var(--amber); }
+  .ask { margin: 0; font: var(--pt-title); color: var(--paper); user-select: text; overflow-wrap: anywhere; }
+  .detail { font: var(--pt-code); color: var(--text2); padding: 8px; background: var(--well); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .decide { display: flex; gap: 8px; }
+  .note { display: flex; align-items: baseline; gap: 6px; font: var(--pt-detail); color: var(--amber); }
+  .note.muted { color: var(--text2); }
+  .options { display: flex; flex-direction: column; gap: 8px; }
+  .option { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; background: var(--field) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 10px; text-align: left; }
+  .key { min-width: 22px; height: 22px; border-radius: 6px; background: var(--well); font: 600 12.57px var(--mono); color: var(--text2); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .otext { display: flex; flex-direction: column; gap: 6px; font: 600 14.86px var(--font); color: var(--paper); min-width: 0; }
+  .otext pre { margin: 0 0 0 12px; font: var(--pt-code); font-size: 12px; color: var(--text2); white-space: pre; overflow-x: auto; max-height: 10lh; }
+  .morewait { font: var(--pt-caption); color: var(--text3); text-align: center; }
+  .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
+  .fieldcard { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }
+  @keyframes rise { from { transform: translateY(16px); opacity: 0; } }
 </style>

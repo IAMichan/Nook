@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use nook_core::companion::client::{ClientSnapshot, Phase};
-use nook_core::companion::{DeliveryLog, ItemKind};
+use nook_core::companion::{feature, DeliveryLog, ItemKind};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::Companion;
@@ -16,12 +16,19 @@ use super::Companion;
 pub struct Poller {
     visible: AtomicBool,
     wake: tokio::sync::Notify,
+    /// The app went to the background: the kept connection closes, and the phone asks now and then instead.
+    hidden: tokio::sync::Notify,
     seen: Mutex<Option<DeliveryLog>>,
 }
 
 impl Default for Poller {
     fn default() -> Self {
-        Self { visible: AtomicBool::new(true), wake: tokio::sync::Notify::new(), seen: Mutex::new(None) }
+        Self {
+            visible: AtomicBool::new(true),
+            wake: tokio::sync::Notify::new(),
+            hidden: tokio::sync::Notify::new(),
+            seen: Mutex::new(None),
+        }
     }
 }
 
@@ -30,6 +37,8 @@ impl Poller {
         self.visible.store(visible, Ordering::SeqCst);
         if visible {
             self.wake.notify_one();
+        } else {
+            self.hidden.notify_waiters();
         }
     }
 
@@ -63,19 +72,44 @@ pub fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             let companion = app.state::<Companion>();
+            let visible = companion.poll.visible.load(Ordering::SeqCst);
+            // In front, with a computer that keeps a connection open: everything follows live, as on the iPhone.
+            if companion.client.is_paired() && visible && companion.client.has(feature::STREAM) {
+                let poll = &companion.poll;
+                let result = tokio::select! {
+                    r = companion.client.stream(
+                        || poll.visible.load(Ordering::SeqCst),
+                        |snapshot, update| {
+                            let _ = app.emit("companion-client", &snapshot);
+                            let _ = app.emit("companion-live", &update);
+                        },
+                    ) => r,
+                    _ = poll.hidden.notified() => Ok(()),
+                };
+                if let Err(e) = result {
+                    log::info!("Companion: live connection ended ({e}); asking instead");
+                    let snapshot = companion.client.refresh().await;
+                    let _ = app.emit("companion-client", &snapshot);
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(3)) => {}
+                        _ = companion.poll.wake.notified() => {}
+                    }
+                }
+                continue;
+            }
             if companion.client.is_paired() {
                 let snapshot = companion.client.refresh().await;
                 let _ = app.emit("companion-client", &snapshot);
                 if snapshot.phase == Phase::Connected {
                     let fresh = companion.poll.fresh(&snapshot);
-                    if !companion.poll.visible.load(Ordering::SeqCst) {
+                    if !visible {
                         for (agent, what) in fresh {
                             notify(&app, &agent, &what);
                         }
                     }
                 }
             }
-            let every = if companion.poll.visible.load(Ordering::SeqCst) { 5 } else { 60 };
+            let every = if visible { 5 } else { 60 };
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(every)) => {}
                 _ = companion.poll.wake.notified() => {}

@@ -143,21 +143,27 @@ layout does not change.
 
 ## Android
 
-Nook for Android (`apps/tauri`, see [`TAURI.md`](TAURI.md)) is a companion too: its Companion page pairs with a Mac (or
-Nook on Windows or Linux) and is laid out as this app. Along the top are the computer's tabs **Nook**, **Agents** and
-**Chats** with what waits as a count on each (the Android app's own tab bar is already at the bottom). A session opens as
-its whole conversation (`timeline`, asked every three seconds while it is open) with what waits docked above the
-composer: deny with a reason, *Steer now* or *After this turn* (`steer`, `turn`), and Stop for the turn it saw. The title
-opens the session's actions (`manage`). *New* starts a session from the Mac's `options`. The Nook tab shows the Mac's
-home (`home`, `music`), Nook's chats (`chats`, `chat`, `ask`, `chatStop`) and a box to ask Nook something. The Chats tab
-lists the Mac's inbox (`inbox`, `inboxChat`, `inboxSend` with `replyTo`, `inboxMark`).
+Nook for Android (`apps/tauri`, see [`TAURI.md`](TAURI.md)) is the same companion as the iPhone app, laid out and
+worded the same. Once a phone is paired, the companion is the whole Android app (`companion-shell.svelte.ts`); Nook on
+the phone itself (its own brain) is in Settings › *Nook on this phone*, and is the app again while nothing is paired.
 
-As on the iPhone, Android offers only what the computer lists in `features` and allows in `scopes`. A computer that
-lists none (Nook on Windows or Linux) gets the Agents list with approve, answer, send and stop. Android sends
-`protocolVersion` and `appVersion` with `hello` and `list`. It opens one short connection per request (no `subscribe`)
-and sends no `compression`. It has no pull requests, files, terminals, diffs, pictures, dictation, history, several
-Macs, widgets or push notifications yet. Code: `apps/tauri/core/src/companion/client.rs` (`ClientCall`),
-`apps/tauri/src/lib/companion.ts` and `apps/tauri/src/views/companion/`.
+- **Look:** the iPhone's screens rebuilt in `apps/tauri/src/views/companion` from its SwiftUI views: the tabs Nook,
+  Agents and Chats along the bottom with their counts, `PanelHeader` with Nook's face (`NookMark`) for the Mac menu and
+  the gear for Settings, the cards of what waits on you, the shelves, the transcript in turns ("Worked for 1m 3s", "Ran 3
+  commands and read 2 files", `lib/transcript.ts`), the docked approval or question, the composer, New session, Nook's
+  chat, the Chats tab with its WhatsApp skin, and Settings as a sheet. Colors are `NookPalette.nookDark` and the type is
+  the phone's scale (`views/companion/ui/phone.css`), the icons are the same Lucide set (`lib/lucide.ts`) and agents carry
+  the Mac's brand marks (`lib/brand-logos.ts`, generated from `BrandLogo.swift`). The words come from the iPhone's own
+  catalog (`lib/i18n/companion-ios.ts`, from `Localizable.xcstrings`). Fonts differ: Android has no SF Pro.
+- **Live:** while the app is in front and the computer lists `stream`, the phone keeps one connection (`subscribe`,
+  `ping` every 5 seconds with `foreground`), the open session follows with `watch` (`TimelineDelta` as
+  `applyTimeline`) and the open chat with `watchChat`. In the background, or with a computer without `stream`, it asks
+  instead (`CompanionClient::stream`, `src-tauri/src/companion/poll.rs`).
+- **Requests:** `ClientCall` in `core/src/companion/client.rs` sends every op the phone uses; the phone offers only what
+  the computer lists in `features` and allows in `scopes`, and sends `protocolVersion` and `appVersion`.
+- **Not on Android yet:** pull requests, review and diffs, files and terminals, pictures and files in a message,
+  dictation, older sessions and the Mac's search, several Macs, prompt links, the relay, the outbox, compression, the
+  snooze time picker, widgets, Live Activities and push notifications (planned through FCM).
 
 ## Compression
 

@@ -1,13 +1,18 @@
 <script lang="ts">
-  // The phone side of the companion, laid out as Nook Companion on the iPhone: the computer's three tabs (Nook, Agents,
-  // Chats) with what waits as a count on each, a session as its whole conversation, a new session, Nook's own chats and
-  // the Chats tab. Only what the computer lists (`features`) and allows this phone (`scopes`) shows; a computer that
-  // lists nothing (Nook on Windows or Linux, an older Mac) gets the Agents list with approve, answer, send and stop.
+  // The phone side of the companion, laid out as Nook Companion on the iPhone (`RootView`): the computer's three tabs
+  // along the bottom (Nook, Agents and Chats, each with what waits there and keeping where it was), Nook's orb for the
+  // computer's menu and the gear for Settings in every tab's header, and a session, a chat with Nook or a chat pushed on
+  // its tab. Only what the computer lists (`features`) and allows this phone (`scopes`) shows. On Android, a paired phone
+  // opens straight into this (`standalone`); Nook on the phone itself is a tap away in Settings.
   import { untrack } from "svelte";
-  import { companion, has, may, needingYou, tabsFor, unreadChats, Feature, type CompanionTab, type ClientView, type InboxChatDigest } from "../../lib/companion";
+  import {
+    companion, has, may, needingYou, tabsFor, unreadChats, Feature,
+    type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest,
+  } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
-  import Icon from "../../components/Icon.svelte";
+  import { setLocal, shell } from "../../lib/companion-shell.svelte";
+  import "./ui/phone.css";
   import Pairing from "./Pairing.svelte";
   import HomeTab from "./HomeTab.svelte";
   import AgentsTab from "./AgentsTab.svelte";
@@ -16,192 +21,194 @@
   import NewSession from "./NewSession.svelte";
   import NookChat from "./NookChat.svelte";
   import InboxChat from "./InboxChat.svelte";
+  import SettingsSheet from "./SettingsSheet.svelte";
+  import ShareSheet from "./ShareSheet.svelte";
+  import TabBar from "./ui/TabBar.svelte";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import Sheet from "./ui/Sheet.svelte";
 
-  type Screen =
-    | { kind: "session"; id: string }
-    | { kind: "new"; task?: string }
-    | { kind: "nook"; id: string | null; ask?: string }
-    | { kind: "chat"; id: string };
+  let { standalone = false }: { standalone?: boolean } = $props();
+
+  type Screen = { kind: "session"; id: string } | { kind: "nook"; id: string | null; ask?: string } | { kind: "chat"; id: string };
 
   let view = $state<ClientView | null>(null);
-  let tab = $state<CompanionTab>("agents");
-  let screen = $state<Screen | null>(null);
-  let menu = $state(false);
-  let refreshing = $state(false);
+  let tab = $state<CompanionTab>("home");
+  // Each tab keeps where it was.
+  let screens = $state<Record<CompanionTab, Screen | null>>({ home: null, agents: null, chats: null });
+  let sheet = $state<null | "settings" | { kind: "new"; task?: string }>(null);
+  let macMenu = $state<DOMRect | null>(null);
   let inbox = $state<InboxChatDigest[]>([]);
   let inboxMessage = $state<string | undefined>(undefined);
+  let conversations = $state<ChatDigest[]>([]);
 
   $effect(() => {
     companion.client().then((v) => (view = v));
     companion.refresh().then((v) => (view = v));
     const un = companion.onClient((v) => (view = { ...v, deviceName: view?.deviceName }));
+    // Live updates of the lists the tabs count: the Chats tab's inbox and Nook's conversations.
+    const live = companion.onLive((r) => {
+      if (r.inbox) inbox = r.inbox;
+      if (r.conversations) conversations = r.conversations;
+    });
     const visible = () => companion.visible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", visible);
     visible();
     return () => {
       un.then((f) => f());
+      live.then((f) => f());
       document.removeEventListener("visibilitychange", visible);
     };
   });
 
   const paired = $derived(!!view && (view.phase === "connected" || view.phase === "offline"));
+  $effect(() => {
+    if (view) shell.paired = paired;
+  });
   const tabs = $derived(tabsFor(view));
   const showInbox = $derived(has(view, Feature.inbox) && may(view, "chats"));
+  const showNook = $derived(has(view, Feature.chat) && may(view, "nookChat"));
+  const connected = $derived(view?.phase === "connected");
 
-  // The Nook tab first when the computer has one, as on the iPhone; a tab the computer stopped listing falls back.
-  let chose = false;
+  // A tab the computer stopped allowing falls back to Agents.
   $effect(() => {
-    if (!tabs.includes(tab)) tab = "agents";
-    if (!chose && tabs.includes("home") && view?.phase === "connected") {
-      chose = true;
-      tab = "home";
-    }
+    if (view && !tabs.includes(tab)) tab = "agents";
   });
 
-  // The Chats list, also for the counts on the tabs: when the tab opens and every 20 seconds while paired.
-  async function loadInbox() {
-    if (!showInbox || view?.phase !== "connected") return;
-    const r = await companion.call({ op: "inbox" });
-    if (r.response?.inbox) inbox = r.response.inbox;
-    inboxMessage = r.response?.message;
+  // The inbox and Nook's conversations, for the counts on the tabs: on connecting and every 20 seconds unless they follow live.
+  async function loadLists() {
+    if (!connected) return;
+    if (showInbox) {
+      const r = await companion.call({ op: "inbox" });
+      if (r.response?.inbox) inbox = r.response.inbox;
+      inboxMessage = r.response?.message;
+    }
+    if (showNook) {
+      const r = await companion.call({ op: "chats" });
+      if (r.response?.conversations) conversations = r.response.conversations;
+    }
   }
-  const connected = $derived(view?.phase === "connected");
   $effect(() => {
-    if (!showInbox || !connected) return;
-    untrack(loadInbox);
-    const timer = setInterval(() => document.visibilityState === "visible" && loadInbox(), 20_000);
+    if (!connected || (!showInbox && !showNook)) return;
+    untrack(loadLists);
+    const timer = setInterval(() => document.visibilityState === "visible" && !has(view, Feature.liveChats) && loadLists(), 20_000);
     return () => clearInterval(timer);
   });
 
-  // The back button closes the menu first, then what is open.
+  // Text another app shared with Nook waits here until you say where it goes.
+  const shared = $derived(shell.shared);
+
+  // The back button: a menu, a sheet, then what is open on the tab.
   $effect(() => onBack(() => {
-    if (menu) return (menu = false), true;
-    if (screen) return (screen = null), true;
+    if (macMenu) return (macMenu = null), true;
+    if (screens[tab]) return (screens[tab] = null), true;
     return false;
   }));
 
-  // A notice sits at the top, clear of every composer, and goes by itself after a few seconds.
-  function clearNotice() {
-    companion.clearNotice();
-    if (view) view.notice = null;
-  }
-  $effect(() => {
-    if (!view?.notice) return;
-    const timer = setTimeout(clearNotice, 5000);
-    return () => clearTimeout(timer);
-  });
-
   async function act(f: () => Promise<ClientView>) {
-    const v = await f();
-    view = { ...v, deviceName: view?.deviceName };
+    took(await f());
   }
-
-  /** Takes the state a call brought back and hands its answer on. */
   function took(v: ClientView) {
     view = { ...v, deviceName: view?.deviceName };
   }
 
-  async function refresh() {
-    refreshing = true;
-    await act(companion.refresh);
-    await loadInbox();
-    refreshing = false;
+  // A notice the computer sent shows as the iPhone's alert, with OK.
+  function clearNotice() {
+    companion.clearNotice();
+    if (view) view.notice = null;
   }
 
-  const counts = $derived<Record<CompanionTab, number>>({ home: 0, agents: needingYou(view?.sessions ?? []), chats: unreadChats(inbox) });
-  const tabTitle = (t: CompanionTab) => (t === "home" ? "Nook" : t === "agents" ? tr("Agents", "Agents") : tr("Chats", "Chats"));
+  function open(where: CompanionTab, screen: Screen) {
+    tab = where;
+    screens[where] = screen;
+  }
+
+  const counts = $derived<Record<CompanionTab, number>>({
+    home: conversations.filter((c) => c.waiting).length,
+    agents: needingYou(view?.sessions ?? []),
+    chats: unreadChats(inbox),
+  });
+
+  const macSections = $derived.by<MenuItem[][]>(() => {
+    if (!view) return [];
+    const route = view.phase === "connected" ? [{ label: tr("Verbonden via je lokale netwerk", "Connected over your local network"), icon: "wifi" }] : [];
+    return [
+      [{ label: view.macName || tr("Je Mac", "Your Mac"), icon: "check", detail: view.host }, ...route,
+        { label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") }],
+      [{ label: tr("Ontkoppel van deze Mac", "Unpair from this Mac"), destructive: true, onselect: () => act(async () => companion.unpair()) }],
+    ];
+  });
 </script>
 
-<div class="companion">
+<div class="companion phone" class:standalone>
   {#if !view}
-    <p class="faint pad">{tr("Laden…", "Loading…")}</p>
+    <div class="launch"></div>
   {:else if !paired}
     <Pairing {view} onchange={(v) => (view = v)} />
-  {:else if screen?.kind === "session"}
-    <SessionDetail {view} id={screen.id} onback={() => (screen = null)} {act} {took} />
-  {:else if screen?.kind === "new"}
-    <NewSession {view} task={screen.task} onback={() => (screen = null)} {took} onstarted={(id) => (screen = id ? { kind: "session", id } : null)} />
-  {:else if screen?.kind === "nook"}
-    <NookChat {view} id={screen.id} ask={screen.ask} onback={() => (screen = null)} {took} />
-  {:else if screen?.kind === "chat"}
-    {@const chat = inbox.find((c) => screen?.kind === "chat" && c.id === screen.id) ?? null}
-    <InboxChat {view} id={screen.id} {chat} onback={() => { screen = null; loadInbox(); }} {took} />
   {:else}
-    <header>
-      <button class="ghost who" onclick={() => (menu = !menu)} aria-expanded={menu} aria-label={tr("Menu van {name}", "Menu of {name}", { name: view.macName || "Nook" })}>
-        <span class="dot" class:away={view.phase === "offline"}></span>
-        <h2>{view.macName || "Nook"}</h2>
-        <Icon name="chevron-down" size={14} />
-      </button>
-      <button class="ghost icon" title={tr("Ververs", "Refresh")} aria-label={tr("Ververs", "Refresh")} disabled={refreshing} onclick={refresh}>↻</button>
-    </header>
-    {#if menu}
-      <div class="menu">
-        <p class="faint small">
-          {view.phase === "connected" ? tr("Verbonden met {host}", "Connected to {host}", { host: view.host }) : view.reason || tr("Zoeken naar je computer…", "Looking for your computer…")}
-        </p>
-        <button class="danger" onclick={() => { menu = false; act(async () => companion.unpair()); }}>{tr("Ontkoppel van {name}", "Unpair from {name}", { name: view.macName || tr("deze computer", "this computer") })}</button>
-      </div>
-    {/if}
-    {#if tabs.length > 1}
-      <nav class="tabs" aria-label={tr("Tabs van je computer", "Your computer's tabs")}>
-        {#each tabs as t (t)}
-          <button class:on={tab === t} aria-current={tab === t ? "page" : undefined} onclick={() => (tab = t)}>
-            <Icon name={t === "home" ? "home" : t === "agents" ? "agents" : "message"} size={16} />
-            <span>{tabTitle(t)}</span>
-            {#if counts[t] > 0}<span class="badge">{counts[t]}</span>{/if}
-          </button>
-        {/each}
-      </nav>
-    {/if}
-    {#if view.phase === "offline"}
-      <div class="banner">📡 {view.reason || tr("Zoeken naar je computer…", "Looking for your computer…")}</div>
-    {/if}
     <div class="page">
-      {#if tab === "home"}
-        <HomeTab {view} {inbox} {took}
-          onsession={(id) => (screen = { kind: "session", id })}
-          onchat={(id) => (screen = { kind: "chat", id })}
-          onnook={(id, ask) => (screen = { kind: "nook", id, ask })}
+      {#if tab === "agents" && screens.agents?.kind === "session"}
+        <SessionDetail {view} id={screens.agents.id} onback={() => (screens.agents = null)} {act} {took} />
+      {:else if tab === "home" && screens.home?.kind === "nook"}
+        <NookChat {view} id={screens.home.id} ask={screens.home.ask} onback={() => { screens.home = null; loadLists(); }} {took} />
+      {:else if tab === "chats" && screens.chats?.kind === "chat"}
+        {@const id = screens.chats.id}
+        <InboxChat {view} {id} chat={inbox.find((c) => c.id === id) ?? null} onback={() => { screens.chats = null; loadLists(); }} {took} />
+      {:else if tab === "home"}
+        <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+          onsession={(id) => open("agents", { kind: "session", id })}
+          onchat={(id) => open("chats", { kind: "chat", id })}
+          onnook={(id, ask) => open("home", { kind: "nook", id, ask })}
           ontab={(t) => (tab = t)} />
       {:else if tab === "chats"}
-        <ChatsTab {inbox} message={inboxMessage} onopen={(id) => (screen = { kind: "chat", id })} />
+        <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
       {:else}
-        <AgentsTab {view} {act} onopen={(id) => (screen = { kind: "session", id })} onnew={() => (screen = { kind: "new" })} />
+        <AgentsTab {view} {act} {took} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+          onopen={(id) => open("agents", { kind: "session", id })} onnew={() => (sheet = { kind: "new" })} />
       {/if}
     </div>
+    {#if tabs.length > 1}
+      <div class="tabbar"><TabBar {tabs} {tab} {counts} onpick={(t) => { if (t === tab) screens[t] = null; tab = t; }} /></div>
+    {/if}
   {/if}
+
+  {#if sheet === "settings" && view}
+    <Sheet onclose={() => (sheet = null)}>
+      <SettingsSheet {view} {took} onclose={() => (sheet = null)} onlocal={standalone ? () => { sheet = null; setLocal(true); } : undefined} />
+    </Sheet>
+  {:else if sheet && typeof sheet === "object" && view}
+    <Sheet onclose={() => (sheet = null)}>
+      <NewSession {view} task={sheet.task} onback={() => (sheet = null)} {took} onstarted={(id) => { sheet = null; if (id) open("agents", { kind: "session", id }); }} />
+    </Sheet>
+  {/if}
+
+  {#if shared && view && paired}
+    <Sheet onclose={() => (shell.shared = null)}>
+      <ShareSheet {view} text={shared} onclose={() => (shell.shared = null)}
+        onnew={(task) => { shell.shared = null; sheet = { kind: "new", task }; }}
+        onnook={(text) => { shell.shared = null; open("home", { kind: "nook", id: null, ask: text }); }}
+        onsession={(id) => { shell.shared = null; open("agents", { kind: "session", id }); }} {took} />
+    </Sheet>
+  {/if}
+
+  {#if macMenu}<Menu sections={macSections} anchor={macMenu} onclose={() => (macMenu = null)} />{/if}
+
   {#if view?.notice}
-    <div class="notice" role="alert">
-      <span>{view.notice}</span>
-      <button onclick={clearNotice}>OK</button>
+    <div class="alert-scrim">
+      <div class="alert" role="alertdialog">
+        <p>{view.notice}</p>
+        <button onclick={clearNotice}>OK</button>
+      </div>
     </div>
   {/if}
 </div>
 
 <style>
   .companion { height: 100%; display: flex; flex-direction: column; min-height: 0; position: relative; }
-  header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-8) var(--space-8) var(--space-4) var(--space-8); }
-  .who { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-8); min-height: 44px; justify-content: flex-start; padding: 0 var(--space-8); }
-  .who h2 { margin: 0; font: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); flex: none; }
-  .dot.away { background: var(--amber); }
-  .icon { min-width: 44px; min-height: 44px; font: var(--text-heading); }
-  .menu { padding: var(--space-8) var(--space-12) var(--space-12); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--space-8); }
-  .menu p { margin: 0; }
-  .menu button { width: 100%; min-height: 44px; }
-  .tabs { display: flex; gap: var(--space-4); padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--line); }
-  .tabs button { flex: 1; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--space-6); border-radius: var(--radius-pill); background: transparent; border: 1px solid transparent; color: var(--text2); font: var(--text-control); }
-  .tabs button.on { background: var(--smoke); color: var(--paper); border-color: var(--line2); }
-  .badge { min-width: 18px; height: 18px; padding: 0 var(--space-4); border-radius: var(--radius-pill); background: var(--amber); color: var(--ink); font: var(--text-caption); display: inline-flex; align-items: center; justify-content: center; }
-  .banner { margin: var(--space-8) var(--space-12) 0; padding: var(--space-8) var(--space-12); border-radius: var(--radius-card); background: var(--field); border: 1px solid var(--line2); color: var(--amber); font: var(--text-detail); }
+  .launch { flex: 1; background: var(--canvas); }
   .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .pad { padding: var(--space-16); }
-  .small { font: var(--text-detail); }
-  .notice {
-    position: absolute; left: var(--space-12); right: var(--space-12); top: var(--space-48); display: flex; gap: var(--space-12); align-items: center; z-index: 5;
-    background: var(--smoke); border: 1px solid var(--line2); border-radius: var(--radius-panel); padding: var(--space-8) var(--space-12); box-shadow: var(--shadow-popover);
-  }
-  .notice span { flex: 1; font: var(--text-detail); }
-  .notice button { min-height: 40px; }
+  :global(html.keyboard-open) .tabbar { display: none; }
+  .alert-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .alert { width: 270px; background: rgba(37, 37, 37, 0.96); backdrop-filter: blur(30px); border-radius: 14px; overflow: hidden; text-align: center; }
+  .alert p { margin: 0; padding: 20px 16px; font: var(--pt-control); color: var(--paper); }
+  .alert button { width: 100%; height: 44px; border-top: 0.5px solid rgba(255, 255, 255, 0.12) !important; color: var(--blue) !important; font: 600 17px var(--font) !important; }
 </style>

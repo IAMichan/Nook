@@ -298,4 +298,74 @@ mod tests {
         let mut reader = FrameReader::default();
         assert!(server.respond(&reader.feed(&reply).remove(0)).await.is_none());
     }
+
+    /// A Mac that keeps the connection open: answers `subscribe` like `list`, then sends a change to the open session's
+    /// conversation, and hears the phone's pings.
+    #[tokio::test]
+    async fn keeps_a_live_connection() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let key = vec![7u8; KEY_LENGTH];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mac_key = key.clone();
+        let mac = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut frames = FrameReader::default();
+            let mut buf = vec![0u8; 65536];
+            let mut seen = Vec::new();
+            let device = PairedDevice::identifier(&mac_key);
+            let send = |r: CompanionResponse| {
+                let json = serde_json::to_vec(&r).unwrap();
+                FrameReader::frame(&seal::seal(&json, &mac_key, &device, seal::Direction::Response)).unwrap()
+            };
+            while seen.len() < 2 {
+                let n = socket.read(&mut buf).await.unwrap();
+                for frame in frames.feed(&buf[..n]) {
+                    let plain = seal::open(&frame, &mac_key, seal::Direction::Request).unwrap();
+                    let request: CompanionRequest = serde_json::from_slice(&plain).unwrap();
+                    seen.push((request.op, request.foreground));
+                    if request.op == CompanionOp::Subscribe {
+                        let list = CompanionResponse {
+                            mac_name: Some("Mac".into()),
+                            sessions: Some(vec![]),
+                            features: Some(vec!["stream".into()]),
+                            ..CompanionResponse::success(&request.id)
+                        };
+                        socket.write_all(&send(list)).await.unwrap();
+                        let update = CompanionResponse {
+                            seq: Some(1),
+                            timeline: Some(
+                                serde_json::json!([{"id": "e2", "kind": "assistant", "text": "hi", "date": 1.0, "failed": false}]),
+                            ),
+                            timeline_session: Some("S1".into()),
+                            timeline_after: Some("e1".into()),
+                            ..CompanionResponse::success(&request.id)
+                        };
+                        socket.write_all(&send(update)).await.unwrap();
+                    }
+                }
+            }
+            seen
+        });
+        let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
+        let link = PairingLink { host: "127.0.0.1".into(), port, key, mac_name: "Mac".into() };
+        secrets
+            .write(
+                "companion.pairing",
+                &serde_json::json!({"host": "127.0.0.1", "port": port, "key": base64url_encode(&link.key), "macName": "Mac"}).to_string(),
+            )
+            .unwrap();
+        let phone = CompanionClient::new(secrets, Arc::new(DnsResolver));
+        let mut updates = Vec::new();
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(7), phone.stream(|| true, |snapshot, r| updates.push((snapshot, r)))).await;
+        assert_eq!(updates.len(), 2, "the answer to subscribe and one update");
+        assert_eq!(updates[0].0.features, vec!["stream".to_string()]);
+        assert_eq!(updates[0].0.phase, Phase::Connected);
+        assert_eq!(updates[1].1.timeline_after.as_deref(), Some("e1"));
+        assert_eq!(updates[1].1.timeline_session.as_deref(), Some("S1"));
+        let seen = mac.await.unwrap();
+        assert_eq!(seen[0], (CompanionOp::Subscribe, Some(true)));
+        assert_eq!(seen[1], (CompanionOp::Ping, Some(true)));
+    }
 }

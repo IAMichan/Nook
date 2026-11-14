@@ -100,7 +100,7 @@ The chat app and service logos on the website (`site/_partials/sprite.html`, ids
 
 ## Interface Icons (Lucide)
 
-The interface icons in `apps/macos/Resources/Lucide.xcassets` are generated from [Lucide](https://lucide.dev) (`lucide-static` 0.564.0) by `scripts/lucide-icons.sh`:
+The interface icons in `apps/macos/Resources/Lucide.xcassets` are generated from [Lucide](https://lucide.dev) (`lucide-static` 0.564.0) by `scripts/lucide-icons.sh`, and the Android companion's icons in `apps/tauri/src/lib/lucide.ts` are copied from the same version:
 
 ```text
 ISC License

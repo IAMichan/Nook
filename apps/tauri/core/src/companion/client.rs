@@ -115,6 +115,17 @@ pub async fn request(link: &PairingLink, req: &CompanionRequest, resolver: &dyn 
     Ok(response)
 }
 
+/// How often the phone says it is still there on a kept connection (`CompanionTiming.pingEvery`).
+pub const PING_EVERY: Duration = Duration::from_secs(5);
+/// A kept connection that brings nothing for this long is gone (the Mac closes one after 45 seconds of silence).
+pub const STREAM_IDLE: Duration = Duration::from_secs(45);
+
+fn sealed_frame(link: &PairingLink, req: &CompanionRequest) -> Result<Vec<u8>, ClientError> {
+    let device_id = PairedDevice::identifier(&link.key);
+    let plain = serde_json::to_vec(req).map_err(|_| ClientError::BadResponse)?;
+    FrameReader::frame(&seal::seal(&plain, &link.key, &device_id, Direction::Request)).ok_or(ClientError::BadResponse)
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredPairing {
@@ -361,6 +372,101 @@ impl CompanionClient {
         let mut r = CompanionRequest::new(CompanionOp::Stop);
         r.session = Some(session.into());
         self.perform(r).await
+    }
+
+    /// Keeps one connection open to the computer, as the iPhone app does while it is in front (`subscribe`): the
+    /// computer sends the sessions, the open session's conversation, the chats and Nook's conversations as they change,
+    /// and the phone pings every few seconds with `foreground()`. `on_update` gets every update with the new state.
+    /// Returns when the connection ends; the caller decides when to connect again. Only for a computer that lists
+    /// `feature::STREAM`.
+    pub async fn stream(
+        &self,
+        foreground: impl Fn() -> bool,
+        mut on_update: impl FnMut(ClientSnapshot, CompanionResponse),
+    ) -> Result<(), ClientError> {
+        let Some(link) = self.lock().link.clone() else { return Err(ClientError::Closed) };
+        let addresses = self.resolver.resolve(&link.host, link.port).await;
+        let mut stream = None;
+        let mut last = ClientError::Unreachable(format!("{} niet gevonden", link.host));
+        for addr in &addresses {
+            match tokio::time::timeout(EXCHANGE_TIMEOUT, TcpStream::connect(addr)).await {
+                Ok(Ok(s)) => {
+                    stream = Some(s);
+                    break;
+                }
+                Ok(Err(e)) => last = ClientError::Unreachable(e.to_string()),
+                Err(_) => last = ClientError::Timeout,
+            }
+        }
+        let (mut reader, mut writer) = stream.ok_or(last)?.into_split();
+        let mut subscribe = CompanionRequest::versioned(CompanionOp::Subscribe, &self.app_version);
+        subscribe.foreground = Some(foreground());
+        let id = subscribe.id.clone();
+        writer.write_all(&sealed_frame(&link, &subscribe)?).await.map_err(|_| ClientError::Closed)?;
+
+        let mut frames = FrameReader::default();
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut ping = tokio::time::interval(PING_EVERY);
+        ping.tick().await;
+        let mut last_seq = -1i64;
+        loop {
+            tokio::select! {
+                read = tokio::time::timeout(STREAM_IDLE, reader.read(&mut buf)) => {
+                    let n = match read {
+                        Err(_) => return Err(ClientError::Timeout),
+                        Ok(Err(_)) | Ok(Ok(0)) => return Err(ClientError::Closed),
+                        Ok(Ok(n)) => n,
+                    };
+                    for frame in frames.feed(&buf[..n]) {
+                        let opened = seal::open(&frame, &link.key, Direction::Response).map_err(|_| ClientError::BadResponse)?;
+                        let Ok(response) = serde_json::from_slice::<CompanionResponse>(&opened) else { continue };
+                        // Answers to pings say nothing new; updates come with the subscription's id, in order.
+                        if response.id != id {
+                            continue;
+                        }
+                        if let Some(seq) = response.seq {
+                            if seq <= last_seq {
+                                continue;
+                            }
+                            last_seq = seq;
+                        }
+                        if response.revoked == Some(true) {
+                            self.unpair();
+                            self.lock().notice = Some("Je computer heeft deze telefoon ontkoppeld. Koppel opnieuw.".into());
+                            on_update(self.snapshot(), response);
+                            return Err(ClientError::Refused);
+                        }
+                        if !response.ok {
+                            return Err(ClientError::Refused);
+                        }
+                        {
+                            let mut i = self.lock();
+                            if let Some(list) = &response.sessions {
+                                i.sessions = list.clone();
+                            }
+                            if let Some(name) = &response.mac_name {
+                                i.mac_name = name.clone();
+                            }
+                            if response.features.is_some() {
+                                i.features = response.features.clone().unwrap_or_default();
+                                i.scopes = response.scopes.clone();
+                            }
+                            i.phase = Phase::Connected;
+                            i.reason.clear();
+                        }
+                        on_update(self.snapshot(), response);
+                    }
+                    if frames.overflowed() {
+                        return Err(ClientError::BadResponse);
+                    }
+                }
+                _ = ping.tick() => {
+                    let mut p = CompanionRequest::new(CompanionOp::Ping);
+                    p.foreground = Some(foreground());
+                    writer.write_all(&sealed_frame(&link, &p)?).await.map_err(|_| ClientError::Closed)?;
+                }
+            }
+        }
     }
 
     async fn perform(&self, req: CompanionRequest) -> ClientSnapshot {

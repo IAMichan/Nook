@@ -174,13 +174,24 @@ pub enum CompanionOp {
     InboxMark,
     /// Manages a session (`item`: a `SessionAction`, `text`: the new name of `rename` or the moment of `snoozeUntil`).
     Manage,
+    /// Keeps the connection open: answered like `list`, then the Mac sends what changed as answers with this request's id
+    /// and a growing `seq` (`feature::STREAM`).
+    Subscribe,
+    /// A sign of life on the open connection, with whether the app is in front (`foreground`).
+    Ping,
+    /// The session the phone has open (`session`; none when it closed it): its conversation follows over the open
+    /// connection as changes after `timelineAfter` (`feature::LIVE_TIMELINE`).
+    Watch,
+    /// The chat the phone has open in the Chats tab (`item`; none when it closed it): its messages follow by themselves
+    /// (`feature::LIVE_CHATS`). Answered like `inboxChat`.
+    WatchChat,
 }
 
 impl CompanionOp {
     /// The ops the phone side may send through `CompanionClient::call`: everything but pairing and push registration,
     /// which the client does itself.
     pub fn callable(self) -> bool {
-        !matches!(self, CompanionOp::Hello | CompanionOp::Register | CompanionOp::Unregister)
+        !matches!(self, CompanionOp::Hello | CompanionOp::Register | CompanionOp::Unregister | CompanionOp::Subscribe | CompanionOp::Ping)
     }
 }
 
@@ -200,6 +211,10 @@ pub mod feature {
     pub const INBOX: &str = "inbox";
     pub const MANAGE: &str = "manage";
     pub const STEER: &str = "steer";
+    pub const STREAM: &str = "stream";
+    pub const LIVE_TIMELINE: &str = "liveTimeline";
+    pub const LIVE_CHATS: &str = "liveChats";
+    pub const FOREGROUND: &str = "foreground";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -252,6 +267,9 @@ pub struct CompanionRequest {
     /// With `stop` and a steering `send`: the turn the phone saw (`SessionDigest::turn`), so only that turn is reached.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<String>,
+    /// With `subscribe` and `ping`: the app is in front, so the Mac leaves out pushes the open connection shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreground: Option<bool>,
 }
 
 impl CompanionRequest {
@@ -272,6 +290,7 @@ impl CompanionRequest {
             app_version: None,
             steer: None,
             turn: None,
+            foreground: None,
         }
     }
 
@@ -346,6 +365,18 @@ pub struct CompanionResponse {
     pub inbox_lines: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inbox_typing: Option<serde_json::Value>,
+    /// The open session's conversation follows after this entry (`TimelineDelta`); none: the conversation whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_after: Option<String>,
+    /// The chat whose messages `inboxLines` holds, on a live update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_chat: Option<String>,
+    /// The order of the updates on a kept connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<i64>,
+    /// The Mac removed this phone: pair again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked: Option<bool>,
 }
 
 impl CompanionResponse {

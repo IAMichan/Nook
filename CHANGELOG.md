@@ -11,11 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
-- A fuller Android companion, laid out as the iPhone app: the computer's tabs Nook, Agents and Chats with counts, a
-  session as its whole conversation with approvals and questions docked above the composer (deny with a reason, Steer
-  now or After this turn), New session, session actions (rename, snooze, archive), Nook's home and chats with Nook, and
-  the Chats tab with replies. It offers only what the paired computer supports and allows the phone (see
-  docs/COMPANION.md, *Android*).
+- The Android app is now the same companion as the iPhone app, with the same layout, look and words: once paired it
+  opens on your Mac's tabs Nook, Agents and Chats, with what waits on you as cards, a session as its whole conversation
+  in turns, approvals and questions above the composer (deny with a reason, Steer now or After this turn), New session,
+  Nook's chat, the Chats tab (WhatsApp chats look like WhatsApp) and Settings. While it is open it follows your Mac live.
+  Nook on the phone itself is in Settings (see docs/COMPANION.md, *Android*).
 
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports

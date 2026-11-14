@@ -1,225 +1,191 @@
 <script lang="ts">
-  // The Nook tab of the iPhone app, the computer's home: the date and a greeting, what waits on you, works and is unread
-  // as tiles, For you (the sessions that wait on you and the unread chats by name, a tap away, and what Nook's home
-  // lists), the agenda, what plays, the plan limits, Nook's own chats, and a box to ask Nook something.
-  import { onMount, untrack } from "svelte";
+  // The Nook tab of the iPhone app (`ChatListView`): the header, the date and a greeting, what waits on you, works and is
+  // unread as tiles, For you (the sessions that need you and the unread chats, a tap away), Nook's recent chats, and a
+  // box to ask Nook something. With no chats yet it offers where to start.
   import {
-    companion, greeting, has, may, needingYou, resetsIn, shortTime, unreadChats, Feature,
-    type ChatDigest, type ClientView, type CompanionTab, type HomeDigest, type InboxChatDigest,
+    has, may, needsYouState, relative, unreadChats, Feature,
+    type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { locale, tr } from "../../lib/i18n.svelte";
-  import Icon from "../../components/Icon.svelte";
+  import { greeting } from "../../lib/companion";
+  import PanelHeader from "./ui/PanelHeader.svelte";
+  import ConnectionLine from "./ui/ConnectionLine.svelte";
+  import Ico from "./ui/Ico.svelte";
+  import AgentMark from "./ui/AgentMark.svelte";
+  import InboxAvatar from "./ui/InboxAvatar.svelte";
+  import StatusPill from "./ui/StatusPill.svelte";
+  import PulseDot from "./ui/PulseDot.svelte";
+  import NookMark from "./ui/NookMark.svelte";
+  import Banner from "./ui/Banner.svelte";
+  import SessionComposer from "./ui/SessionComposer.svelte";
 
-  let { view, inbox, took, onsession, onchat, onnook, ontab }: {
+  let { view, inbox, conversations, onorb, ongear, onsession, onchat, onnook, ontab }: {
     view: ClientView;
     inbox: InboxChatDigest[];
-    took: (v: ClientView) => void;
+    conversations: ChatDigest[];
+    onorb: (r: DOMRect) => void;
+    ongear: () => void;
     onsession: (id: string) => void;
     onchat: (id: string) => void;
     onnook: (id: string | null, ask?: string) => void;
     ontab: (tab: CompanionTab) => void;
   } = $props();
 
-  let home = $state<HomeDigest | null>(null);
-  let chats = $state<ChatDigest[]>([]);
-  let noBrain = $state(false);
   let question = $state("");
+  let header = $state<HTMLDivElement | null>(null);
   const now = new Date();
-
-  const showHome = $derived(has(view, Feature.home));
   const canChat = $derived(has(view, Feature.chat) && may(view, "nookChat"));
-  const canMusic = $derived(has(view, Feature.music) && may(view, "music"));
-  const waiting = $derived(view.sessions.filter((s) => s.items.length > 0));
-  const working = $derived(view.sessions.filter((s) => s.attention === "working").length);
-  const unread = $derived(inbox.filter((c) => c.unread > 0).sort((a, b) => b.last - a.last));
+  const chatsAllowed = $derived(has(view, Feature.inbox) && may(view, "chats"));
+  const needs = (s: SessionDigest) => s.items.length > 0 || needsYouState(s.attention);
+  const waiting = $derived(view.sessions.filter(needs).sort((a, b) => b.updated - a.updated));
+  const working = $derived(view.sessions.filter((s) => s.attention === "working" && !needs(s)).length);
+  const unread = $derived(chatsAllowed ? inbox.filter((c) => c.unread > 0).sort((a, b) => b.last - a.last) : []);
+  const forYou = $derived([...waiting.map((s) => ({ kind: "session" as const, s })), ...unread.map((c) => ({ kind: "chat" as const, c }))].slice(0, 6));
+  const showOverview = $derived(view.sessions.length > 0 || conversations.length > 0 || (chatsAllowed && inbox.length > 0));
+  const calm = $derived(!waiting.length && !working && !unread.length);
+  const suggestions = [tr("Wat staat er vandaag in mijn agenda?", "What’s on my calendar today?"), tr("Vat mijn ongelezen mail samen.", "Summarize my unread mail."), tr("Wat hebben mijn agents vandaag gedaan?", "What did my agents do today?")];
 
-  async function load() {
-    if (document.visibilityState !== "visible") return;
-    if (untrack(() => showHome)) {
-      const r = await companion.call({ op: "home" });
-      if (r.response?.home) home = r.response.home;
-    }
-    if (untrack(() => canChat)) {
-      const r = await companion.call({ op: "chats" });
-      if (r.response?.conversations) chats = r.response.conversations;
-      noBrain = r.response?.message === "nobrain";
-    }
-  }
-
-  onMount(() => {
-    load();
-    const timer = setInterval(load, 20_000);
-    return () => clearInterval(timer);
-  });
-
-  async function music(command: string) {
-    const r = await companion.call({ op: "music", text: command });
-    took(r.view);
-    if (r.response?.home) home = r.response.home;
-  }
-
-  function ask() {
-    const text = question.trim();
-    if (!text) return;
+  function ask(text: string) {
     question = "";
     onnook(null, text);
   }
-
-  const toneColor = (tone: string) => (tone === "mint" ? "var(--mint)" : tone === "amber" ? "var(--amber)" : tone === "coral" ? "var(--coral)" : "var(--iris)");
-  const time = (s: number) => new Date(s * 1000).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 </script>
 
-<div class="home">
+<div class="tab">
   <div class="scroll">
-    <div class="hello">
-      <p class="faint date">{now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}</p>
-      <h2>{greeting(now.getHours())}</h2>
+    <div bind:this={header}>
+      <PanelHeader title="Nook" {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {ongear} />
     </div>
-
-    <div class="tiles">
-      <button class="tile" onclick={() => ontab("agents")}><strong style:color={waiting.length ? "var(--amber)" : undefined}>{needingYou(view.sessions)}</strong><span>{tr("Wacht op je", "Waiting for you")}</span></button>
-      <button class="tile" onclick={() => ontab("agents")}><strong>{working}</strong><span>{tr("Aan het werk", "Working")}</span></button>
-      {#if has(view, Feature.inbox) && may(view, "chats")}
-        <button class="tile" onclick={() => ontab("chats")}><strong>{unreadChats(inbox)}</strong><span>{tr("Ongelezen", "Unread")}</span></button>
-      {/if}
-    </div>
-
-    {#if waiting.length || unread.length || home?.lines.length}
-      <section class="card">
-        <h3>{tr("Voor jou", "For you")}</h3>
-        {#each waiting as s (s.id)}
-          <button class="line" onclick={() => onsession(s.id)}>
-            <span class="mark" style:background="var(--amber)"></span>
-            <span class="text"><strong>{s.title}</strong><span class="faint">{s.items[0]?.title ?? s.agent}</span></span>
-          </button>
-        {/each}
-        {#each unread.slice(0, 5) as c (c.id)}
-          <button class="line" onclick={() => onchat(c.id)}>
-            <span class="mark" style:background="var(--blue)"></span>
-            <span class="text"><strong>{c.name}</strong><span class="faint">{c.appName} · {c.preview}</span></span>
-            <span class="count">{c.unread}</span>
-          </button>
-        {/each}
-        {#each home?.lines ?? [] as l (l.id)}
-          <div class="line static">
-            <span class="mark" style:background={toneColor(l.tone)}></span>
-            <span class="text"><strong>{l.title}</strong>{#if l.subtitle}<span class="faint">{l.subtitle}</span>{/if}</span>
+    <div class="top">
+      <ConnectionLine {view} />
+      {#if showOverview}
+        <div class="overview">
+          <div class="hello">
+            <span class="date">{now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}</span>
+            <h2>{greeting(now.getHours())}</h2>
           </div>
-        {/each}
-      </section>
-    {/if}
-
-    {#if home?.events.length}
-      <section class="card">
-        <h3>{tr("Agenda", "Agenda")}</h3>
-        {#each home.events as e (e.id)}
-          <div class="line static">
-            <Icon name="calendar" size={15} />
-            <span class="text"><strong>{e.title}</strong><span class="faint">{time(e.start)}–{time(e.end)}{e.location ? ` · ${e.location}` : ""}</span></span>
-          </div>
-        {/each}
-      </section>
-    {/if}
-
-    {#if home?.track}
-      <section class="card">
-        <h3>{tr("Speelt nu", "Now playing")}</h3>
-        <div class="track">
-          <span class="text"><strong>{home.track.title}</strong><span class="faint">{home.track.artist}{home.track.app ? ` · ${home.track.app}` : ""}</span></span>
-          {#if canMusic}
-            <div class="controls">
-              <button class="ghost" onclick={() => music("previous")} aria-label={tr("Vorige", "Previous")}>⏮</button>
-              <button class="ghost" onclick={() => music("playpause")} aria-label={home.track.playing ? tr("Pauzeer", "Pause") : tr("Speel af", "Play")}>{home.track.playing ? "⏸" : "▶"}</button>
-              <button class="ghost" onclick={() => music("next")} aria-label={tr("Volgende", "Next")}>⏭</button>
+          {#if calm}
+            <p class="calm"><span style:color="var(--mint)"><Ico name="circle-check" size={16} /></span>{tr("Alles rustig. Er hoeft nu niets van je.", "All calm. Nothing needs you right now.")}</p>
+          {:else}
+            <div class="tiles">
+              {#if waiting.length}{@render tile(waiting.length, tr("Wacht op jou", "Waiting on you"), "hand", "var(--amber)", true, () => ontab("agents"))}{/if}
+              {#if working}{@render tile(working, tr("Aan het werk", "Working"), "circle-dashed", "var(--blue)", false, () => ontab("agents"))}{/if}
+              {#if unread.length}{@render tile(unreadChats(inbox), tr("Ongelezen chats", "Unread chats"), "messages-square", "var(--text2)", false, () => ontab("chats"))}{/if}
+            </div>
+          {/if}
+          {#if forYou.length}
+            <div class="foryou">
+              <span class="label">{tr("Voor jou", "For you")}</span>
+              <div class="card">
+                {#each forYou as row, i (row.kind === "session" ? row.s.id : row.c.id)}
+                  {#if i > 0}<div class="sep"></div>{/if}
+                  {#if row.kind === "session"}
+                    <button class="fy row-press" onclick={() => onsession(row.s.id)}>
+                      <span class="homelogo"><AgentMark agent={row.s.agent} size={18} /></span>
+                      <span class="text"><strong>{row.s.title}</strong><span>{row.s.items[0]?.title ?? row.s.folder}</span></span>
+                      <StatusPill attention={row.s.items[0]?.kind === "approval" ? "approval" : row.s.items[0]?.kind === "question" ? "input" : row.s.attention} />
+                    </button>
+                  {:else}
+                    <button class="fy row-press" onclick={() => onchat(row.c.id)}>
+                      <InboxAvatar name={row.c.name} size={32} badge={false} />
+                      <span class="text"><strong>{row.c.name}</strong><span>{row.c.preview}</span></span>
+                      <span class="unread">{row.c.unread}</span>
+                    </button>
+                  {/if}
+                {/each}
+              </div>
             </div>
           {/if}
         </div>
-      </section>
-    {/if}
+      {/if}
+    </div>
 
-    {#if home?.accounts.some((a) => a.limits.length)}
-      <section class="card">
-        <h3>{tr("Limieten", "Limits")}</h3>
-        {#each home.accounts.filter((a) => a.limits.length) as a (a.id)}
-          <div class="account">
-            <span class="faint small">{a.agent}{a.account ? ` · ${a.account}` : ""}</span>
-            {#each a.limits as limit (limit.label)}
-              <div class="limit">
-                <span class="label">{limit.label}</span>
-                <span class="bar"><span style:width="{Math.min(100, Math.max(0, limit.percent))}%" style:background={limit.percent >= 90 ? "var(--coral)" : limit.percent >= 70 ? "var(--amber)" : "var(--mint)"}></span></span>
-                <span class="faint small pct">{Math.round(limit.percent)}%{limit.resetsAt ? ` · ${resetsIn(limit.resetsAt)}` : limit.note ? ` · ${limit.note}` : ""}</span>
-              </div>
+    {#if !has(view, Feature.chat)}
+      <div class="pad"><Banner icon="circle-arrow-down">{tr("Werk Nook op je Mac bij om vanaf je telefoon met Nook te chatten.", "Update Nook on your Mac to chat with Nook from your phone.")}</Banner></div>
+    {:else if canChat}
+      {#if !conversations.length}
+        <div class="asknook">
+          <NookMark size={44} />
+          <h2>{tr("Vraag Nook wat je wilt", "Ask Nook anything")}</h2>
+          <p>{tr("Je agenda, mail, notities of het web. Plannen en concepten wachten op je goedkeuring op je Mac.", "Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.")}</p>
+          <div class="grid">
+            {#each suggestions as s (s)}
+              <button class="suggestion row-press" onclick={() => ask(s)}><span class="spark"><Ico name="sparkles" size={11} /></span><span>{s}</span></button>
             {/each}
           </div>
-        {/each}
-      </section>
-    {/if}
-
-    {#if canChat}
-      <section class="card">
-        <h3>{tr("Gesprekken met Nook", "Chats with Nook")}</h3>
-        {#if noBrain}<p class="faint small">{tr("Op je computer is Nooks brein nog niet ingesteld.", "Nook's brain isn't set up on your computer yet.")}</p>{/if}
-        {#each chats.slice(0, 6) as c (c.id)}
-          <button class="line" onclick={() => onnook(c.id)}>
-            <Icon name="chat" size={15} />
-            <span class="text"><strong>{c.title || tr("Gesprek", "Chat")}</strong><span class="faint">{c.busy ? tr("Nook schrijft…", "Nook is writing…") : c.preview}</span></span>
-            <span class="faint small">{shortTime(c.updated)}</span>
-          </button>
-        {:else}
-          {#if !noBrain}<p class="faint small">{tr("Nog geen gesprekken.", "No chats yet.")}</p>{/if}
-        {/each}
-        {#if home?.suggestions.length}
-          <div class="chips">
-            {#each home.suggestions.slice(0, 4) as s (s)}<button class="chip" onclick={() => onnook(null, s)}>{s}</button>{/each}
-          </div>
-        {/if}
-      </section>
+        </div>
+      {:else}
+        <h3 class="section">{tr("Recent", "Recent")}</h3>
+        <div class="chats">
+          {#each conversations as c (c.id)}
+            <button class="chatrow row-press" onclick={() => onnook(c.id)}>
+              <span class="l1"><strong>{c.title || tr("Nieuwe chat", "New chat")}</strong>
+                {#if c.waiting}<StatusPill attention="input" />{:else}<span class="when">{relative(c.updated)}</span>{/if}
+              </span>
+              {#if c.busy}<span class="l2 busy"><PulseDot size={6} />{tr("Aan het schrijven…", "Writing…")}</span>
+              {:else}<span class="l2">{c.preview}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
-
   {#if canChat}
-    <div class="composer">
-      <div class="field">
-        <textarea rows="1" placeholder={tr("Vraag Nook iets", "Ask Nook something")} bind:value={question} onkeydown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), ask())}></textarea>
-        <button class="primary send" disabled={!question.trim()} onclick={ask} aria-label={tr("Verstuur", "Send")}><Icon name="arrow" size={18} /></button>
-      </div>
+    <div class="dock">
+      <SessionComposer bind:value={question} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={ask} />
     </div>
   {/if}
 </div>
 
+{#snippet tile(count: number, title: string, icon: string, tint: string, urgent: boolean, onclick: () => void)}
+  <button class="tile press" {onclick} style:border-color={urgent ? `color-mix(in srgb, ${tint} 35%, transparent)` : undefined}
+    style:background-image="linear-gradient(135deg, color-mix(in srgb, {tint} {urgent ? 14 : 6}%, transparent), transparent 70%)">
+    <span class="tilehead"><span style:color={tint}><Ico name={icon} size={13} stroke={2.4} /></span><span class="sp"></span><span class="chev"><Ico name="chevron-right" size={10} stroke={3} /></span></span>
+    <span class="count">{count}</span>
+    <span class="tiletitle">{title}</span>
+  </button>
+{/snippet}
+
 <style>
-  .home { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .scroll { flex: 1; overflow-y: auto; padding: var(--space-12) var(--space-16) var(--space-24); display: flex; flex-direction: column; gap: var(--space-12); }
-  .hello h2 { margin: 0; font: var(--text-display); }
-  .date { margin: 0; font: var(--text-detail); text-transform: capitalize; }
-  .tiles { display: flex; gap: var(--space-8); }
-  .tile { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-12); border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--line2); min-height: 64px; }
-  .tile strong { font: var(--text-display); }
-  .tile span { font: var(--text-detail); color: var(--text2); }
-  .card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-12); border-radius: var(--radius-panel); background: var(--surface); border: 1px solid var(--line2); }
-  h3 { margin: 0 0 var(--space-4); font: var(--text-label); color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
-  .line { display: flex; align-items: center; gap: var(--space-8); text-align: left; background: none; border: none; padding: var(--space-6) var(--space-4); min-height: 44px; border-radius: var(--radius-control); width: 100%; color: inherit; }
-  button.line:active { background: var(--row-hover); }
-  .mark { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-  .text strong { font: var(--text-control); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .text span { font: var(--text-detail); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .count { min-width: 20px; height: 20px; padding: 0 var(--space-6); border-radius: var(--radius-pill); background: var(--blue); color: var(--ink); font: var(--text-caption); display: inline-flex; align-items: center; justify-content: center; }
-  .track { display: flex; align-items: center; gap: var(--space-8); }
-  .controls { display: flex; }
-  .controls button { min-width: 44px; min-height: 44px; font: var(--text-title); }
-  .account { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4) 0; }
-  .limit { display: grid; grid-template-columns: minmax(0, 1fr) 90px; grid-template-areas: "label pct" "bar bar"; gap: var(--space-2) var(--space-8); }
-  .label { grid-area: label; font: var(--text-detail); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pct { grid-area: pct; text-align: right; }
-  .bar { grid-area: bar; height: 6px; border-radius: var(--radius-pill); background: var(--line2); overflow: hidden; }
-  .bar span { display: block; height: 100%; border-radius: var(--radius-pill); }
-  .small { font: var(--text-detail); }
-  p { margin: 0; }
-  .chips { display: flex; flex-wrap: wrap; gap: var(--space-6); padding-top: var(--space-6); }
-  .chip { border-radius: var(--radius-pill); min-height: 36px; padding: 0 var(--space-12); font: var(--text-detail); }
-  .composer { border-top: 1px solid var(--line); padding: var(--space-8) var(--space-12) var(--space-12); }
-  .field { display: flex; gap: var(--space-8); align-items: flex-end; background: var(--composer); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); }
-  .field textarea { flex: 1; resize: none; min-height: 36px; max-height: 120px; border: none; background: transparent; padding: var(--space-8) 0; field-sizing: content; }
-  .send { width: 40px; height: 40px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; flex: none; }
+  .tab { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .scroll { flex: 1; overflow-y: auto; padding-bottom: 24px; }
+  .top { display: flex; flex-direction: column; gap: 12px; padding: 0 16px; }
+  .pad { padding: 12px 16px; }
+  .overview { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+  .hello { display: flex; flex-direction: column; gap: 2px; }
+  .date { font: var(--pt-label); color: var(--text3); }
+  h2 { margin: 0; font: var(--pt-heading); color: var(--paper); }
+  .calm { margin: 0; display: flex; align-items: center; gap: 6px; font: var(--pt-body); color: var(--text2); }
+  .tiles { display: flex; gap: 8px; }
+  .tile { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background-color: var(--surface) !important; border: 1px solid var(--line2) !important; text-align: left; }
+  .tilehead { display: flex; align-items: center; }
+  .sp { flex: 1; }
+  .chev { color: var(--text3); display: inline-flex; }
+  .count { font: 600 26px/1.1 ui-rounded, var(--font); font-variant-numeric: tabular-nums; color: var(--paper); }
+  .tiletitle { font: var(--pt-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foryou { display: flex; flex-direction: column; gap: 6px; }
+  .label { font: var(--pt-label); color: var(--text3); }
+  .card { background: var(--surface); border: 1px solid var(--line2); border-radius: 12px; padding: 4px 0; }
+  .sep { height: 0.5px; background: var(--hairline); margin-left: 52px; }
+  .fy { width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 8px; text-align: left; }
+  .homelogo { width: 32px; height: 32px; border-radius: 9px; background: rgba(255, 255, 255, 0.05); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .text strong { font: var(--pt-strong); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .text span { font: var(--pt-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .unread { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--paper); color: var(--ink); font: var(--pt-caption); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+  .asknook { display: flex; flex-direction: column; gap: 16px; padding: 24px 16px 0; }
+  .asknook p { margin: 0; font: var(--pt-body); color: var(--text2); }
+  .asknook h2 { font: var(--pt-display); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .suggestion { display: flex; align-items: center; gap: 8px; padding: 8px; min-height: 52px; background: var(--field) !important; border-radius: 12px !important; text-align: left; font: var(--pt-body) !important; color: var(--text-strong) !important; }
+  .spark { width: 26px; height: 26px; border-radius: 7.3px; background: rgba(161, 161, 161, 0.12); color: var(--text2); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .section { margin: 0; padding: 16px 28px 8px; font: var(--pt-label); color: var(--text3); }
+  .chats { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .chatrow { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; }
+  .l1 { display: flex; align-items: center; gap: 8px; }
+  .l1 strong { flex: 1; min-width: 0; font: var(--pt-strong); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .when { font: var(--pt-detail); color: var(--text3); flex: none; }
+  .l2 { font: var(--pt-detail); color: var(--text3); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .l2.busy { display: flex; align-items: center; gap: 6px; color: var(--text2); }
+  .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
 </style>
