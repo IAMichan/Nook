@@ -9,6 +9,7 @@ private let streamSocket = Int32(SOCK_STREAM.rawValue)
 
 // The system's calls, under names the class's own methods do not hide.
 private func systemRead(_ fd: Int32, _ buffer: inout [UInt8]) -> Int { read(fd, &buffer, buffer.count) }
+private func systemReadRaw(_ fd: Int32, _ bytes: UnsafeMutableRawPointer?, _ count: Int) -> Int { read(fd, bytes, count) }
 private func systemWrite(_ fd: Int32, _ bytes: UnsafeRawPointer, _ count: Int) -> Int { write(fd, bytes, count) }
 private func systemConnect(_ fd: Int32, _ address: UnsafePointer<sockaddr>, _ size: socklen_t) -> Int32 { connect(fd, address, size) }
 
@@ -81,15 +82,53 @@ final class KeptTransport: ProviderTransport, @unchecked Sendable {
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        // The keeper prints "ready" and its first process exits right away; this runs on the caller's thread (the main
+        // one when a session starts), so neither is waited for longer than `launchTimeout`.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         defer {
             try? output.fileHandleForReading.close()
             try? output.fileHandleForWriting.close()
         }
         try process.run()
         try? output.fileHandleForWriting.close()
-        let answer = output.fileHandleForReading.readData(ofLength: 6)
-        process.waitUntilExit()
+        let deadline = Date().addingTimeInterval(Self.launchTimeout)
+        let answer = Self.readReady(output.fileHandleForReading.fileDescriptor, until: deadline)
+        if exited.wait(timeout: .now() + max(0, deadline.timeIntervalSinceNow)) == .timedOut {
+            process.terminate()
+            throw NookError("The session's keeper did not start.")
+        }
         guard String(decoding: answer, as: UTF8.self).hasPrefix("ready") else { throw NookError("The session's keeper did not start.") }
+    }
+
+    /// How long a new keeper may take to say it is ready (it normally takes a few dozen milliseconds).
+    static let launchTimeout: TimeInterval = 10
+
+    /// Up to six bytes ("ready\n") from `fd`, until its end or `deadline`, whichever comes first. Polls, so a keeper that
+    /// hangs before it answers cannot hold the caller.
+    static func readReady(_ fd: Int32, until deadline: Date) -> Data {
+        var answer = Data()
+        var chunk = [UInt8](repeating: 0, count: 6)
+        while answer.count < 6 {
+            let left = Int32(min(max(0, deadline.timeIntervalSinceNow * 1000), Double(Int32.max)))
+            guard left > 0 else { break }
+            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&poller, 1, left)
+            if ready < 0 {
+                if errno == EINTR { continue }
+                break
+            }
+            if ready == 0 { break }
+            let count = chunk.withUnsafeMutableBytes { systemReadRaw(fd, $0.baseAddress, 6 - answer.count) }
+            if count > 0 {
+                answer.append(contentsOf: chunk[0..<count])
+            } else if count < 0, errno == EINTR || errno == EAGAIN {
+                continue
+            } else {
+                break
+            }
+        }
+        return answer
     }
 
     private func pump(_ fd: Int32, onStdout: @escaping @Sendable (Data) -> Void, onStderr: @escaping @Sendable (Data) -> Void,

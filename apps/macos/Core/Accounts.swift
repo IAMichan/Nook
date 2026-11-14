@@ -32,8 +32,13 @@ final class AccountRegistry: @unchecked Sendable {
     private let storageKey: String
     private let lock = NSLock()
     private var stored: [ServiceAccount]
-    /// Called after every change, on the thread that made it.
-    var onChange: (() -> Void)?
+    /// Called after every change, on the thread that made it. Read and set under `lock` like the accounts themselves,
+    /// since a change can come from any thread; it is called outside the lock.
+    var onChange: (() -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return changeHandler }
+        set { lock.lock(); changeHandler = newValue; lock.unlock() }
+    }
+    private var changeHandler: (() -> Void)?
 
     init(defaults: UserDefaults = .standard, storageKey: String = "serviceAccounts") {
         self.defaults = defaults

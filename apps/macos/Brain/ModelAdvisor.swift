@@ -168,6 +168,164 @@ enum ThinkingPolicy {
         if let open = text.range(of: "<think>") { text = String(text[..<open.lowerBound]) }
         return text
     }
+
+    /// The part of a partial answer that may be shown: without reasoning (also while it is still open) and without a
+    /// tool call that is being written as JSON. For a stream, `StreamingAnswer` gives the same text without reading the
+    /// whole answer again for every token.
+    static func visible(_ partial: String, thinking: Bool = false) -> String {
+        var text = answer(from: partial, thinking: thinking)
+        if let call = text.range(of: StreamingAnswer.toolCallPattern, options: .regularExpression) {
+            text = String(text[..<call.lowerBound])
+        }
+        if let tag = text.range(of: "<tool_call>") { text = String(text[..<tag.lowerBound]) }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// `ThinkingPolicy.visible` for an answer that streams in, worked out from each new piece only. Reading the whole answer
+/// again on every update (removing reasoning blocks, then searching it for a tool call) made a long answer cost more with
+/// every token. Here the reasoning tags are followed as they arrive and a tool call is only searched for in the text that
+/// is new, so an update costs about the size of the piece that came in.
+///
+/// It gives what `ThinkingPolicy.visible` gives on the whole text so far, except for tags that would only form once a
+/// reasoning block is cut out of the middle of them.
+struct StreamingAnswer {
+    /// A tool call a model writes as JSON in its answer instead of calling it.
+    static let toolCallPattern = #"(```(json)?\s*)?\{\s*"(name|tool)"\s*:"#
+
+    private static let open = Array("<think>".utf8)
+    private static let close = Array("</think>".utf8)
+    private static let toolTag = Array("<tool_call>".utf8)
+    /// The characters a tool call can begin with while it is still being written: a match that is not complete yet can only
+    /// start in a trailing run of these.
+    private static let partialCallCharacters = Set("`{\":jsonametl".unicodeScalars)
+
+    let thinking: Bool
+    /// Everything received, as UTF-8.
+    private var raw: [UInt8] = []
+    /// How much of `raw` has been followed; what is after it may still turn out to be the start of a tag.
+    private var scanned = 0
+    /// Within a <think> block.
+    private var inside = false
+    /// A </think> without its <think> came by (the chat template opened the reasoning): only what follows counts.
+    private var closedReasoning = false
+    /// The answer outside reasoning blocks, after the last unmatched </think>.
+    private var shown: [UInt8] = []
+    /// Where in `shown` a tool call begins, once one is there.
+    private var cut: Int?
+    /// No tool call pattern starts in `shown` before this offset.
+    private var patternFrom = 0
+    /// No <tool_call> starts in `shown` before this offset.
+    private var tagFrom = 0
+
+    init(thinking: Bool = false) {
+        self.thinking = thinking
+    }
+
+    /// Adds a piece of the answer.
+    mutating func append(_ chunk: String) {
+        raw.append(contentsOf: chunk.utf8)
+        follow()
+    }
+
+    /// The answer that may be shown so far, as `ThinkingPolicy.visible` gives it for everything appended.
+    var visible: String {
+        if thinking && !closedReasoning { return "" }
+        var bytes = cut.map { Array(shown[..<$0]) } ?? shown
+        // Text after the last full tag that may still become one, e.g. "</thi": shown until it does.
+        if cut == nil, !inside { bytes.append(contentsOf: raw[scanned...]) }
+        return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private mutating func follow() {
+        while true {
+            if inside {
+                guard let end = Self.find(Self.close, in: raw, from: scanned) else {
+                    scanned = Self.keepPartialTag(raw, from: scanned)
+                    return
+                }
+                inside = false
+                scanned = end + Self.close.count
+                continue
+            }
+            let nextOpen = Self.find(Self.open, in: raw, from: scanned)
+            let nextClose = Self.find(Self.close, in: raw, from: scanned)
+            if let closeAt = nextClose, nextOpen.map({ closeAt < $0 }) ?? true {
+                // An unmatched </think>: what came before was reasoning.
+                closedReasoning = true
+                shown.removeAll()
+                cut = nil
+                patternFrom = 0
+                tagFrom = 0
+                scanned = closeAt + Self.close.count
+                continue
+            }
+            if let openAt = nextOpen {
+                commit(raw[scanned..<openAt])
+                inside = true
+                scanned = openAt + Self.open.count
+                continue
+            }
+            let keep = Self.keepPartialTag(raw, from: scanned)
+            commit(raw[scanned..<keep])
+            scanned = keep
+            return
+        }
+    }
+
+    /// Adds answer text and looks for a tool call in what is new.
+    private mutating func commit(_ bytes: ArraySlice<UInt8>) {
+        guard !bytes.isEmpty else { return }
+        shown.append(contentsOf: bytes)
+        guard cut == nil else { return }
+        if let tag = Self.find(Self.toolTag, in: shown, from: tagFrom) {
+            cut = tag
+        } else {
+            tagFrom = max(0, shown.count - (Self.toolTag.count - 1))
+        }
+        let tail = String(decoding: shown[patternFrom...], as: UTF8.self)
+        if let match = tail.range(of: Self.toolCallPattern, options: .regularExpression) {
+            let at = patternFrom + tail.utf8.distance(from: tail.startIndex, to: match.lowerBound)
+            cut = min(cut ?? at, at)
+        } else {
+            patternFrom = Self.partialCallStart(shown, from: patternFrom)
+        }
+    }
+
+    /// Where the trailing run of characters that could begin an unfinished tool call starts (on a character boundary).
+    private static func partialCallStart(_ bytes: [UInt8], from floor: Int) -> Int {
+        var start = bytes.count
+        while start > floor {
+            var scalarStart = start - 1
+            while scalarStart > floor, bytes[scalarStart] & 0xC0 == 0x80 { scalarStart -= 1 }
+            guard let scalar = String(decoding: bytes[scalarStart..<start], as: UTF8.self).unicodeScalars.first,
+                  scalar.properties.isWhitespace || partialCallCharacters.contains(scalar) else { break }
+            start = scalarStart
+        }
+        return start
+    }
+
+    /// Leaves an unfinished "<" or "</thi" at the end unread, so a tag split over two pieces is still seen whole.
+    private static func keepPartialTag(_ bytes: [UInt8], from start: Int) -> Int {
+        let longest = min(close.count - 1, bytes.count - start)
+        guard longest > 0 else { return bytes.count }
+        for length in stride(from: longest, through: 1, by: -1) {
+            let suffix = bytes[(bytes.count - length)...]
+            if open.starts(with: suffix) || close.starts(with: suffix) { return bytes.count - length }
+        }
+        return bytes.count
+    }
+
+    private static func find(_ needle: [UInt8], in bytes: [UInt8], from start: Int) -> Int? {
+        guard bytes.count - start >= needle.count, let first = needle.first else { return nil }
+        var index = start
+        let last = bytes.count - needle.count
+        while index <= last {
+            if bytes[index] == first, bytes[index..<(index + needle.count)].elementsEqual(needle) { return index }
+            index += 1
+        }
+        return nil
+    }
 }
 
 /// A model served by Ollama or LM Studio on this Mac.

@@ -48,6 +48,10 @@ extension WorkspaceManager {
     /// The main checkouts a fast-forward may apply to: those of your sessions on this Mac, your favorite and recent
     /// projects, as long as their project has auto-pull on and is not archived. Paths, not yet resolved to checkouts.
     func autoPullCandidates() -> [String] {
+        // Normalizing resolves symlinks (a few system calls per path): not one of them while no project has it on.
+        guard AutoPull.enabledAnywhere(global: settings.autoPullDefaultBranch, overrides: settings.projectOverrides) else {
+            return []
+        }
         var seen: Set<String> = []
         var result: [String] = []
         let local = runs.filter { $0.remote == nil }.compactMap { $0.repoRoot ?? $0.projectPath }
@@ -65,6 +69,8 @@ extension WorkspaceManager {
     func autoPullDefaultBranches(now: Date = Date()) {
         let clock = AutoPullClock.shared
         guard runsLoaded, !clock.running, let git = gitService, git.remote == nil else { return }
+        // Nobody at the Mac: the checkouts can wait, and the first tick back catches up (as `PullRequestSync`).
+        guard !EnergyMonitor.shared.signals.idle else { return }
         let due = autoPullCandidates().filter { path in
             clock.checked[path].map { now.timeIntervalSince($0) >= AutoPull.interval } ?? true
         }

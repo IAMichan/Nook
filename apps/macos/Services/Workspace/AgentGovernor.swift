@@ -22,6 +22,10 @@ final class AgentGovernor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "nook.agent-governor", qos: .utility)
     private let lock = NSLock()
     private var timer: DispatchSourceTimer?
+    /// On `queue`, like every use of `timer`: whether the timer is suspended because no agent runs. A dispatch source's
+    /// suspends and resumes must balance (resuming one that runs, or releasing a suspended one, crashes), so only
+    /// `sleepIfIdle` suspends and only `wake` resumes, each after checking this. The timer is never cancelled.
+    private var sleeping = false
     // On `queue`.
     private var states: [Int32: AgentGovernorState] = [:]
     private var backgrounded: [Int32: Set<Int32>] = [:]
@@ -41,6 +45,8 @@ final class AgentGovernor: @unchecked Sendable {
 
     /// Resumes what an earlier Nook left paused, and starts reading. Safe to call more than once.
     func start() {
+        // An agent that starts wakes the reading up again (see `sleepIfIdle`).
+        LiveAgentProcesses.onTrack = { [weak self] in self?.wake() }
         queue.async { [self] in
             guard timer == nil else { return }
             resumeLeftovers()
@@ -50,6 +56,27 @@ final class AgentGovernor: @unchecked Sendable {
             timer.resume()
             self.timer = timer
         }
+    }
+
+    /// An agent started: readings go on if they slept. Queued after the agent was tracked, so a reading that just found
+    /// none and went to sleep is always followed by this.
+    func wake() {
+        queue.async { [self] in
+            guard sleeping, let timer else { return }
+            sleeping = false
+            timer.resume()
+        }
+    }
+
+    /// No agent runs and nothing is held back: the timer stops until `wake`, so an idle Nook reads nothing every few
+    /// seconds. On `queue`.
+    private func sleepIfIdle() {
+        guard !sleeping, let timer, paused.isEmpty, backgrounded.isEmpty,
+              LiveAgentProcesses.shared.everyRunning.isEmpty else { return }
+        sleeping = true
+        // The next swap-in rate starts afresh instead of averaging over the whole time asleep.
+        lastSwapins = nil
+        timer.suspend()
     }
 
     /// One reading now, waited for (tests).
@@ -108,7 +135,11 @@ final class AgentGovernor: @unchecked Sendable {
         for pid in Array(paused.keys) where !livePIDs.contains(pid) { resume(agent: pid, forget: true) }
         for pid in Array(backgrounded.keys) where !livePIDs.contains(pid) { backgrounded[pid] = nil }
         states = states.filter { livePIDs.contains($0.key) }
-        guard !agents.isEmpty else { publish([:]); return }
+        guard !agents.isEmpty else {
+            publish([:])
+            sleepIfIdle()
+            return
+        }
 
         let table = Self.processTable()
         let exempted = lock.withLock { exempt }

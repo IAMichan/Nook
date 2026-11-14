@@ -656,25 +656,16 @@ struct GitService: Sendable {
         try run(arguments, in: repo, timeout: 120)
     }
 
-    /// Writes `path` as it is in `ref` to `destination`, byte for byte (`run` decodes its output as text, which would
-    /// spoil an image). False when `ref` has no such file; on this Mac only.
+    /// Writes `path` as it is in `ref` to `destination`, byte for byte (from `stdoutData`: `run` decodes its output as
+    /// text, which would spoil an image). False when `ref` has no such file, or Git did not finish in time; on this Mac only.
     func exportFile(repo: String, ref: String, path: String, to destination: URL) -> Bool {
         guard remote == nil, !ref.hasPrefix("-"), (try? run(["cat-file", "-e", "\(ref):\(path)"], in: repo)) != nil else { return false }
+        // Through `ProcessRunner` like every other git call: a deadline, and both pipes drained.
+        guard let output = try? raw(["-C", repo, "cat-file", "blob", "\(ref):\(path)"], in: repo, timeout: 60),
+              output.status == 0, !output.timedOut else { return false }
         let fm = FileManager.default
         try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard fm.createFile(atPath: destination.path, contents: nil), let handle = try? FileHandle(forWritingTo: destination) else { return false }
-        defer { try? handle.close() }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-C", repo, "cat-file", "blob", "\(ref):\(path)"]
-        process.environment = environment
-        process.standardOutput = handle
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return false }
-        process.waitUntilExit()
-        if process.terminationStatus != 0 { try? fm.removeItem(at: destination) }
-        return process.terminationStatus == 0
+        return (try? output.stdoutData.write(to: destination, options: .atomic)) != nil
     }
 
     /// Deletes a branch only if already merged (`git branch -d`, never -D).

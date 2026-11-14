@@ -69,12 +69,27 @@ private enum SupportFile {
 }
 
 /// The last the phone saw of each Mac (`CompanionCache`), one file per Mac: `companion-cache-<id>.json`.
+/// Saving encodes and writes on a serial queue: the cache holds whole conversations and is saved every few seconds
+/// while one streams, which was too much for the main thread. Removing and loading go through the same queue, so they
+/// come after every save asked for before them and the last save wins.
 enum CacheStore {
+    private static let queue = DispatchQueue(label: "nook.companion.cache-store", qos: .utility)
+
     private static func name(_ mac: String) -> String { "companion-cache-\(mac).json" }
 
-    static func load(mac: String) -> CompanionCache { SupportFile.read(name(mac), as: CompanionCache.self) ?? CompanionCache() }
-    static func save(_ cache: CompanionCache, mac: String) { SupportFile.write(cache, name(mac)) }
-    static func remove(mac: String) { SupportFile.remove(name(mac)) }
+    static func load(mac: String) -> CompanionCache {
+        queue.sync { SupportFile.read(name(mac), as: CompanionCache.self) } ?? CompanionCache()
+    }
+
+    static func save(_ cache: CompanionCache, mac: String) {
+        let file = name(mac)
+        queue.async { SupportFile.write(cache, file) }
+    }
+
+    static func remove(mac: String) {
+        let file = name(mac)
+        queue.async { SupportFile.remove(file) }
+    }
 }
 
 /// The pull requests the phone saw of each Mac (`PullCache`), one file per Mac: `companion-pulls-<id>.json`.

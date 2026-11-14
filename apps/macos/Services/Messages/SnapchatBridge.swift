@@ -30,6 +30,9 @@ final class SnapchatBridge: ChatHistoryBridge {
     var isReady: Bool { session.isSignedIn }
 
     func read() async throws -> [BridgedChat] {
+        // No one can see the screen (it sleeps or is locked): the website is let go (`SnapchatWebSession`) and not
+        // loaded again for a list no one reads now; the next read once the screen is back brings what changed.
+        guard !EnergyMonitor.shared.plan.unseen else { return [] }
         do {
             let list = try await session.list()
             var chats: [BridgedChat] = []

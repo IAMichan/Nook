@@ -900,18 +900,15 @@ private struct TrackCover: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        let artworkURL = app.nowPlaying.current?.artworkURL
+        let track = app.nowPlaying.current
+        let artworkURL = track?.artworkURL
         ZStack {
             NookTheme.shape(NookTheme.Radius.chip)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
-                AsyncImage(url: artworkURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Image(icon: "music.note")
-                        .font(NookTheme.font(9, .bold))
-                        .foregroundStyle(NookTheme.music.opacity(0.6))
-                }
+                // From the shared artwork cache, as every other cover: a new track does not download its cover again
+                // for this strip, and the cover is there in the first frame once the player loaded it.
+                MusicArtwork(url: artworkURL, seed: track?.title ?? "", cornerRadius: 0)
             } else {
                 Image(icon: "music.note")
                     .font(NookTheme.font(10, .bold))

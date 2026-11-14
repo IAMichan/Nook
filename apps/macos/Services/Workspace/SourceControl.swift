@@ -9,6 +9,12 @@ enum AutoPull {
     /// At most this often per repository: each look fetches the default branch once.
     static let interval: TimeInterval = 15 * 60
 
+    /// Whether any folder can resolve to auto-pull on: the global default, or a project that switches it on itself
+    /// (`ProjectSettings.resolve` reads only the string "on" as on). When not, the half-minute tick looks at no path.
+    static func enabledAnywhere(global: Bool, overrides: ProjectOverrides) -> Bool {
+        global || overrides.byProject.values.contains { $0[ProjectSettingKey.autoPull.raw] == .string("on") }
+    }
+
     struct Facts: Equatable, Sendable {
         /// The branch the main checkout is on; nil when its HEAD is detached.
         var branch: String?

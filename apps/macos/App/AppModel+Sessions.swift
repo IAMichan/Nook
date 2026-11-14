@@ -194,24 +194,25 @@ extension AppModel {
         guard !candidates.isEmpty else { return }
         // Each transcript by "family|session id", and by "family|earlier id" for one that resumed another, the first in
         // history's order as before: this runs every two seconds while an agent works, and looking each session up in
-        // the whole history went through every earlier session for every session Nook runs.
-        var ownTranscripts: [String: PastSession] = [:]
-        var resumedTranscripts: [String: PastSession] = [:]
-        for past in history.sessions where !past.path.isEmpty {
-            let family = AgentSessionRecord.family(past.agent.name)
-            if ownTranscripts["\(family)|\(past.sessionID)"] == nil { ownTranscripts["\(family)|\(past.sessionID)"] = past }
-            for earlier in past.earlierIDs where earlier != past.sessionID && resumedTranscripts["\(family)|\(earlier)"] == nil {
-                resumedTranscripts["\(family)|\(earlier)"] = past
-            }
+        // the whole history went through every earlier session for every session Nook runs. Built again only when
+        // history has a new list (`ContinuationIndex`).
+        let index = ContinuationIndex.shared
+        index.update(history.sessions)
+        let ownTranscripts = index.own
+        let resumedTranscripts = index.resumed
+        // The agents' apps and terminals by "family|conversation id", the first in the hub's order as before.
+        var liveSessions: [String: AgentSession] = [:]
+        for session in hub.sessions where !session.transcriptPath.isEmpty {
+            guard let conversation = session.ownConversationID else { continue }
+            let key = "\(AgentSessionRecord.family(session.name))|\(conversation)"
+            if liveSessions[key] == nil { liveSessions[key] = session }
         }
         for run in candidates {
             guard let current = run.providerSessionID, !current.isEmpty else { continue }
             let agent = run.provider.displayName
             let family = AgentSessionRecord.family(agent)
             // The agent's app or terminal working on this conversation right now, with the transcript it writes.
-            let live = hub.sessions.first {
-                AgentSessionRecord.family($0.name) == family && $0.ownConversationID == current && !$0.transcriptPath.isEmpty
-            }
+            let live = liveSessions["\(family)|\(current)"]
             // A transcript that resumed this one under a new id, else this conversation's own.
             let resumed = resumedTranscripts["\(family)|\(current)"]
             let own = ownTranscripts["\(family)|\(current)"]
@@ -318,4 +319,31 @@ struct SessionListsCache {
     let transcripts: [String: PastSession]
     /// Earlier sessions no running session, Nook session or process covers.
     let past: [PastSession]
+}
+
+/// `followTerminalContinuations`' lookups into history: each transcript by "family|session id", and by "family|earlier
+/// id" for one that resumed another, the first in history's order. History replaces its list as a whole, so comparing
+/// the list kept here with the current one is a check of the array's storage, and the index is built again only for a
+/// new list.
+@MainActor
+private final class ContinuationIndex {
+    static let shared = ContinuationIndex()
+    private var source: [PastSession] = []
+    private(set) var own: [String: PastSession] = [:]
+    private(set) var resumed: [String: PastSession] = [:]
+
+    func update(_ sessions: [PastSession]) {
+        // Array's `==` answers at once for the same storage; a new list with equal sessions is compared, not rebuilt.
+        guard sessions != source else { return }
+        source = sessions
+        own = [:]
+        resumed = [:]
+        for past in sessions where !past.path.isEmpty {
+            let family = AgentSessionRecord.family(past.agent.name)
+            if own["\(family)|\(past.sessionID)"] == nil { own["\(family)|\(past.sessionID)"] = past }
+            for earlier in past.earlierIDs where earlier != past.sessionID && resumed["\(family)|\(earlier)"] == nil {
+                resumed["\(family)|\(earlier)"] = past
+            }
+        }
+    }
 }

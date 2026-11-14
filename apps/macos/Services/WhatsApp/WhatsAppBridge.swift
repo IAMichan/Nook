@@ -96,6 +96,9 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
     }
 
     func read() async throws -> [BridgedChat] {
+        // The shared inbox's names are looked at below: at launch the linked phone can answer before the inbox is read
+        // from disk, and reading it here would do that on the main thread while the archive is held.
+        await ChatCaptureService.shared.untilLoaded()
         readNews = news
         news = []
         guard isReady else {

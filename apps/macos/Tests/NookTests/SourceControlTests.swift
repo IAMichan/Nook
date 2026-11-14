@@ -30,6 +30,22 @@ final class SourceControlRuleTests: XCTestCase {
         XCTAssertNil(AutoPull.parseCounts("fatal"))
     }
 
+    /// The half-minute tick looks at no path (no symlink resolving) unless some folder can resolve to auto-pull on.
+    func testAutoPullEnabledAnywhereMatchesTheResolver() {
+        var overrides = ProjectOverrides()
+        XCTAssertFalse(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        XCTAssertTrue(AutoPull.enabledAnywhere(global: true, overrides: overrides))
+        overrides.set(.autoPull, .string("off"), for: "/tmp/a")
+        overrides.set(.worktreeCleanup, .string("on"), for: "/tmp/b")
+        XCTAssertFalse(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        overrides.set(.autoPull, .string("on"), for: "/tmp/c")
+        XCTAssertTrue(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        let global = SessionDefaults(provider: .claude, models: [:], permission: .acceptEdits, isolation: .worktree,
+                                     branchPrefix: "nook")
+        XCTAssertFalse(global.autoPull)
+        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/tmp/c").autoPull)
+    }
+
     func testCloneAddressParsing() {
         XCTAssertEqual(CloneLayout.parse("git@github.com:IAMichan/nook.git"), .init(host: "github.com", owner: "IAMichan", name: "nook"))
         XCTAssertEqual(CloneLayout.parse("https://GitHub.com/IAMichan/nook"), .init(host: "github.com", owner: "IAMichan", name: "nook"))

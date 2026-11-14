@@ -223,3 +223,20 @@ final class GitCheckpointTests: XCTestCase {
         ])
     }
 }
+
+extension GitCheckpointTests {
+    /// A file as it is in a commit, byte for byte (through `ProcessRunner`, with its deadline), and nothing for a missing one.
+    func testExportFileWritesTheBlobBytes() throws {
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0x0A, 0x80])
+        try bytes.write(to: repo.appendingPathComponent("image.png"))
+        try git.run(["add", "-A"], in: repo.path)
+        try git.run(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-q", "-m", "image"], in: repo.path)
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("image.png"))
+        let destination = repo.appendingPathComponent("out/nested/image.png")
+        XCTAssertTrue(git.exportFile(repo: repo.path, ref: "HEAD", path: "image.png", to: destination))
+        XCTAssertEqual(try Data(contentsOf: destination), bytes)
+        let missing = repo.appendingPathComponent("out/missing.txt")
+        XCTAssertFalse(git.exportFile(repo: repo.path, ref: "HEAD", path: "missing.txt", to: missing))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
+    }
+}
