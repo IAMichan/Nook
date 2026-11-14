@@ -400,7 +400,7 @@ struct AgentCommandPalette: View {
         VStack(spacing: 0) {
             NookSearchField(prompt: sublist?.placeholder ?? tr("palette.placeholder"),
                             text: $query, style: .large, focus: $focused,
-                            onSubmit: { perform(list) }, onEscape: escape)
+                            onSubmit: { perform(list) }, onEscape: escape, onClose: close)
                 .padding(.horizontal, NookTheme.Spacing.xs)
             NookDivider()
             if list.isEmpty {

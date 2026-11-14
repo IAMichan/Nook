@@ -49,7 +49,7 @@ struct AddProjectPalette: View {
         let list = sources
         VStack(alignment: .leading, spacing: 0) {
             NookSearchField(prompt: prompt, text: $text, style: .large, focus: $focused,
-                            onSubmit: submit, onEscape: escape, symbol: fieldSymbol)
+                            onSubmit: submit, onEscape: escape, symbol: fieldSymbol, onClose: close)
                 .padding(.horizontal, NookTheme.Spacing.xs)
             NookDivider()
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
