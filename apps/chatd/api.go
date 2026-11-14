@@ -597,6 +597,22 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 	if replyTo := content.RelatesTo.GetReplyTo(); replyTo != "" {
 		out["linkedMessageID"] = string(replyTo)
 	}
+	// Who the message tags (Matrix's m.mentions, which each bridge fills from its app's own tags), you as `me`, the id
+	// your reactions and the participants' isSelf use: Nook tells a quiet group's message that names you.
+	mentions := shown.Mentions
+	if mentions == nil {
+		mentions = content.Mentions
+	}
+	if mentions != nil && len(mentions.UserIDs) > 0 {
+		ids := make([]string, 0, len(mentions.UserIDs))
+		for _, user := range mentions.UserIDs {
+			if a.isSelf(ctx, net, user) {
+				user = me
+			}
+			ids = append(ids, string(user))
+		}
+		out["mentions"] = ids
+	}
 	list := make([]map[string]any, 0, len(reactions))
 	for _, reaction := range reactions {
 		if r, ok := reaction.Content.Parsed.(*event.ReactionEventContent); ok {

@@ -228,6 +228,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             var bridged = BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread,
                                       avatar: chat.avatar, members: named.isEmpty ? nil : named, deleted: gone[id] ?? [])
             bridged.profile = profile(of: chat)
+            bridged.mutedInApp = chat.isMuted
             if chat.isGroup {
                 let faces = faces(of: messages[id] ?? [])
                 if !faces.isEmpty { bridged.faces = faces }
@@ -383,7 +384,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             }
         case "updateChatNotificationSettings":
             if let id = TelegramData.int64(object["chat_id"]), let settings = object["notification_settings"] as? [String: Any] {
-                chats[id]?.isMuted = TelegramData.isMuted(settings)
+                let muted = TelegramData.isMuted(settings)
+                // Muted or unmuted in Telegram: the chat goes to the inbox again, so Nook's notice rules follow it.
+                if chats[id] != nil, chats[id]?.isMuted != muted { changed.insert(id) }
+                chats[id]?.isMuted = muted
                 notificationSettings[id] = settings
             }
         case "updateDeleteMessages":

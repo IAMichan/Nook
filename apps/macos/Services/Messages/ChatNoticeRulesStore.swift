@@ -54,7 +54,7 @@ final class ChatNoticeRulesStore: ObservableObject {
         }
         for (id, mode) in rules.modes {
             guard let jid = Self.whatsAppJID(id, account: account) else { continue }
-            filters.setMode(WAChatMode(mode), for: jid)
+            filters.setMode(mode, for: jid)
         }
         return filters
     }
@@ -82,25 +82,5 @@ final class ChatNoticeRulesStore: ObservableObject {
             modes: defaults.dictionary(forKey: "whatsappChatModes") as? [String: String] ?? [:],
             readsOnReply: defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true,
             ids: { jid in accounts.map { ChatInbox.key(app: "whatsapp", id: WAChatKey.make(WAJID.normalized(jid), account: $0)) } })
-    }
-}
-
-extension WAChatMode {
-    init(_ mode: ChatMode) {
-        switch mode {
-        case .automatic: self = .automatic
-        case .loud: self = .loud
-        case .muted: self = .muted
-        }
-    }
-}
-
-extension ChatMode {
-    init(_ mode: WAChatMode) {
-        switch mode {
-        case .automatic: self = .automatic
-        case .loud: self = .loud
-        case .muted: self = .muted
-        }
     }
 }

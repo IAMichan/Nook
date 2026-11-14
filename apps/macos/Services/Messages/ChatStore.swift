@@ -144,11 +144,12 @@ final class ChatStore {
         var deleted: Bool?
         var membership: ChatMembership?
         var groupChange: ChatGroupChange?
+        var importance: ChatImportance?
 
         /// Short: these keys are in every row that has an extra.
         enum CodingKeys: String, CodingKey {
             case media = "f", poll = "p", receipt = "r", readers = "w", reactions = "e", quote = "q", mentionsMe = "m"
-            case senderID = "s", edited = "d", deleted = "x", membership = "b", groupChange = "g"
+            case senderID = "s", edited = "d", deleted = "x", membership = "b", groupChange = "g", importance = "i"
         }
 
         init(_ message: InboxMessage) {
@@ -164,6 +165,7 @@ final class ChatStore {
             deleted = message.deleted
             membership = message.membership
             groupChange = message.groupChange
+            importance = message.importance
         }
 
         private static let none = Extra(InboxMessage(id: "", text: "", date: .distantPast))
@@ -182,6 +184,7 @@ final class ChatStore {
             message.deleted = deleted
             message.membership = membership
             message.groupChange = groupChange
+            message.importance = importance
         }
     }
 
@@ -377,6 +380,7 @@ final class ChatStore {
         if let receipt = new.receipt { message.receipt = old.receipt.map { $0.advanced(to: receipt) } ?? receipt }
         if let readers = new.readers { message.readers = readers }
         if let mentions = new.mentionsMe { message.mentionsMe = mentions }
+        if let importance = new.importance { message.importance = importance }
         if let reactions = new.reactions { message.reactions = reactions }
         if message.fromMe == nil { message.fromMe = new.fromMe }
         return message

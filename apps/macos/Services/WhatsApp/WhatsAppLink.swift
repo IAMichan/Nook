@@ -266,8 +266,8 @@ final class WhatsAppLink: ObservableObject {
         guard WAJID.isGroup(jid), let conversation = inbox.conversations[jid], let members = conversation.members else { return [] }
         var index = memberIndex(conversation)
         return members.compactMap { member in
-            guard let id = member.ids.first(where: { !$0.hasSuffix("@lid") && WAJID.digits($0).count >= 6 })
-                    ?? member.ids.first(where: { WAJID.digits($0).count >= 6 }) else { return nil }
+            guard let id = member.ids.first(where: { !$0.hasSuffix("@lid") && ChatHandle.phoneKey($0) != nil })
+                    ?? member.ids.first(where: { ChatHandle.phoneKey($0) != nil }) else { return nil }
             if let me, member.ids.contains(where: { WAJID.sameUser($0, me) }) { return nil }
             return ChatTagPerson(name: index.name(id), id: id)
         }
@@ -326,7 +326,10 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var filters: WAFilters
     /// The chats muted on the phone, as far as Nook knows: muted from Nook, or so in the gateway's chat list (OpenWA).
     /// Not WhatsApp's notice rules in Nook (`mute(_:)`), which only quiet the chat here.
-    @Published private(set) var mutedChats: Set<String> = []
+    @Published private(set) var mutedChats: Set<String> = [] {
+        // The phone's mute quiets the chat in Nook too while its choice here is automatic (`WAFilters.mutedInApp`).
+        didSet { if filters.mutedInApp != mutedChats { filters.mutedInApp = mutedChats } }
+    }
     /// The chats pinned on the phone, as far as Nook knows (see `WhatsAppSettings.pinnedChats`).
     @Published private(set) var pinnedChats: Set<String> {
         didSet { if pinnedChats != oldValue { WhatsAppSettings.setPinnedChats(pinnedChats, account: account) } }
@@ -1553,6 +1556,7 @@ final class WhatsAppLink: ObservableObject {
         let unread = unread(key: key)
         facts.unread = unread
         facts.waitsInApp = waitsInWhatsApp(key: key)
+        facts.mutedInApp = mutedChats.contains(key)
         facts.readKnown = readIsKnown(key: key, unread: unread)
         facts.avatar = avatars[key]
         let listed = known(key)
@@ -1935,7 +1939,8 @@ final class WhatsAppLink: ObservableObject {
 
     /// The notice rules changed (`ChatNoticeRulesStore`): this account follows them, and lets go of a chat now hidden.
     func applyNoticeRules() {
-        let next = ChatNoticeRulesStore.shared.filters(account: account)
+        var next = ChatNoticeRulesStore.shared.filters(account: account)
+        next.mutedInApp = mutedChats
         guard next != filters else { return }
         filters = next
         for jid in next.ignored where inbox.conversations[jid] != nil { inbox.remove(jid) }

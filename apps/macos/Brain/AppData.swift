@@ -37,11 +37,8 @@ enum AppData {
         return ""
     }
 
-    static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let text = value as? String { return Double(text) }
-        return nil
-    }
+    /// A number however a row writes it (`ChatJSON.number`).
+    static func number(_ value: Any?) -> Double? { ChatJSON.number(value) }
 
     /// Apple stores dates as seconds since 2001-01-01; Messages since 2017 in nanoseconds.
     static func appleDate(_ raw: Double) -> Date {
@@ -264,12 +261,10 @@ enum AppData {
     }
 
     /// The same person however the number is written: an address in lowercase, a phone number by its last nine digits
-    /// ("+31 6 1234 5678", "0612345678" and "31612345678@s.whatsapp.net" are one key).
+    /// ("+31 6 1234 5678", "0612345678" and "31612345678@s.whatsapp.net" are one key, `ChatHandle.key`). Empty for
+    /// what is neither (a number too short to be one).
     static func key(_ handle: String) -> String {
-        let clean = cleanHandle(handle)
-        if clean.contains("@") { return clean.lowercased() }
-        let digits = clean.filter(\.isNumber)
-        return digits.count > 9 ? String(digits.suffix(9)) : digits
+        ChatHandle.key(cleanHandle(handle)) ?? ""
     }
 
     static func cleanHandle(_ raw: String) -> String {
