@@ -21,6 +21,8 @@ use crate::brain::LoopTool;
 
 pub const ID: &str = "customsources";
 pub const KEY_ACCOUNT: &str = "connector.customsources.list";
+/// A read is cut to 8 000 characters for the model anyway; a body past this is refused instead of held in memory.
+const MAX_RESPONSE_BYTES: usize = 10_000_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,7 +164,10 @@ impl CustomSources {
                 _ => format!("{} returned an error ({code}).", source.name),
             }));
         }
-        let bytes = response.bytes().await.map_err(|e| super::network_error(e, &source.name))?;
+        let bytes = crate::brain::network_guard::body_within(response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(|e| super::network_error(e, &source.name))?
+            .ok_or_else(|| ConnectorError::new(format!("{} sent a response that is too large to read.", source.name)))?;
         let mut text = match serde_json::from_slice::<Value>(&bytes) {
             Ok(json) => sorted(&json).to_string(),
             Err(_) => String::from_utf8_lossy(&bytes).to_string(),

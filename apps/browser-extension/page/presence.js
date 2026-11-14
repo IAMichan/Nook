@@ -5,7 +5,8 @@
 // always, and Nook goes on by itself once they are in (or when they press Continue).
 //
 // Injected into the page's isolated world; the service worker then calls `__nookPresence.busy(ms)`, `.signIn()` or
-// `.release()`. Its elements live in a closed shadow root, so the page's styles cannot hide or restyle it.
+// `.release()`. Its elements live in a closed shadow root, so the page's styles cannot hide or restyle it. It wears Nook's
+// theme (the look the side panel keeps): the strip in the color of Nook's menus, the glow in its violet.
 (() => {
   if (globalThis.__nookPresence) return;
 
@@ -17,7 +18,11 @@
     }
   };
 
-  const state = { host: null, wrap: null, label: null, go: null, mode: 'idle', until: 0, timer: null, nudge: null, acting: false };
+  const state = {
+    host: null, wrap: null, label: null, go: null, mode: 'idle', until: 0, timer: null, nudge: null, acting: false,
+    // The user pressed Continue after signing in; the service worker reads it here, so no page can claim it in a message.
+    continued: false
+  };
 
   function build() {
     if (state.host?.isConnected) return;
@@ -27,25 +32,31 @@
     root.innerHTML = `
       <style>
         :host { all: initial; }
-        .glow { position: fixed; inset: 0; box-shadow: inset 0 0 0 2px rgba(124,108,240,.85), inset 0 0 28px rgba(124,108,240,.35);
+        .wrap { --glow: #b0a2e6; --menu: #171717; --paper: #f5f5f5; --line: #262626; --coral: #ff6467; --amber: #f0b65a; }
+        .glow { position: fixed; inset: 0;
+                box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--glow) 85%, transparent),
+                            inset 0 0 28px color-mix(in srgb, var(--glow) 35%, transparent);
                 opacity: 0; transition: opacity .25s ease-out; }
         .strip { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 8px); opacity: 0; max-width: calc(100vw - 32px);
                  transition: opacity .25s ease-out, transform .25s ease-out; display: flex; align-items: center; gap: 10px;
-                 padding: 7px 8px 7px 14px; border-radius: 999px; background: rgba(22,22,28,.92); color: #f3f2f8;
-                 font: 500 13px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; pointer-events: auto;
-                 box-shadow: 0 6px 24px rgba(0,0,0,.28); }
-        .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #7c6cf0; }
+                 padding: 6px 6px 6px 14px; border-radius: 12px; background: color-mix(in srgb, var(--menu) 94%, transparent);
+                 border: 1px solid var(--line); color: var(--paper); backdrop-filter: blur(12px);
+                 font: 500 13px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; pointer-events: auto;
+                 box-shadow: 0 8px 28px rgba(0,0,0,.32); }
+        .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--glow); animation: pulse 1.6s ease-in-out infinite; }
+        @keyframes pulse { 50% { opacity: .35; } }
         .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        button { all: unset; flex: none; cursor: pointer; padding: 5px 12px; border-radius: 999px; background: #e0605a; color: #fff; font-weight: 600; }
-        button.go { background: #7c6cf0; }
-        button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        button { all: unset; flex: none; cursor: pointer; padding: 5px 12px; border-radius: 8px; background: var(--coral); color: #fff; font-weight: 600; }
+        button.go { background: var(--glow); color: var(--menu); }
+        button:hover { filter: brightness(1.08); }
+        button:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
         .on .glow { opacity: 1; }
         .on .strip { opacity: 1; transform: translate(-50%, 0); }
         .login .glow { opacity: 0; }
-        .login .dot { background: #e0a23a; }
+        .login .dot { background: var(--amber); }
         .nudge .strip { animation: nudge .35s ease-out; }
         @keyframes nudge { 0%, 100% { transform: translate(-50%, 0); } 30% { transform: translate(calc(-50% - 5px), 0); } 60% { transform: translate(calc(-50% + 5px), 0); } }
-        @media (prefers-reduced-motion: reduce) { .glow, .strip { transition: none; } .nudge .strip { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .glow, .strip { transition: none; } .dot, .nudge .strip { animation: none; } }
       </style>
       <div class="wrap"><div class="glow"></div><div class="strip" role="status"><span class="dot"></span><span class="label"></span><button type="button" class="go" hidden></button><button type="button" class="stop"></button></div></div>`;
     state.wrap = root.querySelector('.wrap');
@@ -53,15 +64,28 @@
     state.go = root.querySelector('.go');
     const stop = root.querySelector('.stop');
     stop.textContent = say('presenceStop') || 'Stop';
-    stop.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'pause', paused: true }).catch(() => {});
-      release();
+    stop.addEventListener('click', async () => {
+      // The strip only goes away once Nook is really paused: when the extension was reloaded or its worker cannot be
+      // reached, it stays, so the user never thinks Nook stopped while it did not.
+      try {
+        const reply = await chrome.runtime.sendMessage({ type: 'pause', paused: true });
+        if (reply?.ok) release();
+      } catch {
+        // "Extension context invalidated": this page outlived the extension that drew the strip.
+      }
     });
     state.go.textContent = say('presenceSignedIn') || 'Continue';
     state.go.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'signedIn' }).catch(() => {});
+      state.continued = true;
     });
     state.host = host;
+    // Nook's theme, from the look the side panel keeps; only #RRGGBB values, so nothing else reaches the style.
+    Promise.resolve(chrome.storage?.local?.get('look')).then(({ look } = {}) => {
+      const colors = look?.dark || {};
+      for (const [name, token] of [['--glow', 'violet'], ['--menu', 'menu'], ['--paper', 'paper'], ['--line', 'line2'], ['--coral', 'coral'], ['--amber', 'amber']]) {
+        if (/^#[0-9a-f]{6}$/i.test(colors[token] || '')) state.wrap.style.setProperty(name, colors[token]);
+      }
+    }).catch(() => {});
     document.documentElement.appendChild(host);
   }
 
@@ -87,6 +111,7 @@
   /** The page asks to sign in: the user's hands are free again, and the strip says Nook goes on once they are in. */
   function signIn() {
     state.mode = 'login';
+    state.continued = false;
     state.until = 0;
     clearTimeout(state.timer);
     show(say('presenceSignIn') || 'Sign in on this page; Nook goes on by itself once you are in.');
@@ -134,6 +159,7 @@
     busy, signIn, release,
     /** Set by the page agent while it acts, so its own focus and editing pass as well. */
     acting(on) { state.acting = !!on; },
-    get mode() { return state.mode; }
+    get mode() { return state.mode; },
+    get continued() { return state.continued; }
   });
 })();

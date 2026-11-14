@@ -30,6 +30,8 @@ struct SessionDetailView: View {
     private var entries: [TimelineEntry] { client.conversation(sessionID) }
     /// An older page is on its way (`CompanionClient.loadEarlier`).
     @State private var loadingEarlier = false
+    /// The Mac was asked for a session the list does not hold yet (one just started, a link from a notification).
+    @State private var lookedUp = false
 
     var body: some View {
         if let session {
@@ -117,7 +119,19 @@ struct SessionDetailView: View {
                 }
             }
             // A push about this session arrives without a banner while it is on screen.
-            .onAppear { client.visibleSession = sessionID }
+            .onAppear {
+                client.visibleSession = sessionID
+                // Opened to write to it: the keyboard comes up once the screen has slid in. Taken whichever session
+                // opens, so a request whose screen never came up does not surface later.
+                let wanted = client.focusComposer == sessionID
+                client.focusComposer = nil
+                if wanted, client.allows(.operate), session.canSend != false {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        composerFocused = true
+                    }
+                }
+            }
             .onDisappear {
                 if client.visibleSession == sessionID { client.visibleSession = nil }
                 Task { await client.unwatchSession(sessionID) }
@@ -136,6 +150,19 @@ struct SessionDetailView: View {
                     try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
                 }
             }
+        } else if !lookedUp {
+            // A session that was just started (or opened from a notification) can be on the Mac before it is in the
+            // phone's list: ask for the list straight away, and once more after a moment, before calling it gone.
+            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .screen()
+                .task {
+                    await client.refresh()
+                    if client.session(sessionID) == nil {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        if !Task.isCancelled { await client.refresh() }
+                    }
+                    lookedUp = true
+                }
         } else {
             WSEmptyState(symbol: "tray", title: String(localized: "This session is gone."), message: String(localized: "It was closed or archived on your Mac."))
                 .screen()
@@ -584,6 +611,8 @@ struct NewSessionView: View {
     @Environment(\.dismiss) private var dismiss
     /// A `nook://prompt` link this sheet was opened for: its text, and the project and agent it names.
     var link: PromptLink? = nil
+    /// The project folder to start in (a project's "+" in the Agents list); nil for the link's or your defaults.
+    var startIn: String? = nil
     let started: (String) -> Void
 
     @State private var task = ""
@@ -794,7 +823,8 @@ struct NewSessionView: View {
         guard !prepared, let options else { return }
         prepared = true
         agent = link?.agent(in: options.agents)?.id ?? options.defaultAgent ?? options.agents.first?.id ?? ""
-        project = link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
+        project = startIn.flatMap { folder in options.projects.first { $0.path == folder }?.path }
+            ?? link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
         plan = options.defaultPlan
         worktree = options.defaultWorktree
         model = options.agents.first { $0.id == agent }?.defaultModel ?? ""

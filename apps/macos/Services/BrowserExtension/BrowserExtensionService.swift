@@ -204,6 +204,12 @@ final class BrowserExtensionService: ObservableObject {
             }
             app.stop(conversation: id)
             return conversationReply(id, watchedBy: client.id)
+        case "look":
+            // The side panel draws Nook's theme, accent and density, so it reads as the same app as the main window.
+            let settings = app.settings
+            return BrowserExtensionLook.payload(choice: settings.themeChoice, themes: settings.themes,
+                                                accent: settings.accentHex, defaultAccent: NookTheme.defaultAccentHex,
+                                                density: settings.density, diffColors: settings.diffColors)
         default:
             return ["ok": false, "error": "Nook does not know \"\(request.kind)\"."]
         }

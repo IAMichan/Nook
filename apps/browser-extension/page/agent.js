@@ -577,7 +577,8 @@
       target.focus?.();
     }
     const name = String(params.key).trim();
-    const [keyName, code] = KEYS[name.toLowerCase()] || [name, name.length === 1 ? name.toUpperCase().charCodeAt(0) : 0];
+    // Own keys only: "constructor" or "__proto__" must not resolve to Object's prototype.
+    const [keyName, code] = (Object.hasOwn(KEYS, name.toLowerCase()) && KEYS[name.toLowerCase()]) || [name, name.length === 1 ? name.toUpperCase().charCodeAt(0) : 0];
     const at = target && target !== document.body && target.getBoundingClientRect().width ? centerOf(target)
       : { x: cursor.x ?? innerWidth / 2, y: cursor.y ?? innerHeight / 2 };
     await moveTo(at.x, at.y, say('cursorKey', keyName === ' ' ? 'Space' : keyName), params._from);

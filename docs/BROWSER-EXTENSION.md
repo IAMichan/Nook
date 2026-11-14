@@ -26,6 +26,19 @@ a page until Nook is asked, and the extension sends nothing anywhere but to Nook
 
 **Disconnect** in Settings removes the host and its registrations. The browsers then cannot reach Nook any more.
 
+## Nook's look in the browser
+
+The side panel wears the same look as Nook's main window. It uses the same tokens (`NookPalette`), radii, spacing and type
+scale as `NookTheme`. When it connects, and again whenever the panel opens, comes back into view, or every 15 seconds
+while it shows, the extension asks Nook for its `look` (`BrowserExtensionLook`). The look holds System / Light / Dark,
+both palettes of the chosen themes (an imported VS Code theme too), the colors set one by one in Settings › Appearance ›
+Colors, the accent as drawn, the diff colors and the density. The panel sets these as CSS variables, so a theme change
+in Nook shows in the browser within seconds. The extension keeps the last look, so the panel draws Nook's colors at once,
+also while Nook is not running. The strip on a page while Nook acts takes the same theme's menu color and violet.
+
+Only `#RRGGBB` values are taken (`cleanLook` in `lib/core.js`), so a value can never become other CSS. A Nook that does
+not know `look` yet leaves the panel in Nook's own theme.
+
 ## The tools
 
 | Tool | What it does | Approval |

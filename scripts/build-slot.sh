@@ -48,6 +48,17 @@ duration() {
   if [ "$1" -ge 60 ]; then printf '%dm%02ds' $(($1 / 60)) $(($1 % 60)); else printf '%ds' "$1"; fi
 }
 
+# Whether process $1 is still one of these scripts. `kill -0` alone is not enough: a build killed with SIGKILL (a
+# closed session) leaves its ticket and holder behind, and once the system hands its PID to another process, that
+# ticket would count as a live build ahead in the queue forever and every later build would wait for it.
+SELF_NAME="$(basename "$0")"
+is_slot_process() {
+  local command
+  kill -0 "$1" 2>/dev/null || return 1
+  command="$(ps -p "$1" -o command= 2>/dev/null)" || return 0  # ps could not tell: trust kill -0, as before
+  [[ "$command" == *"$SELF_NAME"* ]]
+}
+
 # Inside a slot (this script runs itself under lockf/flock below): record who holds it, then run the build.
 if [ "${NOOK_BUILD_SLOT_HELD:-}" = 1 ]; then
   asked="${NOOK_BUILD_SLOT_ASKED:-}"
@@ -92,7 +103,7 @@ waiting() {
   local i pid start checkout command words what=""
   for ((i = 1; i <= SLOTS; i++)); do
     if { read -r pid && read -r start && read -r checkout && read -r command; } 2>/dev/null < "$(slot_lock "$i").holder" \
-        && kill -0 "$pid" 2>/dev/null; then
+        && is_slot_process "$pid"; then
       read -r -a words <<< "$command"
       what="$what${what:+; }${words[*]:0:2} in $(basename "$checkout"), running for $(duration $(($(date +%s) - start)))"
     fi
@@ -128,7 +139,7 @@ my_turn() {
     [[ "$ticket" < "$TICKET" ]] || continue
     name="$(basename "$ticket")"
     pid="$((10#${name##*.}))"
-    if kill -0 "$pid" 2>/dev/null; then
+    if is_slot_process "$pid"; then
       ahead=$((ahead + 1))
     else
       rm -f "$ticket" 2>/dev/null

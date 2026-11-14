@@ -70,7 +70,7 @@ export class HookLogic {
     this.sockets = sockets;
     this.timeoutMs = timeoutMs;
     this.newID = newID;
-    /** @type {Map<string, (answer: {status: number, message: string}) => void>} */
+    /** @type {Map<string, {via: string | undefined, done: (answer: {status: number, message: string}) => void}>} */
     this.waiting = new Map();
   }
 
@@ -81,8 +81,18 @@ export class HookLogic {
       } catch {
         // Already closed.
       }
+      this.closed(old);
     }
     this.sockets.acceptWebSocket(ws, ["hooks"]);
+    ws.serializeAttachment?.({ listener: crypto.randomUUID() });
+  }
+
+  /** A Mac socket went away: the Mac answers on the socket a request came by, so what waits for it gets no answer. */
+  closed(ws) {
+    const listener = listenerOf(ws);
+    for (const { via, done } of [...this.waiting.values()]) {
+      if (via === listener) done({ status: 503, message: "the Mac is not reachable" });
+    }
   }
 
   /** What to answer a POST: `{status, message}`. */
@@ -103,15 +113,16 @@ export class HookLogic {
         this.waiting.delete(id);
         resolve({ status: 504, message: "the Mac did not answer" });
       }, this.timeoutMs);
-      this.waiting.set(id, (answer) => {
+      const done = (answer) => {
         clearTimeout(timer);
         this.waiting.delete(id);
         resolve(answer);
-      });
+      };
+      this.waiting.set(id, { via: listenerOf(mac), done });
       try {
         mac.send(JSON.stringify({ id, path: `/hooks/${hook}`, headers: passed, body: base64(new Uint8Array(body)) }));
       } catch {
-        this.waiting.get(id)?.({ status: 503, message: "the Mac is not reachable" });
+        done({ status: 503, message: "the Mac is not reachable" });
       }
     });
   }
@@ -126,6 +137,23 @@ export class HookLogic {
     }
     if (typeof answer?.id !== "string" || !Number.isInteger(answer.status)) return;
     const status = answer.status >= 200 && answer.status <= 599 ? answer.status : 502;
-    this.waiting.get(answer.id)?.({ status, message: String(answer.message ?? "").slice(0, 200) });
+    this.waiting.get(answer.id)?.done({ status, message: String(answer.message ?? "").slice(0, 200) });
   }
+}
+
+/** Which listening socket `ws` is; one without a name (accepted before names) shares the name `undefined`. */
+export function listenerOf(ws) {
+  try {
+    return ws?.deserializeAttachment?.()?.listener;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Statuses whose response must not carry a body (the Response constructor throws otherwise). */
+export const NULL_BODY = new Set([204, 205, 304]);
+
+/** The sender's response for the Mac's answer. */
+export function answerResponse(answer) {
+  return new Response(NULL_BODY.has(answer.status) ? null : answer.message + "\n", { status: answer.status });
 }

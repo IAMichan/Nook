@@ -107,6 +107,12 @@ export function commandError(command, state) {
     const error = targetError(params);
     if (error) return error;
   }
+  // scroll and key take a target too, but only optionally: when one is given it must be a real one, or a blank text
+  // would match the first element on the page and Nook would act on something it never meant.
+  if (['scroll', 'key'].includes(command.method) && ['ref', 'selector', 'text'].some((key) => params[key] !== undefined && params[key] !== null)) {
+    const error = targetError(params);
+    if (error) return error;
+  }
   if (command.method === 'type' && typeof params.value !== 'string') return 'type needs value: the text to enter.';
   if (command.method === 'key' && (typeof params.key !== 'string' || !params.key.trim())) return 'key needs key, such as "Enter", "Escape" or "Tab".';
   if (command.method === 'open') {
@@ -221,4 +227,103 @@ export function isAnswering(messages) {
   if (!messages?.length) return false;
   const last = messages[messages.length - 1];
   return !last.fromNook || !!last.streaming;
+}
+
+/**
+ * Runs async tasks one after another, so a read-modify-write of the extension's storage (the activity list, the tab
+ * groups per window) never loses a concurrent change. A failed task does not stop the ones after it.
+ */
+export function serial() {
+  let tail = Promise.resolve();
+  return (task) => {
+    const result = tail.then(task);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
+/**
+ * Whether a runtime message may reach the service worker's handler. The side panel (an extension page) may send every
+ * kind; a page (the presence strip's Stop button runs in the page's isolated world, and a page's renderer is never
+ * fully trusted) may only pause Nook, never resume it, ask Nook something, or switch a site back on.
+ */
+export function panelMessageAllowed(message, sender, extensionId) {
+  if (!message || typeof message !== 'object' || !sender || sender.id !== extensionId) return false;
+  const fromExtensionPage = !sender.tab && typeof sender.url === 'string' && sender.url.startsWith(`chrome-extension://${extensionId}/`);
+  if (fromExtensionPage) return true;
+  return message.type === 'pause' && message.paused === true;
+}
+
+/**
+ * The console entries collected in the page's main world, as text for Nook. That world belongs to the page, so the
+ * list may be anything the page put there: only real entries count, each as one clipped line.
+ */
+export function consoleText(entries, limit = 200) {
+  const list = Array.isArray(entries) ? entries.slice(-limit) : [];
+  const lines = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const level = entry.level === 'warn' ? 'warn' : 'error';
+    lines.push(`${level}: ${clip(typeof entry.text === 'string' ? entry.text : String(entry.text ?? ''), 2000)}`);
+  }
+  return lines.length ? lines.join('\n') : null;
+}
+
+// MARK: - Nook's look
+
+/**
+ * The colors of Nook's theme the side panel draws, as its CSS variables (`--canvas`, `--text-strong`…). Nook sends them
+ * for dark and for light (`BrowserExtensionLook` on the Mac): the chosen theme, the colors set one by one, the accent.
+ */
+export const LOOK_TOKENS = [
+  'canvas', 'well', 'surface', 'field', 'graphite', 'smoke', 'row-hover', 'row-selected', 'bubble', 'composer',
+  'composer-tray', 'menu', 'line', 'line2', 'border', 'separator', 'field-stroke', 'paper', 'text-strong',
+  'text-secondary', 'text-muted', 'text-tertiary', 'blue', 'mint', 'amber', 'coral', 'violet', 'accent', 'on-accent',
+  'accent-hover', 'added', 'removed'
+];
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const clamp = (value, low, high, fallback) => (Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback);
+
+/**
+ * Nook's look as Nook sent it, checked: only known tokens, each a `#RRGGBB` (so a value can never become other CSS),
+ * the appearance one of system, light and dark, and the density's scales within reason. Null when it is not a look.
+ */
+export function cleanLook(raw) {
+  if (!raw || typeof raw !== 'object' || raw.ok === false) return null;
+  const side = (colors) => {
+    const out = {};
+    for (const token of LOOK_TOKENS) {
+      const value = colors && typeof colors === 'object' ? colors[token] : undefined;
+      if (typeof value === 'string' && HEX.test(value)) out[token] = value.toLowerCase();
+    }
+    return out;
+  };
+  const dark = side(raw.dark);
+  const light = side(raw.light);
+  if (!Object.keys(dark).length && !Object.keys(light).length) return null;
+  return {
+    appearance: ['system', 'light', 'dark'].includes(raw.appearance) ? raw.appearance : 'system',
+    textScale: clamp(raw.textScale, 0.85, 1.15, 1),
+    spacingScale: clamp(raw.spacingScale, 0.6, 1.4, 1),
+    dark,
+    light
+  };
+}
+
+/** Whether the panel shows dark: what Nook is set to, or the system's when Nook follows it (or no look is known yet). */
+export function lookIsDark(look, systemIsDark) {
+  if (look?.appearance === 'dark') return true;
+  if (look?.appearance === 'light') return false;
+  return !!systemIsDark;
+}
+
+/** The CSS variables for one appearance: `{ '--canvas': '#000000', …, '--text-scale': '1' }`. */
+export function lookVariables(look, dark) {
+  if (!look) return {};
+  const vars = {};
+  for (const [token, value] of Object.entries(dark ? look.dark : look.light)) vars['--' + token] = value;
+  vars['--text-scale'] = String(look.textScale);
+  vars['--space-scale'] = String(look.spacingScale);
+  return vars;
 }

@@ -3,8 +3,8 @@
 // side panel's questions to Nook. Nook decides what may happen: every action already passed Nook's approval card before
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
-  GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, commandError, describeTabs,
-  isAnswering, isBlocked, isRestricted, normalizeURL, reconnectDelay, siteOf
+  GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, cleanLook, commandError, consoleText,
+  describeTabs, isAnswering, isBlocked, isRestricted, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf
 } from './lib/core.js';
 
 const REQUEST_TIMEOUT = 20_000;
@@ -19,6 +19,8 @@ let attempt = 0;
 let reconnectTimer = null;
 let nextRequest = 0;
 const waiting = new Map();
+// Read-modify-writes of session storage run one at a time, so concurrent commands never drop each other's change.
+const inOrder = serial();
 
 // MARK: - Settings and status (what the side panel shows)
 
@@ -32,14 +34,39 @@ async function settings() {
   return cachedSettings;
 }
 
+/** Never throws: callers fire it and move on, and a failed write must not become an unhandled rejection. */
 async function setStatus(status) {
-  await chrome.storage.session.set({ status: { ...status, at: Date.now() } });
+  try {
+    await chrome.storage.session.set({ status: { ...status, at: Date.now() } });
+  } catch {
+    // Storage is gone (the browser is shutting down); the panel reads the next status.
+  }
 }
 
-async function remember(line) {
-  const { activity = [] } = await chrome.storage.session.get('activity');
-  activity.unshift({ ...line, at: Date.now() });
-  await chrome.storage.session.set({ activity: activity.slice(0, ACTIVITY_LIMIT) });
+/**
+ * Asks Nook how it looks now (its theme, accent and density) and keeps it, so the side panel and the strip on a page
+ * draw Nook's own colors, also while Nook is not running. A Nook that does not know "look" yet leaves the last one.
+ */
+async function refreshLook() {
+  try {
+    const look = cleanLook(await request({ kind: 'look' }));
+    if (!look) return null;
+    const { look: stored } = await chrome.storage.local.get('look');
+    if (JSON.stringify(stored) !== JSON.stringify(look)) await chrome.storage.local.set({ look });
+    return look;
+  } catch {
+    return null;
+  }
+}
+
+/** Never throws: the activity list is for the user's eyes, and a failure there must not keep a result from Nook. */
+function remember(line) {
+  return inOrder(async () => {
+    const stored = await chrome.storage.session.get('activity');
+    const activity = Array.isArray(stored.activity) ? stored.activity : [];
+    activity.unshift({ ...line, at: Date.now() });
+    await chrome.storage.session.set({ activity: activity.slice(0, ACTIVITY_LIMIT) });
+  }).catch(() => {});
 }
 
 // MARK: - The port to Nook
@@ -77,20 +104,25 @@ function scheduleReconnect() {
 }
 
 async function hello() {
+  // The port this hello goes over. When it closes before Nook answers, its onDisconnect already said why ("missing"
+  // when Nook never installed its host here); that must not be overwritten with a plain "offline".
+  const sent = port;
   try {
     const brands = navigator.userAgentData?.brands || [];
     const reply = await request({
       kind: 'hello', protocol: PROTOCOL_VERSION, version: chrome.runtime.getManifest().version,
       browser: browserName(brands, navigator.userAgent), extension: chrome.runtime.id
     });
+    if (port !== sent) return;
     if (reply?.ok) {
       attempt = 0;
       await setStatus({ nook: 'connected', name: reply.name || 'Nook', version: reply.version || '' });
+      refreshLook();
     } else {
       await setStatus({ nook: 'offline', detail: reply?.error || '' });
     }
   } catch (error) {
-    await setStatus({ nook: 'offline', detail: String(error?.message || error) });
+    if (port === sent && port) await setStatus({ nook: 'offline', detail: String(error?.message || error) });
   }
 }
 
@@ -110,7 +142,14 @@ function request(message) {
       resolve: (value) => { clearTimeout(timer); resolve(value); },
       reject: (error) => { clearTimeout(timer); reject(error); }
     });
-    port.postMessage({ ...message, rid });
+    try {
+      port.postMessage({ ...message, rid });
+    } catch (error) {
+      // The port closed and its onDisconnect has not run yet.
+      waiting.delete(rid);
+      clearTimeout(timer);
+      reject(new Error('Nook is not connected.'));
+    }
   });
 }
 
@@ -131,7 +170,7 @@ function onHostMessage(message) {
       else setStatus({ nook: 'offline' });
       break;
     case 'command':
-      run(message);
+      run(message).catch(() => {});
       break;
     case 'chat':
       // A conversation the side panel follows changed: Nook pushes it, so the answer streams in without asking.
@@ -277,8 +316,14 @@ async function open(params, tab, command) {
 }
 
 /** Puts a tab Nook opened in the "Nook" tab group of its window, made once per window. */
-async function groupWithNook(tab) {
-  if (!chrome.tabGroups) return;
+function groupWithNook(tab) {
+  if (!chrome.tabGroups) return Promise.resolve();
+  // One at a time: two tabs opened at once would otherwise each make a group, and the first one's id would be lost,
+  // so Nook could no longer close the tabs it opened there.
+  return inOrder(() => addToNookGroup(tab));
+}
+
+async function addToNookGroup(tab) {
   try {
     const { groups = {} } = await chrome.storage.session.get('groups');
     let groupId = groups[tab.windowId];
@@ -382,7 +427,7 @@ function keepCursor(tabId, result) {
   if (result?.cursor && Number.isFinite(result.cursor.x)) cursors.set(tabId, result.cursor);
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => cursors.delete(tabId));
+chrome.tabs.onRemoved?.addListener((tabId) => cursors.delete(tabId));
 
 /**
  * Runs one method of the page agent (page/agent.js) in the tab's main frame. The agent stays in the page until it
@@ -452,8 +497,6 @@ async function releaseCurrent() {
 const BUSY_HOLD = 12_000;
 /** How long Nook waits for the user to sign in on a page. */
 const SIGN_IN_WAIT = 5 * 60_000;
-// Tabs where the user pressed Continue on the strip after signing in.
-const signedIn = new Set();
 
 /** True while the user looks at another tab than the one Nook works in: Nook then works beside them, not in their view. */
 async function userElsewhere() {
@@ -477,7 +520,6 @@ async function signInWait(tabId, command, before) {
  */
 async function waitForSignIn(tabId, command, before = '', site = '') {
   request({ kind: 'extend', id: command.id, seconds: SIGN_IN_WAIT / 1000 + 30 }).catch(() => {});
-  signedIn.delete(tabId);
   await presence(tabId, 'signIn');
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (tab && !tab.active) {
@@ -495,7 +537,11 @@ async function waitForSignIn(tabId, command, before = '', site = '') {
     }
     const now = await chrome.tabs.get(tabId).catch(() => null);
     if (!now) return { ok: false, error: 'The tab was closed while the user signed in.' };
-    if (signedIn.delete(tabId)) break;
+    // The user pressed Continue on the strip: read in the page's isolated world, so no page can send it as a message.
+    const [pressed] = await chrome.scripting.executeScript({
+      target: { tabId }, func: () => globalThis.__nookPresence?.continued === true
+    }).catch(() => []);
+    if (pressed?.result) break;
     if (now.status !== 'complete') {
       clear = 0;
       continue;
@@ -528,6 +574,14 @@ async function screenshot(tab) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   await use(tab);
+  // captureVisibleTab takes whatever the window shows now. If the user switched tabs meanwhile, that may be a site they
+  // switched Nook off for, or the browser's own pages: check what is in front right before taking it.
+  const [front] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  if (!front || front.id !== tab.id) {
+    return { ok: false, error: `Tab ${tab.id} is no longer the one in front (the user switched tabs). Try again, or ask the user.` };
+  }
+  const refused = commandError({ method: 'screenshot', params: {} }, { ...(await settings()), url: front.url || front.pendingUrl || '' });
+  if (refused) return { ok: false, error: refused };
   const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 70 });
   return { ok: true, image, url: tab.url, text: `Screenshot of ${tab.title || tab.url} (tab ${tab.id}).` };
 }
@@ -587,32 +641,32 @@ async function consoleMessages(tab, params) {
     },
     args: [!!params.clear]
   });
-  const result = frame?.result || { entries: [] };
-  if (result.started) {
+  // This ran in the page's own world, so the page may have put anything in the list: read it with care.
+  const result = frame?.result && typeof frame.result === 'object' ? frame.result : {};
+  if (result.started === true) {
     return { ok: true, text: 'Nook now listens to this page\'s console. Call chrome_console again after the page did something (or after chrome_open url "reload").' };
   }
-  if (!result.entries.length) return { ok: true, text: 'No console errors or warnings since Nook started listening.' };
-  return { ok: true, text: result.entries.map((e) => `${e.level}: ${e.text}`).join('\n') };
+  return { ok: true, text: consoleText(result.entries) || 'No console errors or warnings since Nook started listening.' };
 }
 
 // MARK: - The side panel and the page's Stop button
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (!panelMessageAllowed(message, sender, chrome.runtime.id)) {
+    reply({ ok: false, error: 'Not allowed.' });
+    return false;
+  }
   handlePanel(message, sender).then(reply, (error) => reply({ ok: false, error: String(error?.message || error) }));
   return true;
 });
 
-async function handlePanel(message, sender) {
+async function handlePanel(message) {
   switch (message?.type) {
     case 'connect':
       if (!port) {
         attempt = 0;
         connect();
       }
-      return { ok: true };
-    case 'signedIn':
-      // The user pressed Continue on the strip after signing in.
-      if (sender?.tab?.id !== undefined) signedIn.add(sender.tab.id);
       return { ok: true };
     case 'pause': {
       await chrome.storage.local.set({ paused: !!message.paused });
@@ -632,6 +686,8 @@ async function handlePanel(message, sender) {
       const page = await pageForQuestion(tab);
       return request({ kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page });
     }
+    case 'look':
+      return { ok: true, look: await refreshLook() };
     case 'chat':
       return request({ kind: 'chat', conversation: message.conversation, watch: !!message.watch });
     case 'stopChat':
@@ -653,9 +709,13 @@ chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() =>
 
 // The badge says when Nook is paused here, so it is never paused without the user seeing it.
 async function updateBadge() {
-  const { paused } = await settings();
-  await chrome.action.setBadgeBackgroundColor({ color: '#e0a23a' });
-  await chrome.action.setBadgeText({ text: paused ? '❚❚' : '' });
+  try {
+    const { paused } = await settings();
+    await chrome.action.setBadgeBackgroundColor({ color: '#e0a23a' });
+    await chrome.action.setBadgeText({ text: paused ? '❚❚' : '' });
+  } catch {
+    // The badge is a hint; the side panel still says Nook is paused.
+  }
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -669,6 +729,7 @@ chrome.runtime.onInstalled.addListener(connect);
 chrome.alarms?.create('reconnect', { periodInMinutes: 1 });
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === 'reconnect' && !port) connect();
+  else if (alarm.name === 'reconnect') refreshLook();
 });
 updateBadge();
 connect();
