@@ -12,6 +12,7 @@ use super::command::{CommandInput, LaunchSpec};
 use super::driver::{self, Driver, DriverEvent, Message, RpcId, Step, Wire};
 use super::models::{ExecutionMode, PermissionPolicy, TurnUsage};
 use super::parsers::{number, ClaudeEvent, ClaudeTurnResult, TokenCounts};
+use crate::i18n::tr;
 
 const WIRE: Wire = Wire { jsonrpc: false };
 
@@ -214,7 +215,7 @@ impl CodexDriver {
             (Call::Thread { .. }, None) => {
                 let thread = result.pointer("/thread/id").and_then(Value::as_str).map(str::to_string);
                 let Some(thread) = thread.or_else(|| self.resume.clone()) else {
-                    return self.finish(step, true, "error", "Codex started no thread.".into(), None);
+                    return self.finish(step, true, "error", tr("Codex startte geen gesprek.", "Codex started no thread.").into(), None);
                 };
                 self.thread = Some(thread.clone());
                 let model = result.get("model").and_then(Value::as_str).map(str::to_string);
@@ -399,7 +400,7 @@ impl CodexDriver {
             "item/fileChange/requestApproval" | "applyPatchApproval" => {
                 let kind = if method == "applyPatchApproval" { ApprovalKind::LegacyPatch } else { ApprovalKind::FileChange };
                 let reason = text("reason");
-                let description = if reason.is_empty() { "Apply file changes".to_string() } else { reason };
+                let description = if reason.is_empty() { tr("Bestandswijzigingen toepassen", "Apply file changes").to_string() } else { reason };
                 (kind, "apply_patch".to_string(), json!({"description": description, "path": text("grantRoot")}))
             }
             "mcpServer/elicitation/request" => {

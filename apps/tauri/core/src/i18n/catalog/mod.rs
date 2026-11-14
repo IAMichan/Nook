@@ -3,8 +3,10 @@
 
 use super::Row;
 
+mod automation;
 mod base;
 mod maintenance;
 mod nook_tools;
+mod workspace_agents;
 
-pub const ALL: &[&[Row]] = &[base::ROWS, maintenance::ROWS, nook_tools::ROWS];
+pub const ALL: &[&[Row]] = &[automation::ROWS, base::ROWS, maintenance::ROWS, nook_tools::ROWS, workspace_agents::ROWS];

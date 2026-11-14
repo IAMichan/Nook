@@ -290,7 +290,7 @@ impl ScreenGrant {
 /// this device.
 pub fn chat_list(conversations: &[Conversation], limit: usize, kept: &BTreeSet<String>) -> String {
     let mut list: Vec<&Conversation> = conversations.iter().filter(|c| !c.archived).collect();
-    list.sort_by(|a, b| b.updated.cmp(&a.updated));
+    list.sort_by_key(|c| std::cmp::Reverse(c.updated));
     if list.is_empty() {
         return "No Nook Chat conversations yet.".into();
     }
@@ -624,9 +624,11 @@ mod tests {
     #[test]
     fn starting_a_session_uses_known_folders_and_remembered_choices() {
         crate::i18n::set_language("en");
-        let mut settings = WorkspaceSettings::default();
-        settings.recent_projects = vec!["/code/app".into(), "/code/gone".into(), "/code/site".into()];
-        settings.default_provider = RunProvider::Claude;
+        let mut settings = WorkspaceSettings {
+            recent_projects: vec!["/code/app".into(), "/code/gone".into(), "/code/site".into()],
+            default_provider: RunProvider::Claude,
+            ..Default::default()
+        };
         settings.folder_choices.insert(
             "/code/site".into(),
             FolderChoices {

@@ -100,6 +100,17 @@ pub fn plan(input: &CommandInput) -> Result<Planned, String> {
     }
 }
 
+/// The program a session of `provider` runs, from the one Nook found for the agent: Antigravity runs its ACP server
+/// (found next to `agy`, in Nook's tools folder or on `PATH`), every other agent the program itself.
+pub fn session_executable(provider: RunProvider, found: Option<String>) -> Option<String> {
+    match provider {
+        RunProvider::Antigravity => super::antigravity::server(found.as_deref().unwrap_or("")),
+        RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini | RunProvider::Opencode | RunProvider::Cursor | RunProvider::Grok => {
+            found
+        }
+    }
+}
+
 // MARK: Can this version of the agent run as a server?
 
 type ProbeKey = (String, Option<SystemTime>);
@@ -339,6 +350,10 @@ pub fn is_program(path: &Path) -> bool {
         path.is_file()
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "driver_tests.rs"]
+mod end_to_end;
 
 #[cfg(test)]
 mod tests {
