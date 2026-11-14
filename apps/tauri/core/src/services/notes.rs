@@ -447,7 +447,9 @@ impl NoteStore {
             None => self.notes.insert(0, note.clone()),
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(note) {
-            let _ = paths::write_atomic(&self.dir.join(format!("{}.json", note.id)), &bytes);
+            if let Some(file) = self.file(&note.id) {
+                let _ = paths::write_atomic(&file, &bytes);
+            }
         }
     }
 
@@ -456,9 +458,20 @@ impl NoteStore {
         self.notes.iter().find(|n| n.id == id || (id.len() >= 8 && n.id.starts_with(id)))
     }
 
+    /// Removes a note and its file. Only a note this store holds: the id comes from the window, and an id such as
+    /// `../settings` must never name a file outside the notes folder.
     pub fn delete(&mut self, id: &str) {
-        self.notes.retain(|n| n.id != id);
-        let _ = std::fs::remove_file(self.dir.join(format!("{id}.json")));
+        let Some(index) = self.notes.iter().position(|n| n.id == id) else { return };
+        let note = self.notes.remove(index);
+        if let Some(file) = self.file(&note.id) {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    /// The file of a note, or `None` for an id that is not one plain file name.
+    fn file(&self, id: &str) -> Option<PathBuf> {
+        let plain = !id.is_empty() && id != "." && id != ".." && !id.contains(['/', '\\', ':', '\0']);
+        plain.then(|| self.dir.join(format!("{id}.json")))
     }
 
     pub fn ready(&self) -> Vec<Note> {
@@ -617,5 +630,23 @@ mod tests {
         assert_eq!(again.notes.len(), 1);
         assert!(again.get(&note.id[..8]).is_some());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn delete_never_removes_a_file_outside_the_notes_folder() {
+        let root = std::env::temp_dir().join(format!("nook-notes-{}", uuid::Uuid::new_v4()));
+        let dir = root.join("notes");
+        let mut store = NoteStore::open(dir.clone());
+        let note = Note::new("Call", Utc::now());
+        store.save(&note);
+        let outside = root.join("settings.json");
+        std::fs::write(&outside, b"{}").unwrap();
+        store.delete("../settings");
+        assert!(outside.exists(), "an id from the window must not reach outside the folder");
+        assert_eq!(store.notes.len(), 1);
+        store.delete(&note.id);
+        assert!(store.notes.is_empty());
+        assert!(!dir.join(format!("{}.json", note.id)).exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -219,12 +219,16 @@ pub mod gowa {
         Some((id, Status { link, me }))
     }
 
+    /// The longest QR lifetime taken from the gateway.
+    pub const MAX_QR_SECONDS: u64 = 600;
+
     /// `GET /devices/{id}/login`: het pad van de QR-afbeelding, op te halen bij de koppeling zelf.
     pub fn qr_path(data: &[u8]) -> Option<(String, u64)> {
         let r = results(data);
         let link = r["qr_link"].as_str()?;
         let url = url::Url::parse(link).ok()?;
-        (!url.path().is_empty()).then(|| (url.path().to_string(), r["qr_duration"].as_u64().unwrap_or(30)))
+        // The gateway's number, capped: a code lives for seconds, and a huge value would overflow the expiry time.
+        (!url.path().is_empty()).then(|| (url.path().to_string(), r["qr_duration"].as_u64().unwrap_or(30).min(MAX_QR_SECONDS)))
     }
 
     /// De foutcode van een geweigerde aanroep (`ALREADY_LOGGED_IN`, …).
@@ -836,6 +840,10 @@ mod tests {
         assert_eq!(
             gowa::qr_path(br#"{"results":{"qr_link":"http://localhost:3000/statics/qrcode/scan-qr-1.png","qr_duration":30}}"#),
             Some(("/statics/qrcode/scan-qr-1.png".into(), 30))
+        );
+        assert_eq!(
+            gowa::qr_path(br#"{"results":{"qr_link":"http://localhost:3000/q.png","qr_duration":18446744073709551615}}"#),
+            Some(("/q.png".into(), gowa::MAX_QR_SECONDS))
         );
         let messages = gowa::messages(br#"{"results":{"data":[{"id":"m1","chat_jid":"1@g.us","sender_jid":"2@s.whatsapp.net","sender_display_name":"Piet","content":"hoi @31611111111","timestamp":"2026-10-18T12:00:00Z","is_from_me":false,"media_type":"image"}],"chat_info":{"name":"Familie"}}}"#, Some("31611111111@s.whatsapp.net"));
         assert_eq!(messages[0].chat_name.as_deref(), Some("Familie"));
