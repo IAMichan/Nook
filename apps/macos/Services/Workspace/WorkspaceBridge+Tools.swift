@@ -50,6 +50,8 @@ extension WorkspaceBridge {
             switch task.target {
             case .newSession(let path, _, _): return !folder.isEmpty && WorkspacePathPolicy.normalize(path) == folder
             case .existingSession(let id, _): return id == session
+            // Nook's own tasks belong to no folder or session: an agent sees them only when it asks for all.
+            case .nook: return false
             }
         }
         var lines = [store.isEnabled ? "Scheduled tasks are switched on."
@@ -216,6 +218,8 @@ extension WorkspaceBridge {
         case .existingSession(let id, let fresh):
             place = tr("bridge.schedule.thisSession") + " (" + id.uuidString.prefix(8).lowercased() + ", "
                 + tr(fresh ? "automation.sched.fresh" : "automation.sched.continue") + ")"
+        case .nook:
+            place = tr("automation.sched.destination.nook")
         }
         return [scheduleText(task.rule), place, permission.rawValue, tr(task.enabled ? "bridge.schedule.on" : "bridge.schedule.off")]
             .joined(separator: " · ")

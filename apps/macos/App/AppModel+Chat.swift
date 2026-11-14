@@ -167,10 +167,10 @@ extension AppModel {
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
         // If prompt originated from a card or voice, reveal chat. If user is already typing in chat, stay there.
-        if !viewModel.isShowing(.chat) {
-            warmUp()
-            if reveal { showChat() }
-        }
+        // The connection to the brain is opened while Nook still prepares (plans, searches), also with the chat open:
+        // the first word of the answer then does not wait for a TLS handshake.
+        warmUp()
+        if !viewModel.isShowing(.chat), reveal { showChat() }
         // The screen brain is on this Mac: it may read the whole conversation.
         // As much of the conversation as the brain's window has room for (`ConversationWindow.Limits.fitting`).
         let historyLimits = ConversationWindow.Limits.fitting(settings.brainProfile)
@@ -312,7 +312,10 @@ extension AppModel {
         }
     }
 
-    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil) async {
+    /// `reusing`: what the first try already prepared (plan, searches, documents read). A retry for the same question writes
+    /// the answer again from it instead of planning and searching all over, which only cost time.
+    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil,
+                reusing earlier: PreparedRun? = nil) async {
         // Scope permitted sources: conversation scope plus query-level constraints ("only my calendar and mail").
         let requested = SourceScope.parse(text)
         let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
@@ -348,7 +351,7 @@ extension AppModel {
         let wantsChart = ChartRescue.wantsChart(text)
 
         // Live retrieval steps appear above the streaming response.
-        let ledger = RetrievalLedger()
+        let ledger = earlier?.ledger ?? RetrievalLedger()
         ledger.onChange = { [weak self, weak ledger] in
             guard let self, let ledger, self.replies[conversation] == id else { return }
             let steps = ledger.steps
@@ -373,13 +376,21 @@ extension AppModel {
         let initialSources = attachedName.map { [$0] } ?? []
         // The chosen brain already searched: the small window here goes to its findings and the screen.
         let outsideFound = ReplyContext.outside
-        let prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, prefetch: outsideFound.isEmpty, history: history) { [weak self] summary in
+        let showSummary: ((text: String, titles: [String])) -> Void = { [weak self] summary in
             self?.chat.update(id) {
                 if !initialSources.isEmpty { $0.sources = initialSources }
                 $0.contextSources = summary.titles
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
                 $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }
+        }
+        let prepared: PreparedRun
+        if let earlier {
+            showSummary(earlier.summary)
+            prepared = earlier
+        } else {
+            prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, prefetch: outsideFound.isEmpty,
+                                        history: history, onSummary: showSummary)
         }
 
         if shouldCaptureScreen {
@@ -411,9 +422,9 @@ extension AppModel {
         var brainContext = outsideFound.isEmpty ? prepared.context
             : "What Nook's main brain found for this question, without the screen:\n\(outsideFound.prefix(settings.brainProfile.isSmall ? 2_000 : 8_000))\n\n" + prepared.context
         if !ReplyContext.brief.isEmpty { brainContext = PrivateBrief.context(ReplyContext.brief) + "\n\n" + brainContext }
-        // The answer style and the space's instructions of this conversation, then what the context inspector shows.
+        // The answer style and the space's instructions of this conversation go to the brain with the request, as the
+        // user's own words (not inside the context, which is third-party data); then what the context inspector shows.
         let instructionLines = InstructionStore.shared.instructionLines(for: conversation)
-        if !instructionLines.isEmpty { brainContext = instructionLines.joined(separator: "\n\n") + "\n\n" + brainContext }
         InstructionStore.shared.noteContext(Self.contextBreakdown(instructions: instructionLines, prepared: prepared,
                                                                   budget: settings.brainProfile.contextTokens))
 
@@ -462,6 +473,7 @@ extension AppModel {
                     untrusted: snapshot?.text,
                     images: images,
                     tools: tools,
+                    instructions: instructionLines,
                     onText: { [weak self] partial in
                         guard let self, self.replies[conversation] == id else { return }
                         flusher.push(partial)
@@ -487,7 +499,8 @@ extension AppModel {
                 if !loose.isEmpty {
                     Log.brain.info("ungrounded details: \(loose.count, privacy: .public)")
                     chat.update(id) { $0.text = ""; $0.status = tr("app.status.checking") }
-                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, correction: Grounding.correction(for: loose))
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, correction: Grounding.correction(for: loose),
+                                 reusing: prepared)
                     return
                 }
             }
@@ -507,7 +520,7 @@ extension AppModel {
                 // Still missing chart: retry once with strict instruction to invoke show_chart.
                 if rescued.isEmpty, wantsChart, !retry, !settings.brainProfile.isSmall {
                     chat.update(id) { $0.text = ""; $0.status = tr("app.status.drawing") }
-                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, reusing: prepared)
                     return
                 }
             }
@@ -520,7 +533,7 @@ extension AppModel {
             let broken = !nothing && rescued.isEmpty && plan.actions.isEmpty && Self.looksBroken(rawBody, question: text, expected: settings.answerLanguage(for: text))
             if nothing || broken, !retry {
                 chat.update(id) { $0.text = ""; $0.status = tr("app.status.searching") }
-                await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                await answer(text, history: history, replyID: id, conversation: conversation, retry: true, reusing: prepared)
                 return
             }
 

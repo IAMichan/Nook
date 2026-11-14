@@ -102,8 +102,10 @@ enum ScheduleTiming {
         now.timeIntervalSince(scheduledFor) > missedGraceSeconds
     }
 
-    /// Only fixed times can be missed; an interval that is overdue simply runs once, now.
-    static func shouldSkip(rule: ScheduleRule, scheduledFor: Date, now: Date) -> Bool {
+    /// Only fixed times can be missed; an interval that is overdue simply runs once, now. `catchesUp`: a run that is still
+    /// worth having late (Nook's morning mail overview when the Mac was asleep at eight) runs once when the Mac is awake.
+    static func shouldSkip(rule: ScheduleRule, scheduledFor: Date, now: Date, catchesUp: Bool = false) -> Bool {
+        if catchesUp { return false }
         if case .fixedTime = rule { return isMissed(scheduledFor: scheduledFor, now: now) }
         return false
     }
@@ -114,14 +116,23 @@ enum ScheduledTaskTarget: Equatable, Sendable, Codable {
     /// Every run goes to this session. `fresh`: each run starts a new conversation there (the agent sees nothing of the
     /// earlier runs, the timeline keeps them all); otherwise it continues the conversation.
     case existingSession(id: UUID, fresh: Bool = false)
+    /// Nook Chat answers each run itself, in a conversation of its own that the user opens from the notice: "every morning
+    /// check my mail and draft the replies". Nook only reads and proposes there; whatever it would send or change waits
+    /// in that conversation for the user's own click (a mail draft's Send, a plan's Run), as any chat answer does.
+    case nook
 
     private enum CodingKeys: String, CodingKey { case type, projectPath, provider, profileID, id, fresh }
 
     var sessionID: UUID? { if case .existingSession(let id, _) = self { return id }; return nil }
     var freshConversation: Bool { if case .existingSession(_, let fresh) = self { return fresh }; return false }
+    var isNook: Bool { if case .nook = self { return true }; return false }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if (try? c.decode(String.self, forKey: .type)) == "nook" {
+            self = .nook
+            return
+        }
         if let id = try? c.decode(UUID.self, forKey: .id), (try? c.decode(String.self, forKey: .type)) == "existingSession" {
             self = .existingSession(id: id, fresh: (try? c.decode(Bool.self, forKey: .fresh)) ?? false)
             return
@@ -143,6 +154,8 @@ enum ScheduledTaskTarget: Equatable, Sendable, Codable {
             try c.encode("existingSession", forKey: .type)
             try c.encode(id, forKey: .id)
             if fresh { try c.encode(true, forKey: .fresh) }
+        case .nook:
+            try c.encode("nook", forKey: .type)
         }
     }
 }
@@ -295,4 +308,150 @@ struct WebhookQueue: Sendable {
 
     /// The task was deleted or its webhook rotated.
     mutating func forget(_ taskID: UUID) { counts.removeValue(forKey: taskID) }
+}
+
+/// A scheduled task as Nook Chat proposes it with `schedule_task` ("check my mail every morning at eight and draft the
+/// replies"): the tool's input becomes a task for Nook itself (`ScheduledTaskTarget.nook`), or the problems to fix.
+/// Foundation only, so the parsing is tested on its own; the user approves the task in the plan before it is saved.
+enum NookSchedule {
+    enum Kind: String, CaseIterable {
+        case daily, weekdays, weekly, interval, once
+    }
+
+    struct Draft: Equatable {
+        var title: String
+        var prompt: String
+        var rule: ScheduleRule
+    }
+
+    /// Nook Chat runs on the user's brain, and each run reads sources and writes an answer: more often than every quarter
+    /// of an hour costs a lot and helps nobody.
+    static let minimumMinutes = 15
+
+    /// The task the input asks for, or what is wrong with it in plain language (for the brain, which fixes and asks again).
+    static func parse(_ input: [String: Any], now: Date, calendar: Calendar = .current) -> (draft: Draft?, problems: [String]) {
+        func text(_ key: String) -> String {
+            ((input[key] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func number(_ key: String) -> Int? {
+            if let value = input[key] as? Int { return value }
+            if let value = input[key] as? Double { return Int(value) }
+            return Int(text(key))
+        }
+        var problems: [String] = []
+        let prompt = text("prompt")
+        if prompt.isEmpty { problems.append("give the prompt: what Nook does on each run, complete, in the user's words") }
+        guard let kind = Kind(rawValue: text("schedule").lowercased()) else {
+            problems.append("schedule must be one of: " + Kind.allCases.map(\.rawValue).joined(separator: ", "))
+            return (nil, problems)
+        }
+        var rule: ScheduleRule?
+        switch kind {
+        case .daily, .weekdays, .weekly:
+            guard let time = time(text("time")) else {
+                problems.append("give the time as HH:mm (24 hours), for example 08:00")
+                break
+            }
+            var days: Set<Int> = []
+            if kind == .weekdays { days = [2, 3, 4, 5, 6] }
+            if kind == .weekly {
+                var names: [String] = []
+                if let list = input["days"] as? [Any] { names = list.compactMap { $0 as? String } }
+                else { names = text("days").components(separatedBy: CharacterSet(charactersIn: ", ")).filter { !$0.isEmpty } }
+                days = Set(names.compactMap(weekday))
+                if days.isEmpty { problems.append("give days for a weekly schedule, for example [\"monday\", \"thursday\"]") }
+            }
+            rule = .fixedTime(hour: time.hour, minute: time.minute, weekdays: days)
+        case .interval:
+            guard let minutes = number("every_minutes"), minutes >= minimumMinutes else {
+                problems.append("give every_minutes, at least \(minimumMinutes)")
+                break
+            }
+            rule = .interval(seconds: minutes * 60)
+        case .once:
+            guard let at = moment(text("at"), calendar: calendar) else {
+                problems.append("give at as a date and time, for example 2026-11-20T09:00")
+                break
+            }
+            if at <= now { problems.append("at is in the past; pick a moment that is still to come") }
+            rule = .once(at: at)
+        }
+        guard problems.isEmpty, let rule else { return (nil, problems) }
+        var title = text("title")
+        if title.isEmpty { title = prompt.split(whereSeparator: \.isNewline).first.map { String($0.prefix(60)) } ?? "" }
+        return (Draft(title: String(title.prefix(80)), prompt: prompt, rule: rule), [])
+    }
+
+    /// "08:00", "8:30", "8.30", "8u30", "8h" or "8" → hour and minute.
+    static func time(_ raw: String) -> (hour: Int, minute: Int)? {
+        let trimmed = raw.lowercased().trimmingCharacters(in: .whitespaces)
+        guard let match = trimmed.range(of: #"^(\d{1,2})(?:[:.hu](\d{2})?)?$"#, options: .regularExpression), match == trimmed.startIndex..<trimmed.endIndex else { return nil }
+        let digits = trimmed.split(whereSeparator: { !$0.isNumber }).map(String.init)
+        guard let hour = digits.first.flatMap({ Int($0) }), (0...23).contains(hour) else { return nil }
+        let minute = digits.count > 1 ? Int(digits[1]) ?? -1 : 0
+        guard (0...59).contains(minute) else { return nil }
+        return (hour, minute)
+    }
+
+    /// A weekday name or abbreviation in English, Dutch, German, French or Spanish → 1 (Sunday) … 7 (Saturday).
+    static func weekday(_ raw: String) -> Int? {
+        let name = raw.lowercased().folding(options: .diacriticInsensitive, locale: nil).trimmingCharacters(in: .whitespaces)
+        let days: [(Int, [String])] = [
+            (1, ["sun", "sunday", "zo", "zondag", "so", "sonntag", "dim", "dimanche", "dom", "domingo"]),
+            (2, ["mon", "monday", "ma", "maandag", "mo", "montag", "lun", "lundi", "lunes"]),
+            (3, ["tue", "tues", "tuesday", "di", "dinsdag", "dienstag", "mar", "mardi", "martes"]),
+            (4, ["wed", "wednesday", "wo", "woensdag", "mi", "mittwoch", "mer", "mercredi", "mie", "miercoles"]),
+            (5, ["thu", "thur", "thurs", "thursday", "do", "donderdag", "donnerstag", "jeu", "jeudi", "jue", "jueves"]),
+            (6, ["fri", "friday", "vr", "vrijdag", "fr", "freitag", "ven", "vendredi", "vie", "viernes"]),
+            (7, ["sat", "saturday", "za", "zaterdag", "sa", "samstag", "sam", "samedi", "sab", "sabado"])
+        ]
+        return days.first { $0.1.contains(name) }?.0
+    }
+
+    /// An ISO 8601 moment, with or without seconds and time zone (without one it is the user's own time).
+    static func moment(_ raw: String, calendar: Calendar = .current) -> Date? {
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: raw) { return date }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: raw) { return date }
+        }
+        return nil
+    }
+
+    /// One line for the plan and the audit log, e.g. "Scheduled task “Morning mail”: every day at 08:00".
+    static func summary(_ draft: Draft) -> String {
+        "Scheduled task “\(draft.title)”: " + describe(draft.rule)
+    }
+
+    /// The schedule in plain English, for the plan and for the brain.
+    static func describe(_ rule: ScheduleRule) -> String {
+        switch rule {
+        case .interval(let seconds):
+            return "every \(max(seconds, ScheduleRule.minimumIntervalSeconds) / 60) minutes"
+        case .fixedTime(let hour, let minute, let weekdays):
+            let at = String(format: "%02d:%02d", hour, minute)
+            let valid = weekdays.filter { (1...7).contains($0) }
+            if valid.isEmpty { return "every day at \(at)" }
+            if valid == [2, 3, 4, 5, 6] { return "every weekday at \(at)" }
+            let names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+            return "every " + valid.sorted { ($0 + 5) % 7 < ($1 + 5) % 7 }.map { names[$0 - 1] }.joined(separator: ", ") + " at \(at)"
+        case .webhook:
+            return "when its webhook is called"
+        case .once(let at):
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd HH:mm"
+            return "once, on \(formatter.string(from: at))"
+        }
+    }
+
+    /// What Nook adds to the prompt of a run, for the brain only (`ReplyContext.note`): nobody is watching, so Nook does
+    /// the whole job in one answer, and prepares what the user approves instead of asking questions first.
+    static func runNote(title: String) -> String {
+        "This request is the user's own scheduled task \"\(title)\", which Nook runs by itself; the user is not watching and reads the answer later from a notice. Do the whole task in one answer without asking questions first: look everything up yourself (for mail: inbox_mail, then read_mail for what matters). Start with a short overview of what happened, most important first. For every mail or message that needs an answer from the user, write the reply ready to send: compose_mail once per mail, with reply_to set to its id, in the language of the sender and the user's own style, so the user only has to click Send. Propose other actions as usual; nothing is sent or changed without the user's approval. When nothing needs the user, say so in one line."
+    }
 }

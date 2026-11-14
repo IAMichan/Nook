@@ -220,6 +220,48 @@ enum MailActions {
         return (["\(verb): \(count) message\(count == 1 ? "" : "s")\(capped)."] + items + more).joined(separator: "\n")
     }
 
+    /// The AppleScript lines (inside `tell application "Mail"`) that make `m` a reply to the message with this Message-ID:
+    /// Mail then keeps the thread (In-Reply-To, References), the "Re:" subject and the account the mail came to. It looks in
+    /// every account's inbox, then the unified inbox and the archive Mail keeps for Gmail (All Mail); `m` stays
+    /// `missing value` when Mail cannot find the message, and the caller then makes a new mail. `body` replaces Mail's
+    /// quoted text with the answer; `to` and `cc`, when given, replace the recipients Mail filled in (the user may have
+    /// changed them in the draft).
+    static func replyScript(id: String, body: String, to: [String], cc: [String], openWindow: Bool) -> String {
+        let q = quote(id)
+        var recipients = ""
+        if !to.isEmpty {
+            recipients += "\n        try\n            delete every to recipient of m\n        end try"
+            for address in to {
+                recipients += "\n        make new to recipient at end of to recipients of m with properties {address:\(quote(address))}"
+            }
+        }
+        for address in cc {
+            recipients += "\n        make new cc recipient at end of cc recipients of m with properties {address:\(quote(address))}"
+        }
+        return """
+            set m to missing value
+            set original to missing value
+            repeat with acc in accounts
+                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox" or name is "All Mail" or name is "Archive")
+                    try
+                        set original to first message of box whose message id is \(q)
+                    end try
+                    if original is not missing value then exit repeat
+                end repeat
+                if original is not missing value then exit repeat
+            end repeat
+            if original is missing value then
+                try
+                    set original to first message of inbox whose message id is \(q)
+                end try
+            end if
+            if original is not missing value then
+                set m to reply original \(openWindow ? "with" : "without") opening window
+                set content of m to \(quote(body))\(recipients)
+            end if
+        """
+    }
+
     static func quote(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }

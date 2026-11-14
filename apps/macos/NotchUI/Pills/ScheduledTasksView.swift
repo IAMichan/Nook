@@ -24,7 +24,10 @@ struct ScheduledTasksView: View {
         SetupSheet(title: tr("sched.title"), subtitle: tr("sched.subtitle"), width: 620) {
             SettingsTile(.automation, size: 40)
         } content: {
-            if !settings.scheduledTasksEnabled { banner(tr("sched.disabledGlobal"), color: NookTheme.amber) }
+            // Nook's own tasks run without the switch for agent tasks; the banner is for the agent tasks it holds back.
+            if !settings.scheduledTasksEnabled, store.tasks.contains(where: { !$0.target.isNook }) {
+                banner(tr("sched.disabledGlobal"), color: NookTheme.amber)
+            }
             if case .failed(let message) = listener.state { banner(tr("sched.webhook.failed", message), color: NookTheme.coralSoft) }
             if store.tasks.isEmpty {
                 // No task yet: the sheet says so and offers the first one, as the empty Agents and Nook lists do.
@@ -35,14 +38,14 @@ struct ScheduledTasksView: View {
                     ForEach(store.tasks) { task in
                         TaskRow(task: task,
                                 running: store.isRunning(task.id),
-                                canRun: settings.scheduledTasksEnabled,
+                                canRun: store.mayRun(task),
                                 toggle: { store.setEnabled(task.id, $0) },
                                 runNow: { run(task) },
                                 edit: { editing = EditorTarget(existing: task) },
                                 delete: { deleting = task })
                             .contextMenu {
                                 Button(tr("sched.runNow")) { run(task) }
-                                    .disabled(!settings.scheduledTasksEnabled || store.isRunning(task.id))
+                                    .disabled(!store.mayRun(task) || store.isRunning(task.id))
                                 Button(tr("sched.edit")) { editing = EditorTarget(existing: task) }
                                 Divider()
                                 Button(tr("sched.delete"), role: .destructive) { deleting = task }
@@ -166,6 +169,7 @@ private struct TaskRow: View {
         if task.target.sessionID != nil {
             parts.append(tr(task.target.freshConversation ? "automation.sched.fresh" : "automation.sched.continue"))
         }
+        if task.target.isNook { parts.append(tr("automation.sched.destination.nook")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -251,9 +255,10 @@ private struct ScheduledTaskEditor: View {
         var id: String { rawValue }
     }
 
-    /// Where the runs go: each one a new session in a project, or all of them into one session.
+    /// Where the runs go: each one a new session in a project, all of them into one session, or Nook Chat itself (each run
+    /// a conversation of its own, with drafts and plans that wait for the user).
     private enum Destination: String, CaseIterable, Identifiable {
-        case newSession, session
+        case newSession, session, nook
         var id: String { rawValue }
     }
 
@@ -294,6 +299,7 @@ private struct ScheduledTaskEditor: View {
         if case .existingSession(let id, let isFresh)? = existing?.target {
             destination = .session; sessionID = id; fresh = isFresh
         }
+        if existing?.target.isNook == true { destination = .nook }
         _destination = State(initialValue: destination)
         _sessionID = State(initialValue: sessionID)
         _fresh = State(initialValue: fresh)
@@ -362,8 +368,13 @@ private struct ScheduledTaskEditor: View {
                     .labelsHidden()
                     .frame(maxWidth: 240, alignment: .leading)
                 }
-                } else {
+                } else if destination == .session {
                     sessionPicker
+                } else {
+                    Text(tr("automation.sched.nook.hint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 field(tr("sched.field.schedule")) { scheduleEditor }
                 if kind == .webhook {
@@ -373,7 +384,8 @@ private struct ScheduledTaskEditor: View {
                     Text(tr("sched.permission.webhookNote"))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
-                } else {
+                } else if destination != .nook {
+                    // Nook proposes and drafts; what it would do waits for the user in the chat, so it has no rights to pick.
                     field(tr("sched.permission")) { permissionPicker }
                 }
             }
@@ -469,6 +481,7 @@ private struct ScheduledTaskEditor: View {
         Picker("", selection: $destination) {
             Text(tr("automation.sched.destination.new")).tag(Destination.newSession)
             Text(tr("automation.sched.destination.session")).tag(Destination.session)
+            Text(tr("automation.sched.destination.nook")).tag(Destination.nook)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -696,6 +709,8 @@ private struct ScheduledTaskEditor: View {
             if path.isEmpty || !FileManager.default.fileExists(atPath: path) { return tr("sched.invalid.project") }
         case .session:
             if sessionID == nil { return tr("automation.sched.invalid.session") }
+        case .nook:
+            if kind == .interval, minutes < NookSchedule.minimumMinutes { return tr("automation.sched.invalid.nookInterval", NookSchedule.minimumMinutes) }
         }
         // A once-task whose moment passed is fine when it is unchanged (it ran, or runs when the Mac wakes).
         if kind == .once, onceAt <= Date(), existing?.rule != .once(at: onceAt) { return tr("automation.sched.invalid.past") }
@@ -751,7 +766,7 @@ private struct ScheduledTaskEditor: View {
         if cleaned.coalesceSeconds > 0 {
             cleaned.coalesceSeconds = min(max(cleaned.coalesceSeconds, WebhookRules.coalesceRange.lowerBound), WebhookRules.coalesceRange.upperBound)
         }
-        store.save(task, permission: kind == .webhook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules())
+        store.save(task, permission: kind == .webhook || destination == .nook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules())
         onDone()
     }
 
@@ -759,6 +774,7 @@ private struct ScheduledTaskEditor: View {
         switch destination {
         case .newSession: return .newSession(projectPath: path, provider: provider.rawValue, profileID: profileID)
         case .session: return .existingSession(id: sessionID ?? UUID(), fresh: fresh)
+        case .nook: return .nook
         }
     }
 }

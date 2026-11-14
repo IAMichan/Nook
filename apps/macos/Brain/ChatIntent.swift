@@ -9,6 +9,8 @@ struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
         case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover, network
+        /// Something Nook does by itself again and again, or later ("check my mail every morning and draft the replies").
+        case schedule
     }
 
     /// Recognized kinds, strongest first.
@@ -164,6 +166,7 @@ struct ChatIntent: Equatable {
         if has(#"github|pull request|\bprs?\b|\bissues?\b|\brepo|\bmerge"#) { kinds.append(.github) }
         if has(#"notion|\bwiki\b"#) { kinds.append(.notion) }
         if has(#"\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b"#) { kinds.append(.network) }
+        if Self.schedules(text) { kinds.append(.schedule) }
         if has(#"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert"#) { kinds.append(.clipboard) }
         if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) { kinds.append(.web) }
         // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
@@ -422,7 +425,7 @@ struct ChatIntent: Equatable {
         .availability: ["check_availability", "list_events"],
         .note: ["create_note", "search_notes", "read_note", "list_notes"],
         .todo: ["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
-        .mailWrite: ["compose_mail", "search_contacts", "search_mail", "read_mail"],
+        .mailWrite: ["compose_mail", "inbox_mail", "search_contacts", "search_mail", "read_mail"],
         .mailRead: ["inbox_mail", "search_mail", "read_mail", "mail_unread", "trash_mail", "mark_mail"],
         .contacts: ["search_contacts"],
         .music: ["play_music", "search_music", "media_control"],
@@ -442,13 +445,14 @@ struct ChatIntent: Equatable {
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
+        .schedule: ["schedule_task", "list_scheduled_tasks"],
         .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
         .takeover, .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
-        .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
+        .contacts, .chats, .mailRead, .schedule, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.
@@ -457,6 +461,15 @@ struct ChatIntent: Equatable {
         .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
         .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember", .takeover: "take_over"
     ]
+
+    /// "Check elke ochtend mijn mail", "every weekday at 8", "maak een automatisering", "täglich um 7": a task Nook runs by
+    /// itself on a schedule. It only adds the scheduling tools; a recurring meeting stays an event ("plan elke maandag
+    /// een overleg" also matches the calendar, which comes first).
+    static func schedules(_ text: String) -> Bool {
+        let every = #"\b(elke|iedere|every|each|jeden|jede|chaque|tous les|toutes les|cada|todos los|todas las)\s+(dag|ochtend|morgen|middag|avond|nacht|week|maand|werkdag|uur|kwartier|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|day|morning|afternoon|evening|night|week|month|weekday|workday|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tag|abend|woche|monat|werktag|stunde|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|jour|jours|matin|soir|semaine|mois|heure|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|d[ií]a|d[ií]as|ma[ñn]ana|tarde|noche|semana|mes|hora|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"#
+        let named = #"\b(dagelijks|wekelijks|maandelijks|daily|weekly|monthly|täglich|wöchentlich|monatlich|quotidien(ne)?|hebdomadaire|diario|diariamente|semanal)\b|automatiser|automatisering|\bautomation|\bautomate\b|automatisier|automatización|automatizar|geplande taak|scheduled task|geplante aufgabe|tâche planifiée|tarea programada|\broutine\b"#
+        return text.range(of: every, options: .regularExpression) != nil || text.range(of: named, options: .regularExpression) != nil
+    }
 
     // MARK: Dates
 

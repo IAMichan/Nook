@@ -33,6 +33,7 @@ final class BrainService {
         images: [ChatImage] = [],
         tools allTools: [ToolSpec],
         ownRequest: Bool = false,
+        instructions: [String] = [],
         onText: ((String) -> Void)? = nil
     ) async throws -> BrainPlan {
         let started = CFAbsoluteTimeGetCurrent()
@@ -114,7 +115,10 @@ final class BrainService {
         // Asked for the text of a message: write it out, so the user has it even when the action is not proposed.
         let draftNote = intent.wantsDraft ? " The user wants the text of the message: always write it out in full in your answer, so they can copy it." : ""
         let note = ReplyContext.note.isEmpty ? "" : " " + ReplyContext.note
-        let request = "Request: \(userText)\n\n(\(language) Answer in plain sentences; never output JSON or code unless the request is about code.\(draftNote)\(note))"
+        // The answer style and the space's instructions the user chose: their own words, so they go with the request,
+        // never inside the context that is marked as third-party data.
+        let chosen = instructions.isEmpty ? "" : "The user's instructions for this conversation (follow them):\n" + instructions.joined(separator: "\n\n") + "\n\n"
+        let request = chosen + "Request: \(userText)\n\n(\(language) Never output JSON or code unless the request is about code.\(draftNote)\(note))"
         // A greeting needs no calendar, mail or screen: a small model would otherwise talk about those instead of answering.
         let lean = profile.isSmall && intent.isSmallTalk && history.isEmpty && untrusted == nil
         // What Nook gathered goes to an external brain as the privacy level allows; the request itself is the user's own.
@@ -202,7 +206,9 @@ final class BrainService {
         let prompt = QueryPlanner.prompt(question: question, history: history, sources: sources)
         let known = Set(sources.map(\.id))
         let started = CFAbsoluteTimeGetCurrent()
-        let reply = try? await RetrievalLedger.withTimeout(profile.isSmall ? 12 : 8) { [weak self] in
+        let selection = settings.selection
+        let limit = QueryPlanner.timeout(small: profile.isSmall, agent: selection.runtime == .external && selection.provider.isSubscription)
+        let reply = try? await RetrievalLedger.withTimeout(limit) { [weak self] in
             guard let self else { throw CancellationError() }
             return try await self.complete(system: QueryPlanner.system, prompt: prompt, profile: profile)
         }
@@ -566,8 +572,12 @@ final class BrainService {
     }
 
     /// Warms up the connection (TLS handshake) so the first query doesn't have to wait for it.
+    /// When the connection was last opened ahead: a connection stays open for about a minute, so asking again sooner adds nothing.
+    private var lastPrewarm = Date.distantPast
+
     func prewarm() {
-        guard !settings.isLocalBrain else { return }
+        guard !settings.isLocalBrain, Date().timeIntervalSince(lastPrewarm) > 45 else { return }
+        lastPrewarm = Date()
         let target: URL
         if settings.provider.textWire == .anthropicMessages {
             guard settings.key(for: settings.provider) != nil else { return }
@@ -622,7 +632,7 @@ final class BrainService {
             "You are Nook, the assistant living in the notch of the user's Mac. You chat with the user. \(settings.languageInstruction)",
             "Answer exactly what the user asks in the request. Use the context only where it helps that answer; never summarize the context, the calendar or the screen when nobody asked for it.",
             "Be concise: one to three sentences, unless the user asks for an explanation, a list or a text. Start with the answer itself (yes or no, the number, the name, the date), then at most a short explanation.",
-            "Timezone: \(TimeZone.current.identifier). Current date and time are in context under \"Nu\"."
+            "Timezone: \(TimeZone.current.identifier). Current date and time are in context under \"Now\"."
         ]
         if !names.isEmpty {
             lines.append("Your tools: \(names.joined(separator: ", ")). If the answer is not in the context, call the right tool; never invent times, names or numbers.")
@@ -649,6 +659,7 @@ final class BrainService {
         if names.contains("github_merge_prs") {
             lines.append("To merge several or all pull requests, first list them with github_overview (or github_search), then call github_merge_prs once with all of them.")
         }
+        if names.contains("schedule_task") { lines.append("To have Nook do something by itself regularly or later (\"every morning check my mail and draft replies\"), propose schedule_task with the complete request as prompt; a run only looks things up and drafts, and the user approves what it prepares.") }
         if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name), never take_over. To change a draft, call compose_mail again with the new version: it replaces the draft at once.") }
         if names.contains("use_source") { lines.append("If you need a connected source whose tools you do not have, call use_source first.") }
         if names.contains("remember") {
@@ -687,7 +698,7 @@ final class BrainService {
 
     private func systemPrompt() -> String {
         """
-        You are Nook, the user's personal assistant living in the notch of their Mac. You converse with them in a chat. You see what they see (text across all visible windows on all displays) and you have full access to their Mac applications, calendar, reminders, Apple Notes, email, browser tabs and web content, contacts, files, clipboard, coding agents, and connected services. Combine all of this to provide genuine, fast, and proactive assistance.
+        You are Nook, the user's personal assistant living in the notch of their Mac. You converse with them in a chat. When the screen is included you see what they see (text across all visible windows on all displays; read_screen reads it otherwise), and you can reach their Mac applications, calendar, reminders, Apple Notes, email, browser tabs and web content, contacts, files, clipboard, coding agents, and connected services. Combine all of this to provide genuine, fast, and proactive assistance.
         Current date and time are in context under "Now". Timezone: \(TimeZone.current.identifier).
 
         Style:
@@ -711,7 +722,9 @@ final class BrainService {
         - Browser: use read_browser_tab to read the full text of the open webpage in Safari, Chrome, Edge, Brave or Arc (e.g. for "summarize this page", "what does the site say"); give tab with part of the site's name or address when the user names it ("FileSender"). The list of open tabs in the context can be minutes old: when the user says a page is open, read it with read_browser_tab instead of saying it is not there.
         - Other Mac Apps: use list_running_apps to see what is running, get_active_app for the focused app, and read_app for ANY app (Notes, Slack, WhatsApp, Teams, Terminal, Finder, Music, Things, Spotify, etc.). Nook reads scriptable apps natively, reads accessibility text, or captures window content.
         - Contacts & Clipboard: use search_contacts to find names, phone numbers, and email addresses; read_clipboard to see what the user just copied.
-        - Mail: use compose_mail to draft an interactive email draft in chat; inbox_mail to see recent inbox mail; search_mail for targeted email search; read_mail to read a whole message; mail_unread for counts and statistics; trash_mail to move mail to the Trash and mark_mail to mark it read, unread or flagged (by ids from search_mail or by a sender/subject filter).
+        - Mail: use compose_mail to draft an interactive email draft in chat (reply_to with the id of the mail it answers, one compose_mail per mail); inbox_mail to see recent inbox mail with each message's id; search_mail for targeted email search; read_mail to read a whole message; mail_unread for counts and statistics; trash_mail to move mail to the Trash and mark_mail to mark it read, unread or flagged (by ids from search_mail or by a sender/subject filter).
+        - Automations: when the user wants Nook to do something by itself on a schedule ("check my mail every morning and draft the replies", "every Friday a summary of my week"), propose schedule_task with the complete request as prompt and the schedule. Check list_scheduled_tasks first when one may exist already.
+        - Answering mail: open the message with read_mail when its start is not enough, then compose_mail with reply_to set to its id, in the sender's language. Several mails that need an answer get one compose_mail each.
         - Acting in ANY app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.
         - Whole tasks: for something that takes many steps in apps or on websites (order or buy something, book a trip, unsubscribe, fill out and send a form, finish what is on screen, change an option that sits a few screens deep in System Settings, edit a part of a document), call take_over with the task in the user's words. Nook then works through it by itself in the user's apps and browser, and asks the user before anything that pays, orders, sends, deletes or books.
         - Editing a document: when the user asks to change, improve or rewrite text in a document or on screen (Word, Pages, Google Docs, Keynote, a text field…) and no tool edits that document directly, never say you cannot and never hand them the steps: call take_over with the change in the user's words (or read_ui and propose control_ui steps), so Nook makes the change itself with mouse and keyboard.
@@ -733,7 +746,7 @@ final class BrainService {
         4. Answer the question itself, with the facts that matter (who, what, when, how many), and cite them. Never answer yes or no without evidence for it; if you could not look, say where you could not look and why.
 
         Working guidelines:
-        - Answer questions directly using the context provided below. If context is missing or partial, invoke the matching read tool immediately.
+        - Answer questions directly using the context provided below. Only when it does not answer the question, invoke the matching read tool right away.
         - Nook searches the relevant sources itself before you answer: the results and the best matches, read in full, are in the context under "Looked up for this question". Answer from those documents. When a result looks relevant but only its start or title is there, open it in full (read_note, read_mail, read_file, notion_read_page, github_issue_details, read_webpage). When nothing relevant was found, search again with other keywords (synonyms, a name, a single word) and in other sources before concluding it is not there.
         - For every question, work out where the answer lives: Notes → search_notes / list_notes / read_note; Reminders → list_reminders / search_reminders; Mail → inbox_mail / search_mail; Browser → read_browser_tab; Open apps / windows → read_app / list_running_apps; People / phone numbers → search_contacts; Meetings → check_availability / list_events; Files → search_files / read_file; Code/PRs → GitHub. Combine tools freely.
         - Action tools (events, reminders, todos, notes, mail changes, app menu commands, apps, links, music, volume, Shortcuts, messages via connected services, messages to and new coding agent sessions, GitHub PR review/comment/merge/close) are not executed directly by you: they appear as a structured plan in chat and execute only when the user clicks Execute. Invoke them immediately with validated parameters, without asking for confirmation first. You may propose multiple actions in a single plan.
@@ -752,7 +765,7 @@ final class BrainService {
 
         What the user sees:
         - <screen_content> contains text from all visible windows across all displays, frontmost window first. Determine which window relates to the query; "this", "here", "that", and "that email" usually refer to the frontmost window. If <screen_content> is missing, retrieve it with read_screen.
-        - If inspecting the screen during an automated background check and nothing actionable is found, respond ONLY with the word NONE.
+        - Only when the request itself says to answer NONE when nothing is relevant (a background check of the screen), and nothing is, respond ONLY with the word NONE.
 
         Combining sources:
         - For a question that spans several sources (mail, documents, chat messages, issues, calendar), look in each relevant one, then bring the findings together per topic rather than per source.

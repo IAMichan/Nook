@@ -11,6 +11,16 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Automations in Nook Chat: ask "check my mail every morning at 8, tell me what happened and draft the replies" and Nook
+  proposes a scheduled task you approve with one click. Each run is a conversation of its own with an overview and a
+  ready reply per mail that needs one, so you only click Send; a notice says when it is ready. Nothing is sent or changed
+  by the run itself. Nook's own tasks run without the switch for agent tasks, a morning overview the Mac slept through
+  runs when it wakes, and you can also pick *Nook Chat* as the destination in Settings › Automation › Scheduled tasks.
+
+- Better mail in Nook Chat: replies go out as Mail's own reply to the message (same thread and account) instead of a new
+  mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
+  mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.
+
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
   it gets the same look and feel; nothing else of theirs changes.
@@ -184,6 +194,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Nook Chat answers sooner: an API brain gets 5 s instead of 8 s to plan a question before Nook falls back to its own
+  search, the connection to the brain is opened while Nook prepares (also with the chat open), and a retry (a chart, a
+  corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
+- Your answer style and a space's instructions now reach the brain as your own instructions instead of inside the
+  context marked as third-party data, so they are followed; the prompt names the date line correctly ("Now").
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's
