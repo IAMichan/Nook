@@ -184,6 +184,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Nook in your browser is much faster and answers better: a question from the side panel takes the page's text (and
+  what you selected) along, so Nook answers about the page right away instead of first reading it with a tool. Nook
+  pushes its answer to the side panel as it writes it, as live as in Nook's own window, instead of the panel asking
+  every second. Commands on a page take one trip instead of two, clicks no longer wait a fixed time, and finding the
+  buttons and fields on a long page is quicker. The page's text goes only to a brain that may see your browser.
+
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's

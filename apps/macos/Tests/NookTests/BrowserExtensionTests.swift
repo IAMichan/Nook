@@ -160,6 +160,32 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertEqual(next.object?["method"] as? String, "find")
     }
 
+    func testAConversationChangeIsPushedOnTheNextPollAndOnlyTheNewestWaits() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Google Chrome"])
+        XCTAssertTrue(hub.push(["kind": "chat", "conversation": "A", "revision": "1"], to: "c1", key: "chat:A"))
+        XCTAssertTrue(hub.push(["kind": "chat", "conversation": "A", "revision": "2"], to: "c1", key: "chat:A"))
+        let poll = send(hub, "c1", ["kind": "poll"])
+        XCTAssertEqual(poll.object?["kind"] as? String, "chat")
+        XCTAssertEqual(poll.object?["revision"] as? String, "2", "a newer change replaces the queued one")
+        let next = send(hub, "c1", ["kind": "poll"])
+        XCTAssertNil(next.object, "nothing else waits")
+        XCTAssertFalse(hub.push(["kind": "chat"], to: "gone", key: "chat:A"), "no push to a browser that is not there")
+    }
+
+    func testAPushWhosePollWentStaysQueued() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Brave"])
+        let dead = send(hub, "c1", ["kind": "poll"])
+        dead.alive = false
+        hub.push(["kind": "chat", "revision": "7"], to: "c1", key: "chat:B")
+        XCTAssertEqual(send(hub, "c1", ["kind": "poll"]).object?["revision"] as? String, "7")
+    }
+
+    func testTheHostPassesPushedConversationsOn() {
+        XCTAssertTrue(BrowserExtensionHost.contents.contains("$message->{kind} eq 'chat'"))
+    }
+
     func testANewPollFromTheSameHostAnswersTheOldOneIdle() {
         let hub = BrowserExtensionHub()
         let first = send(hub, "c1", ["kind": "poll"])
@@ -292,6 +318,41 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertTrue(note.contains("untrusted"))
         XCTAssertNil(BrowserExtensionPanel.Page(["title": "No address"]))
         XCTAssertTrue(BrowserExtensionPanel.note(page: nil, browser: "").contains("cannot read"))
+    }
+
+    func testThePagesTextGoesAlongSoNookNeedsNoReadFirst() throws {
+        let page = try XCTUnwrap(BrowserExtensionPanel.Page([
+            "title": "Release notes", "url": "https://example.com/notes", "tab": 2,
+            "text": "Version 2 adds live answers.", "selection": "live answers"
+        ]))
+        let note = BrowserExtensionPanel.note(page: page, browser: "Google Chrome")
+        XCTAssertTrue(note.contains("without calling chrome_read"))
+        XCTAssertTrue(note.contains("untrusted"))
+        let reading = try XCTUnwrap(page.reading)
+        XCTAssertEqual(reading.site, "example.com")
+        XCTAssertEqual(reading.title, "Release notes")
+        XCTAssertTrue(reading.text.contains("https://example.com/notes"))
+        XCTAssertTrue(reading.text.contains("The user selected: \"live answers\""))
+        XCTAssertTrue(reading.text.contains("Version 2 adds live answers."))
+
+        let kept = page.withoutText
+        XCTAssertNil(kept.reading, "a brain that may not see the browser gets no page text")
+        XCTAssertTrue(BrowserExtensionPanel.note(page: kept, browser: "").contains("read it with chrome_read first"))
+
+        let long = try XCTUnwrap(BrowserExtensionPanel.Page(["url": "https://example.com", "text": String(repeating: "a", count: 40_000)]))
+        XCTAssertEqual(long.text.count, BrowserExtensionPanel.textLimit)
+        XCTAssertTrue(BrowserExtensionPanel.note(page: long, browser: "").contains("clipped"))
+    }
+
+    func testTheRevisionChangesWithAnyVisibleChange() {
+        let base: [[String: Any]] = [["id": "1", "fromNook": true, "text": "Hel", "streaming": true, "status": ""]]
+        var more = base
+        more[0]["text"] = "Hello"
+        var done = more
+        done[0]["streaming"] = false
+        let revisions = Set([base, more, done].map(BrowserExtensionPanel.revision))
+        XCTAssertEqual(revisions.count, 3)
+        XCTAssertEqual(BrowserExtensionPanel.revision(base), BrowserExtensionPanel.revision(base))
     }
 
     // MARK: - The browser_* bridge tools in the user's own browser

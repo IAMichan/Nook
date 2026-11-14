@@ -13,6 +13,10 @@ let conversation = null;
 let messages = [];
 let pollTimer = null;
 let windowId = null;
+// What Nook last sent of the conversation, and whether Nook pushes its changes (Nook 2 and later) or the panel asks.
+let revision = null;
+let live = false;
+let lastUpdate = 0;
 
 function send(message) {
   return chrome.runtime.sendMessage(message);
@@ -101,8 +105,21 @@ async function renderActivity() {
 
 // MARK: - Chat
 
+/** Takes the conversation as Nook sent it; draws it again only when it changed. */
+function applyMessages(next, nextRevision) {
+  lastUpdate = Date.now();
+  if (!Array.isArray(next)) return;
+  const same = nextRevision ? nextRevision === revision : JSON.stringify(next) === JSON.stringify(messages);
+  revision = nextRevision || null;
+  if (same && messages.length) return;
+  messages = next;
+  renderMessages();
+}
+
 function renderMessages() {
   const chat = $('chat');
+  // Follow the answer while the user is at the bottom; leave them where they are when they scrolled up to read.
+  const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 48;
   chat.replaceChildren();
   if (!messages.length) {
     const intro = document.createElement('p');
@@ -136,7 +153,7 @@ function renderMessages() {
     }
     chat.append(bubble);
   }
-  chat.scrollTop = chat.scrollHeight;
+  if (atBottom) chat.scrollTop = chat.scrollHeight;
   renderComposer();
 }
 
@@ -207,25 +224,41 @@ async function ask(text) {
     return;
   }
   conversation = reply.conversation || conversation;
+  live = !!reply.live;
   await chrome.storage.session.set({ conversation });
-  if (reply.messages) messages = reply.messages;
-  renderMessages();
+  applyMessages(reply.messages, reply.revision);
   follow();
 }
 
-/** Reads the conversation again every second while Nook answers, for at most five minutes. */
+/**
+ * While Nook answers: Nook pushes every change (see the chatUpdate listener), and this only asks now and then in case a
+ * push got lost. An older Nook does not push; then the panel asks every second, as before. At most ten minutes.
+ */
 function follow(started = Date.now()) {
   clearTimeout(pollTimer);
-  if (!conversation || Date.now() - started > 5 * 60_000) return;
+  if (!conversation || Date.now() - started > 10 * 60_000) return;
+  const every = live ? 2_500 : 1_000;
   pollTimer = setTimeout(async () => {
-    const reply = await send({ type: 'chat', conversation }).catch(() => null);
-    if (reply?.ok && reply.messages) {
-      messages = reply.messages;
-      renderMessages();
+    pollTimer = null;
+    if (live && Date.now() - lastUpdate < every) {
+      if (isAnswering(messages)) follow(started);
+      return;
+    }
+    const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
+    if (reply?.ok) {
+      live = !!reply.live;
+      applyMessages(reply.messages, reply.revision);
     }
     if (!reply?.ok || isAnswering(messages)) follow(started);
-  }, 1000);
+  }, every);
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== 'chatUpdate' || !conversation || message.conversation !== conversation) return;
+  live = true;
+  applyMessages(message.messages, message.revision);
+  if (isAnswering(messages) && !pollTimer) follow();
+});
 
 $('composer').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -245,8 +278,10 @@ $('input').addEventListener('keydown', (event) => {
 
 $('new-chat').addEventListener('click', async () => {
   clearTimeout(pollTimer);
+  pollTimer = null;
   conversation = null;
   messages = [];
+  revision = null;
   await chrome.storage.session.remove('conversation');
   renderMessages();
   $('input').focus();
@@ -255,10 +290,7 @@ $('new-chat').addEventListener('click', async () => {
 $('stop').addEventListener('click', async () => {
   if (!conversation) return;
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
-  if (reply?.messages) {
-    messages = reply.messages;
-    renderMessages();
-  }
+  if (reply?.messages) applyMessages(reply.messages, reply.revision);
 });
 
 // MARK: - Start
@@ -297,10 +329,10 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   renderMessages();
   await send({ type: 'connect' }).catch(() => {});
   if (conversation) {
-    const reply = await send({ type: 'chat', conversation }).catch(() => null);
+    const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
     if (reply?.ok && reply.messages) {
-      messages = reply.messages;
-      renderMessages();
+      live = !!reply.live;
+      applyMessages(reply.messages, reply.revision);
       if (isAnswering(messages)) follow();
     } else {
       conversation = null;

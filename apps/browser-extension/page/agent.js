@@ -35,8 +35,13 @@
     return ref;
   }
 
+  /** Whether the user can see the element. `checkVisibility` asks the browser's own layout, much faster than styles. */
   function shown(element) {
-    if (!element.isConnected || element.getClientRects().length === 0) return false;
+    if (!element.isConnected) return false;
+    if (element.checkVisibility) {
+      return element.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && element.getClientRects().length > 0;
+    }
+    if (element.getClientRects().length === 0) return false;
     const style = getComputedStyle(element);
     return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) !== 0;
   }
@@ -146,9 +151,16 @@
   function read(params = {}) {
     const limit = Math.max(500, Math.min(Number(params.limit) || TEXT_LIMIT, 100_000));
     const root = document.querySelector('main, [role=main], article') || document.body;
-    const text = clean(root?.innerText || '').length > 200 ? root.innerText : document.body?.innerText || '';
+    // innerText lays the page out; it is read once per part, not again for the length check.
+    const main = root?.innerText || '';
+    const text = root !== document.body && clean(main).length <= 200 ? document.body?.innerText || '' : main;
     const tidy = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
     const selection = clean(String(getSelection() || ''));
+    // For a question from the side panel: the text and the selection apart, without the header Nook adds itself.
+    if (params.plain) {
+      const body = tidy.length > limit ? tidy.slice(0, limit) + `\n… (${tidy.length - limit} more characters; the page is long)` : tidy;
+      return { ok: true, text: body, selection: clip(selection, 2_000) };
+    }
     const scrolled = document.documentElement.scrollHeight > innerHeight
       ? Math.round((scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)) * 100) : null;
     const lines = [`# ${document.title || '(no title)'}`, location.href];

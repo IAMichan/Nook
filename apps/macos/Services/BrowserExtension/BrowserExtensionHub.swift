@@ -53,6 +53,9 @@ final class BrowserExtensionHub: @unchecked Sendable {
     private struct Command {
         let id: String
         let line: Data
+        /// An event nobody waits for (the side panel's conversation changed): it stays queued until a poll takes it, and
+        /// a newer event with the same key replaces it, so a busy stream never piles up.
+        var event = false
     }
 
     private let lock = NSLock()
@@ -203,7 +206,7 @@ final class BrowserExtensionHub: @unchecked Sendable {
             lock.unlock()
             if poll.reply(command.line) { continue }
             lock.lock()
-            if waiting[command.id] != nil { queued[client, default: []].insert(command, at: 0) }
+            if command.event || waiting[command.id] != nil { queued[client, default: []].insert(command, at: 0) }
             lock.unlock()
             return
         }
@@ -254,6 +257,31 @@ final class BrowserExtensionHub: @unchecked Sendable {
             self.lock.unlock()
             expired?(.timedOut(after: Int(timeout)))
         }
+    }
+
+    // MARK: - Events to a browser
+
+    /// Hands a browser's extension a line nobody answers (`{"kind": "chat", …}`: the side panel's conversation changed),
+    /// on its next poll. A queued event with the same `key` is replaced by this newer one. False when that browser is
+    /// not connected.
+    @discardableResult
+    func push(_ object: [String: Any], to client: String, key: String) -> Bool {
+        let line = Self.encode(object)
+        lock.lock()
+        guard liveClients().contains(where: { $0.id == client }) else {
+            lock.unlock()
+            return false
+        }
+        var queue = queued[client] ?? []
+        if let index = queue.firstIndex(where: { $0.event && $0.id == key }) {
+            queue[index] = Command(id: key, line: line, event: true)
+        } else {
+            queue.append(Command(id: key, line: line, event: true))
+        }
+        queued[client] = queue
+        lock.unlock()
+        deliver(client)
+        return true
     }
 
     // MARK: - Lines

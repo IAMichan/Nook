@@ -108,9 +108,17 @@ Nook's commands ─────────┘                                  
 - **Tools** (`BrowserExtensionTools`). One definition per tool covers the name, method, schema, timeout, how its
   arguments are checked, and how its approval reads. `BrowserExtensionConnector` turns these definitions into Nook's
   `ToolSpec`s.
-- **Side panel.** A question becomes `app.ask(…, in: conversation, reveal: false, note:)`, the same path the iPhone
-  companion uses. The page in front goes along as a note that is never shown in the chat
-  (`BrowserExtensionPanel.note`). The panel reads the conversation again every second while Nook answers.
+- **Side panel.** A question becomes `app.ask(…, in: conversation, reveal: false, note:, page:)`, the same path the
+  iPhone companion uses. The page in front goes along as a note that is never shown in the chat
+  (`BrowserExtensionPanel.note`). When Nook may use the site (not paused, not switched off), the extension also reads
+  the page's text and the user's selection as the question is asked (at most 16,000 characters, and only when the page
+  answers within 1.5 s). That text goes to the brain like a dropped file (`ReplyContext.page`), so Nook answers about
+  the page without first spending a round on `chrome_read`. It goes only to a brain that may see the browser
+  extension: with a privacy level or a choice that keeps it on this Mac, only the title and address go along.
+- **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
+  `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
+  and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got
+  lost, and every second with an older Nook that does not push (`live` is false).
 
 ## Developing
 

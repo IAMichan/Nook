@@ -1042,6 +1042,10 @@ enum ReplyContext {
     /// The question brings its own material (words selected in Nook, `SelectionAsk`): no screen and no dropped file go
     /// with it unless it asks about the screen itself.
     @TaskLocal static var selfContained = false
+    /// The page the user asked about from Nook's browser extension, with its text as they see it
+    /// (`BrowserExtensionPanel.Page`): it goes with the question like a dropped file, so Nook answers about the page at
+    /// once instead of first reading it with a tool. Only when the conversation's sources allow the browser extension.
+    @TaskLocal static var page: ScreenSnapshot?
     /// What the chosen brain found for a question both brains work on (`ScreenBrain.needsBoth`).
     @TaskLocal static var outside = ""
     /// The note the model on this Mac wrote for the chosen brain (`PrivateBrief`), and the mail addresses it read: those

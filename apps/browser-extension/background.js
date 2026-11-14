@@ -4,12 +4,15 @@
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
   GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, commandError, describeTabs,
-  isRestricted, normalizeURL, reconnectDelay, siteOf
+  isBlocked, isRestricted, normalizeURL, reconnectDelay, siteOf
 } from './lib/core.js';
 
 const REQUEST_TIMEOUT = 20_000;
 const LOAD_TIMEOUT = 20_000;
 const ACTIVITY_LIMIT = 40;
+/** As much page text as goes along with a question from the side panel (BrowserExtensionPanel.textLimit in Nook). */
+const PAGE_TEXT_LIMIT = 16_000;
+const PAGE_READ_TIMEOUT = 1_500;
 
 let port = null;
 let attempt = 0;
@@ -19,9 +22,14 @@ const waiting = new Map();
 
 // MARK: - Settings and status (what the side panel shows)
 
+// Read once and kept up to date by storage.onChanged, so a command does not wait for storage each time.
+let cachedSettings = null;
+
 async function settings() {
+  if (cachedSettings) return cachedSettings;
   const stored = await chrome.storage.local.get({ paused: false, blocked: [] });
-  return { paused: !!stored.paused, blocked: Array.isArray(stored.blocked) ? stored.blocked : [] };
+  cachedSettings = { paused: !!stored.paused, blocked: Array.isArray(stored.blocked) ? stored.blocked : [] };
+  return cachedSettings;
 }
 
 async function setStatus(status) {
@@ -124,6 +132,11 @@ function onHostMessage(message) {
       break;
     case 'command':
       run(message);
+      break;
+    case 'chat':
+      // A conversation the side panel follows changed: Nook pushes it, so the answer streams in without asking.
+      chrome.runtime.sendMessage({ type: 'chatUpdate', conversation: message.conversation, messages: message.messages, revision: message.revision })
+        .catch(() => {});
       break;
     default:
       break;
@@ -293,23 +306,60 @@ function waitForLoad(tabId, timeout = LOAD_TIMEOUT) {
   });
 }
 
-/** After a click or a key: if the page starts loading, wait for it, so the next look sees the new page. */
+/**
+ * After a click or a key: if the page starts loading, wait for it, so the next look sees the new page. Most clicks
+ * load nothing; those return after a short look instead of a fixed wait.
+ */
 async function settle(tabId) {
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (tab?.status === 'loading') await waitForLoad(tabId, 10_000);
+  for (const pause of [120, 200]) {
+    await new Promise((resolve) => setTimeout(resolve, pause));
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.status === 'loading') {
+      await waitForLoad(tabId, 10_000);
+      return;
+    }
+  }
 }
 
-/** Runs one method of the page agent (page/agent.js) in the tab's main frame. */
+/**
+ * Runs one method of the page agent (page/agent.js) in the tab's main frame. The agent stays in the page until it
+ * reloads, so it is injected only when it is not there yet: one trip to the page instead of two for most commands.
+ */
 async function agent(tabId, method, params) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['page/agent.js'] });
-  const [frame] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (name, input) => globalThis.__nookAgent.run(name, input),
-    args: [method, params]
-  });
-  const result = frame?.result;
-  return result && typeof result === 'object' ? result : { ok: false, error: 'The page did not answer.' };
+  const call = async () => {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (name, input) => (globalThis.__nookAgent ? globalThis.__nookAgent.run(name, input) : { missing: true }),
+      args: [method, params]
+    });
+    return frame?.result;
+  };
+  let result = await call();
+  if (result?.missing) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['page/agent.js'] });
+    result = await call();
+  }
+  return result && typeof result === 'object' && !result.missing ? result : { ok: false, error: 'The page did not answer.' };
+}
+
+/**
+ * The page in front as the side panel's question takes it along: its title and address, and, when Nook may use this
+ * site, its text and the user's selection, so Nook answers about it right away instead of first reading it with a
+ * tool. A page that does not answer quickly goes without its text.
+ */
+async function pageForQuestion(tab) {
+  if (!tab || isRestricted(tab.url)) return null;
+  const page = { title: tab.title || '', url: tab.url || '', tab: tab.id };
+  const { paused, blocked } = await settings();
+  if (paused || isBlocked(tab.url, blocked)) return page;
+  const reading = agent(tab.id, 'read', { limit: PAGE_TEXT_LIMIT, plain: true }).catch(() => null);
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), PAGE_READ_TIMEOUT));
+  const result = await Promise.race([reading, timeout]);
+  if (result?.ok) {
+    page.text = result.text || '';
+    page.selection = result.selection || '';
+  }
+  return page;
 }
 
 /** A strip on the page while Nook acts there, with a Stop button that pauses Nook in this browser. */
@@ -420,11 +470,11 @@ async function handlePanel(message) {
     }
     case 'ask': {
       const tab = await activeTab(message.windowId);
-      const page = tab && !isRestricted(tab.url) ? { title: tab.title || '', url: tab.url || '', tab: tab.id } : null;
+      const page = await pageForQuestion(tab);
       return request({ kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page });
     }
     case 'chat':
-      return request({ kind: 'chat', conversation: message.conversation });
+      return request({ kind: 'chat', conversation: message.conversation, watch: !!message.watch });
     case 'stopChat':
       return request({ kind: 'stopChat', conversation: message.conversation });
     default:
@@ -450,6 +500,7 @@ async function updateBadge() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (changes.paused || changes.blocked)) cachedSettings = null;
   if (area === 'local' && changes.paused) updateBadge();
 });
 

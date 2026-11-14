@@ -137,7 +137,8 @@ extension AppModel {
     /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
     /// `ReplyContext.selfContained`.
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
-             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false) {
+             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false,
+             page: ScreenSnapshot? = nil) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
@@ -190,10 +191,12 @@ extension AppModel {
                             await ReplyContext.$messageID.withValue(replyID) {
                                 await ReplyContext.$note.withValue(note) {
                                     await ReplyContext.$selfContained.withValue(selfContained) {
-                                        if let relay {
-                                            await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
-                                        } else {
-                                            await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                        await ReplyContext.$page.withValue(page) {
+                                            if let relay {
+                                                await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
+                                            } else {
+                                                await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                            }
                                         }
                                     }
                                 }
@@ -300,12 +303,14 @@ extension AppModel {
             await ReplyContext.$images.withValue([]) {
                 await ReplyContext.$note.withValue("") {
                     await ReplyContext.$focus.withValue([]) {
-                        let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
-                        let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
-                        let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
-                                                        context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
-                        // Its citations point at lookups the answer on this Mac does not have.
-                        return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        await ReplyContext.$page.withValue(nil) {
+                            let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
+                            let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
+                            let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
+                                                            context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
+                            // Its citations point at lookups the answer on this Mac does not have.
+                            return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        }
                     }
                 }
             }
@@ -335,6 +340,11 @@ extension AppModel {
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
             images = attachmentImages
+            shouldCaptureScreen = false
+        } else if let page = ReplyContext.page, scope.allows(BrowserExtensionTools.sourceID) {
+            // Asked from the browser's side panel: the page it read goes along, so no tool round is spent reading it.
+            let limit = settings.brainProfile.isSmall ? 8_000 : BrowserExtensionPanel.textLimit
+            snapshot = ScreenSnapshot(appName: page.appName, windowTitle: page.windowTitle, text: String(page.text.prefix(limit)))
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (!selfContained && settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
