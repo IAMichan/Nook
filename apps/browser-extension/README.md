@@ -15,5 +15,5 @@ approve each action.
 | `lib/core.js` | Pure logic (checks, texts for Nook), tested in `test/` |
 | `page/agent.js` | Nook's hands on a page (find, read, click, type, scroll, key), injected only when asked |
 | `page/presence.js` | The glow and the "Nook is working · Stop" strip while Nook acts |
-| `sidepanel.*` | The side panel: status, the switch per site, pause, chat, and activity |
+| `sidepanel.*` | The side panel: status, the switch per site, pause, chat, and activity, in Nook's own theme (`look`) |
 | `_locales/` | Texts in English, Dutch, German, French and Spanish |

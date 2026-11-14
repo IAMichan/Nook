@@ -587,6 +587,7 @@ targets:
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
       - path: Services/BrowserExtension/BrowserExtensionHost.swift
       - path: Services/BrowserExtension/BrowserExtensionHub.swift
+      - path: Services/BrowserExtension/BrowserExtensionLook.swift
       - path: Services/BrowserExtension/BrowserExtensionTools.swift
       - path: Services/Workspace/SessionCommandReceipts.swift
       - path: Services/Workspace/SecretFiles.swift

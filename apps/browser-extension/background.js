@@ -3,7 +3,7 @@
 // side panel's questions to Nook. Nook decides what may happen: every action already passed Nook's approval card before
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
-  GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, commandError, describeTabs,
+  GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, cleanLook, commandError, describeTabs,
   isRestricted, normalizeURL, reconnectDelay, siteOf
 } from './lib/core.js';
 
@@ -26,6 +26,22 @@ async function settings() {
 
 async function setStatus(status) {
   await chrome.storage.session.set({ status: { ...status, at: Date.now() } });
+}
+
+/**
+ * Asks Nook how it looks now (its theme, accent and density) and keeps it, so the side panel and the strip on a page
+ * draw Nook's own colors, also while Nook is not running. A Nook that does not know "look" yet leaves the last one.
+ */
+async function refreshLook() {
+  try {
+    const look = cleanLook(await request({ kind: 'look' }));
+    if (!look) return null;
+    const { look: stored } = await chrome.storage.local.get('look');
+    if (JSON.stringify(stored) !== JSON.stringify(look)) await chrome.storage.local.set({ look });
+    return look;
+  } catch {
+    return null;
+  }
 }
 
 async function remember(line) {
@@ -78,6 +94,7 @@ async function hello() {
     if (reply?.ok) {
       attempt = 0;
       await setStatus({ nook: 'connected', name: reply.name || 'Nook', version: reply.version || '' });
+      refreshLook();
     } else {
       await setStatus({ nook: 'offline', detail: reply?.error || '' });
     }
@@ -423,6 +440,8 @@ async function handlePanel(message) {
       const page = tab && !isRestricted(tab.url) ? { title: tab.title || '', url: tab.url || '', tab: tab.id } : null;
       return request({ kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page });
     }
+    case 'look':
+      return { ok: true, look: await refreshLook() };
     case 'chat':
       return request({ kind: 'chat', conversation: message.conversation });
     case 'stopChat':
@@ -459,6 +478,7 @@ chrome.runtime.onInstalled.addListener(connect);
 chrome.alarms?.create('reconnect', { periodInMinutes: 1 });
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === 'reconnect' && !port) connect();
+  else if (alarm.name === 'reconnect') refreshLook();
 });
 updateBadge();
 connect();
