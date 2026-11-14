@@ -631,7 +631,7 @@ enum AgentTranscript {
     /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.
     static func date(_ value: Any?) -> Date? {
         guard let text = value as? String, !text.isEmpty else { return nil }
-        return NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
+        return NookDates.stamp(text)
     }
 
     /// A long run of steps keeps its newest ones.

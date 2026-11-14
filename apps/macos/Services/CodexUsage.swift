@@ -388,6 +388,6 @@ final class CodexUsage: ObservableObject {
     private nonisolated static func number(_ value: Any?) -> Double? { JSONNumber.double(value) }
 
     private nonisolated static func parseTimestamp(_ string: String) -> Date? {
-        NookDates.isoFractional.date(from: string) ?? NookDates.isoPlain.date(from: string)
+        NookDates.stamp(string)
     }
 }

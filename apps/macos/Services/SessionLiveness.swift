@@ -5,7 +5,12 @@ import Foundation
 /// treats "running" as a claim to verify: the transcript says whether the last turn ended, the process list says
 /// whether the agent is still there at all.
 enum SessionLiveness {
-    enum Turn: Equatable { case ended, open, unknown }
+    enum Turn: Equatable {
+        case ended, open, unknown
+        /// The last message is an answer, in a transcript that does not mark where a turn ends (Gemini CLI, Cursor,
+        /// Antigravity): most likely the end, but a long tool call after an answer looks the same for a while.
+        case answered
+    }
 
     enum Verdict: Equatable {
         /// The transcript shows the turn finished, but no `Stop` arrived.
@@ -17,6 +22,8 @@ enum SessionLiveness {
     /// How long the transcript and hooks must be quiet before the transcript is trusted over the hooks: Claude Code writes
     /// the final line just before it fires `Stop`, and a normal `Stop`, or a new prompt reaching the file, should win.
     static let settleDelay: TimeInterval = 15
+    /// How long a session whose last message is an answer (`Turn.answered`) must be quiet before it counts as done.
+    static let answeredDelay: TimeInterval = 120
     /// How long a session must be quiet, and missing from the process list, before it counts as closed.
     static let goneDelay: TimeInterval = 30
     /// Scans in a row (10 s apart) a process must be missing, so one odd `ps` or `lsof` result never ends a session.
@@ -52,6 +59,7 @@ enum SessionLiveness {
         if missingScans >= goneScans, now.timeIntervalSince(lastEvent) >= goneDelay { return .processGone }
         // A waiting session asks something of you; only a vanished process settles it.
         if working, turn == .ended, quiet >= settleDelay { return .turnEnded }
+        if working, turn == .answered, quiet >= answeredDelay { return .turnEnded }
         return nil
     }
 
@@ -107,6 +115,21 @@ enum SessionLiveness {
     }
 
     // MARK: Transcript
+
+    /// The state of the last turn, from the messages `AgentTranscript` read from any agent's transcript: for the agents
+    /// whose lines do not mark a turn's end (Gemini CLI, Cursor, Antigravity). An answer last is `.answered`, a stop or
+    /// an error last ends it, and anything else (your prompt, thinking, steps) keeps it open.
+    static func lastTurn(of messages: [AgentChatMessage]) -> Turn {
+        guard let last = messages.last else { return .unknown }
+        if last.interrupted { return .ended }
+        switch last.kind {
+        case .assistant: return .answered
+        case .user, .thinking, .tools: return .open
+        case .notice:
+            if case .compacted = last.notice { return .open }
+            return .ended
+        }
+    }
 
     /// The state of the last turn, from the end of a Claude Code or Codex transcript (JSONL).
     static func lastTurn(in tail: Data) -> Turn {
@@ -178,12 +201,12 @@ enum SessionLiveness {
         return nil
     }
 
-    /// Esc in Claude Code ends the turn without a `Stop` hook; the transcript gets this marker instead.
+    /// Esc in Claude Code ends the turn without a `Stop` hook; the transcript gets its marker instead
+    /// (`AgentTranscript.isInterruption`, the one test for it).
     private static func isInterruption(_ content: Any?) -> Bool {
-        let marker = "[Request interrupted by user"
-        if let text = content as? String { return text.hasPrefix(marker) }
+        if let text = content as? String { return AgentTranscript.isInterruption(text) }
         guard let blocks = content as? [[String: Any]], blocks.count == 1 else { return false }
-        return (blocks[0]["text"] as? String)?.hasPrefix(marker) == true
+        return AgentTranscript.isInterruption((blocks[0]["text"] as? String) ?? "")
     }
 
     private static func codexTurn(_ object: [String: Any]) -> Turn? {
@@ -214,7 +237,10 @@ enum SessionLiveness {
         guard let end = try? handle.seekToEnd() else { return nil }
         try? handle.seek(toOffset: end > tailBytes ? end - tailBytes : 0)
         guard let data = try? handle.readToEnd() else { return nil }
-        let turn = lastTurn(in: data)
+        var turn = lastTurn(in: data)
+        // Not a Claude Code or Codex transcript: the messages every agent's transcript reads as (Gemini CLI's chat file,
+        // Cursor's and Antigravity's JSONL). `AgentTranscript` reads a JSONL file on from where it stopped last time.
+        if turn == .unknown { turn = lastTurn(of: AgentTranscript.recent(path: path)) }
         if let modified, let size {
             turnLock.lock()
             if turnCache.count > 64 { turnCache.removeAll() }

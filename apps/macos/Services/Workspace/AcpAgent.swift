@@ -659,12 +659,9 @@ struct AcpListedSession: Equatable, Sendable {
 
     /// One page of `session/list`, and the cursor of the next one. A session without id or folder is left out.
     static func page(_ result: [String: Any]) -> (sessions: [AcpListedSession], next: String?) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
         let sessions = ((result["sessions"] as? [[String: Any]]) ?? []).compactMap { entry -> AcpListedSession? in
             guard let id = entry["sessionId"] as? String, !id.isEmpty, let cwd = entry["cwd"] as? String, !cwd.isEmpty else { return nil }
-            let updated = (entry["updatedAt"] as? String).flatMap { formatter.date(from: $0) ?? plain.date(from: $0) }
+            let updated = (entry["updatedAt"] as? String).flatMap(NookDates.stamp)
             return AcpListedSession(id: id, cwd: cwd, title: (entry["title"] as? String) ?? "", updated: updated)
         }
         let next = (result["nextCursor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
