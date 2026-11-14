@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { isRoom } from "./mux.js";
 import { guestResponse } from "./guest.js";
-import { HookLogic, isHook, mayListen, readLimited } from "./hooks.js";
+import { HookLogic, answerResponse, isHook, mayListen, readLimited } from "./hooks.js";
 import { TunnelLogic, mayListenMCP, routeMCP } from "./mcp.js";
 import { admit, handlePush } from "./push.js";
 import { RoomLogic } from "./room.js";
@@ -119,7 +119,7 @@ export class Room extends DurableObject {
       }
       const body = await request.arrayBuffer();
       const answer = await this.hooks.deliver({ hook: url.pathname.split("/").pop(), headers: request.headers, body });
-      return new Response(answer.message + "\n", { status: answer.status });
+      return answerResponse(answer);
     }
     const role = url.searchParams.get("role");
     const pair = new WebSocketPair();
@@ -135,7 +135,7 @@ export class Room extends DurableObject {
   }
 
   async webSocketClose(ws, code, reason) {
-    if (!this.isTunnel(ws)) this.logic.closed(ws);
+    this.closed(ws);
     try {
       ws.close(code === 1005 || code === 1006 ? 1000 : code, reason);
     } catch {
@@ -144,12 +144,14 @@ export class Room extends DurableObject {
   }
 
   async webSocketError(ws) {
-    if (!this.isTunnel(ws)) this.logic.closed(ws);
+    this.closed(ws);
   }
 
-  /** A Mac's socket for webhooks or MCP, not a room's. */
-  isTunnel(ws) {
+  /** A socket went away: a room tells the other side, a tunnel fails what waits for an answer on it. */
+  closed(ws) {
     const tags = this.ctx.getTags(ws);
-    return tags.includes("hooks") || tags.includes("mcp");
+    if (tags.includes("hooks")) this.hooks.closed(ws);
+    else if (tags.includes("mcp")) this.tunnel.closed(ws);
+    else this.logic.closed(ws);
   }
 }

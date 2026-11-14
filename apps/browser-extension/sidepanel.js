@@ -13,9 +13,20 @@ let conversation = null;
 let messages = [];
 let pollTimer = null;
 let windowId = null;
+// Bumped by "New chat": a reply or poll that started before belongs to the old conversation and is dropped.
+let chatEpoch = 0;
 
 function send(message) {
   return chrome.runtime.sendMessage(message);
+}
+
+/** Like send, but never throws: a worker that is gone answers like a refusal. */
+async function trySend(message) {
+  try {
+    return await send(message);
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
 }
 
 // MARK: - Texts
@@ -67,12 +78,16 @@ async function loadPage() {
   renderSite();
 }
 
+// The switch and the button only show the new state once it is stored (storage.onChanged renders it); when the change
+// did not go through, they show the real state again, so the panel never says a site is off while Nook may still use it.
 $('site-switch').addEventListener('change', async (event) => {
-  await send({ type: 'site', url: page?.url, allowed: event.target.checked });
+  const reply = await trySend({ type: 'site', url: page?.url, allowed: event.target.checked });
+  if (!reply?.ok) renderSite();
 });
 
 $('pause').addEventListener('click', async () => {
-  await send({ type: 'pause', paused: !options.paused });
+  const reply = await trySend({ type: 'pause', paused: !options.paused });
+  if (!reply?.ok) renderSite();
 });
 
 // MARK: - Activity
@@ -193,21 +208,18 @@ function failure(reply) {
 }
 
 async function ask(text) {
+  const asked = chatEpoch;
   messages = [...messages, { fromNook: false, text }, { fromNook: true, text: '', streaming: true }];
   renderMessages();
-  let reply;
-  try {
-    reply = await send({ type: 'ask', text, conversation, windowId });
-  } catch (error) {
-    reply = { ok: false, error: String(error?.message || error) };
-  }
+  const reply = await trySend({ type: 'ask', text, conversation, windowId });
+  if (asked !== chatEpoch) return;
   if (!reply?.ok) {
     messages = [...messages.slice(0, -1), { fromNook: true, text: failure(reply), failed: true }];
     renderMessages();
     return;
   }
   conversation = reply.conversation || conversation;
-  await chrome.storage.session.set({ conversation });
+  await chrome.storage.session.set({ conversation }).catch(() => {});
   if (reply.messages) messages = reply.messages;
   renderMessages();
   follow();
@@ -217,8 +229,10 @@ async function ask(text) {
 function follow(started = Date.now()) {
   clearTimeout(pollTimer);
   if (!conversation || Date.now() - started > 5 * 60_000) return;
+  const following = chatEpoch;
   pollTimer = setTimeout(async () => {
     const reply = await send({ type: 'chat', conversation }).catch(() => null);
+    if (following !== chatEpoch) return;
     if (reply?.ok && reply.messages) {
       messages = reply.messages;
       renderMessages();
@@ -244,18 +258,20 @@ $('input').addEventListener('keydown', (event) => {
 });
 
 $('new-chat').addEventListener('click', async () => {
+  chatEpoch += 1;
   clearTimeout(pollTimer);
   conversation = null;
   messages = [];
-  await chrome.storage.session.remove('conversation');
   renderMessages();
   $('input').focus();
+  await chrome.storage.session.remove('conversation').catch(() => {});
 });
 
 $('stop').addEventListener('click', async () => {
   if (!conversation) return;
+  const stopped = chatEpoch;
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
-  if (reply?.messages) {
+  if (stopped === chatEpoch && reply?.messages) {
     messages = reply.messages;
     renderMessages();
   }
@@ -272,7 +288,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.paused || changes.blocked)) {
     options = {
       paused: changes.paused ? !!changes.paused.newValue : options.paused,
-      blocked: changes.blocked ? changes.blocked.newValue || [] : options.blocked
+      blocked: changes.blocked ? (Array.isArray(changes.blocked.newValue) ? changes.blocked.newValue : []) : options.blocked
     };
     renderSite();
   }
@@ -290,7 +306,8 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   const stored = await chrome.storage.session.get(['status', 'conversation']);
   status = stored.status || status;
   conversation = stored.conversation || null;
-  options = await chrome.storage.local.get({ paused: false, blocked: [] });
+  const local = await chrome.storage.local.get({ paused: false, blocked: [] });
+  options = { paused: !!local.paused, blocked: Array.isArray(local.blocked) ? local.blocked : [] };
   renderStatus();
   await loadPage();
   await renderActivity();

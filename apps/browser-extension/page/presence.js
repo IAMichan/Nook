@@ -33,9 +33,15 @@
     root.querySelector('.strip span:not(.dot)').textContent = label;
     const button = root.querySelector('button');
     button.textContent = stop;
-    button.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'pause', paused: true });
-      state.wrap.classList.remove('on');
+    button.addEventListener('click', async () => {
+      // The strip only goes away once Nook is really paused: when the extension was reloaded or its worker cannot be
+      // reached, it stays, so the user never thinks Nook stopped while it did not.
+      try {
+        const reply = await chrome.runtime.sendMessage({ type: 'pause', paused: true });
+        if (reply?.ok) state.wrap.classList.remove('on');
+      } catch {
+        // "Extension context invalidated": this page outlived the extension that drew the strip.
+      }
     });
     state.wrap = root.querySelector('.wrap');
     state.host = host;

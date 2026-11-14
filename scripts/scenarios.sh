@@ -62,7 +62,8 @@ fi
 # A scenario that was asked for but wrote no result crashed the test process: it could not run.
 MISSING=0
 for name in "$@"; do
-  if ! ls "$OUT_DIR/results" | grep -qE "^$name(-|$)"; then
+  # grep reads all of ls (no -q): with pipefail, ls dying of SIGPIPE after an early match read as "no result".
+  if ! ls "$OUT_DIR/results" | grep -E "^$name(-|$)" >/dev/null; then
     echo "$name wrote no result (see xcodebuild.log)" >&2
     MISSING=1
   fi

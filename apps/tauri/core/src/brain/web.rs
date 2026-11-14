@@ -127,10 +127,9 @@ pub async fn read(raw: &str) -> Result<String> {
         return Err(NookError(format!("De pagina gaf status {status}.")));
     }
     let kind = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
-    let bytes = response.bytes().await?;
-    if bytes.len() >= 4_000_000 {
+    let Some(bytes) = network_guard::body_within(response, 3_999_999).await? else {
         return Err(NookError::new("Die pagina is te groot om te lezen."));
-    }
+    };
     let raw = String::from_utf8_lossy(&bytes).to_string();
     let text = if kind.contains("html") || raw.contains("<html") { readable(&raw) } else { raw };
     let trimmed = text.trim();

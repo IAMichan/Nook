@@ -52,6 +52,9 @@ check "LICENSE" ""
 check "" ""
 # A move: --no-renames in ci.yml lists the old and the new path, and the old path still starts its area.
 check "apps/macos/Core/Moved.swift docs/Moved.swift" "macos core_tests"
+# git diff quotes a path with a non-ASCII letter ("apps/macos/Caf\303\251.swift"); it still starts its area.
+check '"apps/macos/Core/Caf\303\251.swift"' "macos core_tests"
+check '"docs/Caf\303\251.md"' "docs"
 # A change to how CI decides runs everything.
 check ".github/workflows/ci.yml" ALL
 check "scripts/ci-changes.sh" ALL

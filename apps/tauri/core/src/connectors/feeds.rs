@@ -80,13 +80,13 @@ impl CalendarFeeds {
                 _ => ConnectorError::new(format!("De agenda gaf een fout ({code}).")),
             });
         }
-        let bytes = response.bytes().await.map_err(|e| super::network_error(e, "de agenda"))?;
-        if bytes.len() > MAX_BYTES {
-            return Err(ConnectorError::new("Deze agenda is te groot om te lezen."));
-        }
-        let text = match String::from_utf8(bytes.to_vec()) {
+        let bytes = crate::brain::network_guard::body_within(response, MAX_BYTES)
+            .await
+            .map_err(|e| super::network_error(e, "de agenda"))?
+            .ok_or_else(|| ConnectorError::new("Deze agenda is te groot om te lezen."))?;
+        let text = match String::from_utf8(bytes) {
             Ok(t) => t,
-            Err(_) => bytes.iter().map(|b| *b as char).collect(),
+            Err(e) => e.into_bytes().iter().map(|b| *b as char).collect(),
         };
         if !text.contains("BEGIN:VCALENDAR") {
             return Err(ConnectorError::kind("Dit adres geeft geen agenda (ICS) terug.", ErrorKind::Config));

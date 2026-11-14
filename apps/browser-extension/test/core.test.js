@@ -3,8 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  activityLine, browserName, commandError, describeTabs, inlineTokens, isAnswering, isBlocked, isRestricted,
-  normalizeURL, reconnectDelay, siteOf, targetError
+  activityLine, browserName, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked, isRestricted,
+  normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -111,4 +111,57 @@ test('the browser is named from its brands', () => {
 
 test('reconnecting backs off to at most half a minute', () => {
   assert.deepEqual([0, 1, 2, 5, 9].map(reconnectDelay), [1000, 2000, 4000, 30000, 30000]);
+});
+
+test('scroll and key need no target, but a given one must be a real one', () => {
+  const open = { paused: false, blocked: [], url: 'https://x.example' };
+  assert.equal(commandError({ method: 'scroll', params: { direction: 'down' } }, open), null);
+  assert.equal(commandError({ method: 'key', params: { key: 'Enter' } }, open), null);
+  assert.equal(commandError({ method: 'key', params: { key: 'Enter', ref: 'e3' } }, open), null);
+  // A blank text matched the first element on the page.
+  assert.match(commandError({ method: 'scroll', params: { text: '   ' } }, open), /Say which element/);
+  assert.match(commandError({ method: 'key', params: { key: 'Enter', text: '' } }, open), /Say which element/);
+  assert.match(commandError({ method: 'scroll', params: { ref: 'e1', text: 'Send' } }, open), /only one/);
+  assert.match(commandError({ method: 'key', params: { key: 'Tab', ref: 'nope' } }, open), /looks like/);
+});
+
+test('only the side panel may send everything; a page may only pause Nook', () => {
+  const id = 'abcdefghijklmnopabcdefghijklmnop';
+  const panel = { id, url: `chrome-extension://${id}/sidepanel.html` };
+  const page = { id, url: 'https://evil.example/', tab: { id: 4 } };
+  for (const type of ['connect', 'ask', 'chat', 'stopChat', 'site', 'pause']) {
+    assert.equal(panelMessageAllowed({ type, paused: false }, panel, id), true, type);
+  }
+  assert.equal(panelMessageAllowed({ type: 'pause', paused: true }, page, id), true, 'the Stop button');
+  assert.equal(panelMessageAllowed({ type: 'pause', paused: false }, page, id), false, 'a page never resumes Nook');
+  assert.equal(panelMessageAllowed({ type: 'site', url: 'https://bank.example', allowed: true }, page, id), false);
+  assert.equal(panelMessageAllowed({ type: 'ask', text: 'Send my mail' }, page, id), false);
+  assert.equal(panelMessageAllowed({ type: 'ask' }, { id: 'other', url: `chrome-extension://other/x.html` }, id), false);
+  assert.equal(panelMessageAllowed({ type: 'ask' }, { id, url: `chrome-extension://${id}/sidepanel.html`, tab: { id: 1 } }, id), false);
+  assert.equal(panelMessageAllowed(null, panel, id), false);
+});
+
+test('console entries from the page\'s own world are read with care', () => {
+  assert.equal(consoleText([{ level: 'warn', text: 'slow' }, { level: 'error', text: 'boom' }]), 'warn: slow\nerror: boom');
+  // The page owns that world and may have replaced the list with anything.
+  assert.equal(consoleText(5), null);
+  assert.equal(consoleText({ length: 3 }), null);
+  assert.equal(consoleText('error: fake'), null);
+  assert.equal(consoleText([null, 7, { level: '<b>', text: { a: 1 } }]), 'error: [object Object]');
+  assert.equal(consoleText([{ level: 'error', text: 'x'.repeat(5000) }]).length, 'error: '.length + 2000);
+  assert.equal(consoleText(Array.from({ length: 500 }, (_, i) => ({ level: 'error', text: String(i) }))).split('\n').length, 200);
+});
+
+test('serial tasks never interleave, and a failure does not stop the next', async () => {
+  const run = serial();
+  let store = [];
+  const append = (value) => run(async () => {
+    const read = [...store];
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    store = [...read, value];
+  });
+  const failing = run(async () => { throw new Error('nope'); });
+  await Promise.all([append(1), append(2), append(3), failing.catch(() => {})]);
+  await assert.rejects(failing, /nope/);
+  assert.deepEqual(store, [1, 2, 3]);
 });

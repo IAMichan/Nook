@@ -104,7 +104,8 @@ pub fn next_run<Tz: TimeZone>(
         ScheduleRule::Webhook => None,
         ScheduleRule::Once { at } => last_finished.is_none().then_some(*at),
         ScheduleRule::Interval { seconds } => {
-            Some(last_finished.unwrap_or(now) + Duration::seconds((*seconds).max(MINIMUM_INTERVAL_SECONDS)))
+            // Checked: a saved interval past any representable date means the task never comes due, not a crash.
+            Duration::try_seconds((*seconds).max(MINIMUM_INTERVAL_SECONDS)).and_then(|d| last_finished.unwrap_or(now).checked_add_signed(d))
         }
         ScheduleRule::FixedTime { hour, minute, weekdays } => {
             if *hour > 23 || *minute > 59 {
@@ -460,6 +461,14 @@ mod tests {
         let rule = ScheduleRule::Interval { seconds: 5 };
         let now = utc("2026-03-02T10:00:00Z");
         assert_eq!(next_run(&rule, None, now, &Utc), Some(utc("2026-03-02T10:01:00Z")));
+    }
+
+    #[test]
+    fn an_interval_past_any_date_never_comes_due() {
+        let now = utc("2026-03-02T10:00:00Z");
+        for seconds in [i64::MAX, i64::MAX / 1000, 1_000_000_000_000_000] {
+            assert_eq!(next_run(&ScheduleRule::Interval { seconds }, None, now, &Utc), None, "{seconds}");
+        }
     }
 
     #[test]

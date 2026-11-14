@@ -329,7 +329,8 @@
       target.focus?.();
     }
     const name = String(params.key).trim();
-    const [keyName, code] = KEYS[name.toLowerCase()] || [name, name.length === 1 ? name.toUpperCase().charCodeAt(0) : 0];
+    // Own keys only: "constructor" or "__proto__" must not resolve to Object's prototype.
+    const [keyName, code] = (Object.hasOwn(KEYS, name.toLowerCase()) && KEYS[name.toLowerCase()]) || [name, name.length === 1 ? name.toUpperCase().charCodeAt(0) : 0];
     const init = { key: keyName, code: keyName.length === 1 ? 'Key' + keyName.toUpperCase() : keyName, keyCode: code, which: code, bubbles: true, cancelable: true, composed: true };
     const proceed = target.dispatchEvent(new KeyboardEvent('keydown', init));
     if (keyName.length === 1) target.dispatchEvent(new KeyboardEvent('keypress', init));
