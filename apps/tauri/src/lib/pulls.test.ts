@@ -94,7 +94,7 @@ describe("pull request detail", () => {
     expect(activitySentence("labeled", "bug")).toBe("added the label bug");
     expect(activitySentence("closed", "")).toBe("closed this pull request");
     const base = { id: "x", author: "ada", body: "", date: null, url: null };
-    expect(eventLabel({ ...base, kind: "review", state: "CHANGES_REQUESTED" })).toEqual({ text: "vroeg om wijzigingen", tone: "bad" });
+    expect(eventLabel({ ...base, kind: "review", state: "CHANGES_REQUESTED" })).toEqual({ text: "requested changes", tone: "bad" });
     expect(eventLabel({ ...base, kind: "lineComment", path: "a.rs", line: 3 }).text).toBe("commented on a.rs:3");
   });
 

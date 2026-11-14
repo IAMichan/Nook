@@ -59,7 +59,7 @@ describe("TimelinePresentation", () => {
     expect(parts(tools.tally).map((p) => p.category)).toEqual(["command", "edit"]);
     expect(tools.tally.counts.edit).toBe(1);
     expect(tools.tally.failed).toBe(false);
-    expect(sentence(tools.tally)).toBe("1 commando uitgevoerd en 1 bestand gewijzigd");
+    expect(sentence(tools.tally)).toBe("Ran 1 command and changed 1 file");
   });
 
   it("gives every block its own id", () => {

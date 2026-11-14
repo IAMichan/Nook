@@ -112,7 +112,7 @@ const calendar: InboxProvider = {
   },
   act: (item) => ({
     kind: "newNook",
-    ask: tr("Help me me voor te bereiden op \"{title}\" ({detail}).", "Help me prepare for \"{title}\" ({detail}).", { title: item.title, detail: item.detail }),
+    ask: tr("Help me me voor te bereiden op \"{title}\" ({detail}).", "Help me prepare for \"{title}\" ({detail}).", { title: item.title, detail: item.detail ?? "" }),
   }),
   watch: (changed) => unlisten(connectorEvents.onChanged(changed)),
 };
