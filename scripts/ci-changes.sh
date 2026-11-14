@@ -52,13 +52,27 @@ matches() { # file pattern
   esac
 }
 
+# `git diff --name-only` writes a path with a non-ASCII letter, a quote or a backslash in C-style quotes
+# ("apps/macos/caf\303\251.swift"); such a path matched no pattern, so its change started no build. printf turns the
+# \ooo, \\, \" and \t escapes back into the path.
+unquote() {
+  local path="$1"
+  if [[ "$path" == \"*\" ]]; then
+    path="${path:1:${#path}-2}"
+    # shellcheck disable=SC2059 # the path is the format on purpose; its % are doubled first
+    printf -- "${path//\%/%%}"
+  else
+    printf '%s' "$path"
+  fi
+}
+
 all=false
 [ "${1:-}" = "--all" ] && all=true
 
 files=()
 if [ "$all" = false ]; then
   while IFS= read -r line; do
-    [ -n "$line" ] && files+=("$line")
+    [ -n "$line" ] && files+=("$(unquote "$line")")
   done
 fi
 

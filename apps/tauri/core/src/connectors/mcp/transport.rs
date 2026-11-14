@@ -178,6 +178,9 @@ pub struct HttpTransport {
     client: reqwest::Client,
 }
 
+/// The largest answer read from a remote MCP server.
+const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
+
 enum PostError {
     /// 401 met een token: vernieuwen en één keer opnieuw.
     Expired,
@@ -253,8 +256,12 @@ impl HttpTransport {
                 _ => PostError::Failed(ConnectorError::new(format!("De MCP-server gaf een fout ({status})."))),
             });
         }
-        let bytes = response.bytes().await.map_err(|e| PostError::Failed(crate::connectors::network_error(e, "de MCP-server")))?;
-        Ok((kind, bytes.to_vec()))
+        // A remote server is someone else's: an answer is read up to a limit instead of whole into memory.
+        let bytes = crate::brain::network_guard::body_within(response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(|e| PostError::Failed(crate::connectors::network_error(e, "de MCP-server")))?
+            .ok_or_else(|| PostError::Failed(ConnectorError::new("The MCP server sent an answer that is too large to read.")))?;
+        Ok((kind, bytes))
     }
 }
 

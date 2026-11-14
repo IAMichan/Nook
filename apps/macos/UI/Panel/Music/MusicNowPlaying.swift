@@ -32,13 +32,21 @@ struct MusicNowPlayingView: View {
     private var tab: MusicNowPlayingTab { MusicNowPlayingTab(rawValue: storedTab) ?? .lyrics }
     private var wide: Bool { width == 0 || width >= Self.sideBySide }
 
+    /// The narrowest the player's column gets: the large transport fits on one line.
+    private static let column: CGFloat = 264
+
     var body: some View {
         GeometryReader { geo in
             Group {
                 if wide {
+                    // One column on the cover's two edges: the cover, the track, the bar and the controls all line up.
+                    let side = min(320, geo.size.width * 0.34, max(160, geo.size.height - 240))
                     HStack(alignment: .top, spacing: NookTheme.Spacing.xxxl) {
-                        player(cover: min(320, geo.size.width * 0.34, max(140, geo.size.height - 250)))
-                            .frame(width: min(320, geo.size.width * 0.34))
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                            cover(side: side)
+                            details
+                        }
+                        .frame(width: max(Self.column, side))
                         card
                     }
                 } else {
@@ -68,13 +76,6 @@ struct MusicNowPlayingView: View {
 
     // MARK: Player
 
-    private func player(cover side: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-            cover(side: side)
-            details
-        }
-    }
-
     private func cover(side: CGFloat) -> some View {
         MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: NookTheme.Radius.sheet)
             .frame(width: side, height: side)
@@ -83,34 +84,27 @@ struct MusicNowPlayingView: View {
             .animation(NookTheme.open, value: info.isPlaying)
     }
 
+    /// The track, then how far along it is, then the transport, then where and how loud it plays: from what you read
+    /// to what you change, each on its own line and nothing above the title.
     private var details: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                EqualizerBars(color: NookTheme.music, height: 10, isPlaying: info.isPlaying)
-                    .scaleEffect(0.8, anchor: .leading)
-                    .frame(width: 22, alignment: .leading)
-                Text(tr("music.playingIn", musicPlayerName(info)))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: NookTheme.Spacing.md)
-                MusicAddToPlaylistButton(track: service.currentTrack, service: service, size: 28)
-                NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 28) {
-                    openMusicPlayer(info)
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(info.title)
+                        .font(NookTheme.TextStyle.display)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(info.title)
+                    Text(musicSubtitle(info))
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .help(musicSubtitle(info))
                 }
+                Spacer(minLength: 0)
+                MusicAddToPlaylistButton(track: service.currentTrack, service: service, size: 28)
             }
-            Text(info.title)
-                .font(NookTheme.TextStyle.display)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .help(info.title)
-                .padding(.top, NookTheme.Spacing.md)
-            Text(musicSubtitle(info))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textStrong)
-                .lineLimit(1)
-                .padding(.top, NookTheme.Spacing.xs)
             MusicScrubBar(info: info, style: .stacked) { service.seek(to: $0) }
                 .padding(.top, NookTheme.Spacing.xl)
             ViewThatFits(in: .horizontal) {
@@ -118,16 +112,20 @@ struct MusicNowPlayingView: View {
                 MusicTransport(info: info, service: service)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, NookTheme.Spacing.md)
-            // Where it plays beside how loud: the two things one changes about the sound.
-            HStack(spacing: NookTheme.Spacing.md) {
+            .padding(.top, NookTheme.Spacing.sm)
+            // Where it plays on the left, how loud and the player itself on the right, on the column's edges.
+            HStack(spacing: NookTheme.Spacing.sm) {
                 MusicOutputButton(info: info, outputs: outputs)
+                    .padding(.leading, -NookTheme.Spacing.md)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if let volume = info.volume {
-                    MusicVolumeControl(volume: volume, width: 110) { service.setVolume($0) }
+                    MusicVolumeControl(volume: volume, width: 88) { service.setVolume($0) }
+                }
+                NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 28) {
+                    openMusicPlayer(info)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, NookTheme.Spacing.md)
+            .padding(.top, NookTheme.Spacing.lg)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
