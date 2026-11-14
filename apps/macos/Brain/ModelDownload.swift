@@ -149,7 +149,7 @@ enum ModelDownload {
                 // A dropped connection picks up where it stopped (the error carries the resume data) instead of starting
                 // a shard of several GB again. Cancellation and answers such as 404 are final.
                 guard attempt < retries, !Task.isCancelled, isTransient(error) else { throw error }
-                resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeDataKey] as? Data
+                resumeData = (error as? URLError)?.downloadTaskResumeData
                 try await Task.sleep(nanoseconds: firstBackoff << UInt64(attempt))
                 attempt += 1
             }
