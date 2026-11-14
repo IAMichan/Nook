@@ -51,6 +51,7 @@ needs a column in that matrix.
 | Connectors | everything registered with `SourceCatalog.register` | `SourceCatalog` (metadata, tools, aliases, intents) |
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
+| Browsers (Nook's extension) | Google Chrome (and Beta, Canary), Chromium, Brave, Microsoft Edge, Arc, Vivaldi. Not Safari (needs an app extension built with Xcode) or Firefox (other native messaging locations and manifest keys); their tabs are read with `read_browser_tab` | `apps/browser-extension` (one extension for every Chromium browser), `BrowserExtensionHost.browsers` (where each browser looks for the host), `BrowserExtensionTools` (the `chrome_*` tools for Nook Chat and every coding agent through `nook_use`) ([`BROWSER-EXTENSION.md`](BROWSER-EXTENSION.md)) |
 
 ## Side panel to composer
 

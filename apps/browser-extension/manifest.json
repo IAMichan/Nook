@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_appName__",
+  "description": "__MSG_appDesc__",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnxvL9MhXt8K6bhXSd9CA80ANfRmk68iZHr6kNw95aAhT96LP5VResmbuoIEyIpSYbi+SWd+X3T7pvcG0twl/ONIlMzroXKbQw6gG87Zz+9kZ8J3KjlsKapUNenxApSSo6JAP8gwyEOzB4stBHMhsqADJ2r94tQmyaj926hPyjWwyiJO2fXCsRVeZMdib20nSXiAOv0dXM/4pe4O4q0Sl0vw9KFq8UeLcup31F3oqz1GwKA9OyNX2VsD38ANBYLW4opoT5sT+rvC0qubk20ffYVbWBxWMmru8XrP9XIxBxjTg/XqMSN/lwz3B/c+GaW50vOlAnekBPwEgGTiYGmsWdQIDAQAB",
+  "icons": {
+    "16": "icons/nook-16.png",
+    "32": "icons/nook-32.png",
+    "48": "icons/nook-48.png",
+    "128": "icons/nook-128.png"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_icon": {
+      "16": "icons/nook-16.png",
+      "32": "icons/nook-32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["nativeMessaging", "tabs", "tabGroups", "scripting", "sidePanel", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"]
+}

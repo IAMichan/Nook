@@ -1,0 +1,104 @@
+{
+  "appName": {
+    "message": "Nook"
+  },
+  "appDesc": {
+    "message": "Nook, your assistant on the Mac, in your browser: ask about the page you are on, and let Nook read and act in your tabs after you approve."
+  },
+  "actionTitle": {
+    "message": "Open Nook"
+  },
+  "statusConnected": {
+    "message": "Connected"
+  },
+  "statusConnecting": {
+    "message": "Connecting…"
+  },
+  "statusOffline": {
+    "message": "Nook is not running"
+  },
+  "statusMissing": {
+    "message": "Not set up"
+  },
+  "setupTitle": {
+    "message": "Connect this browser to Nook"
+  },
+  "setupStep1": {
+    "message": "Open Nook on your Mac."
+  },
+  "setupStep2": {
+    "message": "Go to Settings › Editor & browser › Nook in your browser and click Connect."
+  },
+  "setupStep3": {
+    "message": "Come back here: the panel connects by itself."
+  },
+  "setupDetail": {
+    "message": "Extension ID: $1"
+  },
+  "siteNone": {
+    "message": "No page"
+  },
+  "siteRestricted": {
+    "message": "The browser keeps its own pages to itself; Nook cannot read or use them."
+  },
+  "siteAllowed": {
+    "message": "Nook may read and work on this site when you ask, after you approve on your Mac."
+  },
+  "siteBlocked": {
+    "message": "Off for this site: Nook will not read or touch it."
+  },
+  "siteSwitch": {
+    "message": "Nook on $1"
+  },
+  "activeNote": {
+    "message": "Nook may use this browser."
+  },
+  "pausedNote": {
+    "message": "Paused: Nook does not read or act in this browser until you resume."
+  },
+  "pause": {
+    "message": "Pause"
+  },
+  "resume": {
+    "message": "Resume"
+  },
+  "activityTitle": {
+    "message": "What Nook did here"
+  },
+  "activityEmpty": {
+    "message": "Nothing yet."
+  },
+  "intro": {
+    "message": "Ask Nook about this page, or ask it to do something here. Nook asks you on your Mac before it clicks, types or opens anything."
+  },
+  "askPlaceholder": {
+    "message": "Ask Nook…"
+  },
+  "send": {
+    "message": "Send"
+  },
+  "newChat": {
+    "message": "New chat"
+  },
+  "stopAnswer": {
+    "message": "Stop"
+  },
+  "thinking": {
+    "message": "Nook is thinking"
+  },
+  "onMacNote": {
+    "message": "Waiting for you in Nook on your Mac."
+  },
+  "noBrain": {
+    "message": "Nook has no model yet. Choose one in Nook › Settings › Assistant."
+  },
+  "errorGeneric": {
+    "message": "Nook could not answer. Is Nook running on your Mac?"
+  },
+  "presenceWorking": {
+    "message": "Nook is working in this tab"
+  },
+  "presenceStop": {
+    "message": "Stop"
+  }
+}

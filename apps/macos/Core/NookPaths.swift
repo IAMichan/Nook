@@ -57,6 +57,11 @@ enum NookPaths {
     static var keeperDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/keep", isDirectory: true)
     }
+    /// Nook's browser extension: the socket its native messaging host talks to, the host script, and the copy of the
+    /// extension a browser loads (see BrowserExtensionHost).
+    static var browserSocketURL: URL { supportDirectory.appendingPathComponent("browser.sock") }
+    static var browserHostScriptURL: URL { supportDirectory.appendingPathComponent("nook-browser-host") }
+    static var browserExtensionDirectory: URL { supportDirectory.appendingPathComponent("Browser Extension", isDirectory: true) }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
     /// Folders of sessions started without a project (`ScratchProjects`): ~/.nook/scratch, beside ~/.nook/worktrees.
     /// Made once: the agent list asks for it for every row on every redraw, and looking up the home folder each time

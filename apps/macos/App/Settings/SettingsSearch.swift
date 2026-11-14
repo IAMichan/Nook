@@ -108,6 +108,7 @@ enum SettingsSearch {
         .init("settings.ws.browserSearch", .openIn),
         .init("settings.ws.linkTarget", .openIn),
         .init("settings.browser.trustedCerts", .openIn),
+        .init("browserExt.settings.label", .openIn),
         .init("settings.ws.inboxProjects", .general),
         .init("settings.ws.confirmQuit", .general),
         .init("settings.general.holdToQuit", .general),

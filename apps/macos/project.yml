@@ -63,6 +63,12 @@ targets:
         createIntermediateGroups: false
         type: folder
         buildPhase: resources
+      # Nook's browser extension (apps/browser-extension), which Settings › Editor & browser copies to Application Support
+      # for the browser's "Load unpacked" (BrowserExtensionService). A folder, like the relay above.
+      - path: ../browser-extension
+        createIntermediateGroups: false
+        type: folder
+        buildPhase: resources
       # Mermaid's script, so a diagram draws without asking a server (see THIRD-PARTY-NOTICES.md).
       - path: Resources/mermaid
         type: folder
@@ -292,6 +298,7 @@ targets:
       - path: Core/I18n+SettingsFlowsB.swift
       - path: Core/I18n+SettingsFlowsC.swift
       - path: Core/I18n+Safeguards.swift
+      - path: Core/I18n+BrowserExtension.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -560,6 +567,9 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/BrowserExtension/BrowserExtensionHost.swift
+      - path: Services/BrowserExtension/BrowserExtensionHub.swift
+      - path: Services/BrowserExtension/BrowserExtensionTools.swift
       - path: Services/Workspace/SessionCommandReceipts.swift
       - path: Services/Workspace/SecretFiles.swift
       - path: Services/Workspace/SudoAskpass.swift
