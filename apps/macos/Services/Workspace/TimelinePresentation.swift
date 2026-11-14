@@ -268,7 +268,7 @@ enum TimelinePresentation {
 
     /// The live line for the running turn: the tool that runs (or ran last) and what the agent last thought about.
     static func live(_ events: [RunEvent]) -> LiveActivity {
-        let turn = split(events).last ?? []
+        let turn = runningTurn(events)
         let tool = turn.last(where: isLive) ?? turn.last { $0.kind == .tool }
         let thought = turn.last { $0.kind == .thinking }.map { headline($0.text) }
         return LiveActivity(tool: tool?.text, thought: thought.flatMap { $0.isEmpty ? nil : $0 })
@@ -306,6 +306,16 @@ enum TimelinePresentation {
     /// without splitting the whole session for it.
     static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
         guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else { return events }
+        return Array(events[start...])
+    }
+
+    /// The turn the agent runs, for its live line: from the last message that started a turn (or wake), across every
+    /// message you steered into it since. A steer starts a turn of its own in the timeline, but the agent goes on with
+    /// what it did and reads the steer only after the tool that runs returns: the live line keeps showing that tool
+    /// instead of "Starting…" until then.
+    static func runningTurn(_ events: [RunEvent]) -> [RunEvent] {
+        guard let start = events.lastIndex(where: { $0.kind == .user && $0.steer == nil || $0.kind == .system && $0.tool == "wake" })
+        else { return events }
         return Array(events[start...])
     }
 

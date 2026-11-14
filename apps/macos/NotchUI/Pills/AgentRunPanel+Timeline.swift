@@ -166,7 +166,7 @@ extension AgentRunPanel {
                     } else if active {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
-                        let turn = TimelinePresentation.lastTurn(events)
+                        let turn = TimelinePresentation.runningTurn(events)
                         TranscriptLiveLine(activity: AgentActivity.current(turn),
                                            tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
                                            waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
@@ -365,7 +365,7 @@ extension AgentRunPanel {
         } else {
             status = run.status.isActive ? .working : .idle
         }
-        let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(TimelinePresentation.lastTurn(events))) : nil
+        let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(events)) : nil
         return AgentAnnouncements.snapshot(events, status: status, step: step)
     }
 
