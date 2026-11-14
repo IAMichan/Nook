@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 /// A web address in a chat message, shown under its text the way chat apps show one, the same in every app: a picture
 /// or a GIF as itself, a video that plays in the bubble, a sound file with its player, and any other page as a card with
 /// its picture, title and site (with a play mark for a YouTube, Vimeo, TikTok or Instagram reel link). A click on a card
-/// opens the page. While its preview loads, and when there is none, a slim line with the site stands in.
+/// opens the page. While its preview loads the card keeps room for its picture, so the chat does not move when it comes;
+/// a page without one shows a slim line with the site.
 struct ChatLinkPreview: View {
     let url: URL
     let fromMe: Bool
@@ -29,6 +30,12 @@ private struct ChatLinkCard: View {
     @State private var preview: ChatLinkPreviews.Preview?
     @State private var hovering = false
     @Environment(\.chatMediaLive) private var live
+
+    init(url: URL) {
+        self.url = url
+        // A preview fetched before (scrolled past, another chat) is there in the first frame, at its own size.
+        _preview = State(initialValue: ChatLinkPreviews.shared.cached(url))
+    }
 
     private var host: String {
         var host = url.host ?? url.absoluteString
@@ -64,10 +71,15 @@ private struct ChatLinkCard: View {
         .contentShape(Rectangle())
     }
 
-    /// The page's picture, 16:9, with a play mark for a video page.
+    /// The page's picture, 16:9, with a play mark for a video page. Its room is kept while the preview loads: most
+    /// pages have one, and a card that grew by its picture pushed the chat around it.
     @ViewBuilder
     private var picture: some View {
-        if let image = preview?.image {
+        if preview == nil {
+            Color.clear
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .accessibilityHidden(true)
+        } else if let image = preview?.image {
             ZStack {
                 Color.clear
                     .aspectRatio(16 / 9, contentMode: .fit)
@@ -123,6 +135,12 @@ private struct ChatRemotePicture: View {
     @State private var enlarged = false
     @State private var hovering = false
     @Environment(\.chatMediaLive) private var live
+
+    init(url: URL) {
+        self.url = url
+        // Fetched before: the picture shows in the first frame, not a tile of another size first.
+        _file = State(initialValue: ChatLinkPreviews.shared.cachedFile(url))
+    }
 
     private var label: String {
         enlarged ? tr("button.shrink") : tr("button.enlarge")
@@ -228,6 +246,15 @@ final class ChatLinkPreviews {
 
     private init() {
         MemoryPressure.shared.register("chatLinkPreviews", emptying: previews)
+    }
+
+    /// The preview when it was fetched before and is still in memory, without fetching it.
+    func cached(_ url: URL) -> Preview? { previews.object(forKey: url as NSURL)?.preview }
+
+    /// The picture a link points at when it was fetched before, without fetching it.
+    func cachedFile(_ url: URL) -> URL? {
+        guard let known = files[url], FileManager.default.fileExists(atPath: known.path) else { return nil }
+        return known
     }
 
     func preview(_ url: URL) async -> Preview {
