@@ -80,6 +80,17 @@
     return false;
   }));
 
+  // A notice sits at the top, clear of every composer, and goes by itself after a few seconds.
+  function clearNotice() {
+    companion.clearNotice();
+    if (view) view.notice = null;
+  }
+  $effect(() => {
+    if (!view?.notice) return;
+    const timer = setTimeout(clearNotice, 5000);
+    return () => clearTimeout(timer);
+  });
+
   async function act(f: () => Promise<ClientView>) {
     const v = await f();
     view = { ...v, deviceName: view?.deviceName };
@@ -163,7 +174,7 @@
   {#if view?.notice}
     <div class="notice" role="alert">
       <span>{view.notice}</span>
-      <button onclick={() => { companion.clearNotice(); if (view) view.notice = null; }}>OK</button>
+      <button onclick={clearNotice}>OK</button>
     </div>
   {/if}
 </div>
@@ -188,7 +199,7 @@
   .pad { padding: var(--space-16); }
   .small { font: var(--text-detail); }
   .notice {
-    position: absolute; left: var(--space-12); right: var(--space-12); bottom: var(--space-12); display: flex; gap: var(--space-12); align-items: center; z-index: 5;
+    position: absolute; left: var(--space-12); right: var(--space-12); top: var(--space-48); display: flex; gap: var(--space-12); align-items: center; z-index: 5;
     background: var(--smoke); border: 1px solid var(--line2); border-radius: var(--radius-panel); padding: var(--space-8) var(--space-12); box-shadow: var(--shadow-popover);
   }
   .notice span { flex: 1; font: var(--text-detail); }

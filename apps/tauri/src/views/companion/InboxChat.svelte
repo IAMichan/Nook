@@ -68,12 +68,21 @@
     if (r.response && !read) onback();
   }
 
-  function hold(line: InboxLine) {
+  // Touch and hold to reply; a finger that moves (a scroll) or is taken over by the system cancels it.
+  let start: { x: number; y: number } | null = null;
+  function hold(e: PointerEvent, line: InboxLine) {
     if (!chat?.canSend) return;
     clearTimeout(press);
+    start = { x: e.clientX, y: e.clientY };
     press = setTimeout(() => (replyTo = line), 450);
   }
-  const release = () => clearTimeout(press);
+  function moved(e: PointerEvent) {
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) release();
+  }
+  function release() {
+    clearTimeout(press);
+    start = null;
+  }
   const typingWord = (t: InboxTypist[]) => {
     const who = t.map((x) => x.name).filter(Boolean).join(", ");
     return who ? tr("{who} typt…", "{who} is typing…", { who }) : tr("typt…", "typing…");
@@ -96,7 +105,7 @@
     {#if !loaded}<p class="faint">{tr("Laden…", "Loading…")}</p>{/if}
     {#each lines as l (l.id)}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="bubble" class:mine={l.fromMe} onpointerdown={() => hold(l)} onpointerup={release} onpointerleave={release} oncontextmenu={(e) => { if (chat?.canSend) { e.preventDefault(); replyTo = l; } }}>
+      <div class="bubble" class:mine={l.fromMe} onpointerdown={(e) => hold(e, l)} onpointermove={moved} onpointerup={release} onpointerleave={release} onpointercancel={release} oncontextmenu={(e) => { if (chat?.canSend) e.preventDefault(); }}>
         {#if l.sender && !l.fromMe}<span class="sender">{l.sender}</span>{/if}
         {#if l.quoteText}<span class="quote"><strong>{l.quoteSender ?? ""}</strong> {l.quoteText}</span>{/if}
         {#if l.attachment}<span class="file">📎 {l.attachment}</span>{/if}
