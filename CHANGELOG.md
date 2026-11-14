@@ -11,6 +11,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- A fuller Android companion, laid out as the iPhone app: the computer's tabs Nook, Agents and Chats with counts, a
+  session as its whole conversation with approvals and questions docked above the composer (deny with a reason, Steer
+  now or After this turn), New session, session actions (rename, snooze, archive), Nook's home and chats with Nook, and
+  the Chats tab with replies. It offers only what the paired computer supports and allows the phone (see
+  docs/COMPANION.md, *Android*).
+
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
   it gets the same look and feel; nothing else of theirs changes.

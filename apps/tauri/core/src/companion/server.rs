@@ -336,6 +336,9 @@ impl CompanionServer {
                 self.audit("stop", &session.digest.title);
                 with_sessions(digests(backend.sessions().await))
             }
+            // What this computer cannot do yet: it lists none of these features, so a phone does not ask; an answer that
+            // says so is better than closing the connection.
+            _ => fail(CompanionError::BadRequest),
         }
     }
 }

@@ -141,6 +141,24 @@ layout does not change.
   message as from the share sheet (`CompanionFile`, needs `attachments`), and Nook's chat takes words only. What does
   not fit is named in a notice.
 
+## Android
+
+Nook for Android (`apps/tauri`, see [`TAURI.md`](TAURI.md)) is a companion too: its Companion page pairs with a Mac (or
+Nook on Windows or Linux) and is laid out as this app. Along the top are the computer's tabs **Nook**, **Agents** and
+**Chats** with what waits as a count on each (the Android app's own tab bar is already at the bottom). A session opens as
+its whole conversation (`timeline`, asked every three seconds while it is open) with what waits docked above the
+composer: deny with a reason, *Steer now* or *After this turn* (`steer`, `turn`), and Stop for the turn it saw. The title
+opens the session's actions (`manage`). *New* starts a session from the Mac's `options`. The Nook tab shows the Mac's
+home (`home`, `music`), Nook's chats (`chats`, `chat`, `ask`, `chatStop`) and a box to ask Nook something. The Chats tab
+lists the Mac's inbox (`inbox`, `inboxChat`, `inboxSend` with `replyTo`, `inboxMark`).
+
+As on the iPhone, Android offers only what the computer lists in `features` and allows in `scopes`. A computer that
+lists none (Nook on Windows or Linux) gets the Agents list with approve, answer, send and stop. Android sends
+`protocolVersion` and `appVersion` with `hello` and `list`. It opens one short connection per request (no `subscribe`)
+and sends no `compression`. It has no pull requests, files, terminals, diffs, pictures, dictation, history, several
+Macs, widgets or push notifications yet. Code: `apps/tauri/core/src/companion/client.rs` (`ClientCall`),
+`apps/tauri/src/lib/companion.ts` and `apps/tauri/src/views/companion/`.
+
 ## Compression
 
 Large messages are compressed before they are sealed (`CompanionWire`, `packages/protocol/Sources/CompanionWire.swift`,

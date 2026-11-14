@@ -33,6 +33,7 @@ fn approval_item(id: &str, tool: &str, summary: &str, command: Option<&str>) -> 
         detail: tool.into(),
         can_allow: can_allow(tool, command),
         options: vec![],
+        ..Default::default()
     }
 }
 
@@ -46,6 +47,7 @@ fn question_item(id: &str, items: &[QuestionItem]) -> DigestItem {
         detail: first.map(|q| q.header.clone()).unwrap_or_default(),
         can_allow: single,
         options: if single { first.map(|q| q.options.iter().map(|o| o.label.clone()).collect()).unwrap_or_default() } else { vec![] },
+        ..Default::default()
     }
 }
 
@@ -81,6 +83,7 @@ pub fn run_session(
             updated: seconds(Some(run.updated_at)),
             excerpt: last_answer.into(),
             items,
+            ..Default::default()
         },
         active: run.status.is_active(),
         free_answers: questions.iter().map(|q| q.id.clone()).collect(),
@@ -129,6 +132,7 @@ pub fn hub_session(session: &AgentSession, approvals: &[ApprovalRequest], questi
             updated: seconds(session.updated.or(session.started)),
             excerpt: session.last_reply.clone(),
             items,
+            ..Default::default()
         },
         active: matches!(session.status, AgentStatus::Running | AgentStatus::Waiting),
         free_answers: questions.iter().map(|q| q.id.clone()).collect(),

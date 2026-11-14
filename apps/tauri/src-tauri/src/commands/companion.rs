@@ -334,6 +334,38 @@ pub async fn companion_client_stop(app: AppHandle, companion: State<'_, Companio
     Ok(view(&app, companion.client.stop(&session).await))
 }
 
+/// Denies a request and tells the agent why (`decide` with `text`).
+#[tauri::command]
+pub async fn companion_client_deny(
+    app: AppHandle,
+    companion: State<'_, Companion>,
+    session: String,
+    item: String,
+    reason: String,
+) -> Result<ClientView, String> {
+    Ok(view(&app, companion.client.decide_with_reason(&session, &item, false, Some(&reason)).await))
+}
+
+/// The answer of `companion_client_call`: the new state, and what the computer sent back (`None` when it was refused or
+/// out of reach; the state says why).
+#[derive(Serialize)]
+pub struct CallResult {
+    view: ClientView,
+    response: Option<nook_core::companion::CompanionResponse>,
+}
+
+/// Every other request of the phone side (the whole conversation, a new session, Nook's chats, home, limits, the Chats
+/// tab, managing a session), as the iPhone app makes them. The computer decides what this phone may do.
+#[tauri::command]
+pub async fn companion_client_call(
+    app: AppHandle,
+    companion: State<'_, Companion>,
+    call: nook_core::companion::client::ClientCall,
+) -> Result<CallResult, String> {
+    let (snapshot, response) = companion.client.call(call).await;
+    Ok(CallResult { view: view(&app, snapshot), response })
+}
+
 #[tauri::command]
 pub fn companion_client_clear_notice(companion: State<'_, Companion>) {
     companion.client.clear_notice();

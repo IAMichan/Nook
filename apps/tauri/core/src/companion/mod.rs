@@ -54,6 +54,7 @@ mod tests {
                     detail: "Bash".into(),
                     can_allow: CompanionPolicy::can_allow("Bash", Some(false)),
                     options: vec![],
+                    ..Default::default()
                 },
                 DigestItem {
                     id: "p2".into(),
@@ -62,6 +63,7 @@ mod tests {
                     detail: "Edit".into(),
                     can_allow: CompanionPolicy::can_allow("Edit", None),
                     options: vec![],
+                    ..Default::default()
                 },
                 DigestItem {
                     id: "q1".into(),
@@ -70,6 +72,7 @@ mod tests {
                     detail: "Opslag".into(),
                     can_allow: true,
                     options: vec!["SQLite".into(), "Postgres".into()],
+                    ..Default::default()
                 },
             ];
             items.retain(|i| !done.contains(&i.id));
@@ -85,6 +88,7 @@ mod tests {
                         updated: 20.0,
                         excerpt: "x".repeat(900),
                         items,
+                        ..Default::default()
                     },
                     active: true,
                     free_answers: vec![],
@@ -100,6 +104,7 @@ mod tests {
                         updated: 10.0,
                         excerpt: String::new(),
                         items: vec![],
+                        ..Default::default()
                     },
                     active: false,
                     free_answers: vec![],
@@ -193,6 +198,26 @@ mod tests {
             *workspace.log.lock().unwrap(),
             vec!["decide S1 p1 false", "decide S1 p2 true", "answer S1 q1 SQLite", "send S1 ga door", "stop S1"]
         );
+        // This computer lists no features: the phone offers only the first version, and a request beyond it is
+        // answered with a refusal rather than a closed connection.
+        let s = phone.refresh().await;
+        assert!(s.features.is_empty());
+        assert_eq!(s.scopes, None);
+        let (s, answer) =
+            phone.call(client::ClientCall { op: Some(CompanionOp::Timeline), session: Some("S1".into()), ..Default::default() }).await;
+        assert!(answer.is_none());
+        assert_eq!(s.phase, Phase::Connected);
+        assert_eq!(s.notice.as_deref(), Some("De computer weigerde dit."));
+        phone.clear_notice();
+        // Pairing and push registration are the client's own: the interface cannot send them.
+        let (s, answer) = phone.call(client::ClientCall { op: Some(CompanionOp::Register), ..Default::default() }).await;
+        assert!(answer.is_none());
+        assert_eq!(s.notice.as_deref(), Some("De computer weigerde dit."));
+        phone.clear_notice();
+        // `call` with `list` answers like a refresh.
+        let (_, answer) = phone.call(client::ClientCall { op: Some(CompanionOp::List), ..Default::default() }).await;
+        assert_eq!(answer.and_then(|a| a.sessions).map(|s| s.len()), Some(2));
+
         let actions: Vec<String> = audit.audit_entries(50, "companion").into_iter().map(|e| e.tool).collect();
         for action in ["companion_paired", "companion_deny", "companion_allow", "companion_answer", "companion_send", "companion_stop"] {
             assert!(actions.contains(&action.to_string()), "{action} in {actions:?}");

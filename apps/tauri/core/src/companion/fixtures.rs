@@ -68,8 +68,10 @@ fn pairing_links_match() {
 
 #[test]
 fn core_requests_and_responses_read_and_write_back() {
+    // The core ones, and those the Android companion sends too: a versioned hello and a new session.
+    let phone = ["helloVersioned", "start"];
     for entry in fixture("requests.json")["requests"].as_array().unwrap() {
-        if entry["core"] != Value::Bool(true) {
+        if entry["core"] != Value::Bool(true) && !phone.contains(&str_of(entry, "name")) {
             continue;
         }
         let request: CompanionRequest = serde_json::from_value(entry["json"].clone()).unwrap();
@@ -85,10 +87,8 @@ fn core_requests_and_responses_read_and_write_back() {
         assert_eq!(back["op"], entry["json"]["op"]);
         assert_eq!(request.sent, entry["json"]["sent"].as_f64().unwrap());
     }
+    // Every answer reads, also those with fields this side does not know (they are left out).
     for entry in fixture("responses.json")["responses"].as_array().unwrap() {
-        if entry["core"] != Value::Bool(true) {
-            continue;
-        }
         let response: CompanionResponse = serde_json::from_value(entry["json"].clone()).unwrap();
         assert_eq!(response.id, str_of(&entry["json"], "id"));
         assert_eq!(response.ok, entry["json"]["ok"].as_bool().unwrap());

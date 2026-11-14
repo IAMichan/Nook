@@ -150,6 +150,73 @@ pub enum CompanionOp {
     /// Het APNs-token van de telefoon (`text`, hex) en de omgeving (`item`: "production" of "development").
     Register,
     Unregister,
+    /// What a new session can start with (`launch` in the answer); `start` starts one (`launch` in the request).
+    Options,
+    Start,
+    /// The recent conversation of one session (`session`; `timeline` in the answer).
+    Timeline,
+    /// Nook's own chats: the list, one conversation, a question (a new conversation when `conversation` is empty) and
+    /// stopping the answer that is being written.
+    Chats,
+    Chat,
+    Ask,
+    ChatStop,
+    /// Nook's home: what waits, the agenda, what plays, the limits (`home` in the answer).
+    Home,
+    /// Plan limits and what the sessions used (`item`: "today", "week" or "month"; `usage` in the answer).
+    Usage,
+    /// Play/pause, next or previous track (`text`); answered with `home`.
+    Music,
+    /// The Chats tab: the inbox, one chat's messages, your own words to a chat, and read or unread by hand.
+    Inbox,
+    InboxChat,
+    InboxSend,
+    InboxMark,
+    /// Manages a session (`item`: a `SessionAction`, `text`: the new name of `rename` or the moment of `snoozeUntil`).
+    Manage,
+}
+
+impl CompanionOp {
+    /// The ops the phone side may send through `CompanionClient::call`: everything but pairing and push registration,
+    /// which the client does itself.
+    pub fn callable(self) -> bool {
+        !matches!(self, CompanionOp::Hello | CompanionOp::Register | CompanionOp::Unregister)
+    }
+}
+
+/// The protocol this side speaks (`CompanionProtocol.version`): 3 added pull requests, files with a message, snoozing
+/// to a moment and `limitResetsAt`. Unknown fields are ignored, so a newer Mac's answers still read.
+pub const PROTOCOL_VERSION: i64 = 3;
+
+/// What a Mac can do beyond the first version of the protocol (`CompanionFeature`). The phone only offers what the Mac
+/// lists in `CompanionResponse::features`.
+pub mod feature {
+    pub const START: &str = "start";
+    pub const TIMELINE: &str = "timeline";
+    pub const CHAT: &str = "chat";
+    pub const HOME: &str = "home";
+    pub const USAGE: &str = "usage";
+    pub const MUSIC: &str = "music";
+    pub const INBOX: &str = "inbox";
+    pub const MANAGE: &str = "manage";
+    pub const STEER: &str = "steer";
+}
+
+/// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchRequest {
+    pub agent: String,
+    pub project: String,
+    pub task: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub plan: bool,
+    pub worktree: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_thread: Option<bool>,
 }
 
 /// Eén aanvraag van de telefoon. `id` is uniek per aanvraag; `sent` is de klok van de telefoon (seconden sinds 1970).
@@ -166,6 +233,25 @@ pub struct CompanionRequest {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow: Option<bool>,
+    /// A Nook chat, for `chat`, `ask` and `chatStop`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<LaunchRequest>,
+    /// The message of a chat that `inboxSend` answers.
+    #[serde(default, rename = "replyTo", skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    /// This side's protocol and app version, with `hello` and `list`.
+    #[serde(default, rename = "protocolVersion", skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<i64>,
+    #[serde(default, rename = "appVersion", skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    /// With `send` to a working session: true steers the running turn, false or nil waits for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steer: Option<bool>,
+    /// With `stop` and a steering `send`: the turn the phone saw (`SessionDigest::turn`), so only that turn is reached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<String>,
 }
 
 impl CompanionRequest {
@@ -179,7 +265,19 @@ impl CompanionRequest {
             item: None,
             text: None,
             allow: None,
+            conversation: None,
+            launch: None,
+            reply_to: None,
+            protocol_version: None,
+            app_version: None,
+            steer: None,
+            turn: None,
         }
+    }
+
+    /// A request that says which versions this side speaks: `hello` and `list` carry them.
+    pub fn versioned(op: CompanionOp, app_version: &str) -> Self {
+        Self { protocol_version: Some(PROTOCOL_VERSION), app_version: Some(app_version.into()), ..Self::new(op) }
     }
 }
 
@@ -210,6 +308,44 @@ pub struct CompanionResponse {
     pub sessions: Option<Vec<SessionDigest>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// What the Mac can do beyond the first version (`feature`), with `hello` and `list`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub features: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_phone: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    /// What this phone may do on the Mac (`CompanionScope` names); nil from a Mac without scopes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
+    /// The id of the session `start` started, or of the conversation `ask` began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    // The phone side passes these through to the interface as they came (`CompanionModels.swift` has their shapes):
+    // `LaunchOptions`, `[TimelineEntry]`, `[ChatDigest]`, `[ChatLine]`, `HomeDigest`, `UsageDigest`, `[InboxChatDigest]`,
+    // `[InboxLine]` and `[InboxTypist]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversations: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_lines: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_typing: Option<serde_json::Value>,
 }
 
 impl CompanionResponse {
@@ -222,15 +358,16 @@ impl CompanionResponse {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ItemKind {
+    #[default]
     Approval,
     Question,
 }
 
 /// Wat in een sessie op jou wacht.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DigestItem {
     pub id: String,
@@ -240,10 +377,13 @@ pub struct DigestItem {
     /// De telefoon mag dit toestaan. Zo niet, dan kan ze het alleen weigeren of aan de computer laten.
     pub can_allow: bool,
     pub options: Vec<String>,
+    /// A question's option previews (a mock-up or code per option, empty for one without); nil when none has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option_previews: Option<Vec<String>>,
 }
 
 /// Wat de telefoon over een sessie hoort. Titels en uittreksels zijn ingekort: de telefoon is geen logboek.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDigest {
     pub id: String,
@@ -257,6 +397,23 @@ pub struct SessionDigest {
     pub updated: f64,
     pub excerpt: String,
     pub items: Vec<DigestItem>,
+    /// The phone can send this session a message or stop it; false for an agent in a terminal. Nil means yes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_send: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// `SessionAction` names the phone may take on this session (`manage`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actions: Option<Vec<String>>,
+    /// The running turn can take a message right now (`steer`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_steer: Option<bool>,
+    /// When the usage limit that stopped this session resets (seconds since 1970).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_resets_at: Option<f64>,
+    /// The turn that runs now, sent back with a Stop or a steer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<String>,
 }
 
 /// Sessies die op jou wachten (een goedkeuring of een vraag), voor het getal op het icoon.
@@ -579,6 +736,7 @@ mod tests {
             detail: String::new(),
             can_allow: false,
             options: vec![],
+            ..Default::default()
         };
         let digest = |id: &str, items: Vec<DigestItem>| SessionDigest {
             id: id.into(),
@@ -590,8 +748,44 @@ mod tests {
             updated: 0.0,
             excerpt: String::new(),
             items,
+            ..Default::default()
         };
         assert_eq!(needing_you(&[digest("1", vec![item.clone(), item]), digest("2", vec![])]), 1);
+    }
+
+    #[test]
+    fn phone_requests_write_what_the_mac_reads() {
+        let mut r = CompanionRequest::versioned(CompanionOp::List, "1.2.0");
+        r.reply_to = Some("m1".into());
+        r.steer = Some(true);
+        r.turn = Some("t1".into());
+        r.launch = Some(LaunchRequest {
+            agent: "claude".into(),
+            project: "/p".into(),
+            task: "Fix it".into(),
+            title: None,
+            plan: true,
+            worktree: false,
+            model: None,
+            main_thread: Some(true),
+        });
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["protocolVersion"], PROTOCOL_VERSION);
+        assert_eq!(json["appVersion"], "1.2.0");
+        assert_eq!(json["replyTo"], "m1");
+        assert_eq!(json["launch"]["mainThread"], true);
+        assert!(json["launch"].get("model").is_none());
+        for (op, name) in [(CompanionOp::ChatStop, "chatStop"), (CompanionOp::InboxChat, "inboxChat"), (CompanionOp::Options, "options")] {
+            assert_eq!(serde_json::to_value(op).unwrap(), name);
+        }
+        assert!(!CompanionOp::Hello.callable() && !CompanionOp::Register.callable() && CompanionOp::Timeline.callable());
+        // A digest from a current Mac keeps what the phone shows.
+        let digest: SessionDigest = serde_json::from_value(serde_json::json!({
+            "id": "S", "title": "t", "agent": "Claude Code", "attention": "working", "folder": "f", "updated": 1.0,
+            "excerpt": "", "items": [], "canSend": false, "canSteer": true, "actions": ["rename"], "turn": "T"
+        }))
+        .unwrap();
+        assert_eq!((digest.can_send, digest.can_steer, digest.turn.as_deref()), (Some(false), Some(true), Some("T")));
     }
 
     #[test]

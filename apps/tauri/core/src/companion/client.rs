@@ -144,6 +144,27 @@ pub struct ClientSnapshot {
     pub host: String,
     pub sessions: Vec<SessionDigest>,
     pub notice: Option<String>,
+    /// What the computer can do beyond approving, answering, sending and stopping (`feature`); empty for a computer
+    /// that lists none (an older Mac, or Nook on Windows and Linux).
+    pub features: Vec<String>,
+    /// What this phone may do there (`CompanionScope` names); `None` from a computer without scopes: everything.
+    pub scopes: Option<Vec<String>>,
+}
+
+/// One request from the interface, as `CompanionRequest` without its id and clock: `CompanionClient::call` adds them.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientCall {
+    pub op: Option<CompanionOp>,
+    pub session: Option<String>,
+    pub item: Option<String>,
+    pub text: Option<String>,
+    pub allow: Option<bool>,
+    pub conversation: Option<String>,
+    pub launch: Option<LaunchRequest>,
+    pub reply_to: Option<String>,
+    pub steer: Option<bool>,
+    pub turn: Option<String>,
 }
 
 struct Inner {
@@ -153,12 +174,15 @@ struct Inner {
     mac_name: String,
     sessions: Vec<SessionDigest>,
     notice: Option<String>,
+    features: Vec<String>,
+    scopes: Option<Vec<String>>,
 }
 
 pub struct CompanionClient {
     secrets: Arc<dyn SecretStore>,
     resolver: Arc<dyn HostResolver>,
     inner: Mutex<Inner>,
+    app_version: String,
 }
 
 impl CompanionClient {
@@ -175,8 +199,16 @@ impl CompanionClient {
             reason: String::new(),
             sessions: Vec::new(),
             notice: None,
+            features: Vec::new(),
+            scopes: None,
         };
-        Self { secrets, resolver, inner: Mutex::new(inner) }
+        Self { secrets, resolver, inner: Mutex::new(inner), app_version: env!("CARGO_PKG_VERSION").into() }
+    }
+
+    /// The app version this phone says it runs (`appVersion` on `hello` and `list`).
+    pub fn with_app_version(mut self, version: &str) -> Self {
+        self.app_version = version.into();
+        self
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -192,7 +224,14 @@ impl CompanionClient {
             host: i.link.as_ref().map(|l| l.host.clone()).unwrap_or_default(),
             sessions: i.sessions.clone(),
             notice: i.notice.clone(),
+            features: i.features.clone(),
+            scopes: i.scopes.clone(),
         }
+    }
+
+    /// Whether the paired computer lists this feature.
+    pub fn has(&self, feature: &str) -> bool {
+        self.lock().features.iter().any(|f| f == feature)
     }
 
     pub fn is_paired(&self) -> bool {
@@ -215,7 +254,7 @@ impl CompanionClient {
             i.phase = Phase::Pairing;
             i.notice = None;
         }
-        let mut hello = CompanionRequest::new(CompanionOp::Hello);
+        let mut hello = CompanionRequest::versioned(CompanionOp::Hello, &self.app_version);
         hello.text = Some(device_name.into());
         let result = match request(&parsed, &hello, &*self.resolver).await {
             Ok(r) if r.ok => self.save(&parsed).map(|_| r),
@@ -227,6 +266,8 @@ impl CompanionClient {
             Ok(response) => {
                 i.mac_name = response.mac_name.unwrap_or_else(|| parsed.mac_name.clone());
                 i.link = Some(parsed);
+                i.features = response.features.unwrap_or_default();
+                i.scopes = response.scopes;
                 i.sessions = response.sessions.unwrap_or_default();
                 i.phase = Phase::Connected;
                 i.reason.clear();
@@ -256,20 +297,49 @@ impl CompanionClient {
             i.phase = Phase::Unpaired;
             i.mac_name.clear();
             i.reason.clear();
+            i.features.clear();
+            i.scopes = None;
         }
         self.snapshot()
     }
 
     pub async fn refresh(&self) -> ClientSnapshot {
-        self.perform(CompanionRequest::new(CompanionOp::List)).await
+        self.perform(CompanionRequest::versioned(CompanionOp::List, &self.app_version)).await
     }
 
+    /// Allows or denies a request. `reason` goes with a denial: the computer tells the agent why (an older one ignores it).
     pub async fn decide(&self, session: &str, item: &str, allow: bool) -> ClientSnapshot {
+        self.decide_with_reason(session, item, allow, None).await
+    }
+
+    pub async fn decide_with_reason(&self, session: &str, item: &str, allow: bool, reason: Option<&str>) -> ClientSnapshot {
         let mut r = CompanionRequest::new(CompanionOp::Decide);
         r.session = Some(session.into());
         r.item = Some(item.into());
         r.allow = Some(allow);
+        r.text = reason.map(str::trim).filter(|t| !allow && !t.is_empty()).map(Into::into);
         self.perform(r).await
+    }
+
+    /// Any other request the interface makes (the whole conversation, a new session, Nook's chats, home, limits, the
+    /// Chats tab, managing a session). The answer comes back as it came, beside the new state; `None` when the computer
+    /// could not be reached or refused it (the state's notice or reason says why).
+    pub async fn call(&self, call: ClientCall) -> (ClientSnapshot, Option<CompanionResponse>) {
+        let Some(op) = call.op.filter(|op| op.callable()) else {
+            self.lock().notice = Some("De computer weigerde dit.".into());
+            return (self.snapshot(), None);
+        };
+        let mut r = if op == CompanionOp::List { CompanionRequest::versioned(op, &self.app_version) } else { CompanionRequest::new(op) };
+        r.session = call.session;
+        r.item = call.item;
+        r.text = call.text;
+        r.allow = call.allow;
+        r.conversation = call.conversation;
+        r.launch = call.launch;
+        r.reply_to = call.reply_to;
+        r.steer = call.steer;
+        r.turn = call.turn;
+        self.exchange(r).await
     }
 
     pub async fn answer(&self, session: &str, item: &str, text: &str) -> ClientSnapshot {
@@ -294,28 +364,44 @@ impl CompanionClient {
     }
 
     async fn perform(&self, req: CompanionRequest) -> ClientSnapshot {
-        let Some(link) = self.lock().link.clone() else { return self.snapshot() };
+        self.exchange(req).await.0
+    }
+
+    async fn exchange(&self, req: CompanionRequest) -> (ClientSnapshot, Option<CompanionResponse>) {
+        let Some(link) = self.lock().link.clone() else { return (self.snapshot(), None) };
+        let op = req.op;
         let result = request(&link, &req, &*self.resolver).await;
         let mut refresh = false;
+        let mut answer = None;
         {
             let mut i = self.lock();
             match result {
                 Ok(response) if response.ok => {
-                    if let Some(list) = response.sessions {
-                        i.sessions = list;
+                    if let Some(list) = &response.sessions {
+                        i.sessions = list.clone();
                     }
-                    if let Some(name) = response.mac_name {
-                        i.mac_name = name;
+                    if let Some(name) = &response.mac_name {
+                        i.mac_name = name.clone();
+                    }
+                    if matches!(op, CompanionOp::Hello | CompanionOp::List) {
+                        // A Mac lists its features with every `list`; one that lists none can do only the first version.
+                        i.features = response.features.clone().unwrap_or_default();
+                        i.scopes = response.scopes.clone();
                     }
                     i.phase = Phase::Connected;
                     i.reason.clear();
-                    if let Some(message) = response.message {
-                        i.notice = (message == "queued").then(|| "In de wachtrij: de sessie is nog bezig.".into());
+                    if op == CompanionOp::Send {
+                        if let Some(message) = &response.message {
+                            i.notice = (message == "queued").then(|| "In de wachtrij: de sessie is nog bezig.".into());
+                        }
                     }
+                    answer = Some(response);
                 }
                 Ok(response) => {
                     i.phase = Phase::Connected;
-                    i.notice = Some(
+                    // A refusal that says why in words (a chat app that could not send) shows those words.
+                    let said = response.message.clone().filter(|m| response.error == Some(CompanionError::Failed) && !m.trim().is_empty());
+                    i.notice = Some(said.unwrap_or_else(|| {
                         match response.error {
                             Some(CompanionError::NotAllowedFromPhone) => "Dat kan niet vanaf de telefoon: open het op je computer.",
                             Some(CompanionError::UnknownItem | CompanionError::UnknownSession) => {
@@ -326,8 +412,8 @@ impl CompanionClient {
                             Some(CompanionError::RateLimited) => "Even rustig aan.",
                             _ => "De computer weigerde dit.",
                         }
-                        .into(),
-                    );
+                        .into()
+                    }));
                 }
                 Err(e) => {
                     i.phase = Phase::Offline;
@@ -340,6 +426,6 @@ impl CompanionClient {
             Box::pin(self.refresh()).await;
             self.lock().notice = notice;
         }
-        self.snapshot()
+        (self.snapshot(), answer)
     }
 }

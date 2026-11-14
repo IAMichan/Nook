@@ -141,6 +141,8 @@ pub fn run() {
             commands::companion::companion_client_answer,
             commands::companion::companion_client_send,
             commands::companion::companion_client_stop,
+            commands::companion::companion_client_deny,
+            commands::companion::companion_client_call,
             commands::companion::companion_client_clear_notice,
             commands::companion::companion_client_visible,
             commands::connectors::connectors_overview,

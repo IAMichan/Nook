@@ -650,10 +650,12 @@ come back to Nook, so you never paste it.
 
 ## Platforms and chats
 
-The iPhone companion is the only other app with the Chats tab. It gets the same things as the Mac over the companion
-protocol. The filled-in ticks come in each `InboxLine.ticks`. Who read it comes in `InboxLine.readers` and opens from
-the ticks. Who is typing comes in `InboxChatDigest.typing` for the list and `CompanionResponse.inboxTyping` for the
-open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one gets one, it reads these same fields.
+The iPhone companion and the Android companion (`apps/tauri/src/views/companion`) have the Mac's Chats tab. They get the
+same things as the Mac over the companion protocol. The filled-in ticks come in each `InboxLine.ticks`. Who read it
+comes in `InboxLine.readers` and opens from the ticks (on the iPhone; Android shows the ticks only). Who is typing
+comes in `InboxChatDigest.typing` for the list and `CompanionResponse.inboxTyping` for the open chat. Every chat app
+reads the same on both phones; replying follows `InboxChatDigest.canSend`. The Linux and Windows apps have no chat
+inbox of their own. If one gets one, it reads these same fields.
 
 ## Platforms and layouts
 
