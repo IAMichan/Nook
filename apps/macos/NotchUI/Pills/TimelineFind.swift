@@ -221,6 +221,28 @@ private struct PinProbe: ViewModifier {
     }
 }
 
+/// A conversation's rows in its scroll view, inside a plain stack: the older ones lazily, the last `eager` drawn in full
+/// (`HistoryWindow.eagerRows`). A lazy stack can come to rest drawing none of its rows where the view stands, also at
+/// its end and also after its scroll view was made again; rows drawn in full cannot, so the end of a conversation always
+/// shows, and `recoversBlankRows` scrolling there always lands on rows. Each row keeps its `.id`, so a scroll to it works
+/// in either part.
+struct ConversationRows<Item: Identifiable, Row: View>: View {
+    let items: [Item]
+    let eager: Int
+    @ViewBuilder let row: (Item) -> Row
+
+    var body: some View {
+        let split = max(0, items.count - max(0, eager))
+        if split > 0 {
+            LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                ForEach(items[..<split]) { row($0) }
+            }
+            .scrollTargetLayout()
+        }
+        ForEach(items[split...]) { row($0) }
+    }
+}
+
 /// The rows of a lazy conversation drawn now, with where each stands in the conversation's own space
 /// (`TurnPinRoom.space`), kept by `countsAsDrawnRow`. Neither of a lazy stack's own reports tells a blank view:
 /// `onScrollTargetVisibilityChange` reports nothing after a jump to a stretch where nothing is drawn (the rows it last
@@ -231,11 +253,16 @@ final class DrawnRows {
     fileprivate private(set) var spans: [AnyHashable: RowsInView.Span] = [:]
     /// Rows that appeared but were not laid out yet: drawn, but not known to be anywhere.
     fileprivate private(set) var pending: Set<AnyHashable> = []
+    /// How many copies of each row are drawn. A scroll view made again (`RowsInView.rebuilds`) draws its rows before the
+    /// old one lets go of the same rows; without the count, the old row's `onDisappear` struck the new one off, and the
+    /// conversation counted as blank (and was made again) for good.
+    private var copies: [AnyHashable: Int] = [:]
     fileprivate var changed: (() -> Void)?
 
     var count: Int { spans.count + pending.count }
 
     fileprivate func appeared(_ id: AnyHashable) {
+        copies[id, default: 0] += 1
         if spans[id] == nil { pending.insert(id) }
         changed?()
     }
@@ -248,6 +275,9 @@ final class DrawnRows {
     }
 
     fileprivate func disappeared(_ id: AnyHashable) {
+        let left = (copies[id] ?? 1) - 1
+        copies[id] = left > 0 ? left : nil
+        guard left <= 0 else { return }
         pending.remove(id)
         spans[id] = nil
         changed?()
