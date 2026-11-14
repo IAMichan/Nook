@@ -25,8 +25,8 @@ struct AccountOptionsSection: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     field(tr("accounts.program"), help: tr("accounts.program.help", profile.kind.command)) {
                         HStack {
-                            TextField(app.history.executables[profile.kind] ?? profile.kind.command, text: $program)
-                                .textFieldStyle(.roundedBorder)
+                            TextField(app.history.executables[profile.kind] ?? profile.kind.command, text: $program, prompt: Text(app.history.executables[profile.kind] ?? profile.kind.command).foregroundStyle(NookTheme.textTertiary))
+                                .settingsField()
                                 .font(NookTheme.TextStyle.code)
                                 .onSubmit(saveProgram)
                             Button(tr("accounts.program.choose"), action: chooseProgram)
@@ -72,16 +72,16 @@ struct AccountOptionsSection: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach($rows) { $row in
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("accounts.variables.name"), text: $row.name)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("accounts.variables.name"), text: $row.name, prompt: Text(tr("accounts.variables.name")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .font(NookTheme.TextStyle.code)
                         .frame(maxWidth: 180)
                     if row.sensitive {
-                        SecureField(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value"), text: $row.value)
-                            .textFieldStyle(.roundedBorder)
+                        SecureField(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value"), text: $row.value, prompt: Text(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value")).foregroundStyle(NookTheme.textTertiary))
+                            .settingsField()
                     } else {
-                        TextField(tr("accounts.variables.value"), text: $row.value)
-                            .textFieldStyle(.roundedBorder)
+                        TextField(tr("accounts.variables.value"), text: $row.value, prompt: Text(tr("accounts.variables.value")).foregroundStyle(NookTheme.textTertiary))
+                            .settingsField()
                             .font(NookTheme.TextStyle.code)
                     }
                     Toggle(isOn: $row.sensitive) { Image(icon: "key.fill") }

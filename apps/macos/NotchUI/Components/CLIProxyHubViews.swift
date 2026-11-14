@@ -174,14 +174,14 @@ struct CLIProxyAddForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            TextField(tr("cliproxy.labelPlaceholder"), text: $label)
-                .textFieldStyle(.roundedBorder)
-            TextField(tr("cliproxy.addressPlaceholder"), text: $address)
-                .textFieldStyle(.roundedBorder)
+            TextField(tr("cliproxy.labelPlaceholder"), text: $label, prompt: Text(tr("cliproxy.labelPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
+            TextField(tr("cliproxy.addressPlaceholder"), text: $address, prompt: Text(tr("cliproxy.addressPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .onSubmit(add)
             HStack {
-                SecureField(tr("cliproxy.keyPlaceholder"), text: $key)
-                    .textFieldStyle(.roundedBorder)
+                SecureField(tr("cliproxy.keyPlaceholder"), text: $key, prompt: Text(tr("cliproxy.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit(add)
                 Button(tr("cliproxy.add"), action: add)
                     .buttonStyle(.nookProminent)

@@ -93,7 +93,7 @@ struct TelegramSettingsRows: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 heading(tr("chats.telegram.password"),
                         detail: hint.isEmpty ? tr("chats.telegram.passwordDetail") : tr("chats.telegram.passwordHint", hint))
-                SecureField("", text: $password).labelsHidden().textFieldStyle(.roundedBorder)
+                SecureField("", text: $password).labelsHidden().settingsField()
                     .onSubmit { telegram.sendPassword(password) }
                 Button(tr("chats.telegram.logIn")) { telegram.sendPassword(password) }
                     .buttonStyle(.nookProminent)
@@ -117,7 +117,7 @@ struct TelegramSettingsRows: View {
                        action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             heading(title, detail: detail)
-            TextField("", text: text, prompt: Text(prompt)).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(action)
+            TextField("", text: text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary)).labelsHidden().settingsField().onSubmit(action)
             // The step's button, under its field.
             Button(button, action: action)
                 .buttonStyle(.nookProminent)
@@ -155,8 +155,8 @@ struct TelegramSettingsRows: View {
             }
             .buttonStyle(.nookLink)
             HStack(spacing: NookTheme.Spacing.sm) {
-                TextField("", text: $apiID, prompt: Text("api_id")).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 110)
-                SecureField("", text: $apiHash, prompt: Text("api_hash")).labelsHidden().textFieldStyle(.roundedBorder)
+                TextField("", text: $apiID, prompt: Text("api_id").foregroundStyle(NookTheme.textTertiary)).labelsHidden().settingsField().frame(width: 110)
+                SecureField("", text: $apiHash, prompt: Text("api_hash").foregroundStyle(NookTheme.textTertiary)).labelsHidden().settingsField()
                     .onSubmit { saveKeys() }
             }
             // The step's button, under its fields.
@@ -345,9 +345,9 @@ struct SlackTokenRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
-            SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
+            SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…").foregroundStyle(NookTheme.textTertiary))
                 .labelsHidden()
-                .textFieldStyle(.roundedBorder)
+                .settingsField()
                 .frame(maxWidth: .infinity)
                 .onSubmit { save() }
             // Save under the field; disconnecting is its own line under the token's state, never beside Save.

@@ -103,6 +103,49 @@ struct SettingsRowLabeledStyle: LabeledContentStyle {
             configuration.content
                 .foregroundStyle(NookTheme.textSecondary)
                 .multilineTextAlignment(.trailing)
+                .settingsMenu()
         }
+    }
+}
+
+/// The size of the controls on a Settings row: one height for fields and menus, and one width a field on the right of
+/// a row takes, so a page's controls line up as one column instead of each stretching to what is left of its row.
+enum SettingsControl {
+    /// A field's and a menu's height: a little taller than the system's, so a row reads calm and easy to hit.
+    static let height: CGFloat = 28
+    /// The width of a field on the right of a row (a name, a prefix, an address).
+    static let fieldWidth: CGFloat = 220
+}
+
+extension View {
+    /// A text or secure field on a Settings page or sheet: Nook's field fill and hairline at `SettingsControl.height`,
+    /// its text from the leading edge. Use it instead of `.settingsField()`.
+    func settingsField() -> some View {
+        modifier(SettingsFieldStyle())
+    }
+
+    /// A menu on a Settings row at `SettingsControl.height`, sized to its choices.
+    func settingsMenu() -> some View {
+        controlSize(.large)
+    }
+}
+
+private struct SettingsFieldStyle: ViewModifier {
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        let shape = NookTheme.shape(NookTheme.Radius.control)
+        content
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.leading)
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(NookTheme.paper)
+            .focused($focused)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .frame(minHeight: SettingsControl.height)
+            .background(shape.fill(NookTheme.field))
+            .overlay(shape.strokeBorder(focused ? NookTheme.line2 : NookTheme.fieldStroke, lineWidth: 1))
+            .contentShape(shape)
     }
 }

@@ -279,9 +279,9 @@ struct AutocompleteSettingsSection: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("autocomplete.download.linkPlaceholder"))
                 HStack {
-                    TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf"))
+                    TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf").foregroundStyle(NookTheme.textTertiary))
                         .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .frame(maxWidth: .infinity)
                         .onSubmit(downloadLink)
                     Button(tr("autocomplete.download"), action: downloadLink)

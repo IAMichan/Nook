@@ -165,6 +165,14 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use .nookPlain / .nookBorderless / .nookProminent / .nookLink (NotchUI/Theme/NookTheme.swift)")
     }
 
+    /// Settings draws its text fields one way: `.settingsField()`, Nook's field at one height, not the system's
+    /// rounded border.
+    func testSettingsFieldsAreTheSharedStyle() {
+        let settings: (String) -> Bool = { $0.hasPrefix("App/Settings/") || $0.hasPrefix("App/") && $0.contains("Settings") }
+        let found = offenders(#"\.textFieldStyle\(\s*\.roundedBorder\s*\)"#, excluding: { !settings($0) })
+        XCTAssertEqual(found, [], "use .settingsField() (App/Settings/SettingsFormStyle.swift)")
+    }
+
     /// Menu buttons show the pointing hand too: `.nookBorderlessButton` / `.nookButton`, not the system menu styles.
     func testMenusShowThePointingHand() {
         let found = offenders(#"\.menuStyle\(\s*\.(borderlessButton|button)\s*\)"#)

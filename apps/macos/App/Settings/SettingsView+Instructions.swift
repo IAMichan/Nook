@@ -145,13 +145,13 @@ private struct AddPromptSheet: View {
             SettingsTile(.instructions, size: 40)
         } content: {
             Text(tr("instructions.prompts.name")).font(NookTheme.TextStyle.strong)
-            TextField("", text: $title).textFieldStyle(.roundedBorder)
+            TextField("", text: $title).settingsField()
             Text(tr("instructions.form.trigger")).font(NookTheme.TextStyle.strong)
-            TextField("", text: $trigger, prompt: Text(tr("instructions.prompts.trigger"))).textFieldStyle(.roundedBorder)
+            TextField("", text: $trigger, prompt: Text(tr("instructions.prompts.trigger")).foregroundStyle(NookTheme.textTertiary)).settingsField()
                 .font(NookTheme.TextStyle.code)
             Text(tr("instructions.form.prompt")).font(NookTheme.TextStyle.strong)
-            TextField("", text: $text, prompt: Text(tr("instructions.prompts.body")), axis: .vertical)
-                .textFieldStyle(.roundedBorder)
+            TextField("", text: $text, prompt: Text(tr("instructions.prompts.body")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                .settingsField()
                 .lineLimit(4...10)
             if rejected { SettingNote(tr("instructions.prompts.rejected"), tone: .warning) }
         } footer: {
@@ -190,10 +190,10 @@ private struct AddSpaceSheet: View {
             SettingsTile(.instructions, size: 40)
         } content: {
             Text(tr("instructions.prompts.name")).font(NookTheme.TextStyle.strong)
-            TextField("", text: $name, prompt: Text(tr("instructions.spaces.name"))).textFieldStyle(.roundedBorder)
+            TextField("", text: $name, prompt: Text(tr("instructions.spaces.name")).foregroundStyle(NookTheme.textTertiary)).settingsField()
             Text(tr("instructions.form.instructions")).font(NookTheme.TextStyle.strong)
-            TextField("", text: $instructions, prompt: Text(tr("instructions.spaces.instructions")), axis: .vertical)
-                .textFieldStyle(.roundedBorder)
+            TextField("", text: $instructions, prompt: Text(tr("instructions.spaces.instructions")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                .settingsField()
                 .lineLimit(4...10)
         } footer: {
             Spacer()

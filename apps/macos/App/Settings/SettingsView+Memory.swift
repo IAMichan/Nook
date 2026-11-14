@@ -148,7 +148,7 @@ struct MemorySettingsSection: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 if editing == item.id {
                     TextField("", text: $editText)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .onSubmit { commitEdit(item) }
                         .onExitCommand {
                             editing = nil
