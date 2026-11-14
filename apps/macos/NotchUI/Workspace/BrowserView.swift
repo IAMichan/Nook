@@ -171,6 +171,7 @@ final class BrowserStore: ObservableObject {
     func evaluate(_ script: String) async throws -> Any { try await page.evaluate(script) }
     func pickElement() async throws -> PickedElement? { try await page.pickElement() }
     func cancelPick() { page.cancelPick() }
+    func clearPicks() { page.clearPicks() }
     func openInDefaultBrowser() { page.openInDefaultBrowser() }
 
     /// No browser page and no popup shows the browser any more: every tab may be put away after a while.
@@ -544,11 +545,17 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         guard let url = webView.url else { throw NookError(tr("workbench.browser.nothingOpen")) }
         let result = try await webView.callAsyncJavaScript(BrowserPickScript.pick, contentWorld: .defaultClient)
         guard let found = result as? [String: Any], let selector = found["selector"] as? String else { return nil }
-        return PickedElement(url: url.absoluteString, selector: selector, text: found["text"] as? String ?? "")
+        return PickedElement(url: url.absoluteString, selector: selector, text: found["text"] as? String ?? "",
+                             label: found["label"] as? String ?? "", html: found["html"] as? String ?? "")
     }
 
     func cancelPick() {
         webView.evaluateJavaScript(BrowserPickScript.cancel, in: nil, in: .defaultClient) { _ in }
+    }
+
+    /// Takes the marks of the selected elements off the page.
+    func clearPicks() {
+        webView.evaluateJavaScript(BrowserPickScript.clear, in: nil, in: .defaultClient) { _ in }
     }
 
     // MARK: WKNavigationDelegate
@@ -805,10 +812,12 @@ struct BrowserView: View {
     @ObservedObject var store: BrowserStore
     @Environment(\.sessionContextTarget) private var session
     @State private var asking = false
-    /// Pointing at an element, and the one you pointed at while you say what about it.
+    /// Selecting elements on the page: each one you click goes to the composer as a snippet until you stop.
     @State private var picking = false
-    @State private var picked: PickedElement?
-    @State private var pickNote = ""
+    /// Outside a session the selected elements go to the chat, which holds one attachment: all of this round's under
+    /// one name (`chatAttachment`), so selecting another grows it.
+    @State private var chatPicks: [PickedElement] = []
+    @State private var chatAttachment: String?
     /// Servers on this Mac, offered while the browser is empty.
     @State private var servers: [LocalServer] = []
     /// The pointer is on the address field, which shows its fill only then.
@@ -842,12 +851,12 @@ struct BrowserView: View {
                 .frame(height: SidePanelMetrics.toolbar)
                 .roundedBackground(addressHovering ? WS.subtle : .clear, radius: NookTheme.Radius.control)
                 .onHover { addressHovering = $0 }
+                // The pointer tool, first of what you do with the page: on, the page highlights what the pointer is on and
+                // a click hands that element to the composer. It stays selected until you click it again or press Escape.
+                ToolbarIconButton("cursorarrow", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
+                                  enabled: store.webView.url != nil, selected: picking) { annotate() }
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
-                }
-                if session != nil {
-                    ToolbarIconButton(picking ? "xmark.circle" : "cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
-                                      enabled: store.webView.url != nil) { annotate() }
                 }
                 if session != nil {
                     ToolbarIconButton("text.badge.plus", tr("browser.addPage"), enabled: store.webView.url != nil && !asking) { addPage() }
@@ -874,7 +883,7 @@ struct BrowserView: View {
             }
             if let question = store.certificateQuestion { certificateQuestion(question) }
             if let site = store.signInQuestion { signInQuestion(site) }
-            if let picked { pickBar(picked) }
+            if picking { pickHint }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
@@ -978,42 +987,52 @@ struct BrowserView: View {
         }
     }
 
-    /// Starts pointing, or stops when you already are.
+    /// Starts selecting, or stops when you already are. Every element you click lands in the composer as a snippet
+    /// (its markup and where it sits), the session's beside it or else the chat's; Escape or the button stops.
     private func annotate() {
         guard !picking else { store.cancelPick(); return }
-        picked = nil
         picking = true
+        chatPicks = []
+        chatAttachment = nil
         Task {
-            defer { picking = false }
-            do {
-                picked = try await store.pickElement()
-                pickNote = ""
-            } catch {
-                ToastCenter.shared.error(error.localizedDescription)
+            // A page that navigates away ends the selection with an error: that is a stop, not a failure to report.
+            while let element = try? await store.pickElement() { take(element) }
+            picking = false
+            store.clearPicks()
+            // Selected from Agents › Browser: the chat they went to opens, with the page beside it.
+            if session == nil, onClose == nil, !chatPicks.isEmpty {
+                if EmbeddedAppStore.shared.current == nil {
+                    app.viewModel.terminalBesideChat = nil
+                    app.viewModel.browserBesideChat = true
+                }
+                app.showChat()
             }
         }
     }
 
-    /// What you want to say about the element, before it goes to the session's composer.
-    private func pickBar(_ element: PickedElement) -> some View {
+    private func take(_ element: PickedElement) {
+        if let session {
+            ComposerInbox.shared.add(element: element, to: session)
+        } else {
+            chatPicks.append(element)
+            chatAttachment = app.attachPageElements(chatPicks, replacing: chatAttachment)
+            ToastCenter.shared.success(tr("browser.pick.added", element.name))
+        }
+    }
+
+    /// While selecting: what a click does, and how to stop.
+    private var pickHint: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(icon: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            TextField(tr("browser.annotate.note"), text: $pickNote)
-                .textFieldStyle(.plain)
+            Image(icon: "cursorarrow").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.iris)
+            Text(tr(session == nil ? "browser.pick.hintChat" : "browser.pick.hint"))
                 .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.paper)
-                .onSubmit { sendPick(element) }
-            ToolbarIconButton("arrow.up.circle", tr("session.context.add")) { sendPick(element) }
-            SidePanelCloseButton(help: tr("button.cancel")) { picked = nil }
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            NookGhostButton(title: tr("browser.pick.done"), compact: true, height: 24) { store.cancelPick() }
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .frame(height: SidePanelMetrics.toolbar)
-    }
-
-    private func sendPick(_ element: PickedElement) {
-        guard let session else { return }
-        ComposerInbox.shared.add(SessionPrompts.pageElement(url: element.url, selector: element.selector, text: element.text, note: pickNote), to: session)
-        picked = nil
     }
 
     /// Hands the open page to the chat as an attachment, like dropping a file.

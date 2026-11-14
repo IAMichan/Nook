@@ -456,9 +456,14 @@ struct ImageAttachmentStrip: View {
                         }
                     }
                     ForEach(Array(files.enumerated()), id: \.offset) { index, file in
-                        ZStack(alignment: .topTrailing) {
-                            ComposerFileTile(label: file.label, paste: file.kind == .paste, url: url(of: file))
-                            removeButton { removeFile(index) }
+                        if file.kind == .element {
+                            // An element from the browser: a small snippet chip, not a file tile.
+                            ComposerSnippetChip(label: file.label) { removeFile(index) }
+                        } else {
+                            ZStack(alignment: .topTrailing) {
+                                ComposerFileTile(label: file.label, paste: file.kind == .paste, url: url(of: file))
+                                removeButton { removeFile(index) }
+                            }
                         }
                     }
                     if let dropSlot {
@@ -471,7 +476,12 @@ struct ImageAttachmentStrip: View {
                 if shown { proxy.scrollTo(Self.slotID, anchor: .trailing) }
             }
         }
-        .frame(height: 56)
+        // Only snippets: the row is as low as they are.
+        .frame(height: onlySnippets ? ComposerSnippetChip.height : 56)
+    }
+
+    private var onlySnippets: Bool {
+        images.isEmpty && dropSlot == nil && !files.isEmpty && files.allSatisfy { $0.kind == .element }
     }
 
     private func url(of file: ContextRefs.Found) -> URL? {
@@ -507,6 +517,46 @@ struct ImageAttachmentStrip: View {
             .background(NookTheme.smoke)
             .roundedClip(NookTheme.Radius.card)
         }
+    }
+}
+
+/// An element selected in Nook's browser, going out with a message: a small chip with the code mark and its name
+/// (`h2.mkt-title`) in the code font, and a cross that takes it off. Its markup goes along unseen.
+struct ComposerSnippetChip: View {
+    static let height: CGFloat = 26
+    let label: String
+    let remove: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Image(icon: "chevron.left.forwardslash.chevron.right")
+                .font(NookTheme.font(10, .semibold))
+                .foregroundStyle(NookTheme.iris)
+            Text(label)
+                .font(NookTheme.mono(11.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 220, alignment: .leading)
+            Button(action: remove) {
+                Image(icon: "xmark")
+                    .font(NookTheme.font(8, .bold))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.nookPlain)
+            .accessibilityLabel(tr("image.remove"))
+        }
+        .padding(.leading, NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .frame(height: Self.height)
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
+        .onHover { hovering = $0 }
+        .help(tr("compose.chip.element") + "\n" + label)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tr("compose.chip.element") + ", " + label)
     }
 }
 

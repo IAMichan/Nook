@@ -36,6 +36,7 @@ extension AgentRunPanel {
 
     func takeFromSidePanel() {
         guard let delivery = ComposerInbox.shared.take(run: runID, directory: workspace.run(runID)?.workingDirectory ?? "") else { return }
+        delivery.keepSnippets(in: composerModel)
         draft = delivery.merged(into: draft)
         composerState.images += delivery.images
         focused = true

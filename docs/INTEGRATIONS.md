@@ -55,9 +55,11 @@ needs a column in that matrix.
 
 ## Side panel to composer
 
-Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pull request, an element pointed at in the
-browser, a remark on a file's line) goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. Both
-composers take it (`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
+Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pull request, a remark on a file's line)
+goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. An element selected in the browser goes the
+same way as a snippet tile (`ContextRef.Kind.element`: its markup, selector and text, sent in the context envelope and
+marked as untrusted page content); outside a session it becomes the chat's attachment. Both composers take it
+(`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
 
 ## A session's pull requests in the side panel
 

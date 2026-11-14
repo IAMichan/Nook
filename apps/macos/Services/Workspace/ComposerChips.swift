@@ -42,7 +42,7 @@ enum ComposerChips {
         case .file: return "@" + label
         case .pullRequest: return "#" + label
         case .skill: return "$" + label
-        case .session, .excerpt, .source, .paste, .model, .secret: return label
+        case .session, .excerpt, .source, .paste, .model, .secret, .element: return label
         }
     }
 

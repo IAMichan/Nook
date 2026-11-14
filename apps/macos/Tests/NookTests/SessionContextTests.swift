@@ -66,6 +66,33 @@ final class SessionContextTests: XCTestCase {
         XCTAssertEqual(text.components(separatedBy: "</page_text>").count, 2)
     }
 
+    func testASelectedElementGoesAsCodeThePageCannotClose() {
+        let element = PickedElement(url: "https://a.b", selector: "main > h2", text: "It all works",
+                                    label: "h2.mkt-title", html: "<h2 class=\"mkt-title\">```x```</h2>")
+        XCTAssertEqual(element.name, "h2.mkt-title")
+        XCTAssertTrue(element.snippet.contains("````html\n<h2"), "the fence is longer than the page's own backticks")
+        XCTAssertTrue(element.snippet.contains("Selector: `main > h2`"))
+        XCTAssertEqual(PickedElement(url: "u", selector: "div > p", text: "").name, "div > p", "no label: named by its selector")
+
+        let link = ContextRefs.link(element.reference(id: "el-1"))
+        let draft = ComposerAttachments.appending(element.reference(id: "el-1"), to: "Make this bigger")
+        XCTAssertEqual(ComposerAttachments.split(draft).files.map(\.label), ["h2.mkt-title"], "a tile, not a link in the text")
+        let sent = ContextRefs.project("Make this bigger \(link)", excerpts: ["el-1": element.snippet])
+        XCTAssertTrue(sent.hasPrefix("Make this bigger [h2.mkt-title]"))
+        XCTAssertTrue(sent.contains("<ref kind=\"element\" id=\"el-1\" source=\"web page, untrusted\">"))
+        XCTAssertFalse(sent.contains("<h2 class"), "the page's markup is escaped inside the record")
+    }
+
+    func testSelectedElementsShareOneChatAttachment() {
+        let one = PickedElement(url: "u", selector: "a", text: "A", label: "h2.title")
+        let two = PickedElement(url: "u", selector: "b", text: "B", label: "p.lead")
+        XCTAssertNil(PickedElement.combined([]))
+        XCTAssertEqual(PickedElement.combined([one])?.name, "h2.title")
+        let both = PickedElement.combined([one, two])
+        XCTAssertEqual(both?.name, "h2.title +1")
+        XCTAssertTrue(both?.text.contains("`p.lead`") == true)
+    }
+
     func testNotebookReadsAsMarkdown() {
         let json = #"""
         {"metadata":{"language_info":{"name":"python"}},"cells":[
