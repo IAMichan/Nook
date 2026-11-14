@@ -85,7 +85,7 @@ struct AcpToolCall: Equatable, Sendable {
 
     /// The call starts a subagent: Claude Code over ACP names its Task or Agent tool in `_meta` (its first report may
     /// come without input), and a call whose input hands a task to another agent (`subagentInput`) does too.
-    var launchesSubagent: Bool { Subagents.tools.contains(metaToolName ?? "") || subagentInput != nil }
+    var launchesSubagent: Bool { Subagents.isTool(metaToolName ?? "") || subagentInput != nil }
 
     /// The input of a call that starts a subagent, in the shape Nook's subagent rows read (Claude Code's Task:
     /// `description`, `prompt`, `subagent_type`): Claude Code over ACP passes its Task input as it is, Copilot names the
@@ -93,7 +93,7 @@ struct AcpToolCall: Equatable, Sendable {
     var subagentInput: JSONBox? {
         guard var raw = input?.object as? [String: Any], let prompt = raw["prompt"] as? String, !prompt.isEmpty else { return nil }
         let type = (raw["subagent_type"] as? String) ?? (raw["agent_type"] as? String)
-        guard type != nil || Subagents.tools.contains(metaToolName ?? "") else { return nil }
+        guard type != nil || Subagents.isTool(metaToolName ?? "") else { return nil }
         raw["subagent_type"] = type ?? "agent"
         return JSONBox(raw)
     }
@@ -124,10 +124,10 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(object)
     }
 
-    /// The tool name Nook's timeline groups by (see ToolCategory). A subagent's call is "Agent", as Claude Code's, so it
-    /// gets the subagent rows, the bar above the composer and the Subagents tab.
+    /// The tool name Nook's timeline groups by: an ACP kind under a spelling `CanonicalTool` knows. A subagent's call is
+    /// "Agent", as Claude Code's, so it gets the subagent rows, the bar above the composer and the Subagents tab.
     var toolName: String {
-        if launchesSubagent { return "Agent" }
+        if launchesSubagent { return CanonicalTool.subagentName }
         switch kind {
         case "execute": return "shell"
         case "edit", "delete", "move": return "edit"

@@ -532,6 +532,12 @@ answer and one thought streaming at a time, a tool call is one row from start to
 turn). Add a provider by translating into those signals, never by writing `RunEvent`s for text, thinking or tools
 yourself.
 
+Every agent's tool names go through one table, `CanonicalTool` (`CanonicalTool.swift`): whether a call is a command,
+an edit, a write, a patch, a read, a search, a fetch or a subagent, and the name its step shows ("Shell", "Edit",
+"Read"), case-insensitively. The timeline's tally, the approval titles, the step words and icons, `PreToolGate`, the
+recap, the hook activity line and the transcripts all read it, and a call's file, command and one-line subject come
+from `ToolInput`. A new agent's tool spelling is one line in that table.
+
 | Feature | Claude Code | Codex (app-server) | Codex (exec) | Gemini CLI (ACP) | Gemini CLI (headless) | ACP agents (OpenCode, Cursor, Grok, Antigravity…) |
 |---|---|---|---|---|---|---|
 | Answer streams live | ✓ | ✓ | – (only whole messages) | ✓ | ✓ | ✓ |
@@ -540,7 +546,7 @@ yourself.
 | Tool output in the row | ✓ | ✓ (commands live, MCP results) | ✓ (commands, MCP results) | ✓ | ✓ | ✓ |
 | Files a call changed | ✓ (Edit/Write) | ✓ (`fileChange`) | ✓ (`file_change`) | ✓ (call paths) | ✓ (replace/write_file) | ✓ (call paths) |
 | A read stops spinning once the agent moves on | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`AcpOpenReads`: Antigravity 1.3.0 closes its `view_file` only at the end of the turn, without output) |
-| Subagents: their own row in the timeline, the bar above the composer and their own Subagents tab in the side panel, apart from the plans (`Subagents`, the Subagents tab of `AgentActivityDock`, `SessionSubagentsPanel`) | ✓ (Task/Agent calls) | ✓ (`spawnAgent`, settled by its state reports) | – (exec reports no subagents) | – (Gemini CLI names no subagent call) | – (same) | ✓ for agents whose tool call starts one: Claude Code over ACP (`_meta.claudeCode.toolName` Task/Agent) and Copilot (`agent_type` in the input), `AcpToolCall.subagentInput`; – for the others (their calls do not say it) |
+| Subagents: their own row in the timeline, the bar above the composer and their own Subagents tab in the side panel, apart from the plans (`Subagents`, the Subagents tab of `AgentActivityDock`, `SessionSubagentsPanel`) | ✓ (Task/Agent calls) | ✓ (`spawnAgent`, settled by its state reports) | – (exec reports no subagents) | – (Gemini CLI names no subagent call) | – (same) | ✓ for agents whose tool call starts one: Claude Code over ACP (`_meta.claudeCode.toolName` Task/Agent) and Copilot (`agent_type` in the input), `AcpToolCall.subagentInput`, and OpenCode's server (its `task` tool takes Claude Code's Task input: `description`, `prompt`, `subagent_type`; `OpenCodeTools.name`); – for the others (their calls do not say it) |
 | A subagent's own steps (its thinking, messages and tool calls) in the Subagents tab (`SubagentStep`) | ✓ (stream messages with `parent_tool_use_id`, as Claude Code streams them) | – (Nook reads only each subagent thread's final message from its state reports) | – | – | – | – |
 | Files the agent hands you (a video, picture or document) in a row of their own beside its answer, a video playable in place, and in the outputs panel (`SharedFiles`, `SharedFilesRow`) | ✓ (`SendUserFile`, also in a session read from its transcript) | ✓ (a picture it generates: an `imageGeneration` item's `savedPath`, its revised prompt as the caption) | – (same) | – (no such tool) | – (same) | – (same; an MCP tool named `SendUserFile` counts) |
 | A subagent in the background keeps running after its turn and settles when it ends, and its session stays working in the list and the notch until then (`subagentsWorking`); the wake line names it | ✓ (`task_started` / `task_notification`, or the `<task-notification>` it hands the model) | – (its subagents end within the turn that waits for them) | – | – | – | – |

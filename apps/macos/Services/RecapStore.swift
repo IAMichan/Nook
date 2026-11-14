@@ -73,7 +73,7 @@ final class RecapStore {
     func toolUse(_ tool: String) {
         update { day in
             day.toolUses += 1
-            if ["Bash", "shell", "run_shell_command", "exec_command"].contains(tool) { day.commands += 1 }
+            if CanonicalTool.kind(tool) == .shell { day.commands += 1 }
         }
     }
 

@@ -147,7 +147,7 @@ enum ViewedImages {
     static func paths(tool: String, input: [String: Any]) -> [String] {
         guard mayView(tool) else { return [] }
         var found: [String] = []
-        for key in ["file_path", "absolute_path", "path", "filePath", "target_file", "file", "abs_path", "notebook_path"] {
+        for key in ToolInput.pathKeys {
             if let value = input[key] as? String { found.append(value) }
         }
         found += (input["paths"] as? [String]) ?? []

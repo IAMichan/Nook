@@ -12,25 +12,9 @@ enum ToolCategory: Int, Comparable, Sendable {
 
     static func < (lhs: ToolCategory, rhs: ToolCategory) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    /// Claude Code, Codex, Gemini CLI and Nook's own tools by name.
+    /// Every agent's tools and Nook's own, by name (`CanonicalTool`).
     static func of(tool: String) -> ToolCategory {
-        let name = tool.lowercased()
-        if name.hasPrefix(BridgeTool.toolPrefix) {
-            return BridgeTool.named(tool) == .terminalRun ? .command : .other
-        }
-        switch name {
-        case "bash", "shell", "run_shell_command", "nook terminal", "killshell", "bashoutput":
-            return .command
-        case "edit", "multiedit", "write", "notebookedit", "write_file", "replace", "apply_patch":
-            return .edit
-        // Codex looks at a picture with view_image (`imageView` in its app server).
-        case "read", "read_file", "read_many_files", "ls", "list_directory", "notebookread", "view_image":
-            return .read
-        case "grep", "glob", "search_file_content", "websearch", "webfetch", "web_search", "web_fetch", "google_web_search":
-            return .search
-        default:
-            return .other
-        }
+        CanonicalTool.of(tool).category
     }
 }
 
@@ -43,26 +27,19 @@ struct EditLines: Equatable, Sendable {
         EditLines(added: lhs.added + rhs.added, removed: lhs.removed + rhs.removed)
     }
 
-    /// Claude Code's Edit, MultiEdit and Write, Gemini CLI's replace and write_file, and a Codex patch.
+    /// Every agent's edit, write and patch (`EditPatch.change`): Claude Code's Edit, MultiEdit and Write, Gemini CLI's
+    /// replace and write_file, str_replace and create, an ACP agent's diffs, and a Codex patch.
     /// Nil when the input does not say what changed.
     static func of(tool: String, input: [String: Any]) -> EditLines? {
         var result = EditLines()
-        switch tool.lowercased() {
-        case "edit" where input["edits"] == nil, "replace":
-            result = between((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
-        case "multiedit", "edit":
-            guard let edits = input["edits"] as? [[String: Any]] else { return nil }
-            for edit in edits {
-                result = result + between((edit["old_string"] as? String) ?? "", (edit["new_string"] as? String) ?? "")
-            }
-        case "write", "write_file":
-            guard let content = input["content"] as? String else { return nil }
+        switch EditPatch.change(tool: tool, input: input) {
+        case .replace(let replacements):
+            for item in replacements { result = result + between(item.old, item.new) }
+        case .write(let content):
             result.added = lines(content).count
-        case "apply_patch":
-            guard let patch = (input["input"] as? String) ?? (input["patch"] as? String) else { return nil }
+        case .patch(let patch):
             return of(patch: patch)
-        default:
+        case nil:
             return nil
         }
         return result.added + result.removed > 0 ? result : nil
@@ -447,7 +424,8 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
 }
 
 enum Subagents {
-    static let tools: Set<String> = ["Task", "Agent"]
+    /// Whether a tool starts a subagent, for every agent (`CanonicalTool`).
+    static func isTool(_ name: String) -> Bool { CanonicalTool.isSubagent(name) }
 
     /// The subagents of the latest turn, in the order they started.
     static func latest(_ events: [RunEvent]) -> [SubagentInfo] {
@@ -465,7 +443,7 @@ enum Subagents {
 
     /// The event is a subagent the agent started (not a call of a subagent's own).
     static func isLaunch(_ event: RunEvent) -> Bool {
-        event.kind == .tool && event.tool.map(tools.contains) == true && !event.text.hasPrefix("↳")
+        event.kind == .tool && event.tool.map(isTool) == true && !event.text.hasPrefix("↳")
     }
 
     /// The subagent was started with `run_in_background`: its call returns at once, and it ends later.

@@ -333,7 +333,7 @@ enum AgentTranscript {
                             let name = (block["name"] as? String) ?? ""
                             let input = (block["input"] as? [String: Any]) ?? [:]
                             append(step: AgentToolStep(id: (block["id"] as? String) ?? blockID, name: toolName(name),
-                                                       summary: toolSummary(name, input), command: ToolSummary.command(input),
+                                                       summary: stepSummary(name, input), command: ToolSummary.command(input),
                                                        tasks: SessionOutputs.taskList(tool: name, input: input),
                                                        path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
                                                        plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
@@ -419,8 +419,11 @@ enum AgentTranscript {
                     let arguments = (payload["arguments"] as? String).flatMap {
                         (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
                     } ?? [:]
-                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments),
-                                               command: ToolSummary.command(arguments) ?? (arguments["cmd"] as? String),
+                    // A patch arrives as a custom tool call with the patch as its input: the step names the files in it.
+                    let patchInput = (payload["input"] as? String).map { ["input": $0] } ?? [:]
+                    append(step: AgentToolStep(id: callID, name: toolName(name),
+                                               summary: stepSummary(name, arguments.merging(patchInput) { old, _ in old }),
+                                               command: ToolSummary.command(arguments),
                                                tasks: SessionOutputs.taskList(tool: name, input: arguments),
                                                // apply_patch arrives as a custom tool call with the patch as its input.
                                                lines: name == "apply_patch"
@@ -436,11 +439,11 @@ enum AgentTranscript {
                            at: when, to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action),
+                    append(step: AgentToolStep(id: callID, name: toolName("local_shell_call"), summary: stepSummary("shell", action),
                                                command: ToolSummary.command(action), input: inputJSON(action)), at: when, to: &messages)
                 case "web_search_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),
+                    append(step: AgentToolStep(id: callID, name: toolName("web_search"), summary: stepSummary("web_search", action)),
                            at: when, to: &messages)
                     finish(step: callID, failed: false, at: when, in: &messages)
                 case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
@@ -461,7 +464,7 @@ enum AgentTranscript {
         var messages: [AgentChatMessage] = []
         for (index, message) in list.enumerated() {
             let id = (message["id"] as? String) ?? "gemini-\(index)"
-            let content = geminiText(message["content"])
+            let content = TextClip.parts(message["content"])
             let when = date(message["timestamp"])
             switch message["type"] as? String {
             case "user":
@@ -483,7 +486,7 @@ enum AgentTranscript {
                     let input = (call["args"] as? [String: Any]) ?? [:]
                     let callDate = date(call["timestamp"]) ?? when
                     let path = ToolSummary.path(input)
-                    append(step: AgentToolStep(id: callID, name: geminiToolName(raw), summary: geminiSummary(raw, input),
+                    append(step: AgentToolStep(id: callID, name: toolName(raw), summary: stepSummary(raw, input),
                                                command: ToolSummary.command(input),
                                                path: ToolCategory.of(tool: raw) == .edit ? path : nil,
                                                lines: EditLines.of(tool: raw, input: input),
@@ -628,103 +631,29 @@ enum AgentTranscript {
     /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.
     static func date(_ value: Any?) -> Date? {
         guard let text = value as? String, !text.isEmpty else { return nil }
-        return fractionalStamp.date(from: text) ?? plainStamp.date(from: text)
+        return NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
-
-    // ISO8601DateFormatter is thread-safe; one each is enough for every transcript.
-    private static let fractionalStamp: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let plainStamp = ISO8601DateFormatter()
 
     /// A long run of steps keeps its newest ones.
     private static let maxSteps = 200
 
-    /// A tool keeps its full name, MCP tools too ("mcp__github__create_issue"): the timeline reads its server and tool
-    /// from it ("GitHub › Create issue"), and the computer-use tools by what they do on your screen.
+    /// The name a step shows under, the same for every agent (`CanonicalTool`): Claude Code's own names, which the
+    /// other agents' tools map onto ("Shell", "Edit", "Read"). Any other tool keeps its full name, MCP tools too
+    /// ("mcp__github__create_issue"): the timeline reads its server and tool from it ("GitHub › Create issue"), and the
+    /// computer-use tools by what they do on your screen.
     static func toolName(_ raw: String) -> String {
-        raw.isEmpty ? "Tool" : raw
+        CanonicalTool.of(raw).name
     }
 
-    /// What a Claude Code step was about, the way the Claude app shows it next to the tool's name.
     /// A step that read or wrote one file, which you can open from it (a folder listing names a folder, not a file).
     static func opensFile(_ name: String) -> Bool {
-        let category = ToolCategory.of(tool: name)
-        return (category == .read || category == .edit) && !["ls", "list_directory"].contains(name.lowercased())
+        [.read, .edit, .write].contains(CanonicalTool.kind(name))
     }
 
-    static func toolSummary(_ name: String, _ input: [String: Any]) -> String {
-        func string(_ key: String) -> String? {
-            guard let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            return value
-        }
-        let fileName = string("file_path").map { ($0 as NSString).lastPathComponent }
-            ?? string("notebook_path").map { ($0 as NSString).lastPathComponent }
-        let summary: String?
-        switch name {
-        case "Bash": summary = string("description") ?? string("command")
-        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": summary = fileName
-        case "Grep", "Glob": summary = string("pattern")
-        case "WebFetch": summary = string("url")
-        case "WebSearch", "web_search": summary = string("query")
-        case "Task", "Agent": summary = string("description")
-        case "Skill": summary = string("skill") ?? string("command")
-        default:
-            summary = ["description", "command", "query", "url", "pattern", "path", "title", "name", "prompt"]
-                .lazy.compactMap { string($0) }.first ?? fileName
-        }
-        return oneLine(summary ?? "")
-    }
-
-    private static func codexToolName(_ raw: String) -> String {
-        switch raw {
-        case "shell", "exec_command", "shell_command", "container.exec": return "Shell"
-        case "apply_patch": return "Edit"
-        case "update_plan": return "Plan"
-        default: return toolName(raw)
-        }
-    }
-
-    /// Gemini CLI's tools by the names the other agents' steps use, so a step reads the same whichever agent ran it.
-    private static func geminiToolName(_ raw: String) -> String {
-        switch raw {
-        case "run_shell_command": return "Shell"
-        case "read_file", "read_many_files": return "Read"
-        case "write_file": return "Write"
-        case "replace": return "Edit"
-        case "glob": return "Glob"
-        case "search_file_content": return "Grep"
-        case "google_web_search": return "WebSearch"
-        case "web_fetch": return "WebFetch"
-        default: return toolName(raw)
-        }
-    }
-
-    /// Gemini CLI: what a step was about, from its own argument names.
-    private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
-        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine((path as NSString).lastPathComponent) }
-        if let paths = input["paths"] as? [String], let first = paths.first {
-            return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
-        }
-        for key in ["description", "command", "pattern", "query", "url", "prompt"] {
-            if let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return oneLine(value) }
-        }
-        return ""
-    }
-
-    /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
-    private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
-        if let command = arguments["command"] as? [String] {
-            if command.count >= 3, ["bash", "sh", "zsh"].contains((command[0] as NSString).lastPathComponent),
-               command[1].hasPrefix("-") { return oneLine(command[2]) }
-            return oneLine(command.joined(separator: " "))
-        }
-        for key in ["cmd", "command", "query", "path", "explanation"] {
-            if let value = arguments[key] as? String, !value.isEmpty { return oneLine(value) }
-        }
-        return ""
+    /// What a step was about, the way the agent's own app shows it next to the tool's name, for every agent
+    /// (`ToolInput.subject`): what a command says it does (or the command), the file, the pattern, the address.
+    static func stepSummary(_ name: String, _ input: [String: Any]) -> String {
+        oneLine(ToolInput.subject(tool: name, input: input, describedCommand: true))
     }
 
     /// The exit code a Codex command reported: in the JSON it wraps its output in (`metadata.exit_code`) or on the
@@ -741,18 +670,7 @@ enum AgentTranscript {
     }
 
     /// The first line, shortened: a step reads on one line.
-    private static func oneLine(_ text: String) -> String {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first ?? ""
-        return line.count > 160 ? String(line.prefix(159)) + "…" : line
-    }
-
-    private static func geminiText(_ content: Any?) -> String {
-        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let parts = content as? [[String: Any]] {
-            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return ""
-    }
+    private static func oneLine(_ text: String) -> String { TextClip.firstLine(text, 160) }
 
     /// Extracts the user request text from an Antigravity prompt, removing envelope tags and metadata.
     static func cleanAntigravityPrompt(_ raw: String) -> String {
@@ -770,11 +688,7 @@ enum AgentTranscript {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func text(_ content: Any?) -> String {
-        if let string = content as? String { return string }
-        guard let blocks = content as? [[String: Any]] else { return "" }
-        return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
-    }
+    private static func text(_ content: Any?) -> String { TextClip.blocks(content) }
 
     /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.

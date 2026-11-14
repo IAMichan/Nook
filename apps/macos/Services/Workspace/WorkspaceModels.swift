@@ -1440,53 +1440,22 @@ enum ToolSummary {
             let detail = McpToolName.argumentLines(input).prefix(2).joined(separator: ", ")
             return detail.isEmpty ? mcp.label : "\(mcp.label) · \(oneLine(detail, 100))"
         }
-        if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
-        if let path = path(input) { return "\(tool) · \((path as NSString).lastPathComponent)" }
-        for key in ["pattern", "query", "url", "description", "prompt"] {
-            if let value = input[key] as? String, !value.isEmpty { return "\(tool) · \(oneLine(value, 100))" }
-        }
-        if tool == "TodoWrite", let todos = input["todos"] as? [Any] { return "\(tool) · \(todos.count)" }
-        return tool
+        if CanonicalTool.kind(tool) == .tasks, let todos = input["todos"] as? [Any] { return "\(tool) · \(todos.count)" }
+        // What it is about, as every view says it (`ToolInput.subject`): the command, file, pattern or address.
+        let subject = ToolInput.subject(tool: tool, input: input)
+        return subject.isEmpty ? tool : "\(tool) · \(oneLine(subject, 120))"
     }
 
-    static func command(_ input: [String: Any]) -> String? {
-        if let text = input["command"] as? String { return text }
-        if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
-               parts[1].hasPrefix("-") {
-                return parts[2...].joined(separator: " ")
-            }
-            return parts.joined(separator: " ")
-        }
-        return nil
-    }
+    static func command(_ input: [String: Any]) -> String? { ToolInput.command(input) }
 
-    static func path(_ input: [String: Any]) -> String? {
-        for key in ["file_path", "notebook_path", "absolute_path", "path"] {
-            if let value = input[key] as? String, !value.isEmpty { return value }
-        }
-        return nil
-    }
+    static func path(_ input: [String: Any]) -> String? { ToolInput.path(input) }
 
-    /// Files modified by this tool, along with the type of change.
+    /// Files modified by this tool, along with the type of change, for every agent (`SessionProjects.changedFiles`).
     static func fileChanges(tool: String, input: [String: Any]) -> [(path: String, kind: String)] {
-        switch tool {
-        case "Edit", "MultiEdit", "NotebookEdit":
-            return path(input).map { [($0, "modified")] } ?? []
-        case "Write", "write_file":
-            return path(input).map { [($0, "written")] } ?? []
-        case "replace":
-            // Gemini CLI's edit tool.
-            return path(input).map { [($0, "modified")] } ?? []
-        default:
-            return []
-        }
+        SessionProjects.changedFiles(tool: tool, input: input)
     }
 
-    static func oneLine(_ text: String, _ limit: Int) -> String {
-        let single = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
-        return single.count > limit ? String(single.prefix(limit)) + "…" : single
-    }
+    static func oneLine(_ text: String, _ limit: Int) -> String { TextClip.oneLine(text, limit) }
 
     /// Formatted, sorted JSON for timeline display.
     static func json(_ object: Any) -> String {
