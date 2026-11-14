@@ -941,7 +941,7 @@ private final class HistoryScanner: @unchecked Sendable {
             guard session.agent == .codex,
                   let name = ([session.sessionID] + session.earlierIDs).lazy.compactMap({ names[$0] }).first else { return session }
             var named = session
-            named.title = Self.oneLine(name, 90)
+            named.title = Self.title(name)
             named.titledByAgent = true
             return named
         }
@@ -1243,20 +1243,14 @@ private final class HistoryScanner: @unchecked Sendable {
                 continue
             }
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
     }
 
     /// Message content is a string, or a list of parts with a `text`.
-    private static func geminiText(_ content: Any?) -> String {
-        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let parts = content as? [[String: Any]] {
-            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return ""
-    }
+    private static func geminiText(_ content: Any?) -> String { TextClip.parts(content) }
 
     // MARK: Antigravity
 
@@ -1341,7 +1335,7 @@ private final class HistoryScanner: @unchecked Sendable {
         )
         session.titledByAgent = !info.title.isEmpty
         if session.title.isEmpty { session.title = prompts.first?.text ?? "" }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: [])
@@ -1489,7 +1483,7 @@ private final class HistoryScanner: @unchecked Sendable {
         guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
             return Parsed(session: nil, entries: entries)
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
@@ -1590,7 +1584,7 @@ private final class HistoryScanner: @unchecked Sendable {
             session.title = named
             session.titledByAgent = true
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         session.firstPrompt = Self.clip(SpawnedSessions.normalized(result.firstPrompt), 4_000)
@@ -1746,7 +1740,7 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         session.firstPrompt = Self.clip(SpawnedSessions.normalized(session.firstPrompt), 4_000)
@@ -1890,23 +1884,14 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     /// Text extracted from a message: either a direct string or concatenated text blocks from an array.
-    private static func text(_ content: Any?) -> String {
-        if let string = content as? String { return string }
-        guard let blocks = content as? [[String: Any]] else { return "" }
-        return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
-            .joined(separator: "\n")
-    }
+    private static func text(_ content: Any?) -> String { TextClip.blocks(content) }
 
-    private static func oneLine(_ text: String, _ limit: Int) -> String {
-        let flat = text.split(whereSeparator: \.isNewline).first.map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? ""
-        return flat.count > limit ? String(flat.prefix(limit - 1)) + "…" : flat
-    }
+    private static func oneLine(_ text: String, _ limit: Int) -> String { TextClip.firstLine(text, limit) }
 
-    private static func clip(_ text: String, _ limit: Int) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count > limit ? String(trimmed.prefix(limit - 1)) + "…" : trimmed
-    }
+    private static func clip(_ text: String, _ limit: Int) -> String { TextClip.clip(text, limit) }
+
+    /// A session's title: its first line, cut after a whole word (`TextClip.title`), as every title in Nook is.
+    private static func title(_ text: String) -> String { TextClip.title(TextClip.firstLine(text, .max), 90) }
 
     /// "max" → "Max", "claude_max_20x" → "Max 20x", "plus" → "Plus".
     static func planName(_ raw: String) -> String {

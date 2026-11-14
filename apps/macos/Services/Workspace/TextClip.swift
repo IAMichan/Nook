@@ -14,6 +14,12 @@ enum TextClip {
         return line.count > limit ? String(line.prefix(limit - 1)) + "…" : line
     }
 
+    /// The text trimmed, and when longer than `limit` characters cut to that many (the "…" included).
+    static func clip(_ text: String, _ limit: Int) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > limit ? String(trimmed.prefix(limit - 1)) + "…" : trimmed
+    }
+
     /// `text` cut at `limit` characters with "…" after it; the text itself when it fits.
     static func cut(_ text: String, _ limit: Int) -> String {
         text.count > limit ? String(text.prefix(limit)) + "…" : text

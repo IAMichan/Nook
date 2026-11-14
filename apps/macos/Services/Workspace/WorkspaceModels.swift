@@ -1171,13 +1171,9 @@ enum WorktreeNaming {
     static func title(from task: String, limit: Int = 60) -> String {
         // The first line of your own words: an agent's tags (`<task-notification>` …) are no title.
         let clean = InjectedPrompt.title(task.split(whereSeparator: \.isNewline).filter { !isPathLine($0) }.joined(separator: "\n"))
-        guard !clean.isEmpty else { return "Nieuwe sessie" }
-        if clean.count <= limit { return clean }
-        let cut = clean.prefix(limit)
-        if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) > limit / 2 {
-            return String(cut[..<space]) + "…"
-        }
-        return String(cut) + "…"
+        guard !clean.isEmpty else { return tr("agents.newSession") }
+        // Cut after a whole word, as every session title is (`TextClip.title`).
+        return TextClip.title(clean, limit)
     }
 
     /// The prefix Nook puts before the branches it creates, unless Settings › Workspace names another.
