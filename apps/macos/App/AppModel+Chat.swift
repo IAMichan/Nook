@@ -284,7 +284,9 @@ extension AppModel {
                     let sources = kept.subtracting([SourceCatalog.screen, SourceCatalog.browserExtension]).filter { wanted.allows($0) }
                     let readsScreen = page == nil && kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
                         && (ScreenBrain.refersToScreen(text) || ScreenBrain.followsUp(text))
-                    let screen = page ?? (readsScreen ? try? await screenSnapshot() : nil)
+                    // Read first: the right side of ?? cannot await.
+                    let captured = readsScreen ? try? await screenSnapshot() : nil
+                    let screen = page ?? captured
                     let prepared = await prepareRun(text: text, scope: SourceScope(mode: .only, included: sources), snapshotText: nil,
                                                     ledger: RetrievalLedger(), prefetch: !sources.isEmpty, history: history)
                     guard screen != nil || !prepared.fetched.isEmpty else { return nil }
