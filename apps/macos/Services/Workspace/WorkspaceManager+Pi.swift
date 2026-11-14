@@ -115,7 +115,7 @@ extension WorkspaceManager {
                 run.move(to: .completed)
             }
         }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failed ? .failed : .done))
         processes[id]?.closeInput()
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)

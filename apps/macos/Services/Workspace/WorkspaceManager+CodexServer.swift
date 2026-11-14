@@ -519,7 +519,7 @@ extension WorkspaceManager {
             noteFailure(id, text: error)
         }
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failed ? .failed : .done))
         expireApprovals(id)
         questions[id] = nil
         turns[id] = nil

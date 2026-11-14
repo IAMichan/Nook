@@ -173,9 +173,12 @@ struct RunInspector: View {
                 InfoRow(label: tr("ws.usage.autoCompact"), value: TokenTally.format(at), help: tr("ws.usage.autoCompactHelp"))
             }
             if workspace.settings.showCost {
-                InfoRow(label: tr("ws.usage.cost"),
-                        value: caps.reportsCost ? WSFormat.cost(usage.reportedCostUSD) : nil,
-                        help: caps.reportsCost ? tr("ws.usage.costReportedHelp") : tr("ws.usage.costUnavailable", run.provider.displayName))
+                // Every agent's cost the same way (`PriceTable.cost`): an agent that reports tokens but no cost gets an
+                // estimate at the model's list price, marked as one.
+                let cost = run.cost(of: usage, prices: UsagePrices.current())
+                InfoRow(label: tr("ws.usage.cost"), value: CostFormat.label(cost),
+                        help: cost.isEstimate ? tr("ws.cost.estimatedHelp")
+                            : caps.reportsCost ? tr("ws.usage.costReportedHelp") : tr("ws.usage.costUnavailable", run.provider.displayName))
             }
             InfoRow(label: tr("ws.usage.turns"), value: "\(usage.turns)")
             InfoRow(label: tr("ws.usage.active"), value: usage.activeSeconds > 0 ? AgentPathFormat.duration(usage.activeSeconds) : nil)
