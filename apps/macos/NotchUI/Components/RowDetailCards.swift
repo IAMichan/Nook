@@ -79,7 +79,8 @@ struct RowPullRequestCard: View {
     private var merged: Int { pullRequests.all.filter { $0.state == .merged }.count }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        // Less the room the list keeps above it for the lit fill, so the count sits as far from the first request as before.
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg - Self.fillBleed) {
             if pullRequests.all.count > 1 {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(tr("agents.row.pr.count", pullRequests.all.count))
@@ -101,19 +102,24 @@ struct RowPullRequestCard: View {
             ScrollView {
                 list
                     .padding(.horizontal, Self.inset)
+                    // The lit fill of a request reaches past it (`HoverCardButton`); the scroll view clips at its edge,
+                    // so without this room the fill of the first and last request lost its rounded corners.
+                    .padding(.vertical, Self.fillBleed)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(listHeight > Self.maxListHeight ? .automatic : .hidden)
             .frame(height: fitted)
         }
-        .padding(.vertical, Self.inset)
+        .padding(.vertical, Self.inset - Self.fillBleed)
         .frame(width: 320, alignment: .leading)
         .background(DropdownStyle.panel)
     }
 
     /// The card's padding; the list keeps it inside the scroll view so the scroller sits at the card's edge.
     private static var inset: CGFloat { NookTheme.Spacing.lg + NookTheme.Spacing.xxs }
+    /// How far a `HoverCardButton`'s lit fill reaches past its line.
+    private static var fillBleed: CGFloat { NookTheme.Spacing.xs }
 
     private var list: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
