@@ -354,7 +354,8 @@ pub fn tokens_from(json: &Value, previous_refresh: Option<&str>, now: DateTime<U
     Ok(Tokens {
         access_token: access.to_string(),
         refresh_token: json["refresh_token"].as_str().map(str::to_string).or_else(|| previous_refresh.map(str::to_string)),
-        expires_at: seconds.map(|s| now + chrono::Duration::milliseconds((s * 1000.0) as i64)),
+        // `expires_in` is the server's number: one past any representable date means no known expiry, not a crash.
+        expires_at: seconds.and_then(|s| chrono::Duration::try_milliseconds((s * 1000.0) as i64)).and_then(|d| now.checked_add_signed(d)),
     })
 }
 
@@ -792,6 +793,10 @@ mod tests {
         );
         assert_eq!(tokens_from(&json!({"error": "invalid_grant"}), None, now), Err(OAuthError::Expired));
         assert!(tokens_from(&json!({"access_token": "a", "token_type": "mac"}), None, now).is_err());
+        for absurd in [json!(1e300), json!("1e30"), json!(9_223_372_036_854_775_807i64), json!(-1e300)] {
+            let t = tokens_from(&json!({"access_token": "a", "expires_in": absurd}), None, now).unwrap();
+            assert_eq!(t.expires_at, None, "{absurd}");
+        }
     }
 
     #[test]

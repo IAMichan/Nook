@@ -23,8 +23,9 @@ export class RoomLogic {
     this.sockets = sockets;
   }
 
+  /** The Mac's open socket. A replaced one stays listed while it closes, which can take long when its peer is gone. */
   mac() {
-    return this.sockets.getWebSockets("mac")[0] ?? null;
+    return this.sockets.getWebSockets("mac").find(isOpen) ?? null;
   }
 
   /** Takes in a new socket; false when it was closed right away (no Mac, room full). */
@@ -43,7 +44,8 @@ export class RoomLogic {
       safeClose(ws, MAC_OFFLINE, "mac offline");
       return false;
     }
-    if (this.sockets.getWebSockets("phone").length > MAX_PHONE_CONNECTIONS) {
+    // Phones closed earlier (a reconnected Mac, a full room) can stay listed while they close; they hold no place.
+    if (this.sockets.getWebSockets("phone").filter(isOpen).length > MAX_PHONE_CONNECTIONS) {
       safeClose(ws, ROOM_FULL, "room full");
       return false;
     }
@@ -52,7 +54,10 @@ export class RoomLogic {
     do connection = (Math.random() * 0xffffffff) >>> 0;
     while (taken.has(connection));
     ws.serializeAttachment({ role: "phone", connection });
-    mac.send(encode(OPEN, connection));
+    if (!safeSend(mac, encode(OPEN, connection))) {
+      safeClose(ws, MAC_OFFLINE, "mac offline");
+      return false;
+    }
     return true;
   }
 
@@ -64,8 +69,7 @@ export class RoomLogic {
     const attachment = ws.deserializeAttachment();
     if (attachment?.role === "phone") {
       const mac = this.mac();
-      if (!mac) return safeClose(ws, MAC_OFFLINE, "mac offline");
-      mac.send(encode(DATA, attachment.connection, bytes));
+      if (!mac || !safeSend(mac, encode(DATA, attachment.connection, bytes))) safeClose(ws, MAC_OFFLINE, "mac offline");
       return;
     }
     const decoded = decode(bytes);
@@ -73,24 +77,40 @@ export class RoomLogic {
     const phone = this.phone(decoded.connection);
     if (!phone) {
       // That phone left already; tell the Mac so it lets go too.
-      if (decoded.kind === DATA) ws.send(encode(CLOSE, decoded.connection));
+      if (decoded.kind === DATA) safeSend(ws, encode(CLOSE, decoded.connection));
       return;
     }
-    if (decoded.kind === DATA) phone.send(decoded.payload);
+    if (decoded.kind === DATA) safeSend(phone, decoded.payload);
     else if (decoded.kind === CLOSE) safeClose(phone, 1000, "closed");
   }
 
   closed(ws) {
     const attachment = ws.deserializeAttachment();
     if (attachment?.role === "phone") {
-      this.mac()?.send(encode(CLOSE, attachment.connection));
-    } else if (attachment?.role === "mac" && this.sockets.getWebSockets("mac").every((s) => s === ws)) {
+      const mac = this.mac();
+      if (mac) safeSend(mac, encode(CLOSE, attachment.connection));
+    } else if (attachment?.role === "mac" && !this.sockets.getWebSockets("mac").some((s) => s !== ws && isOpen(s))) {
       for (const phone of this.sockets.getWebSockets("phone")) safeClose(phone, MAC_OFFLINE, "mac offline");
     }
   }
 
   phone(connection) {
     return this.sockets.getWebSockets("phone").find((s) => s.deserializeAttachment()?.connection === connection) ?? null;
+  }
+}
+
+/** Open, or a socket that does not say (as in the tests). */
+export function isOpen(ws) {
+  return ws.readyState === undefined || ws.readyState === 1;
+}
+
+/** Sends, and says whether it could: a socket that is closing throws. */
+export function safeSend(ws, message) {
+  try {
+    ws.send(message);
+    return true;
+  } catch {
+    return false;
   }
 }
 

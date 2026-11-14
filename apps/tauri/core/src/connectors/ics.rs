@@ -304,17 +304,19 @@ fn parse_duration(value: &str) -> Option<Duration> {
         }
         let amount: i64 = number.parse().ok()?;
         number.clear();
-        total += match c {
-            'W' => amount * 7 * 86_400,
-            'D' => amount * 86_400,
-            'H' => amount * 3_600,
-            'M' if in_time => amount * 60,
+        // A feed is untrusted text: an absurd number gives no duration instead of an overflow.
+        let seconds = match c {
+            'W' => amount.checked_mul(7 * 86_400)?,
+            'D' => amount.checked_mul(86_400)?,
+            'H' => amount.checked_mul(3_600)?,
+            'M' if in_time => amount.checked_mul(60)?,
             'M' => 0,
             'S' => amount,
             _ => return None,
         };
+        total = total.checked_add(seconds)?;
     }
-    Some(Duration::seconds(sign * total))
+    Duration::try_seconds(sign * total)
 }
 
 fn make_event(lines: &[Line]) -> Option<Event> {
@@ -326,8 +328,8 @@ fn make_event(lines: &[Line]) -> Option<Event> {
     let (start, all_day, zone) = parse_date(&start_line.value, start_line)?;
     let end = if let Some((end, _, _)) = first("DTEND").and_then(|l| parse_date(&l.value, l)) {
         end
-    } else if let Some(d) = first("DURATION").and_then(|l| parse_duration(&l.value)) {
-        start + d
+    } else if let Some(end) = first("DURATION").and_then(|l| parse_duration(&l.value)).and_then(|d| start.checked_add_signed(d)) {
+        end
     } else if all_day {
         start + Duration::days(1)
     } else {
@@ -457,7 +459,13 @@ fn starts(event: &Event, rule: &Rule, limit: DateTime<Utc>) -> Vec<DateTime<Utc>
     match rule.frequency {
         Frequency::Daily => {
             for index in 0..CAP as i64 {
-                let Some(date) = at(local_start.date() + Duration::days(index * rule.interval)) else { break };
+                // Checked: a huge INTERVAL from a feed ends the series instead of overflowing the date.
+                let Some(day) =
+                    index.checked_mul(rule.interval).and_then(Duration::try_days).and_then(|d| local_start.date().checked_add_signed(d))
+                else {
+                    break;
+                };
+                let Some(date) = at(day) else { break };
                 if !rule.by_day.is_empty() && !rule.by_day.iter().any(|(_, d)| *d == zone.naive(date).weekday()) {
                     if date > limit {
                         break;
@@ -477,14 +485,21 @@ fn starts(event: &Event, rule: &Rule, limit: DateTime<Utc>) -> Vec<DateTime<Utc>
             offsets.dedup();
             let week_start = local_start.date() - Duration::days(local_start.weekday().num_days_from_monday() as i64);
             'outer: for week in 0..CAP as i64 {
-                let base = week_start + Duration::days(7 * week * rule.interval);
+                let Some(base) = week
+                    .checked_mul(rule.interval)
+                    .and_then(|n| n.checked_mul(7))
+                    .and_then(Duration::try_days)
+                    .and_then(|d| week_start.checked_add_signed(d))
+                else {
+                    break;
+                };
                 match zone.resolve(base.and_time(NaiveTime::MIN)) {
                     Some(b) if b > limit => break,
                     None => break,
                     _ => {}
                 }
                 for offset in &offsets {
-                    let Some(date) = at(base + Duration::days(*offset)) else { continue };
+                    let Some(date) = base.checked_add_signed(Duration::days(*offset)).and_then(at) else { continue };
                     if date < event.start {
                         continue;
                     }
@@ -516,7 +531,7 @@ fn starts(event: &Event, rule: &Rule, limit: DateTime<Utc>) -> Vec<DateTime<Utc>
                             found.extend(&matching);
                         } else if *ordinal > 0 && *ordinal <= count {
                             found.push(matching[(*ordinal - 1) as usize]);
-                        } else if *ordinal < 0 && -*ordinal <= count {
+                        } else if *ordinal < 0 && ordinal.checked_neg().is_some_and(|n| n <= count) {
                             found.push(matching[(count + *ordinal) as usize]);
                         }
                     }
@@ -528,11 +543,14 @@ fn starts(event: &Event, rule: &Rule, limit: DateTime<Utc>) -> Vec<DateTime<Utc>
                 found.into_iter().filter_map(|n| NaiveDate::from_ymd_opt(year, month, n as u32)).filter_map(at).collect()
             };
             'outer: for step in 0..CAP as i64 {
+                // Checked: a huge INTERVAL ends the series instead of wrapping around to the same year again.
+                let Some(offset) = step.checked_mul(rule.interval) else { break };
                 let months: Vec<(i32, u32)> = if rule.frequency == Frequency::Monthly {
-                    let total = (start_month as i64 - 1) + step * rule.interval;
-                    vec![(start_year + (total / 12) as i32, (total % 12) as u32 + 1)]
+                    let Some(total) = offset.checked_add(start_month as i64 - 1) else { break };
+                    let Some(year) = i32::try_from(total / 12).ok().and_then(|y| start_year.checked_add(y)) else { break };
+                    vec![(year, (total % 12) as u32 + 1)]
                 } else {
-                    let year = start_year + (step * rule.interval) as i32;
+                    let Some(year) = i32::try_from(offset).ok().and_then(|y| start_year.checked_add(y)) else { break };
                     let mut list = if rule.by_month.is_empty() { vec![start_month] } else { rule.by_month.clone() };
                     list.sort_unstable();
                     list.into_iter().map(|m| (year, m)).collect()
@@ -567,6 +585,33 @@ mod tests {
 
     fn cal(body: &str) -> Calendar {
         Calendar::parse(&format!("BEGIN:VCALENDAR\r\nX-WR-CALNAME:Werk\r\n{body}\r\nEND:VCALENDAR\r\n"))
+    }
+
+    #[test]
+    fn huge_durations_and_intervals_from_a_feed_do_not_panic() {
+        // A feed is text from the internet: absurd numbers must give no event or the first one, never a crash.
+        for duration in ["P99999999999999W", "P99999999999999D", "PT9999999999999999999S", "P999999999D", "-P999999999D"] {
+            let c = cal(&format!("BEGIN:VEVENT\nUID:d\nSUMMARY:D\nDTSTART:20261013T090000Z\nDURATION:{duration}\nEND:VEVENT"));
+            assert_eq!(c.events.len(), 1, "{duration}");
+            let _ = c.entries(utc("2026-10-01T00:00:00Z"), utc("2026-11-01T00:00:00Z"), "Werk");
+        }
+        for rule in [
+            "FREQ=DAILY;INTERVAL=100000000",
+            "FREQ=DAILY;INTERVAL=9223372036854775807",
+            "FREQ=WEEKLY;INTERVAL=100000000",
+            "FREQ=WEEKLY;INTERVAL=9223372036854775807",
+            "FREQ=MONTHLY;INTERVAL=9223372036854775807",
+            "FREQ=YEARLY;INTERVAL=9223372036854775807",
+            "FREQ=YEARLY;INTERVAL=4294967296",
+        ] {
+            let c =
+                cal(&format!("BEGIN:VEVENT\nUID:r\nSUMMARY:R\nDTSTART:20261013T090000Z\nDTEND:20261013T100000Z\nRRULE:{rule}\nEND:VEVENT"));
+            let list = c.entries(utc("2026-10-01T00:00:00Z"), utc("2026-11-01T00:00:00Z"), "Werk");
+            assert_eq!(list.len(), 1, "{rule}");
+        }
+        // An ordinal that cannot be negated matches no day, and does not overflow.
+        let c = cal("BEGIN:VEVENT\nUID:o\nSUMMARY:O\nDTSTART:20261013T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=-2147483648MO\nEND:VEVENT");
+        assert!(c.entries(utc("2026-10-01T00:00:00Z"), utc("2026-11-01T00:00:00Z"), "Werk").is_empty());
     }
 
     #[test]

@@ -8,6 +8,9 @@
 #
 # Keep the files it writes (in ./nook-release-identity) somewhere safe: a new identity means asking for everything again.
 set -eu
+# The password and the base64 copy of the identity are secrets: only the owner may read them (openssl already writes
+# key.pem and identity.p12 that way, printf and base64 did not).
+umask 077
 NAME="Nook Release Signing"
 OUT="${1:-nook-release-identity}"
 if [ -e "$OUT" ]; then echo "$OUT already exists; remove it or pass another folder." >&2; exit 1; fi
