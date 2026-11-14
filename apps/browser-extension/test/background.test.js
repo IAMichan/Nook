@@ -285,3 +285,21 @@ test('a request over a port that just closed fails at once instead of after the 
   assert.match(reply.error, /not connected/);
   assert.ok(Date.now() - started < 1000);
 });
+
+test('a page that redirects to a site the user switched off is never touched: no strip, no look', async () => {
+  const tabs = [{ id: 1, windowId: 1, url: 'https://shop.example/', title: 'Shop', status: 'complete', active: true, groupId: -1 }];
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs, local: { blocked: ['bank.example'] } });
+  // The shop sends the tab on to the bank, which the user switched Nook off for.
+  const update = chrome.tabs.update;
+  chrome.tabs.update = async (id, props) => update(id, props.url ? { ...props, url: 'https://bank.example/login' } : props);
+  const injected = [];
+  chrome.scripting.executeScript = async (details) => { injected.push(details); return [{ result: { ok: true, text: '' } }]; };
+  ports[0].onMessage.fire({ kind: 'command', id: 4, method: 'open', params: { url: 'https://shop.example/pay', tab: 1 } });
+  await wait(700);
+  await settle();
+  const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 4);
+  assert.ok(result, 'the command answered');
+  assert.deepEqual(injected, [], 'nothing ran in the bank\'s page: no strip that holds the user\'s input, no glance');
+  assert.match(result.text, /switched Nook off/);
+});
+

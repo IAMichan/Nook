@@ -502,6 +502,9 @@ async function pageForQuestion(tab) {
  * and keys on that page held back for a while), `signIn` while the user signs in, `release` when Nook is done.
  */
 async function presence(tabId, mode = 'busy') {
+  // A page on a site the user switched off (or that the tab was sent on to since) is never touched: no strip there,
+  // and the user's input there is never held.
+  if (mode !== 'release' && !(await mayRead(tabId))) return;
   try {
     // Releasing needs nothing new on a page that never had the strip.
     if (mode !== 'release') await chrome.scripting.executeScript({ target: { tabId }, files: ['page/presence.js'] });
