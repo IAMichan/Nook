@@ -119,3 +119,28 @@ final class ChatIdentityTests: XCTestCase {
         XCTAssertEqual(inbox.thread(named: anna.id)?.name, "Anna")
     }
 }
+
+/// A note or birthday kept under a person's name before they were matched by their address stays theirs.
+final class ChatPersonNotesCarryOverTests: XCTestCase {
+    func testNameNoteMovesToTheAddressKey() {
+        var notes = ChatPersonNotes()
+        notes.setNote("Met at the conference", for: "name:" + ChatText.words("Anna Smit"))
+        notes.setNote("Snap friend", for: "name:" + ChatText.words("Jan"))
+        XCTAssertTrue(notes.hasNameKeys)
+        let anna = ChatPerson(id: "mail:anna@example.com", name: "Anna Smit", chats: [])
+        let jan = ChatPerson(id: "name:" + ChatText.words("Jan"), name: "Jan", chats: [])
+        notes.carryOver(to: [anna, jan])
+        XCTAssertEqual(notes.note(for: anna.id), "Met at the conference")
+        XCTAssertEqual(notes.note(for: jan.id), "Snap friend", "someone still matched by name keeps their note")
+        XCTAssertEqual(notes.entries.count, 2)
+    }
+
+    func testAnExistingEntryIsNotOverwritten() {
+        var notes = ChatPersonNotes()
+        notes.setNote("old", for: "name:" + ChatText.words("Anna"))
+        notes.setNote("new", for: "tel:612345678")
+        notes.carryOver(to: [ChatPerson(id: "tel:612345678", name: "Anna", chats: [])])
+        XCTAssertEqual(notes.note(for: "tel:612345678"), "new")
+        XCTAssertEqual(notes.note(for: "name:" + ChatText.words("Anna")), "old")
+    }
+}

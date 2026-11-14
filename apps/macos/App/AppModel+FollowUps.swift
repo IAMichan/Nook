@@ -7,6 +7,8 @@ import Foundation
 extension AppModel {
     /// When the follow-ups were last looked at.
     private static var lastFollowUpTick = Date.distantPast
+    /// How many chats the inbox had when notes were last carried over to people's keys.
+    private static var carriedNotesChats = -1
     /// Scheduled messages on their way, so a slow send is not started twice.
     private static var sendingScheduled: Set<UUID> = []
 
@@ -15,6 +17,15 @@ extension AppModel {
         guard !demoMode, now.timeIntervalSince(Self.lastFollowUpTick) >= ChatFollowUpTick.interval - 1 else { return }
         Self.lastFollowUpTick = now
         let store = ChatFollowUpStore.shared
+        // Notes kept under a name before people were matched by address follow them: only while any are left, and only
+        // when the inbox has other chats than last time, so a note of someone matched by name costs nothing each minute.
+        if store.notes.hasNameKeys {
+            let chats = ChatCaptureService.shared.loadedInbox
+            if chats.threads.count != Self.carriedNotesChats {
+                Self.carriedNotesChats = chats.threads.count
+                store.carryOverNotes(with: chats)
+            }
+        }
         guard ChatFollowUpTick.hasWork(store.follow) else { return }
         let inbox = ChatCaptureService.shared.loadedInbox
         // Answered waits, ended snoozes and chats that are gone are forgotten first (written only when something changed).

@@ -63,6 +63,22 @@ struct ChatPersonNotes: Codable, Equatable, Sendable {
         entries[person] = entry.note.isEmpty && entry.birthday == nil ? nil : entry
     }
 
+    /// Whether anything is still kept under a name alone ("name:…"), from before a person was known by their number or
+    /// address in every app (`InboxThread.identity`).
+    var hasNameKeys: Bool { entries.keys.contains { $0.hasPrefix("name:") } }
+
+    /// Moves what you kept under a person's name to their key now, when that is their number or address and nothing is
+    /// kept there yet: a note or birthday saved before Slack, Teams or Mail people were matched by address stays theirs.
+    mutating func carryOver(to people: [ChatPerson]) {
+        guard hasNameKeys else { return }
+        for person in people where !person.id.hasPrefix("name:") && entries[person.id] == nil {
+            let old = "name:" + ChatText.words(person.name)
+            guard let entry = entries[old] else { continue }
+            entries[person.id] = entry
+            entries[old] = nil
+        }
+    }
+
     /// People whose birthday falls on `date`, from the ones you listed.
     func birthdays(on date: Date, calendar: Calendar = .current) -> [String] {
         entries.filter { NookMonthDay(stored: $0.value.birthday)?.matches(date, calendar: calendar) == true }.map(\.key).sorted()
