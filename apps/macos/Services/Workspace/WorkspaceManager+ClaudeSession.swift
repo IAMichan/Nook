@@ -180,6 +180,22 @@ extension WorkspaceManager {
         if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
     }
 
+    /// A background command whose processes have been gone a while, though its agent never said it ended (Claude Code
+    /// drops the note for a call it moved to the background past its time limit, say): it settles as ended, with a line
+    /// under its output that says how Nook knows, so the bar no longer shows it running and the session can settle too.
+    /// For every agent: the bar above the composer reads the process table the same way for each.
+    func settleGoneBackgroundCommand(_ id: UUID, _ eventID: UUID) {
+        guard let event = timeline(id).first(where: { $0.id == eventID }), BackgroundCommands.isCommand(event),
+              BackgroundCommands.list([event]).first?.isRunning == true else { return }
+        mutateEvent(id, eventID) { event in
+            event.background = true
+            event.state = .done
+            event.output = RunEvent.clip([event.output, tr("ws.background.endedUnreported")].compactMap { $0 }.joined(separator: "\n\n"))
+        }
+        noteSubagentsWorking(id)
+        if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
+    }
+
     /// Works out whether the session still has subagents or commands at work in the background. Only while its process
     /// (or Codex's app-server) lives: they end with it, and their rows may keep saying they run (after Nook restarted, say).
     func noteSubagentsWorking(_ id: UUID) {
