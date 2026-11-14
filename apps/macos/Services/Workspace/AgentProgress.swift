@@ -258,11 +258,14 @@ enum AgentActivity: Equatable, Sendable {
 
     /// The live line of a session's last turn: the tool that runs, else what the agent did last.
     static func current(_ events: [RunEvent]) -> AgentActivity {
-        let turn = TimelinePresentation.split(events).last ?? []
+        let turn = TimelinePresentation.runningTurn(events)
         // While it compacts, the agent does nothing else.
         if CompactionProgress.running(in: turn) != nil { return .compacting }
         if let running = turn.last(where: TimelinePresentation.isLive) { return of(running) }
-        guard let last = turn.last(where: { [.assistant, .thinking, .tool, .fileChange, .error, .user].contains($0.kind) }) else {
+        // A message you steered in says nothing about what the agent does: it reads it only between steps.
+        guard let last = turn.last(where: {
+            [.assistant, .thinking, .tool, .fileChange, .error].contains($0.kind) || $0.kind == .user && $0.steer == nil
+        }) else {
             return .starting
         }
         switch last.kind {

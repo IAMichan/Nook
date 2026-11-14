@@ -115,6 +115,7 @@ struct SidePanelPullRequestPicker: View {
                             NookSectionLabel(group.title, inset: NookTheme.Spacing.sm)
                                 .padding(.top, NookTheme.Spacing.md)
                             ForEach(group.items, id: \.item.id) { request in
+                                if request.item.id != group.items.first?.item.id { NookRowSeparator() }
                                 PullRequestRow(item: request.item, role: group.role, showRepo: true, accountID: request.account,
                                                stack: stacks[request.account]?[request.item.id], now: context.date) {
                                     choose(request)

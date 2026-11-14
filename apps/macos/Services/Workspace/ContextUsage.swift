@@ -34,6 +34,16 @@ struct ContextUsage: Equatable, Sendable {
     var skills: Int?
     /// False for an estimate: then only the conversation as a whole is known, not its parts.
     var detailed: Bool
+    /// The agent can say what fills its window but has not yet for the context the session holds now: the breakdown
+    /// shows a skeleton instead of a guessed split. Nil for a real breakdown and for an agent that never says its parts.
+    var pending: Pending?
+
+    enum Pending: Equatable, Sendable {
+        /// A turn is running: the parts move with every answer, so the agent is asked once it ends.
+        case afterTurn
+        /// Asked, the answer is on its way.
+        case loading
+    }
 
     static let conversation = "conversation"
 

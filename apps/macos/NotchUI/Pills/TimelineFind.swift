@@ -127,98 +127,10 @@ struct TimelineToEndPill: View {
     }
 }
 
-/// The room under a reply that lets the message you sent stand near the top of the view (`TurnPin`). It follows the
-/// rows on its own, so a streaming reply redraws this spacer and not the conversation around it.
-///
-/// The room comes from the distance between the message (`pinProbe`) and the end of its rows (`TurnPinSpacer`), both
-/// measured in the conversation's own coordinate space while they are laid out; the view then only scrolls to its end.
-/// It never scrolls to an offset worked out from the conversation's height: in a lazy stack that height is an estimate,
-/// and such a scroll could land where no row was drawn, leaving the conversation blank until you scrolled.
-@MainActor
-final class TurnPinRoom: ObservableObject {
-    /// The name of the conversation's coordinate space (on its lazy stack), where `pinProbe` and `TurnPinSpacer` measure.
-    nonisolated static let space = "timeline"
-
-    @Published private(set) var height = 0.0
-    /// The row held, for `pinProbe`.
-    private(set) var row: String?
-    /// Whether a row is held now; `row` stays after `release` (dropping the probe would rebuild that row).
-    private(set) var holding = false
-    /// Where the held row and the end of the conversation stand; not published, nothing draws them.
-    private var rowY: Double?
-    private var endY: Double?
-    private var container = 0.0
-
-    /// Starts holding `row`, which came in at the end; the room follows once it was laid out.
-    func hold(row: String) {
-        self.row = row
-        holding = true
-        rowY = nil
-        recompute()
-    }
-
-    func update(_ frame: ScrollFrame) {
-        guard container != frame.container else { return }
-        container = frame.container
-        recompute()
-    }
-
-    /// The message is no longer held: the room goes, so the conversation ends at its last row again.
-    func release() {
-        holding = false
-        if height != 0 { height = 0 }
-    }
-
-    /// The top of the held row, in `space`.
-    func measuredRow(_ y: Double) {
-        rowY = y
-        recompute()
-    }
-
-    /// Where the conversation's rows end (the top of the room), in `space`.
-    func measuredEnd(_ y: Double) {
-        endY = y
-        recompute()
-    }
-
-    private func recompute() {
-        guard holding, let rowY, let endY else { return }
-        let next = TurnPin(below: endY - rowY).room(container: container).rounded()
-        if next != height { height = next }
-    }
-}
-
-extension View {
-    /// Reports where this row of a conversation stands while it is the one `room` holds near the top.
-    func pinProbe(_ id: String, room: TurnPinRoom) -> some View {
-        modifier(PinProbe(active: room.row == id, room: room))
-    }
-}
-
-/// The room under a held message, at the end of the conversation's rows. It reports where those rows end (its own
-/// top, so its height does not feed back into it); in the conversation's own space that only changes when the rows do,
-/// not on every frame of a scroll.
-struct TurnPinSpacer: View {
-    @ObservedObject var room: TurnPinRoom
-
-    var body: some View {
-        Color.clear
-            .frame(height: room.height)
-            .onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.measuredEnd($0) }
-    }
-}
-
-private struct PinProbe: ViewModifier {
-    let active: Bool
-    let room: TurnPinRoom
-
-    func body(content: Content) -> some View {
-        if active {
-            content.onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.measuredRow($0) }
-        } else {
-            content
-        }
-    }
+/// The conversation's own coordinate space (on its stack of rows), where its rows report where they stand
+/// (`countsAsDrawnRow`).
+enum TimelineSpace {
+    static let name = "timeline"
 }
 
 /// A conversation's rows in its scroll view, inside a plain stack: the older ones lazily, the last `eager` drawn in full
@@ -232,7 +144,7 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     @ViewBuilder let row: (Item) -> Row
 
     var body: some View {
-        let split = max(0, items.count - max(0, eager))
+        let split = HistoryWindow.lazyRows(count: items.count, eager: eager)
         if split > 0 {
             LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 ForEach(items[..<split]) { row($0) }
@@ -244,7 +156,7 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
 }
 
 /// The rows of a lazy conversation drawn now, with where each stands in the conversation's own space
-/// (`TurnPinRoom.space`), kept by `countsAsDrawnRow`. Neither of a lazy stack's own reports tells a blank view:
+/// (`TimelineSpace.name`), kept by `countsAsDrawnRow`. Neither of a lazy stack's own reports tells a blank view:
 /// `onScrollTargetVisibilityChange` reports nothing after a jump to a stretch where nothing is drawn (the rows it last
 /// reported still count as in view), and a row the stack keeps drawn just outside the view counts as drawn. Where the
 /// drawn rows stand, held against what the scroll view shows (`RowsInView`), is what the user sees.
@@ -290,7 +202,7 @@ extension View {
     func countsAsDrawnRow<ID: Hashable>(_ drawn: DrawnRows, id: ID) -> some View {
         let key = AnyHashable(id)
         return onGeometryChange(for: RowsInView.Span.self) { proxy in
-            let frame = proxy.frame(in: .named(TurnPinRoom.space))
+            let frame = proxy.frame(in: .named(TimelineSpace.name))
             return RowsInView.Span(top: frame.minY, bottom: frame.maxY)
         } action: { drawn.placed(key, $0) }
         .onAppear { drawn.appeared(key) }
@@ -450,5 +362,13 @@ extension View {
                     }
                 }
         }
+    }
+}
+
+extension ScrollFrame {
+    /// Where `geometry`'s scroll view stands.
+    init(_ geometry: ScrollGeometry) {
+        self.init(offset: geometry.contentOffset.y, content: geometry.contentSize.height, container: geometry.containerSize.height,
+                  insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
     }
 }

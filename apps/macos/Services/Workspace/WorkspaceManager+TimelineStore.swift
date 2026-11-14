@@ -207,7 +207,9 @@ extension WorkspaceManager {
             if events[id] == nil, let at = timelineStore.bufferedAppends[id]?.lastIndex(where: { $0.id == eventID }) {
                 // Out and back in: the change runs outside an access to `timelineStore`, which it may read itself.
                 var event = timelineStore.bufferedAppends[id]![at]
+                let wasRunning = event.state == .running
                 change(&event)
+                event.noteEnd(wasRunning: wasRunning)
                 timelineStore.bufferedAppends[id]?[at] = event
             }
             return
@@ -215,7 +217,9 @@ extension WorkspaceManager {
         timelineStore.changing = id
         timelineStore.countingBytes = true
         let before = events[id]![index].approximateBytes
+        let wasRunning = events[id]![index].state == .running
         change(&events[id]![index])
+        events[id]![index].noteEnd(wasRunning: wasRunning)
         timelineStore.bytes.changed(id, from: before, to: events[id]![index].approximateBytes)
         timelineStore.countingBytes = false
         timelineStore.changing = nil

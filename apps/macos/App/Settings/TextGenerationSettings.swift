@@ -46,7 +46,7 @@ private struct TextGeneratorRow: View {
         if let provider = generator.provider {
             SettingFieldRow(tr("textgen.model")) {
                 TextField(tr("textgen.model"), text: $modelDraft,
-                          prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel))
+                          prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel).foregroundStyle(NookTheme.textTertiary))
                     .onSubmit { saveModel(provider) }
                     .onChange(of: modelDraft) { _, _ in result = nil }
                     .onAppear { modelDraft = currentModel }
@@ -54,7 +54,7 @@ private struct TextGeneratorRow: View {
             }
             if provider.needsKey && !brain.hasKey(for: provider) {
                 SettingFieldRow(tr("textgen.key")) {
-                    SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder))
+                    SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder).foregroundStyle(NookTheme.textTertiary))
                         .onSubmit { saveKey(provider) }
                 }
                 SettingNote(tr("textgen.key.missing", name(provider)) + " " + tr("textgen.key.onReturn"))

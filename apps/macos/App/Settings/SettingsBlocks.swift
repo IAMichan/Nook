@@ -177,13 +177,15 @@ struct SettingFieldRow<Field: View>: View {
         if stacked {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 SettingRowText(title: title, detail: detail).settingsAnchor(title)
-                field().labelsHidden().textFieldStyle(.roundedBorder)
+                field().labelsHidden().settingsField()
             }
         } else {
             HStack(spacing: NookTheme.Spacing.xl) {
                 SettingRowText(title: title, detail: detail).settingsAnchor(title)
                     .layoutPriority(1)
-                field().labelsHidden().textFieldStyle(.roundedBorder)
+                Spacer(minLength: 0)
+                field().labelsHidden().settingsField()
+                    .frame(maxWidth: SettingsControl.fieldWidth)
             }
         }
     }
@@ -638,8 +640,8 @@ struct WorkspaceSettingsSection: View {
                 HStack {
                     TextField("", text: Binding(
                         get: { overrideText(.branchPrefix, path) ?? resolved.branchPrefix },
-                        set: { ws.setOverride(.branchPrefix, $0, for: path) }), prompt: Text(resolved.branchPrefix))
-                        .textFieldStyle(.roundedBorder)
+                        set: { ws.setOverride(.branchPrefix, $0, for: path) }), prompt: Text(resolved.branchPrefix).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         // The row already has its label: a titled field in a form would show the prefix a second time.
                         .labelsHidden()
                         .accessibilityLabel(tr("settings.ws.branchPrefix"))
@@ -674,7 +676,7 @@ struct WorkspaceSettingsSection: View {
                 TextField(tr("settings.ws.titleInstructions"), text: Binding(
                     get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
                     set: { ws.setOverride(.titleInstructions, $0, for: path) }),
-                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                     .lineLimit(1...4)
             }
         }
@@ -684,7 +686,7 @@ struct WorkspaceSettingsSection: View {
                 TextField(tr("settings.ws.agentInstructions"), text: Binding(
                     get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
                     set: { ws.setOverride(.agentInstructions, $0, for: path) }),
-                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                     .lineLimit(2...8)
             }
         }
@@ -750,7 +752,8 @@ struct WorkspaceSettingsSection: View {
     }
 
     /// Nook's browser: the search engine of its address bar, whether an agent's links open there or in your own, its
-    /// sign-ins (kept, imported from another browser), and Nook as the Mac's default browser.
+    /// sign-ins (kept, imported from another browser), the pages it remembers, its saved passwords, its extensions, and
+    /// Nook as the Mac's default browser.
     @ViewBuilder
     private var browser: some View {
         Section(tr("settings.browser.title")) {
@@ -768,8 +771,11 @@ struct WorkspaceSettingsSection: View {
             }
             .help(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
+            BrowserHistoryRow()
+            BrowserPasswordsRow()
             TrustedCertificatesRow()
         }
+        BrowserExtensionsSettings()
         DefaultBrowserSection()
         BrowserExtensionSection()
     }
@@ -896,14 +902,14 @@ struct WorkspaceSettingsSection: View {
             // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
             SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
                 TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
-                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                     .lineLimit(1...4)
             }
             // Every agent gets these at launch, in every project that does not set its own.
             SettingFieldRow(tr("settings.ws.agentInstructions"), detail: tr("settings.ws.agentInstructions.help"),
                             stacked: true) {
                 TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
-                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                     .lineLimit(2...8)
             }
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
@@ -957,8 +963,8 @@ struct WorkspaceSettingsSection: View {
             }
             LabeledContent {
                 HStack {
-                    TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix))
-                        .textFieldStyle(.roundedBorder)
+                    TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .labelsHidden()
                         .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
@@ -1173,8 +1179,8 @@ struct WatchedPullRequestsSection: View {
                 ServiceTile(domain: "github.com", fallback: "building.2", size: 48)
             } content: {
                 SetupStep(number: 1, title: tr("watch.name"), done: canAdd) {
-                    TextField(tr("watch.name"), text: $text, prompt: Text(tr("settings.pulls.placeholder")))
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("watch.name"), text: $text, prompt: Text(tr("settings.pulls.placeholder")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .onSubmit(add)
                         .onChange(of: text) { _, _ in invalid = false }
                     if invalid {

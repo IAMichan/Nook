@@ -18,7 +18,7 @@ test('the key in the manifest gives the id Nook\'s host allows', () => {
 });
 
 test('the extension and Nook agree on the host and the protocol', () => {
-  assert.match(swiftHost, new RegExp(`static let name = "${HOST_NAME.replace(/\./g, '\\.')}"`));
+  assert.ok(swiftHost.includes(`static let name = "${HOST_NAME}"`), HOST_NAME);
   assert.match(swiftHub, new RegExp(`static let protocolVersion = ${PROTOCOL_VERSION}\\b`));
 });
 

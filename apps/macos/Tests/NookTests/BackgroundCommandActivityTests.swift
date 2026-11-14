@@ -59,4 +59,31 @@ final class BackgroundCommandActivityTests: XCTestCase {
         XCTAssertEqual(read?.lastOutput, date)
         XCTAssertEqual(read?.hasOutputFile, true)
     }
+
+    func testFindsACommandQuotedTheNewerWay() {
+        let line = #"/bin/zsh -c source snap.sh && eval 'python3 - <<'"'"'EOF'"'"'"# + "\np='x'\nEOF' < /dev/null"
+        XCTAssertTrue(BackgroundCommandActivity.runs(line, "python3 - <<'EOF'\np='x'\nEOF"))
+        XCTAssertFalse(BackgroundCommandActivity.runs(line, "python3 - <<'END'"))
+    }
+
+    func testCountsAsEndedOnlyAfterStayingGoneWithStillOutput() {
+        let command = "make all"
+        var probe = BackgroundCommandProbe()
+        let line: (Int32) -> String? = { $0 == 12 ? "sh -c make all" : nil }
+        let note = "Output is being written to: /tmp/x/tasks/b1.output."
+        var written = Date(timeIntervalSince1970: 100)
+        let alive = [sample(10, 1), sample(12, 10)], gone = [sample(10, 1)]
+        _ = probe.read(command: command, output: note, roots: [10], table: alive, at: 0, commandLine: line) { _ in written }
+        XCTAssertFalse(probe.ended(at: 100), "it runs")
+        _ = probe.read(command: command, output: note, roots: [10], table: gone, at: 3, commandLine: line) { _ in written }
+        _ = probe.read(command: command, output: note, roots: [10], table: gone, at: 6, commandLine: line) { _ in written }
+        XCTAssertFalse(probe.ended(at: 6), "gone only a moment")
+        written = Date(timeIntervalSince1970: 200)
+        _ = probe.read(command: command, output: note, roots: [10], table: gone, at: 40, commandLine: line) { _ in written }
+        XCTAssertFalse(probe.ended(at: 60), "its output changed at 40: something still writes it")
+        _ = probe.read(command: command, output: note, roots: [10], table: gone, at: 90, commandLine: line) { _ in written }
+        XCTAssertTrue(probe.ended(at: 90), "gone and still for longer than endedAfter")
+        _ = probe.read(command: command, output: note, roots: [10], table: alive, at: 93, commandLine: line) { _ in written }
+        XCTAssertFalse(probe.ended(at: 200), "its process is back")
+    }
 }

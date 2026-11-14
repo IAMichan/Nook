@@ -37,6 +37,9 @@ final class RunTimelineDerived {
     private(set) var allCommands: [BackgroundCommandInfo] = []
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
+    /// How far each running command and subagent is, by event id (`WorkProgress`): the live line, the bar above the
+    /// composer and the Subagents tab show it.
+    private(set) var progress: [UUID: WorkProgress] = [:]
 
     /// Counts the changes to the events other than more text in the answer being written (`TimelineRowContext`).
     private(set) var revision = 0
@@ -135,12 +138,24 @@ final class RunTimelineDerived {
         answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         outputSignatures = outputs.map(SessionOutputs.signature)
-        allSubagents = Subagents.list(all)
-        allCommands = BackgroundCommands.list(all)
+        progress = WorkProgress.running(in: all)
+        let progress = progress
+        func withProgress(_ agent: SubagentInfo) -> SubagentInfo {
+            var agent = agent
+            agent.progress = progress[agent.id]
+            return agent
+        }
+        func withProgress(_ command: BackgroundCommandInfo) -> BackgroundCommandInfo {
+            var command = command
+            command.progress = progress[command.id]
+            return command
+        }
+        allSubagents = Subagents.list(all).map(withProgress)
+        allCommands = BackgroundCommands.list(all).map(withProgress)
         subagentsSignature = Subagents.signature(allSubagents) + "|" + BackgroundCommands.signature(allCommands)
-        let current = Subagents.current(all)
+        let current = Subagents.current(all).map(withProgress)
         subagents = active || current.contains(where: \.isRunning) ? current : []
-        let currentCommands = BackgroundCommands.current(all)
+        let currentCommands = BackgroundCommands.current(all).map(withProgress)
         commands = active || currentCommands.contains(where: \.isRunning) ? currentCommands : []
         marks = TranscriptPresentation.promptMarks(events: events)
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))

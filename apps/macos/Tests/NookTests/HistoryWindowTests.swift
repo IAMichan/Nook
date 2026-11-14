@@ -44,6 +44,20 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [40, 40, 2, 3], start: 3), 3, "never more than the window shows")
     }
 
+    func testRowsMoveIntoTheLazyStackInSteps() {
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 20, eager: 12), 0, "fewer than a step: all drawn in full")
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 100, eager: 48), 48)
+        // A working agent adds rows one by one: the split between the parts stays where it is for a while.
+        let splits = (100...115).map { HistoryWindow.lazyRows(count: $0, eager: 48) }
+        XCTAssertEqual(Set(splits).count, 2, "moves once in sixteen new rows, not with every one")
+        for count in 0...300 {
+            let lazy = HistoryWindow.lazyRows(count: count, eager: 48)
+            XCTAssertGreaterThanOrEqual(count - lazy, min(count, 48), "the last rows are always drawn in full")
+            XCTAssertLessThan(count - lazy, 48 + HistoryWindow.lazyStep)
+        }
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 5, eager: 9), 0)
+    }
+
     func testAConversationThatWentBackKeepsAValidStart() {
         XCTAssertEqual(HistoryWindow.clamped(40, turnCount: 10), 9)
         XCTAssertEqual(HistoryWindow.clamped(40, turnCount: 0), 0)

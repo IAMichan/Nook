@@ -66,6 +66,21 @@ final class AgentProgressTests: XCTestCase {
 
     // MARK: Activity
 
+    /// A steer starts a turn of its own in the timeline, but the agent reads it only after the tool that runs returns:
+    /// the live line goes on with that tool instead of falling back to "Starting…".
+    func testSteerKeepsTheRunningToolAsTheLiveLine() {
+        var steer = event(.user, "What is the URL?", at: 2)
+        steer.steer = .steer
+        let events = [event(.user, "Fix it"), bash("swift test", .running, at: 1), steer]
+        XCTAssertEqual(AgentActivity.current(events), .verifying(.tests))
+        XCTAssertEqual(AgentActivity.current(TimelinePresentation.runningTurn(events)), .verifying(.tests))
+        XCTAssertEqual(TimelinePresentation.live(events).tool, "Bash · swift test")
+        let done = [event(.user, "Fix it"), bash("swift test", .done, at: 1), steer]
+        XCTAssertEqual(AgentActivity.current(done), .reviewing, "a steer is not what the agent does")
+        XCTAssertEqual(AgentActivity.current([event(.user, "Fix it"), bash("swift test", .done, at: 1), event(.user, "Next", at: 2)]),
+                       .starting, "a new message of yours does start a turn")
+    }
+
     func testRunningToolSaysWhatItDoes() {
         let user = event(.user, "Fix it")
         XCTAssertEqual(AgentActivity.current([user]), .starting)

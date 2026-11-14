@@ -29,6 +29,9 @@ struct AgentActivityDock: View {
     var openPanel: (() -> Void)? = nil
     /// The session's agent processes: with them each running command says whether it still works.
     var agentPIDs: (() -> [Int32])? = nil
+    /// Settles a running command whose processes have been gone a while (`BackgroundCommandProbe.ended`): its agent never
+    /// said it ended, and without this its row would spin on.
+    var settleGone: ((UUID) -> Void)? = nil
 
     @State private var open = false
     @State private var chosen: Kind?
@@ -315,7 +318,7 @@ struct AgentActivityDock: View {
                 switch kind {
                 case .tasks: EmptyView()
                 case .subagents: if let agent = leadSubagent { SubagentElapsed(agent: agent) }
-                case .commands: if let command = leadCommand { SubagentElapsed(command: command) }
+                case .commands: if let command = leadCommand { SubagentElapsed(command: command.reading(activity[command.id])) }
                 }
             }
             .font(NookTheme.TextStyle.detail)
@@ -415,26 +418,32 @@ struct AgentActivityDock: View {
         let running = commands.filter(\.isRunning)
         guard let agentPIDs, !running.isEmpty else { return }
         var probes: [UUID: BackgroundCommandProbe] = [:]
+        var settled = Set<UUID>()
         while !Task.isCancelled {
             let roots = agentPIDs()
             let before = probes
-            let (read, after) = await Task.detached(priority: .utility) { () -> ([UUID: BackgroundCommandActivity], [UUID: BackgroundCommandProbe]) in
+            let (read, after, ended) = await Task.detached(priority: .utility) {
+                () -> ([UUID: BackgroundCommandActivity], [UUID: BackgroundCommandProbe], [UUID]) in
                 var probes = before
                 var read: [UUID: BackgroundCommandActivity] = [:]
+                var ended: [UUID] = []
                 let table = ProcessTable.read()
                 let now = Date().timeIntervalSinceReferenceDate
                 for command in running {
                     var probe = probes[command.id] ?? BackgroundCommandProbe()
                     read[command.id] = probe.read(command: command.command, output: command.output, roots: roots, table: table, at: now,
                                                   commandLine: BackgroundCommandActivityLabel.commandLine,
-                                                  modified: BackgroundCommandActivityLabel.modified)
+                                                  modified: BackgroundCommandActivityLabel.modified,
+                                                  tail: { BackgroundCommandActivity.tail($0) })
                     probes[command.id] = probe
+                    if probe.ended(at: now) { ended.append(command.id) }
                 }
-                return (read, probes)
+                return (read, probes, ended)
             }.value
             guard !Task.isCancelled else { return }
             probes = after
             if read != activity { activity = read }
+            for id in ended where settled.insert(id).inserted { settleGone?(id) }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
     }
@@ -607,7 +616,7 @@ struct BackgroundCommandRows: View {
                             .foregroundStyle(NookTheme.textTertiary)
                             .help(tr("ws.background.hasOutput"))
                     }
-                    SubagentElapsed(command: command)
+                    SubagentElapsed(command: command.reading(activity[command.id]))
                     DisclosureChevron(open: expanded, size: 8)
                 }
                 .frame(minHeight: 22)

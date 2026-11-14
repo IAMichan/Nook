@@ -299,7 +299,9 @@ enum TranscriptPresentation {
     /// What the agent does now in the turn that runs: the step that runs, else what it did last.
     static func activity(_ messages: [AgentChatMessage]) -> AgentActivity {
         let turn = split(messages.filter { !($0.isThinking && $0.text.isEmpty) }).last ?? []
-        guard let last = turn.last else { return .starting }
+        // A message you steered in says nothing about what the agent does: it reads it only after the step that runs
+        // returns, so that step (or what it did last) stays the live line rather than "Starting…".
+        guard let last = turn.last(where: { !$0.fromUser }) ?? turn.last else { return .starting }
         switch last.kind {
         case .user:
             return .starting

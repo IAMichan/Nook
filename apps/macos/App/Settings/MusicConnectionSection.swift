@@ -82,8 +82,8 @@ private struct MusicConnectionForm: View {
                 }
                 SetupStep(number: 2, title: tr("music.connect.stepClientID"),
                           done: !clientID.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("music.connect.clientID"), text: $clientID)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("music.connect.clientID"), text: $clientID, prompt: Text(tr("music.connect.clientID")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .font(NookTheme.mono(12))
                 }
                 SetupStep(number: 3, title: tr("hub.signIn.step", "Spotify")) {

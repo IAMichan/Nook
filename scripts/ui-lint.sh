@@ -122,6 +122,9 @@ grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' NotchUI App 
 grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)' NotchUI App --include='*.swift' \
   | report "buttons show the pointing hand (.nookPlain / .nookBorderless / .nookProminent / .nookLink, not the system styles)"
 
+grep -rnE '\.textFieldStyle\(\s*\.roundedBorder\s*\)' App --include='*.swift' | grep -E '^App/(Settings/|[^/]*Settings)' \
+  | report "Settings text fields use .settingsField() (no system .roundedBorder)"
+
 grep -rnE '\.menuStyle\(\s*\.(borderlessButton|button)\s*\)' NotchUI App --include='*.swift' \
   | report "menus show the pointing hand (.nookBorderlessButton / .nookButton, not the system menu styles)"
 

@@ -121,14 +121,14 @@ struct OwnRelaySheet: View {
                 }
             }
             SetupStep(number: 2, title: tr("companion.relay.step.token")) {
-                SecureField(tr("companion.relay.setup.token"), text: $token).textFieldStyle(.roundedBorder)
+                SecureField(tr("companion.relay.setup.token"), text: $token, prompt: Text(tr("companion.relay.setup.token")).foregroundStyle(NookTheme.textTertiary)).settingsField()
             }
             SetupCheckStep(number: 3, title: tr("companion.relay.step.check"), detail: tr("companion.relay.step.checkDetail"),
                            state: checkState, check: setUp, disabled: cleanToken.isEmpty || settingUp)
             if case .working(let step) = relay.setup { SettingNote(Self.progress(step)) }
             SettingsFold(tr("companion.relay.setup.manual")) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("companion.relay.address"), text: $manualAddress).textFieldStyle(.roundedBorder)
+                    TextField(tr("companion.relay.address"), text: $manualAddress, prompt: Text(tr("companion.relay.address")).foregroundStyle(NookTheme.textTertiary)).settingsField()
                     Button(tr("companion.relay.setup.use")) {
                         relay.address = manualAddress
                         manualAddress = ""
@@ -208,8 +208,8 @@ struct APNsKeySheet: View {
                 }
             }
             SetupStep(number: 2, title: tr("companion.push.step.ids"), done: store.canPush) {
-                TextField(tr("companion.push.keyID"), text: $store.apnsKeyID).textFieldStyle(.roundedBorder)
-                TextField(tr("companion.push.teamID"), text: $store.apnsTeamID).textFieldStyle(.roundedBorder)
+                TextField(tr("companion.push.keyID"), text: $store.apnsKeyID, prompt: Text(tr("companion.push.keyID")).foregroundStyle(NookTheme.textTertiary)).settingsField()
+                TextField(tr("companion.push.teamID"), text: $store.apnsTeamID, prompt: Text(tr("companion.push.teamID")).foregroundStyle(NookTheme.textTertiary)).settingsField()
                 if store.hasAPNsKey {
                     StepAction(detail: tr("companion.push.keySaved"), button: tr("companion.push.step.replaceKey"),
                                prominent: false, action: importKey)

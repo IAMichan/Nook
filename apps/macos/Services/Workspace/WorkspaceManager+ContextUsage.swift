@@ -11,7 +11,16 @@ extension WorkspaceManager {
         guard let used = live?.lastContext ?? run.usage.contextTokens,
               let window = run.usage.contextWindow ?? live?.contextWindow ?? known?.usage.window, window > 0 else { return nil }
         if let known, known.contextTokens == used { return known.usage }
-        return ContextUsage.estimate(used: used, window: window, autoCompactAt: autoCompactAt(run))
+        var estimate = ContextUsage.estimate(used: used, window: window, autoCompactAt: autoCompactAt(run))
+        // An agent that says its parts gets a skeleton until it has, never a split Nook made up.
+        if breakdownExpected(run) { estimate.pending = live == nil ? .loading : .afterTurn }
+        return estimate
+    }
+
+    /// Whether the agent will say what fills the session's window: it can, and it could be asked.
+    func breakdownExpected(_ run: WorkspaceRun) -> Bool {
+        run.provider.capabilities.reportsContextBreakdown && !run.isRemote
+            && contextBreakdownMissing[run.id] != .some(currentContextTokens(run))
     }
 
     /// The tokens the session's context holds now: the running turn's latest, else what the last turn ended with.
@@ -34,17 +43,27 @@ extension WorkspaceManager {
         }
     }
 
-    /// Asks the agent for its breakdown, when it can give one: as the card opens. Only a process that already runs is
-    /// asked; hovering over an old session does not start one.
+    /// Asks the agent for its breakdown, when it can give one: as the breakdown opens, and again when a turn ends while
+    /// it is open. Not during a turn (the parts change with every answer). Only a process that already runs is asked;
+    /// hovering over an old session does not start one. When none runs or it answers with an error, the session is marked
+    /// (`contextBreakdownMissing`) so the breakdown shows the estimate instead of waiting forever.
     func refreshContextUsage(_ id: UUID) {
         guard let run = run(id), !run.isRemote else { return }
+        if let turn = turns[id], !turn.finished { return }
         switch run.provider {
         case .claude:
             let tokens = currentContextTokens(run)
-            _ = claudeControl(id, starts: false, ClaudeStreamParser.contextUsageRequest(id:)) { [weak self] response, error in
-                guard let self, error == nil, let usage = response.flatMap({ ContextUsage.claude($0.dictionary) }) else { return }
+            if let known = contextUsages[id], known.contextTokens == tokens { return }
+            let sent = claudeControl(id, starts: false, ClaudeStreamParser.contextUsageRequest(id:)) { [weak self] response, error in
+                guard let self else { return }
+                guard error == nil, let usage = response.flatMap({ ContextUsage.claude($0.dictionary) }) else {
+                    self.contextBreakdownMissing[id] = .some(tokens)
+                    return
+                }
+                self.contextBreakdownMissing[id] = nil
                 self.contextUsages[id] = (usage, tokens)
             }
+            if !sent { contextBreakdownMissing[id] = .some(tokens) }
         case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             // They report the conversation's size but not what it is made of (see docs/INTEGRATIONS.md).
             break

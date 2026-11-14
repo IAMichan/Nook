@@ -198,8 +198,8 @@ private struct ManageAccountSheet: View {
             // The same parts as every sheet for something linked: the account, how it signs in, then its place in Nook.
             SheetPart(tr("agents.name")) {
                 HStack {
-                    TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name, prompt: Text(profile.isDefault ? tr("agents.personal") : tr("agents.name")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .onSubmit(saveName)
                     Button(tr("button.save"), action: saveName)
                         .disabled(!nameChanged)
@@ -339,8 +339,8 @@ private struct ManageAccountSheet: View {
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         } else {
             HStack {
-                SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                    .textFieldStyle(.roundedBorder)
+                SecureField(tr("accounts.keyPlaceholder"), text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit(saveKey)
                 if saving {
                     ProgressView().controlSize(.small)
@@ -484,8 +484,8 @@ private struct AddAccountSheet: View {
         } content: {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 SetupStep(number: 1, title: tr("agents.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")))
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                     if !found.isEmpty {
                         Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
                         ForEach(found, id: \.url) { item in
@@ -511,8 +511,8 @@ private struct AddAccountSheet: View {
                         if kind.takesAPIKeyAccounts {
                             DisclosureGroup(isExpanded: Binding(get: { method == .apiKey },
                                                                 set: { method = $0 ? .apiKey : .cli })) {
-                                SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                                    .textFieldStyle(.roundedBorder)
+                                SecureField(tr("accounts.keyPlaceholder"), text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                                    .settingsField()
                                     .onSubmit { if canAdd { add() } }
                                     .padding(.top, NookTheme.Spacing.xs)
                             } label: {

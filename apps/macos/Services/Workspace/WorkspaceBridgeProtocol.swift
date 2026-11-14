@@ -173,7 +173,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .browserScreenshot:
             return "Takes a screenshot of Nook's browser to check layout and visual changes."
         case .pullRequestCreate:
-            return "Proposes a pull request for your current branch (user approves unless full rights), pushes the branch, and opens the PR via GitHub (or opens GitHub in Nook's browser as fallback). Commit first; use instead of `gh pr create`, also when gh is rate limited. When the repository has a pull request template, body must follow it (every section, filled in; workspace_info shows it), or the call returns what to fix. Returns the link."
+            return "Proposes a pull request for your current branch (user approves unless they asked for it or full rights), pushes the branch, and opens the PR via GitHub (or opens GitHub in Nook's browser as fallback). Commit first; use instead of `gh pr create`, also when gh is rate limited. When the repository has a pull request template, body must follow it (every section, filled in; workspace_info shows it), or the call returns what to fix. Returns the link."
         case .orchestratorCapabilities:
             return "Lists agents Nook can run for delegate_task (installed status, models, rights), your mode/rights, and delegation limits."
         case .delegateTask:
@@ -250,6 +250,17 @@ enum BridgeTool: String, CaseIterable, Sendable {
     }
 
     var schema: [String: Any] {
+        var schema = ownSchema
+        // Every browser tool also works in the user's own browser, through Nook's extension (BridgeUserBrowser).
+        if BridgeUserBrowser.chromeTool(for: self) != nil {
+            var properties = (schema["properties"] as? [String: Any]) ?? [:]
+            properties[BridgeUserBrowser.key] = BridgeUserBrowser.property
+            schema["properties"] = properties
+        }
+        return schema
+    }
+
+    private var ownSchema: [String: Any] {
         func object(_ properties: [String: Any], required: [String] = []) -> [String: Any] {
             var schema: [String: Any] = ["type": "object", "properties": properties]
             if !required.isEmpty { schema["required"] = required }
@@ -569,9 +580,11 @@ enum BridgePolicy {
     /// `nookAction`: for `nook_use`, whether the Nook tool it runs is an action rather than a read (unknown: an action).
     /// `answers`: for `session_questions`, whether the call answers a question rather than lists or reads them.
     /// `ownTask`: the question belongs to a session the caller delegated, so the caller is the one it waits for.
+    /// `userAsked`: for `pull_request_create`, the user asked the session for a pull request in their own words
+    /// (`PullRequestAsked`), so opening it is their decision already made.
     static func verdict(tool: BridgeTool, caller: BridgeCaller, command: CommandAssessment.Level? = nil,
                         enabled: Bool = true, localPage: Bool = false, nookAction: Bool = true,
-                        answers: Bool = true, ownTask: Bool = false) -> BridgeVerdict {
+                        answers: Bool = true, ownTask: Bool = false, userAsked: Bool = false) -> BridgeVerdict {
         guard enabled else { return .refuse(.disabled) }
         if tool.effect == .read { return .allow }
         // Reading the user's apps through Nook is reading, also in Plan mode.
@@ -581,8 +594,11 @@ enum BridgePolicy {
         if caller.mode == .plan { return .refuse(.planMode) }
         switch tool {
         case .pullRequestCreate:
-            // It pushes and leaves this Mac, so you see it first, unless you gave the session every right.
-            return caller.permission == .bypass ? .allow : .ask(.outward)
+            // It pushes and leaves this Mac, so you see it first, unless you asked for it yourself or gave the session
+            // every right. Only a session Nook runs: Nook reads what you asked in its timeline.
+            if caller.permission == .bypass { return .allow }
+            if case .run = caller.kind, userAsked { return .allow }
+            return .ask(.outward)
         case .scheduleTask, .updateScheduledTask, .runScheduledTaskNow:
             // Work that runs later without anyone watching: always your decision, whatever the session's rights.
             return .ask(.schedule)
@@ -814,7 +830,7 @@ struct BridgeLaunch: Equatable, Sendable {
     You are running inside Nook, a Mac app the user watches while you work. Its `nook` MCP tools: terminal_run and \
     terminal_read for dev servers and watchers (the user sees them; short commands still run in your own shell); \
     browser_open, browser_snapshot (refs for browser_click and browser_type), browser_read and browser_screenshot for \
-    Nook's browser; pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
+    Nook's browser (in: "user" for the user's browser); pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
     GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
     side work to another agent (it sees only your brief; its result comes back as a message, so never poll); device_open, device_list and \
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \

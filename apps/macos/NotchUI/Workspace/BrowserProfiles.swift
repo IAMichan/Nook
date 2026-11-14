@@ -53,7 +53,18 @@ enum BrowserProfiles {
         case .project(let path): name = path
         case .none: return ephemeral
         }
-        return policy(for: key) == .forget ? ephemeral : store(id(of: name))
+        switch policy(for: key) {
+        case .forget:
+            return ephemeral
+        case .ask:
+            return store(id(of: name))
+        case .keep:
+            // Kept: its session cookies too, which WebKit itself drops at quit (`BrowserSessionCookies`).
+            let id = id(of: name)
+            let made = store(id)
+            BrowserSessionCookies.adopt(made, id: id)
+            return made
+        }
     }
 
     /// The store a project (nil: Nook's own browser) keeps its sign-ins in, whatever it does with them now: where imported
@@ -67,6 +78,7 @@ enum BrowserProfiles {
     static func forget(project: String?) {
         let name = project.map(WorkspacePathPolicy.normalize) ?? nookOwner
         guard let saved = savedIDs[name], let id = UUID(uuidString: saved) else { return }
+        BrowserSessionCookies.forget(id: id)
         store(id).removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
     }
 

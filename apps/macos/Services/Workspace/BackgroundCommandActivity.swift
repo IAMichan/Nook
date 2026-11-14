@@ -26,6 +26,8 @@ struct BackgroundCommandActivity: Equatable, Sendable {
     var lastOutput: Date?
     /// Nook knows its output file, so a missing `lastOutput` means it printed nothing yet.
     var hasOutputFile = false
+    /// The share done the end of its output file reports ("[12/340]", "45%"; `WorkProgress.reported`).
+    var reported: Double? = nil
 
     /// Below this much CPU (percent of one core) a command counts as waiting.
     static let idleCPU = 1.0
@@ -46,13 +48,13 @@ struct BackgroundCommandActivity: Equatable, Sendable {
         return trimmed.isEmpty ? nil : String(trimmed.prefix(80))
     }
 
-    /// Whether a process's command line runs `command`: as it is, or single-quoted the way a shell `eval '…'` holds it
-    /// (each `'` written as `'\''`).
+    /// Whether a process's command line runs `command`: as it is, or single-quoted the way a shell `eval '…'` holds it,
+    /// each `'` written as `'\''` or as `'"'"'` (Claude Code's newer form). Missing a form made a running command look gone.
     static func runs(_ commandLine: String, _ command: String) -> Bool {
         guard let fragment = fragment(command) else { return false }
         if commandLine.contains(fragment) { return true }
-        let quoted = fragment.replacingOccurrences(of: "'", with: #"'\''"#)
-        return quoted != fragment && commandLine.contains(quoted)
+        guard fragment.contains("'") else { return false }
+        return [#"'\''"#, #"'"'"'"#].contains { commandLine.contains(fragment.replacingOccurrences(of: "'", with: $0)) }
     }
 
     /// The processes of `command`: the topmost process below `roots` (the agent's processes) whose command line runs it,
@@ -96,6 +98,16 @@ struct BackgroundCommandActivity: Equatable, Sendable {
 
     // MARK: Its output
 
+    /// The last `bytes` of the file at `path`, as text: where a progress line is. Nil when it cannot be read.
+    static func tail(_ path: String, bytes: Int = 4_096) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        try? handle.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
+        guard let data = try? handle.readToEnd() else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     /// The file Claude Code writes a background command's output to, from the note its call returned ("Output is being
     /// written to: /private/tmp/…/tasks/b3k9.output.").
     static func outputFile(_ output: String?) -> String? {
@@ -113,11 +125,28 @@ struct BackgroundCommandProbe: Sendable {
     private var previous: [String: UInt64] = [:]
     /// Readings in a row that found none of its processes: one miss may be a process between two steps.
     private var misses = 0
+    /// What its output file reported when it last changed (`lastRead`).
+    private var reported: Double?
+    private var lastRead: Date?
+    /// Since when none of its processes is left, and its output file has not changed since.
+    private var goneSince: TimeInterval?
+    private var goneOutput: Date?
+
+    /// How long a command must stay gone, its output file still, before it counts as ended: an agent may never report the
+    /// end of a command (Claude Code drops the note for a call it moved to the background), and its row then spun on.
+    static let endedAfter: TimeInterval = 45
+
+    /// The command has been gone, its output unchanged, for `endedAfter` seconds at `time`: it ended, whether or not its
+    /// agent says so.
+    func ended(at time: TimeInterval) -> Bool {
+        goneSince.map { time - $0 >= Self.endedAfter } ?? false
+    }
 
     /// The command's activity in `table`, a reading of every process at `time`. Nil while that cannot be told (the agent
     /// runs no process Nook knows, or it missed once).
     mutating func read(command: String, output: String?, roots: [Int32], table: [ProcessSample], at time: TimeInterval,
-                       commandLine: (Int32) -> String?, modified: (String) -> Date?) -> BackgroundCommandActivity? {
+                       commandLine: (Int32) -> String?, modified: (String) -> Date?,
+                       tail: (String) -> String? = { _ in nil }) -> BackgroundCommandActivity? {
         // `modified`: when the file last changed, nil while it is empty or missing.
         guard !roots.isEmpty else { return nil }
         let tree = BackgroundCommandActivity.processes(of: command, roots: roots, in: table, commandLine: commandLine)
@@ -127,16 +156,23 @@ struct BackgroundCommandProbe: Sendable {
             misses += 1
             meter = ResourceMeter()
             previous = [:]
+            if goneSince == nil || lastOutput != goneOutput {
+                goneSince = time
+                goneOutput = lastOutput
+            }
             return misses >= 2 ? BackgroundCommandActivity(state: .gone, lastOutput: lastOutput, hasOutputFile: file != nil) : nil
         }
         misses = 0
+        goneSince = nil
         let current = BackgroundCommandActivity.current(tree, previous: previous)
         previous = Dictionary(tree.map { ($0.identity, $0.cpuNanoseconds) }, uniquingKeysWith: { $1 })
         let cpu = meter.measure(tree, at: time)?.cpuPercent
         let state: BackgroundCommandActivity.State = (cpu ?? 0) >= BackgroundCommandActivity.idleCPU ? .working : .waiting
+        // Only read again when the file changed since: a command that prints nothing new reports the same.
+        if lastOutput != lastRead { reported = file.flatMap(tail).flatMap(WorkProgress.reported(in:)); lastRead = lastOutput }
         return BackgroundCommandActivity(state: cpu == nil ? .working : state, cpuPercent: cpu,
                                          process: current.map(\.name).flatMap { $0.isEmpty ? nil : $0 }, lastOutput: lastOutput,
-                                         hasOutputFile: file != nil)
+                                         hasOutputFile: file != nil, reported: reported)
     }
 }
 

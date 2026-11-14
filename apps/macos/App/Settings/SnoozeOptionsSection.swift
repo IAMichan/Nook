@@ -74,7 +74,7 @@ struct SnoozeOptionsSection: View {
             switch kind {
             case .duration:
                 TextField("", value: $amount, format: .number)
-                    .textFieldStyle(.roundedBorder)
+                    .settingsField()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 56)
                     .accessibilityLabel(tr("snooze.settings.amount"))

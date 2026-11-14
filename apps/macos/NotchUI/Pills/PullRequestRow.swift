@@ -15,10 +15,11 @@ struct PullRequestRowLink: Equatable {
     var removeTitle: String
 }
 
-/// One pull request in a list, on the Pull requests page and in the side panel alike: GitHub's state mark (with a small
-/// warning on it for a conflict), then two lines. On top the number and title, the checks and the review decision, and
-/// the lines added and removed at the end; under it the author's picture and login, the repository, up to three labels
-/// in their own colors (in a session's own list the branches instead), its place in a stack, and when it last changed.
+/// One pull request in a list, on the Pull requests page and in the side panel alike, laid out as GitHub lists them:
+/// the state mark (with a small warning on it for a conflict), then two lines. On top the title and up to three labels
+/// in their own colors (in a session's own list the branches instead); under it the number, the author and when they
+/// opened it, their role in the repository, the repository, its place in a stack, the review and the checks that
+/// passed. At the end the lines added and removed over the number of comments.
 struct PullRequestRow: View, Equatable {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
@@ -137,40 +138,60 @@ struct PullRequestRow: View, Equatable {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             stateMark.padding(.top, 2)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                // The number and title lead; how it stands follows them.
+                // The title leads, with its labels (in a session's own list its branches) right behind it.
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Text(verbatim: "#\(item.number)")
-                        .font(NookTheme.mono(11))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .monospacedDigit()
-                        .fixedSize()
-                        .help(linked?.source ?? "")
                     Text(item.title)
-                        .font(NookTheme.TextStyle.body)
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
                         .help(item.title)
-                    // A little air between the marks, so the CI check and the review mark read as two things.
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        if linked?.watching == true, item.state == .open {
-                            Image(icon: "eye")
-                                .font(NookTheme.font(10, .medium))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .help(tr("agents.pr.linked.watching"))
-                        }
-                        ciMark
-                        reviewMark
+                    if linked?.watching == true, item.state == .open {
+                        Image(icon: "eye")
+                            .font(NookTheme.font(10, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .help(tr("agents.pr.linked.watching"))
                     }
-                    .fixedSize()
-                    Spacer(minLength: NookTheme.Spacing.sm)
-                    if let additions = item.additions, let deletions = item.deletions {
-                        PullRequestLineCounts(additions: additions, deletions: deletions)
+                    Group {
+                        if linked != nil { branches } else { labels }
                     }
+                    .layoutPriority(-2)
+                    Spacer(minLength: 0)
                 }
-                // Who and where: its chain, the author, the repository, what it waits on, its labels or branches, and
-                // when it last changed.
-                HStack(spacing: NookTheme.Spacing.sm) {
+                // Under it, as GitHub lists it: the number, who opened it and when, how they stand in the repository,
+                // where it stands (draft, ready, waiting on you), the review, and the checks that passed.
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(verbatim: "#\(item.number)")
+                        .monospacedDigit()
+                        .fixedSize()
+                        .help(linked?.source ?? "")
+                    if !item.author.isEmpty {
+                        dot
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            GitHubAvatar(login: item.author, size: 14)
+                            Text(item.author).lineLimit(1)
+                        }
+                        .help("@" + item.author)
+                    }
+                    if let opened = item.created ?? item.updated {
+                        Text(Self.opened(now.timeIntervalSince(opened)))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize()
+                            .help(opened.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if let role = Self.roleKey(item.authorRole) {
+                        NookTag(tr(role)).fixedSize()
+                    }
+                    if showRepo {
+                        dot
+                        Text(item.repo)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(item.repo)
+                            .layoutPriority(-1)
+                    }
                     if let linked, linked.stackSize > 1 {
+                        dot
                         HStack(spacing: NookTheme.Spacing.xxs) {
                             PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text(verbatim: "\(linked.stackSize)").monospacedDigit()
@@ -178,35 +199,8 @@ struct PullRequestRow: View, Equatable {
                         .fixedSize()
                         .help(tr("agents.pr.linked.stack", linked.stackSize))
                     }
-                    if !item.author.isEmpty {
-                        HStack(spacing: NookTheme.Spacing.xs) {
-                            GitHubAvatar(login: item.author, size: 14)
-                            Text(item.author).lineLimit(1)
-                        }
-                        .help("@" + item.author)
-                    }
-                    if showRepo {
-                        Text(item.repo)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(item.repo)
-                    }
-                    if item.draft, item.state == .open {
-                        NookTag(tr("agents.pulls.draft").localizedCapitalized, tint: NookTheme.textSecondary)
-                    }
-                    // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
-                    if role == .review, item.state == .open, !showRepo { NookTag(tr("agents.pulls.scope.reviews"), tint: NookTheme.amber) }
-                    // Yours, and nothing left in its way: say so, so it does not wait for a reason nobody sees.
-                    if role == .mine, PullRequestRepoGroup.Row(item: item, role: role).isReadyToMerge {
-                        NookTag(tr("agents.pr.ready.verdict.ready"), tint: NookTheme.mint)
-                    }
-                    if linked != nil {
-                        branches.layoutPriority(-2)
-                    } else {
-                        labels.layoutPriority(-2)
-                    }
-                    Spacer(minLength: NookTheme.Spacing.sm)
                     if let stack, linked == nil {
+                        dot
                         HStack(spacing: NookTheme.Spacing.xxs) {
                             PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text("\(stack.index)/\(stack.count)").monospacedDigit()
@@ -219,22 +213,103 @@ struct PullRequestRow: View, Equatable {
                         .help(stack.merged > 0 ? tr("agents.pulls.stack.positionMerged", stack.index, stack.count, stack.merged)
                             : tr("agents.pulls.stack.position", stack.index, stack.count))
                     }
-                    if let updated = item.updated {
-                        Text(AgentFormat.short(now.timeIntervalSince(updated)))
-                            .monospacedDigit()
-                            .fixedSize()
-                            .help(updated.formatted(date: .abbreviated, time: .shortened))
-                            .opacity(linked != nil && hovering ? 0 : 1)
+                    if item.draft, item.state == .open {
+                        dot
+                        NookTag(tr("agents.pulls.draft").localizedCapitalized, tint: NookTheme.textSecondary)
                     }
+                    // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
+                    if role == .review, item.state == .open, !showRepo {
+                        dot
+                        NookTag(tr("agents.pulls.scope.reviews"), tint: NookTheme.amber)
+                    }
+                    // Yours, and nothing left in its way: say so, so it does not wait for a reason nobody sees.
+                    if role == .mine, PullRequestRepoGroup.Row(item: item, role: role).isReadyToMerge {
+                        dot
+                        NookTag(tr("agents.pr.ready.verdict.ready"), tint: NookTheme.mint)
+                    }
+                    reviewText
+                    checksText
+                    Spacer(minLength: 0)
                 }
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
             }
+            // At the end, as on GitHub: the lines it changes over the comments on its conversation.
+            VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
+                if let additions = item.additions, let deletions = item.deletions {
+                    PullRequestLineCounts(additions: additions, deletions: deletions)
+                }
+                if let comments = item.comments, comments > 0 {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Image(icon: "bubble.left")
+                        Text(verbatim: "\(comments)").monospacedDigit()
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize()
+                    .help(tr("agents.pulls.row.comments", comments))
+                }
+            }
+            // The ⋯ of a session's own list sits over this corner while the pointer is on the row.
+            .opacity(linked != nil && hovering ? 0 : 1)
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
         .contentShape(Rectangle())
+    }
+
+    /// The "·" between the parts of the second line.
+    private var dot: some View {
+        Text(verbatim: "·").foregroundStyle(NookTheme.textTertiary)
+    }
+
+    /// "opened 6m ago", or "opened just now" in its first minute.
+    static func opened(_ interval: TimeInterval) -> String {
+        interval < 60 ? tr("agents.pulls.row.openedNow") : tr("agents.pulls.row.opened", AgentFormat.short(interval))
+    }
+
+    /// The badge for how the author stands in the repository; nil for no tie (GitHub's NONE) or a list saved before it.
+    static func roleKey(_ association: String) -> String? {
+        switch association {
+        case "OWNER": return "agents.pulls.role.owner"
+        case "MEMBER": return "agents.pulls.role.member"
+        case "COLLABORATOR": return "agents.pulls.role.collaborator"
+        case "CONTRIBUTOR": return "agents.pulls.role.contributor"
+        case "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER": return "agents.pulls.role.firstTime"
+        default: return nil
+        }
+    }
+
+    /// "· Review required", "· Approved" or "· Changes requested" while it is open, in words as GitHub writes it.
+    @ViewBuilder
+    private var reviewText: some View {
+        if item.state == .open, let review = item.reviewIcon {
+            dot
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                PullRequestReviewIcon(review: review)
+                Text(tr(Self.reviewKey(review))).lineLimit(1)
+            }
+            .fixedSize()
+            .help(tr(Self.reviewKey(review)))
+        }
+    }
+
+    /// "· ✓ 28/30": the checks' mark and how many of them passed; just the mark when the count is not known.
+    @ViewBuilder
+    private var checksText: some View {
+        if let outcome = item.checkOutcome {
+            dot
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                CheckOutcomeGlyph(outcome: outcome)
+                if let passed = item.checksPassed, let total = item.checksTotal, total > 0 {
+                    Text(verbatim: "\(passed)/\(total)").monospacedDigit()
+                }
+            }
+            .fixedSize()
+            .help(item.checksTotal.map { tr("agents.pulls.row.checks", item.checksPassed ?? 0, $0) }
+                ?? tr("agents.pulls.status." + outcome.rawValue))
+        }
     }
 
     /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears the conflict mark.
@@ -284,15 +359,6 @@ struct PullRequestRow: View, Equatable {
         case .merged: return "agents.pulls.state.merged"
         case .closed: return "agents.pulls.state.closed"
         case .open: return item.conflict ? "agents.pulls.state.conflict" : item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
-        }
-    }
-
-    /// The checks as their filled circle, right behind the title, so you see at a glance whether CI passed.
-    @ViewBuilder
-    private var ciMark: some View {
-        if let outcome = item.checkOutcome {
-            CheckOutcomeGlyph(outcome: outcome)
-                .help(tr("agents.pulls.status." + outcome.rawValue))
         }
     }
 }

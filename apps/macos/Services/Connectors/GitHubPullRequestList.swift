@@ -531,18 +531,30 @@ final class PullRequestStore: ObservableObject {
         func refreshed(_ items: [PullRequestItem]) -> [PullRequestItem] {
             items.map { item in
                 guard item.id == detail.id else { return item }
-                return PullRequestItem(repo: item.repo, number: item.number, title: detail.title, url: detail.url ?? item.url,
-                                       draft: detail.state == .draft, updated: detail.updated ?? item.updated, author: item.author,
-                                       ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
-                                       state: mergedHere[item.id] != nil && state == .open ? .merged : state,
-                                       additions: detail.additions, deletions: detail.deletions,
-                                       review: item.review,
-                                       // While GitHub works mergeability out again, the row keeps the conflict it knew.
-                                       conflict: detail.conflicted || (detail.mergeable == nil && item.conflict),
-                                       labels: detail.labels,
-                                       labelColors: detail.labelColors, labelDescriptions: detail.labelDescriptions, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
-                                       baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
-                                       nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)
+                // A copy of the row, so what the page does not carry (opened, comments, the author's role) stays.
+                var row = item
+                row.title = detail.title
+                row.draft = detail.state == .draft
+                row.ci = detail.checks.isEmpty ? item.ci : detail.checkSummary
+                row.state = mergedHere[item.id] != nil && state == .open ? .merged : state
+                row.additions = detail.additions
+                row.deletions = detail.deletions
+                // While GitHub works mergeability out again, the row keeps the conflict it knew.
+                row.conflict = detail.conflicted || (detail.mergeable == nil && item.conflict)
+                row.conflictKnown = true
+                row.labels = detail.labels
+                row.labelColors = detail.labelColors
+                row.labelDescriptions = detail.labelDescriptions
+                if !detail.headBranch.isEmpty { row.headBranch = detail.headBranch }
+                if !detail.baseBranch.isEmpty { row.baseBranch = detail.baseBranch }
+                if !detail.nodeID.isEmpty { row.nodeID = detail.nodeID }
+                if !detail.checks.isEmpty {
+                    row.checksPassed = detail.checks.filter { $0.outcome == .passing || $0.outcome == .skipped }.count
+                    row.checksTotal = detail.checks.count
+                }
+                row.url = detail.url ?? item.url
+                row.updated = detail.updated ?? item.updated
+                return row
             }
         }
         let updated = accounts.map { account -> AccountPullRequests in

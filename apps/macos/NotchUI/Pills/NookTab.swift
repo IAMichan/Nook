@@ -447,7 +447,8 @@ struct NookChatView: View {
             .onScrollGeometryChange(for: ThreadScrollGeometry.self) { geometry in
                 ThreadScrollGeometry(offset: geometry.contentOffset.y,
                                      container: geometry.containerSize.height,
-                                     content: geometry.contentSize.height)
+                                     content: geometry.contentSize.height,
+                                     insetTop: geometry.contentInsets.top)
             } action: { old, new in
                 // Called for every frame of a scroll: the state is written only when it changes, so scrolling does not
                 // draw the whole chat again for each frame.
@@ -472,9 +473,7 @@ struct NookChatView: View {
             // The composer growing under it (a card, a draft) changes the inset instead, and is caught up with as well.
             // Only a change in size scrolls, and only when the end is not already in view and no scroll is under way.
             .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
-                ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
-                            container: geometry.containerSize.height,
-                            insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+                ScrollFrame(geometry)
             } action: { old, frame in
                 viewport.frame = frame
                 let resized = frame.content != old.content || frame.container != old.container || frame.insetBottom != old.insetBottom
@@ -677,10 +676,12 @@ private struct ThreadScrollGeometry: Equatable {
     var offset: Double
     var container: Double
     var content: Double
+    /// The room above the view (a toolbar): the view's end is that much higher (`ScrollFrame.maxOffset`).
+    var insetTop: Double
 
     /// How far the end lies below what is in view.
-    var fromEnd: Double { content - (offset + container) }
-    var atEnd: Bool { fromEnd <= 48 }
+    var fromEnd: Double { content - insetTop - (offset + container) }
+    var atEnd: Bool { fromEnd <= ScrollFrame.endMargin }
 }
 
 /// The pictures waiting in the chat's box when the notch closed; the text itself goes to `ComposerDraftStore`.

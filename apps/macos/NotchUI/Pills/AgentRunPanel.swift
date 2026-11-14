@@ -44,8 +44,6 @@ struct AgentRunPanel: View {
     /// Quote and Ask about this, for every answer's text view: the same two closures on every redraw, so a streamed token
     /// does not hand each answer a new environment.
     @State private var selectionActions = StableSelectionActions()
-    /// Held, not observed: its height changes as streamed rows are laid out, and only `TurnPinSpacer` draws it.
-    @State var pinRoom = TurnPinRoom()
     @State var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State var scrollPhase = Unobserved(ScrollPhase.idle)

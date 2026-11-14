@@ -229,11 +229,11 @@ private struct AcpManualSheet: View {
         } content: {
             // Three steps, as every add sheet: what to call it, the command that starts its ACP server, and the check.
             SetupStep(number: 1, title: tr("acp.manual.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                TextField("", text: $name, prompt: Text(tr("acp.manual.namePlaceholder"))).textFieldStyle(.roundedBorder)
+                TextField("", text: $name, prompt: Text(tr("acp.manual.namePlaceholder")).foregroundStyle(NookTheme.textTertiary)).settingsField()
             }
             SetupStep(number: 2, title: tr("acp.manual.command"), done: parsed != nil) {
-                TextField("", text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0"))
-                    .textFieldStyle(.roundedBorder)
+                TextField("", text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0").foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .font(NookTheme.TextStyle.code)
                     .onChange(of: command) { _, _ in check = .idle }
                 if !command.isEmpty, parsed == nil {

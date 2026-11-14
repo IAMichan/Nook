@@ -291,7 +291,8 @@ extension AgentRunPanel {
                                   commands: commands, focus: $barFocus,
                                   reveal: { conversationFocus = $0 },
                                   openPanel: outputsLink.showSubagents,
-                                  agentPIDs: { workspace.agentPIDs(runID) })
+                                  agentPIDs: { workspace.agentPIDs(runID) },
+                                  settleGone: { workspace.settleGoneBackgroundCommand(runID, $0) })
             }
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.

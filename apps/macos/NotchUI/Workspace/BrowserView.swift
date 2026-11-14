@@ -4,8 +4,9 @@ import WebKit
 import Security
 
 /// A browser in Nook's window, with one or more tabs (`BrowserPage`). You browse as usual; Nook can read the open page
-/// when you ask (a read tool), and only navigates on its own after your approval (an action). It keeps no history beyond
-/// the session and stores no passwords; sign-ins stay only for a project that asks for it (`BrowserProfiles`). Everything that acts on "the page" (agents, the bridge, the chat) acts on the
+/// when you ask (a read tool), and only navigates on its own after your approval (an action). It remembers the pages you
+/// visit for the address bar (`BrowserHistory`), saves passwords when you say so (`BrowserPasswords`) and runs the web
+/// extensions you add (`BrowserExtensions`); sign-ins stay as Settings › Browser and each project say (`BrowserProfiles`). Everything that acts on "the page" (agents, the bridge, the chat) acts on the
 /// tab in view. `shared` is Nook's own browser (the chat, Agents › Browser); every agent session has one of its own
 /// (`SessionBrowsers`), so one agent opening a page leaves the page of another alone.
 @MainActor
@@ -44,6 +45,10 @@ final class BrowserStore: ObservableObject {
     /// The site you just signed in to while this browser still asks whether to keep sign-ins (`BrowserProfiles`): the
     /// browser asks above the page until you answer.
     @Published private(set) var signInQuestion: String?
+    /// A sign-in you just sent that is not saved yet: the browser asks above the page whether to save it.
+    @Published private(set) var passwordQuestion: PasswordQuestion?
+    /// The user name a site asked for on a page of its own before the password (`rememberUsername`), for a few minutes.
+    private var pendingUsername: (site: String, name: String, at: Date)?
     /// The agent driving this browser now (opening, clicking, typing), while it does: the page glows at its edges with a
     /// way to stop it (`BrowserTakeoverOverlay`). Clears a while after its last step, or as soon as you browse yourself.
     @Published private(set) var drivenBy: String?
@@ -67,6 +72,7 @@ final class BrowserStore: ObservableObject {
         first.store = self
         watch(first)
         updateTabs()
+        BrowserExtensions.shared.opened(self)
     }
 
     /// Whether something shows this browser now: a browser page, a chat corner or (Nook's own) the popup.
@@ -85,12 +91,21 @@ final class BrowserStore: ObservableObject {
     /// Opens an empty tab after the one in view and brings it into view.
     @discardableResult
     func newTab() -> BrowserPage {
+        let made = newBackgroundTab()
+        select(made.id)
+        return made
+    }
+
+    /// Opens an empty tab after the one in view, leaving that one in view (an extension opening a page behind it).
+    @discardableResult
+    func newBackgroundTab() -> BrowserPage {
         let made = BrowserPage(dataStore: dataStore)
         made.store = self
         let index = pages.firstIndex { $0 === page }.map { $0 + 1 } ?? pages.count
         pages.insert(made, at: index)
         watch(made)
-        select(made.id)
+        updateTabs()
+        BrowserExtensions.shared.openedTab(made)
         return made
     }
 
@@ -102,6 +117,7 @@ final class BrowserStore: ObservableObject {
         updateTabs()
         previous.outOfSight()
         next.inSight()
+        BrowserExtensions.shared.activated(next, previous: previous)
     }
 
     /// Closes a tab; the one next to it comes into view. The last tab stays: closing it closes the browser's panel tab.
@@ -109,10 +125,12 @@ final class BrowserStore: ObservableObject {
         guard pages.count > 1, let index = pages.firstIndex(where: { $0.id == id }) else { return }
         let closing = pages.remove(at: index)
         watchers[closing.id] = nil
+        BrowserExtensions.shared.closedTab(closing)
         closing.discard()
         if closing === page {
             page = pages[min(index, pages.count - 1)]
             page.inSight()
+            BrowserExtensions.shared.activated(page, previous: nil)
         }
         updateTabs()
     }
@@ -181,7 +199,10 @@ final class BrowserStore: ObservableObject {
     func inSight() { page.inSight() }
 
     /// The session's tabs are done with: its pages go and their web views stop.
-    func discard() { pages.forEach { $0.discard() } }
+    func discard() {
+        BrowserExtensions.shared.closed(self)
+        pages.forEach { $0.discard() }
+    }
 
     /// A page of this browser was signed in to: ask once whether to keep sign-ins, while nobody answered yet.
     func signedIn(to host: String) {
@@ -224,6 +245,39 @@ final class BrowserStore: ObservableObject {
         driveEnd?.cancel()
         driveEnd = nil
         if drivenBy != nil { drivenBy = nil }
+    }
+
+    // MARK: Saved passwords
+
+    /// A site asked for the user name alone; the password comes on its next page, which is when the browser asks to save.
+    func rememberUsername(_ name: String, site: String) {
+        guard !name.isEmpty else { return }
+        pendingUsername = (site, name, Date())
+    }
+
+    /// A sign-in was sent on a page of this browser: ask whether to save it, unless it is saved like this already or
+    /// the site is one you said never for. Not for a page an agent opened or while one drives: you did not type it.
+    func offerPassword(site: String, username: String, password: String) {
+        guard !password.isEmpty, drivenBy == nil, page.openedBy == nil else { return }
+        var name = username
+        if name.isEmpty, let pending = pendingUsername, pending.site == site, Date().timeIntervalSince(pending.at) < 600 {
+            name = pending.name
+        }
+        let offer = BrowserPasswords.shared.offer(site: site, username: name, password: password)
+        guard offer != .none else { return }
+        passwordQuestion = PasswordQuestion(site: site, username: name, password: password, isUpdate: offer == .update)
+    }
+
+    /// Your answer: save it, never for this site, or not now (nil).
+    func answerPassword(save: Bool?) {
+        guard let question = passwordQuestion else { return }
+        passwordQuestion = nil
+        pendingUsername = nil
+        switch save {
+        case true?: BrowserPasswords.shared.save(site: question.site, username: question.username, password: question.password)
+        case false?: BrowserPasswords.shared.never(question.site)
+        case nil: break
+        }
     }
 
     /// Your answer to the question: stored for good (Settings › Browser or the project's own row), or nil for "later",
@@ -388,6 +442,14 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
                          in: .defaultClient))
         let signIns = SignInMessages()
         configuration.userContentController.add(signIns, contentWorld: .defaultClient, name: BrowserSignInScript.handlerName)
+        // Saved passwords: noticed when sent, filled in when asked for (`BrowserPasswords`).
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: BrowserPasswordScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false,
+                         in: .defaultClient))
+        let passwords = PasswordMessages()
+        configuration.userContentController.addScriptMessageHandler(passwords, contentWorld: .defaultClient,
+                                                                    name: BrowserPasswordScript.handlerName)
+        BrowserExtensions.shared.configure(configuration)
         if !BrowserStore.hasPasskeyEntitlement {
             configuration.userContentController.addUserScript(
                 WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -400,6 +462,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         signIns.page = self
+        passwords.page = self
     }
 
     /// Hands the sign-in script's message to the page without the web view holding on to the page.
@@ -565,7 +628,24 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         if certificateQuestion != nil { certificateQuestion = nil }
         refresh(loading: true)
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { refresh(loading: false) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        refresh(loading: false)
+        remember()
+        BrowserSessionCookies.pageLoaded()
+    }
+
+    /// A page you opened yourself goes into the history the address bar suggests from; one an agent opened does not.
+    private func remember() {
+        guard openedBy == nil, store?.drivenBy == nil, BrowserHistory.isEnabled(), let url = webView.url else { return }
+        let title = webView.title ?? ""
+        BrowserHistory.shared.record(url: url, title: title)
+        // Many sites set their title with a script after the page loaded.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, self.webView.url == url, let later = self.webView.title, later != title else { return }
+            BrowserHistory.shared.updateTitle(url: url, title: later)
+        }
+    }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         lastError = failure(error)
         refresh(loading: false)
@@ -663,6 +743,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         if let url = webView.url?.absoluteString { address = url }
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+        BrowserExtensions.shared.changed(self)
     }
 }
 
@@ -822,6 +903,10 @@ struct BrowserView: View {
     @State private var servers: [LocalServer] = []
     /// The pointer is on the address field, which shows its fill only then.
     @State private var addressHovering = false
+    /// The pages you visited that fit what you type in the address bar.
+    @StateObject private var suggestions = AddressSuggestions()
+    @FocusState private var addressFocused: Bool
+    @ObservedObject private var extensions = BrowserExtensions.shared
     /// Shown beside the chat: a button that puts the browser away again.
     var onClose: (() -> Void)?
 
@@ -841,11 +926,22 @@ struct BrowserView: View {
                     Image(icon: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
                         .font(NookTheme.font(9.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
-                    TextField(tr("workbench.browser.address"), text: $store.address)
+                    TextField(tr("workbench.browser.address"), text: addressText)
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.paper)
-                        .onSubmit { store.go(store.address) }
+                        .focused($addressFocused)
+                        .onSubmit { submitAddress() }
+                        .onKeyPress(.downArrow) { moveSuggestion(1) }
+                        .onKeyPress(.upArrow) { moveSuggestion(-1) }
+                        .onKeyPress(.escape) {
+                            guard suggestions.isOpen else { return .ignored }
+                            suggestions.close()
+                            return .handled
+                        }
+                        .onChange(of: addressFocused) { _, focused in
+                            if !focused { suggestions.close() }
+                        }
                 }
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(height: SidePanelMetrics.toolbar)
@@ -855,6 +951,7 @@ struct BrowserView: View {
                 // a click hands that element to the composer. It stays selected until you click it again or press Escape.
                 ToolbarIconButton("cursorarrow", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
                                   enabled: store.webView.url != nil, selected: picking) { annotate() }
+                BrowserExtensionButtons(store: store)
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
@@ -883,6 +980,8 @@ struct BrowserView: View {
             }
             if let question = store.certificateQuestion { certificateQuestion(question) }
             if let site = store.signInQuestion { signInQuestion(site) }
+            if let question = store.passwordQuestion { passwordQuestion(question) }
+            if let id = storeExtensionID { addExtensionBar(id) }
             if picking { pickHint }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
@@ -896,6 +995,15 @@ struct BrowserView: View {
                 .id(store.page.id)
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
                 .overlay { BrowserTakeoverOverlay(store: store) }
+        }
+        // Over the page, under the address bar: the pages you visited that fit what you type.
+        .overlay(alignment: .topLeading) {
+            if suggestions.isOpen && addressFocused {
+                AddressSuggestionList(model: suggestions) { open($0) }
+                    .frame(maxWidth: 560)
+                    .padding(.top, SidePanelMetrics.toolbar + NookTheme.Spacing.xxs)
+                    .padding(.horizontal, NookTheme.Spacing.xl * 3)
+            }
         }
         // In view: whatever an agent opens here is seen, also while you watch.
         .onAppear {
@@ -914,6 +1022,79 @@ struct BrowserView: View {
             let found = await LocalServers.scan()
             if found != servers { servers = found }
         }
+    }
+
+    // MARK: The address bar
+
+    /// The address bar's text: what you type goes to the page's address and to the suggestions.
+    private var addressText: Binding<String> {
+        Binding(
+            get: { store.address },
+            set: { text in
+                store.address = text
+                guard addressFocused else { return }
+                suggestions.update(for: text)
+            })
+    }
+
+    private func moveSuggestion(_ step: Int) -> KeyPress.Result {
+        guard suggestions.isOpen else { return .ignored }
+        suggestions.move(step)
+        return .handled
+    }
+
+    /// Enter: the suggestion lit, or else what you typed.
+    private func submitAddress() {
+        if let chosen = suggestions.chosen { return open(chosen) }
+        suggestions.close()
+        store.go(store.address)
+    }
+
+    private func open(_ suggestion: BrowserSuggestion) {
+        suggestions.close()
+        store.address = suggestion.url
+        store.go(suggestion.url)
+    }
+
+    // MARK: Questions above the page
+
+    /// A sign-in you just sent: save it so the browser fills it in next time, never for this site, or not now.
+    private func passwordQuestion(_ question: PasswordQuestion) -> some View {
+        PanelNoticeBar(title: tr(question.isUpdate ? "browser.passwords.updateQuestion" : "browser.passwords.question", question.site),
+                       detail: question.username.isEmpty ? tr("browser.passwords.noUsername") : question.username,
+                       symbol: "key") {
+            NookNoticeActions(
+                primary: NookNoticeAction(tr(question.isUpdate ? "browser.passwords.update" : "browser.passwords.save")) {
+                    store.answerPassword(save: true)
+                },
+                secondary: NookNoticeAction(tr("browser.passwords.notNow")) { store.answerPassword(save: nil) },
+                extra: question.isUpdate ? [] : [NookNoticeAction(tr("browser.passwords.never")) { store.answerPassword(save: false) }])
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.bottom, NookTheme.Spacing.sm)
+    }
+
+    /// The extension the Chrome Web Store page in view is about, when it is not in Nook yet.
+    private var storeExtensionID: String? {
+        guard BrowserExtensions.isSupported, let url = store.webView.url,
+              let id = ChromeWebStore.extensionID(from: url.absoluteString), !extensions.has(storeID: id) else { return nil }
+        return id
+    }
+
+    /// On an extension's page in the Chrome Web Store, whose own button only works in Chrome: add it to Nook instead.
+    private func addExtensionBar(_ id: String) -> some View {
+        let name = store.title.components(separatedBy: " - Chrome Web Store").first?.trimmingCharacters(in: .whitespaces) ?? ""
+        let busy = extensions.installing == id
+        return PanelNoticeBar(title: tr("browser.extensions.storeTitle", name.isEmpty ? tr("browser.extensions.thisOne") : name),
+                              detail: tr("browser.extensions.storeDetail"),
+                              symbol: "puzzlepiece.extension") {
+            NookNoticeActions(primary: NookNoticeAction(tr(busy ? "browser.extensions.adding" : "browser.extensions.add")) {
+                guard !busy else { return }
+                Task { await extensions.installFromStore(id) }
+            })
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.bottom, NookTheme.Spacing.sm)
     }
 
     /// After the first sign-in while sign-ins are still undecided: keep them after Nook quits, or not. Settings › Browser
@@ -1168,6 +1349,9 @@ final class SessionBrowsers: ObservableObject {
 
     /// Not `@Published`: views ask for their browser while they draw, and that may make it (see `make`).
     private var stores: [BrowserSession.Key: BrowserStore] = [:]
+
+    /// Every session's browser open now (the extensions see each as a window).
+    var allStores: [BrowserStore] { Array(stores.values) }
     /// The sessions whose agent opened a page that shows in their chat's corner, until you browse yourself or put it away.
     @Published private var corners: Set<BrowserSession.Key> = []
     /// The sessions on screen, the latest last: the notch and the main window can both show one.
@@ -1259,34 +1443,56 @@ extension BridgeCaller {
     }
 }
 
-/// The page an agent opened, small in the bottom right corner of its own session's chat, just above the composer, so
-/// you follow along without leaving the conversation. Only that session shows it; expanding opens the browser tab in the
-/// side panel, the cross puts it away until the agent opens a page again.
+/// The page an agent opened, small beside its own session's chat so you follow along without leaving the conversation:
+/// under the docked session panel's cards when that panel shows, otherwise in the chat's bottom right corner just above
+/// the composer. Only that session shows it; you can drag it anywhere over the row, expanding opens the browser tab in
+/// the side panel, and the cross puts it away until the agent opens a page again.
 struct SessionBrowserCorner: View {
     let runID: UUID?
     let directory: String
     /// The session shows the browser in a panel already.
     let hidden: Bool
-    /// The room the card may move in, from its resting place: how far it can go left and up.
-    var room: CGSize = CGSize(width: 10_000, height: 10_000)
-    /// How far it can go down from its resting place above the composer, over the composer to the chat's bottom edge.
-    var below: CGFloat = 0
-    /// How far it can go right from its resting place, over the panels beside the chat to the row's edge.
-    var right: CGFloat = 0
+    /// Where the card rests, in the row it floats over.
+    let rest: CGRect
+    /// Where it may be dragged to, in the same row.
+    let area: CGRect
     let expand: () -> Void
     @ObservedObject private var browsers = SessionBrowsers.shared
-    /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
+    /// Where you dragged the card to, from its resting place; it keeps that while the chat is open.
     @State private var moved: CGSize = .zero
     @State private var dragStart: CGSize?
 
+    /// Where the page this session's agent opened rests in the row: right under the docked session panel's cards, its right
+    /// edge on theirs, as long as it fits in that column; otherwise in the conversation's bottom right corner, above the
+    /// composer, narrower when the conversation is narrow.
+    static func rest(conversation: CGRect, dockColumn: CGRect?, dockCards: CGRect?, row: CGSize) -> CGRect {
+        let size = SessionBrowserCard.size
+        if let dockColumn, let dockCards {
+            let bottom = min(dockColumn.maxY, row.height) - NookTheme.Spacing.md
+            let top = min(dockCards.maxY + NookTheme.Spacing.md, bottom - size.height)
+            if top >= dockColumn.minY {
+                return CGRect(x: max(0, dockCards.maxX - size.width), y: top, width: size.width, height: size.height)
+            }
+        }
+        let width = min(size.width, max(240, conversation.width * 0.7))
+        return CGRect(x: conversation.maxX - NookTheme.Spacing.lg - width,
+                      y: conversation.maxY - NookTheme.Spacing.md - size.height,
+                      width: width, height: size.height)
+    }
+
+    /// Kept inside `area`; when the card is larger than it, it keeps to the area's top left.
     private func clamped(_ size: CGSize) -> CGSize {
-        CGSize(width: min(right, max(-room.width, size.width)), height: min(below, max(-room.height, size.height)))
+        let x = rest.minX + size.width, y = rest.minY + size.height
+        let clampedX = max(area.minX, min(area.maxX - rest.width, x))
+        let clampedY = max(area.minY, min(area.maxY - rest.height, y))
+        return CGSize(width: clampedX - rest.minX, height: clampedY - rest.minY)
     }
 
     var body: some View {
         let store = hidden ? nil : browsers.corner(BrowserSession(run: runID, directory: directory))
         let shown = store != nil
-        ZStack(alignment: .bottomTrailing) {
+        let offset = clamped(moved)
+        ZStack(alignment: .topLeading) {
             if let store {
                 SessionBrowserCard(store: store, directory: directory, expand: expand, close: { browsers.putAway(store) },
                                    drag: { translation in
@@ -1295,11 +1501,13 @@ struct SessionBrowserCorner: View {
                     moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
                 }, dragEnded: { dragStart = nil })
                     .id(ObjectIdentifier(store))
+                    .frame(width: rest.width)
                     // Clamped here too: a panel that closes takes the room the card was moved into with it.
-                    .offset(clamped(moved))
-                    .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+                    .offset(x: rest.minX + offset.width, y: rest.minY + offset.height)
+                    .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(NookTheme.reveal, value: shown)
     }
 }

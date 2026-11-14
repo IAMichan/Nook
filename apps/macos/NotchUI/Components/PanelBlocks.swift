@@ -21,6 +21,8 @@ struct NookSearchField: View {
     var onEscape: (() -> Void)? = nil
     /// The glyph in front: a magnifier for a search, another one where the field asks for something else (a name, an address).
     var symbol = "magnifyingglass"
+    /// A cross at the end that closes what the field sits in (a palette), for those who reach for the pointer, not Escape.
+    var onClose: (() -> Void)? = nil
     @State private var hovering = false
 
     private var glyphSize: CGFloat {
@@ -39,6 +41,9 @@ struct NookSearchField: View {
             field
             if !text.isEmpty {
                 ToolbarIconButton("xmark.circle.fill", tr("button.clear"), height: 20, width: 20) { text = "" }
+            }
+            if let onClose {
+                ToolbarIconButton("xmark", tr("button.close"), height: 20, width: 20, onClose)
             }
         }
         .padding(.horizontal, style == .inline ? 0 : NookTheme.Spacing.md)

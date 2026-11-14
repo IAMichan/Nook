@@ -131,30 +131,87 @@ struct SubagentStatusMark: View {
     }
 }
 
-/// How long a running subagent or background command has been at it, counting up; nothing once it is done (its row only
-/// keeps its outcome).
+/// How long a running subagent or background command has been at it, counting up, after how far it is when Nook can tell
+/// (`WorkProgressMark`); nothing once it is done (its row only keeps its outcome).
 struct SubagentElapsed: View {
     let running: Bool
     let started: Date
+    var progress: WorkProgress? = nil
 
     init(agent: SubagentInfo) {
         running = agent.isRunning
         started = agent.started
+        progress = agent.progress
     }
 
     init(command: BackgroundCommandInfo) {
         running = command.isRunning
         started = command.started
+        progress = command.progress
     }
 
     var body: some View {
         if running, started > .distantPast {
-            Text(timerInterval: started...Date.distantFuture, countsDown: false)
-                .font(NookTheme.mono(10.5))
-                .foregroundStyle(NookTheme.textTertiary)
-                .monospacedDigit()
-                .fixedSize()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let progress { WorkProgressMark(progress: progress) }
+                Text(timerInterval: started...Date.distantFuture, countsDown: false)
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
         }
+    }
+}
+
+/// How far a running command or subagent is: a short bar with "45 %" when it prints that itself, or a bar that fills over
+/// the time the same work took before, marked as an estimate (`WorkProgress`). The estimated bar runs on the system's
+/// own timer, like the elapsed time beside it, so nothing is drawn again per second on the main thread.
+struct WorkProgressMark: View {
+    let progress: WorkProgress
+
+    static let width: CGFloat = 34
+
+    var body: some View {
+        if let percent = progress.percent, let reported = progress.reported {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ProgressView(value: min(1, max(0, reported)))
+                    .progressViewStyle(.linear)
+                    .controlSize(.mini)
+                    .tint(NookTheme.iris)
+                    .frame(width: Self.width)
+                Text(tr("ws.progress.percent", percent))
+                    .font(NookTheme.mono(10.5, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+            .help(tr("ws.progress.reported.help", percent))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tr("ws.progress.reported.help", percent))
+        } else if let end = progress.estimatedEnd, let expected = progress.expected, end > progress.started {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(tr("ws.progress.estimate"))
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                ProgressView(timerInterval: progress.started...end, countsDown: false, label: { EmptyView() },
+                             currentValueLabel: { EmptyView() })
+                    .progressViewStyle(.linear)
+                    .controlSize(.mini)
+                    .tint(NookTheme.iris.opacity(0.7))
+                    .labelsHidden()
+                    .frame(width: Self.width)
+            }
+            .help(tr("ws.progress.estimated.help", Self.duration(expected)))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tr("ws.progress.estimated.help", Self.duration(expected)))
+        }
+    }
+
+    /// "2 min 10 s": how long the same work took before.
+    static func duration(_ seconds: TimeInterval) -> String {
+        Duration.seconds(seconds.rounded()).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated,
+                                                             maximumUnitCount: 2))
     }
 }
 
