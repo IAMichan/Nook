@@ -2082,6 +2082,9 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(all.last?.receipt, .sent)
         XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "Gone", receipt: .read)], members: ["Anna"]).map(\.name),
                        ["Gone", "Anna"], "someone who left since still shows")
+        let noah = ChatReceipts.everyone([ChatReader(name: "Noah", receipt: .delivered)], members: ["Noah✝️", "Émile 🙂"])
+        XCTAssertEqual(noah.map(\.name), ["Noah", "Émile 🙂"], "one person with a sign in one list shows once")
+        XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "emile", receipt: .read)], members: ["Émile 🙂"]).count, 1)
     }
 
     func testAPrivateChatsInfoNamesItsPerson() {

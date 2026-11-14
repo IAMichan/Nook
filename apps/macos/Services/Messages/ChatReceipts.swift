@@ -155,13 +155,15 @@ enum ChatReceipts {
 
     /// Everyone in the group with how far the message got with them, as the message's info lists them: who read it
     /// (the first to read on top), who has it, and the members who answered nothing yet (as `sent`). `members` are the
-    /// names of the others in the group; a reader who is not among them (they left since) still shows.
+    /// names of the others in the group; a reader who is not among them (they left since) still shows. A member is the
+    /// reader of the same name, even when the app writes it with an emoji or a sign the other list leaves out
+    /// ("Noah✝" in the group, "Noah" in the receipt): one person never shows twice.
     static func everyone(_ readers: [ChatReader], members: [String]) -> [ChatReader] {
         // A reader without a name only says when a private chat's person read it: in a group there is no one to show.
         let named = readers.filter { !$0.name.isEmpty }
-        var seen = Set(named.map { $0.name.lowercased() })
+        var seen = Set(named.map { sameName($0.name) })
         var all = named
-        for member in members where !member.isEmpty && seen.insert(member.lowercased()).inserted {
+        for member in members where !member.isEmpty && seen.insert(sameName(member)).inserted {
             all.append(ChatReader(name: member, receipt: .sent))
         }
         return all.sorted { a, b in
@@ -173,6 +175,14 @@ enum ChatReceipts {
             default: return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             }
         }
+    }
+
+    /// A name as `everyone` compares it: its letters and digits only, without case or accents. A name of signs alone
+    /// stays itself, so it still tells people apart.
+    static func sameName(_ name: String) -> String {
+        let folded = name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        let letters = folded.unicodeScalars.filter { $0.properties.isAlphabetic || $0.properties.numericType != nil }
+        return letters.isEmpty ? folded : String(String.UnicodeScalarView(letters))
     }
 
     /// Your message in Messages' own database: an error is a failure, a read date is read, `is_delivered`
