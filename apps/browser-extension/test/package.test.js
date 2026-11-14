@@ -3,13 +3,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { HOST_NAME, PROTOCOL_VERSION } from '../lib/core.js';
+import { HOST_NAME, PROTOCOL_VERSION, WATCH_LEASE } from '../lib/core.js';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
 const swiftHost = read('../macos/Services/BrowserExtension/BrowserExtensionHost.swift');
 const swiftHub = read('../macos/Services/BrowserExtension/BrowserExtensionHub.swift');
+const swiftService = read('../macos/Services/BrowserExtension/BrowserExtensionService.swift');
 
 test('the key in the manifest gives the id Nook\'s host allows', () => {
   const digest = createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest('hex').slice(0, 32);
@@ -20,6 +21,10 @@ test('the key in the manifest gives the id Nook\'s host allows', () => {
 test('the extension and Nook agree on the host and the protocol', () => {
   assert.ok(swiftHost.includes(`static let name = "${HOST_NAME}"`), HOST_NAME);
   assert.match(swiftHub, new RegExp(`static let protocolVersion = ${PROTOCOL_VERSION}\\b`));
+});
+
+test('the panel renews within the lease Nook gives it', () => {
+  assert.match(swiftService, new RegExp(`static let watchFor: TimeInterval = ${WATCH_LEASE / 60_000} \\* 60\\b`));
 });
 
 test('it asks only for what it uses', () => {

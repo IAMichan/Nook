@@ -2,7 +2,9 @@
 // browser, a chat with Nook about the page, and what Nook did here lately. Questions go to Nook on the Mac and are
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
-import { cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf } from './lib/core.js';
+import {
+  cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
+} from './lib/core.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -18,6 +20,14 @@ let windowId = null;
 let revision = null;
 let live = false;
 let lastUpdate = 0;
+// When the panel last asked Nook to follow its conversation (`watchRenewalDue`).
+let lastAsked = 0;
+
+/** Reads the conversation and asks Nook to keep following it for this panel. */
+function readAndFollow(id) {
+  lastAsked = Date.now();
+  return send({ type: 'chat', conversation: id, watch: true }).catch(() => null);
+}
 // Bumped by "New chat": a reply or poll that started before belongs to the old conversation and is dropped.
 let chatEpoch = 0;
 let look = null;
@@ -280,6 +290,8 @@ async function ask(text) {
   }
   conversation = reply.conversation || conversation;
   live = !!reply.live;
+  // Asking starts Nook following this conversation for the panel.
+  lastAsked = Date.now();
   await chrome.storage.session.set({ conversation }).catch(() => {});
   // "New chat" while that was being stored: this answer belongs to the conversation that was left.
   if (asked !== chatEpoch) return;
@@ -289,16 +301,15 @@ async function ask(text) {
 
 /**
  * Nook follows this panel's conversation for ten minutes after it last asked. While the panel is open it asks again
- * every few minutes, also when Nook is not writing, so an answer that starts later (from Nook's own window, say) still
- * comes here by itself.
+ * every few minutes, whether Nook is writing or not: an answer that starts later (from Nook's own window, say) still
+ * comes here by itself, and a long answer never outlives the lease.
  */
-const RENEW_EVERY = 4 * 60_000;
 setInterval(async () => {
-  if (!conversation || !live || pollTimer) return;
+  if (!conversation || !live || !watchRenewalDue(Date.now(), lastAsked)) return;
   const renewing = chatEpoch;
-  const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
+  const reply = await readAndFollow(conversation);
   if (renewing === chatEpoch && reply?.ok) applyMessages(reply.messages, reply.revision);
-}, RENEW_EVERY);
+}, 30_000);
 
 /**
  * While Nook answers: Nook pushes every change (see the chatUpdate listener), and this only asks now and then in case a
@@ -315,7 +326,7 @@ function follow(started = Date.now()) {
       if (isAnswering(messages)) follow(started);
       return;
     }
-    const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
+    const reply = await readAndFollow(conversation);
     if (following !== chatEpoch) return;
     if (reply?.ok) {
       live = !!reply.live;
@@ -422,7 +433,7 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   await send({ type: 'connect' }).catch(() => {});
   refreshLook();
   if (conversation) {
-    const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
+    const reply = await readAndFollow(conversation);
     if (reply?.ok && reply.messages) {
       live = !!reply.live;
       applyMessages(reply.messages, reply.revision);
