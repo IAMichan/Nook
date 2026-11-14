@@ -100,5 +100,20 @@
   },
   "presenceStop": {
     "message": "Stop"
+  },
+  "cursorClick": {
+    "message": "Klikt"
+  },
+  "cursorType": {
+    "message": "Typt"
+  },
+  "cursorScroll": {
+    "message": "Scrolt"
+  },
+  "cursorKey": {
+    "message": "Drukt op $1"
+  },
+  "cursorChoose": {
+    "message": "Kiest"
   }
 }

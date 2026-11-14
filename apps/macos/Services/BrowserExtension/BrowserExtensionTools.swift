@@ -75,7 +75,7 @@ enum BrowserExtensionTools {
             required: [], timeout: 15),
         Definition(
             name: "chrome_scroll", method: "scroll", isAction: false,
-            description: "Scrolls the page: direction down (default), up, top or bottom, by amount screens (default 1); or brings an element (ref, selector or text) into view.",
+            description: "Scrolls the page: direction down (default), up, top or bottom, by amount screens (default 1); or brings an element (ref, selector or text) into view. Its result lists what can be used in view after scrolling.",
             properties: target.merging([
                 "direction": ["type": "string", "enum": ["down", "up", "top", "bottom"], "description": "Where to scroll."],
                 "amount": ["type": "number", "description": "How many screens (0.25–10)."]
@@ -83,7 +83,7 @@ enum BrowserExtensionTools {
             required: [], timeout: 15),
         Definition(
             name: "chrome_open", method: "open", isAction: true,
-            description: "Opens a web address in the user's own browser, in a new tab in Nook's tab group (default) or, with new_tab: false or tab, in that tab; waits for it to load. url \"back\", \"forward\" or \"reload\" acts on the tab Nook works in. The user approves first.",
+            description: "Opens a web address in the user's own browser, in a new tab in Nook's tab group (default) or, with new_tab: false or tab, in that tab; waits for it to load and says what can be used on it (with refs). url \"back\", \"forward\" or \"reload\" acts on the tab Nook works in. The user approves first.",
             properties: [
                 "url": ["type": "string", "description": "https address (http only for localhost), or back, forward or reload."],
                 "new_tab": ["type": "boolean", "description": "False: open it in the tab Nook works in instead of a new one."]
@@ -91,11 +91,11 @@ enum BrowserExtensionTools {
             required: ["url"], timeout: 30),
         Definition(
             name: "chrome_click", method: "click", isAction: true,
-            description: "Clicks a link, button, checkbox or option on the page in the user's own browser, by ref from chrome_find (preferred), CSS selector or visible text. The user approves first. Look at the result with chrome_find or chrome_read.",
+            description: "Clicks a link, button, checkbox or option on the page in the user's own browser, by ref from chrome_find (preferred), CSS selector or visible text. The user approves first. When something covers it (a cookie banner, a dialog), the error names that element with its ref: click it first. A link that opens a new tab moves Nook there. Its result already says what the page shows now and what can be used in view (with refs): take the next step from that, without chrome_find first.",
             properties: target, required: [], timeout: 25),
         Definition(
             name: "chrome_type", method: "type", isAction: true,
-            description: "Types text into a field on the page in the user's own browser (replaces its text unless append: true; submit: true submits the form), or picks an option in a list. Never types into password fields: let the user sign in. The user approves the exact text first.",
+            description: "Types text into a field on the page in the user's own browser (replaces its text unless append: true; submit: true submits the form), or picks an option in a list. Never types into password fields: let the user sign in. The user approves the exact text first. Its result already says what the page shows now and what can be used in view (with refs): take the next step from that, without chrome_find first.",
             properties: target.merging([
                 "value": ["type": "string", "description": "The text to enter, or the option to pick."],
                 "append": ["type": "boolean", "description": "Add to the field's text instead of replacing it."],
@@ -104,7 +104,7 @@ enum BrowserExtensionTools {
             required: ["value"], timeout: 25),
         Definition(
             name: "chrome_key", method: "key", isAction: true,
-            description: "Presses a key (Enter, Escape, Tab, ArrowDown, a letter…) on the focused element of the page, or on an element given by ref, selector or text. The user approves first.",
+            description: "Presses a key (Enter, Escape, Tab, ArrowDown, a letter…) on the focused element of the page, or on an element given by ref, selector or text. The user approves first. Its result already says what the page shows now and what can be used in view (with refs): take the next step from that, without chrome_find first.",
             properties: target.merging(["key": ["type": "string", "description": "The key, e.g. \"Enter\" or \"Escape\"."]]) { mine, _ in mine },
             required: ["key"], timeout: 25),
         Definition(

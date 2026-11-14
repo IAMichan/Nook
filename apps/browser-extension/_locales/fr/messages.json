@@ -100,5 +100,20 @@
   },
   "presenceStop": {
     "message": "Arrêter"
+  },
+  "cursorClick": {
+    "message": "Clique"
+  },
+  "cursorType": {
+    "message": "Écrit"
+  },
+  "cursorScroll": {
+    "message": "Fait défiler"
+  },
+  "cursorKey": {
+    "message": "Appuie sur $1"
+  },
+  "cursorChoose": {
+    "message": "Choisit"
   }
 }

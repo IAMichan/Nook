@@ -57,6 +57,30 @@ in front. When several browsers run the extension, `browser` picks one; otherwis
 approval card says what Nook will do and where. For example: *Click button "Send" · mail.example.com*. Nook takes the
 element's name from the last `chrome_find` (`BrowserExtensionRefs`).
 
+## Watching Nook work
+
+While Nook acts on a page, a cursor in Nook's color glides to what it clicks, types in, chooses or scrolls, and a badge
+under it says what it does, in your language: *Klikt · Verzenden*, *Typt · Lisa de Vries*, *Scrolt ↓*, *Drukt op
+Enter*. A click shows as a short press and a ripple. On the next page the cursor goes on from where it was. It is
+drawn in a closed shadow root, never takes a click itself, and does not glide when you asked for reduced motion.
+
+## Quick, and sure of where it clicks
+
+- **One step at a time, no extra looks.** After every click, key and typing, the extension waits until the page has
+  done what the action caused (a new page loading, a link that opened a tab, a menu or results appearing, never a
+  fixed wait) and sends what the page shows now and what can be used in view, with refs. `chrome_open` and
+  `chrome_scroll` do the same. Nook takes its next step from that, without a `chrome_find` round in between.
+- **The right element.** By text, what you can see wins: an exact name before one that starts with it before one that
+  contains it, in view before off screen, a button or link before a label. Refs, selectors and text also reach into
+  web components (open shadow roots).
+- **Something in the way.** Before a click the extension checks what is really under the cursor. When a cookie banner,
+  dialog or sticky bar covers the target, Nook hears so, with that layer's buttons and their refs, so it can accept or
+  close it first.
+- **Like a person.** Pointer and mouse events land where the cursor is, short text is typed in a few quick steps so
+  search fields and suggestions react, and a link that opens a new tab moves Nook there.
+
+`test/agent.browser.test.js` runs the page agent in Chromium on a checkout page when Playwright is installed.
+
 ## What keeps it safe
 
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions
@@ -136,7 +160,7 @@ Nook's commands ─────────┘                                  
 
 ```sh
 cd apps/browser-extension
-npm test                       # lib/core.js, the manifest and id, the five languages (Node's test runner)
+npm test                       # lib/core.js, the manifest and id, the five languages, the page agent in Chromium (Node's test runner)
 ../../scripts/core-tests.sh --filter BrowserExtensionTests   # the Mac side: host, hub, tools
 ```
 

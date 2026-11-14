@@ -200,15 +200,28 @@ async function perform(method, params, tab) {
     case 'screenshot': return screenshot(tab);
     case 'wait': return waitFor(tab, params);
     case 'console': return consoleMessages(tab, params);
-    case 'find': case 'read': case 'scroll':
+    case 'find': case 'read':
       await use(tab);
       return agent(tab.id, method, params);
+    case 'scroll': {
+      await use(tab);
+      const result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
+      keepCursor(tab.id, result);
+      return result;
+    }
     case 'click': case 'type': case 'key': {
       await use(tab);
       await presence(tab.id);
-      const result = await agent(tab.id, method, params);
-      if (result.ok) await settle(tab.id);
-      return result;
+      const result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
+      keepCursor(tab.id, result);
+      if (!result.ok) return result;
+      // What the action did, and what can be used now: Nook takes its next step from this without looking again.
+      const after = await settle(tab.id);
+      let text = result.text;
+      if (after.opened) text += ` It opened a new tab (tab ${after.tabId}); Nook works there now.`;
+      const look = await glance(after.tabId);
+      if (look) text += '\n\n' + look;
+      return { ...result, text };
     }
     default:
       return { ok: false, error: `Nook's extension does not know "${method}".` };
@@ -243,10 +256,12 @@ async function open(params, tab) {
   }
   await use(tab);
   const loaded = await waitForLoad(tab.id);
+  // What can be used on it goes along, so the next step needs no chrome_find first.
+  const look = await glance(tab.id);
   return {
     ok: true, url: loaded.url,
     text: `Opened ${loaded.title || '(no title)'} | ${loaded.url} in tab ${tab.id}${loaded.status === 'complete' ? '' : ' (still loading)'}. `
-      + 'Use chrome_read for its text or chrome_find for what you can click and type in.'
+      + 'Use chrome_read for its text.' + (look ? '\n\n' + look : ' Use chrome_find for what you can click and type in.')
   };
 }
 
@@ -302,24 +317,61 @@ function waitForLoad(tabId, timeout = LOAD_TIMEOUT) {
     setTimeout(async () => {
       const tab = await chrome.tabs.get(tabId).catch(() => null);
       if (!tab || (tab.status === 'complete' && tab.url && tab.url !== 'about:blank')) finish();
-    }, 300);
+    }, 150);
   });
 }
 
 /**
- * After a click or a key: if the page starts loading, wait for it, so the next look sees the new page. Most clicks
- * load nothing; those return after a short look instead of a fixed wait.
+ * After a click, a key or typing: waits for what it did, so the next look sees it. A new page loading: until it is
+ * there. A link that opened a tab of its own: Nook goes on in that tab. Otherwise until the page stops changing (a
+ * menu opening, results coming in), never a fixed wait.
  */
 async function settle(tabId) {
-  for (const pause of [120, 200]) {
-    await new Promise((resolve) => setTimeout(resolve, pause));
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    if (tab?.status === 'loading') {
-      await waitForLoad(tabId, 10_000);
-      return;
+  let opened = null;
+  const onCreated = (created) => {
+    if (created.openerTabId === tabId) opened = created;
+  };
+  chrome.tabs.onCreated.addListener(onCreated);
+  try {
+    for (const pause of [90, 160]) {
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      if (opened) break;
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (tab?.status === 'loading') {
+        await waitForLoad(tabId, 10_000);
+        return { tabId, navigated: true };
+      }
     }
+  } finally {
+    chrome.tabs.onCreated.removeListener(onCreated);
   }
+  if (opened) {
+    await waitForLoad(opened.id, 10_000);
+    await use(opened);
+    return { tabId: opened.id, opened: true };
+  }
+  await withTimeout(agent(tabId, 'quiet', {}), 2_000);
+  return { tabId };
 }
+
+/** What the user sees on the page now, in short (page/agent.js `glance`); '' when the page does not answer in time. */
+async function glance(tabId) {
+  const look = await withTimeout(agent(tabId, 'glance', {}), 1_500);
+  return look?.ok ? look.text : '';
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([promise.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+}
+
+// Where Nook's cursor was on each tab, so it glides on from there on the next page instead of starting over.
+const cursors = new Map();
+
+function keepCursor(tabId, result) {
+  if (result?.cursor && Number.isFinite(result.cursor.x)) cursors.set(tabId, result.cursor);
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => cursors.delete(tabId));
 
 /**
  * Runs one method of the page agent (page/agent.js) in the tab's main frame. The agent stays in the page until it

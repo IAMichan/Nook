@@ -193,6 +193,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   your Mac whenever the screen does (Strict, or by hand). The model you picked for screen work then reads the page,
   answers itself or gives your external brain a short, filtered note, and fills in forms on the page itself, so what
   you fill in never goes through the cloud. The side panel says how Nook answered.
+- Watch Nook work in your browser: a cursor glides to what Nook clicks, types in or scrolls, with a badge under it that
+  says what it does ("Klikt · Verzenden", "Typt", "Scrolt"). Nook also clicks more surely and needs fewer steps: every
+  action reports what the page shows now, a cookie banner or dialog in the way is named with its buttons, buttons in
+  web components are found, and a link that opens a new tab takes Nook along.
 - Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
   over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
   connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a
