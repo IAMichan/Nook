@@ -2,8 +2,9 @@ import AppKit
 import Contacts
 
 /// Profile photos for the Chats tab, from the photos in Contacts: matched on a chat's phone number or address (what any
-/// app says of the person, `InboxThread.handle`) or, for a chat that says neither, on its name. Read on this Mac only, nothing is fetched from a chat app's
-/// servers, and only with access to Contacts; `requestAccess` asks for it when you click the hint in the Chats tab.
+/// app says of the person, `InboxThread.handle`) or, for a chat that says neither, on its name. Read on this Mac only,
+/// nothing is fetched from a chat app's servers, and only with access to Contacts; `requestAccess` asks for it when you
+/// click the hint in the Chats tab.
 @MainActor
 final class ContactPhotos: ObservableObject {
     static let shared = ContactPhotos()
