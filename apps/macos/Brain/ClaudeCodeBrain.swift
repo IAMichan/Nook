@@ -10,18 +10,37 @@ import Foundation
 enum ClaudeCodeBrain {
     /// Cached path to `claude`, searched once.
     private static var cachedPath: String??
+    /// The login shell search under way, if any.
+    private static var search: Task<String?, Never>?
 
+    /// The path to `claude`, without waiting: the fixed folders are checked right away, and the login shell (nvm, asdf and
+    /// the like) is asked off the main thread, because it can take seconds and `brainReady` reads this on every redraw.
+    /// nil until that answers; Settings redraws once it finds the program.
     static var executable: String? {
         if let cachedPath { return cachedPath }
-        let found = locate()
-        cachedPath = .some(found)
-        return found
+        if let hit = inFolders() {
+            cachedPath = .some(hit)
+            return hit
+        }
+        _ = searchInShell()
+        return nil
+    }
+
+    /// The path to `claude` when a run needs a definite answer: waits for the shell search instead of reporting
+    /// "not installed" while it is still under way.
+    static func resolvedExecutable() async -> String? {
+        if let path = executable { return path }
+        if let cachedPath { return cachedPath }
+        return await searchInShell().value
     }
 
     /// Reset cached path (e.g. after newly installing Claude Code).
-    static func resetLocation() { cachedPath = nil }
+    static func resetLocation() {
+        cachedPath = nil
+        search = nil
+    }
 
-    private static func locate() -> String? {
+    private static func inFolders() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "\(home)/.claude/local/claude",
@@ -32,14 +51,30 @@ enum ClaudeCodeBrain {
             "\(home)/.bun/bin/claude",
             "\(home)/.volta/bin/claude"
         ]
-        if let hit = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return hit }
-        // Via the user's shell, for environments managed by nvm, asdf, etc.
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        if let output = try? SystemControl.runProcess(shell, ["-lc", "command -v claude"]) {
-            let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
-            if path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) { return path }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Starts the login shell search once and caches what it finds. A reset while it runs drops its answer, so a new
+    /// search starts with the next read.
+    private static func searchInShell() -> Task<String?, Never> {
+        if let search { return search }
+        let task = Task.detached(priority: .utility) { shellLookup() }
+        search = task
+        Task { @MainActor in
+            let found = await task.value
+            guard search == task else { return }
+            search = nil
+            cachedPath = .some(found)
+            if found != nil { AppSettings.shared.objectWillChange.send() }
         }
-        return nil
+        return task
+    }
+
+    private nonisolated static func shellLookup() -> String? {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        guard let output = try? SystemControl.runProcess(shell, ["-lc", "command -v claude"]) else { return nil }
+        let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
+        return path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
     /// A conversation for the shared tool loop. Nook's tools go through a text protocol (JSON on its own line), which the
@@ -69,7 +104,7 @@ enum ClaudeCodeBrain {
         }
 
         func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
-            guard let path = ClaudeCodeBrain.executable else {
+            guard let path = await ClaudeCodeBrain.resolvedExecutable() else {
                 throw NookError("Could not find Claude Code on your Mac. Install it (claude.com/product/claude-code), run `claude` in the terminal to log in, and try again.")
             }
             let fullSystem = system + "\n\n" + ClaudeCodeBrain.protocolText(tools, allowWebSearch: allowWebSearch)

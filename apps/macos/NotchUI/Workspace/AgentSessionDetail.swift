@@ -96,6 +96,7 @@ struct AgentSessionDetail: View {
     private func takeFromSidePanel() {
         guard case .live(let session) = selection,
               let delivery = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
+        delivery.keepSnippets(in: composerModel)
         draft = delivery.merged(into: draft)
         composerState.images += delivery.images
         composerFocused = true

@@ -1687,6 +1687,25 @@ private struct ChatAppActions: View {
     }
 }
 
+/// What you are typing to a chat (`ChatsDetail`), held without being observed by the chat: only its field watches it.
+/// Each change is kept as the chat's draft (`ComposerDraftStore` writes it out a moment later), except while the field
+/// changes one of your messages (`draftKey` is nil then).
+@MainActor
+final class ChatReplyState: ObservableObject {
+    /// The key of the chat's draft; nil while the field holds a message of yours being changed.
+    var draftKey: String?
+    @Published var text = "" {
+        didSet {
+            guard text != oldValue, let draftKey else { return }
+            ComposerDraftStore.shared.save(sessionID: draftKey, text: text)
+        }
+    }
+
+    init(draftKey: String?) {
+        self.draftKey = draftKey
+    }
+}
+
 private struct ChatsDetail: View, Equatable {
     let entry: ChatsEntry
     @ObservedObject var capture: ChatCaptureService
@@ -1705,7 +1724,13 @@ private struct ChatsDetail: View, Equatable {
     /// Asked, not watched, as in the tab: each change of the app model (four a second while an agent works) built the
     /// chat's header and answer field again. What the chat can do follows the chat services it watches.
     private var app: AppModel { AppModel.shared }
-    @State private var reply = ""
+    /// What you type, held without being observed (as `NookComposerState`): as state of this view every key drew the
+    /// whole chat again (its header, its messages, what Nook can do here). Only the field watches it (`Observing`).
+    @State private var replyState: ChatReplyState
+    private var reply: String {
+        get { replyState.text }
+        nonmutating set { replyState.text = newValue }
+    }
     @State private var notice: String?
     /// The sends still going to the chat, one after another: each waits for the one before it, so messages arrive in
     /// the order you sent them while the field is free for the next one at once.
@@ -1715,8 +1740,16 @@ private struct ChatsDetail: View, Equatable {
     @Environment(\.chatMediaStage) private var mediaStage
     /// The message the field answers, quoted above it until it is sent or let go.
     @State private var replyingTo: ChatBubble?
-    /// Your message whose text the field changes, shown above it until the change goes or is let go.
-    @State private var editing: ChatBubble?
+    /// Your message whose text the field changes, shown above it until the change goes or is let go. Its text in the
+    /// field is not an unsent answer: while it is set, what the field holds is not kept as the chat's draft.
+    @State private var editingState: ChatBubble?
+    private var editing: ChatBubble? {
+        get { editingState }
+        nonmutating set {
+            editingState = newValue
+            replyState.draftKey = newValue == nil ? Self.draftKey(entry.id) : nil
+        }
+    }
     /// The message whose deletion waits for your choice: for you, or for everyone.
     @State private var deleting: ChatBubble?
     /// Messages you deleted for yourself, which this chat no longer shows.
@@ -1755,6 +1788,7 @@ private struct ChatsDetail: View, Equatable {
         self.onBack = onBack
         _unreadAtOpen = State(initialValue: entry.unread)
         _bubblesMemo = State(initialValue: ChatBubblesMemo.kept(for: entry.id))
+        _replyState = State(initialValue: ChatReplyState(draftKey: Self.draftKey(entry.id)))
     }
 
     /// The open chat is drawn again for its own changes (what it observes) and when it shows another state of its chat;
@@ -1807,7 +1841,7 @@ private struct ChatsDetail: View, Equatable {
     private var abilities: ChatAbilities { app.chatAbilities(route) }
 
     /// The stickers and GIFs in this chat, newest first, for the sticker panel.
-    private var shelfItems: [ChatShelfItem] {
+    private func shelfItems(_ bubbles: [ChatBubble]) -> [ChatShelfItem] {
         bubbles.reversed().compactMap { bubble in
             switch bubble.media {
             case .sticker(let url): return ChatShelfItem(url: url, gif: false)
@@ -1870,7 +1904,7 @@ private struct ChatsDetail: View, Equatable {
         // Made once per redraw: each read filters the hidden messages and lays the outbox over them again.
         let bubbles = self.bubbles
         VStack(alignment: .leading, spacing: 0) {
-            header
+            header(hasMessages: !bubbles.isEmpty)
                 .padding(.bottom, NookTheme.Spacing.md)
             NookDivider()
             // The messages and the field take the whole width, as a chat app's do: theirs on the left edge, yours on the
@@ -1915,7 +1949,8 @@ private struct ChatsDetail: View, Equatable {
                     }
                 }
                 .animation(NookTheme.reveal, value: composer.hasFiles)
-                footer
+                // Drawn again for each key you type, without the chat around it.
+                Observing(replyState) { footer(bubbles: bubbles) }
                     .padding(.top, NookTheme.Spacing.sm)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1966,6 +2001,8 @@ private struct ChatsDetail: View, Equatable {
             app.setChatOnline(entry)
             composer.reset()
             editing = nil
+            // The field's draft key follows the chat before its text does, so one chat's draft is never kept as another's.
+            replyState.draftKey = Self.draftKey(id)
             reply = Self.draft(id) ?? ""
             replyFocused = true
         }
@@ -1979,11 +2016,6 @@ private struct ChatsDetail: View, Equatable {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
             guard note.object is NotchPanel, !replyFocused, mediaStage?.isShowing != true, composer.panel == nil else { return }
             replyFocused = true
-        }
-        // A message's text being changed is not an unsent answer.
-        .onChange(of: reply) { _, text in
-            guard editing == nil else { return }
-            ComposerDraftStore.shared.save(sessionID: Self.draftKey(entry.id), text: text)
         }
         // A file or picture dropped on the chat waits above the field, as one chosen with "+".
         .composerDrop(of: [.fileURL, .image], $composer.drop) { providers in
@@ -2134,8 +2166,9 @@ private struct ChatsDetail: View, Equatable {
             return
         }
         notice = nil
-        reply = ""
+        // The change is let go first, so the emptied field is the chat's draft again.
         withAnimation(NookTheme.reveal) { editing = nil }
+        reply = ""
         enqueue {
             do {
                 try await app.editInChat(bubble, text: text, route: route, name: entry.name)
@@ -2183,7 +2216,7 @@ private struct ChatsDetail: View, Equatable {
 
     /// Who and where on top: the picture, the name, and under it the app, the group's people, someone typing, and where
     /// the chat stands; opening the app and the rest of the actions on the right. The same for every app.
-    private var header: some View {
+    private func header(hasMessages: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
             if let onBack { PanelBackButton(action: onBack) }
             // The face and the name open the chat's info, as in a chat app.
@@ -2216,7 +2249,7 @@ private struct ChatsDetail: View, Equatable {
                             .lineLimit(1)
                             .transition(.opacity)
                     } else {
-                        headerDetails
+                        headerDetails(hasMessages: hasMessages)
                     }
                 }
                 .animation(NookTheme.reveal, value: typing.line(entry.id))
@@ -2248,7 +2281,7 @@ private struct ChatsDetail: View, Equatable {
 
     /// The app (and whether Nook reads it or only saw its notifications), the group's people, and where it stands.
     @ViewBuilder
-    private var headerDetails: some View {
+    private func headerDetails(hasMessages: Bool) -> some View {
         // A chat a bridge reads is the app's own; any other is what its notifications showed.
         Text(route == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appLine)
             .font(NookTheme.TextStyle.detail)
@@ -2263,7 +2296,7 @@ private struct ChatsDetail: View, Equatable {
             }
         }
         // Read but not new: where it stands, small, instead of a strip above the answer field.
-        if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
+        if !entry.read.isUnread && !entry.lastIsMine && hasMessages {
             headerDot
             ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                            markReadInApp: { app.markChatReadInApp(entry) })
@@ -2320,13 +2353,13 @@ private struct ChatsDetail: View, Equatable {
     /// you to read before it goes anywhere. Where Nook can write, the field takes more than text, as the app's own does:
     /// photos, videos, GIFs, stickers, files, a voice message, a poll, a place, a contact, an emoji.
     @ViewBuilder
-    private var footer: some View {
+    private func footer(bubbles: [ChatBubble]) -> some View {
         let route = self.route
         let sends = app.chatSends(route)
         // Something new and its steps sit in the tray above the box, as an agent's queued messages do; once read in
         // Nook, where it stands moves to the header, so the tray is gone.
         let field = ChatReplyField(
-            text: $reply, notice: $notice, focus: $replyFocused,
+            text: $replyState.text, notice: $notice, focus: $replyFocused,
             placeholder: route == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
             sendSymbol: route == nil ? "doc.on.doc" : "arrow.up",
             sendLabel: route == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
@@ -2336,8 +2369,10 @@ private struct ChatsDetail: View, Equatable {
                 ?? replyingTo?.quote(contact: entry.name),
             cancelQuote: {
                 withAnimation(NookTheme.reveal) {
-                    if editing != nil { reply = "" }
+                    // The change is let go first, so the emptied field is the chat's draft again.
+                    let wasEditing = editing != nil
                     editing = nil
+                    if wasEditing { reply = "" }
                     replyingTo = nil
                 }
             },
@@ -2379,13 +2414,13 @@ private struct ChatsDetail: View, Equatable {
                 paste: { composer.paste() },
                 leading: {
                     ChatAttachMenu(model: composer, sends: sends)
-                    ChatEmojiButton(text: $reply)
+                    ChatEmojiButton(text: $replyState.text)
                 },
                 above: {
                     // Only while the sticker shelf is open: this is built with every key you type, and finding the
                     // stickers walks the whole chat.
                     ChatComposerPanels(model: composer, sends: sends,
-                                       chatStickers: composer.panel == .stickers ? shelfItems : []) { sendItem($0) }
+                                       chatStickers: composer.panel == .stickers ? shelfItems(bubbles) : []) { sendItem($0) }
                 },
                 idle: {
                     ChatMicButton(recorder: composer.recorder) { notice = $0.localizedDescription }

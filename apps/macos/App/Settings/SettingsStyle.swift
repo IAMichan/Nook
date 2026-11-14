@@ -76,7 +76,7 @@ extension SettingsSection {
         case .pullRequests: return "arrow.triangle.branch"
         case .chats: return "bubble.left.and.bubble.right"
         case .connections: return "person.crop.circle.badge.checkmark"
-        case .iphone: return "iphone"
+        case .iphone: return "laptopcomputer.and.iphone"
         case .machines: return "server.rack"
         case .privacy: return "hand.raised"
         case .maintenance: return "wrench.and.screwdriver"

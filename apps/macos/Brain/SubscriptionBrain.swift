@@ -12,25 +12,43 @@ import Foundation
 /// whole conversation is sent again each round, so nothing is kept on disk between calls.
 @MainActor
 enum SubscriptionBrain {
-    /// The agent's program on this Mac: as the Agents page finds it for the agents Nook runs, else searched once.
+    /// The agent's program on this Mac: as the Agents page finds it for the agents Nook runs, else searched once. Never
+    /// waits: the login shell is asked off the main thread and this stays nil until it answers (`brainReady` reads it on
+    /// every redraw). Claude Code keeps its own lookup in `ClaudeCodeBrain`, which works the same way.
     static func executable(_ provider: AIProvider) -> String? {
         guard let command = provider.cliCommand else { return nil }
-        if provider == .claudeCode { return ClaudeCodeBrain.executable }
         if let kind = provider.subscriptionAgent, let path = AppModel.shared.history.executables[kind] { return path }
+        if hasOwnLookup(provider) { return ClaudeCodeBrain.executable }
         if let cached = located[command] { return cached }
         if let hit = inFolders(command) {
             located[command] = .some(hit)
             return hit
         }
-        searchInShell(command)
+        _ = searchInShell(command)
         return nil
     }
 
+    /// The program when a run needs a definite answer: waits for the shell search instead of reporting "not installed"
+    /// while it is still under way.
+    static func resolvedExecutable(_ provider: AIProvider) async -> String? {
+        if let path = executable(provider) { return path }
+        if hasOwnLookup(provider) { return await ClaudeCodeBrain.resolvedExecutable() }
+        guard let command = provider.cliCommand else { return nil }
+        if let cached = located[command] { return cached }
+        return await searchInShell(command).value
+    }
+
+    /// Claude Code is found by `ClaudeCodeBrain`, which the brain's own Claude Code runs share.
+    private static func hasOwnLookup(_ provider: AIProvider) -> Bool { provider == .claudeCode }
+
     /// Search again, e.g. after installing an agent.
-    static func resetLocations() { located = [:] }
+    static func resetLocations() {
+        located = [:]
+        searches = [:]
+    }
 
     private static var located: [String: String?] = [:]
-    private static var searching: Set<String> = []
+    private static var searches: [String: Task<String?, Never>] = [:]
 
     private static func inFolders(_ command: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -40,18 +58,19 @@ enum SubscriptionBrain {
     }
 
     /// Asks the user's login shell (nvm, asdf, uv and the like) off the main thread: a login shell can take seconds.
-    /// Settings redraws once the program is found.
-    private static func searchInShell(_ command: String) {
-        guard !searching.contains(command) else { return }
-        searching.insert(command)
-        Task.detached(priority: .utility) {
-            let found = shellLookup(command)
-            await MainActor.run {
-                located[command] = .some(found)
-                searching.remove(command)
-                if found != nil { AppSettings.shared.objectWillChange.send() }
-            }
+    /// Settings redraws once the program is found. A reset while it runs drops its answer.
+    private static func searchInShell(_ command: String) -> Task<String?, Never> {
+        if let running = searches[command] { return running }
+        let task = Task.detached(priority: .utility) { shellLookup(command) }
+        searches[command] = task
+        Task { @MainActor in
+            let found = await task.value
+            guard searches[command] == task else { return }
+            searches[command] = nil
+            located[command] = .some(found)
+            if found != nil { AppSettings.shared.objectWillChange.send() }
         }
+        return task
     }
 
     private nonisolated static func shellLookup(_ command: String) -> String? {
@@ -110,7 +129,7 @@ enum SubscriptionBrain {
         }
 
         func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
-            guard let path = SubscriptionBrain.executable(provider) else {
+            guard let path = await SubscriptionBrain.resolvedExecutable(provider) else {
                 throw NookError(tr("brain.cli.notInstalled", provider.title))
             }
             let searches = allowWebSearch && provider.cliSearchesWeb

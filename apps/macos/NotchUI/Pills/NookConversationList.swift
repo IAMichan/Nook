@@ -324,7 +324,9 @@ private struct NookRow: View, Equatable {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+        // Read once: it searches the last answer for citations.
+        let preview = conversation.preview
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(conversation.title)
                     .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
@@ -336,7 +338,7 @@ private struct NookRow: View, Equatable {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)
             }
-            Text(conversation.preview.isEmpty ? statusText : conversation.preview)
+            Text(preview.isEmpty ? statusText : preview)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)

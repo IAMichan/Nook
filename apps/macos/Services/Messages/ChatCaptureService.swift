@@ -299,6 +299,9 @@ final class ChatCaptureService: ObservableObject {
             startWhenLoaded = false
             start()
         }
+        let waiters = loadWaiters
+        loadWaiters = []
+        for waiter in waiters { waiter.resume() }
     }
 
     /// Every hour while Nook runs: the archive gives free room back to the disk and tidies its index (`ChatStore.maintain`),
@@ -316,6 +319,15 @@ final class ChatCaptureService: ObservableObject {
 
     /// `start` came before the inbox was read.
     private var startWhenLoaded = false
+    /// Bridge reads that came in before the inbox was read, waiting for it (`untilLoaded`).
+    private var loadWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Returns once the inbox is read: at once after launch, else when the background read is in. For a bridge that
+    /// looks at the inbox while it reads (`WhatsAppGatewayBridge`), so it never reads it on the main thread itself.
+    func untilLoaded() async {
+        guard !loaded else { return }
+        await withCheckedContinuation { loadWaiters.append($0) }
+    }
 
     /// The inbox for something that reads it once and acts on it (a tool of the brain, a search, sending a reply): read
     /// right now when the background read is not done yet, so it never finds the empty inbox of the first moment after
@@ -359,8 +371,9 @@ final class ChatCaptureService: ObservableObject {
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = nil
         armTimer()
+        lastPlan = EnergyMonitor.shared.plan
         planWatch = EnergyMonitor.shared.$plan.removeDuplicates().receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.armTimer() }
+            .sink { [weak self] plan in self?.planChanged(plan) }
         Task {
             await poll()
             await pollBridges()
@@ -379,6 +392,44 @@ final class ChatCaptureService: ObservableObject {
                 await self?.pollTick()
             }
         }
+    }
+
+    /// The energy plan the bridges' turns were last set by (`planChanged`).
+    private var lastPlan: EnergyPlan?
+
+    /// The energy plan changed: the tick follows it, and a bridge whose turn a slower plan pushed out gets it sooner.
+    /// Back from a screen nobody saw (displays asleep, screen locked), every bridge that works reads now, so what came in
+    /// meanwhile is there when you look; otherwise a turn is only brought forward to what the quicker plan allows, so a
+    /// plan that changes often does not set off a read of every app each time.
+    private func planChanged(_ plan: EnergyPlan) {
+        armTimer()
+        guard let last = lastPlan, last != plan else { lastPlan = plan; return }
+        lastPlan = plan
+        guard plan.slowdown < last.slowdown || (last.unseen && !plan.unseen) else { return }
+        let now = Date()
+        for bridge in bridges where bridgeFailures[bridge.bridgeID] == nil {
+            let id = bridge.bridgeID
+            guard let due = bridgeDue[id] else { continue }
+            if last.unseen && !plan.unseen {
+                bridgeDue[id] = nil
+            } else {
+                bridgeDue[id] = min(due, now.addingTimeInterval(Self.paced(bridge.interval, plan: plan, local: bridge.readsLocally)))
+            }
+        }
+        Task { await pollBridges() }
+    }
+
+    /// While nobody sees the screen, an app read over the network waits at least this long between two reads.
+    static let unseenRemoteGap: TimeInterval = 15 * 60
+
+    /// The time between two reads of a bridge under the energy plan, the same rule for every app: its usual interval
+    /// stretched by the plan's slowdown, and while nobody sees the screen (displays asleep, screen locked) at least
+    /// `unseenRemoteGap` for an app read over the network. Its notifications still bring a quick read (`nudge`), and back
+    /// at the screen it reads at once (`planChanged`). A database on this Mac costs a look at its date: it only slows down.
+    nonisolated static func paced(_ interval: TimeInterval, plan: EnergyPlan, local: Bool) -> TimeInterval {
+        let slowed = interval * plan.slowdown
+        guard plan.unseen, !local else { return slowed }
+        return max(slowed, unseenRemoteGap)
     }
 
     private var lastPollTime: Date = .distantPast
@@ -586,10 +637,17 @@ final class ChatCaptureService: ObservableObject {
     /// Reads a bridge now and returns once what it brought is in the inbox (after the read going on, if one is): a chat
     /// card asked for shows the chat as its app has it this moment.
     func readAndWait(_ bridge: ChatBridge) async {
-        while reading.contains(bridge.bridgeID) { try? await Task.sleep(for: .milliseconds(50)) }
+        // Woken when the read going on ends (`read`), not by looking every few milliseconds; another read can start in
+        // between, so it looks again.
+        while reading.contains(bridge.bridgeID) {
+            await withCheckedContinuation { readWaiters[bridge.bridgeID, default: []].append($0) }
+        }
         reading.insert(bridge.bridgeID)
         await read(bridge)
     }
+
+    /// Who waits for a bridge's read to end (`readAndWait`), by `bridgeID`.
+    private var readWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot
     /// be read: Slack needs no disk access. Each bridge reads on its own: a slow one (a web service that takes seconds to
@@ -597,6 +655,7 @@ final class ChatCaptureService: ObservableObject {
     func pollBridges() async {
         var started: [Task<Void, Never>] = []
         let watched = watchedApps()
+        let plan = EnergyMonitor.shared.plan
         for bridge in bridges {
             // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
             // quiet tick every second costs no redraw.
@@ -618,7 +677,8 @@ final class ChatCaptureService: ObservableObject {
             let id = bridge.bridgeID
             guard !reading.contains(id) else { continue }
             if let due = bridgeDue[id], due > Date() { continue }
-            let interval = watches(bridge, watched) ? min(bridge.interval, Self.watchGap) : bridge.interval
+            let usual = watches(bridge, watched) ? min(bridge.interval, Self.watchGap) : bridge.interval
+            let interval = Self.paced(usual, plan: plan, local: bridge.readsLocally)
             bridgeDue[id] = Date().addingTimeInterval(catchUp.next(id).map { min(interval, $0) } ?? interval)
             reading.insert(id)
             started.append(Task { await self.read(bridge) })
@@ -634,6 +694,10 @@ final class ChatCaptureService: ObservableObject {
         defer {
             reading.remove(bridge.bridgeID)
             if readAgain.remove(bridge.bridgeID) != nil { readNow(bridge) }
+            // Read again at once: who waits, waits for that one too.
+            if !reading.contains(bridge.bridgeID), let waiters = readWaiters.removeValue(forKey: bridge.bridgeID) {
+                for waiter in waiters { waiter.resume() }
+            }
         }
         let started = generation
         // Collecting switched on or off meanwhile makes a bridge's read stale; an app that reads on its own (WhatsApp's
@@ -642,7 +706,11 @@ final class ChatCaptureService: ObservableObject {
         do {
             let chats = try await bridge.read()
             guard current() else { return }
-            ensureLoaded()
+            // Merged only into the inbox as read from disk. A read that comes before the background load is done (the
+            // linked phone answers at launch) waits for it, instead of reading the whole inbox again here on the main
+            // thread and holding it on the archive meanwhile.
+            await untilLoaded()
+            guard current() else { return }
             // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
             let before = inbox
             var merged = inbox
@@ -1329,9 +1397,15 @@ final class ChatCaptureService: ObservableObject {
                 guard let first = thread.messages.first?.date else { continue }
                 if oldestStored[thread.id].map({ first < $0 }) ?? true { oldestStored[thread.id] = first }
             }
-            let write: @Sendable (ChatStore) -> Void = { store in
-                // A write that failed leaves the archive as it was: the next one writes everything again.
-                if !store.apply(from: previous, to: inbox) { store.apply(from: nil, to: inbox) }
+            let write: @Sendable (ChatStore) -> Void = { [weak self] store in
+                // A write that failed leaves the archive as it was (one transaction): the whole inbox is written instead.
+                if store.apply(from: previous, to: inbox) || store.apply(from: nil, to: inbox) { return }
+                // Neither went in, yet `lastSaved` already says this inbox is on disk, and every later save would write
+                // only what changed since: what this one held would never reach the archive. Forgotten, the next save
+                // writes everything. Also when a newer save took its place meanwhile: that one wrote only what changed
+                // since this inbox, so it lacks the same.
+                let service = self
+                DispatchQueue.main.async { MainActor.assumeIsolated { service?.lastSaved = nil } }
             }
             if wait { archive.writeNow(write) } else { archive.write(write) }
             return

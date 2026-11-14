@@ -55,6 +55,25 @@ extension AppModel {
 
     /// Pending proactive offer awaiting response, displayed temporarily in Today.
 
+    /// Runs `thinkAlongTick` every 10 seconds while Think Along is on, and not at all while it is off: a timer that only
+    /// found the setting off woke Nook thousands of times a day for nothing. Zero cost otherwise; the model is only
+    /// invoked when Think Along determines assistance is genuinely helpful.
+    func startThinkAlongWatch() {
+        settings.$autoWatch
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                guard let self else { return }
+                self.watchTimer?.invalidate()
+                self.watchTimer = nil
+                guard on else { return }
+                self.watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
+                    Task { @MainActor in self?.thinkAlongTick() }
+                }
+            }
+            .store(in: &bag)
+    }
+
     /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     func thinkAlongTick() {
         // Not while you share your screen or sit in a meeting and chose quiet for it.

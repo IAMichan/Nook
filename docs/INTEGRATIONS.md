@@ -51,12 +51,15 @@ needs a column in that matrix.
 | Connectors | everything registered with `SourceCatalog.register` | `SourceCatalog` (metadata, tools, aliases, intents) |
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
+| Browsers (Nook's extension) | Google Chrome (and Beta, Canary), Chromium, Brave, Microsoft Edge, Arc, Vivaldi. Not Safari (needs an app extension built with Xcode) or Firefox (other native messaging locations and manifest keys); their tabs are read with `read_browser_tab` | `apps/browser-extension` (one extension for every Chromium browser), `BrowserExtensionHost.browsers` (where each browser looks for the host), `BrowserExtensionTools` (the `chrome_*` tools for Nook Chat and every coding agent through `nook_use`) ([`BROWSER-EXTENSION.md`](BROWSER-EXTENSION.md)) |
 
 ## Side panel to composer
 
-Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pull request, an element pointed at in the
-browser, a remark on a file's line) goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. Both
-composers take it (`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
+Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pull request, a remark on a file's line)
+goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. An element selected in the browser goes the
+same way as a snippet tile (`ContextRef.Kind.element`: its markup, selector and text, sent in the context envelope and
+marked as untrusted page content); outside a session it becomes the chat's attachment. Both composers take it
+(`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
 
 ## A session's pull requests in the side panel
 
@@ -495,6 +498,7 @@ check the agent's protocol before you write `–`.
 | Answers its own permission prompts from a terminal session (`PermissionRequest` card in the notch and the session view) | ✓ (`PermissionRequest`) | ✓ (`PermissionRequest`) | – (its `BeforeTool` hook can only deny or force a prompt: `allow` does not skip Gemini's dialog; sessions Nook runs get them over ACP) | – (same: a hook's `allow` does not skip agy's prompt; sessions Nook runs get them over ACP) | ✓ (plugin: `permission.asked`, answered through OpenCode's reply route; its own prompt stays, the first answer counts) | – (a hook's `allow` does not skip Cursor's own approval; sessions Nook runs get them over ACP) | – (no hooks; sessions Nook runs get them) | – (same) | – (same) |
 | Progress in the notch from a terminal (hooks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no hooks) | – (no hooks) | – (no hooks) |
 | Past sessions (`ProviderCapabilities.pastSessions`) | ✓ (disk) | ✓ (disk) | ✓ (disk, `.json` and from 0.33 `.jsonl`) | ✓ (disk) | ✓ (`session/list`) | ✓ (disk: `~/.cursor/chats` and `agent-transcripts`; its ACP server has no `session/list`) | ✓ (`session/list` when Grok offers it in `initialize`, as for every ACP agent: it shares their capabilities, `pastSessions: .agent`) | – (only the sessions Nook ran; Pi's own session files are not read yet) | ✓ (`session/list` when the agent offers it) |
+| A transcript that grows (a session in a terminal, polled every 2 seconds while it works, and the history scan) is read on from where the last read stopped, never again whole; a file that shrank or was replaced under the same name is read from its start (`AgentTranscript.recent`, `HistoryScanner.readLines`/`readChunks`) | ✓ | ✓ | ✓ (the `.jsonl` log of 0.33 and newer is replayed on, `GeminiChatLog.Log`; the single `.json` file of older versions is rewritten whole, so it is read whole, only when it changed) | ✓ | – (no transcript on disk) | ✓ (`agent-transcripts`; `meta.json` and `store.db` are read again when the transcript changed) | – (Nook reads no Grok transcripts) | – (Nook reads no Pi session files) | – (their sessions come from `session/list`) |
 | ⌘F finds in a session read from its transcript (a terminal or past session): your messages, the answers and notices, also inside folds, which open on the match (`TranscriptSearch`, `TimelineFindBar` in `TranscriptConversation`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Resume a past session | ✓ | ✓ | ✓ | ✓ (in the Antigravity app while it runs; otherwise in Nook, a new conversation that starts from its transcript) | ✓ | ✓ | ✓ | ✓ (`--session` with the session file, for sessions Nook ran) | ✓ (`session/load`) |
 | A session Nook runs shows the turns written outside Nook (the agent's own app or terminal, also while it works there), with their steps (`TranscriptFollow`) | ✓ (the Claude app too) | ✓ | ✓ | ✓ (messages and thinking; its transcript has no steps) | – (no transcript on disk) | ✓ (from `agent-transcripts/<id>/<id>.jsonl`, under the id of its ACP session, with its steps: Claude Code's blocks under `role`) | – (same as OpenCode) | – (same) | – (same) |
@@ -589,7 +593,9 @@ held back for an agent that ignores it then (Kiro).
 
 Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give
 messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,
-thoughts and its `toolCalls` as the same steps (with outcome, output and the lines an edit changed).
+thoughts and its `toolCalls` as the same steps (with outcome, output and the lines an edit changed). Every one of
+them is read on from where the last read stopped while the file grows (Gemini CLI's log is replayed on from there), so a
+long session that is still working costs only its new lines.
 
 Both kinds of session draw their conversation with the same views, so a session reads the same whichever agent runs it
 and whether Nook or a terminal runs it: messages are `TranscriptUserMessage` and `TranscriptReply`

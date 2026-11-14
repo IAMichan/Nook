@@ -6,8 +6,9 @@ import AppKit
 /// you pushed to last until you pick others, remembered, each tab marked when something runs or fails, and a "+" that
 /// searches the rest), then the state filter (all, running, failed) and a chip per workflow with the mark of its newest
 /// run, so "did the promote go through" is one click. A run opens beside the list when the page is wide enough, else in its place
-/// (`WorkflowRunDetail`): its jobs, each job's steps and log, and re-run or cancel. While a run in sight still runs, the
-/// list is read again every few seconds; otherwise every minute.
+/// (`WorkflowRunDetail`): its jobs, each job's steps and log, and re-run or cancel. The play button in the header (or a
+/// workflow chip's menu) opens `WorkflowDispatchPanel` to start a workflow by hand. While a run in sight still runs, the
+/// list is read again every few seconds; otherwise every half minute, as a conditional read.
 struct ActionsPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = ActionsStore.shared
@@ -17,6 +18,8 @@ struct ActionsPanel: View {
     /// The state filter is kept while Nook runs, so a visit to another tab and back finds it as it was left.
     @State private var filter: WorkflowRunFilter = ActionsPanel.keptFilter
     @State private var openRun: WorkflowRun?
+    /// The workflow the run form is open for; nil while it is closed.
+    @State private var dispatching: Int?
 
     /// The side panel, as on the pull requests page: half the page at first, as wide as you drag it after.
     @AppStorage("nook.actions.panelWidth") private var panelWidth: Double = 0
@@ -55,6 +58,7 @@ struct ActionsPanel: View {
         }
         .onChange(of: store.repo) { _, _ in
             openRun = nil
+            dispatching = nil
             filter = .all
         }
         .onChange(of: filter) { _, value in ActionsPanel.keptFilter = value }
@@ -82,6 +86,12 @@ struct ActionsPanel: View {
                         NSWorkspace.shared.open(url)
                     }
                 }
+                if store.repo != nil {
+                    NookIconButton(systemName: "play", label: dispatchLabel, size: 28) {
+                        dispatching = dispatching == nil ? defaultDispatchWorkflow : nil
+                    }
+                    .disabled(defaultDispatchWorkflow == nil)
+                }
                 NookIconButton(systemName: "arrow.clockwise", label: tr("actions.refresh"), size: 28) {
                     Task { await store.refresh() }
                 }
@@ -100,6 +110,14 @@ struct ActionsPanel: View {
                 } else if store.repo == nil {
                     WSEmptyState(symbol: "play.circle", title: tr("actions.pickRepo"), message: tr("actions.pickRepoDetail"))
                 } else {
+                    if let workflow = dispatching, let info = store.dispatchInfo, info.inputs[workflow] != nil {
+                        WorkflowDispatchPanel(store: store, info: info, workflowID: workflow, onClose: { dispatching = nil }) { run in
+                            dispatching = nil
+                            filter = .all
+                            if let run { openRun = run }
+                        }
+                        .id((store.repo ?? "") + "|\(workflow)")
+                    }
                     content(selected: selected)
                 }
             }
@@ -107,12 +125,17 @@ struct ActionsPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Every few seconds while something runs, so a promote or a CI run is followed live; else every minute.
         .task(id: (store.repo ?? "") + "|" + String(store.workflowID ?? 0)) {
-            await store.refreshRepositories()
+            // The repositories you pushed to are only waited for when there is no repository to read yet; else the
+            // runs are read at the same time.
+            let repositories = Task { await store.refreshRepositories() }
+            if store.repo == nil { await repositories.value }
             while !Task.isCancelled {
                 await store.refresh()
                 // The other tabs after the open one, so each says how it stands and opens at once.
                 Task { await store.peekRecent() }
-                try? await Task.sleep(nanoseconds: store.hasActiveRuns ? 8_000_000_000 : 60_000_000_000)
+                // Polls are conditional reads (an unchanged list is a 304 outside the rate limit), so an idle list is
+                // checked every half minute.
+                try? await Task.sleep(nanoseconds: store.hasActiveRuns ? 6_000_000_000 : 30_000_000_000)
             }
         }
         // ⇧⌘[ and ⇧⌘] go to the repository tab on the left or right, as they go through the chats on Chats.
@@ -154,12 +177,30 @@ struct ActionsPanel: View {
                                     store.select(workflow: workflow.id)
                                 }
                                 .help(workflow.path)
+                                .contextMenu {
+                                    if store.dispatchInfo?.inputs[workflow.id] != nil {
+                                        Button(tr("actions.dispatch.open")) { dispatching = workflow.id }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// The workflow the run form opens on: the one the list shows when it can be started by hand, else the first that
+    /// can. Nil when none can (or it is not known yet).
+    private var defaultDispatchWorkflow: Int? {
+        guard let info = store.dispatchInfo else { return nil }
+        if let shown = store.workflowID, info.inputs[shown] != nil { return shown }
+        return store.workflows.first { info.inputs[$0.id] != nil }?.id
+    }
+
+    private var dispatchLabel: String {
+        if store.dispatchInfo == nil { return tr("actions.dispatch.open") }
+        return tr(defaultDispatchWorkflow == nil ? "actions.dispatch.none" : "actions.dispatch.open")
     }
 
     /// What the repository picker offers besides the tabs: those you pushed to, typed in, of your pull requests, watched.

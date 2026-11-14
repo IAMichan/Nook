@@ -236,7 +236,7 @@ enum ComposerChipArt {
     static func details(_ ref: ContextRef) -> String {
         switch ref.kind {
         case .file, .pullRequest, .model: return kindName(ref.kind) + "\n" + ref.id
-        case .session, .excerpt, .source, .skill, .paste, .secret: return kindName(ref.kind) + "\n" + ref.label
+        case .session, .excerpt, .source, .skill, .paste, .secret, .element: return kindName(ref.kind) + "\n" + ref.label
         }
     }
 
@@ -251,6 +251,7 @@ enum ComposerChipArt {
         case .paste: return tr("compose.chip.paste")
         case .model: return tr("compose.chip.model")
         case .secret: return tr("compose.chip.secret")
+        case .element: return tr("compose.chip.element")
         }
     }
 
@@ -266,6 +267,7 @@ enum ComposerChipArt {
         case .paste: return "doc.on.clipboard"
         case .model: return "cpu"
         case .secret: return "key.fill"
+        case .element: return "chevron.left.forwardslash.chevron.right"
         }
     }
 

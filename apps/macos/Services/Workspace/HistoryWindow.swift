@@ -49,6 +49,27 @@ enum HistoryWindow {
         min(max(0, start), max(0, turnCount - 1))
     }
 
+    /// Turns at the end of a conversation that are always drawn in full, never by a lazy stack.
+    static let eagerTurns = 2
+    /// Rows at least drawn in full at the end (a few short turns would not fill a view).
+    static let eagerMinRows = 12
+    /// Rows at most drawn in full at the end, so a turn still at work with hundreds of rows stays cheap to lay out.
+    static let eagerMaxRows = 48
+
+    /// How many of the last rows of the window starting at turn `start` are drawn in full (a plain stack), the rest
+    /// lazily. A lazy stack whose rows change height (a turn that folds, an answer that streams, a narrower column) can
+    /// come to rest drawing none of its rows where the view stands, even at its very end, and scrolling or making the
+    /// scroll view again does not reliably bring them back (seen in the app on 2026-11-13: 68 rows, none drawn, at the
+    /// end, through rebuilds; reproduced offscreen with a bare `LazyVStack`). Rows drawn in full are always there, so the
+    /// end of a conversation, where you nearly always are, can never be blank, and a recovery that scrolls to it always
+    /// lands on rows. The last `eagerTurns` turns, at least `eagerMinRows` rows, at most `eagerMaxRows`.
+    static func eagerRows(rowsPerTurn: [Int], start: Int, minRows: Int = eagerMinRows, maxRows: Int = eagerMaxRows) -> Int {
+        let shown = rowsPerTurn.dropFirst(max(0, start))
+        let total = shown.reduce(0, +)
+        let lastTurns = shown.suffix(eagerTurns).reduce(0, +)
+        return min(total, min(maxRows, max(minRows, lastTurns)))
+    }
+
     /// The index of the first row drawn: every row of the turns before `start`.
     static func firstRow(rowsPerTurn: [Int], start: Int) -> Int {
         rowsPerTurn.prefix(max(0, start)).reduce(0, +)

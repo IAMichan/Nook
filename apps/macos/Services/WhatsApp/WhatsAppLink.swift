@@ -197,7 +197,7 @@ final class WhatsAppLink: ObservableObject {
     /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
     @Published private(set) var inbox: WAInbox {
         didSet {
-            if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger, to: WAPollStore.file(account: account)) }
+            if inbox.pollLedger != oldValue.pollLedger { savePolls() }
             if inbox.receiptLedger.revision != oldValue.receiptLedger.revision { saveReceipts() }
             keepUnread()
         }
@@ -235,6 +235,7 @@ final class WhatsAppLink: ObservableObject {
     /// The gateway's contact list as it last answered.
     private var gatewayContacts: [WAContact] = []
     private var receiptSave: Task<Void, Never>?
+    private var pollSave: Task<Void, Never>?
 
     /// Writes the kept ticks a moment after the last change: a burst of receipts is one write.
     private func saveReceipts() {
@@ -246,6 +247,38 @@ final class WhatsAppLink: ObservableObject {
             let file = WAReceiptStore.file(account: account)
             await Task.detached(priority: .utility) { WAReceiptStore.save(ledger, to: file) }.value
         }
+    }
+
+    /// Writes the kept votes a moment after the last change, off the main thread, as `saveReceipts` does: the ledger is
+    /// sorted, encoded and written whole, and a poll's burst of votes is one write.
+    private func savePolls() {
+        pollSave?.cancel()
+        pollSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            let ledger = inbox.pollLedger
+            let file = WAPollStore.file(account: account)
+            await Task.detached(priority: .utility) { WAPollStore.save(ledger, to: file) }.value
+        }
+    }
+
+    /// Runs a change on a copy of the inbox and writes it back only when something changed, as `ingest` does. A mutating
+    /// call on the published inbox publishes and runs its `didSet` even when it changes nothing (the same tick twice, a
+    /// reaction on a message Nook does not keep, a chat already read), and each publish makes the shared inbox read every
+    /// chat of this account again (`WhatsAppGatewayBridge`). The copy is compared, not the call's answer: a receipt that
+    /// changes no chat can still keep ticks for later (`WAInbox.receiptLedger`, its early receipts).
+    @discardableResult
+    private func changeInbox<Result>(_ change: (inout WAInbox) -> Result) -> Result {
+        var next = inbox
+        let result = change(&next)
+        if next != inbox { inbox = next }
+        return result
+    }
+
+    /// A chat in the inbox counts nothing new any more: written only when it did.
+    private func markInboxRead(_ key: String) {
+        guard (inbox.conversations[WAJID.normalized(key)]?.unread ?? 0) > 0 else { return }
+        changeInbox { $0.markRead(key) }
     }
 
     /// The name a chat on the phone shows: for a person a saved contact's, as WhatsApp shows it, else what the phone's
@@ -445,8 +478,9 @@ final class WhatsAppLink: ObservableObject {
     func remove() {
         let provider = provider ?? WhatsAppSettings.makeProvider(account: account)
         stop(forget: true)
-        // The ticks written a moment after the last change would bring its file back.
+        // The ticks and votes written a moment after the last change would bring their files back.
         receiptSave?.cancel()
+        pollSave?.cancel()
         WhatsAppSettings.forget(account: account)
         if let provider { Task { await provider.removeAccount() } }
     }
@@ -559,7 +593,10 @@ final class WhatsAppLink: ObservableObject {
 
     /// Ticks (of 5 s) between two status checks of a gateway that is not linked while nothing shows its QR code or
     /// status: once a minute at full speed, stretched by the energy plan (six minutes while nobody is at the Mac).
-    nonisolated static func unlinkedGap(slowdown: Double) -> Int { max(1, Int((12 * slowdown).rounded())) }
+    nonisolated static func unlinkedGap(slowdown: Double) -> Int { paced(12, slowdown: slowdown) }
+
+    /// A gap of `ticks` stretched by the energy plan's slowdown, one tick at least.
+    nonisolated static func paced(_ ticks: Int, slowdown: Double) -> Int { max(1, Int((Double(ticks) * slowdown).rounded())) }
 
     private func onTick() {
         tick += 1
@@ -572,9 +609,14 @@ final class WhatsAppLink: ObservableObject {
             }
             refresh()
         } else {
-            if tick % 12 == 0 { refresh() }
-            // With the webhook: half a minute apart from the status check, so the two never ask the gateway at once.
-            let due = webhookAlive ? tick % Self.safetyPollGap == Self.safetyPollGap / 2 : tick % Self.pollGap == 0
+            // Both follow the energy plan, as the capture service's turns do: a status check once a minute and a poll every
+            // ten seconds at full speed, six times further apart while nobody is at the Mac. The webhook still brings
+            // each message the moment it comes.
+            let slowdown = EnergyMonitor.shared.plan.slowdown
+            if tick % Self.paced(12, slowdown: slowdown) == 0 { refresh() }
+            // With the webhook: half a gap apart from the status check, so the two never ask the gateway at once.
+            let safety = Self.paced(Self.safetyPollGap, slowdown: slowdown)
+            let due = webhookAlive ? tick % safety == safety / 2 : tick % Self.paced(Self.pollGap, slowdown: slowdown) == 0
             if due { poll() }
         }
     }
@@ -603,7 +645,11 @@ final class WhatsAppLink: ObservableObject {
                     }
                     if webhook == .listening { await register(provider, gen: gen) }
                     if !backfilled, gen == generation { await backfill(provider, gen: gen) }
-                    if Date().timeIntervalSince(lastChatList) > 300 { await loadChats(provider, gen: gen) }
+                    // The phone's whole chat list (thousands of chats): every five minutes, further apart as the energy
+                    // plan slows down.
+                    if Date().timeIntervalSince(lastChatList) > 300 * EnergyMonitor.shared.plan.slowdown {
+                        await loadChats(provider, gen: gen)
+                    }
                 case .needsQR:
                     if link != .needsQR { link = .needsQR }
                     if qrPNG == nil || Date() > qrExpiry {
@@ -702,9 +748,9 @@ final class WhatsAppLink: ObservableObject {
         case .message(let message)?:
             ingest([message], announce: true)
         case .receipt(let ids, let chat, let status)?:
-            if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(chatKey(changed)) }
+            if let changed = changeInbox({ $0.applyReceipt(status, ids: ids, chat: chat) }) { onReceipt?(chatKey(changed)) }
         case .memberReceipt(let ids, let chat, let member, let status)?:
-            if let changed = inbox.applyMemberReceipt(status, ids: ids, chat: chat, member: member) { onReceipt?(chatKey(changed)) }
+            if let changed = changeInbox({ $0.applyMemberReceipt(status, ids: ids, chat: chat, member: member) }) { onReceipt?(chatKey(changed)) }
             // Who is in the group says when everyone has it: asked once, the first time a member answers.
             if WAJID.isGroup(chat), membersLoaded[WAJID.normalized(chat)] == nil {
                 Task { @MainActor [weak self] in
@@ -731,19 +777,19 @@ final class WhatsAppLink: ObservableObject {
             readElsewhere(WAJID.normalized(chat))
         case .reaction(let chat, let message, let emoji, let sender, let fromMe)?:
             // A new emoji redraws the chat's card when it is on screen, as new ticks do; it never brings one up.
-            if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
+            if let changed = changeInbox({ $0.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) }) {
                 onReceipt?(chatKey(changed))
             }
         case .edited(let chat, let message, let text)?:
             // Changed on a phone: the chat shows the new text, marked as edited, without bringing a card up.
-            if let changed = inbox.applyEdit(text, message: message, chat: chat) {
+            if let changed = changeInbox({ $0.applyEdit(text, message: message, chat: chat) }) {
                 onReceipt?(chatKey(changed))
             } else {
                 archiveChange(chat, message: message, edited: text)
             }
         case .revoked(let chat, let message)?:
             // Deleted for everyone on a phone: the chat shows it as deleted.
-            if let changed = inbox.applyDelete(message: message, chat: chat) {
+            if let changed = changeInbox({ $0.applyDelete(message: message, chat: chat) }) {
                 onReceipt?(chatKey(changed))
             } else {
                 archiveChange(chat, message: message, deleted: true)
@@ -759,7 +805,7 @@ final class WhatsAppLink: ObservableObject {
         readInWhatsApp[key] = readMark(key)
         clearMarkedUnread(key)
         guard inbox.conversations[key] != nil else { return }
-        inbox.markRead(key)
+        markInboxRead(key)
         onReadElsewhere?(chatKey(key))
     }
 
@@ -776,7 +822,8 @@ final class WhatsAppLink: ObservableObject {
         liveSince = Date()
         let since = Date().addingTimeInterval(-12 * 3600)
         guard let messages = try? await provider.recentMessages(since: since, me: me), gen == generation else { return }
-        for message in messages { inbox.add(message, filters: filters, history: true) }
+        // Added to a copy and published once: hundreds of messages were as many writes, each redrawing the panel.
+        changeInbox { inbox in for message in messages { inbox.add(message, filters: filters, history: true) } }
         for message in messages { nameGroupIfNeeded(WAJID.normalized(message.chat)) }
         lastPoll = Date()
     }
@@ -795,10 +842,12 @@ final class WhatsAppLink: ObservableObject {
             return
         }
         guard gen == generation else { return }
-        knownChats = WAChatInfo.keepingNames(chats.map {
+        let phoneList = WAChatInfo.keepingNames(chats.map {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned,
                        muted: $0.muted)
         }, from: knownChats)
+        // Written only when the list moved: each write rebuilds the index and makes the shared inbox read every chat again.
+        if phoneList != knownChats { knownChats = phoneList }
         // A group you left stays on the phone's list (until you delete it there), but is no chat of yours any more.
         if let joined = await provider.joinedGroups(), gen == generation {
             let next = WhatsAppLeftGroups.left(known: knownChats.map(\.jid) + Array(inbox.conversations.keys), joined: joined)
@@ -842,13 +891,13 @@ final class WhatsAppLink: ObservableObject {
         if !told.isEmpty {
             var pins = pinnedChats
             for chat in told { if chat.pinned == true { pins.insert(chat.jid) } else { pins.remove(chat.jid) } }
-            pinnedChats = pins
+            if pins != pinnedChats { pinnedChats = pins }
         }
         let muteTold = knownChats.filter { $0.muted != nil }
         if !muteTold.isEmpty {
             var muted = mutedChats
             for chat in muteTold { if chat.muted == true { muted.insert(chat.jid) } else { muted.remove(chat.jid) } }
-            mutedChats = muted
+            if muted != mutedChats { mutedChats = muted }
         }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
@@ -1014,7 +1063,7 @@ final class WhatsAppLink: ObservableObject {
         } catch {
             throw NookError(tr("chat.poll.failed"))
         }
-        inbox.applyVote(WAPollVote(poll: poll, choice: choice), chat: key, voter: WAPoll.me)
+        changeInbox { $0.applyVote(WAPollVote(poll: poll, choice: choice), chat: key, voter: WAPoll.me) }
     }
 
     /// The profile photos of the people who wrote a group's newest messages, newest first, for the faces beside their
@@ -1119,7 +1168,8 @@ final class WhatsAppLink: ObservableObject {
             let polls = await WhatsAppGOWAProcess.shared.storedPolls(chat: key).filter { poll in oldest.map { poll.date >= $0 } ?? true }
             if !polls.isEmpty { fetched = (fetched + polls).sorted { $0.date < $1.date } }
         }
-        for message in fetched { inbox.add(message, filters: filters, history: true) }
+        // Added to a copy and published once, only when something is new: a chat opened again mostly brings what it had.
+        changeInbox { inbox in for message in fetched { inbox.add(message, filters: filters, history: true) } }
         // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
         if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),
            let known = known(key), !WAJID.isPlaceholderName(known.name, for: key) {
@@ -1137,7 +1187,7 @@ final class WhatsAppLink: ObservableObject {
         guard isConnected, let limit = inbox.growCapacity(key) else { return false }
         let before = inbox.conversations[key]?.messages.count ?? 0
         guard let fetched = try? await fetchHistory(key, limit: limit) else { return false }
-        if fetched.gateway < limit { inbox.markOldestReached(key) }
+        if fetched.gateway < limit { changeInbox { $0.markOldestReached(key) } }
         return (inbox.conversations[key]?.messages.count ?? 0) > before
     }
 
@@ -1171,7 +1221,7 @@ final class WhatsAppLink: ObservableObject {
         historyFetched[key] = now
         let before = inbox.conversations[key]?.messages
         if let fetched = try? await fetchHistory(key, limit: WAInbox.keep), fetched.gateway < WAInbox.keep {
-            inbox.markOldestReached(key)
+            changeInbox { $0.markOldestReached(key) }
         }
         return inbox.conversations[key]?.messages != before
     }
@@ -1240,7 +1290,7 @@ final class WhatsAppLink: ObservableObject {
            membersLoaded[key].map({ Date().timeIntervalSince($0) > 600 }) ?? true {
             membersLoaded[key] = Date()
             guard let person = await provider.personInfo(key) else { return false }
-            return inbox.setPerson(person, chat: key)
+            return changeInbox { $0.setPerson(person, chat: key) }
         }
         guard isConnected, let provider, WAJID.isGroup(key),
               membersLoaded[key].map({ Date().timeIntervalSince($0) > 600 }) ?? true else { return false }
@@ -1253,7 +1303,7 @@ final class WhatsAppLink: ObservableObject {
         if profile != nil, info.members.contains(where: { member in member.admin && me.map(member.matches) == true }) {
             profile?.youAreAdmin = true
         }
-        return inbox.setMembers(members, profile: profile, chat: key)
+        return changeInbox { $0.setMembers(members, profile: profile, chat: key) }
     }
 
     // MARK: Files
@@ -1423,7 +1473,7 @@ final class WhatsAppLink: ObservableObject {
     /// Marks the chat read in Nook only: WhatsApp (and your phone) keep it unread, and the sender sees no blue ticks.
     func markReadInNook(_ chat: String) {
         let key = WAJID.normalized(chat)
-        inbox.markRead(key)
+        markInboxRead(key)
         readInNook[key] = readMark(key)
         clearMarkedUnread(key)
     }
@@ -1498,7 +1548,7 @@ final class WhatsAppLink: ObservableObject {
     func markReadInWhatsApp(_ chat: String) async throws {
         let key = WAJID.normalized(chat)
         readInNook[key] = readMark(key)
-        inbox.markRead(key)
+        markInboxRead(key)
         clearMarkedUnread(key)
         guard let provider, isConnected else { throw NookError(statusLine) }
         let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
@@ -1605,7 +1655,7 @@ final class WhatsAppLink: ObservableObject {
         readInNook[key] = readMark(key)
         clearMarkedUnread(key)
         guard let provider, let conversation = inbox.conversations[key] else { return }
-        inbox.markRead(key)
+        markInboxRead(key)
         guard hadUnread, ChatNoticeRulesStore.shared.rules.readsOnReply("whatsapp") else { return }
         let last = conversation.messages.last { !$0.fromMe }?.id
         Task { try? await provider.markRead(chat: key, lastIncoming: last) }
@@ -1774,7 +1824,7 @@ final class WhatsAppLink: ObservableObject {
         do {
             try await provider.react(new, to: id, chat: key, old: old)
             guard gen == generation else { return conversation.name }
-            inbox.applyReaction(new, message: id, chat: key, sender: me ?? "", fromMe: true)
+            changeInbox { $0.applyReaction(new, message: id, chat: key, sender: me ?? "", fromMe: true) }
             Log.connectors.info("WhatsApp: reaction sent")
             return conversation.name
         } catch let error as WAError {
@@ -1839,7 +1889,7 @@ final class WhatsAppLink: ObservableObject {
             throw Self.actionSentence(error)
         }
         guard gen == generation else { return }
-        if inbox.applyEdit(body, message: message, chat: key) == nil { archiveChange(key, message: message, edited: body) }
+        if changeInbox({ $0.applyEdit(body, message: message, chat: key) }) == nil { archiveChange(key, message: message, edited: body) }
         Log.connectors.info("WhatsApp: message edited")
     }
 
@@ -1856,7 +1906,7 @@ final class WhatsAppLink: ObservableObject {
             throw Self.actionSentence(error)
         }
         guard gen == generation else { return }
-        if inbox.applyDelete(message: message, chat: key) == nil { archiveChange(key, message: message, deleted: true) }
+        if changeInbox({ $0.applyDelete(message: message, chat: key) }) == nil { archiveChange(key, message: message, deleted: true) }
         Log.connectors.info("WhatsApp: message deleted")
     }
 

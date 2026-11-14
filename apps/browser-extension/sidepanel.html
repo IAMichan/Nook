@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nook</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <img src="icons/nook-32.png" alt="" width="20" height="20">
+    <h1 data-i18n="appName">Nook</h1>
+    <span id="status" class="pill" role="status"></span>
+  </header>
+
+  <section id="setup" class="card setup" hidden>
+    <h2 data-i18n="setupTitle"></h2>
+    <ol>
+      <li data-i18n="setupStep1"></li>
+      <li data-i18n="setupStep2"></li>
+      <li data-i18n="setupStep3"></li>
+    </ol>
+    <p class="note" id="setup-detail"></p>
+  </section>
+
+  <section class="card site">
+    <div class="row">
+      <div class="grow">
+        <div id="site-name" class="site-name"></div>
+        <div id="site-note" class="note"></div>
+      </div>
+      <label class="switch" id="site-switch-wrap">
+        <input type="checkbox" id="site-switch" role="switch">
+        <span aria-hidden="true"></span>
+      </label>
+    </div>
+    <div class="row pause-row">
+      <div id="paused-note" class="note grow"></div>
+      <button id="pause" type="button" class="quiet"></button>
+    </div>
+  </section>
+
+  <main id="chat" class="chat" aria-live="polite">
+    <p id="intro" class="intro" data-i18n="intro"></p>
+  </main>
+
+  <section class="activity" aria-labelledby="activity-title">
+    <details id="activity-box">
+      <summary id="activity-title" data-i18n="activityTitle"></summary>
+      <ul id="activity"></ul>
+    </details>
+  </section>
+
+  <form id="composer" class="composer">
+    <textarea id="input" rows="2" data-i18n-placeholder="askPlaceholder"></textarea>
+    <div class="composer-row">
+      <button id="new-chat" type="button" class="quiet" data-i18n="newChat"></button>
+      <span class="grow"></span>
+      <button id="stop" type="button" class="quiet" data-i18n="stopAnswer" hidden></button>
+      <button id="send" type="submit" class="primary" data-i18n="send"></button>
+    </div>
+  </form>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

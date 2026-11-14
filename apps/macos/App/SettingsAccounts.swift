@@ -10,11 +10,18 @@ struct AccountsSettingsSection: View {
     @State private var before: Set<String> = []
     /// The account just added: its row opens by itself, so signing in or naming it is right there.
     @State private var justAdded: String?
+    /// Only this agent's accounts (Settings › Coding agents shows one agent at a time); nil lists every agent's, with
+    /// the ACP agents after them.
+    private let only: AgentKind?
+
+    init(only: AgentKind? = nil) {
+        self.only = only
+    }
 
     /// Every account of every agent in one list, its agent's logo on each row. ACP agents you added follow in a section
     /// of their own (pick from the registry, or enter a command).
     var body: some View {
-        let kinds = AgentKind.allCases.filter { $0 != .acp }
+        let kinds = AgentKind.allCases.filter { $0 != .acp && (only == nil || only == $0) }
         let profiles = kinds.flatMap { app.profiles.profiles(for: $0) }
         // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
         let info = kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n")
@@ -28,18 +35,25 @@ struct AccountsSettingsSection: View {
                     .id(profile.id == justAdded ? profile.id + ".added" : profile.id)
             }
         } header: {
-            ConnectionListMenuHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info,
-                                     add: tr("accounts.add")) {
-                // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
-                ForEach(kinds.filter(\.supportsProfiles)) { kind in
-                    Button { startAdding(kind) } label: { AgentName(kind) }
+            // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
+            let addable = kinds.filter(\.supportsProfiles)
+            if addable.isEmpty {
+                ConnectionListHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info)
+            } else {
+                ConnectionListMenuHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info,
+                                         add: tr("accounts.add")) {
+                    ForEach(addable) { kind in
+                        Button { startAdding(kind) } label: { AgentName(kind) }
+                    }
                 }
             }
         }
         .sheet(item: $adding, onDismiss: noteAdded) { kind in
             AddAccountSheet(kind: kind)
         }
-        AcpAgentsSection()
+        if only == nil {
+            AcpAgentsSection()
+        }
     }
 
     private var profileIDs: Set<String> {

@@ -756,12 +756,18 @@ private final class HistoryScanner: @unchecked Sendable {
         // and rebuilding them (joining resumed chats, every usage entry of 90 days) would only cost CPU. Rebuilt at least daily,
         // for the 30-day list.
         let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
+        // Codex's thread names (`namedByCodex`) are part of what the list shows: renaming a thread rebuilds it too.
+        let codexIndexes = codexIndexFiles(homes).map { url -> String in
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return "codex-index|\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
+        }
         let signature = files.map { "\($0.agent.rawValue)|\($0.profile)|\($0.url.path)|\($0.key.modified.timeIntervalSince1970)|\($0.key.size)" }
-            + homes.map { "home|\($0.id)|\($0.url.path)" } + [ownFolder, String(day)]
+            + homes.map { "home|\($0.id)|\($0.url.path)" } + codexIndexes + [ownFolder, String(day)]
         let sessions: [PastSession]
         var usage: [String: AgentUsageSummary] = [:]
         var ledger = UsageLedger()
         if signature == lastSignature, let last = lastBuilt {
+            // The very list given last time: AgentHistory compares it with what it shows, and the same array compares at once.
             sessions = last.sessions
             usage = last.usage
             ledger = last.ledger
@@ -782,7 +788,7 @@ private final class HistoryScanner: @unchecked Sendable {
                     switch file.agent {
                     case .claude: parsed = parseClaude(file.url, key: file.key)
                     case .codex: parsed = parseCodex(file.url, key: file.key)
-                    case .gemini: parsed = parseGemini(file.url)
+                    case .gemini: parsed = parseGemini(file.url, key: file.key)
                     case .antigravity:
                         let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
                         antigravitySummaries = summaries
@@ -807,6 +813,7 @@ private final class HistoryScanner: @unchecked Sendable {
             saveDiskCache()
             claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
             codexProgress = codexProgress.filter { fresh[$0.key] != nil }
+            geminiProgress = geminiProgress.filter { fresh[$0.key] != nil }
             antigravityProgress = antigravityProgress.filter { fresh[$0.key] != nil }
             cursorProgress = cursorProgress.filter { fresh[$0.key] != nil }
 
@@ -818,7 +825,7 @@ private final class HistoryScanner: @unchecked Sendable {
             // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
             // Named as the list names them (Codex's thread names), so the Usage page's chats read the same.
             let conversations = namedByCodex(Self.joinResumed(listed), homes: homes)
-            sessions = conversations.filter { $0.ended >= listSince }
+            sessions = Self.linkLaunched(conversations.filter { $0.ended >= listSince })
 
             for home in homes where fm.fileExists(atPath: home.url.path) {
                 usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
@@ -863,7 +870,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
-        return Result(sessions: Self.linkLaunched(namedByCodex(sessions, homes: homes)), accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
+        return Result(sessions: sessions, accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
     }
 
     /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
@@ -914,11 +921,11 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     /// Codex names its threads (the Codex app, `/rename`) in `session_index.jsonl` next to the sessions, apart from the
-    /// transcripts: read on every scan (the file is small, and only again when it changed), the latest line per thread wins.
+    /// transcripts: read when a scan rebuilds the list (its date is part of `scan`'s signature; the file is small, and read
+    /// again only when it changed), the latest line per thread wins.
     private func namedByCodex(_ sessions: [PastSession], homes: [ProfileHome]) -> [PastSession] {
         var names: [String: String] = [:]
-        for home in homes where home.kind == .codex {
-            let url = home.url.appendingPathComponent("session_index.jsonl")
+        for url in codexIndexFiles(homes) {
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             if let modified, let known = codexThreadNames[url.path], known.modified == modified {
                 names.merge(known.names) { _, new in new }
@@ -945,6 +952,13 @@ private final class HistoryScanner: @unchecked Sendable {
             named.titledByAgent = true
             return named
         }
+    }
+
+    /// The `session_index.jsonl` of every Codex account, where Codex names its threads (`namedByCodex`).
+    private func codexIndexFiles(_ homes: [ProfileHome]) -> [URL] {
+        var files: [URL] = []
+        for home in homes where home.kind == .codex { files.append(home.url.appendingPathComponent("session_index.jsonl")) }
+        return files
     }
 
     /// Who is logged in per account. Only reads small config files, so it is fast.
@@ -1202,8 +1216,18 @@ private final class HistoryScanner: @unchecked Sendable {
         return result
     }
 
-    private func parseGemini(_ url: URL) -> Parsed {
-        guard let data = try? Data(contentsOf: url), let chat = GeminiChatLog.read(data) else { return Parsed(session: nil, entries: []) }
+    private func parseGemini(_ url: URL, key: CacheKey) -> Parsed {
+        let read: GeminiChatLog.Chat?
+        if url.pathExtension == "jsonl" {
+            // Gemini CLI 0.33 and newer: a log of changes, only ever appended to, so replayed on from where the last scan stopped.
+            read = readChunks(url, key: key, progress: &geminiProgress, initial: { GeminiChatLog.Log() }) { lines, log in
+                log.apply(lines)
+            }?.chat
+        } else {
+            // Up to 0.32: one JSON object, written whole every time; read again only when it changed (`scan`'s cache).
+            read = (try? Data(contentsOf: url)).flatMap(GeminiChatLog.read)
+        }
+        guard let chat = read else { return Parsed(session: nil, entries: []) }
         let root = chat.metadata
         let messages = chat.messages
         // The folder is not in the chat file itself (see GeminiChatLog.folder); ~/.gemini holds tmp/<project>/chats.
@@ -1308,12 +1332,12 @@ private final class HistoryScanner: @unchecked Sendable {
 
     /// A Cursor chat: what was said from its transcript, its folder and times from meta.json, its name from store.db.
     private func parseCursor(_ url: URL, key: CacheKey, chats: [String: URL]) -> Parsed {
-        // Read on from where the last scan stopped, as for Claude Code and Codex (`readLines`): each line only adds to or
-        // finishes what came before (`AgentTranscript.jsonl(_:continuing:firstLine:)`).
-        guard let read = readLines(url, key: key, progress: &cursorProgress, initial: { CursorState() }, line: { line, state in
-            state.messages = AgentTranscript.jsonl(line, continuing: state.messages, firstLine: state.lines)
-            state.lines += 1
-        }) else { return Parsed(session: nil, entries: []) }
+        // The transcript only grows: read on from where the last scan stopped, the way the live view does.
+        let read = readChunks(url, key: key, progress: &cursorProgress, initial: { CursorState() }) { lines, state in
+            state.messages = AgentTranscript.jsonl(lines, continuing: state.messages, firstLine: state.lines)
+            state.lines += AgentTranscript.lineCount(lines)
+        }
+        guard let messages = read?.messages else { return Parsed(session: nil, entries: []) }
         let id = url.deletingPathExtension().lastPathComponent
         var info = CursorChats.Info()
         if let folder = chats[id] {
@@ -1323,7 +1347,6 @@ private final class HistoryScanner: @unchecked Sendable {
                 if info.created == nil { info.created = stored.created }
             }
         }
-        let messages = read.messages
         let prompts = messages.filter { $0.kind == .user }
         guard !prompts.isEmpty else { return Parsed(session: nil, entries: []) }
         let modified = attributes(url)?.modified ?? Date()
@@ -1395,18 +1418,41 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let antigravityPlanner = Data(#""PLANNER_RESPONSE""#.utf8)
     private static let antigravityUser = Data(#""USER_INPUT""#.utf8)
 
-    private struct AntigravityState {
-        var session: PastSession
-        var entries: [UsageEntry] = []
+    private func parseAntigravity(_ url: URL, key: CacheKey, summaries: [String: (title: String, cwd: String)]) -> Parsed {
+        // .../brain/<conversation_id>/.system_generated/logs/transcript.jsonl
+        let sessionID = url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        let initial = {
+            AntigravityState(session: PastSession(
+                agent: .antigravity, sessionID: sessionID, title: "", cwd: "", branch: "", model: "",
+                started: .distantFuture, ended: .distantPast,
+                prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+            ))
+        }
+        guard let result = readLines(url, key: key, progress: &antigravityProgress, initial: initial, line: antigravityLine) else {
+            return Parsed(session: nil, entries: [])
+        }
+        var session = result.session
+        let entries = result.entries
+        // The summary database names the conversation and its folder; the transcript only when it has none. Applied here,
+        // not to the state the lines build, since the database changes apart from the transcript.
+        let summary = summaries[sessionID]
+        session.title = summary.map { $0.title }.flatMap { $0.isEmpty ? nil : $0 } ?? result.firstPrompt
+        session.cwd = summary.map { $0.cwd }.flatMap { $0.isEmpty ? nil : $0 } ?? result.toolCwd
+
+        let fallbackDate = attributes(url)?.modified ?? Date()
+        if session.started == .distantFuture { session.started = session.ended > .distantPast ? session.ended : fallbackDate }
+        if session.ended == .distantPast { session.ended = session.started }
+
+        guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
+            return Parsed(session: nil, entries: entries)
+        }
+        session.title = Self.title(InjectedPrompt.title(session.title))
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
+        return Parsed(session: session, entries: entries)
     }
 
-    private struct CursorState {
-        var messages: [AgentChatMessage] = []
-        var lines = 0
-    }
-
-    /// One line of an Antigravity transcript.
-    private func antigravityLine(_ line: Data, sessionID: String, into state: inout AntigravityState) {
+    private func antigravityLine(_ line: Data, into state: inout AntigravityState) {
         let isPlanner = line.range(of: Self.antigravityPlanner) != nil
         let isUser = !isPlanner && line.range(of: Self.antigravityUser) != nil
         guard isPlanner || isUser, let object = json(line) else { return }
@@ -1422,7 +1468,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 guard !text.isEmpty else { return }
                 state.session.prompts += 1
                 state.session.lastPrompt = text
-                if state.session.title.isEmpty { state.session.title = text }
+                if state.firstPrompt.isEmpty { state.firstPrompt = text }
             }
         } else if isPlanner {
             if let content = object["content"] as? String {
@@ -1432,13 +1478,13 @@ private final class HistoryScanner: @unchecked Sendable {
                 let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { state.session.lastReply = trimmed }
             }
-            if state.session.cwd.isEmpty, let toolCalls = object["tool_calls"] as? [[String: Any]] {
+            if state.toolCwd.isEmpty, let toolCalls = object["tool_calls"] as? [[String: Any]] {
                 for tc in toolCalls {
                     if let args = tc["args"] as? [String: Any] {
                         let rawCwd = (args["Cwd"] as? String) ?? (args["cwd"] as? String) ?? ""
                         let clean = rawCwd.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r\t "))
                         if !clean.isEmpty {
-                            state.session.cwd = clean
+                            state.toolCwd = clean
                             break
                         }
                     }
@@ -1452,41 +1498,10 @@ private final class HistoryScanner: @unchecked Sendable {
                 state.session.tokens += tally
                 let when = (object["created_at"] as? String).flatMap({ self.date($0) }) ?? state.session.ended
                 let step = (object["step_index"] as? Int) ?? state.entries.count
-                state.entries.append(UsageEntry(key: "antigravity:\(sessionID):\(step)", date: when, tokens: tally, model: state.session.model))
+                state.entries.append(UsageEntry(key: "antigravity:\(state.session.sessionID):\(step)", date: when, tokens: tally,
+                                                model: state.session.model))
             }
         }
-    }
-
-    private func parseAntigravity(_ url: URL, key: CacheKey, summaries: [String: (title: String, cwd: String)]) -> Parsed {
-        // .../brain/<conversation_id>/.system_generated/logs/transcript.jsonl
-        let sessionID = url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
-        let summary = summaries[sessionID]
-        let initial = {
-            AntigravityState(session: PastSession(
-                agent: .antigravity, sessionID: sessionID,
-                title: summary?.title ?? "", cwd: summary?.cwd ?? "", branch: "", model: "",
-                started: .distantFuture, ended: .distantPast,
-                prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
-            ))
-        }
-        // Read on from where the last scan stopped, as for Claude Code and Codex (`readLines`).
-        guard let read = readLines(url, key: key, progress: &antigravityProgress, initial: initial, line: { line, state in
-            self.antigravityLine(line, sessionID: sessionID, into: &state)
-        }) else { return Parsed(session: nil, entries: []) }
-        var session = read.session
-        let entries = read.entries
-
-        let fallbackDate = attributes(url)?.modified ?? Date()
-        if session.started == .distantFuture { session.started = session.ended > .distantPast ? session.ended : fallbackDate }
-        if session.ended == .distantPast { session.ended = session.started }
-
-        guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
-            return Parsed(session: nil, entries: entries)
-        }
-        session.title = Self.title(InjectedPrompt.title(session.title))
-        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
-        session.lastReply = Self.clip(session.lastReply, 12_000)
-        return Parsed(session: session, entries: entries)
     }
 
     // MARK: Claude Code
@@ -1506,6 +1521,8 @@ private final class HistoryScanner: @unchecked Sendable {
         var state: State
         var offset: Int
         var size: Int
+        /// The file read (its inode): a file replaced by another one under the same name is read from its start.
+        var file: UInt64?
     }
 
     private struct ClaudeState {
@@ -1530,10 +1547,26 @@ private final class HistoryScanner: @unchecked Sendable {
         var previous = TokenTally()
     }
 
+    /// What an Antigravity transcript's lines give; its title and folder come from the summary database first.
+    private struct AntigravityState {
+        var session: PastSession
+        var entries: [UsageEntry] = []
+        var firstPrompt = ""
+        /// The folder the first command ran in, for a conversation the database has none for.
+        var toolCwd = ""
+    }
+
+    /// A Cursor transcript's messages so far, and how many lines gave them (`AgentTranscript.jsonl` numbers its lines).
+    private struct CursorState {
+        var messages: [AgentChatMessage] = []
+        var lines = 0
+    }
+
     private var claudeProgress: [String: Progress<ClaudeState>] = [:]
     /// Codex's thread names per `session_index.jsonl`, with when that file last changed.
     private var codexThreadNames: [String: (modified: Date, names: [String: String])] = [:]
     private var codexProgress: [String: Progress<CodexState>] = [:]
+    private var geminiProgress: [String: Progress<GeminiChatLog.Log>] = [:]
     private var antigravityProgress: [String: Progress<AntigravityState>] = [:]
     private var cursorProgress: [String: Progress<CursorState>] = [:]
     /// Only transcripts touched this recently keep their progress: older ones rarely grow, and this bounds the memory.
@@ -1543,26 +1576,38 @@ private final class HistoryScanner: @unchecked Sendable {
     /// rewritten. Gives the same state as reading the whole file. Nil when the file can't be read.
     private func readLines<State>(_ url: URL, key: CacheKey, progress: inout [String: Progress<State>],
                                   initial: () -> State, line: (Data, inout State) -> Void) -> State? {
+        readChunks(url, key: key, progress: &progress, initial: initial) { lines, state in
+            forEachLine(lines) { line($0, &state) }
+        }
+    }
+
+    /// The same, for a parser that takes its lines a run at a time (`chunk` gets whole lines only, and the line still
+    /// being written on its own): what Cursor's transcripts share with the live view (`AgentTranscript.jsonl`).
+    private func readChunks<State>(_ url: URL, key: CacheKey, progress: inout [String: Progress<State>],
+                                   initial: () -> State, chunk: (Data, inout State) -> Void) -> State? {
+        // Before the read: a file swapped in after it is then caught by the next scan.
+        let file = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.systemFileNumber] as? NSNumber)?.uint64Value
         guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else {
             progress[url.path] = nil
             return nil
         }
         var saved: Progress<State>
-        if let known = progress[url.path], known.offset <= data.count, known.size <= data.count,
+        // Read on only when it is the same file and it only grew: shrunk (truncated) or replaced, it is read again whole.
+        if let known = progress[url.path], known.file == file, known.offset <= data.count, known.size <= data.count,
            known.offset == 0 || data[data.startIndex + known.offset - 1] == 0x0A {
             saved = known
         } else {
-            saved = Progress(state: initial(), offset: 0, size: 0)
+            saved = Progress(state: initial(), offset: 0, size: 0, file: file)
         }
         // Complete lines advance the saved state; a line still being written is read on top of a copy only.
         let fresh = data[(data.startIndex + saved.offset)...]
         let complete = fresh.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? fresh.startIndex
-        forEachLine(data[fresh.startIndex..<complete]) { line($0, &saved.state) }
+        if complete > fresh.startIndex { chunk(data[fresh.startIndex..<complete], &saved.state) }
         saved.offset = complete - data.startIndex
         saved.size = data.count
         progress[url.path] = Date().timeIntervalSince(key.modified) < Self.progressWindow ? saved : nil
         var state = saved.state
-        if complete < data.endIndex { forEachLine(data[complete...]) { line($0, &state) } }
+        if complete < data.endIndex { chunk(data[complete...], &state) }
         return state
     }
 

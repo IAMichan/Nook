@@ -3,13 +3,16 @@
   // can be followed without a pull request in between. The repositories sit on top as tabs (each marked while something
   // runs or a workflow fails, ⇧⌘[ / ⇧⌘] to step through them, "+" to open another), narrow the runs to a workflow
   // or to the running or failed ones, and open a run beside the list (in its place when the window is narrow) to see
-  // its jobs, re-run or cancel it, and read a job's log. The list is read again every ten seconds while something in
-  // it runs, and every minute otherwise.
+  // its jobs, re-run or cancel it, and read a job's log. "Run workflow" starts one that has a workflow_dispatch trigger.
+  // The list is read again every ten seconds while something in it runs, and every minute otherwise. Switching a filter
+  // or a tab shows what is already known at once (the matching runs of the list read before, a tab's last read) while
+  // GitHub's answer is on its way.
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
-    actionsApi, candidateRepos, eventName, isLive, latestPerWorkflow, neighborTab, openTab, parseRepo, repoStatus, runClock,
-    statusFilterName, type ActionsRepo, type RepoStatus, type RunStatusFilter, type Workflow, type WorkflowRun,
+    actionsApi, candidateRepos, eventName, filterRuns, isLive, latestPerWorkflow, neighborTab, openTab, parseRepo, repoStatus,
+    runClock, statusFilterName, type ActionsRepo, type Dispatched, type RepoStatus, type RunStatusFilter, type Workflow,
+    type WorkflowRun,
   } from "../../../lib/actions";
   import { api } from "../../../lib/api";
   import { tr } from "../../../lib/i18n.svelte";
@@ -20,6 +23,7 @@
   import RepoTabs from "./RepoTabs.svelte";
   import RunMark from "./RunMark.svelte";
   import RunView from "./RunView.svelte";
+  import DispatchSheet from "./DispatchSheet.svelte";
 
   const REPO_KEY = "agents.actions.repo";
   const TYPED_KEY = "agents.actions.typed";
@@ -28,6 +32,7 @@
   /// The other tabs are read in the background at most this often, so each shows how it stands.
   const PEEK_MS = 120_000;
   const STATUSES: RunStatusFilter[] = ["all", "running", "failed"];
+  const ALL_RUNS = runsFilterKey(null, "all");
 
   let pushed = $state<ActionsRepo[]>([]);
   let available = $state(true);
@@ -41,6 +46,12 @@
   let workflow = $state<number | null>(null);
   let status = $state<RunStatusFilter>("all");
   let runs = $state<WorkflowRun[]>([]);
+  /// The filter `runs` was read for ("workflow|status"); the list shows the runs that match the current one meanwhile.
+  let runsKey = $state(ALL_RUNS);
+  /// The last list of all runs and the workflows of each repository read so far, by its lowercased name, so a tab
+  /// opens with them at once.
+  const known = new Map<string, { runs: WorkflowRun[]; account: string; workflows?: Workflow[] }>();
+  let dispatching = $state(false);
   /// The account that could read the repository; the run and its job logs are read with it too.
   let account = $state<string | null>(null);
   let loaded = $state(false);
@@ -55,10 +66,17 @@
   const repos = $derived(candidateRepos(pushed, pullRequests.accounts, typed));
   const wide = $derived(width >= 760);
   const anyLive = $derived(runs.some(isLive));
+  // The runs that match the filter, also while the list read for the one before is still shown.
+  const shown = $derived(filterRuns(runs, workflow, status));
+  const stale = $derived(runsKey !== runsFilterKey(workflow, status));
   // The run beside the list keeps up with the list's copy, so its row and its header agree.
   const openedRun = $derived(opened ? (runs.find((r) => r.id === opened!.id) ?? opened) : null);
   // The mark on each workflow's chip: its newest run, from the list of all workflows.
-  const newest = $derived(workflow === null && status === "all" ? latestPerWorkflow(runs) : new Map<number, WorkflowRun>());
+  const newest = $derived(runsKey === ALL_RUNS ? latestPerWorkflow(runs) : new Map<number, WorkflowRun>());
+
+  function runsFilterKey(flow: number | null, filter: RunStatusFilter) {
+    return `${flow ?? ""}|${filter}`;
+  }
 
   function read(key: string): string | null {
     try {
@@ -153,18 +171,26 @@
   // Another repository: its own workflows, the filters back to all, the run closed.
   $effect(() => {
     const name = repo;
-    workflows = [];
+    const last = name ? known.get(name.toLowerCase()) : undefined;
+    workflows = last?.workflows ?? [];
     workflow = null;
     opened = null;
-    runs = [];
-    loaded = false;
+    runs = last?.runs ?? [];
+    runsKey = ALL_RUNS;
+    loaded = !!last;
+    dispatching = false;
     // Read without tracking: the picker's list grows while it loads, which is no reason to start over.
-    account = untrack(() => repos.find((r) => r.name === name)?.account ?? null);
+    account = last?.account ?? untrack(() => repos.find((r) => r.name === name)?.account ?? null);
     if (!name) return;
     let cancelled = false;
     actionsApi
       .workflows(untrack(() => account), name)
-      .then((list) => !cancelled && (workflows = list))
+      .then((list) => {
+        if (cancelled) return;
+        workflows = list;
+        const entry = known.get(name.toLowerCase());
+        if (entry) entry.workflows = list;
+      })
       .catch(() => {
         // The chips are a shortcut; the run list says what went wrong.
       });
@@ -190,8 +216,9 @@
           const fresh = await actionsApi.runs(untrack(() => account), name, flow, filter);
           if (cancelled) return;
           runs = fresh.runs;
+          runsKey = runsFilterKey(flow, filter);
           account = fresh.account;
-          if (flow === null && filter === "all") statuses[name.toLowerCase()] = repoStatus(fresh.runs);
+          if (flow === null && filter === "all") remember(name, fresh.runs, fresh.account);
           error = null;
           failures = 0;
         } catch (e) {
@@ -227,10 +254,10 @@
         const key = name.toLowerCase();
         if (Date.now() - (peekedAt.get(key) ?? 0) < PEEK_MS) continue;
         peekedAt.set(key, Date.now());
-        const known = untrack(() => repos.find((r) => r.name.toLowerCase() === key)?.account ?? null);
+        const owner = untrack(() => repos.find((r) => r.name.toLowerCase() === key)?.account ?? null);
         try {
-          const fresh = await actionsApi.runs(known, name, null, "all");
-          if (!cancelled) statuses[key] = repoStatus(fresh.runs);
+          const fresh = await actionsApi.runs(owner, name, null, "all");
+          if (!cancelled) remember(name, fresh.runs, fresh.account);
         } catch {
           // Only the tab's mark; opening the tab says what went wrong.
         }
@@ -249,6 +276,30 @@
     const tick = setInterval(() => (now = Date.now()), anyLive ? 1000 : 60_000);
     return () => clearInterval(tick);
   });
+
+  /// A repository's latest list of all runs: its tab's mark, and what the tab shows at once when it opens.
+  function remember(name: string, list: WorkflowRun[], reader: string) {
+    const key = name.toLowerCase();
+    statuses[key] = repoStatus(list);
+    known.set(key, { runs: list, account: reader, workflows: known.get(key)?.workflows });
+  }
+
+  /// A workflow was started: the list is read again, and the new run opens when GitHub said which one it is. Without
+  /// its id, the list is read once more a moment later, by when GitHub lists the run.
+  function dispatched(result: Dispatched, flow: { id: number; name: string; branch: string }) {
+    dispatching = false;
+    account = result.account;
+    reload++;
+    if (result.run === null) {
+      setTimeout(() => reload++, 2_000);
+      return;
+    }
+    opened = {
+      id: result.run, workflowId: flow.id, workflow: flow.name, title: flow.name, number: 0, attempt: 1, branch: flow.branch, sha: "",
+      event: "workflow_dispatch", actor: "", status: "queued", conclusion: null, outcome: "pending", running: false,
+      created: new Date().toISOString(), started: null, finished: null, url: null, path: "",
+    };
+  }
 
   function openSettings() {
     write("settings.section", "accounts");
@@ -277,6 +328,7 @@
       <!-- A first read has the list's skeleton; this only marks a refresh. -->
       {#if loading && loaded}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
       <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}>{tr("Vernieuwen", "Refresh")}</button>
+      {#if repo && !notConnected}<button title={tr("Start een workflow die met de hand kan starten", "Start a workflow that can be run by hand")} onclick={() => (dispatching = true)}>{tr("Workflow starten", "Run workflow")}</button>{/if}
       {#if repo}<button class="ghost" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
     </div>
 
@@ -321,9 +373,9 @@
         <div class="list">
           {#if error && !runs.length}
             <p class="err">{error}</p>
-          {:else if !loaded}
+          {:else if !loaded || (stale && !shown.length)}
             <RunSkeleton />
-          {:else if !runs.length}
+          {:else if !shown.length}
             {#if workflow !== null || status !== "all"}
               {@render empty(tr("Geen runs gevonden", "No runs found"), tr("Niets past bij dit filter.", "Nothing matches this filter."), [tr("Wis filter", "Clear filter"), () => ((workflow = null), (status = "all"))])}
             {:else}
@@ -331,7 +383,7 @@
             {/if}
           {:else}
             {#if error}<p class="err">{error}</p>{/if}
-            {#each runs as run (run.id)}
+            {#each shown as run (run.id)}
               {@render row(run)}
             {/each}
           {/if}
@@ -347,6 +399,10 @@
     {/if}
   {/if}
 </div>
+
+{#if dispatching && repo}
+  <DispatchSheet {repo} {account} selected={workflow} onclose={() => (dispatching = false)} ondispatched={dispatched} />
+{/if}
 
 {#snippet row(run: WorkflowRun)}
   {@const clock = runClock(run, now)}

@@ -1,11 +1,14 @@
 import AppKit
+import Combine
 import WebKit
 
 /// Snapchat the way Nook links Slack and Teams: you sign in on snapchat.com/web in a window of Nook's own, as in your
 /// browser. Snapchat has no service another program may read your chats from, so after that the website stays open out
 /// of sight, in a store of its own on this Mac (not shared with Safari or Nook's other windows), and Nook reads what it
 /// shows with the scripts in `SnapchatWebData`. Nothing is taken from the website: its sign-in stays in that store.
-/// One thing happens at a time in the page (reading the list, opening a chat, typing an answer).
+/// One thing happens at a time in the page (reading the list, opening a chat, typing an answer). A whole web app is a
+/// lot to keep running all day, so it is let go once nothing used it for a few minutes and while no one can see the
+/// screen (`EnergyPlan.unseen`), and loaded again by the next read (`loaded()`).
 @MainActor
 final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static let shared = SnapchatWebSession()
@@ -26,6 +29,13 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     private var watch: Timer?
     /// The work in the page now; the next waits for it.
     private var queue: Task<Void, Never>?
+    /// How many of the works in `queue` have not finished yet: the website is only let go when none is left.
+    private var pending = 0
+    /// Lets the website go once it went unused for `idleAfter`.
+    private var idle: Timer?
+    private static let idleAfter: TimeInterval = 5 * 60
+    /// The screen going dark or locking: the website is let go then.
+    private var planWatch: AnyCancellable?
 
     enum Problem: LocalizedError {
         case signedOut
@@ -48,6 +58,10 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     override init() {
         isSignedIn = UserDefaults.standard.bool(forKey: Self.linkedKey)
         super.init()
+        planWatch = EnergyMonitor.shared.$plan.map(\.unseen).removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] unseen in
+                if unseen { self?.releaseIfIdle() }
+            }
     }
 
     // MARK: Signing in
@@ -230,8 +244,15 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     /// not open.
     private func serially<T: Sendable>(_ work: @escaping @MainActor (WKWebView) async throws -> T) async throws -> T {
         let before = queue
+        pending += 1
+        idle?.invalidate()
+        idle = nil
         let task = Task { @MainActor () -> Result<T, Error> in
             await before?.value
+            defer {
+                self.pending -= 1
+                self.armIdleRelease()
+            }
             do {
                 guard self.isSignedIn else { throw Problem.signedOut }
                 return .success(try await work(try await self.loaded()))
@@ -313,6 +334,28 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
         }
         window = nil
         if !isSignedIn { dropWebView() }
+    }
+
+    /// Lets the website go after `idleAfter` without work, when it is open out of sight.
+    private func armIdleRelease() {
+        idle?.invalidate()
+        idle = nil
+        guard pending == 0, web != nil, window == nil else { return }
+        // Work asked for while no one can see the screen (opening a chat from a notification): let go right after.
+        if EnergyMonitor.shared.plan.unseen { releaseIfIdle(); return }
+        idle = Timer.scheduledTimer(withTimeInterval: Self.idleAfter, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseIfIdle() }
+        }
+        idle?.tolerance = 30
+    }
+
+    /// Lets the website out of sight go when no work waits for it; the sign-in window keeps its own. The sign-in itself
+    /// stays in the website's store, so the next read only loads the page again.
+    private func releaseIfIdle() {
+        idle?.invalidate()
+        idle = nil
+        guard pending == 0, !isSigningIn, window == nil, web != nil else { return }
+        dropWebView()
     }
 
     private func dropWebView() {

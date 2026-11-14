@@ -123,8 +123,9 @@ struct TranscriptConversation: View {
             ScrollViewReader { proxy in
                 // No scroll bar, not even when the system shows them always: the rail beside it marks your messages and scrolls.
                 ScrollView {
-                    // Lazy: a long conversation only lays out what is on screen.
-                    LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    // Lazy, but for its latest turns (`ConversationRows`): a long conversation only lays out what is on
+                    // screen, and its end never stays blank.
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
                             if readFinished {
                                 Text(tr("agents.noMessagesInTranscript"))
@@ -144,7 +145,7 @@ struct TranscriptConversation: View {
                                 if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
                             }
                         }
-                        ForEach(rows) { row in
+                        ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start)) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     TimelineNewDivider()

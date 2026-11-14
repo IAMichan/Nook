@@ -43,11 +43,14 @@ final class EmbeddedModel: ObservableObject {
     }
 
     /// Pre-loads the model in the background (e.g. when opening panel or starting interaction).
+    /// Never while a query runs: that one keeps its model, and loading another next to it would take both in memory.
     func preload(_ id: String) {
         guard !id.isEmpty, loadedID != id, !busy, installed.contains(id) else { return }
         Task {
+            // A query may have started since: it goes first.
+            guard !busy, loadedID != id else { return }
             _ = try? await load(id)
-            scheduleUnload()
+            if !busy { scheduleUnload() }
         }
     }
 
@@ -114,13 +117,19 @@ final class EmbeddedModel: ObservableObject {
     private var loading: (id: String, task: Task<ModelContainer, Error>)?
 
     /// Loads the model, avoiding duplicate concurrent loads: subsequent callers await the first.
-    private func load(_ id: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ModelContainer {
+    /// `ownsQuery`: called from within `exclusive`, so the running query is this caller's own.
+    private func load(_ id: String, ownsQuery: Bool = false,
+                      progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ModelContainer {
         if loadedID == id, let container { return container }
         if let loading, loading.id == id { return try await loading.task.value }
 
+        // Another model is in memory: let it go before the new one loads, so the two (several GB each) are never held
+        // together. Not while someone else's query is still answering with it.
+        if container != nil, !busy || ownsQuery { unload() }
         let task = Task { try await Self.fetch(id, progress: progress) }
         loading = (id, task)
-        defer { loading = nil }
+        // Only this load's own entry: a load of another model may have started meanwhile, and it must stay findable.
+        defer { if loading?.task == task { loading = nil } }
         let loaded = try await task.value
         container = loaded
         loadedID = id
@@ -136,8 +145,10 @@ final class EmbeddedModel: ObservableObject {
             // without them a model can run on past its answer.
             let stops = ModelAdvisor.catalog.first { $0.id == id }?.family.stopTokens ?? []
             var configuration = ModelConfiguration(id: id, extraEOSTokens: stops)
+            var fromOwnFolder = false
             if let local = ModelDownload.completedDirectory(for: id) {
                 configuration = ModelConfiguration(directory: local, extraEOSTokens: stops)
+                fromOwnFolder = true
             } else if !ModelDownload.isInHubCache(id) {
                 do {
                     configuration = ModelConfiguration(directory: try await ModelDownload.fetch(id, progress: progress), extraEOSTokens: stops)
@@ -145,10 +156,17 @@ final class EmbeddedModel: ObservableObject {
                     Log.brain.error("own model download unavailable (\(error.reason, privacy: .public)), using the library")
                 }
             }
-            return try await #huggingFaceLoadModelContainer(
-                configuration: configuration,
-                progressHandler: { p in progress(p.fractionCompleted) }
-            )
+            do {
+                return try await #huggingFaceLoadModelContainer(
+                    configuration: configuration,
+                    progressHandler: { p in progress(p.fractionCompleted) }
+                )
+            } catch {
+                // A folder marked complete that no longer loads (a file damaged or removed since): forget that it is complete,
+                // so the next try checks every file and downloads what is wrong instead of failing the same way forever.
+                if fromOwnFolder, !(error is CancellationError) { ModelDownload.markIncomplete(id) }
+                throw error
+            }
         } catch let error as URLError {
             switch error.code {
             case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost, .timedOut:
@@ -194,7 +212,7 @@ final class EmbeddedModel: ObservableObject {
     /// Small test query without tools.
     func test(model id: String) async throws -> String {
         try await exclusive {
-            let container = try await load(id)
+            let container = try await load(id, ownsQuery: true)
             // No reasoning for a one-word check: a hybrid model would otherwise spend its 20 tokens thinking.
             let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, maxKVSize: 512, temperature: 0.1),
                                       additionalContext: ["enable_thinking": false])
@@ -216,7 +234,7 @@ final class EmbeddedModel: ObservableObject {
 
     private func runExclusive(model id: String, system: String, prompt: String, profile: ModelProfile, runner: ToolRunner,
                               thinking requested: Bool, onText: ((String) -> Void)?) async throws -> BrainPlan {
-        let container = try await load(id)
+        let container = try await load(id, ownsQuery: true)
         let option = Self.options.first { $0.id == id }
         let thinking = requested && (option?.canThink ?? false)
         let sampling = option?.sampling(thinking: thinking) ?? ModelFamily.other.sampling(thinking: false)
@@ -281,36 +299,38 @@ final class EmbeddedModel: ObservableObject {
         return BrainPlan(text: text.trimmingCharacters(in: .whitespacesAndNewlines), actions: runner.actions)
     }
 
-    /// Generates one answer and hands the visible part to `onText` while it grows (at most ~20 times a second).
-    /// Reasoning in <think> and tool calls written as JSON are never shown.
+    /// Generates one answer and hands the visible part to `onText` while it grows (at most ~20 times a second, and only
+    /// when it changed). Reasoning in <think> and tool calls written as JSON are never shown. `StreamingAnswer` follows
+    /// each token as it arrives, so an update costs the size of the token, not of the whole answer so far.
     private func stream(_ session: ChatSession, _ prompt: String, thinking: Bool = false, images: [UserInput.Image] = [],
                         onText: ((String) -> Void)?) async throws -> String {
         var output = ""
+        var answer = StreamingAnswer(thinking: thinking)
         var lastEmit = Date.distantPast
+        var shown = ""
+        func emit() {
+            let visible = answer.visible
+            guard !visible.isEmpty, visible != shown else { return }
+            shown = visible
+            onText?(visible)
+        }
         for try await chunk in session.streamResponse(to: prompt, role: .user, images: images, videos: [], audios: []) {
             try Task.checkCancellation()
             output += chunk
-            guard let onText, Date().timeIntervalSince(lastEmit) > 0.05 else { continue }
+            guard onText != nil else { continue }
+            answer.append(chunk)
+            guard Date().timeIntervalSince(lastEmit) > 0.05 else { continue }
             lastEmit = Date()
-            let visible = Self.visible(output, thinking: thinking)
-            if !visible.isEmpty { onText(visible) }
+            emit()
         }
-        if let onText {
-            let visible = Self.visible(output, thinking: thinking)
-            if !visible.isEmpty { onText(visible) }
-        }
+        if onText != nil { emit() }
         return output
     }
 
     /// The part of a partial answer that may be shown: without reasoning (also while it is still open) and without
     /// a tool call that is being written as JSON.
     nonisolated static func visible(_ partial: String, thinking: Bool = false) -> String {
-        var text = ThinkingPolicy.answer(from: partial, thinking: thinking)
-        if let call = text.range(of: #"(```(json)?\s*)?\{\s*"(name|tool)"\s*:"#, options: .regularExpression) {
-            text = String(text[..<call.lowerBound])
-        }
-        if let tag = text.range(of: "<tool_call>") { text = String(text[..<tag.lowerBound]) }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        ThinkingPolicy.visible(partial, thinking: thinking)
     }
 
     /// Kept for callers of the old name; the implementation lives in the shared tool loop.

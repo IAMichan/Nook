@@ -45,25 +45,57 @@ extension AgentHub {
         }
     }
 
+    /// A burst of hook events becomes one write, and one snapshot: the records are copied only once the burst is over,
+    /// not for every event the wait then throws away.
     private func saveRecords() {
-        saveWork?.cancel()
-        let snapshot = records.map { key, r in
-            SavedRecord(key: key, agentID: r.agentID, agent: r.agent, cwd: r.cwd, status: "\(r.status)",
-                        steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
+        let previous = saveWork
+        previous?.cancel()
+        saveWork = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let snapshot = self.recordSnapshot()
+            // An earlier write still under way finishes first, so an older snapshot never lands after this one.
+            await previous?.value
+            await Task.detached(priority: .utility) {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                guard let data = try? encoder.encode(snapshot) else { return }
+                try? data.write(to: Self.recordsURL, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.recordsURL.path)
+            }.value
+        }
+    }
+
+    private func recordSnapshot() -> [SavedRecord] {
+        records.map { key, r in
+            SavedRecord(key: key, agentID: r.agentID, agent: r.agent, cwd: r.cwd, status: Self.savedName(r.status),
+                        steps: r.steps.map { [Self.savedName($0.mark), $0.text] }, file: r.file, lastMessage: r.lastMessage,
                         updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
                         sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
                         firstPrompt: r.firstPrompt, linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted,
                         otherProjects: r.otherProjects.isEmpty ? nil : r.otherProjects)
         }
-        // A burst of hook events becomes one write.
-        saveWork = Task.detached(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard !Task.isCancelled else { return }
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            guard let data = try? encoder.encode(snapshot) else { return }
-            try? data.write(to: Self.recordsURL, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.recordsURL.path)
+    }
+
+    /// The names the saved file has always used: the case names `"\(status)"` wrote, spelled out instead of found by
+    /// reflection for every record on every save. `restoreRecords` reads them back.
+    private nonisolated static func savedName(_ status: AgentStatus) -> String {
+        switch status {
+        case .waiting: return "waiting"
+        case .running: return "running"
+        case .failed: return "failed"
+        case .done: return "done"
+        case .detected: return "detected"
+        }
+    }
+
+    private nonisolated static func savedName(_ mark: AgentStep.Mark) -> String {
+        switch mark {
+        case .done: return "done"
+        case .running: return "running"
+        case .blocked: return "blocked"
+        case .failed: return "failed"
+        case .todo: return "todo"
         }
     }
 

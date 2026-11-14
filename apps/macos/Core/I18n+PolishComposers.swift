@@ -21,6 +21,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Geplakte tekst",
         "compose.chip.model": "Model",
         "compose.chip.secret": "Geheim",
+        "compose.chip.element": "Element van een pagina",
     ],
     .en: [
         "compose.plus.screenshot": "Screenshot of the front window (⌥⌘5)",
@@ -39,6 +40,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Pasted text",
         "compose.chip.model": "Model",
         "compose.chip.secret": "Secret",
+        "compose.chip.element": "Page element",
     ],
     .de: [
         "compose.plus.screenshot": "Screenshot des vordersten Fensters (⌥⌘5)",
@@ -57,6 +59,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Eingefügter Text",
         "compose.chip.model": "Modell",
         "compose.chip.secret": "Geheimnis",
+        "compose.chip.element": "Element einer Seite",
     ],
     .fr: [
         "compose.plus.screenshot": "Capture de la fenêtre au premier plan (⌥⌘5)",
@@ -75,6 +78,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Texte collé",
         "compose.chip.model": "Modèle",
         "compose.chip.secret": "Secret",
+        "compose.chip.element": "Élément de la page",
     ],
     .es: [
         "compose.plus.screenshot": "Captura de la ventana en primer plano (⌥⌘5)",
@@ -93,5 +97,6 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Texto pegado",
         "compose.chip.model": "Modelo",
         "compose.chip.secret": "Secreto",
+        "compose.chip.element": "Elemento de la página",
     ],
 ]

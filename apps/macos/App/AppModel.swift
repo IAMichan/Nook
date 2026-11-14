@@ -517,6 +517,8 @@ final class AppModel: ObservableObject {
             NotesConnector(),
             MailConnector(),
             BrowserConnector(),
+            // The user's own browser through Nook's extension (Settings › Browser › Nook in your browser).
+            BrowserExtensionConnector(),
             FilesConnector(),
             ClipboardConnector(),
             ChatInboxConnector(),
@@ -541,6 +543,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        BrowserExtensionService.shared.start(app: self)
         startWhatsApp()
         startChats()
         startFlow()
@@ -596,11 +599,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self?.refreshUpcoming() }
         }
 
-        // ThinkAlong: evaluates dwell time periodically. Zero cost; model is only
-        // invoked when ThinkAlong determines assistance is genuinely helpful.
-        watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
-            Task { @MainActor in self?.thinkAlongTick() }
-        }
+        // ThinkAlong: evaluates dwell time periodically, only while it is on (`startThinkAlongWatch`).
+        startThinkAlongWatch()
 
         startBuddy()
         startQuietWatch()

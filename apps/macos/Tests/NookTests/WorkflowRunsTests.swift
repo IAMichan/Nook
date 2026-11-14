@@ -38,8 +38,8 @@ final class WorkflowRunsTests: XCTestCase {
     func testAFirstReadAsksTheSameRunsInPagesAtOnce() {
         let count = WorkflowRunParser.firstReadPages
         XCTAssertEqual(WorkflowRunParser.pageSize % count, 0, "the pages hold exactly the runs of one read")
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil, page: 1), "/actions/runs?per_page=10&page=1")
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7, page: 4), "/actions/workflows/7/runs?per_page=10&page=4")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil, page: 1), "/actions/runs?per_page=10&page=1&exclude_pull_requests=true")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7, page: 4), "/actions/workflows/7/runs?per_page=10&page=4&exclude_pull_requests=true")
         let pages = [[1, 2, 3], [3, 4], [5]].map { ids in
             WorkflowRunParser.runs(["workflow_runs": ids.map { runJSON($0, status: "completed", conclusion: "success") }])
         }
@@ -102,8 +102,8 @@ final class WorkflowRunsTests: XCTestCase {
         XCTAssertEqual(runs.filter(WorkflowRunFilter.active.matches).map(\.id), [3])
         XCTAssertEqual(runs.filter(WorkflowRunFilter.failed.matches).map(\.id), [2])
         XCTAssertTrue(runs[2].waitsForApproval)
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil), "/actions/runs?per_page=40")
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7), "/actions/workflows/7/runs?per_page=40")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil), "/actions/runs?per_page=40&exclude_pull_requests=true")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7), "/actions/workflows/7/runs?per_page=40&exclude_pull_requests=true")
     }
 
     func testWorkflowsSkipDisabledOnesAndSortByName() {
@@ -231,6 +231,6 @@ final class WorkflowRunsTests: XCTestCase {
                        URL(string: "https://github.com/o/r/blob/abc/.github/workflows/ci.yml"))
         XCTAssertNil(WorkflowRunParser.workflowFile(repo: "o/r", sha: "abc", path: "dynamic/pages/pages-build-deployment"))
         XCTAssertEqual(WorkflowRunParser.branchRunsPath(workflowID: 7, branch: "fix/a&b"),
-                       "/actions/workflows/7/runs?branch=fix/a%26b&per_page=30")
+                       "/actions/workflows/7/runs?branch=fix/a%26b&per_page=30&exclude_pull_requests=true")
     }
 }

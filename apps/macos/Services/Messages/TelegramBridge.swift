@@ -135,8 +135,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         do {
             state = .starting
             loginError = nil
-            client = try TDLibClient(library: library) { [weak self] object in
-                Task { @MainActor in self?.handle(object) }
+            // Only what `handle` reads crosses to the main thread, in the order TDLib sent it (`TDLibClient`).
+            client = try TDLibClient(library: library, types: Self.handledTypes) { [weak self] object in
+                MainActor.assumeIsolated { self?.handle(object) }
             }
             // The first request wakes TDLib up; it answers with where the login stands.
             send(["@type": "getOption", "name": "version"])
@@ -345,6 +346,20 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         guard let client, let json = TelegramData.request(request) else { return }
         client.send(json)
     }
+
+    /// Every `@type` that `handle` has a case for: the rest of what TDLib sends (a person coming online, an option, a
+    /// download's progress…) is dropped on TDLib's thread, so it never wakes the main thread. Keep it equal to the cases
+    /// below; `TelegramBridgeTypesTests` compares the two.
+    nonisolated static let handledTypes: Set<String> = [
+        "updateAuthorizationState", "updateNewChat", "chat", "updateChatPosition", "updateBasicGroup", "updateSupergroup",
+        "updateChatNotificationSettings", "updateDeleteMessages", "updateChatPhoto", "updateChatTitle",
+        "updateChatReadOutbox", "basicGroupFullInfo", "chatMembers", "updateChatPermissions",
+        "updateChatMessageAutoDeleteTime", "updateBasicGroupFullInfo", "updateSupergroupFullInfo", "updateUserFullInfo",
+        "supergroupFullInfo", "userFullInfo", "messageViewers", "users", "messageReadDateRead", "updateChatAction",
+        "updateChatReadInbox", "updateUser", "updateMessageContent", "updateMessageEdited", "updateMessageInteractionInfo",
+        "updateNewMessage", "updateMessageSendSucceeded", "message", "updateMessageSendFailed", "chats", "foundMessages",
+        "messages", "file", "updateFile", "user", "error",
+    ]
 
     private func handle(_ object: [String: Any]) {
         switch TelegramData.type(object) {
@@ -965,20 +980,19 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     }
 }
 
-/// TDLib's JSON client in Nook's own process: requests go in as JSON strings, every answer and update comes back on a
-/// thread of its own and is handed over as a JSON object.
+/// TDLib's JSON client in Nook's own process: requests go in as JSON strings, every answer and update comes back on
+/// TDLib's receiving thread (`TDLibReceiver`) and is handed to the main thread as a JSON object, in the order it came.
 final class TDLibClient: @unchecked Sendable {
     private typealias CreateClient = @convention(c) () -> Int32
     private typealias Send = @convention(c) (Int32, UnsafePointer<CChar>) -> Void
-    private typealias Receive = @convention(c) (Double) -> UnsafePointer<CChar>?
+    fileprivate typealias Receive = @convention(c) (Double) -> UnsafePointer<CChar>?
     private typealias Execute = @convention(c) (UnsafePointer<CChar>) -> UnsafePointer<CChar>?
 
     private let id: Int32
     private let sendFunction: Send
-    private let lock = NSLock()
-    private var running = true
 
-    init(library: URL, onUpdate: @escaping @Sendable ([String: Any]) -> Void) throws {
+    /// `types` are the `@type`s the caller reads; everything else is dropped before it reaches the main thread.
+    init(library: URL, types: Set<String>, onUpdate: @escaping @Sendable ([String: Any]) -> Void) throws {
         guard let handle = dlopen(library.path, RTLD_NOW | RTLD_LOCAL) else {
             throw NookError(tr("chats.telegram.loadFailed", dlerror().map { String(cString: $0) } ?? ""))
         }
@@ -991,33 +1005,67 @@ final class TDLibClient: @unchecked Sendable {
         _ = executeFunction(#"{"@type":"setLogVerbosityLevel","new_verbosity_level":1}"#)
         id = unsafeBitCast(create, to: CreateClient.self)()
         sendFunction = unsafeBitCast(send, to: Send.self)
-        let receiveFunction = unsafeBitCast(receive, to: Receive.self)
-        let client = id
-        let thread = Thread { [weak self] in
-            while self?.isRunning ?? false {
-                guard let answer = receiveFunction(1.0) else { continue }
+        TDLibReceiver.shared.register(id, receive: unsafeBitCast(receive, to: Receive.self)) { object in
+            guard types.contains(TelegramData.type(object)) else { return }
+            // One queue, so updates reach the bridge in TDLib's order (unstructured tasks would not keep it).
+            DispatchQueue.main.async { onUpdate(object) }
+        }
+    }
+
+    deinit { TDLibReceiver.shared.unregister(id) }
+
+    func send(_ json: String) {
+        json.withCString { sendFunction(id, $0) }
+    }
+
+    /// Closes the session cleanly; TDLib then stops sending, and nothing more of this client is handed over.
+    func close() {
+        send(#"{"@type":"close"}"#)
+        TDLibReceiver.shared.unregister(id)
+    }
+}
+
+/// The one thread that waits for TDLib's answers, for every client this process makes. TDLib's `td_receive` serves all
+/// clients at once and must not run on two threads at the same time, so a client started again after a log out does not
+/// get a thread of its own: its answers are handed to whichever client they name (`@client_id`). The thread waits in
+/// `td_receive` until TDLib has something, with a long timeout, so a quiet Telegram does not wake Nook every second; it
+/// needs no stop flag, since a closed client is simply no longer registered.
+private final class TDLibReceiver: @unchecked Sendable {
+    static let shared = TDLibReceiver()
+    /// How long one `td_receive` waits when TDLib has nothing: only a bound, TDLib answers as soon as it has something.
+    private static let timeout = 60.0
+
+    private let lock = NSLock()
+    private var clients: [Int32: @Sendable ([String: Any]) -> Void] = [:]
+    private var started = false
+
+    func register(_ id: Int32, receive: @escaping TDLibClient.Receive, handler: @escaping @Sendable ([String: Any]) -> Void) {
+        lock.lock()
+        clients[id] = handler
+        let start = !started
+        started = true
+        lock.unlock()
+        guard start else { return }
+        let thread = Thread { [self] in
+            while true {
+                guard let answer = receive(Self.timeout) else { continue }
                 let text = String(cString: answer)
                 guard let object = TelegramData.object(text) else { continue }
-                if let from = TelegramData.int64(object["@client_id"]), from != Int64(client) { continue }
-                onUpdate(object)
+                for handler in handlers(for: TelegramData.int64(object["@client_id"])) { handler(object) }
             }
         }
         thread.name = "TDLib"
         thread.start()
     }
 
-    private var isRunning: Bool {
+    func unregister(_ id: Int32) {
+        lock.lock(); clients[id] = nil; lock.unlock()
+    }
+
+    /// The client an answer names; one that names none goes to every client (there is only ever one at a time).
+    private func handlers(for client: Int64?) -> [@Sendable ([String: Any]) -> Void] {
         lock.lock(); defer { lock.unlock() }
-        return running
-    }
-
-    func send(_ json: String) {
-        json.withCString { sendFunction(id, $0) }
-    }
-
-    /// Closes the session cleanly; TDLib then stops sending.
-    func close() {
-        send(#"{"@type":"close"}"#)
-        lock.lock(); running = false; lock.unlock()
+        guard let client else { return Array(clients.values) }
+        return clients[Int32(truncatingIfNeeded: client)].map { [$0] } ?? []
     }
 }

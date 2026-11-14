@@ -168,11 +168,15 @@ enum WorkflowRunParser {
     /// The runs Nook reads at once: about two screens of a busy repository.
     static let pageSize = 40
 
-    /// `GET /actions/runs`, or the runs of one workflow (`/actions/workflows/{id}/runs`).
+    /// `GET /actions/runs`, or the runs of one workflow (`/actions/workflows/{id}/runs`). Without the pull requests of
+    /// each run, which the list never shows: GitHub looks them up per run, and leaving them out makes its answer quicker
+    /// and smaller.
     static func runsPath(workflowID: Int?) -> String {
         let base = workflowID.map { "/actions/workflows/\($0)/runs" } ?? "/actions/runs"
-        return base + "?per_page=\(pageSize)"
+        return base + "?per_page=\(pageSize)&\(lean)"
     }
+
+    static let lean = "exclude_pull_requests=true"
 
     /// A list with nothing to show yet is read in this many pages at once. GitHub's time grows with the page (about
     /// 0.6 s for 10 runs, 1.2 to 1.6 s for 40), so four pages of 10 side by side come in about twice as fast as one of
@@ -182,7 +186,7 @@ enum WorkflowRunParser {
     /// The same runs as `runsPath`, as page `page` (from 1) of `firstReadPages`.
     static func runsPath(workflowID: Int?, page: Int) -> String {
         let base = workflowID.map { "/actions/workflows/\($0)/runs" } ?? "/actions/runs"
-        return base + "?per_page=\(pageSize / firstReadPages)&page=\(page)"
+        return base + "?per_page=\(pageSize / firstReadPages)&page=\(page)&\(lean)"
     }
 
     /// Pages read side by side as one list, in page order. A run that started between two pages' reads pushes the
@@ -227,7 +231,7 @@ enum WorkflowRunParser {
     static func branchRunsPath(workflowID: Int, branch: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~/"))
         let encoded = branch.addingPercentEncoding(withAllowedCharacters: allowed) ?? branch
-        return "/actions/workflows/\(workflowID)/runs?branch=\(encoded)&per_page=30"
+        return "/actions/workflows/\(workflowID)/runs?branch=\(encoded)&per_page=30&\(lean)"
     }
 
     /// How long after a run was cancelled its replacement may have been created: GitHub cancels the older run within a

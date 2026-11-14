@@ -31,11 +31,24 @@ struct AutoSettledLine: View {
     }
 
     /// "3 hours ago", in the app's language.
+    @MainActor
     static func elapsed(since date: Date, now: Date) -> String {
         if now.timeIntervalSince(date) < 60 { return tr("agents.justNow") }
+        return formatter().localizedString(for: date, relativeTo: now)
+    }
+
+    /// Made once per language instead of on every tick of every line: in the language Nook speaks, made again when that
+    /// changes (as `MailThreadView`'s formatters are).
+    @MainActor private static var kept: (language: String, formatter: RelativeDateTimeFormatter)?
+
+    @MainActor
+    private static func formatter() -> RelativeDateTimeFormatter {
+        let language = I18n.shared.language.rawValue
+        if let kept, kept.language == language { return kept.formatter }
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: I18n.shared.language.rawValue)
+        formatter.locale = Locale(identifier: language)
         formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: now)
+        kept = (language, formatter)
+        return formatter
     }
 }

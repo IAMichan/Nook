@@ -94,8 +94,12 @@ final class LiveAgentProcesses: @unchecked Sendable {
     /// `AgentGovernor` watches.
     private var running: [ObjectIdentifier: AgentProcess] = [:]
 
+    /// Called after an agent is tracked, outside the lock: `AgentGovernor` wakes its readings up again.
+    nonisolated(unsafe) static var onTrack: (@Sendable () -> Void)?
+
     func track(_ process: AgentProcess) {
         lock.withLock { running[ObjectIdentifier(process)] = process }
+        Self.onTrack?()
     }
 
     func untrack(_ process: AgentProcess) {

@@ -522,33 +522,44 @@ struct SessionUsageButton: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     let source: SessionUsageSource
-    @State private var open = false
-    @State private var hovering = false
 
+    /// Reads the usage on every change of the workspace or the app model (both publish often while an agent works); the
+    /// button itself, its help and its ring are drawn again only when what they show changed.
     var body: some View {
         let snapshot = SessionUsageSnapshot.read(source, app: app, workspace: workspace)
         if !snapshot.isEmpty {
-            Button { open.toggle() } label: {
-                SessionUsageRing(snapshot: snapshot).equatable()
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .frame(height: ToolbarGroup.itemHeight)
-                    .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: ToolbarGroup.itemRadius)
-                    .contentShape(Rectangle())
-                    .onHover { hovering = $0 }
-            }
-            .buttonStyle(.nookPlain)
-            .fixedSize()
-            .help(help(snapshot))
-            .accessibilityLabel(help(snapshot))
-            .popover(isPresented: $open, arrowEdge: .bottom) {
-                SessionUsagePopover(source: source, legend: true) { open = false }
-            }
+            SessionUsageButtonLabel(source: source, snapshot: snapshot).equatable()
         }
     }
+}
 
-    /// The usage, then which ring is which.
-    private func help(_ snapshot: SessionUsageSnapshot) -> String {
-        [snapshot.help, snapshot.ringOrder].compactMap { $0 }.joined(separator: "\n")
+/// `SessionUsageButton` for one reading of the usage.
+private struct SessionUsageButtonLabel: View, Equatable {
+    let source: SessionUsageSource
+    let snapshot: SessionUsageSnapshot
+    @State private var open = false
+    @State private var hovering = false
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.source == rhs.source && lhs.snapshot == rhs.snapshot }
+
+    var body: some View {
+        // The usage, then which ring is which: made once for the tooltip and the label.
+        let help = [snapshot.help, snapshot.ringOrder].compactMap { $0 }.joined(separator: "\n")
+        Button { open.toggle() } label: {
+            SessionUsageRing(snapshot: snapshot).equatable()
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(height: ToolbarGroup.itemHeight)
+                .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: ToolbarGroup.itemRadius)
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+        .buttonStyle(.nookPlain)
+        .fixedSize()
+        .help(help)
+        .accessibilityLabel(help)
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            SessionUsagePopover(source: source, legend: true) { open = false }
+        }
     }
 }
 

@@ -109,12 +109,17 @@ enum GitHubActions {
     /// Re-runs or cancels a run, only after your click. GitHub answers with an empty body, so this reads none; a refusal
     /// comes back in GitHub's own words.
     static func perform(_ action: WorkflowRunAction, repo: String, runID: Int, token: String) async throws {
-        guard let url = URL(string: "https://api.github.com" + action.path(repo: repo, runID: runID)) else {
-            throw NookError("Invalid GitHub address.")
-        }
+        _ = try await post(action.path(repo: repo, runID: runID), token: token)
+    }
+
+    /// A POST that changes something on GitHub, its answer's body returned; a refusal in GitHub's own words.
+    private static func post(_ path: String, token: String, body: Data? = nil) async throws -> Data {
+        guard let url = URL(string: "https://api.github.com" + path) else { throw NookError("Invalid GitHub address.") }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.httpBody = body
         for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -123,15 +128,64 @@ enum GitHubActions {
             let message = (object["message"] as? String).map { "GitHub: \($0) (\(status))" } ?? "GitHub returned an error (\(status))."
             throw NookError(message, kind: status == 401 ? .auth : ConnectorErrorKind.forHTTP(status: status))
         }
+        return data
+    }
+
+    /// The repository's default branch, which a run form starts on.
+    static func defaultBranch(repo: String, token: String) async throws -> String {
+        ((try await get("/repos/\(repo)", token: token) as? [String: Any])?["default_branch"] as? String) ?? ""
+    }
+
+    /// The branches a workflow can be started on, the default branch first.
+    static func branches(repo: String, defaultBranch: String, token: String) async throws -> [String] {
+        WorkflowDispatch.branches(try await get("/repos/\(repo)/branches?per_page=100", token: token), defaultBranch: defaultBranch)
+    }
+
+    /// The inputs of a workflow that can be started by hand, read from its file at `ref`; nil when it cannot be (no
+    /// `workflow_dispatch`, or no such file on that branch).
+    static func dispatchInputs(repo: String, path: String, ref: String, token: String) async throws -> [WorkflowInput]? {
+        do {
+            let json = try await get(WorkflowDispatch.filePath(repo: repo, path: path, ref: ref), token: token)
+            return WorkflowDispatch.fileText(json).flatMap(WorkflowDispatch.inputs)
+        } catch let error as NookError where error.kind == .config {
+            return nil
+        }
+    }
+
+    /// Which of `workflows` can be started by hand, with their inputs, read from their files at `ref` side by side.
+    /// A file that cannot be read counts as one that cannot be started.
+    static func dispatchable(repo: String, workflows: [Workflow], ref: String, token: String) async -> [Int: [WorkflowInput]] {
+        await withTaskGroup(of: (Int, [WorkflowInput]?).self) { group in
+            for workflow in workflows where workflow.path.hasPrefix(".github/") {
+                group.addTask {
+                    let inputs = try? await dispatchInputs(repo: repo, path: workflow.path, ref: ref, token: token)
+                    return (workflow.id, inputs ?? nil)
+                }
+            }
+            var result: [Int: [WorkflowInput]] = [:]
+            for await (id, inputs) in group { if let inputs { result[id] = inputs } }
+            return result
+        }
+    }
+
+    /// Starts a workflow by hand, only after your click. Returns the new run's id when GitHub gives it.
+    static func dispatch(repo: String, workflowID: Int, ref: String, inputs: [WorkflowInput], values: [String: String],
+                         token: String) async throws -> Int? {
+        let body = WorkflowDispatch.body(ref: ref, inputs: inputs, values: values)
+        let data = try await post("/repos/\(repo)/actions/workflows/\(workflowID)/dispatches", token: token,
+                                  body: try JSONSerialization.data(withJSONObject: body))
+        return data.isEmpty ? nil : WorkflowDispatch.runID(try? JSONSerialization.jsonObject(with: data))
     }
 
     private static func headers(_ token: String) -> [String: String] {
         ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
     }
 
+    /// Every read is conditional: the page polls the same lists, and an unchanged one comes back as a 304 without a body,
+    /// quicker and outside GitHub's rate limit.
     private static func get(_ path: String, token: String) async throws -> Any {
         guard let url = URL(string: "https://api.github.com" + path) else { throw NookError("Invalid GitHub address.") }
-        return try await ConnectorHTTP.json(url, headers: headers(token))
+        return try await ConnectorHTTP.json(url, headers: headers(token), conditional: true)
     }
 }
 
@@ -169,6 +223,9 @@ final class ActionsStore: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var errorKind: ConnectorErrorKind?
     @Published private(set) var lastRead: Date?
+    /// What can be started by hand in the open repository: its default branch and the workflows with a
+    /// `workflow_dispatch` trigger, with their inputs. Nil until read.
+    @Published private(set) var dispatchInfo: ActionsDispatchInfo?
 
     private var tokens: [String: String] = [:]
     /// The read under way per repository and workflow.
@@ -182,6 +239,10 @@ final class ActionsStore: ObservableObject {
     /// When each tab's repository was last read in the background.
     private var peekedAt: [String: Date] = [:]
     private var peeking = false
+    /// What can be started by hand per repository (lowercased), read at most every ten minutes or when its workflows
+    /// change.
+    private var dispatchCache: [String: ActionsDispatchInfo] = [:]
+    private var dispatchReads: Set<String> = []
     private static let recentKey = "nook.actions.recent"
     private static let repoKey = "nook.actions.repo"
     private static let addedKey = "nook.actions.added"
@@ -267,6 +328,17 @@ final class ActionsStore: ObservableObject {
     private var cacheKey: String { (repo ?? "") + "|" + (workflowID.map(String.init) ?? "") }
 
     private func showCached() {
+        dispatchInfo = repo.flatMap { dispatchCache[$0.lowercased()] }
+        // A workflow not read on its own yet: its runs in the list of every workflow, at once, while its own are read.
+        if cache[cacheKey] == nil, let workflowID, let repo, let all = cache[repo + "|"] {
+            runs = all.runs.filter { $0.workflowID == workflowID }
+            if !all.workflows.isEmpty { workflows = all.workflows }
+            lastRead = nil
+            loaded = !runs.isEmpty
+            error = nil
+            errorKind = nil
+            return
+        }
         if let kept = cache[cacheKey] {
             runs = kept.runs
             if !kept.workflows.isEmpty { workflows = kept.workflows }
@@ -319,6 +391,7 @@ final class ActionsStore: ObservableObject {
                 statuses[repo.lowercased()] = WorkflowRepoStatus(runs: runs)
                 save()
             }
+            if fetched.workflows != nil { Task { await readDispatch(repo: repo, workflows: list, token: token) } }
             guard repo == self.repo, workflowID == self.workflowID else { return }
             self.runs = runs
             self.workflows = list
@@ -389,6 +462,54 @@ final class ActionsStore: ObservableObject {
         save()
     }
 
+    /// Reads which workflows can be started by hand, from their files on the default branch: once, again after ten
+    /// minutes, or when the workflows changed. A failure leaves what was read before.
+    private func readDispatch(repo: String, workflows: [Workflow], token: String) async {
+        let name = repo.lowercased()
+        let ids = Set(workflows.map(\.id))
+        if let known = dispatchCache[name], known.workflowIDs == ids, Date().timeIntervalSince(known.read) < 600 { return }
+        guard dispatchReads.insert(name).inserted else { return }
+        defer { dispatchReads.remove(name) }
+        guard let branch = try? await GitHubActions.defaultBranch(repo: repo, token: token), !branch.isEmpty else { return }
+        let inputs = await GitHubActions.dispatchable(repo: repo, workflows: workflows, ref: branch, token: token)
+        let info = ActionsDispatchInfo(read: Date(), defaultBranch: branch, workflowIDs: ids, inputs: inputs)
+        dispatchCache[name] = info
+        if repo.caseInsensitiveCompare(self.repo ?? "") == .orderedSame { dispatchInfo = info }
+    }
+
+    /// The branches of the open repository a workflow can be started on, the default branch first.
+    func dispatchBranches() async -> [String] {
+        guard let repo, let info = dispatchInfo else { return [] }
+        guard let token = try? await token(for: repo),
+              let list = try? await GitHubActions.branches(repo: repo, defaultBranch: info.defaultBranch, token: token),
+              !list.isEmpty else { return [info.defaultBranch] }
+        return list
+    }
+
+    /// The inputs of `workflow` as its file reads on `ref`; nil when it cannot be started there. The default branch's
+    /// were read already.
+    func dispatchInputs(_ workflow: Workflow, ref: String) async throws -> [WorkflowInput]? {
+        guard let repo else { return nil }
+        if let info = dispatchInfo, ref == info.defaultBranch { return info.inputs[workflow.id] }
+        let token = try await token(for: repo)
+        return try await GitHubActions.dispatchInputs(repo: repo, path: workflow.path, ref: ref, token: token)
+    }
+
+    /// Starts a workflow by hand and reads the list again, so the new run shows. Returns the new run when GitHub named
+    /// it and it is in the list.
+    func dispatch(workflow: Workflow, ref: String, inputs: [WorkflowInput], values: [String: String]) async throws -> WorkflowRun? {
+        guard let repo else { return nil }
+        let token = try await token(for: repo)
+        let id = try await GitHubActions.dispatch(repo: repo, workflowID: workflow.id, ref: ref, inputs: inputs, values: values,
+                                                  token: token)
+        // Without the run's id GitHub needs a moment before the run shows in the list.
+        if id == nil { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+        await refresh()
+        guard let id else { return nil }
+        if let listed = runs.first(where: { $0.id == id }) { return listed }
+        return try? await GitHubActions.run(repo: repo, id: id, token: token)
+    }
+
     /// The token for a run's page: the one that read the list.
     func token(for repository: String) async throws -> String {
         if let known = tokens[repository] { return known }
@@ -396,4 +517,14 @@ final class ActionsStore: ObservableObject {
         tokens[repository] = token
         return token
     }
+}
+
+/// What can be started by hand in a repository: its default branch and, per workflow with a `workflow_dispatch` trigger,
+/// the inputs it asks for.
+struct ActionsDispatchInfo: Equatable, Sendable {
+    let read: Date
+    let defaultBranch: String
+    /// The workflows the files were read for, so a changed list is read again.
+    let workflowIDs: Set<Int>
+    let inputs: [Int: [WorkflowInput]]
 }

@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Typing › Autocomplete and its pages: suggestions as you type in any app, with a GGUF model on this Mac or
+/// Settings › Intelligence › Autocomplete and its detail pages: suggestions as you type in any app, with a GGUF model on this Mac or
 /// the brain's own model. One page per part (general, apps, style, playground, statistics), never tabs.
 struct AutocompleteSettingsSection: View {
     /// The page this shows.
@@ -62,7 +62,7 @@ struct AutocompleteSettingsSection: View {
                     statsSection
                 }
             } else if page != .general {
-                // The other pages only matter while completing is on: one line that says so and the way to turn it on.
+                // The other parts only matter while completing is on: one line that says so and the way to turn it on.
                 Section {
                     StatusRow(title: tr("autocomplete.offTitle"), detail: tr("autocomplete.offDetail"), state: .todo) {
                         Button(tr("autocomplete.turnOn")) { store.prefs.enabled = true; autocomplete.refresh() }
