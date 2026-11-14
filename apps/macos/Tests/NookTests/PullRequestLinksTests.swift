@@ -218,8 +218,8 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(one, PullRequestBadge(glyph: .draft, label: .number(12)))
         XCTAssertEqual(one?.text, "#12")
         let many = PullRequestBadge.text(links: [link(12, head: "a"), link(13, head: "b", state: .merged), link(14, head: "c", state: .closed)])
-        XCTAssertEqual(many, PullRequestBadge(glyph: .open, label: .numberPlus(12, extra: 2)))
-        XCTAssertEqual(many?.text, "#12 +2")
+        XCTAssertEqual(many, PullRequestBadge(glyph: .closed, label: .numberPlus(14, extra: 2)))
+        XCTAssertEqual(many?.text, "#14 +2")
         let stack = PullRequestBadge.text(links: [link(1, base: "main", head: "a"), link(2, base: "a", head: "b"), link(3, base: "b", head: "c")])
         XCTAssertEqual(stack, PullRequestBadge(glyph: .stack, label: .stack(3, merged: 0)))
         XCTAssertNil(stack?.text)
@@ -235,9 +235,14 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(dropped, PullRequestBadge(glyph: .closed, label: .stack(2, merged: 0)))
     }
 
-    func testBadgePrefersUnresolvedThenMergedOverClosed() {
-        XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .closed), link(2, state: .merged)])?.glyph, .merged)
-        XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .open), link(2, state: .merged)])?.label, .numberPlus(1, extra: 1))
+    func testBadgeShowsTheNewestRequest() {
+        XCTAssertEqual(PullRequestBadge.text(links: [link(2, state: .merged), link(1, state: .closed)])?.glyph, .merged)
+        // An older request still open in conflict does not hide that the newest one merged.
+        var older = link(1326)
+        older.conflicted = true
+        let badge = PullRequestBadge.text(links: [older, link(1579, state: .merged)])
+        XCTAssertEqual(badge, PullRequestBadge(glyph: .merged, label: .numberPlus(1579, extra: 1)))
+        XCTAssertEqual(PullRequestBadge.text(links: [link(3, state: .merged), link(4, state: .draft)])?.glyph, .draft)
     }
 
     func testBadgeShowsAMergeConflictOnlyWhileOpen() {
