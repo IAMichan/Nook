@@ -10,6 +10,7 @@ A static site with no dependencies: plain HTML, one stylesheet and one script. I
 | `assistant.html` | Ask Nook: screen context, plans, Nooks, memory, music and your day |
 | `writing.html` | Autocomplete in every app, Flow dictation, Double Tap, call notes |
 | `privacy.html` | Local-first brains, Only on this Mac, approvals and the audit log, what Nook never reads |
+| `browser-extension-privacy.html` | The browser extension's privacy policy (linked from its Chrome Web Store listing) |
 | `download.html` | Download, platforms, requirements, build from source |
 
 ## Editing
