@@ -114,6 +114,16 @@ final class TranscriptPresentationTests: XCTestCase {
         ]), .verifying(.build))
     }
 
+    func testSteerKeepsTheRunningStepAsTheLiveLine() {
+        var steer = message("u2", .user, "What is the URL?", at: 3)
+        steer.queued = true
+        XCTAssertEqual(TranscriptPresentation.activity([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running)], at: 2),
+            steer
+        ]), .verifying(.build))
+    }
+
     func testTheThoughtBeforeTheRunningStepGoesWithTheLiveLine() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Fix de test", at: 0),
