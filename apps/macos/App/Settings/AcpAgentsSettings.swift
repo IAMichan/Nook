@@ -144,12 +144,9 @@ private struct AcpRegistrySheet: View {
             }
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(chosen?.command == nil && chosen?.binary != nil ? tr("acp.install") : tr("acp.add")) { confirm() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(!(chosen?.isSupported ?? false) || installing)
         }
         .interactiveDismissDisabled(installing)
@@ -248,16 +245,13 @@ private struct AcpManualSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             // A program Nook could not find is still added: it may only be on the PATH of the shell sessions start in.
             Button(tr("acp.add")) {
                 if let parsed { add(name.trimmingCharacters(in: .whitespaces), parsed.command, parsed.arguments) }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
             .disabled(!canAdd)
         }
     }

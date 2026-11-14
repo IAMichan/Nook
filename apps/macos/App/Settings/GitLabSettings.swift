@@ -126,9 +126,7 @@ struct GitLabSetupSheet: View {
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .task {
             guard let managing, let stored = GitLabCredentials.token(host: managing) else { return }

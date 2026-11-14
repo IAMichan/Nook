@@ -238,9 +238,7 @@ struct AddConnectionSheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -508,9 +506,7 @@ struct ServiceSignInSheet: View {
                 if status == .connecting { signIn.cancel() }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
     }
 
     private func disconnect() {
@@ -554,9 +550,7 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
         }, footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         })
     }
 }

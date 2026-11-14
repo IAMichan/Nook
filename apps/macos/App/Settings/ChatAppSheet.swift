@@ -41,9 +41,7 @@ struct ChatAppSheet: View {
                 Task { if isLinking { await linker.cancel() } }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
         }
         .confirmDelete($unlinking, question: { tr("chats.link.unlinkQuestion", $0.name) }, detail: tr("chats.link.unlinkDetail", name),
                        confirmTitle: tr("chats.link.unlink")) { account in

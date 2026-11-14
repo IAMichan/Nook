@@ -212,9 +212,7 @@ private struct MCPServerDetailSheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done"), action: done)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -293,12 +291,9 @@ struct AddMCPServerWizardSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: done)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(tr("mcp.addButton"), action: add)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(trimmedName.isEmpty || trimmedCommand.isEmpty || !allRequiredEnvFilled)
         }
         // The key copied on the service's page, picked up on the way back into the first field still empty.

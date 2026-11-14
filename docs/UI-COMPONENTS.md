@@ -525,6 +525,7 @@ to share it (Nook has no hosting to publish to), and per-line comments inside a 
 | `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same row and setup-sheet shapes |
 | `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
 | `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |
+| `.sheetPrimaryButton()`, `.sheetCancelButton()` | `SettingsStyle.swift` | A sheet footer's buttons: the one step (Done, Add, Save) prominent, large and on Return; Cancel large and on Escape. Never the three modifiers by hand |
 | `SetupCheckStep`, `SetupCheckState` | `SettingsStyle.swift` | The last step of every setup flow: Nook checks the link, key, address or command (`check:`, then checking, passed with what it found, or failed with the reason and Try again), or, with nothing to check, "Ready to add". Never a check button of a flow's own |
 | `ConnectionListHeader`, `ConnectionListMenuHeader`, `ConnectionListAddLabel`, `ConnectionListEmpty` | `ConnectionRow.swift` | A list on a Settings page: its title with ⓘ and "+ Add …" on the right (a button, or a menu where adding starts with a choice), one look for both. An empty list says what would be there and nothing else: adding is only in the header |
 | `SheetPart` | `SettingsStyle.swift` | A part of a sheet for something already set up: its name and its rows. A linked chat app's sheet is always Accounts, In Nook, then Advanced folded away |

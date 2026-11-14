@@ -74,9 +74,7 @@ struct PairPhoneSheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .onAppear(perform: showCode)
         // The code appears as soon as this Mac listens.
@@ -142,9 +140,7 @@ struct OwnRelaySheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -238,9 +234,7 @@ struct APNsKeySheet: View {
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .id(keyVersion)
         .onChange(of: store.apnsKeyID) { _, _ in test = .idle }

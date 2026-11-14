@@ -117,9 +117,7 @@ private struct MusicConnectionForm: View {
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 }

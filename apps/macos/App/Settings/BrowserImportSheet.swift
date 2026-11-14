@@ -197,9 +197,7 @@ struct BrowserImportSheet: View {
     private var footer: some View {
         Spacer()
         Button(tr("settings2.done")) { dismiss() }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
     }
 
     // MARK: Actions

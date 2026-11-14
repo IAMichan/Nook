@@ -268,15 +268,12 @@ private struct AddMachineSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(tr("remote.add")) {
                 add(draft, outcome)
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
             .disabled(!canAdd || check == .checking)
         }
         .onAppear { if let start { fill(start) } }

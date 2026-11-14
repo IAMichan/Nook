@@ -59,9 +59,7 @@ struct ScheduledTasksView: View {
             }
             Spacer()
             Button(tr("settings2.done"), action: onClose)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .sheet(item: $editing) { target in
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
@@ -384,12 +382,9 @@ private struct ScheduledTaskEditor: View {
             InlineErrorText(problem ?? "")
             Spacer()
             Button(tr("button.cancel"), action: onDone)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(tr("sched.save"), action: save)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(problem != nil)
         }
         .onChange(of: provider) {

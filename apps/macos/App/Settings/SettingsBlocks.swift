@@ -30,12 +30,9 @@ struct ConfigPreview: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -1183,12 +1180,9 @@ struct WatchedPullRequestsSection: View {
             } footer: {
                 Spacer()
                 Button(tr("button.cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.large)
+                    .sheetCancelButton()
                 Button(tr("settings.pulls.addButton"), action: add)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.nookProminent)
-                    .controlSize(.large)
+                    .sheetPrimaryButton()
                     .disabled(!canAdd)
             }
         }

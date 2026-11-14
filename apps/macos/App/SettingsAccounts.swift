@@ -514,12 +514,9 @@ private struct AddAccountSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(addTitle) { add() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(!canAdd || saving)
         }
     }
