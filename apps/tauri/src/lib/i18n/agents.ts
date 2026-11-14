@@ -167,6 +167,26 @@ export const table: Table = {
   "{n} running": { de: "{n} laufen", fr: "{n} en cours", es: "{n} en curso" },
   "{n} failing": { de: "{n} fehlgeschlagen", fr: "{n} en échec", es: "{n} con fallos" },
   "Close tab": { de: "Tab schließen", fr: "Fermer l'onglet", es: "Cerrar pestaña" },
+  "Run workflow": { de: "Workflow starten", fr: "Lancer le workflow", es: "Ejecutar workflow" },
+  "Start a workflow that can be run by hand": {
+    de: "Einen Workflow starten, der sich von Hand ausführen lässt",
+    fr: "Lancer un workflow qui peut être exécuté à la main",
+    es: "Iniciar un workflow que se puede ejecutar a mano",
+  },
+  "Reading workflows…": { de: "Workflows werden gelesen…", fr: "Lecture des workflows…", es: "Leyendo workflows…" },
+  "None of this repository's workflows can be started by hand. A workflow needs the workflow_dispatch trigger in its file for that.": {
+    de: "Keiner der Workflows dieses Repositorys lässt sich von Hand starten. Dafür braucht ein Workflow den Trigger workflow_dispatch in seiner Datei.",
+    fr: "Aucun workflow de ce dépôt ne peut être lancé à la main. Pour cela, un workflow a besoin du déclencheur workflow_dispatch dans son fichier.",
+    es: "Ninguno de los workflows de este repositorio se puede iniciar a mano. Para eso, un workflow necesita el disparador workflow_dispatch en su archivo.",
+  },
+  "Workflow": { de: "Workflow", fr: "Workflow", es: "Workflow" },
+  " (default)": { de: " (Standard)", fr: " (par défaut)", es: " (predeterminada)" },
+  "Environment name": { de: "Name der Environment", fr: "Nom de l'environnement", es: "Nombre del entorno" },
+  "Fill in the required fields (*).": {
+    de: "Fülle die Pflichtfelder aus (*).",
+    fr: "Remplis les champs obligatoires (*).",
+    es: "Rellena los campos obligatorios (*).",
+  },
   "Loading jobs…": { de: "Jobs werden geladen…", fr: "Chargement des jobs…", es: "Cargando jobs…" },
   "Loading runs…": { de: "Runs werden geladen…", fr: "Chargement des exécutions…", es: "Cargando ejecuciones…" },
   "Cancel run #{number} of {workflow}?": {
