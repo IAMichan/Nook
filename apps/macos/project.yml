@@ -348,6 +348,7 @@ targets:
       - path: Services/Messages/ChatParallel.swift
       - path: Services/Messages/ChatFormat.swift
       - path: Services/Messages/ChatHiddenMessages.swift
+      - path: Services/Messages/ChatPins.swift
       - path: Services/Messages/ChatPoll.swift
       - path: Services/Messages/ChatOutgoing.swift
       - path: Services/Messages/ChatImageEdit.swift
