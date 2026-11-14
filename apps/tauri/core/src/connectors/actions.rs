@@ -306,11 +306,12 @@ pub fn parse_jobs(root: &Value) -> Vec<RunJob> {
         .collect()
 }
 
-/// The address of the run list: one workflow's or all of them, with GitHub's own status filter.
+/// The address of the run list: one workflow's or all of them, with GitHub's own status filter. Without the pull
+/// requests of each run: GitHub works those out per run, which makes the list slow and large, and the page shows none.
 pub fn runs_url(repo: &str, workflow: Option<i64>, status: &str) -> String {
     let base = match workflow {
-        Some(id) => format!("{}/repos/{repo}/actions/workflows/{id}/runs?per_page=40", api()),
-        None => format!("{}/repos/{repo}/actions/runs?per_page=40", api()),
+        Some(id) => format!("{}/repos/{repo}/actions/workflows/{id}/runs?per_page=40&exclude_pull_requests=true", api()),
+        None => format!("{}/repos/{repo}/actions/runs?per_page=40&exclude_pull_requests=true", api()),
     };
     match status {
         "running" => format!("{base}&status=in_progress"),
@@ -397,7 +398,7 @@ pub async fn load_run(env: &Env, tokens: &[(String, String)], repo: &str, run: i
         if let (Some(branch), Some((_, token))) = (&run.branch, tokens.iter().find(|(a, _)| *a == account)) {
             let url = with_query(
                 &format!("{}/repos/{repo}/actions/workflows/{}/runs", api(), run.workflow_id),
-                &[("branch", branch.clone()), ("per_page", "30".into())],
+                &[("branch", branch.clone()), ("per_page", "30".into()), ("exclude_pull_requests", "true".into())],
             );
             if let Ok(root) = env.http.get(&url, &headers(token), "GitHub").await {
                 others = parse_runs(&root);
@@ -436,6 +437,401 @@ pub async fn run_action(env: &Env, tokens: &[(String, String)], repo: &str, run:
     })
     .await?;
     Ok(account)
+}
+
+// Starting a workflow by hand (workflow_dispatch)
+
+/// One input of a workflow's `workflow_dispatch` trigger, as its file declares it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchInput {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+    pub default: Option<String>,
+    /// string, boolean, choice, number or environment; an unknown type reads as string.
+    pub kind: String,
+    /// The choices of a `choice` input, in file order.
+    pub options: Vec<String>,
+}
+
+/// A workflow on the "Run workflow" form: `inputs` is None when its file has no `workflow_dispatch` trigger (or could not
+/// be read), so it cannot be started by hand.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchWorkflow {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+    pub inputs: Option<Vec<DispatchInput>>,
+}
+
+/// What the "Run workflow" form needs: the branches (default first) and each workflow's inputs at the default branch.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchForm {
+    pub account: String,
+    pub default_branch: String,
+    pub branches: Vec<String>,
+    pub workflows: Vec<DispatchWorkflow>,
+}
+
+/// One line of a workflow file: its indentation, the text without its comment, and the line as written (for block
+/// scalars, where a `#` is text).
+struct YamlLine<'a> {
+    indent: usize,
+    text: String,
+    raw: &'a str,
+}
+
+impl YamlLine<'_> {
+    /// Blank or only a comment: no part of a mapping.
+    fn empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
+/// The line without a `# comment`: a `#` at the start or after a space, outside a quoted scalar. A quote only opens a
+/// scalar where one can start (after `: `, `- `, `[`, `,`, `{` or at the start), so "don't" stays a plain word.
+fn strip_comment(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut quote: Option<char> = None;
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match quote {
+            Some('\'') => {
+                if c == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        out.push_str("''");
+                        i += 2;
+                        continue;
+                    }
+                    quote = None;
+                }
+            }
+            Some(_) => {
+                if c == '\\' && i + 1 < chars.len() {
+                    out.push(c);
+                    out.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if c == '"' {
+                    quote = None;
+                }
+            }
+            None => {
+                let before = out.trim_end().chars().last();
+                if c == '#' && (i == 0 || chars[i - 1].is_whitespace()) {
+                    break;
+                }
+                if (c == '\'' || c == '"') && matches!(before, None | Some(':' | '-' | '[' | ',' | '{')) {
+                    quote = Some(c);
+                }
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out.trim().to_string()
+}
+
+fn yaml_lines(text: &str) -> Vec<YamlLine<'_>> {
+    text.lines()
+        .map(|raw| {
+            let raw = raw.trim_end_matches('\r');
+            YamlLine { indent: raw.len() - raw.trim_start_matches(' ').len(), text: strip_comment(raw), raw }
+        })
+        .collect()
+}
+
+/// A scalar without its quotes: `'it''s'` → it's, `"a \"b\""` → a "b", `plain` → plain.
+fn yaml_scalar(value: &str) -> String {
+    let v = value.trim();
+    if v.len() >= 2 && v.starts_with('\'') && v.ends_with('\'') {
+        return v[1..v.len() - 1].replace("''", "'");
+    }
+    if v.len() >= 2 && v.starts_with('"') && v.ends_with('"') {
+        let mut out = String::new();
+        let mut chars = v[1..v.len() - 1].chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some(other) => out.push(other),
+                None => {}
+            }
+        }
+        return out;
+    }
+    if v == "~" || v == "null" {
+        return String::new();
+    }
+    v.to_string()
+}
+
+/// The items of a flow list (`[a, 'b, c']`), quotes respected.
+fn flow_list(value: &str) -> Vec<String> {
+    let inner = value.trim().trim_start_matches('[').trim_end_matches(']');
+    let mut items = vec![];
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    for c in inner.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '\'' || c == '"' => quote = Some(c),
+            None if c == ',' => {
+                items.push(std::mem::take(&mut current));
+                continue;
+            }
+            None => {}
+        }
+        current.push(c);
+    }
+    items.push(current);
+    items.into_iter().map(|i| yaml_scalar(&i)).filter(|i| !i.is_empty()).collect()
+}
+
+/// `key: rest` of a mapping line; the key unquoted. None for a line that is no mapping entry.
+fn split_key(text: &str) -> Option<(String, String)> {
+    let (key, rest) = if text.starts_with('\'') || text.starts_with('"') {
+        let q = text.chars().next()?;
+        let end = text[1..].find(q)? + 1;
+        (yaml_scalar(&text[..=end]), text[end + 1..].trim_start())
+    } else {
+        let at = text.char_indices().find(|&(i, c)| c == ':' && text[i + 1..].chars().next().is_none_or(char::is_whitespace))?.0;
+        (text[..at].trim().to_string(), &text[at..])
+    };
+    let rest = rest.strip_prefix(':')?;
+    Some((key, rest.trim().to_string()))
+}
+
+/// One entry of a block mapping: its key, the value on its own line, and the lines below it that belong to it.
+struct Entry {
+    key: String,
+    value: String,
+    children: std::ops::Range<usize>,
+}
+
+/// The entries of the block mapping in `range` (all at the indentation of its first line), in file order.
+fn entries(lines: &[YamlLine], range: std::ops::Range<usize>) -> Vec<Entry> {
+    let Some(indent) = lines[range.clone()].iter().find(|l| !l.empty()).map(|l| l.indent) else { return vec![] };
+    let mut result = vec![];
+    let mut i = range.start;
+    while i < range.end {
+        let line = &lines[i];
+        if line.empty() || line.indent != indent {
+            i += 1;
+            continue;
+        }
+        let mut end = i + 1;
+        while end < range.end && (lines[end].empty() || lines[end].indent > indent) {
+            end += 1;
+        }
+        if let Some((key, value)) = split_key(&line.text) {
+            result.push(Entry { key, value, children: i + 1..end });
+        }
+        i = end;
+    }
+    result
+}
+
+/// The items of a block sequence (`- a` lines) in `range`.
+fn sequence(lines: &[YamlLine], range: std::ops::Range<usize>) -> Vec<String> {
+    lines[range]
+        .iter()
+        .filter_map(|l| l.text.strip_prefix('-').filter(|rest| rest.is_empty() || rest.starts_with(' ')))
+        .map(yaml_scalar)
+        .filter(|i| !i.is_empty())
+        .collect()
+}
+
+/// A scalar value: on the key's line, or a `|` / `>` block scalar below it.
+fn entry_text(lines: &[YamlLine], entry: &Entry) -> String {
+    let v = entry.value.as_str();
+    if !(v.starts_with('|') || v.starts_with('>')) {
+        return yaml_scalar(v);
+    }
+    let body: Vec<&YamlLine> = lines[entry.children.clone()].iter().collect();
+    let indent = body.iter().filter(|l| !l.raw.trim().is_empty()).map(|l| l.indent).min().unwrap_or(0);
+    let rows: Vec<&str> = body.iter().map(|l| l.raw.get(indent..).unwrap_or("").trim_end()).collect();
+    let text = if v.starts_with('|') {
+        rows.join("\n")
+    } else {
+        // Folded: lines join with a space, an empty line is a line break.
+        let mut out = String::new();
+        for row in rows {
+            if row.is_empty() {
+                out.push('\n');
+            } else {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push(' ');
+                }
+                out.push_str(row);
+            }
+        }
+        out
+    };
+    text.trim().to_string()
+}
+
+fn truthy(value: &str) -> bool {
+    matches!(yaml_scalar(value).to_lowercase().as_str(), "true" | "yes" | "on")
+}
+
+fn parse_input(lines: &[YamlLine], name: String, children: std::ops::Range<usize>) -> DispatchInput {
+    let mut input =
+        DispatchInput { name, description: String::new(), required: false, default: None, kind: "string".into(), options: vec![] };
+    for prop in entries(lines, children) {
+        match prop.key.as_str() {
+            "description" => input.description = entry_text(lines, &prop),
+            "required" => input.required = truthy(&prop.value),
+            "default" => input.default = Some(entry_text(lines, &prop)),
+            "type" => {
+                let kind = yaml_scalar(&prop.value).to_lowercase();
+                if ["string", "boolean", "choice", "number", "environment"].contains(&kind.as_str()) {
+                    input.kind = kind;
+                }
+            }
+            "options" if prop.value.starts_with('[') => input.options = flow_list(&prop.value),
+            "options" => input.options = sequence(lines, prop.children.clone()),
+            _ => {}
+        }
+    }
+    input
+}
+
+/// The inputs of a workflow's `workflow_dispatch` trigger, in file order; None when the file has no such trigger.
+/// Reads only the top-level `on:` block (also written `"on":`, `'on':` or YAML 1.1's `true:`) in its usual forms:
+/// `on: workflow_dispatch`, `on: [push, workflow_dispatch]`, a list of events, or a mapping whose `workflow_dispatch`
+/// entry may hold `inputs` with description, required, default, type and options.
+pub fn dispatch_inputs(yaml: &str) -> Option<Vec<DispatchInput>> {
+    let lines = yaml_lines(yaml);
+    let top = entries(&lines, 0..lines.len());
+    let on = top.iter().find(|e| matches!(e.key.as_str(), "on" | "true" | "True" | "ON" | "On"))?;
+    let is_dispatch = |name: &str| yaml_scalar(name) == "workflow_dispatch";
+    let value = on.value.as_str();
+    if value.starts_with('[') {
+        return flow_list(value).iter().any(|e| e == "workflow_dispatch").then(Vec::new);
+    }
+    if value.starts_with('{') {
+        let inner = value.trim_start_matches('{').trim_end_matches('}');
+        return inner.split(',').any(|part| is_dispatch(part.split(':').next().unwrap_or(""))).then(Vec::new);
+    }
+    if !value.is_empty() {
+        return is_dispatch(value).then(Vec::new);
+    }
+    if sequence(&lines, on.children.clone()).iter().any(|e| e == "workflow_dispatch") {
+        return Some(vec![]);
+    }
+    let dispatch = entries(&lines, on.children.clone()).into_iter().find(|e| e.key == "workflow_dispatch")?;
+    let Some(inputs) = entries(&lines, dispatch.children.clone()).into_iter().find(|e| e.key == "inputs") else { return Some(vec![]) };
+    Some(entries(&lines, inputs.children.clone()).into_iter().map(|input| parse_input(&lines, input.key, input.children)).collect())
+}
+
+/// The branch names of `GET /repos/{repo}/branches`, the default branch first.
+pub fn parse_branches(root: &Value, default_branch: &str) -> Vec<String> {
+    let mut names: Vec<String> = list(root).iter().filter_map(|b| b["name"].as_str().map(str::to_string)).collect();
+    names.retain(|n| n != default_branch);
+    if !default_branch.is_empty() {
+        names.insert(0, default_branch.to_string());
+    }
+    names
+}
+
+/// The text of a file from `GET /repos/{repo}/contents/{path}`: GitHub sends it base64-encoded, wrapped every 60 chars.
+pub fn file_content(root: &Value) -> Option<String> {
+    use base64::Engine;
+    let encoded: String = root["content"].as_str()?.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+/// The workflow file's path for the contents endpoint, or None for a workflow without a file of its own (a dynamic one
+/// like "dynamic/pages/pages-build-deployment").
+fn workflow_file_path(path: &str) -> Option<String> {
+    let file = path.split('@').next().unwrap_or(path);
+    if !file.starts_with(".github/workflows/") || file.contains("..") {
+        return None;
+    }
+    const SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC.remove(b'.').remove(b'-').remove(b'_');
+    let encoded: Vec<String> = file.split('/').map(|s| percent_encoding::utf8_percent_encode(s, SEGMENT).to_string()).collect();
+    Some(encoded.join("/"))
+}
+
+/// The repository's branches and the inputs of every workflow at its default branch, for the "Run workflow" form. A
+/// workflow file that cannot be read counts as one that cannot be started by hand.
+pub async fn load_dispatch_form(env: &Env, tokens: &[(String, String)], repo: &str) -> CResult<DispatchForm> {
+    let base = format!("{}/repos/{repo}", api());
+    let (account, (info, branches, flows)) = first_with_access(tokens, |token| {
+        let base = base.clone();
+        async move {
+            let h = headers(&token);
+            let (branches_url, flows_url) = (format!("{base}/branches?per_page=100"), format!("{base}/actions/workflows?per_page=100"));
+            let (info, branches, flows) = futures_util::join!(
+                env.http.get(&base, &h, "GitHub"),
+                env.http.get(&branches_url, &h, "GitHub"),
+                env.http.get(&flows_url, &h, "GitHub"),
+            );
+            Ok((info?, branches.unwrap_or(Value::Null), flows?))
+        }
+    })
+    .await?;
+    let default_branch = text(&info["default_branch"]);
+    let token = tokens.iter().find(|(a, _)| *a == account).map(|(_, t)| t.clone()).unwrap_or_default();
+    let workflows = join_all(parse_workflows(&flows).into_iter().map(|w| {
+        let (token, default_branch) = (token.clone(), default_branch.clone());
+        let url = workflow_file_path(&w.path).map(|file| with_query(&format!("{base}/contents/{file}"), &[("ref", default_branch)]));
+        async move {
+            let inputs = match url {
+                Some(url) => env.http.get(&url, &headers(&token), "GitHub").await.ok().and_then(|root| file_content(&root)),
+                None => None,
+            }
+            .and_then(|yaml| dispatch_inputs(&yaml));
+            DispatchWorkflow { id: w.id, name: w.name, path: w.path, inputs }
+        }
+    }))
+    .await;
+    Ok(DispatchForm { account, branches: parse_branches(&branches, &default_branch), default_branch, workflows })
+}
+
+/// The body of a dispatch: the branch, the inputs that were filled in, and the ask for the new run's id.
+pub fn dispatch_body(git_ref: &str, inputs: &std::collections::BTreeMap<String, String>) -> Value {
+    let filled: serde_json::Map<String, Value> =
+        inputs.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect();
+    serde_json::json!({"ref": git_ref, "inputs": filled, "return_run_details": true})
+}
+
+/// Starts a workflow on `git_ref` with the first account allowed to. Returns that account and the new run's id when
+/// GitHub gave it (a 200 with run details; an older GitHub answers 204 without a body).
+pub async fn dispatch_workflow(
+    env: &Env,
+    tokens: &[(String, String)],
+    repo: &str,
+    workflow: i64,
+    git_ref: &str,
+    inputs: &std::collections::BTreeMap<String, String>,
+) -> CResult<(String, Option<i64>)> {
+    let url = format!("{}/repos/{repo}/actions/workflows/{workflow}/dispatches", api());
+    let body = dispatch_body(git_ref, inputs);
+    first_with_access(tokens, |token| {
+        let (url, body) = (url.clone(), body.clone());
+        async move {
+            let (status, bytes) = env.http.send("POST", &url, &headers(&token), Some(&body), "GitHub").await?;
+            if !(200..300).contains(&status) {
+                return Err(action_error(status, &bytes));
+            }
+            Ok(serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| int(&v["workflow_run_id"])))
+        }
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -573,12 +969,141 @@ mod tests {
         assert_eq!(workflow_file("acme/web", "abc", "dynamic/pages/pages-build-deployment"), None);
     }
 
+    fn names(inputs: &[DispatchInput]) -> Vec<&str> {
+        inputs.iter().map(|i| i.name.as_str()).collect()
+    }
+
+    #[test]
+    fn dispatch_trigger_in_short_forms() {
+        assert_eq!(dispatch_inputs("name: X\non: workflow_dispatch\njobs: {}\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on: [push, workflow_dispatch]\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on: [ push, 'workflow_dispatch' ]  # by hand too\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on: [push, pull_request]\n"), None);
+        assert_eq!(dispatch_inputs("on: push\n"), None);
+        assert_eq!(dispatch_inputs("\"on\": workflow_dispatch\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("'on':\n  workflow_dispatch:\n"), Some(vec![]));
+        // YAML 1.1 reads a bare `on` as true; some tools write it back that way.
+        assert_eq!(dispatch_inputs("true:\n  push:\n  workflow_dispatch: {}\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on:\n  - push\n  - workflow_dispatch\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on: {push: {}, workflow_dispatch: {}}\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("on:\n  workflow_dispatch: # by hand\n  push:\n    branches: [main]\n"), Some(vec![]));
+        assert_eq!(dispatch_inputs("name: no trigger\njobs:\n  a:\n    runs-on: x\n"), None);
+    }
+
+    #[test]
+    fn a_workflow_without_dispatch_cannot_be_started() {
+        let yaml =
+            "name: CI\non:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  workflow_dispatch:\n    runs-on: ubuntu-latest\n";
+        assert_eq!(dispatch_inputs(yaml), None, "a job named workflow_dispatch is no trigger");
+        // A commented-out trigger is no trigger either.
+        assert_eq!(dispatch_inputs("on:\n  push:\n  # workflow_dispatch:\n"), None);
+    }
+
+    #[test]
+    fn dispatch_inputs_with_every_kind() {
+        let yaml = r#"# Promote a build
+name: Promote
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Where it goes' # the store channel
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - "stable"   # the real one
+      dry_run:
+        description: Only pretend
+        type: boolean
+        default: false
+      count:
+        type: number
+        default: "3"
+      target:
+        type: environment
+        required: yes
+      note:
+        description: "It's a \"note\" # not a comment"
+      flavours:
+        type: choice
+        options: [plain, 'with, comma', "x"]
+  push:
+    branches: [main]
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: inputs
+        run: echo "${{ inputs.channel }}"
+      - uses: actions/checkout@v4
+        with:
+          description: not an input
+"#;
+        let inputs = dispatch_inputs(yaml).unwrap();
+        assert_eq!(names(&inputs), vec!["channel", "dry_run", "count", "target", "note", "flavours"]);
+        let channel = &inputs[0];
+        assert_eq!(channel.description, "Where it goes");
+        assert!(channel.required);
+        assert_eq!(channel.default.as_deref(), Some("beta"));
+        assert_eq!(channel.kind, "choice");
+        assert_eq!(channel.options, vec!["beta", "stable"]);
+        assert_eq!((inputs[1].kind.as_str(), inputs[1].default.as_deref(), inputs[1].required), ("boolean", Some("false"), false));
+        assert_eq!((inputs[2].kind.as_str(), inputs[2].default.as_deref()), ("number", Some("3")));
+        assert_eq!((inputs[3].kind.as_str(), inputs[3].required), ("environment", true));
+        assert_eq!(inputs[4].description, "It's a \"note\" # not a comment");
+        assert_eq!(inputs[4].kind, "string", "no type is a string");
+        assert_eq!(inputs[4].default, None);
+        assert_eq!(inputs[5].options, vec!["plain", "with, comma", "x"]);
+    }
+
+    #[test]
+    fn dispatch_inputs_with_block_scalars_and_odd_spacing() {
+        let yaml = "on:\n    workflow_dispatch:\n        inputs:\n            reason:\n                description: |\n                    Why this runs.\n                    # Kept as text.\n                required: false\n            summary:\n                description: >-\n                    One long\n                    line.\n\n                    Next.\n                type: Mystery\n            plain:\n                description: don't stop # here\n";
+        let inputs = dispatch_inputs(yaml).unwrap();
+        assert_eq!(names(&inputs), vec!["reason", "summary", "plain"]);
+        assert_eq!(inputs[0].description, "Why this runs.\n# Kept as text.");
+        assert!(!inputs[0].required);
+        assert_eq!(inputs[1].description, "One long line.\nNext.");
+        assert_eq!(inputs[1].kind, "string", "an unknown type reads as string");
+        assert_eq!(inputs[2].description, "don't stop");
+    }
+
+    #[test]
+    fn dispatch_without_inputs_and_crlf() {
+        assert_eq!(dispatch_inputs("on:\r\n  workflow_dispatch:\r\n    inputs: {}\r\njobs:\r\n  a: {}\r\n"), Some(vec![]));
+        let inputs = dispatch_inputs("---\non:\n  workflow_dispatch:\n    inputs:\n      tag:\n        required: true\n").unwrap();
+        assert_eq!(names(&inputs), vec!["tag"]);
+        assert!(inputs[0].required);
+    }
+
+    #[test]
+    fn branches_contents_and_dispatch_body() {
+        let branches = parse_branches(&json!([{"name": "feature"}, {"name": "main"}, {"name": "dev"}]), "main");
+        assert_eq!(branches, vec!["main", "feature", "dev"]);
+        assert_eq!(
+            file_content(&json!({"content": "b246CndvcmtmbG93\nX2Rpc3BhdGNoCg==\n", "encoding": "base64"})).as_deref(),
+            Some("on:\nworkflow_dispatch\n")
+        );
+        assert_eq!(file_content(&json!({})), None);
+        assert_eq!(workflow_file_path(".github/workflows/ci.yml@refs/heads/main").as_deref(), Some(".github/workflows/ci.yml"));
+        assert_eq!(workflow_file_path("dynamic/pages/pages-build-deployment"), None);
+        let inputs: std::collections::BTreeMap<String, String> =
+            [("channel".to_string(), "beta".to_string()), ("note".to_string(), String::new()), ("dry".to_string(), "false".to_string())]
+                .into();
+        assert_eq!(
+            dispatch_body("main", &inputs),
+            json!({"ref": "main", "inputs": {"channel": "beta", "dry": "false"}, "return_run_details": true})
+        );
+    }
+
     #[test]
     fn run_list_filters() {
-        assert!(runs_url("acme/web", None, "all").ends_with("/repos/acme/web/actions/runs?per_page=40"));
-        assert!(
-            runs_url("acme/web", Some(5), "running").ends_with("/repos/acme/web/actions/workflows/5/runs?per_page=40&status=in_progress")
-        );
+        assert!(runs_url("acme/web", None, "all").ends_with("/repos/acme/web/actions/runs?per_page=40&exclude_pull_requests=true"));
+        assert!(runs_url("acme/web", Some(5), "running")
+            .ends_with("/repos/acme/web/actions/workflows/5/runs?per_page=40&exclude_pull_requests=true&status=in_progress"));
         assert!(runs_url("acme/web", None, "failed").ends_with("&status=failure"));
         assert_eq!(action_path("rerunFailed"), Some("rerun-failed-jobs"));
         assert_eq!(action_path("delete"), None);
