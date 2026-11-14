@@ -2422,18 +2422,14 @@ enum WAOpenWA {
 enum WAMention {
     /// "@33612345678" in the text, for this account's number (how GOWA shows a mention of you).
     static func textMentions(_ text: String, me: String?) -> Bool {
-        guard let me, case let digits = WAJID.digits(me), digits.count >= 6 else { return false }
+        guard let me, case let digits = WAJID.digits(me), digits.count >= ChatHandle.digitCount.lowerBound else { return false }
         return text.contains("@" + digits)
     }
 }
 
 extension WAJID {
-    /// The user part's digits: "33612345678:3@s.whatsapp.net" → "33612345678".
-    static func digits(_ jid: String) -> String {
-        let user = jid.split(separator: "@").first.map(String.init) ?? jid
-        let base = user.split(separator: ":").first.map(String.init) ?? user
-        return base.filter(\.isNumber)
-    }
+    /// The user part's digits: "33612345678:3@s.whatsapp.net" → "33612345678" (`ChatHandle.digits`).
+    static func digits(_ jid: String) -> String { ChatHandle.digits(jid) }
 
     /// Two ids of the same person, whatever their server part (@c.us, @s.whatsapp.net, a bare number).
     static func sameUser(_ a: String, _ b: String) -> Bool {
@@ -2507,33 +2503,12 @@ private func nonEmpty(_ v: Any?) -> String? {
 
 /// Pure helpers: who a recipient means, and messages as text. Tested in WhatsAppTests.
 enum WhatsAppRecipients {
-    /// A chat by id or number, else by name: exact, then the first name or a word of it, then a part of it.
-    /// Nil when nothing matches or two different chats match equally well.
+    /// A chat by id or number, else by name: exact, then the first name or a word of it, then a part of it, then a
+    /// typo, as every app's chats are found (`ChatRecipients.pick`). Nil when nothing matches or two different chats
+    /// match equally well.
     static func match(_ wanted: String, in chats: [(jid: String, name: String)]) -> (jid: String, name: String)? {
-        let fold: (String) -> String = { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
-        let query = fold(wanted)
-        if wanted.contains("@"), let chat = chats.first(where: { WAJID.normalized($0.jid) == WAJID.normalized(wanted) }) {
-            return chat
-        }
-        let digits = wanted.filter(\.isNumber)
-        if digits.count >= 8, digits.count * 2 >= wanted.filter({ !$0.isWhitespace }).count {
-            if let chat = chats.first(where: { WAJID.digits($0.jid).hasSuffix(String(digits.suffix(9))) }) { return chat }
-            return nil
-        }
-        func unique(_ found: [(jid: String, name: String)]) -> (jid: String, name: String)? {
-            let ids = Set(found.map(\.jid))
-            return ids.count == 1 ? found.first : nil
-        }
-        let exact = chats.filter { fold($0.name) == query }
-        if !exact.isEmpty { return unique(exact) }
-        let word = chats.filter { fold($0.name).split(separator: " ").contains { String($0) == query } }
-        if !word.isEmpty { return unique(word) }
-        guard query.count >= 3 else { return nil }
-        let partly = chats.filter { fold($0.name).contains(query) }
-        if !partly.isEmpty { return unique(partly) }
-        // A typo ("Lsia"): the one name that is close, never a guess between two.
-        guard let name = Fuzzy.best(wanted, in: chats.map(\.name)) else { return nil }
-        return unique(chats.filter { $0.name == name })
+        ChatRecipients.pick(wanted, in: chats, id: { WAJID.normalized($0.jid) }, name: \.name, number: \.jid,
+                            isID: { asked, chat in asked.contains("@") && WAJID.normalized(chat.jid) == WAJID.normalized(asked) }).found
     }
 
     static func label(_ media: WAMedia) -> String? {

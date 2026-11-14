@@ -677,7 +677,7 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
             }
         }
         if found.isEmpty {
-            let fold = { (text: String) in text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+            let fold = ChatText.fold
             var keys = Set((await ContactDirectory.entries()).filter { fold($0.name) == fold(name) }.flatMap(\.handles).map(AppData.key))
             keys.insert(AppData.key(name))
             keys.remove("")

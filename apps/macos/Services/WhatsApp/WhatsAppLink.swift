@@ -266,8 +266,8 @@ final class WhatsAppLink: ObservableObject {
         guard WAJID.isGroup(jid), let conversation = inbox.conversations[jid], let members = conversation.members else { return [] }
         var index = memberIndex(conversation)
         return members.compactMap { member in
-            guard let id = member.ids.first(where: { !$0.hasSuffix("@lid") && WAJID.digits($0).count >= 6 })
-                    ?? member.ids.first(where: { WAJID.digits($0).count >= 6 }) else { return nil }
+            guard let id = member.ids.first(where: { !$0.hasSuffix("@lid") && ChatHandle.phoneKey($0) != nil })
+                    ?? member.ids.first(where: { ChatHandle.phoneKey($0) != nil }) else { return nil }
             if let me, member.ids.contains(where: { WAJID.sameUser($0, me) }) { return nil }
             return ChatTagPerson(name: index.name(id), id: id)
         }

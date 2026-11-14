@@ -676,7 +676,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var account: String? = nil
     /// Person, group, status or channel, when its app says (`BridgedChat.kind`).
     var kind: ChatKind? = nil
-    /// The other person's phone number, to find their picture in Contacts (`BridgedChat.handle`).
+    /// The other person's phone number or address, to find their picture in Contacts (`BridgedChat.handle`); for an app
+    /// whose bridge gives none, the number or address its profile says (`contactHandle`).
     var handle: String? = nil
     /// False when its app does not say where the chat stands (`BridgedChat.readKnown`); nil and true: it does.
     var readKnown: Bool? = nil
@@ -1397,7 +1398,13 @@ struct ChatInbox: Codable, Equatable, Sendable {
         }
         if let account = chat.account { thread.account = account }
         if let kind = chat.kind { thread.kind = kind }
-        if let handle = chat.handle { thread.handle = handle }
+        if let handle = chat.handle {
+            thread.handle = handle
+        } else if thread.handle == nil, thread.noticeKind == .person, let known = thread.contactHandle {
+            // An app that names the person by a number or address in what it says of them (Messages, Telegram, Slack,
+            // Teams, Mail, the chat helper) finds them in Contacts and in People as WhatsApp's handle does.
+            thread.handle = known
+        }
         if let readKnown = chat.readKnown { thread.readKnown = readKnown }
         if let hasOlder = chat.hasOlder { thread.hasOlder = hasOlder }
         if let waitsInApp = chat.waitsInApp { thread.waitsInApp = waitsInApp }
@@ -1771,15 +1778,26 @@ enum ChatTimeline {
 // MARK: For Nook's answers
 
 extension ChatInbox {
-    /// The chat best matching a name (exactly, else the one starting with it, else containing it), in one app or any.
-    func thread(named name: String, app: String? = nil, among shown: (InboxThread) -> Bool = { _ in true }) -> InboxThread? {
-        let wanted = Self.key(app: "", chat: name).dropFirst()
-        guard !wanted.isEmpty else { return nil }
+    /// The chat a name, number or id means, in one app or any (`ChatRecipients.pick`, the same for every app): by its
+    /// id, by the person's number, else by name (exact, a whole word, a part, a typo). Two different chats that fit
+    /// equally well are `several`: an answer never goes to a guess.
+    func pick(_ name: String, app: String? = nil, among shown: (InboxThread) -> Bool = { _ in true }) -> ChatPick<InboxThread> {
         let candidates = sorted.filter { (app == nil || $0.app == app) && shown($0) }
-        let folded = { (thread: InboxThread) in Self.key(app: "", chat: thread.name).dropFirst() }
-        return candidates.first { folded($0) == wanted }
-            ?? candidates.first { folded($0).hasPrefix(wanted) }
-            ?? candidates.first { folded($0).contains(wanted) }
+        return ChatRecipients.pick(name, in: candidates, id: \.id, name: \.name, number: \.phone,
+                                   isID: { wanted, thread in thread.id == wanted || thread.chatID == wanted })
+    }
+
+    /// The one chat a name means (`pick`); nil when none does, or when several do equally well.
+    func thread(named name: String, app: String? = nil, among shown: (InboxThread) -> Bool = { _ in true }) -> InboxThread? {
+        pick(name, app: app, among: shown).found
+    }
+
+    /// What Nook says when a name fits several chats: each with its app, so the next ask can say which.
+    static func which(_ name: String, among threads: [InboxThread]) -> String {
+        let list = threads.prefix(8).map { thread in
+            "\(thread.name) (\(MessagingApps.app(id: thread.app)?.name ?? thread.app))"
+        }.joined(separator: ", ")
+        return "\"\(name)\" fits more than one chat: \(list). Ask the user which one they mean, then name it exactly (with its app)."
     }
 
     /// One line per chat, newest first: "Telegram · Anna (2 unread) · 2026-10-20 12:04 · Anna: See you at eight".
@@ -1846,9 +1864,7 @@ extension ChatInbox {
         }.joined(separator: "\n")
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    private static func fold(_ text: String) -> String { ChatText.fold(text) }
 
     private static func line(_ message: InboxMessage, in thread: InboxThread) -> String {
         let text = message.summary.count > 300 ? String(message.summary.prefix(300)) + "…" : message.summary

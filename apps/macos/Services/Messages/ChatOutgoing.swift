@@ -289,7 +289,7 @@ struct ChatContactCard: Equatable, Sendable {
     }
 
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (6...20).contains(cleanPhone.filter(\.isNumber).count)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ChatHandle.digitCount.contains(ChatHandle.digits(cleanPhone).count)
     }
 
     /// The card as a vCard, for an app that takes one.

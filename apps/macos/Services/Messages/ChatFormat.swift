@@ -773,13 +773,9 @@ enum ChatMentions {
         return ids.contains(me)
     }
 
-    /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code.
-    /// Nil for something too short to be a number.
-    static func key(_ number: String) -> String? {
-        let digits = number.filter { $0.isASCII && $0.isNumber }
-        guard digits.count >= 6 else { return nil }
-        return String(digits.suffix(9))
-    }
+    /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code
+    /// (`ChatHandle.phoneKey`). Nil for something too short to be a number.
+    static func key(_ number: String) -> String? { ChatHandle.phoneKey(number) }
 }
 
 /// Someone a message can tag: their name as the chat shows it and their id in their app (a WhatsApp JID, a Slack user
@@ -859,7 +855,5 @@ enum ChatTags {
         return result + text[last...]
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).trimmingCharacters(in: .whitespaces)
-    }
+    private static func fold(_ text: String) -> String { ChatText.fold(text) }
 }

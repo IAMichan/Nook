@@ -159,7 +159,7 @@ enum TeamsData {
     /// The chats of several accounts, with a name that turns up in more than one account followed by the account
     /// ("Anna (contoso.com)"), so two chats of different accounts never become one in the Chats tab.
     static func distinguish(_ lists: [[Chat]], labels: [String]) -> [[Chat]] {
-        let fold = { (name: String) in name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let fold = ChatText.fold
         var accounts: [String: Set<Int>] = [:]
         for (index, list) in lists.enumerated() {
             for chat in list { accounts[fold(chat.name), default: []].insert(index) }

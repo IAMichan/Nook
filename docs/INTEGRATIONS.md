@@ -191,7 +191,8 @@ member cannot do:
 These work on the shared inbox (`InboxThread`), so they hold for every chat app at once: WhatsApp (both gateways), Messages,
 Telegram, Slack, Teams, Snapchat, Mail and every network of the chat helper (Signal, Instagram, Messenger and the rest).
 No app needs a translation of its own, because they use only what every bridge already fills in: whose message is last,
-when it was written, the person's name and, where the app gives one, their number (`InboxThread.handle`).
+when it was written, the person's name and, where the app gives one, their number or address (`InboxThread.identity`:
+the bridge's handle, else the number or address in the chat's profile).
 
 | Feature | Where | What it needs from an app | Members left out |
 |---|---|---|---|
@@ -199,7 +200,9 @@ when it was written, the person's name and, where the app gives one, their numbe
 | "Waiting for reply" with a reminder after a day; it ends by itself when they answer (`ChatFollowUps.markWaiting`, `settle`) | `ChatFollowUpView`, row menu | the newest message and its date | none |
 | Snooze a chat until this evening, tomorrow morning or next week (`ChatLaterOption`); a snoozed chat is not owed until its time | `ChatFollowUpView`, row menu | nothing | none |
 | Scheduled send as an editable draft (`ChatScheduledSend`); a due message goes through `ChatAction.send` and the audit log, never by itself | the follow-up store hands it to the sender | `ChatAbilities.send` | chats Nook only reads cannot send, so they cannot schedule either |
-| People view: one card per person across apps, matched by phone number, else the whole name (`ChatPeople`), with a note and a birthday of your own (`ChatPersonNotes`) | `ChatPeopleView` | a name; a number where the app gives one | Slack and Teams give no number, so they match by name only; groups, status updates and channels are no person |
+| People view: one card per person across apps, matched by phone number, else address, else the whole name (`InboxThread.identity`, `ChatPeople`), with a note and a birthday of your own (`ChatPersonNotes`) | `ChatPeopleView` | a name; a number or address where the app gives one (WhatsApp's handle; the profile's phone or email from Messages, Telegram, the chat helper, Slack, Teams and Mail) | Snapchat gives neither, so it matches by name only; groups, status updates and channels are no person |
+| One way to read a number for every app (`ChatHandle`: its last nine digits, E.164, at least 6 and at most 15 digits) and one name fold (`ChatText`) | Contacts lookups, People, the Chats tab's photos (`ContactPhotos`), calls, tags | what the app says | none |
+| Which chat a name means (`ChatRecipients.pick`, `ChatInbox.pick`): by id, by number, else exact name, whole word, part, typo; two chats that fit equally well are never guessed between, `chat_send` and `chat_inbox` ask which one | chat_send, chat_inbox, "@chat", `whatsapp_send` | the chat's name; its number where the app gives one | none |
 | Connector health with "Fix it" (`ConnectorHealth`, `ConnectorHealthSection`): sign in again where the sign-in is the problem, read again where the service was away | Settings › Connections | `ConnectorErrorKind` | none |
 
 Not built yet, and why: a summary of one conversation and a smart reply in the user's tone go through the one brain pipeline

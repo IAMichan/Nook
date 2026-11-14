@@ -264,12 +264,10 @@ enum AppData {
     }
 
     /// The same person however the number is written: an address in lowercase, a phone number by its last nine digits
-    /// ("+31 6 1234 5678", "0612345678" and "31612345678@s.whatsapp.net" are one key).
+    /// ("+31 6 1234 5678", "0612345678" and "31612345678@s.whatsapp.net" are one key, `ChatHandle.key`). Empty for
+    /// what is neither (a number too short to be one).
     static func key(_ handle: String) -> String {
-        let clean = cleanHandle(handle)
-        if clean.contains("@") { return clean.lowercased() }
-        let digits = clean.filter(\.isNumber)
-        return digits.count > 9 ? String(digits.suffix(9)) : digits
+        ChatHandle.key(cleanHandle(handle)) ?? ""
     }
 
     static func cleanHandle(_ raw: String) -> String {
