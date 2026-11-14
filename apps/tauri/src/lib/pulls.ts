@@ -78,6 +78,225 @@ export function ciStatusLine(check: PullRequestCheck, now: number = Date.now(), 
   }
 }
 
+export type CiLineKind = "plain" | "group" | "command" | "error" | "warning" | "notice";
+export interface CiLine {
+  kind: CiLineKind;
+  text: string;
+}
+
+const MARKERS: [string, CiLineKind][] = [
+  ["##[group]", "group"],
+  ["##[command]", "command"],
+  ["##[error]", "error"],
+  ["##[warning]", "warning"],
+  ["##[notice]", "notice"],
+];
+
+/// The cleaned log as lines with a kind (`CILogParser.lines` on the Mac): GitHub's `##[…]` markers become the kind and
+/// leave the text, `##[endgroup]` and `##[debug]` are dropped, and a plain line saying "error:", "warning:" or that the
+/// build failed counts too.
+export function ciLines(text: string): CiLine[] {
+  const lines: CiLine[] = [];
+  for (const line of text.split("\n")) {
+    const marker = MARKERS.find(([prefix]) => line.startsWith(prefix));
+    if (marker) {
+      lines.push({ kind: marker[1], text: line.slice(marker[0].length) });
+      continue;
+    }
+    if (line.startsWith("##[endgroup]") || line.startsWith("##[debug]")) continue;
+    const lower = line.toLowerCase();
+    const kind: CiLineKind =
+      lower.includes("error:") || lower.includes("build failed") || lower.includes("test failed") || lower.startsWith("fatal:")
+        ? "error"
+        : lower.includes("warning:")
+          ? "warning"
+          : "plain";
+    lines.push({ kind, text: line });
+  }
+  return lines;
+}
+
+/// Only what went wrong: the error and warning lines, each group's name before its first one.
+export function ciProblems(lines: CiLine[]): CiLine[] {
+  const result: CiLine[] = [];
+  let group: CiLine | null = null;
+  for (const line of lines) {
+    if (line.kind === "group") group = line;
+    else if (line.kind === "error" || line.kind === "warning") {
+      if (group) {
+        result.push(group);
+        group = null;
+      }
+      result.push(line);
+    }
+  }
+  return result;
+}
+
+/// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); null for a check from another app, which
+/// has no log for Nook to read. The same rule as `job_id` in the core.
+export function jobId(url: string | null): number | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== "github.com" && !parsed.hostname.endsWith(".github.com")) return null;
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const index = parts.indexOf("job");
+  if (index < 0 || !parts.includes("actions")) return null;
+  const id = Number(parts[index + 1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export type PullRequestEvent = {
+  id: string;
+  author: string;
+  /// Markdown, already rewritten from GitHub's HTML by the core; render it with `renderMarkdown`.
+  body: string;
+  date: string | null;
+  url: string | null;
+} & (
+  | { kind: "comment" }
+  | { kind: "review"; state: string }
+  | { kind: "lineComment"; path: string; line: number | null }
+  | { kind: "commit"; sha: string }
+  | { kind: "activity"; event: string; detail: string }
+);
+
+export interface PullRequestCommit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string | null;
+}
+
+export interface PullRequestFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string | null;
+  previousPath: string | null;
+}
+
+export interface PullRequestDetail {
+  repo: string;
+  number: number;
+  title: string;
+  body: string;
+  url: string | null;
+  author: string;
+  state: DetailState;
+  baseBranch: string;
+  headBranch: string;
+  headSha: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  created: string | null;
+  updated: string | null;
+  mergeable: boolean | null;
+  mergeState: string;
+  checks: PullRequestCheck[];
+  events: PullRequestEvent[];
+  commits: PullRequestCommit[];
+  files: PullRequestFile[];
+  methods: MergeMethod[];
+  canPush: boolean | null;
+  /// Your permission in the repository: ADMIN, MAINTAIN, WRITE, TRIAGE or READ.
+  permission: string | null;
+  /// Whether you may merge although branch protection blocks it.
+  canBypass: boolean | null;
+  autoMerge: boolean;
+  isOpen: boolean;
+  canMerge: boolean;
+  checkSummary: Ci;
+  mergeNote: string | null;
+}
+
+export const pullsApi = {
+  detail: (account: string | null, repo: string, number: number) =>
+    invoke<PullRequestDetail>("github_pull_request", { account, repo, number }),
+  ciLog: (account: string | null, repo: string, job: number) => invoke<CiLog>("github_ci_log", { account, repo, job }),
+  /// Only after the confirmation in the view. Runs the `github_merge_pr` action and writes it to the action log.
+  merge: (account: string | null, repo: string, number: number, method: MergeMethod, sha: string) =>
+    invoke<string>("github_merge_pull_request", { account, repo, number, method, sha }),
+  /// Approves, asks for changes on or comments on a pull request (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`); only after a click.
+  review: (account: string | null, repo: string, number: number, event: ReviewEvent, body: string) =>
+    invoke<string>("github_review_pull_request", { account, repo, number, event, body }),
+  watchAdd: (text: string) => invoke<string[]>("pull_watch_add", { text }),
+  watchRemove: (entry: string) => invoke<string[]>("pull_watch_remove", { entry }),
+};
+
+export const itemId = (item: { repo: string; number: number }) => `${item.repo}#${item.number}`;
+export const isEmpty = (a: AccountPullRequests) => !a.mine.length && !a.reviews.length && !a.watched.length;
+
+// Search and filters
+
+export type StateFilter = "all" | "open" | "closed" | "merged";
+export type ScopeFilter = "all" | "reviews" | "mine" | "watched";
+export type DraftFilter = "all" | "drafts" | "ready";
+export type StatusFilter = "any" | "failing" | "pending" | "passing";
+
+export interface PullRequestFilter {
+  query: string;
+  state: StateFilter;
+  scope: ScopeFilter;
+  /// A login, or null for anyone.
+  author: string | null;
+  draft: DraftFilter;
+  status: StatusFilter;
+}
+
+export const defaultFilter = (query = ""): PullRequestFilter => ({ query, state: "open", scope: "all", author: null, draft: "all", status: "any" });
+
+/// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
+export function activeCount(f: PullRequestFilter): number {
+  return [f.state !== "open", f.scope !== "all", f.author !== null, f.draft !== "all", f.status !== "any"].filter(Boolean).length;
+}
+
+const words = (f: PullRequestFilter) => f.query.toLowerCase().split(/\s+/).filter(Boolean);
+
+export const isActive = (f: PullRequestFilter) => words(f).length > 0 || activeCount(f) > 0;
+
+/// Every word of the search must appear; "@ada" matches the author, "#12" (or a bare 12) the number.
+export function matches(f: PullRequestFilter, item: PullRequestItem): boolean {
+  if (f.state !== "all" && item.state !== f.state) return false;
+  if (f.author !== null && item.author.toLowerCase() !== f.author.toLowerCase()) return false;
+  if (f.draft === "drafts" && !item.draft) return false;
+  if (f.draft === "ready" && item.draft) return false;
+  if (f.status !== "any" && item.ci !== f.status) return false;
+  const text = `${item.repo}#${item.number} ${item.title} @${item.author}`.toLowerCase();
+  return words(f).every((word) => {
+    // A number is the pull request's number, never part of another one ("#123").
+    const digits = word.startsWith("#") ? word.slice(1) : word;
+    if (/^\d+$/.test(digits)) return item.number === Number(digits) || (!word.startsWith("#") && text.includes(word));
+    return text.includes(word);
+  });
+}
+
+/// The account with only the pull requests that match. An error stays, so a failing account never disappears.
+export function apply(f: PullRequestFilter, account: AccountPullRequests): AccountPullRequests {
+  const keep = (scope: ScopeFilter, items: PullRequestItem[]) => (f.scope === "all" || f.scope === scope ? items.filter((i) => matches(f, i)) : []);
+  return { ...account, reviews: keep("reviews", account.reviews), mine: keep("mine", account.mine), watched: keep("watched", account.watched) };
+}
+
+/// Every author in the lists, for the Author choice: most pull requests first, then by name.
+export function authors(accounts: AccountPullRequests[]): string[] {
+  const counts = new Map<string, number>();
+  for (const a of accounts) {
+    for (const item of [...a.mine, ...a.reviews, ...a.watched]) {
+      if (item.author) counts.set(item.author, (counts.get(item.author) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((x, y) => y[1] - x[1] || x[0].toLowerCase().localeCompare(y[0].toLowerCase()))
+    .map(([login]) => login);
+}
+
 /// Watched entries that no account could search, while at least one account could be read.
 export function unreadable(accounts: AccountPullRequests[], watching: string[]): string[] {
   const readers = accounts.filter((a) => !a.error);
