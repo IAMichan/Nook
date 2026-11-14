@@ -341,7 +341,8 @@ struct NookToastView: View {
 }
 
 extension View {
-    /// The toast's bubble: lifted a step above the panel it floats over, its tone in the symbol and a faint edge, not a
+    /// The toast's bubble: a card (`surface`, "Cards and panels" in Settings › Appearance › Colors, so a color set there
+    /// reaches it too) lifted off the panel it floats over by its shadow, its tone in the symbol and a faint edge, not a
     /// loud frame. Also worn by what waits for you in the same corner (`PanelNoticeBar(floating:)`), so a request and a
     /// result read as the same kind of thing in the same place.
     func toastBubble(tone: Color, maxWidth: CGFloat = 480) -> some View {
@@ -349,7 +350,7 @@ extension View {
             .padding(.trailing, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: maxWidth, alignment: .leading)
-            .cardBackground(NookTheme.graphite, stroke: tone.opacity(0.22), radius: NookTheme.Radius.panel)
+            .cardBackground(NookTheme.surface, stroke: tone.opacity(0.22), radius: NookTheme.Radius.panel)
             .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
     }
 }
