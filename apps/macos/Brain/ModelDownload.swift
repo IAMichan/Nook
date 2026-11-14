@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Downloads a built-in model from Hugging Face into Nook's own folder, with progress per byte.
@@ -46,9 +47,18 @@ enum ModelDownload {
         return FileManager.default.fileExists(atPath: dir.appendingPathComponent(completeMarker).path) ? dir : nil
     }
 
+    /// Forgets that a model is complete, e.g. when it no longer loads: the next fetch checks every file again and downloads
+    /// what is wrong.
+    static func markIncomplete(_ id: String) {
+        try? FileManager.default.removeItem(at: directory(for: id).appendingPathComponent(completeMarker))
+    }
+
     struct File: Equatable, Sendable {
         var path: String
         var size: Int64
+        /// The SHA-256 of the content, for the large files the Hub keeps in LFS (its `lfs.oid`); nil for small files,
+        /// whose `oid` is a git hash of another kind.
+        var sha256: String? = nil
     }
 
     /// The files of a model and their sizes, from the Hub's file list.
@@ -69,14 +79,18 @@ enum ModelDownload {
         }
         return entries.compactMap { entry in
             guard (entry["type"] as? String) == "file", let path = entry["path"] as? String, isNeeded(path) else { return nil }
-            let lfs = (entry["lfs"] as? [String: Any])?["size"] as? NSNumber
-            let size = lfs ?? (entry["size"] as? NSNumber)
-            return File(path: path, size: size?.int64Value ?? 0)
+            let lfs = entry["lfs"] as? [String: Any]
+            let size = (lfs?["size"] as? NSNumber) ?? (entry["size"] as? NSNumber)
+            let oid = (lfs?["oid"] as? String)?.lowercased()
+            let sha256 = oid.flatMap { $0.count == 64 && $0.allSatisfy(\.isHexDigit) ? $0 : nil }
+            return File(path: path, size: size?.int64Value ?? 0, sha256: sha256)
         }
     }
 
-    /// Downloads every file Nook does not have yet (a file of the right size from an interrupted try stays), a few at a
-    /// time, and returns the model's folder. `progress` gets the fraction of all bytes, several times a second.
+    /// Downloads every file Nook does not have yet (a file of the right size and content from an interrupted try stays), a
+    /// few at a time, and returns the model's folder. `progress` gets the fraction of all bytes, several times a second.
+    /// Every file is checked against the Hub's size and SHA-256 before the model counts as complete, so a cut-off or
+    /// altered file is never trusted. This runs off the main actor (a nonisolated async function), hashing included.
     static func fetch(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let dir = directory(for: id)
         let listing = try await files(of: id)
@@ -89,7 +103,7 @@ enum ModelDownload {
         for (index, file) in listing.enumerated() {
             let target = dir.appendingPathComponent(file.path)
             let size = (try? FileManager.default.attributesOfItem(atPath: target.path)[.size] as? NSNumber)?.int64Value
-            if let size, file.size > 0, size == file.size {
+            if let size, file.size > 0, size == file.size, (try? verify(target, as: file)) != nil {
                 counter.set(index, bytes: file.size)
             } else {
                 missing.append((index, file))
@@ -110,9 +124,14 @@ enum ModelDownload {
             }
         }
         counter.flush()
+        // Every file was checked as it landed (or above, when it was already there): only now is the model complete.
         FileManager.default.createFile(atPath: dir.appendingPathComponent(completeMarker).path, contents: Data())
         return dir
     }
+
+    /// How often one file is tried again after a dropped connection, and how long to wait first (doubling each time).
+    private static let retries = 3
+    private static let firstBackoff: UInt64 = 2_000_000_000
 
     private static func download(id: String, file: File, to dir: URL, index: Int, counter: ByteCounter) async throws {
         let encoded = file.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file.path
@@ -120,10 +139,36 @@ enum ModelDownload {
             throw NookError("Invalid file in \(id): \(file.path)")
         }
         let target = dir.appendingPathComponent(file.path)
+        var resumeData: Data?
+        var attempt = 0
+        while true {
+            do {
+                try await downloadOnce(url: url, resumeData: resumeData, to: target, index: index, counter: counter)
+                break
+            } catch {
+                // A dropped connection picks up where it stopped (the error carries the resume data) instead of starting
+                // a shard of several GB again. Cancellation and answers such as 404 are final.
+                guard attempt < retries, !Task.isCancelled, isTransient(error) else { throw error }
+                resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeDataKey] as? Data
+                try await Task.sleep(nanoseconds: firstBackoff << UInt64(attempt))
+                attempt += 1
+            }
+        }
+        do {
+            try verify(target, as: file)
+        } catch {
+            try? FileManager.default.removeItem(at: target)
+            counter.set(index, bytes: 0)
+            throw error
+        }
+        counter.set(index, bytes: file.size > 0 ? file.size : counter.bytes(index))
+    }
+
+    private static func downloadOnce(url: URL, resumeData: Data?, to target: URL, index: Int, counter: ByteCounter) async throws {
         let delegate = FileDownload(destination: target) { written in counter.set(index, bytes: written) }
         let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        let task = session.downloadTask(with: url)
+        let task = resumeData.map { session.downloadTask(withResumeData: $0) } ?? session.downloadTask(with: url)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 delegate.continuation = continuation
@@ -132,8 +177,54 @@ enum ModelDownload {
         } onCancel: {
             task.cancel()
         }
-        counter.set(index, bytes: file.size > 0 ? file.size : counter.bytes(index))
     }
+
+    /// Network trouble worth another try: a lost or timed-out connection, or the server being busy for a moment.
+    private static func isTransient(_ error: Error) -> Bool {
+        if let failure = error as? HTTPFailure { return failure.status == 429 || failure.status >= 500 }
+        guard let error = error as? URLError else { return false }
+        switch error.code {
+        case .cancelled, .badURL, .unsupportedURL, .fileDoesNotExist, .noPermissionsToReadFile, .cannotCreateFile,
+             .cannotWriteToFile, .userAuthenticationRequired:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Checks a downloaded file against the Hub's listing: its size, and its SHA-256 when the Hub gives one.
+    static func verify(_ url: URL, as file: File) throws {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+        if file.size > 0, size != file.size {
+            throw NookError("\(file.path) is incomplete: \(size ?? 0) of \(file.size) bytes.")
+        }
+        guard let expected = file.sha256 else { return }
+        guard try sha256(of: url) == expected else {
+            throw NookError("\(file.path) does not match the published file (SHA-256 differs).")
+        }
+    }
+
+    /// The SHA-256 of a file in lowercase hex, read in chunks so a shard of several GB never sits in memory whole.
+    static func sha256(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let more: Bool = try autoreleasepool {
+                guard let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty else { return false }
+                hasher.update(data: chunk)
+                return true
+            }
+            if !more { break }
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// The Hub answered a download with an error status.
+private struct HTTPFailure: Error, LocalizedError {
+    var status: Int
+    var errorDescription: String? { "Download failed: Hugging Face answered \(status)." }
 }
 
 /// Adds up the bytes of all files and reports the fraction at most ten times a second, so the main thread is not flooded.
@@ -198,7 +289,7 @@ private final class FileDownload: NSObject, URLSessionDownloadDelegate, @uncheck
         // The temporary file is gone once this returns: move it now.
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            failure = NookError("Download failed: Hugging Face answered \(status).")
+            failure = HTTPFailure(status: status)
             return
         }
         do {

@@ -157,6 +157,35 @@ enum MemoryText {
     }
 }
 
+/// The content words of each memory, kept by its text and subject. Recall reads them for every memory (up to 400),
+/// several times per chat request and on every pause while the user types for autocomplete, and folding, splitting and
+/// stemming every text again each time added up. Keyed by the text itself, so a memory that changes simply gets a new
+/// entry and nothing goes stale; entries of memories that are gone are dropped when the cache grows past twice the book.
+enum MemoryTokens {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: Set<String>] = [:]
+
+    static func of(_ item: MemoryItem) -> Set<String> {
+        let key = item.text + " " + item.subject
+        lock.lock()
+        let hit = cache[key]
+        lock.unlock()
+        if let hit { return hit }
+        let tokens = MemoryText.tokens(key)
+        lock.lock()
+        if cache.count >= MemoryBook.capacity * 2 { cache.removeAll(keepingCapacity: true) }
+        cache[key] = tokens
+        lock.unlock()
+        return tokens
+    }
+
+    /// Whether the words of this text and subject are kept; for tests.
+    static func isCached(_ item: MemoryItem) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cache[item.text + " " + item.subject] != nil
+    }
+}
+
 // MARK: - The book
 
 /// Every memory, with the rules for adding, merging, forgetting and recalling. A value type: `NookMemory` stores it.
@@ -274,7 +303,7 @@ struct MemoryBook: Equatable {
             if !item.subject.isEmpty, item.subject.lowercased() == lower { return true }
             if lower.count >= 4, item.text.lowercased().contains(lower) { return true }
             guard !wanted.isEmpty else { return false }
-            let have = MemoryText.tokens(item.text + " " + item.subject)
+            let have = MemoryTokens.of(item)
             // Every word of the request is in the memory ("vergeet mijn adres" → the memory about the address).
             return wanted.isSubset(of: have) || MemoryText.similarity(item.text, needle) >= 0.5
         }
@@ -313,7 +342,7 @@ struct MemoryBook: Equatable {
                 guard let tool = item.tool, tools.contains(tool), item.evidence >= Self.habitEvidence else { continue }
             }
             var relevance = 0.0
-            let have = MemoryText.tokens(item.text + " " + item.subject)
+            let have = MemoryTokens.of(item)
             if !have.isEmpty, !words.isEmpty {
                 let common = words.filter { word in have.contains(word) || (word.count >= 5 && have.contains { $0.hasPrefix(word) || word.hasPrefix($0) }) }
                 relevance += Double(common.count) / Double(min(have.count, max(words.count, 1))) * 1.2

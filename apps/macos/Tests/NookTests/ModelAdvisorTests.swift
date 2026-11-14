@@ -64,6 +64,64 @@ final class ModelAdvisorTests: XCTestCase {
         XCTAssertEqual(ThinkingPolicy.answer(from: "Begin <think>half", thinking: false), "Begin ")
     }
 
+    /// Answers that stress the streaming cuts: reasoning opened by the template, reasoning blocks of the model's own, tool
+    /// calls written as JSON (with and without a fence), <tool_call> tags and text that is not ASCII.
+    private let streamedAnswers: [String] = [
+        "Let me think…\nabout it\n</think>\n\nHet antwoord is 42.",
+        "<think>first a thought</think>Het antwoord <think>another</think>gaat door.",
+        "Even kijken.\n```json\n{\"name\": \"calendar\", \"parameters\": {}}\n```",
+        "Ik zoek het op. { \"tool\" : \"mail\" }",
+        "Antwoord <tool_call>{\"name\": \"x\"}</tool_call> rest",
+        "Café ☕️ 👩‍👩‍👧 — naïve { \"na\nme\": no call } done",
+        "</think></think>twice closed",
+        "thinking text\n</think>answer<think>open and never closed",
+        "A <thin k> that is not a tag and a </thin> either, then </think>after",
+        "``` not json\n{\n  \"name\"\n  :\n \"weather\"}",
+        "   \n\n  ",
+        "tools: name json `{` and \"name\" without a colon",
+    ]
+
+    func testStreamingAnswerMatchesTheWholeText() {
+        for thinking in [false, true] {
+            for sample in streamedAnswers {
+                // One character at a time: every prefix must give what the whole-text function gives.
+                var answer = StreamingAnswer(thinking: thinking)
+                var prefix = ""
+                for character in sample {
+                    prefix.append(character)
+                    answer.append(String(character))
+                    XCTAssertEqual(answer.visible, ThinkingPolicy.visible(prefix, thinking: thinking),
+                                   "prefix: \(prefix.debugDescription), thinking: \(thinking)")
+                }
+                // Pieces of several characters, as a model sends them.
+                for size in [2, 3, 5, 7, 11] {
+                    var answer = StreamingAnswer(thinking: thinking)
+                    var prefix = ""
+                    let characters = Array(sample)
+                    for start in stride(from: 0, to: characters.count, by: size) {
+                        let piece = String(characters[start..<min(start + size, characters.count)])
+                        prefix += piece
+                        answer.append(piece)
+                        XCTAssertEqual(answer.visible, ThinkingPolicy.visible(prefix, thinking: thinking),
+                                       "prefix: \(prefix.debugDescription), piece size \(size), thinking: \(thinking)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testStreamingAnswerHidesReasoningAndToolCalls() {
+        var answer = StreamingAnswer(thinking: true)
+        answer.append("Still reasoning </thi")
+        XCTAssertEqual(answer.visible, "", "nothing shows before the reasoning ends")
+        answer.append("nk>\nHet antwoord")
+        XCTAssertEqual(answer.visible, "Het antwoord")
+        answer.append(" {\"name\": \"calendar\"")
+        XCTAssertEqual(answer.visible, "Het antwoord", "a tool call being written is never shown")
+        answer.append(" en meer")
+        XCTAssertEqual(answer.visible, "Het antwoord")
+    }
+
     func testExistingOllamaModelBeatsADownload() {
         let top = first(16, servers: [ServerModel(server: .ollama, name: "qwen2.5:7b-instruct")])
         XCTAssertEqual(top.choice, .server(ServerModel(server: .ollama, name: "qwen2.5:7b-instruct")))
