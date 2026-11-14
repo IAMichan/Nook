@@ -160,7 +160,10 @@ enum GitHubMarkdown {
         text = replace(text, itemRegex) { _ in "\n- " }
         text = replace(text, blockRegex) { _ in "\n\n" }
         text = replace(text, inlineRegex) { _ in "" }
-        return replace(HTMLEntities.decode(text), placeholderRegex) { groups in Int(groups[1]).map { spans[$0] } ?? "" }
+        // A mark the comment itself held (written out or as a reference) names no span: it reads as nothing.
+        return replace(HTMLEntities.decode(text), placeholderRegex) { groups in
+            Int(groups[1]).flatMap { spans.indices.contains($0) ? spans[$0] : nil } ?? ""
+        }
     }
 
     /// Lines left with only spaces become empty, and runs of empty lines one.
