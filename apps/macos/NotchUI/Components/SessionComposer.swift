@@ -420,16 +420,10 @@ struct SessionComposer<Controls: View>: View {
     /// Tab (one word) or ⇧Tab (all of it) on the sentence on screen: the words go in at the caret; what is left stays grey.
     private func acceptGhostText(all: Bool) -> Bool {
         let words = typedText
-        guard case .text(var suggestion, let shownWords, let caret)? = ComposerInlineGhost.shared.shown(
-                  for: ComposerFieldStyle.focusedEditor(expecting: ComposerChips.display(words))),
-              shownWords == words, let index = String.Index(exactUTF16: caret, in: words) else { return false }
-        let prefs = AutocompleteStore.shared.prefs
-        let piece = all ? suggestion.remaining
-            : suggestion.acceptNextChunk(.init(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.punctuationWithWord))
-        guard !piece.isEmpty else { return false }
-        let value = String(words[..<index]) + piece + String(words[index...])
+        guard let (value, caret) = ComposerInlineGhost.shared.acceptingText(
+            all: all, in: words, editor: ComposerFieldStyle.focusedEditor(expecting: ComposerChips.display(words))) else { return false }
         assign(ComposerAttachments.replacingBody(of: text, with: value))
-        placeCaret(caret + piece.utf16.count, inWords: value)
+        placeCaret(caret, inWords: value)
         return true
     }
 

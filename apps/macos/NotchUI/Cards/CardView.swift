@@ -257,6 +257,10 @@ struct CardView: View {
                        draft: onDraft, send: submitReply)
             .runsActions { await AppModel.shared.runDraftActions($0) }
             .tags { card.chatReply ? AppModel.shared.chatTagPeople(card: card) : [] }
+            .completes {
+                if case .chat(let bubbles) = card.detail { return .chat(card.chatReply ? card.title : nil, bubbles: bubbles) }
+                return ComposerCompletion.Situation(recipient: card.chatReply ? card.title : nil)
+            }
     }
 
     /// The compact card's one field (the Double Tap field): the same composer as the Nook chat, with the model and what

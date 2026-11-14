@@ -2414,6 +2414,7 @@ private struct ChatsDetail: View, Equatable {
                 return true
             }
             .tags { app.chatTagPeople(route, name: entry.name) }
+            .completes { .chat(entry.name, bubbles: bubbles) }
             .tray(entry.read.isUnread
                 ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                        markReadInNook: { app.markChatReadInNook(entry) },
