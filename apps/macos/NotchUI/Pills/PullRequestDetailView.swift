@@ -617,9 +617,8 @@ struct PullRequestDetailView: View {
             .accessibilityLabel(tr("agents.pr.write.choose"))
         }
         .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.smoke))
-        .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.line2, lineWidth: 1))
-        .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
         .clipShape(NookTheme.shape(NookTheme.Radius.control))
+        .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.line2, lineWidth: 1))
         .disabled(actions.sending)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.bottom, NookTheme.Spacing.md)

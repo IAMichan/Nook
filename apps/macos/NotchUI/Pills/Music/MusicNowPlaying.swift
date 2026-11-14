@@ -163,8 +163,8 @@ struct MusicNowPlayingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(shape.fill(NookTheme.surface.opacity(0.78)))
-        .overlay(shape.strokeBorder(NookTheme.border, lineWidth: 1))
         .clipShape(shape)
+        .overlay(shape.strokeBorder(NookTheme.border, lineWidth: 1))
     }
 }
 

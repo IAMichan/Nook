@@ -195,8 +195,8 @@ struct AgentsSettingsPanel<LinkRow: View>: View {
             }
             .frame(height: Self.height)
             .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
-            .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.panel)
             .roundedClip(NookTheme.Radius.panel)
+            .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.panel)
         } header: {
             SettingsSectionTitle(tr("agents.panel.title"), info: tr("agents.link.info"))
         }
