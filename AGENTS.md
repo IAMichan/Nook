@@ -123,11 +123,11 @@ back from swap counts as short even when macOS's own pressure level still says n
 Test programs must leave the user's screen, focus, and input alone. This Mac is in use while agents work, and a throwaway
 harness that opens a window interrupts whatever the user is doing:
 
-- Prefer a unit test. When a behavior needs AppKit or SwiftUI, host the view in an offscreen window (`orderBack` or a frame
-  outside every screen, never `makeKeyAndOrderFront`).
+- Prefer a unit test. For AppKit or SwiftUI, host the view with `scripts/harness/OffscreenWindow.swift` (`orderBack`
+  alone stays on screen behind the user's windows) and take pictures with its `snapshot`, never with screen capture.
 - Do not set `.floating` or a higher window level, call `activate`, or use the `.regular` activation policy in a harness.
 - Send events to the window directly (`NSWindow.sendEvent`, `hitTest`). Never post real input with `CGEvent` or
-  `osascript`: it moves the user's cursor and lands on whatever is under it.
+  `osascript`.
 - If a check only works on the real screen, ask the user first and run it once, not in a loop.
 
 To show a behavior end to end, or to prove a fix (it fails on the base commit and passes on the fix), write a scenario:
