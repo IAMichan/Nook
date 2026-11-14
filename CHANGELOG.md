@@ -15,7 +15,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   project (on by default), each folder folding away and its **+** starting a new session right in that project. A long
   press on a session offers Send a message, Stop and New session here, so you steer and start agents from the phone in
   a tap or two; the New session sheet opens on what your Mac offers at once, and a session you just started opens
-  without a "This session is gone." in between.
+  without a "This session is gone." in between. Approving or answering clears the card at the tap, an agent's
+  words reach the phone twice as often, and the Agents list redraws only the rows that changed.
 
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports

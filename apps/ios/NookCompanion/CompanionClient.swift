@@ -28,6 +28,8 @@ final class CompanionClient: ObservableObject {
     @Published var openSession: String?
     /// The session whose screen is open, so a push about it arrives without a banner.
     var visibleSession: String?
+    /// Approvals and questions answered on this phone, hidden until the Mac drops them (`settle`).
+    private var settledItems = SettledItems()
     /// A session opened to write to it ("Send a message" on a row): its screen puts the keyboard in its composer once.
     var focusComposer: String?
     /// A `nook://prompt` link that was opened: the New session sheet shows with its text.
@@ -910,13 +912,35 @@ final class CompanionClient: ObservableObject {
     }
 
     /// `reason`: with a denial, what the agent is told (the Mac passes it on; an older Mac only denies).
+    /// The approval leaves the screen at the tap (`settle`) and comes back only when the Mac could not take it.
     func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, reason: String = "") async {
-        await perform(CompanionRequest(op: .decide, session: session.id, item: item.id,
-                                       text: allow || reason.isEmpty ? nil : reason, allow: allow))
+        settle(item.id)
+        let response = await perform(CompanionRequest(op: .decide, session: session.id, item: item.id,
+                                                      text: allow || reason.isEmpty ? nil : reason, allow: allow))
+        if response == nil { unsettle(item.id) }
     }
 
     func answer(_ session: SessionDigest, item: SessionDigest.Item, text: String) async {
-        await perform(CompanionRequest(op: .answer, session: session.id, item: item.id, text: text))
+        settle(item.id)
+        let response = await perform(CompanionRequest(op: .answer, session: session.id, item: item.id, text: text))
+        if response == nil { unsettle(item.id) }
+    }
+
+    // MARK: Answered at the tap
+
+    /// Hides an approval or question you just answered from every list on the phone (`SettledItems`).
+    private func settle(_ item: String) {
+        settledItems.settle(item, at: Date())
+        let list = settledItems.hiding(sessions, now: Date())
+        guard list != sessions else { return }
+        sessions = list
+        Notifications.setBadge(list.needingYou)
+    }
+
+    /// The Mac did not take it: it shows again, as the Mac lists it.
+    private func unsettle(_ item: String) {
+        guard settledItems.unsettle(item) else { return }
+        Task { await refresh() }
     }
 
     /// A message to a session. With a Mac that answers repeats once (`CompanionFeature.retry`) it goes through the
@@ -1283,7 +1307,7 @@ final class CompanionClient: ObservableObject {
     private func apply(_ response: CompanionResponse, to req: CompanionRequest) {
         // The badge is set on (re)connecting too, so one left from before is corrected. Older sessions (`history`) are
         // no live list: they are taken in where they were asked for.
-        let live = req.op == .history ? nil : response.sessions
+        let live = req.op == .history ? nil : response.sessions.map { settledItems.hiding($0, now: Date()) }
         if let list = live, list != sessions || phase != .connected {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }

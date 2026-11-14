@@ -507,9 +507,28 @@ struct SessionListView: View {
             }
             .sorted { $0.updated > $1.updated }
     }
-    private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
-    private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
-    private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
+    /// The list's three lanes (what needs you, what works, the rest), from one filter, sort and pass over the sessions:
+    /// worked out once per redraw and handed to the parts that read them.
+    private struct Lanes {
+        var all: [SessionDigest] = []
+        var needsYou: [SessionDigest] = []
+        var working: [SessionDigest] = []
+        var rest: [SessionDigest] = []
+    }
+
+    private var lanes: Lanes {
+        var lanes = Lanes(all: ordered)
+        for session in lanes.all {
+            if Self.needsYou(session) {
+                lanes.needsYou.append(session)
+            } else if session.attention == "working" {
+                lanes.working.append(session)
+            } else {
+                lanes.rest.append(session)
+            }
+        }
+        return lanes
+    }
     /// Settled sessions older than the live list, paged in from the Mac (`CompanionFeature.history`).
     private var older: [SessionDigest] { CompanionHistory.merge(live: client.sessions, older: client.olderSessions) }
     /// What the Mac found for the words beyond what the live list already shows.
@@ -539,6 +558,10 @@ struct SessionListView: View {
     }
 
     var body: some View {
+        let lanes = self.lanes
+        let needsYou = lanes.needsYou
+        let working = lanes.working
+        let rest = lanes.rest
         // A list, not a stack, so a row swipes to its actions as in Mail.
         List {
             Group {
@@ -570,7 +593,7 @@ struct SessionListView: View {
                             viewMenu
                         }
                     }
-                    if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
+                    if lanes.all.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
@@ -580,7 +603,7 @@ struct SessionListView: View {
                 .padding(.horizontal, Theme.Spacing.xl)
                 group(String(localized: "Working"), working, open: $workingOpen)
                 if groupByProject {
-                    projectShelves
+                    projectShelves(rest)
                 } else {
                     group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
                           open: $recentOpen)
@@ -594,7 +617,7 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
-                olderShelves
+                olderShelves(restCount: rest.count)
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     WSEmptyState(symbol: "square.stack.3d.up", title: String(localized: "No sessions"),
@@ -706,7 +729,7 @@ struct SessionListView: View {
     /// The recent sessions under their project's folder, newest project first, as the Mac's list grouped by project:
     /// the header folds it (remembered), and its "+" starts a new session right in that project.
     @ViewBuilder
-    private var projectShelves: some View {
+    private func projectShelves(_ rest: [SessionDigest]) -> some View {
         // Worked out once for every shelf, not per header.
         let projects = startProjects
         let folded = foldedProjects
@@ -747,7 +770,7 @@ struct SessionListView: View {
     /// One session in a shelf: a tap opens it, a swipe snoozes or archives it, and a long press offers what you do
     /// with it most from here (write to it, stop it, start another in its folder) beside the rest.
     private func sessionRow(_ session: SessionDigest) -> some View {
-        Button { path.append(session.id) } label: { AgentRow(session: session).detailSelected(session.id) }
+        Button { path.append(session.id) } label: { AgentRow(session: session).equatable().detailSelected(session.id) }
             .buttonStyle(RowPress())
             .padding(.horizontal, Theme.Spacing.md)
             .contextMenu {
@@ -779,14 +802,14 @@ struct SessionListView: View {
     /// Below the recent sessions, as the Mac's settled sessions: the older ones, a page at a time, or while searching,
     /// the older ones that match.
     @ViewBuilder
-    private var olderShelves: some View {
+    private func olderShelves(restCount: Int) -> some View {
         if !query.isEmpty {
             group(String(localized: "Older matches"), foundOlder, open: $olderOpen)
             if olderOpen, client.foundCursor != nil, !foundOlder.isEmpty {
                 PageButton(title: String(localized: "More matches")) { await client.searchSessions(query, more: true) }
                     .padding(.horizontal, Theme.Spacing.xl)
             }
-        } else if hasOlder, groupByProject || (recentOpen && (showsAllRecent || rest.count <= Self.recentShown)) {
+        } else if hasOlder, groupByProject || (recentOpen && (showsAllRecent || restCount <= Self.recentShown)) {
             group(String(localized: "Older"), older, open: $olderOpen)
             if olderOpen || older.isEmpty, !client.olderEnded {
                 PageButton(title: older.isEmpty ? String(localized: "Show older sessions") : String(localized: "Show more older sessions")) {
@@ -813,7 +836,7 @@ struct SessionListView: View {
                     Button {
                         client.switchMac(to: mac.id)
                         path.append(session.id)
-                    } label: { AgentRow(session: session) }
+                    } label: { AgentRow(session: session).equatable() }
                         .buttonStyle(RowPress())
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.xxs / 2)
@@ -1069,8 +1092,11 @@ struct WaitingRow: View {
 /// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
 /// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
 /// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
-struct AgentRow: View {
+struct AgentRow: View, Equatable {
     let session: SessionDigest
+    /// The minute it was drawn in: with `.equatable()` a row is drawn again only when its session changed or its
+    /// "12 min" moved on, not each time the list redraws while an agent streams.
+    var minute = Int(Date().timeIntervalSince1970 / 60)
 
     /// Only what needs you is set in full strength; work in progress and the rest read quieter.
     private var receded: Bool { !SessionListView.needsYou(session) }
