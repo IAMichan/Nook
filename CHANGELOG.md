@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
+  type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
+  density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows
+  the theme too.
+
 - Nook Companion's Agents list reads like the Mac's: the search and a view menu on one row, and sessions grouped by
   project (on by default), each folder folding away and its **+** starting a new session right in that project. A long
   press on a session offers Send a message, Stop and New session here, so you steer and start agents from the phone in
