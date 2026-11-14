@@ -1,45 +1,56 @@
 import XCTest
 
 final class ScrollModelTests: XCTestCase {
-    func testPinLeavesRoomForTheMessageToReachTheTop() {
-        // The message and what came after it are 60 tall; at the end, the room brings it to 24 from the top.
-        let pin = TurnPin(below: 60)
-        XCTAssertEqual(pin.room(container: 580), 496)
-        XCTAssertEqual(580 - (60 + pin.room(container: 580)), pin.anchorOffset)
+    private func frame(_ offset: Double, content: Double = 2000) -> ScrollFrame {
+        ScrollFrame(offset: offset, content: content, container: 600)
     }
 
-    func testPinRoomShrinksAsTheReplyGrows() {
-        XCTAssertEqual(TurnPin(below: 60).room(container: 580), 496)
-        XCTAssertEqual(TurnPin(below: 260).room(container: 580), 296)
+    func testScrollingUpNearTheEndStopsFollowingAtOnce() {
+        // A wheel or a drag that began at the end, still within the margin `atEnd` allows.
+        let model = ScrollModel()
+        XCTAssertEqual(model.reaction(movedFrom: frame(1400), to: frame(1390)), .userScrolled)
     }
 
-    func testPinRoomEndsOnceTheReplyFillsTheView() {
-        XCTAssertEqual(TurnPin(below: 900).room(container: 580), 0)
+    func testGrowthIsNotAScroll() {
+        var model = ScrollModel()
+        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1380, content: 1980)), "a row above measured shorter")
+        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1600, content: 2200)), "the reply grew")
+        model.userScrolled()
+        XCTAssertNil(model.reaction(movedFrom: frame(1200), to: frame(1100)), "already free: nothing to write")
     }
 
-    func testNoPinRoomFromAStaleMeasurement() {
-        // The end was measured before the message moved below it: no room rather than a guess.
-        XCTAssertEqual(TurnPin(below: -40).room(container: 580), 0)
+    func testABounceBackToTheEndKeepsFollowing() {
+        let model = ScrollModel()
+        XCTAssertNil(model.reaction(movedFrom: frame(1420), to: frame(1400)))
     }
 
-    func testPinRoomNeverExceedsTheView() {
-        XCTAssertLessThanOrEqual(TurnPin(below: 0).room(container: 580), 580)
+    func testScrollingBackToTheVeryEndFollowsAgain() {
+        var model = ScrollModel()
+        model.userScrolled()
+        XCTAssertNil(model.reaction(movedFrom: frame(1300), to: frame(1340)), "not at the end yet")
+        let reaction = model.reaction(movedFrom: frame(1340), to: frame(1360))
+        XCTAssertEqual(reaction, .reachedEnd)
+        if let reaction { model.apply(reaction) }
+        XCTAssertTrue(model.shouldFollowEnd)
+        model.findStarted()
+        XCTAssertNil(model.reaction(movedFrom: frame(1380), to: frame(1400)), "a find owns the position")
     }
 
-    func testNoToEndPillWhileAMessageIsPinned() {
-        var m = ScrollModel()
-        m.sent(messageID: UUID())
-        XCTAssertFalse(m.shouldFollowEnd)
-        XCTAssertFalse(m.showsToEndPill(atEnd: false))
-        m.jumpedToEnd()
-        XCTAssertTrue(m.shouldFollowEnd)
+    func testTheEndLeavesOutTheRoomAroundTheView() {
+        // As a real scroll view reports it with a 40 pt toolbar above and a 100 pt composer under: the container is the
+        // height between them, and the very end is at 1881 (measured).
+        let end = ScrollFrame(offset: 1881, content: 2281, container: 360, insetTop: 40, insetBottom: 100)
+        XCTAssertEqual(end.maxOffset, 1881)
+        XCTAssertTrue(end.nearEnd, "at its end: no pill back to the end")
+        let up = ScrollFrame(offset: 1700, content: 2281, container: 360, insetTop: 40, insetBottom: 100)
+        XCTAssertFalse(up.nearEnd)
+        XCTAssertEqual(ScrollFrame(offset: -40, content: 200, container: 360, insetTop: 40).maxOffset, -40, "content that fits")
     }
 
     func testStartsFollowing() {
         let m = ScrollModel()
         XCTAssertTrue(m.shouldFollowEnd)
-        XCTAssertNil(m.anchorMessageID)
-        XCTAssertEqual(m.anchorOffset, 24)
+        XCTAssertFalse(m.cancelQueuedScrolls)
     }
 
     func testUserScrollCancelsFollowingAndQueuedScrolls() {
@@ -47,46 +58,7 @@ final class ScrollModelTests: XCTestCase {
         m.userScrolled()
         XCTAssertFalse(m.shouldFollowEnd)
         XCTAssertTrue(m.cancelQueuedScrolls)
-        m.contentGrew(toolActivityStarted: true, overflows: true)
-        XCTAssertFalse(m.shouldFollowEnd)
-    }
-
-    func testSendAnchorsThenToolActivityFollows() {
-        var m = ScrollModel()
-        let id = UUID()
-        m.userScrolled()
-        m.sent(messageID: id)
-        XCTAssertEqual(m.mode, .anchoringNewTurn)
-        XCTAssertEqual(m.anchorMessageID, id)
-        XCTAssertFalse(m.cancelQueuedScrolls)
-        XCTAssertFalse(m.shouldFollowEnd)
-        m.contentGrew(toolActivityStarted: false, overflows: true)
-        XCTAssertEqual(m.mode, .anchoringNewTurn)
-        m.contentGrew(toolActivityStarted: true, overflows: false)
-        XCTAssertEqual(m.mode, .anchoringNewTurn)
-        m.contentGrew(toolActivityStarted: true, overflows: true)
-        XCTAssertTrue(m.shouldFollowEnd)
-        XCTAssertNil(m.anchorMessageID)
-    }
-
-    func testSendingWhileAMessageIsHeldKeepsItsRoom() {
-        var m = ScrollModel()
-        XCTAssertTrue(m.goesToEndOnSend)
-        m.userScrolled()
-        XCTAssertTrue(m.goesToEndOnSend)
-        // The last reply was short: the message before it still stands near the top, with room under the reply.
-        m.sent(messageID: UUID())
-        XCTAssertFalse(m.goesToEndOnSend)
-        m.contentGrew(toolActivityStarted: true, overflows: true)
-        XCTAssertTrue(m.goesToEndOnSend)
-    }
-
-    func testUserScrollLeavesAnchor() {
-        var m = ScrollModel()
-        m.sent(messageID: UUID())
-        m.userScrolled()
-        XCTAssertEqual(m.mode, .free)
-        XCTAssertNil(m.anchorMessageID)
+        XCTAssertTrue(m.isFreeAfterUserScroll)
     }
 
     func testReachedEndResumesFollowingJumpToo() {
@@ -98,10 +70,6 @@ final class ScrollModelTests: XCTestCase {
         m.jumpedToEnd()
         XCTAssertTrue(m.shouldFollowEnd)
         XCTAssertFalse(m.cancelQueuedScrolls)
-        // reaching the end while anchored keeps the anchor
-        m.sent(messageID: UUID())
-        m.reachedEnd()
-        XCTAssertEqual(m.mode, .anchoringNewTurn)
     }
 
     func testFindStopsFollowingAndHidesPill() {
@@ -130,9 +98,6 @@ final class ScrollModelTests: XCTestCase {
 
     func testToEndPillOnlyAfterScrollingAwayFromTheEnd() {
         var m = ScrollModel()
-        XCTAssertFalse(m.showsToEndPill(atEnd: false))
-        // A sent message held near the top is not you scrolling away.
-        m.sent(messageID: UUID())
         XCTAssertFalse(m.showsToEndPill(atEnd: false))
         m.userScrolled()
         XCTAssertTrue(m.showsToEndPill(atEnd: false))

@@ -70,6 +70,18 @@ enum HistoryWindow {
         return min(total, min(maxRows, max(minRows, lastTurns)))
     }
 
+    /// Rows move from the part drawn in full into the lazy part this many at a time.
+    static let lazyStep = 16
+
+    /// How many of `count` rows go into the lazy stack when the last `eager` must be drawn in full: in steps of
+    /// `lazyStep`. A row that moves from one part to the other is made again, and the lazy stack guesses the height of
+    /// what it has not measured; moving one row each time a working agent added one made the conversation jump up or
+    /// down by a few points for every step. In steps, a little more is drawn in full and it moves only now and then.
+    static func lazyRows(count: Int, eager: Int, step: Int = lazyStep) -> Int {
+        let lazy = max(0, count - max(0, eager))
+        return step > 1 ? lazy / step * step : lazy
+    }
+
     /// The index of the first row drawn: every row of the turns before `start`.
     static func firstRow(rowsPerTurn: [Int], start: Int) -> Int {
         rowsPerTurn.prefix(max(0, start)).reduce(0, +)
