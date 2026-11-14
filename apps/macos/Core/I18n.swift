@@ -140,8 +140,6 @@ public func tr(_ key: String, _ args: CVarArg...) -> String {
 private let translations: [AppLanguage: [String: String]] = [
     .nl: [
         // MARK: Menu Bar & General
-        "menu.talk": "Praat met Nook",
-        "menu.screen": "Kijk mee met mijn scherm",
         "menu.developer": "Ontwikkelaar",
         "menu.demoScenes": "Voorbeeldscènes",
         "menu.demoData": "Voorbeelddata tonen",
@@ -149,6 +147,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Nook afsluiten",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Open Nook",
+        "menu.ask": "Vraag Nook iets",
         "menu.now": "nu",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d agents bezig",
@@ -913,8 +912,6 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         // MARK: Menu Bar & General
-        "menu.talk": "Talk to Nook",
-        "menu.screen": "Look at my screen",
         "menu.developer": "Developer",
         "menu.demoScenes": "Demo scenes",
         "menu.demoData": "Show demo data",
@@ -922,6 +919,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Quit Nook",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Open Nook",
+        "menu.ask": "Ask Nook something",
         "menu.now": "now",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d agents running",
@@ -1686,8 +1684,6 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         // MARK: Menu Bar & General
-        "menu.talk": "Mit Nook sprechen",
-        "menu.screen": "Auf meinen Bildschirm schauen",
         "menu.developer": "Entwickler",
         "menu.demoScenes": "Beispielszenen",
         "menu.demoData": "Beispieldaten anzeigen",
@@ -1695,6 +1691,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Nook beenden",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Nook öffnen",
+        "menu.ask": "Nook etwas fragen",
         "menu.now": "jetzt",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d Agents aktiv",

@@ -174,7 +174,7 @@ extension AppModel {
             window.toolbarStyle = .unified
             // The appearance and canvas from Settings › Appearance, not whatever the Mac's wallpaper gives.
             NookWindowLook.adopt(window)
-            window.setContentSize(NSSize(width: 820, height: 600))
+            window.setContentSize(SettingsLayout.openingSize(on: NSScreen.main))
             window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false
             window.center()
