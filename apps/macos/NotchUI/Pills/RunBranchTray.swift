@@ -21,9 +21,7 @@ struct RunBranchTray: View {
                 withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(icon: "chevron.up")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(showsOlderBranches ? 180 : 0))
+                    DisclosureChevron(open: showsOlderBranches, size: 8.5, tint: nil, style: .upward)
                     Text(showsOlderBranches ? tr("ws.branches.hideOlder")
                                             : tr("ws.branches.showOlder", folded.hidden, folded.hiddenPullRequests))
                 }

@@ -67,9 +67,7 @@ struct BeeperImportSheet: View {
                 .disabled(importer.isBusy)
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .confirmationDialog(tr("beeper.import.finish"), isPresented: $confirmFinish, titleVisibility: .visible) {
             Button(tr("beeper.import.finishButton")) {

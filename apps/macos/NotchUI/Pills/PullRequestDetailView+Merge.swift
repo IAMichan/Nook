@@ -47,9 +47,7 @@ extension PullRequestDetailView {
             .frame(height: 28)
             .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .help(tr("agents.pulls.stack.position", index, shownStack.count))
     }
 
@@ -58,10 +56,7 @@ extension PullRequestDetailView {
         let numbers = stackToMerge.map { "#\($0.number)" }.joined(separator: ", ")
         return Group {
             if mergingStack {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(tr("agents.pulls.stack.merging", numbers))
             } else {
                 AdaptiveActionRow {
                     HStack(spacing: NookTheme.Spacing.md) {

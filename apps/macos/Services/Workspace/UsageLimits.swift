@@ -148,10 +148,11 @@ enum UsageLimits {
     static func codexReset(_ params: [String: Any]) -> Date? {
         let snapshot = (params["rateLimits"] as? [String: Any]) ?? params
         if let limit = snapshot["limitId"] as? String, limit != "codex" { return nil }
-        let full = ["primary", "secondary"].compactMap { snapshot[$0] as? [String: Any] }
-            .filter { (ClaudeStreamParser.number($0["usedPercent"]) ?? 0) >= 100 }
+        // The same tolerant reading as Codex's usage snapshots (`CodexRateLimits.window`).
+        let full = ["primary", "secondary"].compactMap { CodexRateLimits.window(snapshot[$0], at: Date()) }
+            .filter { $0.usedPercent >= 100 }
         guard !full.isEmpty else { return nil }
-        let resets = full.map { ClaudeStreamParser.number($0["resetsAt"]).map { Date(timeIntervalSince1970: $0) } }
+        let resets = full.map(\.resetsAt)
         guard !resets.contains(where: { $0 == nil }) else { return nil }
         return resets.compactMap { $0 }.max()
     }

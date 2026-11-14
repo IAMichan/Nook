@@ -174,10 +174,7 @@ private struct GlanceCard<Content: View>: View {
                             .foregroundStyle(statusColor)
                             .lineLimit(1)
                     }
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(9, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .opacity(hovering ? 1 : 0)
+                    HoverGlyph("chevron.right", shown: hovering, size: 9)
                 }
                 content()
             }
@@ -325,28 +322,12 @@ private struct GlanceLimitsCard: View {
                                 .font(NookTheme.mono(11, .medium))
                                 .foregroundStyle(UsageTone.text(used: limit.used))
                         }
-                        GlanceBar(fraction: Double(limit.used) / 100, color: UsageTone.fill(used: limit.used, calm: NookTheme.textSecondary))
+                        Bar(fraction: Double(limit.used) / 100, color: UsageTone.fill(used: limit.used, calm: NookTheme.textSecondary),
+                            track: NookTheme.line, minFill: 0)
                     }
                 }
             }
         }
-    }
-}
-
-/// A thin bar that fills from the left.
-private struct GlanceBar: View {
-    let fraction: Double
-    let color: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(NookTheme.line)
-                Capsule().fill(color)
-                    .frame(width: proxy.size.width * min(1, max(0, fraction)))
-            }
-        }
-        .frame(height: 4)
     }
 }
 

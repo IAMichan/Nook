@@ -21,7 +21,6 @@ final class RemoteMCPServer: ObservableObject {
 
     private static let tokenAccount = "remote-mcp.relay-token"
     private static let pingSeconds: UInt64 = 30
-    private static let maxBackoffSeconds: UInt64 = 60
     private var socket: URLSessionWebSocketTask?
     private var loop: Task<Void, Never>?
     private var relay: String?
@@ -93,7 +92,8 @@ final class RemoteMCPServer: ObservableObject {
 
     private func run(_ address: String, _ token: String) async {
         guard let url = RemoteMCPTunnel.listenURL(relay: address, token: token) else { state = .noRelay; return }
-        var backoff: UInt64 = 2
+        // Failures in a row: the wait grows with them, with jitter, up to a minute (`RetryBackoff`, as the companion's).
+        var failures = 0
         while !Task.isCancelled {
             var request = URLRequest(url: url)
             request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
@@ -112,7 +112,7 @@ final class RemoteMCPServer: ObservableObject {
                 while !Task.isCancelled {
                     let message = try await socket.receive()
                     state = .connected
-                    backoff = 2
+                    failures = 0
                     guard case .string(let text) = message, let incoming = RemoteMCPHTTP.incoming(text) else { continue }
                     // A call may wait for the user's approval: it must not hold up the next request.
                     Task { [weak self] in
@@ -128,8 +128,9 @@ final class RemoteMCPServer: ObservableObject {
             pings.cancel()
             socket.cancel(with: .goingAway, reason: nil)
             guard !Task.isCancelled else { return }
-            try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
-            backoff = min(backoff * 2, Self.maxBackoffSeconds)
+            failures += 1
+            let wait = RetryBackoff.delay(failures: failures, random: Double.random(in: 0...1))
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
         }
     }
 

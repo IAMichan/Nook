@@ -207,9 +207,7 @@ private struct MusicPlaylistDetailView: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .help(tr("music.playlists.more"))
         .accessibilityLabel(tr("music.playlists.more"))
     }
@@ -508,7 +506,7 @@ struct MusicTrackRow: View {
                     ToolbarIconButton("minus.circle", removeLabel ?? tr("music.playlists.removeTrack"), height: 28, width: 28, symbolSize: 12, onRemove)
                 }
             }
-            .opacity(hovering ? 1 : 0)
+            .revealOnHover(hovering)
             MusicTrackMenu(track: track, service: service, play: action, queues: queues, onRemove: onRemove, removeLabel: removeLabel)
                 .opacity(hovering ? 1 : 0.5)
             if let primary {
@@ -573,9 +571,7 @@ struct MusicTrackMenu: View {
                 .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .onHover { hovering = $0 }
         .help(tr("music.track.more"))
         .accessibilityLabel(tr("music.track.more"))
@@ -665,9 +661,7 @@ struct MusicAddToPlaylistButton: View {
                     .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
                     .contentShape(Circle())
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
             .onHover { hovering = $0 }
             .help(tr("music.playlists.addTo"))
             .accessibilityLabel(tr("music.playlists.addTo"))

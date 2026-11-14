@@ -45,6 +45,6 @@ enum AgentPathFormat {
     }
 
     static func cost(_ usd: Double) -> String {
-        usd < 0.01 && usd > 0 ? "< $0.01" : String(format: "$%.2f", usd)
+        CostFormat.short(usd)
     }
 }

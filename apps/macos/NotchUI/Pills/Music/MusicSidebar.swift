@@ -134,7 +134,7 @@ private struct MusicSidebarPlaylistRow: View {
                 NookIconButton(systemName: "play.fill", label: tr("music.playlists.play", playlist.name), size: 22) {
                     service.play(playlist)
                 }
-                .opacity(hovering ? 1 : 0)
+                .revealOnHover(hovering)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)

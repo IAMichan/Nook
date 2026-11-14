@@ -425,6 +425,21 @@ struct AgentName: View {
     }
 }
 
+extension View {
+    /// A sheet's one step in its footer (Done, Add, Save): Nook's prominent button at the large size, run by Return.
+    func sheetPrimaryButton() -> some View {
+        keyboardShortcut(.defaultAction)
+            .buttonStyle(.nookProminent)
+            .controlSize(.large)
+    }
+
+    /// A sheet's Cancel in its footer, beside `sheetPrimaryButton()`: the large size, run by Escape.
+    func sheetCancelButton() -> some View {
+        keyboardShortcut(.cancelAction)
+            .controlSize(.large)
+    }
+}
+
 /// Sheet chrome shared by every sheet Settings opens: the icon, title and one line on top (with the state of a linked
 /// connection beside them), the content, and the buttons at the bottom. Its buttons follow one rule: a sheet where the
 /// steps do the work has one button, Done; a sheet you fill in has Cancel and its one step (Return), both on the right;

@@ -34,10 +34,7 @@ private struct SuggestionCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
-                Image(icon: "arrow.up.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 1 : 0)
+                HoverGlyph("arrow.up.right", shown: hovering)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)

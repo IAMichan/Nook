@@ -370,11 +370,7 @@ struct ChatPictureSizeBadge: View {
     let enlarged: Bool
 
     var body: some View {
-        Image(icon: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-            .font(NookTheme.font(10, .semibold))
-            .foregroundStyle(NookTheme.paper)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(NookTheme.ink.opacity(0.65)))
+        MediaOverlayGlyph(enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             .padding(NookTheme.Spacing.sm)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -492,16 +488,8 @@ struct ImageAttachmentStrip: View {
     }
 
     private func removeButton(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(icon: "xmark")
-                .font(NookTheme.font(8, .bold))
-                .foregroundStyle(NookTheme.paper)
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(Color.black.opacity(0.7)))
-        }
-        .buttonStyle(.nookPlain)
-        .padding(3)
-        .accessibilityLabel(tr("image.remove"))
+        MediaOverlayButton("xmark", label: tr("image.remove"), size: .mini, action: action)
+            .padding(3)
     }
 
     private func thumbnail(_ image: ImageAttachment) -> some View {

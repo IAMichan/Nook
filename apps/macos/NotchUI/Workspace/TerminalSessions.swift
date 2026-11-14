@@ -569,19 +569,9 @@ private struct TerminalRow: View {
         }
         .buttonStyle(.nookPlain)
         .overlay(alignment: .trailing) {
-            Button(action: close) {
-                Image(icon: "xmark")
-                    .font(NookTheme.font(9, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                    .frame(width: 14, height: 14)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.nookPlain)
-            .padding(.trailing, NookTheme.Spacing.sm)
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
-            .help(tr("workbench.terminal.close"))
-            .accessibilityLabel(tr("workbench.terminal.close"))
+            TabCloseButton(tr("workbench.terminal.close"), target: 14, tint: NookTheme.paper, action: close)
+                .padding(.trailing, NookTheme.Spacing.sm)
+                .revealOnHover(hovering)
         }
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
@@ -799,9 +789,7 @@ struct SessionTerminalActions: View {
                         .frame(width: TerminalMetrics.action.width, height: TerminalMetrics.action.height)
                         .contentShape(Rectangle())
                 }
-                .menuStyle(.nookBorderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .nookMenuButton()
                 .help(tr("workbench.scripts"))
                 .accessibilityLabel(tr("workbench.scripts"))
             }

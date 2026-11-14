@@ -334,8 +334,11 @@ extension AgentHub {
             record.status = .failed
             record.turnStarted = nil
             let error = (event["error"] as? String) ?? (event["message"] as? String) ?? "stopped with an error"
+            // A usage limit (and when it resets) or a login that ran out reads as it does for a session Nook runs
+            // (`FailureClassifier`), for every agent whose hook passes its error.
+            let failure = FailureClassifier.hookFailure(error)
             Self.complete(&record, as: .failed)
-            Self.push(&record, .failed, Self.shorten(error, 70))
+            Self.push(&record, .failed, Self.shorten(failure.line, 70))
             attention = true
             recap?.turnEnded(session: key)
         case "SubagentStart":

@@ -76,17 +76,9 @@ struct MessageInfoView: View {
         }
     }
 
-    private static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
     /// "14:02" today, else "Yesterday 14:02", "Monday 14:02", "12 Oct 14:02".
     static func when(_ date: Date) -> String {
-        let clock = time.string(from: date)
-        guard !Calendar.current.isDateInToday(date) else { return clock }
-        return ChatTimeline.dayLabel(date, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue)) + " " + clock
+        NookDates.dayAndClock(date)
     }
 }
 

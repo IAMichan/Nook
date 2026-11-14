@@ -16,12 +16,13 @@ extension AppModel {
                             open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil,
                             reply: ((String) -> Void)? = nil) {
         logNotice(Self.noticeKind(notice.state), title: notice.headline, detail: notice.historyDetail,
-                  context: notice.project, target: target, source: .agents, app: app)
+                  context: notice.project, target: target, source: .agents, app: app,
+                  urgent: notice.state == .waiting)
         deliverNotice(.agents, app: app, id: notice.cardID, pace: notice.pace,
                       urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.bannerSubtitle,
                       body: notice.bannerBody, sound: Self.noticeSound(notice.state), watching: watching,
                       kind: Self.toastKind(notice.state),
-                      card: { [weak self] in self?.showAgentNotice(notice, open: open, openApp: openApp) },
+                      card: { [weak self] in self?.showAgentNotice(notice, app: app, open: open, openApp: openApp) },
                       strip: { [weak self] in self?.showAgentStrip(notice, open: open) },
                       open: open,
                       // Its banner opens the session, or the terminal it runs in, as the card does.
@@ -30,17 +31,31 @@ extension AppModel {
 
     /// The card: the agent's logo, who and where, its state and changed lines in the header; what the session is about
     /// as the title, and what the agent said last under it. View, the agent's own app, and OK with its countdown.
-    private func showAgentNotice(_ notice: AgentStatusNotice, open: @escaping () -> Void,
+    /// `app`: the agent as Settings › Notifications names it; what you do with the card is feedback for it
+    /// (`AttentionFeedback`): View opens, OK dismisses, the countdown running out times out.
+    private func showAgentNotice(_ notice: AgentStatusNotice, app: String, open: @escaping () -> Void,
                                  openApp: (title: String, action: () -> Void)?) {
         guard notchFreeForNotice else { return }
         // One card per session: a newer notice redraws it and keeps its countdown running.
         let token = notice.cardID
         var redraw = false
         if case .card(let shown) = viewModel.state { redraw = shown.id == token }
-        viewModel.register("\(token)#view", open)
-        if let openApp { viewModel.register("\(token)#app", openApp.action) }
+        let source = NoticeSource.agents.rawValue
+        viewModel.register("\(token)#view") {
+            AttentionFeedbackStore.shared.record(.opened, source: source, app: app)
+            open()
+        }
+        if let openApp {
+            viewModel.register("\(token)#app") {
+                AttentionFeedbackStore.shared.record(.opened, source: source, app: app)
+                openApp.action()
+            }
+        }
         // OK: gone at once instead of waiting out the timeout; a queued card comes next.
-        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
+        viewModel.register("\(token)#ok") { [weak self] in
+            AttentionFeedbackStore.shared.record(.dismissed, source: source, app: app)
+            self?.viewModel.dismissCard(id: token)
+        }
 
         let tone = Self.doneTone(notice.state)
         let titleLines = max(1, min(2, Int(ceil(Double(notice.title.count) / 40.0))))
@@ -63,7 +78,7 @@ extension AppModel {
             status: CardStatus(text: tr("card.status.\(notice.state.rawValue)"), tone: tone),
             changes: notice.hasChanges ? LineChanges(added: notice.added, removed: notice.removed) : nil
         )))
-        if !redraw { dismissAgentCardLater(token) }
+        if !redraw { dismissAgentCardLater(token, app: app) }
     }
 
     /// One line in the notch's own row: the agent's logo with its state as a badge, the headline and which session,
@@ -76,7 +91,8 @@ extension AppModel {
 
     /// Closes an agent notice once it has been shown `agentNoticeSeconds` with the pointer off the notch, like its
     /// countdown ring. Hovering holds the clock, for at most about 100 seconds in all.
-    func dismissAgentCardLater(_ token: String) {
+    /// `app`: when given, a card that times out untouched counts as such for its agent (`AttentionFeedback`).
+    func dismissAgentCardLater(_ token: String, app: String? = nil) {
         let seconds = Self.agentNoticeSeconds
         Task { [weak self] in
             let step: TimeInterval = 0.1
@@ -88,6 +104,7 @@ extension AppModel {
                 if left <= 0 { break }
             }
             guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
+            if let app { AttentionFeedbackStore.shared.record(.timedOut, source: NoticeSource.agents.rawValue, app: app) }
             self.viewModel.dismissCard(id: token)
         }
     }

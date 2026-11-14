@@ -13,6 +13,12 @@ enum NookDates {
         return nil
     }
 
+    /// An ISO 8601 time stamp with its zone, with or without a fraction of a second ("2026-10-19T14:03:11.482Z"), as
+    /// agents write them in transcripts and APIs. Nil for anything else.
+    static func stamp(_ string: String) -> Date? {
+        isoFractional.date(from: string) ?? isoPlain.date(from: string)
+    }
+
     static func iso(_ date: Date) -> String {
         let zone = TimeZone.current
         let formatter = cached("iso|\(zone.identifier)") { () -> ISO8601DateFormatter in

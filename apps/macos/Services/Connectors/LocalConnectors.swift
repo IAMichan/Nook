@@ -874,13 +874,10 @@ final class BrowserConnector: ContextSource {
         }
     }
 
-    nonisolated private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
-        ("Safari", "com.apple.Safari", true),
-        ("Google Chrome", "com.google.Chrome", false),
-        ("Arc", "company.thebrowser.Browser", false),
-        ("Brave Browser", "com.brave.Browser", false),
-        ("Microsoft Edge", "com.microsoft.edgemac", false)
-    ]
+    /// The browsers Nook reads (`AppCatalog.readableBrowsers`).
+    nonisolated private static let browsers: [(name: String, bundle: String, safari: Bool)] = AppCatalog.readableBrowsers.map {
+        ($0.name, $0.bundleID, $0.engine == .webkit)
+    }
 
     var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
     /// Every read scripts each open browser tab by tab, which holds up the browser while it answers.

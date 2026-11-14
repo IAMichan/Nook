@@ -218,10 +218,7 @@ struct DropdownRow: View {
                 // Room for the star, which sits on top of the row as a button of its own.
                 if favorite != nil { Color.clear.frame(width: 14, height: 14) }
                 if let expanded {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    DisclosureChevron(open: expanded, size: 12, weight: .regular)
                 }
             }
             .padding(.horizontal, tiled ? NookTheme.Spacing.sm : NookTheme.Spacing.md)

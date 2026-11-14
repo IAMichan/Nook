@@ -84,7 +84,7 @@ final class ConnectorHub: ObservableObject {
 
     private func tick() {
         let now = Date()
-        let away = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!) > 300
+        let away = AttentionSignals.current(now: now).isAway
         // One scripted source per tick: started together they wait on the one AppleScript queue, and the ones behind it
         // fall back to starting an `osascript` process each. The others follow on the next ticks.
         var scripting = running.contains { Self.followsYou.contains($0) }

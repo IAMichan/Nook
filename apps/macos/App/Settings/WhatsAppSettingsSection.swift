@@ -187,9 +187,7 @@ struct WhatsAppAddAccountSheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -210,10 +208,7 @@ private struct WhatsAppNewAccountSteps: View {
                 SettingNote(tr("whatsapp.accounts.scan"))
                 QRCodeView(image: image, side: 160, label: tr("chats.link.qr"))
             } else if !link.isConnected {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(link.statusLine).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(link.statusLine)
             }
         }
         // While this step shows, the new account's gateway is asked every few seconds, so a scanned code links at once.

@@ -680,11 +680,9 @@ struct SearchPanel: View {
             Text(tr("search.footer")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
             Spacer(minLength: NookTheme.Spacing.md)
             if center.indexing {
-                ProgressView().controlSize(.small)
-                Text(tr("search.indexing")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+                BusyLine(tr("search.indexing"), tone: .tertiary, font: NookTheme.TextStyle.caption)
             } else if center.searchingHistory, !text.isEmpty {
-                ProgressView().controlSize(.small)
-                Text(tr("search.history")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+                BusyLine(tr("search.history"), tone: .tertiary, font: NookTheme.TextStyle.caption)
             } else if !text.isEmpty {
                 Text(tr("search.results", visible.count)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
             }

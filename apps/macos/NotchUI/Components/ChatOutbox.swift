@@ -28,12 +28,6 @@ final class ChatOutbox: ObservableObject {
     /// The difference allowed between this Mac's clock and the time the app gives your message.
     nonisolated private static let clockSlack: TimeInterval = 10
 
-    private static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
     /// Shows `text` in `chat` now; `shown` is what the chat shows at this moment. Returns the id to report back with.
     func add(_ text: String, quote: BubbleQuote?, chat: String, shown: [ChatBubble]) -> String {
         let waiting = items[chat] ?? []
@@ -69,7 +63,7 @@ final class ChatOutbox: ObservableObject {
         }
         guard !open.isEmpty else { return shown }
         return shown + open.map { item in
-            ChatBubble(id: item.id, text: item.text, time: Self.time.string(from: item.date), date: item.date, fromMe: true,
+            ChatBubble(id: item.id, text: item.text, time: NookDates.clock(item.date), date: item.date, fromMe: true,
                        ticks: item.sent == nil ? .pending : .sent, quote: item.quote, local: true)
         }
     }

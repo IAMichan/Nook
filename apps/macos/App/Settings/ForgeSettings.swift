@@ -207,17 +207,12 @@ struct ForgeSetupSheet: View {
             Spacer()
             if managing != nil || kind.canCheckToken {
                 Button(tr("settings2.done")) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.nookProminent)
-                    .controlSize(.large)
+                    .sheetPrimaryButton()
             } else {
                 Button(tr("button.cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.large)
+                    .sheetCancelButton()
                 Button(tr("settings.forge.add"), action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.nookProminent)
-                    .controlSize(.large)
+                    .sheetPrimaryButton()
                     .disabled(!canSave)
             }
         }

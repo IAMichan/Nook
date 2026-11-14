@@ -51,6 +51,7 @@ final class ChatStoreTests: XCTestCase {
         full.senderID = "123"
         full.edited = true
         full.mentionsMe = true
+        full.importance = .urgent
         full.receipt = .read
         full.reactions = [InboxReaction(emoji: "❤️", count: 2, mine: true, people: ["Bram"])]
         full.quote = InboxQuote(id: "m0", sender: "Bram", text: "hoi", mine: false)

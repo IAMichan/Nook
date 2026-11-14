@@ -42,83 +42,93 @@ extension AppModel {
         }
     }
 
+    /// What Today shows: everything that may need you as one list, ranked by `AttentionScorer` (an approval before a
+    /// question, a question before a reply you owe, what is due soon before what is not, and what you tend to act on
+    /// before what you keep turning away). The phone's home shows the same rows.
     var todayItems: [TodayItem] {
         if demoMode { return DemoContent.today }
-        var items: [TodayItem] = []
+        let now = Date()
+        var items: [RankedTodayItem] = []
 
         // Proactive offer from Nook awaiting user reaction.
-        if let missed = missedNudge, Date().timeIntervalSince(missed.date) < 45 * 60 {
-            items.append(TodayItem(
-                id: "nudge-\(missed.card.id)",
-                title: missed.line,
-                subtitle: tr("app.today.alongIn", missed.app, NookDates.time(missed.date)),
-                action: tr("button.view"),
-                color: NookTheme.iris,
-                target: .action { [weak self] in
-                    self?.missedNudge = nil
-                    self?.viewModel.show(.card(missed.card))
-                },
-                logo: .symbol("sparkles")
-            ))
+        if let missed = missedNudge, now.timeIntervalSince(missed.date) < 45 * 60 {
+            items.append(RankedTodayItem(
+                attention: AttentionItem(source: NoticeSource.suggestions.rawValue, id: "nudge-\(missed.card.id)", app: missed.app,
+                                         needsYou: .info, since: missed.date),
+                row: TodayItem(
+                    id: "nudge-\(missed.card.id)",
+                    title: missed.line,
+                    subtitle: tr("app.today.alongIn", missed.app, NookDates.time(missed.date)),
+                    action: tr("button.view"),
+                    color: NookTheme.iris,
+                    target: .action { [weak self] in
+                        self?.missedNudge = nil
+                        self?.viewModel.show(.card(missed.card))
+                    },
+                    logo: .symbol("sparkles")
+                )))
         }
 
-        if let attention = autocompleteAttentionItem() { items.append(attention) }
-
-        for session in hub.sessions where session.status == .waiting || session.status == .failed {
-            let title = session.status == .waiting ? tr("app.today.agentWaiting", session.name) : tr("app.today.agentFailed", session.name)
-            items.append(TodayItem(
-                id: "agent-\(session.id)",
-                title: title,
-                subtitle: session.project,
-                action: tr("button.view"),
-                color: session.status.color,
-                target: .agent(session.id),
-                logo: .agent(session.name)
-            ))
+        if let attention = autocompleteAttentionItem() {
+            items.append(RankedTodayItem(attention: AttentionItem(source: "autocomplete", id: attention.id, needsYou: .failure),
+                                         row: attention))
         }
 
-        let now = Date()
+        // Agents that wait on you or failed, owed replies and birthdays.
+        items += agentAttention(now: now)
+        items += owedChatAttention(now: now)
+        items += birthdayAttention(now: now)
+
         if let next = upcoming.first(where: { $0.end > now }), next.start.timeIntervalSince(now) < 3 * 3600 {
             let starting = next.start <= now
-            items.append(TodayItem(
-                id: "event-\(next.id)",
-                title: next.title,
-                subtitle: (starting ? tr("app.today.now") : tr("app.today.at", NookDates.time(next.start))) + (next.location.isEmpty ? "" : " · \(next.location)"),
-                action: tr("app.today.prepare"),
-                color: NookTheme.iris,
-                target: .action { [weak self] in
-                    self?.handleUserText(tr("app.today.preparePrompt", next.title))
-                },
-                logo: .source("calendar")
-            ))
+            items.append(RankedTodayItem(
+                attention: AttentionItem(source: "calendar", id: "event-\(next.id)", subject: next.id, needsYou: .info,
+                                         deadline: next.start),
+                row: TodayItem(
+                    id: "event-\(next.id)",
+                    title: next.title,
+                    subtitle: (starting ? tr("app.today.now") : tr("app.today.at", NookDates.time(next.start))) + (next.location.isEmpty ? "" : " · \(next.location)"),
+                    action: tr("app.today.prepare"),
+                    color: NookTheme.iris,
+                    target: .action { [weak self] in
+                        self?.handleUserText(tr("app.today.preparePrompt", next.title))
+                    },
+                    logo: .source("calendar")
+                )))
         }
 
         for source in connectors.needingAttention.prefix(2) {
-            items.append(TodayItem(
-                id: "connector-\(source.id)",
-                title: "\(source.title): \(source.status.headline)",
-                subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
-                action: tr("button.view"),
-                color: NookTheme.amber,
-                target: .action { [weak self] in self?.openSettings(section: .connections) },
-                logo: .source(source.id)
-            ))
+            items.append(RankedTodayItem(
+                attention: AttentionItem(source: "connectors", id: "connector-\(source.id)", app: source.id, needsYou: .failure),
+                row: TodayItem(
+                    id: "connector-\(source.id)",
+                    title: "\(source.title): \(source.status.headline)",
+                    subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
+                    action: tr("button.view"),
+                    color: NookTheme.amber,
+                    target: .action { [weak self] in self?.openSettings(section: .connections) },
+                    logo: .source(source.id)
+                )))
         }
 
-        if let recapItem = weeklyRecapItem() { items.append(recapItem) }
+        if let recapItem = weeklyRecapItem() {
+            items.append(RankedTodayItem(attention: AttentionItem(source: "nook", id: recapItem.id, needsYou: .info), row: recapItem))
+        }
 
         for loop in loops.prefix(3) {
-            items.append(TodayItem(
-                id: "loop-\(loop.id)",
-                title: loop.title,
-                subtitle: tr("app.today.openSince", NookDates.short(loop.created, locale: NookDates.appLocale)),
-                action: tr("app.today.finish"),
-                color: NookTheme.amber,
-                target: .action { [weak self] in self?.presentLoop(loop) },
-                logo: .symbol("checklist")
-            ))
+            items.append(RankedTodayItem(
+                attention: AttentionItem(source: "loops", id: "loop-\(loop.id)", subject: loop.id, needsYou: .info, since: loop.created),
+                row: TodayItem(
+                    id: "loop-\(loop.id)",
+                    title: loop.title,
+                    subtitle: tr("app.today.openSince", NookDates.short(loop.created, locale: NookDates.appLocale)),
+                    action: tr("app.today.finish"),
+                    color: NookTheme.amber,
+                    target: .action { [weak self] in self?.presentLoop(loop) },
+                    logo: .symbol("checklist")
+                )))
         }
-        var shown = Array(items.prefix(5))
+        var shown = attentionScorer(now: now).rank(items, by: \.attention).prefix(5).map(\.row)
         // What autocomplete saved you today: last, and only when there is room.
         if shown.count < 5, let used = autocompleteTodayItem() { shown.append(used) }
         return shown

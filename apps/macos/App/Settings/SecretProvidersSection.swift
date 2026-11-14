@@ -88,9 +88,7 @@ struct SecretProviderSheet: View {
                 saveAll()
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
         }
         .task { await load() }
     }

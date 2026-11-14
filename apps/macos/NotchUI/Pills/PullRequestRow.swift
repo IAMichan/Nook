@@ -87,16 +87,7 @@ struct PullRequestRow: View, Equatable {
         // Into a composer, or anywhere else that takes a link.
         .onDrag { NSItemProvider(object: (item.url?.absoluteString ?? "#\(item.number)") as NSString) }
         .contextMenu {
-            if let url = item.url {
-                Button(tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
-                Button(tr("agents.pr.copyLink")) { copyLink(url) }
-            }
-            if !item.headBranch.isEmpty {
-                Button(tr("agents.pr.copyBranch")) {
-                    Pasteboard.copy(item.headBranch)
-                    ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
-                }
-            }
+            GitHubLinkMenuItems(url: item.url, branch: item.headBranch)
             if let linked {
                 Divider()
                 if let watching = linked.watching, let onWatch, item.state == .open {
@@ -108,8 +99,7 @@ struct PullRequestRow: View, Equatable {
     }
 
     private func copyLink(_ url: URL) {
-        Pasteboard.copy(url.absoluteString)
-        ToastCenter.shared.success(tr("agents.pr.copiedLink"))
+        Pasteboard.copy(url.absoluteString, toast: tr("agents.pr.copiedLink"))
     }
 
     /// The row's ⋯, under the pointer only: copy, open, watch, and take it off the list.
@@ -138,8 +128,7 @@ struct PullRequestRow: View, Equatable {
         }
         .help(tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
-        .opacity(hovering ? 1 : 0)
-        .allowsHitTesting(hovering)
+        .revealOnHover(hovering)
         .padding(.trailing, NookTheme.Spacing.sm)
         .padding(.bottom, NookTheme.Spacing.xs)
     }

@@ -296,7 +296,7 @@ struct CommitSheet: View {
                     .buttonStyle(.nookLink)
                     .font(NookTheme.TextStyle.detail)
             }
-            if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
+            if let error { InlineErrorText(error) }
             if let done { Text(tr("ws.commit.done", done)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint) }
             AdaptiveActionRow {
                 Text(tr("ws.commit.note")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
@@ -403,17 +403,14 @@ struct PullRequestSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if writing {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("ws.quick.generatingPR")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
-                }
+                BusyLine(tr("ws.quick.generatingPR"), font: NookTheme.TextStyle.detail)
             }
             if !writing, !missingSections.isEmpty {
                 Text(tr("ws.pr.missingSections", missingSections.joined(separator: ", ")))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
+            if let error { InlineErrorText(error) }
             if let created {
                 Button(tr("ws.pr.created")) { PullRequestViewer.show(created) }
                     .buttonStyle(.nookLink)

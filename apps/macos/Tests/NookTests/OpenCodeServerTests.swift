@@ -142,7 +142,8 @@ final class OpenCodeServerTests: XCTestCase {
                                                   directory: "/Users/me/project"), ["/Users/me/project/notes.txt"])
         XCTAssertEqual(OpenCodeTools.name("edit"), "Edit")
         XCTAssertEqual(OpenCodeTools.name("write"), "Write")
-        XCTAssertEqual(OpenCodeTools.name("shell"), "shell")
+        // Every agent's command reads "Shell" (`CanonicalTool`).
+        XCTAssertEqual(OpenCodeTools.name("shell"), "Shell")
         // Stop: the running command ends as aborted, and the execution as interrupted.
         XCTAssertTrue(events.contains(.toolFailed(session: session, call: "chatcmpl-tool-8caacf7af79bb0a3", kind: "aborted",
                                                   message: "Tool execution interrupted")))

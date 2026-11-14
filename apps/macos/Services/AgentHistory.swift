@@ -711,16 +711,6 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let days = 90
     private static let maxFiles = 1500
 
-    private let iso: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private let isoPlain: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
 
     func scan(_ homes: [ProfileHome], excludingFolder ownFolder: String) -> Result {
         lock.lock()
@@ -958,7 +948,7 @@ private final class HistoryScanner: @unchecked Sendable {
             guard session.agent == .codex,
                   let name = ([session.sessionID] + session.earlierIDs).lazy.compactMap({ names[$0] }).first else { return session }
             var named = session
-            named.title = Self.oneLine(name, 90)
+            named.title = Self.title(name)
             named.titledByAgent = true
             return named
         }
@@ -1264,11 +1254,10 @@ private final class HistoryScanner: @unchecked Sendable {
                 if !text.isEmpty { session.lastReply = text }
                 if let model = message["model"] as? String, !model.isEmpty { session.model = model }
                 if let raw = message["tokens"] as? [String: Any] {
-                    // Gemini counts cached tokens inside its input; keep them apart like the other agents do.
-                    let cached = Self.int(raw["cached"])
-                    let tally = TokenTally(input: max(0, Self.int(raw["input"]) - cached),
-                                           output: Self.int(raw["output"]) + Self.int(raw["thoughts"]),
-                                           cacheRead: cached, cacheWrite: 0)
+                    // Gemini counts cached tokens inside its input, and thoughts as output, as it does live
+                    // (`TokenUsageSplit.gemini`).
+                    let counts = TokenUsageSplit.gemini(raw)
+                    let tally = TokenTally(input: counts.input, output: counts.output, cacheRead: counts.cacheRead, cacheWrite: 0)
                     session.tokens += tally
                     let when = (message["timestamp"] as? String).flatMap { date($0) } ?? session.ended
                     let id = (message["id"] as? String) ?? "\(entries.count)"
@@ -1278,20 +1267,14 @@ private final class HistoryScanner: @unchecked Sendable {
                 continue
             }
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
     }
 
     /// Message content is a string, or a list of parts with a `text`.
-    private static func geminiText(_ content: Any?) -> String {
-        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let parts = content as? [[String: Any]] {
-            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return ""
-    }
+    private static func geminiText(_ content: Any?) -> String { TextClip.parts(content) }
 
     // MARK: Antigravity
 
@@ -1375,7 +1358,7 @@ private final class HistoryScanner: @unchecked Sendable {
         )
         session.titledByAgent = !info.title.isEmpty
         if session.title.isEmpty { session.title = prompts.first?.text ?? "" }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: [])
@@ -1463,7 +1446,7 @@ private final class HistoryScanner: @unchecked Sendable {
         guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
             return Parsed(session: nil, entries: entries)
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
@@ -1646,7 +1629,7 @@ private final class HistoryScanner: @unchecked Sendable {
             session.title = named
             session.titledByAgent = true
         }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         session.firstPrompt = Self.clip(SpawnedSessions.normalized(result.firstPrompt), 4_000)
@@ -1802,7 +1785,7 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
-        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.title = Self.title(InjectedPrompt.title(session.title))
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         session.firstPrompt = Self.clip(SpawnedSessions.normalized(session.firstPrompt), 4_000)
@@ -1844,13 +1827,9 @@ private final class HistoryScanner: @unchecked Sendable {
                 // Cumulative session total so far; the delta with the previous line is the incremental usage.
                 guard let info = payload["info"] as? [String: Any],
                       let total = info["total_token_usage"] as? [String: Any] else { return }
-                let cached = Self.int(total["cached_input_tokens"])
-                let current = TokenTally(
-                    input: max(0, Self.int(total["input_tokens"]) - cached),
-                    output: Self.int(total["output_tokens"]),
-                    cacheRead: cached,
-                    cacheWrite: 0
-                )
+                // Codex counts cached input inside its input, as it does live (`TokenUsageSplit.codex`).
+                let counts = TokenUsageSplit.codex(total)
+                let current = TokenTally(input: counts.input, output: counts.output, cacheRead: counts.cacheRead, cacheWrite: 0)
                 guard current.total > state.previous.total else { return }
                 let delta = TokenTally(
                     input: max(0, current.input - state.previous.input),
@@ -1942,31 +1921,22 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private func date(_ string: String) -> Date? {
-        iso.date(from: string) ?? isoPlain.date(from: string)
+        NookDates.stamp(string)
     }
 
     private static func int(_ value: Any?) -> Int {
-        (value as? NSNumber)?.intValue ?? 0
+        JSONNumber.int(value) ?? 0
     }
 
     /// Text extracted from a message: either a direct string or concatenated text blocks from an array.
-    private static func text(_ content: Any?) -> String {
-        if let string = content as? String { return string }
-        guard let blocks = content as? [[String: Any]] else { return "" }
-        return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
-            .joined(separator: "\n")
-    }
+    private static func text(_ content: Any?) -> String { TextClip.blocks(content) }
 
-    private static func oneLine(_ text: String, _ limit: Int) -> String {
-        let flat = text.split(whereSeparator: \.isNewline).first.map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? ""
-        return flat.count > limit ? String(flat.prefix(limit - 1)) + "…" : flat
-    }
+    private static func oneLine(_ text: String, _ limit: Int) -> String { TextClip.firstLine(text, limit) }
 
-    private static func clip(_ text: String, _ limit: Int) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count > limit ? String(trimmed.prefix(limit - 1)) + "…" : trimmed
-    }
+    private static func clip(_ text: String, _ limit: Int) -> String { TextClip.clip(text, limit) }
+
+    /// A session's title: its first line, cut after a whole word (`TextClip.title`), as every title in Nook is.
+    private static func title(_ text: String) -> String { TextClip.title(TextClip.firstLine(text, .max), 90) }
 
     /// "max" → "Max", "claude_max_20x" → "Max 20x", "plus" → "Plus".
     static func planName(_ raw: String) -> String {

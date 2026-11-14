@@ -87,8 +87,7 @@ struct SettingsRowToggleStyle: ToggleStyle {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Toggle("", isOn: configuration.$isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                .compactSwitch()
         }
         // One element for VoiceOver: the name, its explanation and the switch's state together.
         .accessibilityElement(children: .combine)

@@ -337,10 +337,7 @@ private struct StackedDiffHeader: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(icon: "chevron.right")
-                .font(NookTheme.font(10, .bold))
-                .foregroundStyle(file.tint)
-                .rotationEffect(.degrees(open ? 90 : 0))
+            DisclosureChevron(open: open, size: 10, tint: file.tint)
                 .animation(NookTheme.reveal, value: open)
                 .frame(width: 16)
             Text(file.path)
@@ -400,9 +397,7 @@ private struct StackedDiffBody<Content: View>: View {
             if let text, !text.isEmpty {
                 content(file, text)
             } else if let error {
-                Text(error)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
+                InlineErrorText(error)
                     .padding(NookTheme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if text != nil {
@@ -523,11 +518,8 @@ private struct StackedDiffTreeRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if row.isDirectory {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 8)
                         .frame(width: 10)
-                        .foregroundStyle(NookTheme.textTertiary)
                 } else {
                     Color.clear.frame(width: 10, height: 1)
                 }

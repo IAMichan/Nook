@@ -64,10 +64,7 @@ struct TranscriptWorkLine: View {
                     .truncationMode(.tail)
             }
             if let open {
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, tint: NookTheme.textTertiary.opacity(0.7))
                     .opacity(!quietChevron || open || hovering ? 1 : 0)
             }
             if failed {
@@ -80,10 +77,7 @@ struct TranscriptWorkLine: View {
                     .opacity(reveals || hovering ? 1 : 0)
             }
             if let link {
-                Image(icon: link)
-                    .font(NookTheme.font(9.5, .medium))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 1 : 0)
+                HoverGlyph(link, shown: hovering, size: 9.5, weight: .medium)
             }
             if let lines { EditLinesLabel(lines: lines, size: 11) }
             if !checks.isEmpty { VerificationChips(checks: checks) }
@@ -264,9 +258,7 @@ struct TranscriptFoldLine: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 // The sentence first; the checks beside it make do with what is left.
                 Text(text).lineLimit(1).layoutPriority(1)
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(11, .semibold))
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, size: 11, weight: .semibold, tint: nil)
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
@@ -384,26 +376,27 @@ enum TranscriptStepText {
     /// `detail` is the command, file, pattern or task; `mono` when it is code or a path rather than words.
     static func parts(_ step: AgentToolStep) -> (verb: String, detail: String, mono: Bool) {
         let summary = step.summary
-        switch step.name {
-        case "Task", "Agent": return (tr("agents.step.delegated"), summary, false)
-        case "TodoWrite", "Plan", "update_plan": return (tr("agents.step.tasks"), "", false)
-        case "ExitPlanMode": return (tr("agents.step.plan"), "", false)
-        case "WebSearch", "web_search", "google_web_search": return (tr("agents.step.searchedWeb"), summary, false)
-        case "WebFetch", "web_fetch": return (tr("agents.step.fetched"), summary, true)
-        case "Skill": return (tr("agents.step.skill"), summary, true)
-        case "SendUserFile": return (tr("ws.shared.title"), summary, true)
+        // Every agent's spelling of the tool (`CanonicalTool`).
+        let kind = CanonicalTool.kind(step.name)
+        switch kind {
+        case .subagent: return (tr("agents.step.delegated"), summary, false)
+        case .tasks: return (tr("agents.step.tasks"), "", false)
+        case .plan: return (tr("agents.step.plan"), "", false)
+        case .webSearch: return (tr("agents.step.searchedWeb"), summary, false)
+        case .webFetch: return (tr("agents.step.fetched"), summary, true)
+        case .skill: return (tr("agents.step.skill"), summary, true)
         default: break
         }
-        let name = step.name.lowercased()
+        if step.name == "SendUserFile" { return (tr("ws.shared.title"), summary, true) }
         switch ToolCategory.of(tool: step.name) {
         case .command:
             // A description says in words what the command does; without one the command line itself shows.
             let described = step.command.map { $0 != summary } ?? false
             return (tr("agents.step.ran"), summary, !described)
         case .edit:
-            return (tr(["write", "write_file"].contains(name) ? "agents.step.wrote" : "agents.step.edited"), summary, true)
+            return (tr(kind == .write ? "agents.step.wrote" : "agents.step.edited"), summary, true)
         case .read:
-            return (tr(["ls", "list_directory"].contains(name) ? "agents.step.listed" : "agents.step.read"), summary, true)
+            return (tr(kind == .list ? "agents.step.listed" : "agents.step.read"), summary, true)
         case .search:
             return (tr("agents.step.searched"), summary, true)
         case .other:
@@ -421,12 +414,12 @@ enum TranscriptStepText {
 /// The icon of a step, after the kind of work it does.
 enum TranscriptSymbols {
     static func symbol(_ tool: String) -> String {
-        switch tool {
-        case "Task", "Agent": return "person.2"
-        case "TodoWrite", "Plan", "update_plan", "ExitPlanMode": return "checklist"
-        case "WebSearch", "WebFetch", "web_search", "web_fetch", "google_web_search": return "globe"
-        case "Skill": return "sparkles"
-        case "SendUserFile": return "paperclip"
+        if tool == "SendUserFile" { return "paperclip" }
+        switch CanonicalTool.kind(tool) {
+        case .subagent: return "person.2"
+        case .tasks, .plan: return "checklist"
+        case .webSearch, .webFetch: return "globe"
+        case .skill: return "sparkles"
         default:
             switch ToolCategory.of(tool: tool) {
             case .command: return "terminal"
@@ -468,10 +461,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button(action: toggle) {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10, weight: .semibold)
                     Text(tr("agents.superseded.title"))
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)

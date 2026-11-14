@@ -79,14 +79,17 @@ struct CICheckLogView: View {
                 }
                 Spacer(minLength: 0)
                 if let text = log?.text ?? report?.plainText, !text.isEmpty {
-                    ToolbarIconButton("doc.on.doc", tr("ws.ci.copy")) { Pasteboard.copy(text) }
+                    CopyIconButton(tr("ws.ci.copy")) { text }
                 }
                 if let url = check.url {
                     ToolbarIconButton("arrow.up.right.square", tr("ws.ci.open")) { NSWorkspace.shared.open(url) }
                 }
             }
             if running, let log, !log.steps.isEmpty {
-                ProgressBar(fraction: Double(log.doneSteps) / Double(log.steps.count))
+                // The thin bar under a running job's name, filling as its steps finish.
+                Bar(fraction: Double(log.doneSteps) / Double(log.steps.count), color: NookTheme.paper,
+                    height: 3, track: NookTheme.smoke, minFill: 4)
+                    .animation(NookTheme.reveal, value: log.doneSteps)
             }
         }
     }
@@ -163,9 +166,7 @@ struct CICheckLogView: View {
                     withAnimation(NookTheme.reveal) { showSteps.toggle() }
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        Image(icon: "chevron.right")
-                            .font(NookTheme.font(9, .semibold))
-                            .rotationEffect(.degrees(showSteps ? 90 : 0))
+                        DisclosureChevron(open: showSteps, weight: .semibold, tint: nil)
                         Text(tr("ws.ci.steps", log.steps.count))
                         if let failed = log.steps.first(where: { $0.outcome == .failing }) {
                             Text("·")
@@ -380,8 +381,7 @@ struct CICheckLogView: View {
                 if index > 0 { NookDivider() }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        GitHubAvatar(login: note.author, size: 16)
-                        Text(note.author).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong).lineLimit(1)
+                        GitHubPerson(login: note.author)
                         if let date = note.date {
                             Text("· " + NookDates.ago(date)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
                         }
@@ -485,18 +485,3 @@ struct CICheckStatusText: View {
     }
 }
 
-/// The thin bar under a running job's name, filling as its steps finish.
-private struct ProgressBar: View {
-    let fraction: Double
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(NookTheme.smoke)
-                Capsule().fill(NookTheme.paper).frame(width: max(4, proxy.size.width * min(1, max(0, fraction))))
-            }
-        }
-        .frame(height: 3)
-        .animation(NookTheme.reveal, value: fraction)
-    }
-}

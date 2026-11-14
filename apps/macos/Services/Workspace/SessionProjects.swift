@@ -25,35 +25,54 @@ enum SessionProjects {
     /// The files a tool call wrote, absolute, as a hook reports it: the path of an edit or write (Claude Code, Gemini CLI,
     /// Cursor, …), or every file a patch touches (Codex's `apply_patch`). Relative paths are read from `cwd`.
     static func writtenFiles(tool: String, input: [String: Any], cwd: String) -> [String] {
-        var paths: [String] = []
-        switch tool.lowercased() {
-        case "edit", "multiedit", "write", "notebookedit", "write_file", "replace", "create", "str_replace",
-             "str_replace_editor":
-            for key in ["file_path", "absolute_path", "notebook_path", "path"] {
-                if let path = input[key] as? String, !path.isEmpty { paths.append(path); break }
+        changedFiles(tool: tool, input: input).map { absolute($0.path, cwd: cwd) }
+    }
+
+    /// `path` as it is when absolute, else read from `cwd`.
+    static func absolute(_ path: String, cwd: String) -> String {
+        if path.hasPrefix("/") || cwd.isEmpty { return path }
+        return URL(fileURLWithPath: cwd, isDirectory: true).appendingPathComponent(path).standardizedFileURL.path
+    }
+
+    /// The files a call changes as the agent named them, each with how ("modified", "written", "deleted"): the file
+    /// of an edit, write or delete of any agent (`CanonicalTool`), or every file a patch touches. Empty for a call that
+    /// changes no file.
+    static func changedFiles(tool: String, input: [String: Any]) -> [(path: String, kind: String)] {
+        switch CanonicalTool.kind(tool) {
+        case .edit:
+            // str_replace_editor's create writes a whole file.
+            if case .write = EditPatch.change(tool: tool, input: input) {
+                return ToolInput.path(input).map { [($0, "written")] } ?? []
             }
-        case "apply_patch":
+            return ToolInput.path(input).map { [($0, "modified")] } ?? []
+        case .write:
+            return ToolInput.path(input).map { [($0, "written")] } ?? []
+        case .delete:
+            return ToolInput.path(input).map { [($0, "deleted")] } ?? []
+        case .patch:
             let patch = (input["input"] as? String) ?? (input["patch"] as? String) ?? (input["command"] as? String) ?? ""
-            paths = patchFiles(patch)
+            return patchChanges(patch)
         default:
-            break
+            return []
         }
-        return paths.map { path in
-            if path.hasPrefix("/") || cwd.isEmpty { return path }
-            return URL(fileURLWithPath: cwd, isDirectory: true).appendingPathComponent(path).standardizedFileURL.path
+    }
+
+    /// The files an `apply_patch` patch adds, updates, deletes or moves to, each with how.
+    static func patchChanges(_ patch: String) -> [(path: String, kind: String)] {
+        let heads = [("*** Add File: ", "written"), ("*** Update File: ", "modified"), ("*** Delete File: ", "deleted"),
+                     ("*** Move to: ", "written")]
+        var files: [(path: String, kind: String)] = []
+        for line in patch.split(separator: "\n") {
+            guard let head = heads.first(where: { line.hasPrefix($0.0) }) else { continue }
+            let path = line.dropFirst(head.0.count).trimmingCharacters(in: .whitespaces)
+            if !path.isEmpty, !files.contains(where: { $0.path == path }) { files.append((path, head.1)) }
         }
+        return files
     }
 
     /// The files an `apply_patch` patch adds, updates, deletes or moves to.
     static func patchFiles(_ patch: String) -> [String] {
-        let heads = ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "]
-        var files: [String] = []
-        for line in patch.split(separator: "\n") {
-            guard let head = heads.first(where: { line.hasPrefix($0) }) else { continue }
-            let path = line.dropFirst(head.count).trimmingCharacters(in: .whitespaces)
-            if !path.isEmpty, !files.contains(path) { files.append(path) }
-        }
-        return files
+        patchChanges(patch).map(\.path)
     }
 
     /// The names the list shows for `projects`, in the order they were found, without the session's own name.

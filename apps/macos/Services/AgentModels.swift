@@ -29,14 +29,15 @@ struct ApprovalRequest: Identifiable {
     var title: String {
         if let customTitle { return customTitle }
         if assessment.level == .danger { return assessment.title }
-        switch tool {
-        case "Bash", "shell", "run_shell_command", "exec_command":
+        // Every agent's spelling, in any case (`CanonicalTool`): an ACP agent's "edit" reads as Claude Code's Edit.
+        switch CanonicalTool.kind(tool) {
+        case .shell:
             return "May \(agentName) execute this?"
-        case "Edit", "MultiEdit", "Write", "NotebookEdit", "write_file", "replace", "apply_patch":
+        case .edit, .write, .delete, .patch:
             return "May \(agentName) edit this file?"
-        case "WebFetch", "web_fetch":
+        case .webFetch:
             return "May \(agentName) fetch this page?"
-        case "WebSearch", "google_web_search":
+        case .webSearch:
             return "May \(agentName) search the web?"
         default:
             if let mcp = McpToolName(tool) { return tr("ws.approval.mcpTitle", agentName, mcp.toolLabel, mcp.serverLabel) }

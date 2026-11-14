@@ -694,10 +694,7 @@ private struct ChoiceRow: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Image(icon: "arrow.up.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 1 : 0)
+                HoverGlyph("arrow.up.right", shown: hovering)
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)

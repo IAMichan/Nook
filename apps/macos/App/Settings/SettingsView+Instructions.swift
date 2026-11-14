@@ -157,12 +157,9 @@ private struct AddPromptSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(tr("instructions.prompts.add"), action: save)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(!canSave)
         }
     }
@@ -201,12 +198,9 @@ private struct AddSpaceSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(tr("instructions.spaces.add"), action: save)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
                 .disabled(cleanName.isEmpty)
         }
     }

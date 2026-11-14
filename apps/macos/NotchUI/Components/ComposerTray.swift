@@ -55,11 +55,7 @@ struct ComposerErrorLine: View {
             Image(icon: "exclamationmark.triangle.fill")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coral)
-            Text(message)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            InlineErrorText(message)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let dismiss {
                 ToolbarIconButton("xmark", tr("button.clear"), height: 18, width: 18, dismiss)

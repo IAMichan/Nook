@@ -546,13 +546,11 @@ enum OpenCodeTools {
         return mapped
     }
 
-    /// Nook's tool name for the row: OpenCode's own, with its writes and edits under the names the timeline knows.
+    /// Nook's tool name for the row: OpenCode's own under the name every agent's step shows (`CanonicalTool`). Its
+    /// `task` tool starts a subagent with Claude Code's Task input (`description`, `prompt`, `subagent_type`), so it is
+    /// "Task" and gets the subagent rows, the bar above the composer and the Subagents tab, as for every other agent.
     static func name(_ tool: String) -> String {
-        switch tool {
-        case "edit": return "Edit"
-        case "write": return "Write"
-        default: return tool
-        }
+        CanonicalTool.of(tool).name
     }
 
     /// Files a successful call changed: the edited and written paths, and what its metadata lists.

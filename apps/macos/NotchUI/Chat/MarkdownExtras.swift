@@ -22,10 +22,7 @@ struct MarkdownDetailsBlock: View {
                 withAnimation(NookTheme.swap) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .bold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10)
                     Text(MarkdownBlock.inline(summary.isEmpty ? tr("markdown.details") : summary, size: size))
                         .font(NookTheme.font(size, .medium))
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
@@ -171,33 +168,21 @@ enum TableText {
 struct TableCopyMenu: View {
     let header: [String]
     let rows: [[String]]
-    @State private var copied = false
+    @StateObject private var moment = CopiedMoment()
 
     var body: some View {
         Menu {
-            Button(tr("table.copyMarkdown")) { copy(TableText.markdown(header: header, rows: rows)) }
-            Button(tr("table.copyCSV")) { copy(TableText.csv(header: header, rows: rows)) }
+            Button(tr("table.copyMarkdown")) { moment.copy(TableText.markdown(header: header, rows: rows)) }
+            Button(tr("table.copyCSV")) { moment.copy(TableText.csv(header: header, rows: rows)) }
         } label: {
-            Image(icon: copied ? "checkmark" : "doc.on.doc")
+            Image(icon: moment.copied ? "checkmark" : "doc.on.doc")
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(copied ? tr("button.copied") : tr("table.copy"))
+        .nookMenuButton()
+        .help(moment.copied ? tr("button.copied") : tr("table.copy"))
         .accessibilityLabel(tr("table.copy"))
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            copied = false
-        }
     }
 }

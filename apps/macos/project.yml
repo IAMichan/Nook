@@ -249,6 +249,7 @@ targets:
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+ChatFollowUp.swift
+      - path: Core/I18n+Attention.swift
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+WorktreeCleanup.swift
@@ -357,6 +358,7 @@ targets:
       - path: Services/Messages/ChatNoticeRules.swift
       - path: Services/Messages/ChatFollowUp.swift
       - path: Services/Messages/ChatPeople.swift
+      - path: Services/Messages/ChatIdentity.swift
       - path: Services/Connectors/ConnectorHealth.swift
       - path: Services/Connectors/AppDatabaseConnections.swift
       - path: Services/Messages/ChatStickers.swift
@@ -400,6 +402,15 @@ targets:
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
       - path: Services/NoticePacer.swift
+      - path: Services/Attention/AttentionItem.swift
+      - path: Services/Messages/ChatFollowUpTick.swift
+      - path: Services/Attention/ChatNoticePriority.swift
+      - path: Services/ThinkAlongBackoff.swift
+      - path: Core/DecayedCounter.swift
+      - path: Services/Attention/AttentionFeedback.swift
+      - path: Services/Attention/AttentionContext.swift
+      - path: Services/Attention/AppCatalog.swift
+      - path: Core/TextKit.swift
       - path: Services/AgentStatusNotice.swift
       - path: Core/NookError.swift
       - path: Core/MemoryPressure.swift
@@ -588,6 +599,9 @@ targets:
       - path: Services/Workspace/AgentAnnouncements.swift
       - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
+      - path: Services/Workspace/CanonicalTool.swift
+      - path: Services/Workspace/TextClip.swift
+      - path: Services/Workspace/TokenNumbers.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift
       - path: Services/PreToolGate.swift

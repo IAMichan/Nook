@@ -81,18 +81,10 @@ struct NookTabBar<Value: Hashable>: View {
                 .accessibilityValue(item.value == beside ? tr("split.beside") : "")
                 .overlay(alignment: .trailing) {
                     if let onClose, item.value == selected || hovered == item.value {
-                        Button { onClose(item.value) } label: {
-                            Image(icon: "xmark")
-                                .font(NookTheme.font(8, .bold))
-                                .foregroundStyle(NookTheme.textSecondary)
-                                // A bigger target than the glyph, centered where the glyph is.
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
+                        TabCloseButton(tr("tab.close"), spoken: tr("tab.close") + " " + item.title, target: 20) {
+                            onClose(item.value)
                         }
-                        .buttonStyle(.nookPlain)
                         .padding(.trailing, 4)
-                        .help(tr("tab.close"))
-                        .accessibilityLabel(tr("tab.close") + " " + item.title)
                     }
                 }
                 .onHover { inside in

@@ -185,10 +185,7 @@ struct AgentActivityDock: View {
                             .fixedSize()
                     }
                     segments(kind)
-                    Image(icon: "chevron.up")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(open ? 180 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: open, size: 8.5, style: .upward)
                 }
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -611,10 +608,7 @@ struct BackgroundCommandRows: View {
                             .help(tr("ws.background.hasOutput"))
                     }
                     SubagentElapsed(command: command)
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: expanded, size: 8)
                 }
                 .frame(minHeight: 22)
                 .contentShape(Rectangle())

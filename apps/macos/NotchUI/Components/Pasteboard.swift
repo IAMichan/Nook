@@ -8,6 +8,14 @@ enum Pasteboard {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// Copies `text` and says so in a toast ("Link copied"): what a copy menu item does, where no button can turn into
+    /// a checkmark.
+    @MainActor
+    static func copy(_ text: String, toast: String) {
+        copy(text)
+        ToastCenter.shared.success(toast)
+    }
+
     /// Replaces what is on the pasteboard with the picture in the file at `url`, at its full size, as PNG and TIFF so
     /// it pastes into any app. `fallback` (the smaller picture a bubble shows) is used when the file can't be read.
     @discardableResult

@@ -238,9 +238,7 @@ struct AddConnectionSheet: View {
         } footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -462,12 +460,8 @@ struct ServiceSignInSheet: View {
             switch status {
             case .connecting:
                 tagline
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("connect.waiting", service.name))
-                        .font(NookTheme.TextStyle.detail)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                BusyLine(tr("connect.waiting", service.name), tone: .inherited, font: NookTheme.TextStyle.detail)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(tr("button.cancel")) { signIn.cancel() }
             case .connected:
                 tagline
@@ -512,9 +506,7 @@ struct ServiceSignInSheet: View {
                 if status == .connecting { signIn.cancel() }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
     }
 
     private func disconnect() {
@@ -558,9 +550,7 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
         }, footer: {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         })
     }
 }

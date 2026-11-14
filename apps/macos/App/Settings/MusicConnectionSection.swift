@@ -89,10 +89,7 @@ private struct MusicConnectionForm: View {
                 SetupStep(number: 3, title: tr("hub.signIn.step", "Spotify")) {
                     switch spotify.phase {
                     case .waiting:
-                        HStack(spacing: NookTheme.Spacing.md) {
-                            ProgressView().controlSize(.small)
-                            Text(tr("connect.waiting", "Spotify")).font(NookTheme.TextStyle.detail)
-                        }
+                        BusyLine(tr("connect.waiting", "Spotify"), tone: .inherited, font: NookTheme.TextStyle.detail)
                         Button(tr("button.cancel")) { spotify.cancel() }
                     default:
                         Button {
@@ -120,9 +117,7 @@ private struct MusicConnectionForm: View {
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 }

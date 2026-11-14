@@ -188,10 +188,7 @@ struct NookList: View {
                         .fixedSize()
                     NookDivider()
                     // The shelf opens upwards: its chevron points up while closed, down while open.
-                    Image(icon: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(showArchived ? 0 : 180))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: showArchived, size: 8.5, style: .upward)
                 }
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 30)
@@ -316,8 +313,7 @@ private struct NookRow: View, Equatable {
                 .rowActionsBackdrop(background)
                 .padding(.top, NookTheme.Spacing.md)
                 .padding(.trailing, NookTheme.Spacing.md)
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
+                .revealOnHover(hovering)
         }
         .onHover { hovering = $0 }
         // Closed over the buttons, so their first click is not spent closing the card. Warm, as in the Agents list.

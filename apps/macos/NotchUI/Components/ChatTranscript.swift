@@ -737,9 +737,7 @@ private struct ChatBubbleView: View, Equatable {
                             if armed {
                                 MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                     .padding(NookTheme.Spacing.xs)
-                                    .opacity(hovering ? 1 : 0)
-                                    .allowsHitTesting(hovering)
-                                    .animation(NookTheme.hover, value: hovering)
+                                    .revealOnHover(hovering, animated: true)
                             }
                         }
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
@@ -838,9 +836,7 @@ private struct ChatBubbleView: View, Equatable {
                     BubbleActionButton(symbol: "arrowshape.turn.up.left", label: tr("chat.reply"), action: onReply)
                 }
             }
-            .opacity(shown ? 1 : 0)
-            .allowsHitTesting(shown)
-            .animation(NookTheme.hover, value: shown)
+            .revealOnHover(shown, animated: true)
         }
     }
 
@@ -1574,11 +1570,7 @@ struct VideoTile: View {
                                 .interpolation(.high)
                                 .aspectRatio(contentMode: .fit)
                         }
-                        Image(icon: "play.fill")
-                            .font(NookTheme.font(18, .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Circle().fill(Color.black.opacity(hovering ? 0.65 : 0.5)))
+                        MediaOverlayGlyph("play.fill", size: .play, emphasized: hovering)
                     }
                     .contentShape(Rectangle())
                 }
@@ -1589,18 +1581,8 @@ struct VideoTile: View {
         }
         .overlay(alignment: .topTrailing) {
             if showEnlarge {
-                Button { enlarge() } label: {
-                    Image(icon: "arrow.up.left.and.arrow.down.right")
-                        .font(NookTheme.font(11, .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.black.opacity(0.55)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.nookPlain)
-                .padding(6)
-                .help(enlargeLabel)
-                .accessibilityLabel("\(enlargeLabel): \(name)")
+                MediaOverlayButton("arrow.up.left.and.arrow.down.right", label: enlargeLabel, detail: name) { enlarge() }
+                    .padding(6)
             }
         }
         .overlay(alignment: .bottomLeading) {

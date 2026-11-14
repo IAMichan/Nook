@@ -539,49 +539,18 @@ final class AgentHub: ObservableObject {
     }
 
     static func shorten(_ text: String, _ limit: Int) -> String {
-        let single = text.replacingOccurrences(of: "\n", with: " ")
-        return single.count > limit ? String(single.prefix(limit)) + "…" : single
+        TextClip.cut(text.replacingOccurrences(of: "\n", with: " "), limit)
     }
 
     /// The command text, even when an agent provides it as an argument array (Codex: ["bash", "-lc", "npm test"]).
-    static func commandText(_ input: [String: Any]) -> String? {
-        if let text = input["command"] as? String { return text }
-        if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
-               parts[1].hasPrefix("-") {
-                return parts[2...].joined(separator: " ")
-            }
-            return parts.joined(separator: " ")
-        }
-        return nil
-    }
+    static func commandText(_ input: [String: Any]) -> String? { ToolInput.command(input) }
 
-    static func filePath(_ input: [String: Any]) -> String? {
-        for key in ["file_path", "absolute_path", "notebook_path", "path"] {
-            if let path = input[key] as? String, !path.isEmpty { return path }
-        }
-        return nil
-    }
+    static func filePath(_ input: [String: Any]) -> String? { ToolInput.path(input) }
 
+    /// What an edit, write or patch of any agent changes, for the approval card: Codex's apply_patch shows its diff too
+    /// (`EditPatch.lineOps`).
     static func editDiff(tool: String, input: [String: Any]) -> (lines: [DiffLine], added: Int, removed: Int)? {
-        var ops: [LineDiff.Op] = []
-        switch tool {
-        case "Edit", "replace":
-            let old = (input["old_string"] as? String) ?? ""
-            let new = (input["new_string"] as? String) ?? ""
-            ops = LineDiff.diff(LineDiff.lines(old), LineDiff.lines(new))
-        case "MultiEdit":
-            for edit in (input["edits"] as? [[String: Any]]) ?? [] {
-                let old = (edit["old_string"] as? String) ?? ""
-                let new = (edit["new_string"] as? String) ?? ""
-                ops += LineDiff.diff(LineDiff.lines(old), LineDiff.lines(new))
-            }
-        case "Write", "write_file":
-            ops = LineDiff.lines((input["content"] as? String) ?? "").map { LineDiff.Op.add($0) }
-        default:
-            return nil
-        }
-        guard !ops.isEmpty else { return nil }
+        guard let ops = EditPatch.lineOps(tool: tool, input: input) else { return nil }
         let counts = LineDiff.counts(ops)
         return (LineDiff.display(ops, context: 1, limit: 30), counts.added, counts.removed)
     }
@@ -591,6 +560,11 @@ final class AgentHub: ObservableObject {
         if let mcp = McpToolName(tool) {
             let arguments = McpToolName.arguments(input)
             return arguments.isEmpty ? mcp.label : arguments
+        }
+        // A patch (Codex's apply_patch passes it as its `command`) names the files it changes, not the patch text.
+        if CanonicalTool.kind(tool) == .patch {
+            let files = ToolInput.subject(tool: tool, input: input)
+            if !files.isEmpty { return "\(tool) \(files)" }
         }
         if let command = commandText(input) { return command }
         if let path = filePath(input) { return "\(tool) \(shortPath(path))" }
@@ -608,7 +582,7 @@ final class AgentHub: ObservableObject {
         input: [String: Any],
         edit: (lines: [DiffLine], added: Int, removed: Int)?
     ) -> CommandAssessment {
-        if let command = commandText(input) {
+        if !CanonicalTool.of(tool).changesFiles, let command = commandText(input) {
             let assessment = CommandRisk.assess(command)
             if assessment.level == .safe {
                 return CommandAssessment(level: .review, title: "", note: "Read-only · looks harmless")
@@ -616,7 +590,9 @@ final class AgentHub: ObservableObject {
             return assessment
         }
         if let edit {
-            let file = filePath(input).map { ($0 as NSString).lastPathComponent } ?? "a file"
+            // The file, or the files of a patch ("a.swift +1").
+            let subject = ToolInput.subject(tool: tool, input: input)
+            let file = subject.isEmpty ? "a file" : (subject as NSString).lastPathComponent
             return CommandAssessment(level: .review, title: "", note: "Modifies \(file) · +\(edit.added) −\(edit.removed)")
         }
         if let url = input["url"] as? String {
@@ -628,32 +604,32 @@ final class AgentHub: ObservableObject {
         return CommandAssessment(level: .review, title: "", note: "Please review")
     }
 
+    /// The record's one-line activity, for every agent's tools (`CanonicalTool`, `ToolInput.subject`).
     static func describe(tool: String, input: [String: Any]) -> String {
-        if let command = commandText(input) {
+        let canonical = CanonicalTool.of(tool)
+        if canonical.kind == .shell || (canonical.kind == .other && McpToolName(tool) == nil), let command = commandText(input) {
             return "Bash: " + shorten(command, 55)
         }
-        switch tool {
-        case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit", "read_file", "write_file", "replace":
-            let path = filePath(input) ?? ""
-            let verb: String
-            switch tool {
-            case "Read", "read_file": verb = "Reads"
-            case "Write", "write_file": verb = "Writes"
-            default: verb = "Modifies"
-            }
-            return "\(verb) \((path as NSString).lastPathComponent)"
-        case "Grep", "Glob", "search_file_content", "glob":
-            return "Searches \(shorten((input["pattern"] as? String) ?? "", 40))"
-        case "WebFetch", "web_fetch":
+        let subject = ToolInput.subject(tool: tool, input: input)
+        switch canonical.kind {
+        case .read, .list:
+            return "Reads \((subject as NSString).lastPathComponent)"
+        case .write:
+            return "Writes \((subject as NSString).lastPathComponent)"
+        case .edit, .patch, .delete:
+            return "Modifies \((subject as NSString).lastPathComponent)"
+        case .search:
+            return "Searches \(shorten(subject, 40))"
+        case .webFetch:
             let host = URL(string: (input["url"] as? String) ?? "")?.host ?? ""
             return "Fetches: \(host)"
-        case "WebSearch", "google_web_search":
-            return "Searches online: \(shorten((input["query"] as? String) ?? "", 40))"
-        case "Task", "Agent":
-            return "Subagent: \(shorten((input["description"] as? String) ?? "", 40))"
-        case "TodoWrite":
+        case .webSearch:
+            return "Searches online: \(shorten(subject, 40))"
+        case .subagent:
+            return "Subagent: \(shorten(subject, 40))"
+        case .tasks:
             return "Updates task list"
-        default:
+        case .shell, .shellControl, .plan, .skill, .other:
             if let mcp = McpToolName(tool) { return mcp.label }
             return tool.isEmpty ? "busy" : tool
         }

@@ -324,13 +324,7 @@ struct PullRequestDetailView: View {
         .help(tr("agents.pulls.open"))
         .accessibilityLabel(tr("agents.pulls.open"))
         .contextMenu {
-            if let url = detail?.url ?? item.url {
-                Button(tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
-                Button(tr("agents.pr.copyLink")) {
-                    Pasteboard.copy(url.absoluteString)
-                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
-                }
-            }
+            GitHubLinkMenuItems(url: detail?.url ?? item.url)
         }
     }
 
@@ -354,11 +348,7 @@ struct PullRequestDetailView: View {
             let author = detail?.author ?? item.author
             HStack(spacing: NookTheme.Spacing.sm) {
                 if !author.isEmpty {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        GitHubAvatar(login: author, size: 16)
-                        Text(author).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
-                    }
-                    .help("@" + author)
+                    GitHubPerson(login: author)
                 }
                 if let updated = detail?.updated ?? item.updated {
                     if !author.isEmpty { Text("·").foregroundStyle(NookTheme.textMuted) }
@@ -547,8 +537,7 @@ struct PullRequestDetailView: View {
                 baseBranch(detail)
                 Image(icon: "arrow.left").font(NookTheme.font(10, .medium)).foregroundStyle(NookTheme.textMuted.opacity(0.6))
                 Button {
-                    Pasteboard.copy(detail.headBranch)
-                    ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
+                    Pasteboard.copy(detail.headBranch, toast: tr("agents.pr.copiedBranch"))
                 } label: {
                     // A fork's branch carries its owner, as on GitHub: "ada:feature".
                     Text((detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch).lineLimit(1).truncationMode(.middle)
@@ -830,10 +819,7 @@ struct PullRequestDetailView: View {
     /// The summary is in, the timeline, commits and files are still on their way.
     var activityLoading: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ProgressView().controlSize(.small)
-                Text(tr("agents.pr.loadingActivity")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            }
+            BusyLine(tr("agents.pr.loadingActivity"), tone: .tertiary, font: NookTheme.TextStyle.detail)
             ForEach(0..<4, id: \.self) { _ in PullRequestGhostRow() }
             Spacer(minLength: 0)
         }

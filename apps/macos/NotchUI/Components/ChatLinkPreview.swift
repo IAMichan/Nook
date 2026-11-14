@@ -84,11 +84,7 @@ private struct ChatLinkCard: View {
     }
 
     private var playMark: some View {
-        Image(icon: "play.fill")
-            .font(NookTheme.font(16, .semibold))
-            .foregroundStyle(NookTheme.paper)
-            .frame(width: 42, height: 42)
-            .background(Circle().fill(NookTheme.ink.opacity(0.55)))
+        MediaOverlayGlyph("play.fill", size: .play)
             .accessibilityHidden(true)
     }
 

@@ -44,6 +44,14 @@ final class ChatFollowUpStore: ObservableObject {
         inbox.threads.values.map(ChatFollowUpTurn.init)
     }
 
+    /// Moves notes and birthdays kept under a name alone to the person's number or address key, once the inbox shows who
+    /// they are (`ChatPersonNotes.carryOver`). Returns at once when nothing is kept under a name.
+    func carryOverNotes(with inbox: ChatInbox) {
+        guard notes.hasNameKeys else { return }
+        let people = ChatPeople.people(Array(inbox.threads.values))
+        changeNotes { $0.carryOver(to: people) }
+    }
+
     /// Forgets the waits that were answered and the snoozes that ended, after the inbox changed.
     func settle(with inbox: ChatInbox, now: Date = Date()) {
         change { $0.settle(with: Self.turns(of: inbox), now: now) }

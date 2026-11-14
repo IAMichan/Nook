@@ -58,28 +58,8 @@ enum SearchAI {
 
     // MARK: Without the brain
 
-    /// Words that say nothing about what is searched for, in the languages Nook speaks.
-    static let stopwords: Set<String> = [
-        // English
-        "a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "for", "with", "about", "from", "by", "is", "are",
-        "was", "were", "be", "been", "do", "does", "did", "what", "which", "who", "whom", "when", "where", "why", "how",
-        "i", "me", "my", "we", "our", "you", "your", "it", "its", "that", "this", "there", "can", "could", "would",
-        "should", "have", "has", "had", "find", "show", "tell", "search", "look", "all", "any", "some", "again",
-        // Dutch
-        "de", "het", "een", "en", "of", "van", "naar", "op", "aan", "voor", "met", "over", "uit", "bij", "is", "zijn",
-        "was", "waren", "wat", "welke", "wie", "wanneer", "waar", "waarom", "hoe", "ik", "mij", "mijn", "we", "wij",
-        "ons", "onze", "je", "jij", "jouw", "die", "dat", "dit", "er", "kan", "kun", "kunt", "heb", "hebben", "had",
-        "zoek", "vind", "laat", "zien", "toon", "nog", "ook", "al", "alle", "iets", "toen", "daar", "hier", "om", "te",
-        // German
-        "der", "die", "das", "ein", "eine", "und", "oder", "von", "zu", "im", "mit", "uber", "fur", "ist", "sind",
-        "war", "wer", "wann", "wo", "warum", "wie", "ich", "mein", "meine", "wir", "du", "dein", "es",
-        // French
-        "le", "la", "les", "un", "une", "et", "ou", "du", "des", "au", "aux", "avec", "pour", "sur", "est", "sont",
-        "que", "qui", "quoi", "quand", "pourquoi", "comment", "je", "mon", "ma", "mes", "nous", "vous", "il", "elle",
-        // Spanish
-        "el", "los", "las", "uno", "una", "y", "o", "del", "con", "para", "por", "sobre", "es", "son", "fue", "que",
-        "quien", "cuando", "donde", "como", "yo", "mi", "mis", "nosotros", "tu", "su",
-    ]
+    /// Words that say nothing about what is searched for, in the languages Nook speaks: the shared list.
+    static var stopwords: Set<String> { TextKit.stopwords }
 
     /// The question as one broad search: its words that carry meaning, any of them (`a OR b`), so a question in full
     /// sentences still finds the places that have its key words. Empty when only filler is left.

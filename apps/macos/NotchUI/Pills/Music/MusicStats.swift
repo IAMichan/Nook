@@ -298,12 +298,7 @@ private struct MusicArtistRow: View {
                     }
                 }
                 if let share {
-                    GeometryReader { geo in
-                        Capsule()
-                            .fill(NookTheme.music.opacity(0.85))
-                            .frame(width: max(4, geo.size.width * share))
-                    }
-                    .frame(height: 3)
+                    Bar(fraction: share, color: NookTheme.music.opacity(0.85), height: 3, track: nil, minFill: 4)
                 }
             }
         }

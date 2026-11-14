@@ -100,10 +100,7 @@ struct SourcesDisclosure: View {
                                 .padding(.vertical, 2)
                                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
                         }
-                        Image(icon: "chevron.down")
-                            .font(NookTheme.font(8, .bold))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                        DisclosureChevron(open: expanded, size: 8, style: .vertical)
                     }
                     .padding(.vertical, 3)
                     .contentShape(Rectangle())

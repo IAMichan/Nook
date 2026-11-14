@@ -88,8 +88,7 @@ struct SessionSuggestionCard: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             switch state {
             case .running:
-                ProgressView().controlSize(.small)
-                Text(tr("suggest.starting", suggestion.title))
+                BusyLine(tr("suggest.starting", suggestion.title), tone: .inherited)
             case .done:
                 Image(icon: "checkmark.circle").foregroundStyle(NookTheme.mint)
                 Text(tr("suggest.startedLine", suggestion.title))

@@ -469,7 +469,7 @@ extension WorkspaceManager {
             guard turns[id]?.timeline.eventID(forCall: callID) == nil else { return }
             let input: [String: Any] = ["description": TimelinePresentation.headline(prompt, limit: 80), "prompt": prompt,
                                         "subagent_type": model ?? "codex"]
-            feed(id, .toolStarted(AgentToolCall(id: callID, name: "Agent", title: "Agent · " + TimelinePresentation.headline(prompt, limit: 80),
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: CanonicalTool.subagentName, title: CanonicalTool.subagentName + " · " + TimelinePresentation.headline(prompt, limit: 80),
                                                 detail: ToolSummary.json(input), input: JSONBox(input), state: failed ? .failed : .running)))
             guard let eventID = turns[id]?.timeline.eventID(forCall: callID) else { return }
             for thread in threads { codexSubagents[id, default: [:]][thread] = eventID }
@@ -519,7 +519,7 @@ extension WorkspaceManager {
             noteFailure(id, text: error)
         }
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failed ? .failed : .done))
         expireApprovals(id)
         questions[id] = nil
         turns[id] = nil

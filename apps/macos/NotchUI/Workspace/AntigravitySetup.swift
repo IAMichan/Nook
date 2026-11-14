@@ -23,8 +23,7 @@ struct AntigravitySetupRow: View {
                     ProgressView(value: fraction).frame(width: 90)
                     Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(NookTheme.textTertiary)
                 case .verifying, .unpacking, .checking:
-                    ProgressView().controlSize(.small)
-                    Text(phaseText).foregroundStyle(NookTheme.textTertiary)
+                    BusyLine(phaseText, tone: .tertiary)
                 case .idle, .failed:
                     if !installed {
                         SmallGhostButton(title: tr("ws.antigravity.install")) { installer.install() }

@@ -744,26 +744,14 @@ struct ChatVideoControls: View {
     var body: some View {
         ZStack {
             if !playback.playing {
-                Button(action: playback.toggle) {
-                    Image(icon: "play.fill")
-                        .font(NookTheme.font(18, .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(Color.black.opacity(0.5)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.nookPlain)
-                .help(label)
-                .accessibilityLabel("\(label): \(name)")
+                MediaOverlayButton("play.fill", label: label, size: .play, detail: name, action: playback.toggle)
             }
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 bar
             }
         }
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
-        .animation(NookTheme.hover, value: visible)
+        .revealOnHover(visible, animated: true)
     }
 
     private var bar: some View {

@@ -83,6 +83,42 @@ struct GitHubAvatar: View {
     }
 }
 
+/// A GitHub account by picture and login, as a pull request's author, a run's actor or a note's writer show it, with
+/// "@login" on hover. `handle` writes the login as "@login".
+struct GitHubPerson: View {
+    let login: String
+    var size: CGFloat = 16
+    var font: Font = NookTheme.TextStyle.label
+    var tint: Color = NookTheme.textStrong
+    var handle: Bool = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            GitHubAvatar(login: login, size: size)
+            Text(handle ? "@" + login : login).font(font).foregroundStyle(tint).lineLimit(1)
+        }
+        .help("@" + login)
+    }
+}
+
+/// The context menu items of anything on GitHub (a pull request, a workflow run): open it, copy its link, and copy its
+/// branch, each copy confirmed by a toast. `openTitle` names where it opens.
+struct GitHubLinkMenuItems: View {
+    let url: URL?
+    var branch: String = ""
+    var openTitle: String = tr("agents.pulls.open")
+
+    var body: some View {
+        if let url {
+            Button(openTitle) { NSWorkspace.shared.open(url) }
+            Button(tr("agents.pr.copyLink")) { Pasteboard.copy(url.absoluteString, toast: tr("agents.pr.copiedLink")) }
+        }
+        if !branch.isEmpty {
+            Button(tr("agents.pr.copyBranch")) { Pasteboard.copy(branch, toast: tr("agents.pr.copiedBranch")) }
+        }
+    }
+}
+
 /// GitHub pictures already read, shared by every `GitHubAvatar`: each is asked for once however many rows show it at
 /// the same time, and read and decoded off the main thread. `NSCache` drops pictures under memory pressure.
 final class GitHubAvatarStore: @unchecked Sendable {

@@ -29,9 +29,7 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(title).font(NookTheme.TextStyle.label)
-                        Image(icon: "chevron.right")
-                            .font(NookTheme.font(8.5, .bold))
-                            .rotationEffect(.degrees(open ? 90 : 0))
+                        DisclosureChevron(open: open, size: 8.5, tint: nil)
                     }
                     .foregroundStyle(NookTheme.textTertiary)
                     .contentShape(Rectangle())

@@ -271,10 +271,7 @@ struct SidePanelPullRequestPicker: View {
                     .disabled(linkBusy || linkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let linkError {
-                Text(linkError)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                InlineErrorText(linkError)
             }
         }
     }

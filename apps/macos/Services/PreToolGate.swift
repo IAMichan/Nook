@@ -10,30 +10,21 @@ enum PreToolGate {
     /// Claude Code, Codex, Muse Code) are answered there instead.
     static let agents: Set<String> = ["copilot"]
 
-    private static let shellTools: Set<String> = [
-        "bash", "shell", "powershell", "run_shell_command", "exec_command", "run_command", "run_in_terminal"
-    ]
-    private static let writeTools: Set<String> = [
-        "edit", "multiedit", "write", "create", "str_replace", "str_replace_editor", "apply_patch", "notebookedit",
-        "write_file", "replace", "delete", "delete_file", "insert"
-    ]
-    private static let fetchTools: Set<String> = ["web_fetch", "webfetch", "fetch", "fetch_url", "url"]
-
     /// Would the agent ask you before this call, by default?
     static func wouldAsk(tool: String, input: [String: Any]) -> Bool {
         if McpToolName(tool) != nil { return true }
-        let name = tool.lowercased()
-        if shellTools.contains(name) {
+        let canonical = CanonicalTool.of(tool)
+        if canonical.kind == .shell {
             guard let command = command(input) else { return true }
             return CommandRisk.assess(command).level != .safe
         }
-        return writeTools.contains(name) || fetchTools.contains(name)
+        return canonical.changesFiles || canonical.kind == .webFetch
     }
 
     /// What "Always" allows for the rest of the session: a shell command by its program ("git"), any other tool by name.
     static func grant(tool: String, input: [String: Any]) -> String {
         let name = tool.lowercased()
-        if shellTools.contains(name), let command = command(input),
+        if CanonicalTool.kind(tool) == .shell, let command = command(input),
            let program = command.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).first {
             return "\(name):\(program)"
         }

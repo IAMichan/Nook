@@ -30,12 +30,9 @@ struct ConfigPreview: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
@@ -373,8 +370,7 @@ struct HoverActionsRow<Content: View, Idle: View, Actions: View>: View {
                     .opacity(shown ? 0 : 1)
                     .accessibilityHidden(shown)
                 HStack(spacing: NookTheme.Spacing.xs) { actions() }
-                    .opacity(shown ? 1 : 0)
-                    .allowsHitTesting(shown)
+                    .revealOnHover(shown)
             }
         }
         .contentShape(Rectangle())
@@ -1189,12 +1185,9 @@ struct WatchedPullRequestsSection: View {
             } footer: {
                 Spacer()
                 Button(tr("button.cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.large)
+                    .sheetCancelButton()
                 Button(tr("settings.pulls.addButton"), action: add)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.nookProminent)
-                    .controlSize(.large)
+                    .sheetPrimaryButton()
                     .disabled(!canAdd)
             }
         }

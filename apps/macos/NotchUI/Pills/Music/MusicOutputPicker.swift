@@ -102,12 +102,7 @@ struct MusicOutputList: View {
                     .padding(.leading, -NookTheme.Spacing.md)
             }
         } else if outputs.loading {
-            HStack(spacing: NookTheme.Spacing.md) {
-                ProgressView().controlSize(.small)
-                Text(tr("music.output.looking"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
+            BusyLine(tr("music.output.looking"), font: NookTheme.TextStyle.detail)
         } else {
             Text(player == "Spotify" ? tr("music.output.noneSpotify") : tr("music.output.noneAirPlay"))
                 .font(NookTheme.TextStyle.detail)

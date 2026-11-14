@@ -522,6 +522,18 @@ enum UsagePrices {
     static func save(_ table: PriceTable, defaults: UserDefaults = .standard) {
         defaults.setEncoded(table, forKey: defaultsKey)
     }
+
+    private static let last = LockedValue<(data: Data?, table: PriceTable)>((nil, PriceTable()))
+
+    /// The prices as `load` reads them, decoded again only when they changed: for a view that shows a cost on every
+    /// redraw, and a line written at the end of every turn.
+    static func current(defaults: UserDefaults = .standard) -> PriceTable {
+        let data = defaults.data(forKey: defaultsKey)
+        if let hit = last.withLock({ $0.data == data ? $0.table : nil }) { return hit }
+        let table = data.flatMap { try? JSONDecoder().decode(PriceTable.self, from: $0) } ?? PriceTable()
+        last.withLock { $0 = (data, table) }
+        return table
+    }
 }
 
 /// A value several threads read and write, behind a lock.

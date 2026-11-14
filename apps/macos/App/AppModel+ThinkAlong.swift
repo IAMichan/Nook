@@ -86,6 +86,10 @@ extension AppModel {
         // On battery that look waits altogether (`EnergyPlan.runsLocalModels`): a cloud brain still thinks along.
         let plan = EnergyMonitor.shared.plan
         guard plan.thinksAlong else { return }
+        // Inside the quiet hours, or with the day's offers and moments spent (`InterruptionBudget`), there is no reason to
+        // look at all: an offer could not be shown.
+        guard !AttentionNow.shared.context.quietHours,
+              noticePacer.budget.allows(.suggestion, now: Date(), extraGap: thinkAlong.offerGap) else { return }
         let local = (settings.screenWorker ?? settings.selection).isLocal
         guard !local || plan.runsLocalModels else { return }
         let minGap = max(local ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
@@ -180,8 +184,9 @@ extension AppModel {
         // On the notch it needs a resting notch; when it is busy, the offer waits for a later look.
         let decision = settings.noticeRules.decide(.suggestions, app: bundleID, quiet: quiet.silent)
         if let style = decision.style, style != .system, !viewModel.nudgeFits { return }
+        let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: NoticeSource.suggestions.rawValue, app: bundleID)
         let paced = decision.style != nil
-            && !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer)
+            && !noticePacer.permits(.suggestion, key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer, gapFactor: gapFactor)
         logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
         // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes into
@@ -219,23 +224,27 @@ extension AppModel {
         viewModel.register("\(token)#yes") { [weak self] in
             guard let self else { return }
             self.thinkAlong.accepted()
+            AttentionFeedbackStore.shared.record(.answered, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self.missedNudge = nil
             self.cardReplies[token] = nil
             if !plan.actions.isEmpty { self.continueInChat(shown, title: topic, sources: [appName], offers: offers) }
         }
         viewModel.register("\(token)#no") { [weak self] in
             self?.thinkAlong.declined(topic)
+            AttentionFeedbackStore.shared.record(.dismissed, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self?.missedNudge = nil
             self?.cardReplies[token] = nil
         }
         viewModel.register("\(token)#mute") { [weak self] in
             self?.thinkAlong.mute(bundleID: bundleID, name: appName)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self?.missedNudge = nil
             self?.cardReplies[token] = nil
         }
         registerCardReply(token) { [weak self] in
             guard let self else { return }
             self.thinkAlong.accepted()
+            AttentionFeedbackStore.shared.record(.answered, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self.missedNudge = nil
             self.continueInChat(shown, title: topic, sources: [appName], offers: offers, run: false)
         }

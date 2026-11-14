@@ -73,10 +73,7 @@ struct WorkflowRunDetail: View {
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if let url = current.url {
-                    ToolbarIconButton("doc.on.doc", tr("agents.pr.copyLink")) {
-                        Pasteboard.copy(url.absoluteString)
-                        ToastCenter.shared.success(tr("agents.pr.copiedLink"))
-                    }
+                    CopyIconButton(tr("agents.pr.copyLink")) { url.absoluteString }
                     ToolbarIconButton("arrow.up.right.square", tr("actions.openOnGitHub")) { NSWorkspace.shared.open(url) }
                 }
             }
@@ -94,10 +91,8 @@ struct WorkflowRunDetail: View {
             if !current.sha.isEmpty { fact(symbol: "number", text: current.shortSHA, mono: true) }
             fact(symbol: "bolt", text: WorkflowRunWords.event(current.event))
             if !current.actor.isEmpty {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    GitHubAvatar(login: current.actor, size: 14)
-                    Text("@" + current.actor)
-                }
+                GitHubPerson(login: current.actor, size: 14, font: NookTheme.TextStyle.caption, tint: NookTheme.textTertiary,
+                             handle: true)
             }
         }
         .font(NookTheme.TextStyle.caption)
@@ -105,7 +100,7 @@ struct WorkflowRunDetail: View {
         .lineLimit(1)
         .contextMenu {
             if !current.branch.isEmpty {
-                Button(tr("agents.pr.copyBranch")) { Pasteboard.copy(current.branch) }
+                Button(tr("agents.pr.copyBranch")) { Pasteboard.copy(current.branch, toast: tr("agents.pr.copiedBranch")) }
             }
             if !current.sha.isEmpty {
                 Button(tr("actions.copySHA")) { Pasteboard.copy(current.sha) }
@@ -199,9 +194,7 @@ struct WorkflowRunDetail: View {
     @ViewBuilder
     private var jobList: some View {
         if let failure, jobs.isEmpty {
-            Text(failure)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
+            InlineErrorText(failure)
                 .padding(.horizontal, NookTheme.Spacing.xs)
         } else if !loaded {
             // The jobs' shape while they are read: a heading and a few rows.
@@ -340,10 +333,7 @@ private struct WorkflowJobRow: View {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 CICheckStatusText(check: check)
                     .fixedSize()
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 1 : 0)
+                HoverGlyph("chevron.right", shown: hovering)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)

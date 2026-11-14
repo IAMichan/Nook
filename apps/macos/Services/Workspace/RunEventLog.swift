@@ -452,9 +452,7 @@ enum RunEventFold {
 /// What the search index keeps of an event: the same fields "Find in session" searches (not thinking), folded the way
 /// it compares (case and diacritics ignored).
 enum TimelineSearchText {
-    static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    static func fold(_ text: String) -> String { TextKit.fold(text) }
 
     static func body(_ event: RunEvent) -> String {
         guard event.kind != .thinking else { return "" }

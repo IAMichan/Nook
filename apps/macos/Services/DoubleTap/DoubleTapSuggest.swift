@@ -46,12 +46,7 @@ extension DoubleTapLogic {
     static let maxRecents = 8
 
     /// Apps whose text box is where you answer someone: an empty box there asks for a reply.
-    static let replyApps: Set<String> = [
-        "net.whatsapp.WhatsApp", "desktop.WhatsApp", "com.apple.MobileSMS", "com.tinyspeck.slackmacgap",
-        "com.microsoft.teams2", "com.microsoft.teams", "ru.keepcoder.Telegram", "org.telegram.desktop",
-        "org.whispersystems.signal-desktop", "com.hnc.Discord", "com.apple.mail", "com.microsoft.Outlook",
-        "com.readdle.smartemail-Mac", "com.facebook.archon", "com.beeper.beeper-desktop", "com.automattic.beeper.desktop"
-    ]
+    static var replyApps: Set<String> { AppCatalog.replyBundles }
     /// Placeholder words of a reply box, in every language Nook speaks ("Write a message", "Typ een bericht").
     static let replyPlaceholderWords: [String] = [
         "message", "reply", "answer", "respond", "comment",

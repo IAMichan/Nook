@@ -258,9 +258,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.nookProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .onAppear {
             load()
@@ -333,10 +331,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             .controlSize(.large)
             .disabled(gitHubSignIn.phase == .checkingCLI || gitHubSignIn.phase == .waitingForCLI)
             if gitHubSignIn.phase == .waitingForCLI {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("connector.githubFinishLogin")).font(NookTheme.TextStyle.detail)
-                }
+                BusyLine(tr("connector.githubFinishLogin"), tone: .inherited, font: NookTheme.TextStyle.detail)
             } else if case .failed(let message) = gitHubSignIn.phase {
                 SettingNote(message, tone: .error)
             } else {

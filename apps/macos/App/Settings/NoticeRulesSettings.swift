@@ -39,11 +39,34 @@ struct NoticeRulesSettings: View {
                 }
                 SettingToggle(tr("agentNotice.watching"), detail: tr("agentNotice.watchingDetail"),
                               isOn: $settings.quietWhileWatching)
+                quietHours
             } header: {
                 SettingsSectionTitle(tr("notices.settings.how"), info: tr("notices.settings.howFooter"))
             }
             .onAppear { if settings.noticeRules.usesSystem { notifier.requestAccess() } }
         }
+    }
+
+    /// Quiet hours for every notice, on the Mac and on the phone (`NoticeRules.quietHours`).
+    @ViewBuilder
+    private var quietHours: some View {
+        SettingToggle(tr("notices.quietHours.title"), detail: tr("notices.quietHours.detail"), isOn: Binding(
+            get: { settings.noticeRules.quietHours != nil },
+            set: { on in settings.noticeRules.quietHours = on ? (settings.noticeRules.quietHours ?? .evening) : nil }))
+        if let hours = settings.noticeRules.quietHours {
+            HStack {
+                Stepper(tr("companion.push.from", hours.from), value: quietHour(\.from), in: 0...23)
+                Stepper(tr("companion.push.to", hours.to), value: quietHour(\.to), in: 0...23)
+            }
+            Toggle(tr("companion.push.urgent"), isOn: Binding(
+                get: { settings.noticeRules.quietHours?.allowsUrgent ?? true },
+                set: { settings.noticeRules.quietHours?.allowsUrgent = $0 }))
+        }
+    }
+
+    private func quietHour(_ keyPath: WritableKeyPath<QuietHours, Int>) -> Binding<Int> {
+        Binding(get: { settings.noticeRules.quietHours?[keyPath: keyPath] ?? 0 },
+                set: { settings.noticeRules.quietHours?[keyPath: keyPath] = $0 })
     }
 
     /// Which apps may notify, per source; one search over all of them, as the chat apps alone can be a long list.

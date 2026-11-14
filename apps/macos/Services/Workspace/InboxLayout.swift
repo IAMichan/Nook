@@ -531,7 +531,5 @@ enum InboxSearch {
         }
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    private static func fold(_ text: String) -> String { TextKit.fold(text) }
 }

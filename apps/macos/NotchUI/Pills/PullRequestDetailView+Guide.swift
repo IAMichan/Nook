@@ -12,11 +12,8 @@ extension PullRequestDetailView {
         let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if writingGuide {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("agents.pr.guide.writing")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-                }
-                .padding(NookTheme.Spacing.lg)
+                BusyLine(tr("agents.pr.guide.writing"), font: NookTheme.TextStyle.body)
+                    .padding(NookTheme.Spacing.lg)
             } else if let guide {
                 if !guide.isCurrent(for: detail.headSHA) {
                     HStack(spacing: NookTheme.Spacing.md) {
@@ -94,10 +91,7 @@ extension PullRequestDetailView {
                         }
                     }) {
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                            Image(icon: "chevron.right")
-                                .font(NookTheme.font(8.5, .bold))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .rotationEffect(.degrees(guideFiles.contains(file.path) ? 90 : 0))
+                            DisclosureChevron(open: guideFiles.contains(file.path), size: 8.5)
                             filePath(file.path)
                             if !file.note.isEmpty {
                                 Text(file.note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(2)

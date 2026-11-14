@@ -75,12 +75,6 @@ struct AgentInboxList: View {
         return max(shelfMaxHeight, listHeight * workingShelfShare)
     }
 
-    private static let wakeFormat: DateFormatter = {
-        let format = DateFormatter()
-        format.dateFormat = "HH:mm"
-        return format
-    }()
-
     // MARK: Rows
 
     private func row(_ item: AgentListItem) -> InboxRow {
@@ -716,9 +710,7 @@ struct AgentInboxList: View {
             withAnimation(NookTheme.reveal) { store.setThread(entry.id, open: !open) }
         } label: {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(9, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
+                DisclosureChevron(open: open, weight: .semibold, tint: nil)
                     .frame(width: NookTheme.Spacing.xl)
                 Text(count)
                     .font(NookTheme.TextStyle.detail)
@@ -755,7 +747,7 @@ struct AgentInboxList: View {
                 item: item, now: now, selected: current == item.id,
                 receded: entry.receded, pinned: entry.row.pinned, woke: entry.woke, slim: slim,
                 grouped: grouped,
-                wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", Self.wakeFormat.string(from: $0)) } : nil,
+                wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", NookDates.clock($0)) } : nil,
                 project: grouped ? nil : project,
                 actions: AgentRowActions(
                     pinned: entry.row.pinned,
@@ -1240,9 +1232,7 @@ private struct ProjectHeaderRow: View {
                     // On the count's slot in `foldButton`, just before the chevron. Only under the pointer, as a row's own
                     // actions: a pencil on every project header made the list read as a toolbar.
                     .padding(.trailing, Self.chevronWidth + 2 * Self.gap)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
-                    .animation(NookTheme.hover, value: hovering)
+                    .revealOnHover(hovering, animated: true)
                 }
             }
             .contextMenu {
@@ -1310,10 +1300,7 @@ private struct ProjectHeaderRow: View {
                     }
                 }
                 .frame(minWidth: newSession == nil ? 0 : Self.newSessionWidth, alignment: .trailing)
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(10, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .foregroundStyle(NookTheme.textTertiary)
+                DisclosureChevron(open: open, size: 10, weight: .semibold)
                     .frame(width: Self.chevronWidth)
             }
             .padding(.horizontal, Self.gap)

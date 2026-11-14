@@ -208,6 +208,52 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use PullRequestIcon / PullRequestStateIcon (NotchUI/Components/PullRequestIcons.swift)")
     }
 
+    /// "path:line: text" for every line matching `first` that is followed, within `window` lines, by one matching `then`:
+    /// a pattern that spans a modifier chain.
+    private func chains(_ first: String, then: String, within window: Int,
+                        excluding excluded: (String) -> Bool = { _ in false }) -> [String] {
+        let head = try! NSRegularExpression(pattern: first)
+        let tail = try! NSRegularExpression(pattern: then)
+        func matches(_ regex: NSRegularExpression, _ line: String) -> Bool {
+            regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+        }
+        var found: [String] = []
+        for (path, text) in Self.sources where !excluded(path) {
+            let lines = text.components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where matches(head, line) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("//") { continue }
+                let next = lines[(index + 1)..<min(lines.count, index + 1 + window)]
+                if next.contains(where: { matches(tail, $0) }) { found.append("\(path):\(index + 1): \(trimmed)") }
+            }
+        }
+        return found
+    }
+
+    /// A section that folds open turns a `DisclosureChevron` (`HoverReveal.swift`), so every disclosure turns the same
+    /// way at the same weight. `PanelParts.swift` is shared with the iPhone app, where its chevron follows Dynamic Type.
+    func testDisclosureChevronsAreTheSharedComponent() {
+        let found = chains(#"Image\(icon: "chevron\.(right|down|up|left)"\)"#, then: #"\.rotationEffect\("#, within: 3) {
+            ["NotchUI/Components/HoverReveal.swift", "NotchUI/Shared/PanelParts.swift"].contains($0)
+        }
+        XCTAssertEqual(found, [], "use DisclosureChevron(open:size:weight:tint:style:) (NotchUI/Components/HoverReveal.swift)")
+    }
+
+    /// A control hidden at rest is `.revealOnHover` (`HoverReveal.swift`), never an opacity and a hit test by hand.
+    func testHiddenControlsUseRevealOnHover() {
+        let found = chains(#"\.opacity\(.+ \? 1 : 0\)\s*$"#, then: #"^\s*\.allowsHitTesting\("#, within: 1) {
+            $0 == "NotchUI/Components/HoverReveal.swift"
+        }
+        XCTAssertEqual(found, [], "use .revealOnHover(_:animated:) (NotchUI/Components/HoverReveal.swift)")
+    }
+
+    /// Times on screen come from `NookDates.clock` / `clockOrDay` / `dayAndClock` (`Core/RelativeTime.swift`): one
+    /// cached formatter in the app's language, never a view's own `DateFormatter` for "HH:mm".
+    func testClockTimesComeFromNookDates() {
+        let found = offenders(#"dateFormat\s*=\s*"H{1,2}:mm""#)
+        XCTAssertEqual(found, [], "use NookDates.clock / clockOrDay / dayAndClock (Core/RelativeTime.swift)")
+    }
+
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
     func testThemeDefinesTheScales() {
         guard let theme = Self.sources.first(where: { $0.path == "NotchUI/Theme/NookTheme.swift" })?.text else {

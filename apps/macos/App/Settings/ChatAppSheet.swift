@@ -41,9 +41,7 @@ struct ChatAppSheet: View {
                 Task { if isLinking { await linker.cancel() } }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.nookProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
         }
         .confirmDelete($unlinking, question: { tr("chats.link.unlinkQuestion", $0.name) }, detail: tr("chats.link.unlinkDetail", name),
                        confirmTitle: tr("chats.link.unlink")) { account in
@@ -273,10 +271,7 @@ struct ChatLinkSteps: View {
                            disabled: linker.isSending) { Task { await linker.link(network) } }
             }
             if linker.isSending {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("chats.link.busy")).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(tr("chats.link.busy"))
             }
             if let problem = linker.stepProblem, linker.linking?.id == network.id || session == nil {
                 SettingNote(problem, tone: .error)
@@ -330,10 +325,7 @@ struct ChatLinkSteps: View {
         case .display(_, let instructions, let show):
             instructionsText(instructions)
             display(show)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ProgressView().controlSize(.small)
-                Text(tr("chats.link.waiting")).foregroundStyle(NookTheme.textSecondary)
-            }
+            BusyLine(tr("chats.link.waiting"))
         case .complete(let instructions):
             instructionsText(instructions.isEmpty ? tr("chats.link.done", network.name) : instructions)
         }
@@ -471,10 +463,7 @@ struct ChatOwnLinkSteps: View {
             } else {
                 if installer.busy {
                     detail(tr("chats.own.whatsapp.installDetail"))
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        ProgressView().controlSize(.small)
-                        Text(installLine).foregroundStyle(NookTheme.textSecondary)
-                    }
+                    BusyLine(installLine)
                 } else {
                     StepAction(detail: tr("chats.own.whatsapp.installDetail"), button: tr("whatsapp.install.button")) {
                         installer.install()
@@ -494,10 +483,7 @@ struct ChatOwnLinkSteps: View {
                 detail(tr("whatsapp.settings.scan"))
                 QRCodeView(image: image, label: tr("chats.link.qr"))
             } else {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(whatsApp.statusLine).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(whatsApp.statusLine)
                 if whatsApp.link == .unreachable || whatsApp.link == .unauthorized {
                     Button(tr("whatsapp.settings.retry")) { whatsAppAccounts.settingsChanged() }
                 }

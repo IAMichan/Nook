@@ -238,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             add(to: menu, title: title, action: #selector(openAgents), icon: "sparkles")
             status = true
         }
+        // The one thing that waits on you most, ranked as Today ranks it (`AttentionScorer`): a reply you owe, or the
+        // agent that needs you, by name.
+        if let top = model.topAttention() {
+            add(to: menu, title: tr("menu.needsYou", top.row.title), action: #selector(openTopAttention), icon: "bell")
+            status = true
+        }
         if let track = model.nowPlaying.current {
             // The track on one line; play/pause and next live behind it instead of taking two more lines.
             let line = track.artist.isEmpty ? track.title : "\(track.title) – \(track.artist)"
@@ -376,6 +382,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openChat() { model.viewModel.focusChat = true; model.viewModel.show(.panel(.chat), inNotch: true) }
     @objc private func openAgents() { model.viewModel.show(.panel(.agents), inNotch: true) }
+    /// Opens what the menu's "Needs you" line names, as Today's row does.
+    @objc private func openTopAttention() {
+        guard let top = model.topAttention() else { return }
+        switch top.row.target {
+        case .agent(let id):
+            model.viewModel.selectedAgentID = id
+            model.viewModel.show(.panel(.agents), inNotch: true)
+        case .action(let run):
+            run()
+        case .card, .none:
+            break
+        }
+    }
     @objc private func playPause() { model.nowPlaying.control(.playPause) }
     @objc private func nextTrack() { model.nowPlaying.control(.next) }
     @objc private func talk() { model.toggleVoice() }

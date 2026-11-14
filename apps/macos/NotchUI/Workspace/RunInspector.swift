@@ -94,7 +94,7 @@ struct RunInspector: View {
                                       enabled: snapshot?.loading != true) { workspace.refreshGit(runID) }
                 }
                 if let error = snapshot?.error {
-                    Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
+                    InlineErrorText(error)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
                         NookTheme.shape(4).fill(WS.subtle).frame(height: 14)
@@ -173,9 +173,12 @@ struct RunInspector: View {
                 InfoRow(label: tr("ws.usage.autoCompact"), value: TokenTally.format(at), help: tr("ws.usage.autoCompactHelp"))
             }
             if workspace.settings.showCost {
-                InfoRow(label: tr("ws.usage.cost"),
-                        value: caps.reportsCost ? WSFormat.cost(usage.reportedCostUSD) : nil,
-                        help: caps.reportsCost ? tr("ws.usage.costReportedHelp") : tr("ws.usage.costUnavailable", run.provider.displayName))
+                // Every agent's cost the same way (`PriceTable.cost`): an agent that reports tokens but no cost gets an
+                // estimate at the model's list price, marked as one.
+                let cost = run.cost(of: usage, prices: UsagePrices.current())
+                InfoRow(label: tr("ws.usage.cost"), value: CostFormat.label(cost),
+                        help: cost.isEstimate ? tr("ws.cost.estimatedHelp")
+                            : caps.reportsCost ? tr("ws.usage.costReportedHelp") : tr("ws.usage.costUnavailable", run.provider.displayName))
             }
             InfoRow(label: tr("ws.usage.turns"), value: "\(usage.turns)")
             InfoRow(label: tr("ws.usage.active"), value: usage.activeSeconds > 0 ? AgentPathFormat.duration(usage.activeSeconds) : nil)

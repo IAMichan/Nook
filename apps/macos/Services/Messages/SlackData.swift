@@ -112,7 +112,8 @@ enum SlackData {
             person.phone = ChatProfile.text(profile["phone"] as? String)
             if let name = ChatProfile.text(member["name"] as? String) { person.username = "@" + name }
             person.timeZone = ChatProfile.text(member["tz_label"] as? String) ?? ChatProfile.text(member["tz"] as? String)
-            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true { person.bot = true }
+            // Slackbot itself (USLACKBOT) is no `is_bot` user in the list, but it is a bot all the same.
+            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true || id == "USLACKBOT" { person.bot = true }
             people[id] = person
         }
         return people
@@ -140,11 +141,11 @@ enum SlackData {
             let isGroup = channel["is_mpim"] as? Bool == true
             guard isIM || isGroup else { return nil }
             // `updated` is in milliseconds; `created` in seconds.
-            let updated = (channel["updated"] as? Double).map { $0 > 10_000_000_000 ? $0 / 1000 : $0 }
-                ?? (channel["created"] as? Double) ?? 0
+            let updated = ChatJSON.number(channel["updated"]).map { $0 > 10_000_000_000 ? $0 / 1000 : $0 }
+                ?? ChatJSON.number(channel["created"]) ?? 0
             let about = ChatProfile.text((channel["topic"] as? [String: Any])?["value"] as? String)
                 ?? ChatProfile.text((channel["purpose"] as? [String: Any])?["value"] as? String)
-            let created = (channel["created"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
+            let created = ChatJSON.epoch(seconds: channel["created"])
             return Conversation(id: id, user: channel["user"] as? String, name: (channel["name"] as? String) ?? "",
                                 isGroup: isGroup, updated: updated, about: isGroup ? about : nil, created: isGroup ? created : nil,
                                 creator: isGroup ? (channel["creator"] as? String).flatMap { $0.isEmpty ? nil : $0 } : nil)
@@ -176,17 +177,14 @@ enum SlackData {
             if let subtype = message["subtype"] as? String, subtype == "channel_topic" || subtype == "channel_purpose" {
                 // A new topic or purpose: a line, with what it says now.
                 let user = (message["user"] as? String) ?? ""
-                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
-                                        date: Date(timeIntervalSince1970: seconds), fromMe: me != nil && user == me)
-                line.groupChange = ChatGroupChange(.described, by: user == me ? ChatMembership.me : users[user] ?? user,
-                                                   text: message[subtype == "channel_topic" ? "topic" : "purpose"] as? String)
-                return line
+                let change = ChatGroupChange(.described, by: user == me ? ChatMembership.me : users[user] ?? user,
+                                             text: message[subtype == "channel_topic" ? "topic" : "purpose"] as? String)
+                return .notice(id: messageID(conversation: conversation.id, ts: ts), date: Date(timeIntervalSince1970: seconds),
+                               groupChange: change, fromMe: me != nil && user == me)
             }
             if let change = membership(message, users: users, me: me) {
-                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
-                                        date: Date(timeIntervalSince1970: seconds), fromMe: change.by == ChatMembership.me)
-                line.membership = change
-                return line
+                return .notice(id: messageID(conversation: conversation.id, ts: ts), date: Date(timeIntervalSince1970: seconds),
+                               membership: change)
             }
             // What stays of a deleted message that had answers ("This message was deleted."): it shows as deleted.
             if message["subtype"] as? String == "tombstone" {
@@ -210,6 +208,11 @@ enum SlackData {
             // Who wrote it in a group, by their Slack id: their face beside the bubble goes by it.
             if !mine, conversation.isGroup, !user.isEmpty { inbox.senderID = user }
             if message["edited"] != nil { inbox.edited = true }
+            // Someone tagged you ("<@U1>" in the text as Slack sends it, before `clean` names it): a quiet group still
+            // tells you, as WhatsApp's groups do.
+            if !mine, conversation.isGroup {
+                inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs((message["text"] as? String) ?? ""), me: me)
+            }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
             inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
@@ -342,12 +345,12 @@ enum SlackData {
     /// recorded in Slack is a voice message.
     static func file(_ file: [String: Any]) -> ChatMedia? {
         let name = (file["name"] as? String) ?? (file["title"] as? String)
-        let size = (file["size"] as? Int) ?? 0
+        let size = Int(ChatJSON.int64(file["size"]) ?? 0)
         // A file too large to fetch for a chat opens in Slack instead.
         let source = size > ChatMedia.maxBytes ? nil : (file["url_private_download"] as? String) ?? (file["url_private"] as? String)
         guard name != nil || source != nil else { return nil }
         let voice = (file["subtype"] as? String) == "slack_audio"
-        let milliseconds = (file["duration_ms"] as? Double) ?? (file["duration_ms"] as? Int).map(Double.init)
+        let milliseconds = ChatJSON.number(file["duration_ms"])
         return ChatMedia(kind: ChatMedia.kind(mimeType: file["mimetype"] as? String, name: name, voice: voice), name: name,
                          seconds: milliseconds.map { $0 / 1000 }, source: source)
     }
@@ -360,6 +363,21 @@ enum SlackData {
 
     /// Slack's markup as plain text: `<@U1>` → "@Anna", `<#C1|general>` → "#general", `<https://x|label>` → "label",
     /// `<https://x>` → the link, and the three escaped characters back.
+    /// The user ids a message's text tags, as Slack writes a tag: "<@U123>" or "<@U123|name>". "<!here>" and
+    /// "<!channel>" tag nobody in particular and are left out.
+    static func mentionedIDs(_ text: String) -> [String] {
+        var ids: [String] = []
+        var rest = Substring(text)
+        while let open = rest.range(of: "<@") {
+            guard let close = rest[open.upperBound...].firstIndex(of: ">") else { break }
+            let inner = rest[open.upperBound..<close]
+            let id = inner.prefix { $0 != "|" }
+            if !id.isEmpty { ids.append(String(id)) }
+            rest = rest[rest.index(after: close)...]
+        }
+        return ids
+    }
+
     static func clean(_ text: String, users: [String: String]) -> String {
         var result = ""
         var rest = Substring(text)

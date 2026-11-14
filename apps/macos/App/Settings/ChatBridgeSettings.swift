@@ -74,10 +74,7 @@ struct TelegramSettingsRows: View {
             StepAction(detail: tr("chats.telegram.connectDetail"), button: tr("chats.telegram.connect")) { telegram.start() }
             TelegramKeysButton(telegram: telegram)
         case .starting:
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ProgressView().controlSize(.small)
-                Text(tr("chats.telegram.starting")).foregroundStyle(NookTheme.textSecondary)
-            }
+            BusyLine(tr("chats.telegram.starting"))
         case .login(let step):
             login(step)
         }

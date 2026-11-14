@@ -99,14 +99,7 @@ struct ChatPollView: View {
                     }
                 }
                 if showsCounts {
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(NookTheme.line2)
-                            Capsule().fill(option.chosen ? NookTheme.mint : NookTheme.textSecondary)
-                                .frame(width: geometry.size.width * share)
-                        }
-                    }
-                    .frame(height: 4)
+                    Bar(fraction: Double(share), color: option.chosen ? NookTheme.mint : NookTheme.textSecondary, minFill: 0)
                 }
                 if showVoters, let voters = option.voters, !voters.isEmpty {
                     Text(voters.joined(separator: ", "))

@@ -46,12 +46,11 @@ struct WANameBook: Equatable, Sendable {
     }
 
     /// The lookup key of an id: "lid:" and the digits for an @lid, else the last nine digits of the number (as
-    /// `AppData.key` makes them). Nil for something that is no person (a group, a channel, a number too short).
+    /// `AppData.key` makes them, `ChatHandle.phoneKey`). Nil for something that is no person (a group, a channel, a
+    /// number too short).
     static func key(_ id: String) -> String? {
-        let digits = WAJID.digits(id)
-        guard digits.count >= 6, WAJID.kind(id) == .person else { return nil }
-        if id.hasSuffix("@lid") { return "lid:" + digits }
-        return digits.count > 9 ? String(digits.suffix(9)) : digits
+        guard WAJID.kind(id) == .person, let key = ChatHandle.phoneKey(id) else { return nil }
+        return id.hasSuffix("@lid") ? "lid:" + WAJID.digits(id) : key
     }
 }
 

@@ -595,11 +595,7 @@ enum CodexAppServerMapper {
 
     /// Codex counts cached input inside `inputTokens`; keep them apart like the other agents.
     static func counts(_ raw: Any?) -> TokenCounts {
-        let object = (raw as? [String: Any]) ?? [:]
-        let cached = Int(ClaudeStreamParser.number(object["cachedInputTokens"]) ?? 0)
-        let input = Int(ClaudeStreamParser.number(object["inputTokens"]) ?? 0)
-        return TokenCounts(input: max(0, input - cached), output: Int(ClaudeStreamParser.number(object["outputTokens"]) ?? 0),
-                           cacheRead: cached, cacheWrite: Int(ClaudeStreamParser.number(object["cacheWriteInputTokens"]) ?? 0))
+        TokenUsageSplit.codex((raw as? [String: Any]) ?? [:])
     }
 }
 

@@ -183,14 +183,9 @@ private struct LimitLineBar: View {
         let elapsed = LimitPool.timeElapsed(limit.poolLimit, now: now)
         GeometryReader { proxy in
             let width = proxy.size.width
-            ZStack(alignment: .leading) {
-                Capsule().fill(NookTheme.line2)
-                Capsule()
-                    .fill(UsageTone.fill(used: used, calm: NookTheme.textSecondary))
-                    .frame(width: max(used > 0 ? Self.height : 0, width * CGFloat(min(used, 100)) / 100))
-            }
-            .frame(height: Self.height)
-            .frame(maxHeight: .infinity)
+            Bar(fraction: Double(used) / 100, color: UsageTone.fill(used: used, calm: NookTheme.textSecondary),
+                height: Self.height, minFill: used > 0 ? Self.height : 0)
+                .frame(maxHeight: .infinity)
             if let elapsed, width >= 6 {
                 Capsule()
                     .fill(NookTheme.paper)
@@ -731,10 +726,7 @@ private struct UsageBlockRows: View {
                 withAnimation(NookTheme.swap) { if open { expanded.remove(block.id) } else { expanded.insert(block.id) } }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10, weight: .semibold)
                         .frame(width: 12)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         HStack(spacing: NookTheme.Spacing.sm) {

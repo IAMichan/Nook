@@ -86,17 +86,13 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                 if let isOn {
                     Toggle("", isOn: isOn)
                         .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
+                        .compactSwitch()
                         .help(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
                         .accessibilityLabel(tr("connection.use", title))
                 }
                 moreMenu
                 // The chevron last: every row lines up, whether it opens or not.
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, size: 10, weight: .semibold)
                     .frame(width: 12)
                     .opacity(opens ? 1 : 0)
                     .accessibilityHidden(true)
@@ -156,9 +152,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
             .help(tr("connection.more"))
             .accessibilityLabel(tr("connection.more"))
         } else {
@@ -236,9 +230,7 @@ struct ConnectionListMenuHeader<Items: View>: View {
             } label: {
                 ConnectionListAddLabel(title: add, symbol: "plus")
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
         }
     }
 }
