@@ -240,6 +240,8 @@ extension WorkspaceBridge {
             return tr("bridge.schedule.webhook")
         case .once(let at):
             return tr("automation.sched.rule.once", ScheduledTaskText.date(at))
+        case .message(let trigger):
+            return ScheduledTaskText.messageSummary(trigger)
         }
     }
 

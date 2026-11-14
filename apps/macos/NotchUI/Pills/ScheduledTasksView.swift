@@ -176,6 +176,7 @@ private struct TaskRow: View {
         if let last = task.lastRun { parts.append(tr("sched.last", ScheduledTaskText.date(last))) }
         if task.enabled, let next = task.nextRun, !running { parts.append(tr("sched.next", ScheduledTaskText.date(next))) }
         if task.enabled, task.rule.isWebhook { parts.append(tr("sched.waitingWebhook")) }
+        if task.enabled, task.rule.isMessage { parts.append(tr("automation.sched.waitingMessage")) }
         if task.isDone { parts.append(tr("automation.sched.done")) }
         if task.target.sessionID != nil {
             parts.append(tr(task.target.freshConversation ? "automation.sched.fresh" : "automation.sched.continue"))
@@ -220,7 +221,28 @@ enum ScheduledTaskText {
             return tr("sched.rule.webhook")
         case .once(let at):
             return tr("automation.sched.rule.once", date(at))
+        case .message(let trigger):
+            return messageSummary(trigger)
         }
+    }
+
+    /// The apps a message trigger can listen to, as the chat inbox names them, with their names.
+    static let messageApps: [(id: String, name: String)] = [
+        ("whatsapp", "WhatsApp"), ("messages", "Messages"), ("mail", "Mail"), ("telegram", "Telegram"), ("slack", "Slack"),
+        ("teams", "Teams"), ("signal", "Signal"), ("instagram", "Instagram"), ("messenger", "Messenger"), ("linkedin", "LinkedIn"),
+        ("discord", "Discord"), ("snapchat", "Snapchat")
+    ]
+
+    /// "On a new message · WhatsApp, Mail · from Lisa · about invoice" for the list and the approval card.
+    static func messageSummary(_ trigger: MessageTrigger) -> String {
+        var parts = [tr("automation.sched.rule.message")]
+        if !trigger.apps.isEmpty {
+            parts.append(trigger.apps.map { id in messageApps.first { $0.id == id }?.name ?? id }.joined(separator: ", "))
+        }
+        if !trigger.from.isEmpty { parts.append(tr("automation.sched.rule.from", trigger.from)) }
+        if !trigger.keywords.isEmpty { parts.append(tr("automation.sched.rule.about", trigger.keywords.joined(separator: ", "))) }
+        if trigger.groups { parts.append(tr("automation.sched.rule.groups")) }
+        return parts.joined(separator: " · ")
     }
 
     /// The stored reason as text: our own reasons are keys, the interrupted reason is a fixed phrase, the rest is what the
@@ -262,7 +284,7 @@ private struct ScheduledTaskEditor: View {
     @ObservedObject private var settings = WorkspaceSettings.shared
 
     private enum Kind: String, CaseIterable, Identifiable {
-        case interval, time, once, webhook
+        case interval, time, once, webhook, message
         var id: String { rawValue }
     }
 
@@ -294,6 +316,11 @@ private struct ScheduledTaskEditor: View {
     @State private var fresh: Bool
     /// Nook Chat only speaks up when something new needs the user.
     @State private var quiet: Bool
+    /// A message trigger: which apps (empty: all), from whom, about what, and whether group chats count.
+    @State private var messageApps: Set<String>
+    @State private var messageFrom: String
+    @State private var messageWords: String
+    @State private var messageGroups: Bool
     @State private var rules: WebhookRules
     @State private var showsDeliveries = false
     @StateObject private var secretCopied = CopiedMoment()
@@ -333,9 +360,16 @@ private struct ScheduledTaskEditor: View {
             kind = .webhook
         case .once(let at)?:
             kind = .once; onceAt = at
+        case .message?:
+            kind = .message
         case nil:
             break
         }
+        let trigger = existing?.rule.messageTrigger ?? MessageTrigger()
+        _messageApps = State(initialValue: Set(trigger.apps))
+        _messageFrom = State(initialValue: trigger.from)
+        _messageWords = State(initialValue: trigger.keywords.joined(separator: ", "))
+        _messageGroups = State(initialValue: trigger.groups)
         _kind = State(initialValue: kind)
         _minutes = State(initialValue: minutes)
         _time = State(initialValue: Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date())
@@ -441,6 +475,8 @@ private struct ScheduledTaskEditor: View {
                 Text(tr("sched.kind.time")).tag(Kind.time)
                 Text(tr("automation.sched.kind.once")).tag(Kind.once)
                 Text(tr("sched.kind.webhook")).tag(Kind.webhook)
+                // Waiting for a message is for Nook Chat, which reads the chat and prepares the answer.
+                if destination == .nook { Text(tr("automation.sched.kind.message")).tag(Kind.message) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -488,7 +524,36 @@ private struct ScheduledTaskEditor: View {
                     .fixedSize(horizontal: false, vertical: true)
             case .webhook:
                 EmptyView()
+            case .message:
+                messageEditor
             }
+        }
+    }
+
+    private var messageEditor: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            ChipFlow(spacing: NookTheme.Spacing.sm) {
+                ForEach(ScheduledTaskText.messageApps.map(\.id), id: \.self) { id in
+                let on = messageApps.contains(id)
+                Button {
+                    if on { messageApps.remove(id) } else { messageApps.insert(id) }
+                } label: {
+                    Text(ScheduledTaskText.messageApps.first { $0.id == id }?.name ?? id)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(on ? NookTheme.onPrimary : NookTheme.textSecondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 26)
+                        .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.primary : NookTheme.field))
+                }
+                .buttonStyle(.nookPlain)
+                }
+            }
+            Text(tr("automation.sched.message.apps.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            TextField(tr("automation.sched.message.from"), text: $messageFrom).textFieldStyle(.plain).modifier(FieldBox())
+            TextField(tr("automation.sched.message.words"), text: $messageWords).textFieldStyle(.plain).modifier(FieldBox())
+            Toggle(tr("automation.sched.message.groups"), isOn: $messageGroups).compactSwitch()
+            Text(tr("automation.sched.message.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -740,6 +805,7 @@ private struct ScheduledTaskEditor: View {
             return tr("automation.hook.invalid.filter")
         }
         if kind == .interval, minutes < 1 { return tr("sched.invalid.interval") }
+        if kind == .message, destination != .nook { return tr("automation.sched.invalid.messageNook") }
         return nil
     }
 
@@ -768,6 +834,9 @@ private struct ScheduledTaskEditor: View {
             rule = .webhook
         case .once:
             rule = .once(at: onceAt)
+        case .message:
+            rule = .message(MessageTrigger(apps: messageApps.sorted(), from: messageFrom,
+                                           keywords: messageWords.components(separatedBy: ","), groups: messageGroups))
         }
         var profileID: String?
         if case .newSession(_, let name, let id)? = existing?.target, name == provider.rawValue { profileID = id }

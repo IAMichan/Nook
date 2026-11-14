@@ -355,6 +355,8 @@ enum BridgeScheduleArguments {
             return "when its webhook is called"
         case .once(let at):
             return "once at " + ISO8601DateFormatter().string(from: at)
+        case .message:
+            return NookSchedule.describe(rule)
         }
     }
 

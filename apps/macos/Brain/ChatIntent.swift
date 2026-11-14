@@ -468,7 +468,10 @@ struct ChatIntent: Equatable {
     static func schedules(_ text: String) -> Bool {
         let every = #"\b(elke|iedere|every|each|jeden|jede|chaque|tous les|toutes les|cada|todos los|todas las)\s+(dag|ochtend|morgen|middag|avond|nacht|week|maand|werkdag|uur|kwartier|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|day|morning|afternoon|evening|night|week|month|weekday|workday|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tag|abend|woche|monat|werktag|stunde|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|jour|jours|matin|soir|semaine|mois|heure|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|d[ií]a|d[ií]as|ma[ñn]ana|tarde|noche|semana|mes|hora|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"#
         let named = #"\b(dagelijks|wekelijks|maandelijks|daily|weekly|monthly|täglich|wöchentlich|monatlich|quotidien(ne)?|hebdomadaire|diario|diariamente|semanal)\b|automatiser|automatisering|\bautomation|\bautomate\b|automatisier|automatización|automatizar|geplande taak|scheduled task|geplante aufgabe|tâche planifiée|tarea programada|\broutine\b|secretaresse|secretaris|\bsecretary|sekretär|secrétaire|secretari[oa]\b|persoonlijke assistent|personal assistant|persönliche[rn]? assistent|houd (alles|me) bij|keep (track of|me on top of) (everything|it all)"#
+        // "Zodra Lisa schrijft…", "when a mail about an invoice comes in…": a task that waits for a message.
+        let when = #"\b(zodra|telkens als|telkens wanneer|elke keer als|iedere keer als|as soon as|whenever|every time|sobald|immer wenn|jedes mal wenn|dès que|chaque fois que|en cuanto|cada vez que)\b[^.?!]{0,60}\b(schrijft|stuurt|mailt|appt|belt|binnenkomt|binnen komt|writes|messages|texts|emails|mails|sends|arrives|comes in|schreibt|schickt|ankommt|reinkommt|écrit|envoie|arrive|escribe|env[ií]a|llega)\b"#
         return text.range(of: every, options: .regularExpression) != nil || text.range(of: named, options: .regularExpression) != nil
+            || text.range(of: when, options: .regularExpression) != nil
     }
 
     // MARK: Dates

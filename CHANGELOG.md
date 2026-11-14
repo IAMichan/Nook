@@ -23,6 +23,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   something new needs you, and *Set up personal secretary* (or asking for one in the chat) adds a morning briefing, a
   quiet midday check and an end-of-day wrap-up.
 
+- Automations that start on a message: "as soon as Lisa writes on WhatsApp, prepare an answer" or "when a mail about an
+  invoice comes in, add a reminder". Filter by app (every chat app Nook reads, Mail included), sender and words, with
+  group chats optional; Nook reads the chat and prepares the reply and other steps for your approval.
+
 - Better mail in Nook Chat: replies go out as Mail's own reply to the message (same thread and account) instead of a new
   mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
   mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.

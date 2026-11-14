@@ -51,6 +51,9 @@ final class ChatCaptureService: ObservableObject {
     /// Chats someone just wrote in (their keys in `inbox`), newest last: Nook may tell you (Settings › Notifications).
     /// Only chats that show and that the notice rules let reach you (`ChatNoticeRules`).
     var onFresh: ([String]) -> Void = { _ in }
+    /// The new messages from someone else in chats that show, before the notice rules: what an automation that waits for a
+    /// message sees (`ScheduledTaskStore.messagesArrived`). A muted chat can still start a task the user made for it.
+    var onArrived: ([ArrivedMessage]) -> Void = { _ in }
     /// Chats read in their own app (on the phone, in the app on this Mac) since Nook last read them: what Nook still had
     /// waiting for them goes.
     var onReadElsewhere: ([String]) -> Void = { _ in }
@@ -789,6 +792,8 @@ final class ChatCaptureService: ObservableObject {
 
     /// Tells about these chats, oldest news first: the ones that show and that the notice rules let reach you.
     private func announce(_ ids: [String]) {
+        let arrived = ids.compactMap { inbox.threads[$0] }.filter(isShown).flatMap { ArrivedMessage.newest(in: $0) }
+        if !arrived.isEmpty { onArrived(arrived) }
         let rules = ChatNoticeRulesStore.shared.rules
         let fresh = ids
             .filter { id in
