@@ -300,6 +300,7 @@ targets:
       - path: Core/I18n+SettingsFlowsC.swift
       - path: Core/I18n+Safeguards.swift
       - path: Core/I18n+BrowserExtension.swift
+      - path: Core/I18n+BrowserMemory.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -624,6 +625,9 @@ targets:
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift
+      - path: Services/Workspace/BrowserHistory.swift
+      - path: Services/Workspace/BrowserPasswordBook.swift
+      - path: Services/Workspace/ChromeWebStore.swift
       - path: Services/Workspace/McpUI.swift
       - path: Services/Workspace/McpApps.swift
       - path: Services/Workspace/Simulators.swift
