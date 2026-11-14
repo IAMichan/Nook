@@ -138,13 +138,31 @@ final class BrowserMemoryTests: XCTestCase {
 
     func testZipComesOutOfCrx3AndCrx2() throws {
         let zip: [UInt8] = [0x50, 0x4B, 0x03, 0x04, 1, 2, 3]
-        func le(_ value: UInt32) -> [UInt8] { [UInt8(value & 0xFF), UInt8(value >> 8 & 0xFF), UInt8(value >> 16 & 0xFF), UInt8(value >> 24)] }
-        let crx3 = Data(Array("Cr24".utf8) + le(3) + le(5) + [9, 9, 9, 9, 9] + zip)
-        XCTAssertEqual(try ChromeWebStore.zip(fromPackage: crx3), Data(zip))
-        let crx2 = Data(Array("Cr24".utf8) + le(2) + le(2) + le(3) + [7, 7] + [8, 8, 8] + zip)
-        XCTAssertEqual(try ChromeWebStore.zip(fromPackage: crx2), Data(zip))
+        let magic: [UInt8] = Array("Cr24".utf8)
+        // Spelled out piece by piece: one long chain of `+` takes older compilers too long to type-check.
+        var crx3: [UInt8] = magic
+        crx3 += Self.littleEndian(3)
+        crx3 += Self.littleEndian(5)
+        crx3 += [9, 9, 9, 9, 9]
+        crx3 += zip
+        XCTAssertEqual(try ChromeWebStore.zip(fromPackage: Data(crx3)), Data(zip))
+        var crx2: [UInt8] = magic
+        crx2 += Self.littleEndian(2)
+        crx2 += Self.littleEndian(2)
+        crx2 += Self.littleEndian(3)
+        crx2 += [7, 7, 8, 8, 8]
+        crx2 += zip
+        XCTAssertEqual(try ChromeWebStore.zip(fromPackage: Data(crx2)), Data(zip))
         XCTAssertEqual(try ChromeWebStore.zip(fromPackage: Data(zip)), Data(zip))
         XCTAssertThrowsError(try ChromeWebStore.zip(fromPackage: Data("hello".utf8)))
-        XCTAssertThrowsError(try ChromeWebStore.zip(fromPackage: Data(Array("Cr24".utf8) + le(3) + le(500) + zip)))
+        var truncated: [UInt8] = magic
+        truncated += Self.littleEndian(3)
+        truncated += Self.littleEndian(500)
+        truncated += zip
+        XCTAssertThrowsError(try ChromeWebStore.zip(fromPackage: Data(truncated)))
+    }
+
+    private static func littleEndian(_ value: UInt32) -> [UInt8] {
+        [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF), UInt8((value >> 16) & 0xFF), UInt8(value >> 24)]
     }
 }
