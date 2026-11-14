@@ -53,6 +53,9 @@ struct NoticeRules: Codable, Equatable, Sendable {
     var styles: [String: NoticeStyle] = [:]
     /// Apps switched on or off by you, by `appKey`; an app missing here uses its default.
     var apps: [String: Bool] = [:]
+    /// Quiet hours for every notice Nook gives by himself, on the Mac and on the phone (`PushPolicy`); nil for none.
+    /// Saved before they existed, the rules read back without them.
+    var quietHours: QuietHours?
 
     /// The way each source shows until you choose.
     static func defaultStyle(_ source: NoticeSource) -> NoticeStyle {
@@ -112,12 +115,31 @@ struct NoticeRules: Codable, Equatable, Sendable {
     ///   as a card.
     /// - `quiet`: you share your screen or sit in a meeting and chose quiet for it.
     /// - `watching`: you are looking at what it is about already.
+    /// - `now`: inside the quiet hours only the history keeps it, unless it is urgent and urgent may come through.
     func decide(_ source: NoticeSource, app: String = "", urgent: Bool = false, quiet: Bool = false,
-                watching: Bool = false) -> NoticeDecision {
+                watching: Bool = false, now: Date = Date()) -> NoticeDecision {
         let style = style(for: source)
+        if let quietHours, quietHours.silences(urgent: urgent, at: now) { return .historyOnly }
         if urgent { return .show(style == .system ? .system : .card) }
         guard !watching, !quiet, style != .off, isOn(source, app: app) else { return .historyOnly }
         return .show(style)
+    }
+
+    /// Whether an agent's push may go to the phone, by the same rules as the Mac's notices: what waits on you (an approval,
+    /// a question) always may, as an urgent notice does; a finished, failed or limited turn only while the agent's app is
+    /// on in Settings › Notifications and the session is neither snoozed nor marked finished.
+    func allowsAgentPush(_ kind: PushEvent.Kind, app: String, snoozed: Bool, settled: Bool) -> Bool {
+        if PushPolicy.isUrgent(kind) { return true }
+        return isOn(.agents, app: app) && !snoozed && !settled
+    }
+
+    /// The quiet hours set for the phone before the Mac shared them: taken over once, while the rules have none yet.
+    /// Returns whether anything changed.
+    @discardableResult
+    mutating func adoptingQuietHours(_ legacy: QuietHours?, adopted: Bool) -> Bool {
+        guard !adopted, quietHours == nil, let legacy else { return false }
+        quietHours = legacy
+        return true
     }
 
     // MARK: Before these rules

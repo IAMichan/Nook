@@ -47,7 +47,7 @@ struct EnergySignals: Equatable {
     var idle: Bool { unseen || away }
 
     /// After this long without input you count as away: nothing on screen is being looked at.
-    static let awayAfter: TimeInterval = 300
+    static let awayAfter: TimeInterval = AttentionContext.awayAfter
 
     /// Pages per second read back from swap above which the Mac counts as short on memory. Some swapping in is normal; this
     /// many, kept up over a whole reading, is the Mac waiting for its disk: what you feel as a beach ball everywhere. macOS's

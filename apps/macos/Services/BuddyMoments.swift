@@ -47,7 +47,7 @@ enum BuddyTone: String, CaseIterable, Codable, Identifiable {
 /// What you have been doing, built up from how long the Mac has been idle, sampled every half minute or so.
 struct BuddyActivity: Equatable {
     /// You count as away after this long without touching the keyboard or mouse.
-    static let awayAfter: TimeInterval = 5 * 60
+    static let awayAfter: TimeInterval = AttentionContext.awayAfter
     /// Away this long or more and coming back is worth a hello.
     static let longAway: TimeInterval = 45 * 60
     /// How long "just started the day" and "just came back" stay true, so a moment can wait for the notch to be free.
@@ -86,7 +86,7 @@ struct BuddyActivity: Equatable {
 
     /// You were active within the last minute or two.
     func isActive(at now: Date) -> Bool {
-        lastActive.map { now.timeIntervalSince($0) < 120 } ?? false
+        lastActive.map { now.timeIntervalSince($0) < AttentionContext.presentWithin } ?? false
     }
 
     /// You sat down for the first time today a moment ago.

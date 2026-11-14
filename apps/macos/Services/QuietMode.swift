@@ -193,8 +193,12 @@ enum QuietPolicy {
         if signals.microphoneApps.contains(where: isCallApp) { return true }
         if signals.microphoneApps.contains(where: isBrowser), signals.windowNames.contains(where: isMeetingSite) { return true }
         guard signals.useCalendar else { return false }
-        return signals.events.contains {
-            $0.start <= signals.now && $0.end > signals.now && $0.end.timeIntervalSince($0.start) < 12 * 3600
-        }
+        return inEvent(signals.events, now: signals.now)
+    }
+
+    /// An event in your calendar is going on at `now`. All-day events (a holiday, someone's birthday) are not meetings.
+    /// The one reading of the calendar for quiet mode and the moments (`AttentionContext.inEvent`).
+    static func inEvent(_ events: [Event], now: Date) -> Bool {
+        events.contains { $0.start <= now && $0.end > now && $0.end.timeIntervalSince($0.start) < 12 * 3600 }
     }
 }

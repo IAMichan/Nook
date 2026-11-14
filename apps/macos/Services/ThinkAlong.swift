@@ -75,9 +75,8 @@ final class ThinkAlong: ObservableObject {
         guard !bundleID.isEmpty, bundleID != Bundle.main.bundleIdentifier,
               AppSettings.shared.noticeRules.isOn(.suggestions, app: bundleID),
               !ScreenReader.excludedBundles.contains(bundleID) else { return false }
-        // Away from the Mac: nothing to proactively assist with.
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        guard idle < 120 else { return false }
+        // Away from the Mac: nothing to proactively assist with (`AttentionContext.presentWithin`).
+        guard AttentionSignals.current(now: now).isPresent else { return false }
 
         let key = bundleID + "|" + window
         if key != focusKey {

@@ -26,7 +26,7 @@ enum SessionFocus {
     }
 
     /// Without input for longer than this you may have walked away: the notice comes as usual.
-    static let presence: TimeInterval = 60
+    static let presence: TimeInterval = AttentionContext.focusedWithin
 
     /// True when `id` is the session you are looking at. When several sessions run in the same app, the front window's
     /// title must name the session's project, and only that one; when Nook cannot tell which one is in front, it tells

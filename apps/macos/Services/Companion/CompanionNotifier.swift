@@ -36,12 +36,9 @@ final class CompanionNotifier: ObservableObject {
         }
     }
 
-    /// Idle for two minutes, or the screen is locked.
+    /// Idle for two minutes, or the screen is locked (`AttentionContext.awayFromMac`).
     static func userIsAway() -> Bool {
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        if idle >= 120 { return true }
-        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-        return (session?["CGSSessionScreenIsLocked"] as? Bool) == true
+        AttentionSignals.current().awayFromMac
     }
 
     // MARK: Live Activities
@@ -116,8 +113,11 @@ final class CompanionNotifier: ObservableObject {
 
     func turnFinished(_ run: WorkspaceRun) {
         let kind: PushEvent.Kind = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .finished
+        // A session you snoozed or marked finished says nothing until it needs you, on the phone as on the Mac.
+        let snoozed = (run.snoozedUntil ?? .distantPast) > Date()
+        let settled = FinishedSessions.shared.contains(FinishedSessions.key(run: run))
         notify(PushEvent(kind: kind, session: run.id.uuidString, item: nil, agent: run.provider.displayName, title: run.title),
-               turn: Int(run.updatedAt.timeIntervalSince1970))
+               turn: Int(run.updatedAt.timeIntervalSince1970), snoozed: snoozed, settled: settled)
     }
 
     /// A permission request from an agent running in a terminal, or through the workspace bridge (`CompanionAgents`).
@@ -141,20 +141,27 @@ final class CompanionNotifier: ObservableObject {
         case .failed: kind = .failed
         default: return
         }
+        let settled = FinishedSessions.shared.contains(FinishedSessions.key(session: session))
         notify(PushEvent(kind: kind, session: CompanionAgents.terminalPrefix + session.id, item: nil, agent: session.name,
-                         title: session.project), turn: Int((session.updated ?? Date()).timeIntervalSince1970))
+                         title: session.project), turn: Int((session.updated ?? Date()).timeIntervalSince1970), settled: settled)
     }
 
     /// Notifications can go out: with the user's own APNs key, or sealed through the relay (`RelayPushClient`).
     static var canSendAlerts: Bool { CompanionStore.shared.canPush || RelayPushClient.shared.active }
 
-    private func notify(_ event: PushEvent, turn: Int = 0) {
+    /// Sends a push within the phone's rules (`PushPolicy`) and the Mac's: the agent's app switched on in Settings ›
+    /// Notifications, the session neither snoozed nor settled (`NoticeRules.allowsAgentPush`; what waits on you always
+    /// goes), and the quiet hours the Mac keeps (`NoticeRules.quietHours`).
+    private func notify(_ event: PushEvent, turn: Int = 0, snoozed: Bool = false, settled: Bool = false) {
         let store = CompanionStore.shared
         guard store.enabled, Self.canSendAlerts else { return }
+        let rules = AppSettings.shared.noticeRules
+        guard rules.allowsAgentPush(event.kind, app: event.agent, snoozed: snoozed, settled: settled) else { return }
         // A phone connected live with the app in front already shows it (`ForegroundPolicy`).
         let targets = store.devices.filter { $0.pushToken != nil && !CompanionServer.shared.phoneInFront($0.id) }
         guard !targets.isEmpty else { return }
-        guard PushPolicy.skipReason(event, settings: store.push, away: Self.userIsAway(), now: Date()) == nil else { return }
+        guard PushPolicy.skipReason(event, settings: store.push, away: Self.userIsAway(), now: Date(),
+                                    quietHours: .some(rules.quietHours)) == nil else { return }
         guard ledger.admit(event, turn: turn) else { return }
         deliver(event, turn: turn, to: targets, test: false)
     }

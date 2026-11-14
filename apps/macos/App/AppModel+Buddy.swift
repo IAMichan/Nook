@@ -48,11 +48,10 @@ extension AppModel {
 
     /// In a meeting (an event going on in your calendar), on a call, recording one or sharing your screen: no moments,
     /// whatever you chose for the rest of the notch in Settings › Notifications.
+    /// The one reading of all of it (`AttentionContext.keepsNiceToHaveQuiet`), the quiet hours included.
     private func buddyShouldStayQuiet(at now: Date) -> Bool {
-        // All-day events (a holiday, someone's birthday) are not meetings.
-        let meeting = upcoming.contains { $0.start <= now && $0.end > now && $0.end.timeIntervalSince($0.start) < 12 * 3600 }
-        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(QuietPolicy.isCallApp) ?? false
-        return meeting || calling || quiet.situation.meeting || quiet.situation.sharing || NoteTaker.shared.isRecording
+        refreshAttention(now: now)
+        return AttentionNow.shared.context.keepsNiceToHaveQuiet
     }
 
     /// The moment as Nook shows it: his mood, his words in your language and tone,.

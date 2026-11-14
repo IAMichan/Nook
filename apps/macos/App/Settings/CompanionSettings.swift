@@ -146,10 +146,6 @@ struct CompanionSettingsRows: View {
                 set: { on in if on { store.push.kinds.insert(kind) } else { store.push.kinds.remove(kind) } })
     }
 
-    private func hourBinding(_ keyPath: WritableKeyPath<PushSettings, Int?>) -> Binding<Int> {
-        Binding(get: { store.push[keyPath: keyPath] ?? 22 }, set: { store.push[keyPath: keyPath] = $0 })
-    }
-
     @ViewBuilder
     private var pushSection: some View {
         SettingToggle(tr("companion.push.enable"), detail: tr("companion.push.hint"), isOn: $store.push.enabled)
@@ -164,16 +160,8 @@ struct CompanionSettingsRows: View {
             .padding(.leading, NookTheme.Spacing.lg)
             Toggle(tr("companion.push.onlyAway"), isOn: $store.push.onlyWhenAway)
             Toggle(tr("companion.push.titles"), isOn: $store.push.includeTitle)
-            Toggle(isOn: Binding(
-                get: { store.push.quietFrom != nil },
-                set: { on in store.push.quietFrom = on ? 22 : nil; store.push.quietTo = on ? 7 : nil })) { SettingText("companion.push.quiet") }
-            if store.push.quietFrom != nil {
-                HStack {
-                    Stepper(tr("companion.push.from", store.push.quietFrom ?? 22), value: hourBinding(\.quietFrom), in: 0...23)
-                    Stepper(tr("companion.push.to", store.push.quietTo ?? 7), value: hourBinding(\.quietTo), in: 0...23)
-                }
-                Toggle(tr("companion.push.urgent"), isOn: $store.push.quietAllowsUrgent)
-            }
+            // One set of quiet hours for the Mac and the phone, kept with the other notice rules.
+            SettingNote(tr("companion.push.quietShared"))
         }
     }
 
