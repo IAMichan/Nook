@@ -174,3 +174,19 @@ test("refuses what is not a push", async () => {
   assert.equal((await handlePush(request("x".repeat(MAX_BODY + 1)), env, deps())).status, 413);
   assert.equal((await handlePush(request(null, { method: "GET" }), env, deps())).status, 405);
 });
+
+test("a body without a length is read only up to the limit", async () => {
+  const { env } = await makeEnv();
+  let pulled = 0;
+  const big = new ReadableStream({
+    pull(controller) {
+      pulled += 1;
+      if (pulled > 1000) return controller.close();
+      controller.enqueue(new Uint8Array(1024).fill(32));
+    },
+  });
+  const chunked = new Request("https://relay.example/v1/push", { method: "POST", body: big, duplex: "half" });
+  assert.equal(chunked.headers.get("content-length"), null);
+  assert.equal((await handlePush(chunked, env, deps())).status, 413);
+  assert.ok(pulled < 20, "stopped reading");
+});
