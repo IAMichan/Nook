@@ -5,7 +5,7 @@
   // stays as it was. The notice card groups its actions in one bar next to a white OK with the countdown.
   import { agentApi, type QuestionRequest } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
-  import { tr, english } from "../../lib/i18n.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import { compactNotice, noticeTone } from "../../lib/notice";
   import NoticeMark from "../../components/NoticeMark.svelte";
   import NoticeOk from "../../components/NoticeOk.svelte";
@@ -86,7 +86,7 @@
   <div class="alert">
     <div class="qbar">
       <NoticeMark tone={noticeTone(card.status)} />
-      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status, english())}</div></div>
+      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status)}</div></div>
       <button class="ghost" onclick={view}>{tr("Bekijk", "View")}</button>
       <NoticeOk compact {left} onclick={ondismiss} />
     </div>

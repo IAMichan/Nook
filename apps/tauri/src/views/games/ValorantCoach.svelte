@@ -3,7 +3,7 @@
   // every round. The coach itself is `nook_core::games::valorant` (Rust); this page shows it and words it.
   import { games, clock, coachingText, confidenceLabel, generalText, habitText, statusLabel, type ValorantCatalog } from "../../lib/games";
   import { gamer } from "../../lib/gamer.svelte";
-  import { english, locale, tr } from "../../lib/i18n.svelte";
+  import { appLanguage, locale, tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toast } from "../../lib/toast.svelte";
   import Icon from "../../components/Icon.svelte";
@@ -20,7 +20,7 @@
     games.catalog().then((c) => (catalog = c)).catch(() => {});
   });
 
-  const lang = $derived(english() ? "en" : "nl");
+  const lang = $derived(appLanguage());
   const view = $derived(gamer.view);
   const match = $derived(view?.current ?? null);
   const analysis = $derived(view?.analysis ?? null);

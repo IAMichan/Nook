@@ -44,7 +44,7 @@ export function noticeTone(status: AgentStatus): NoticeTone {
 
 /// The line of a compact notice: "Claude Code is done · nook", in the interface language. The last argument is no longer
 /// used (the language comes from the setting); callers may drop it.
-export function compactNotice(name: string, project: string, status: AgentStatus, _english?: boolean): string {
+export function compactNotice(name: string, project: string, status: AgentStatus): string {
   const tone = noticeTone(status);
   const who = tone === "done"
     ? tr("{name} is klaar", "{name} is done", { name })

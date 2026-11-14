@@ -457,7 +457,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill strip" onmousedown={drag}>
       <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
-      <span class="message">{compactNotice(card.name, card.project, card.status, english())}</span>
+      <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
         <button class="ghost" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>

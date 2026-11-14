@@ -118,7 +118,7 @@
   }
 </script>
 
-<h2>Agents</h2>
+<h2>{tr("Agents", "Agents")}</h2>
 {#if !local}
   <p class="muted">
     {tr(

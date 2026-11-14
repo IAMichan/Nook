@@ -1,10 +1,10 @@
 <script lang="ts">
   // What you can ask Nook (click one to put it in the chat field), and what the bar itself can do.
   import { askGroups, barCommands, type Pair } from "../lib/bar-commands";
-  import { english, tr } from "../lib/i18n.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   let { onuse }: { onuse: (text: string) => void } = $props();
-  const pick = (pair: Pair) => (english() ? pair[1] : pair[0]);
+  const pick = (pair: Pair) => tr(pair[0], pair[1]);
 </script>
 
 <div class="commands">

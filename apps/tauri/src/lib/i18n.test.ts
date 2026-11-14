@@ -1,20 +1,16 @@
 // The counterpart of I18nCoverageTests on the Mac: every visible string in the interface goes through `tr(nl, en)`,
 // and every English text has German, French, and Spanish with the same `{placeholders}`.
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { catalog } from "./i18n/catalog";
 import { fill, translate } from "./i18n.svelte";
 
-const SRC = join(__dirname, "..");
-
-function files(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return name === "i18n" ? [] : files(path);
-    return /\.(svelte|ts)$/.test(name) && !name.endsWith(".test.ts") ? [path] : [];
-  });
-}
+// Every source file of the interface as text, through Vite (no Node types needed). The i18n module itself and its
+// catalogs are left out: their comments show `tr` examples.
+const sources = import.meta.glob<string>(["../**/*.svelte", "../**/*.ts", "!../**/*.test.ts", "!./i18n.svelte.ts", "!./i18n/**"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 
 const STR = String.raw`("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\x60(?:[^\x60\\]|\\.)*\x60)`;
 const CALL = new RegExp(String.raw`\btr\(\s*` + STR + String.raw`\s*,\s*` + STR, "g");
@@ -30,10 +26,9 @@ function unquote(lit: string): string {
 
 type Use = { file: string; nl: string; en: string; raw: string };
 
-const uses: Use[] = files(SRC).flatMap((file) => {
-  const text = readFileSync(file, "utf8");
-  return [...text.matchAll(CALL)].map((m) => ({ file: file.slice(SRC.length + 1), nl: unquote(m[1]), en: unquote(m[2]), raw: m[1] + m[2] }));
-});
+const uses: Use[] = Object.entries(sources).flatMap(([file, text]) =>
+  [...text.matchAll(CALL)].map((m) => ({ file: file.replace(/^\.\.\//, ""), nl: unquote(m[1]), en: unquote(m[2]), raw: m[1] + m[2] })),
+);
 
 const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
 
