@@ -181,12 +181,16 @@ final class BrowserExtensionService: ObservableObject {
             } else {
                 id = app.chat.startInBackground()
             }
-            // The page's text goes along only to a brain that may see the user's browser (the privacy level, or the
-            // user keeping the browser extension on this Mac).
-            let mayRead = !app.settings.privateSources.contains(BrowserExtensionTools.sourceID)
-            let page = mayRead ? request.page : request.page?.withoutText
-            let reading = page?.reading.map { ScreenSnapshot(appName: $0.site, windowTitle: $0.title, text: $0.text) }
-            app.ask(text, in: id, reveal: false, note: BrowserExtensionPanel.note(page: page, browser: client.browser), page: reading)
+            // The page's text goes with the question but stays on this Mac: only a brain that may see the user's
+            // browser gets it (`answer` checks the privacy level and what the user keeps here). While the browser stays
+            // here, the screen brain on this Mac reads it and hands the chosen brain a filtered note, or does what the
+            // question asks on the page itself (`AppModel.ask`, `pageWorker`).
+            let settings = app.settings
+            let kept = settings.privateSources.contains(BrowserExtensionTools.sourceID)
+            let privacy: BrowserExtensionPanel.Privacy = !kept ? .shared : settings.pageWorker != nil ? .readHere : .keptHere
+            let reading = request.page?.reading.map { ScreenSnapshot(appName: $0.site, windowTitle: $0.title, text: $0.text) }
+            app.ask(text, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser, privacy: privacy),
+                    page: privacy == .keptHere ? nil : reading)
             app.store.audit(tool: "browser_extension_ask", args: client.browser, result: app.chat.conversation(id)?.title ?? "")
             return conversationReply(id, watchedBy: client.id)
         case "chat":
@@ -262,6 +266,8 @@ final class BrowserExtensionService: ObservableObject {
                 "streaming": message.streaming,
                 "status": CompanionPolicy.clip(message.status, limit: 120),
                 "failed": message.isError,
+                // What Nook says about how it answered ("read on this Mac, only a filtered note went out"), as on the Mac.
+                "notice": CompanionPolicy.clip(message.notices.last ?? "", limit: 240),
                 "onMac": !message.actions.isEmpty || !message.mails.isEmpty || !message.charts.isEmpty
             ]
         }

@@ -145,6 +145,13 @@ function renderMessages() {
       line.textContent = message.status;
       bubble.append(line);
     }
+    if (message.notice && !message.streaming) {
+      // How Nook answered, as Nook says it on the Mac: read there and kept private, for instance.
+      const line = document.createElement('span');
+      line.className = 'notice';
+      line.textContent = message.notice;
+      bubble.append(line);
+    }
     if (message.onMac) {
       const line = document.createElement('span');
       line.className = 'on-mac';

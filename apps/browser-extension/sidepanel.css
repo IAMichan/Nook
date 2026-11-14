@@ -151,7 +151,7 @@ button.warn { color: var(--amber); border-color: var(--amber); }
 }
 .message.nook { align-self: flex-start; }
 .message.failed { color: var(--coral); }
-.message .status, .message .on-mac { display: block; margin-top: var(--space-xs); color: var(--text-muted); font-size: 12px; }
+.message .status, .message .notice, .message .on-mac { display: block; margin-top: var(--space-xs); color: var(--text-muted); font-size: 12px; }
 .message .on-mac { color: var(--amber); }
 .message a { color: inherit; }
 .message code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--graphite); padding: 0 4px; border-radius: var(--radius-s); }

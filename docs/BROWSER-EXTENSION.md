@@ -81,8 +81,20 @@ element's name from the last `chrome_find` (`BrowserExtensionRefs`).
   each connection's user is checked). The extension has no `debugger` permission and no content scripts. It injects its
   page agent into a tab only when Nook sends a command for that tab, into the page's isolated world, where the page's
   own scripts cannot reach it.
-- **Privacy level.** The source counts as personal data on this Mac (`SourceCatalog.personal`). With a privacy level
-  that keeps personal sources local, an external brain or agent does not get these tools.
+- **Your privacy settings, in the browser too.** The extension follows what you set in Nook's main window. A page in
+  your browser is part of your screen: whenever the screen stays on this Mac (the Strict privacy level, or
+  **Settings › Privacy** by hand), the browser extension does too (`PrivacyLevel.keptOnMac`), and you can also keep only
+  the browser here. While it stays here, an external brain never gets the page's text or the `chrome_*` tools, and
+  neither does a coding agent. With a model on this Mac picked under **Settings › Brain › Screen work**:
+  - A question about the page goes to that model (`AppModel.pageWorker`). It reads the page on this Mac and either
+    answers itself, or (with "It gives Claude a short, filtered note") writes the external brain a note with only what
+    the question needs (`PrivateBrief`). The note is filtered at the strictest level before it leaves: secrets, mail
+    addresses and phone numbers go out first. The external brain answers from it, with its own sources.
+  - A request to act on the page (fill in, type, click, choose, send; `ScreenBrain.actsOnPage`) stays with the model on
+    this Mac. It has the page and the `chrome_*` tools, fills in the form itself, and every action still waits for your
+    approval. What you fill in never passes through the cloud.
+  - The side panel shows how Nook answered under the answer, as on the Mac ("read on this Mac…").
+  Without such a model, only the page's title and address go along, and Nook says it cannot read the page.
 
 ## How it fits together
 
@@ -114,7 +126,7 @@ Nook's commands ─────────┘                                  
   the page's text and the user's selection as the question is asked (at most 16,000 characters, and only when the page
   answers within 1.5 s). That text goes to the brain like a dropped file (`ReplyContext.page`), so Nook answers about
   the page without first spending a round on `chrome_read`. It goes only to a brain that may see the browser
-  extension: with a privacy level or a choice that keeps it on this Mac, only the title and address go along.
+  extension; see "Your privacy settings, in the browser too" for what happens when it stays on this Mac.
 - **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
   `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
   and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got

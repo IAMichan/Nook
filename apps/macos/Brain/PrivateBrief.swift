@@ -20,9 +20,18 @@ enum PrivateBrief {
     - If nothing in the material bears on the request, write NONE.
     """
 
+    /// Where the material of `prompt` comes from: the screen, or the page the user asks about in their browser.
+    static let screenPlace = "On the user's screen"
+
+    static func pagePlace(_ title: String) -> String {
+        let name = title.replacingOccurrences(of: "\n", with: " ").prefix(120)
+        return "On the page the user has open in their browser (\"\(name)\"); they ask about it from Nook's side panel"
+    }
+
     /// The prompt for the model on this Mac. Everything has to fit in its window: the conversation gives way first, then
     /// the sources, and the screen last, because a question that comes here is usually about the screen.
-    static func prompt(request: String, history: String, context: String, screen: String?, budget: Int) -> String {
+    static func prompt(request: String, history: String, context: String, screen: String?, budget: Int,
+                       place: String = screenPlace) -> String {
         let room = max(budget - system.count - request.count, 1_500)
         let fitted = ContextBudget.fit([
             .init(text: history, priority: 1, minimum: min(history.count, 300)),
@@ -32,7 +41,7 @@ enum PrivateBrief {
         var prompt = "The user's request: \(request)\n\n"
         if !fitted[0].isEmpty { prompt += "The conversation so far:\n\(fitted[0])\n\n" }
         if !fitted[1].isEmpty { prompt += "From the sources kept on this Mac:\n\(UntrustedText.wrap(fitted[1]))\n\n" }
-        if screen != nil { prompt += "On the user's screen:\n<screen_content>\n\(UntrustedText.neutralize(fitted[2]))\n</screen_content>\n\n" }
+        if screen != nil { prompt += "\(place):\n<screen_content>\n\(UntrustedText.neutralize(fitted[2]))\n</screen_content>\n\n" }
         return prompt + "Write the note now."
     }
 

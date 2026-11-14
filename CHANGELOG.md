@@ -189,6 +189,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   pushes its answer to the side panel as it writes it, as live as in Nook's own window, instead of the panel asking
   every second. Commands on a page take one trip instead of two, clicks no longer wait a fixed time, and finding the
   buttons and fields on a long page is quicker. The page's text goes only to a brain that may see your browser.
+- Nook in your browser follows your privacy settings: a page in your browser is part of your screen, so it stays on
+  your Mac whenever the screen does (Strict, or by hand). The model you picked for screen work then reads the page,
+  answers itself or gives your external brain a short, filtered note, and fills in forms on the page itself, so what
+  you fill in never goes through the cloud. The side panel says how Nook answered.
 - Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
   over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
   connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a
