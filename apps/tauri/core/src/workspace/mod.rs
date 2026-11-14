@@ -9,9 +9,9 @@ pub mod bridge_nook;
 pub mod codex_app_server;
 pub mod command;
 pub mod delegation;
+pub mod driver;
 #[cfg(all(test, unix))]
 mod e2e_automation_tests;
-pub mod driver;
 pub mod git;
 pub mod handoff;
 pub mod limits;

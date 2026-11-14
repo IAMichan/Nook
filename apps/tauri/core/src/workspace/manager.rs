@@ -1817,7 +1817,9 @@ impl Manager {
             // Codex (`turn/interrupt`) and ACP (`session/cancel`) are asked to end the turn the way Claude Code is.
             let polite: Option<Vec<String>> = match s.processes.get_mut(&id).and_then(|p| p.driver.as_mut()) {
                 Some(d) => Some(d.interrupt()),
-                None if claude => Some(vec![parsers::claude_interrupt(&format!("nook-stop-{}", &Uuid::new_v4().simple().to_string()[..8]))]),
+                None if claude => {
+                    Some(vec![parsers::claude_interrupt(&format!("nook-stop-{}", &Uuid::new_v4().simple().to_string()[..8]))])
+                }
                 None => None,
             };
             Self::expire_approvals(&mut s, id, &mut out);

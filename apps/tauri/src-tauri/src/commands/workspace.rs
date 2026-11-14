@@ -72,7 +72,10 @@ pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
                 name: p.display_name(),
                 capabilities: p.capabilities(),
                 executable: if desktop {
-                    nook_core::workspace::driver::session_executable(p, nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()))
+                    nook_core::workspace::driver::session_executable(
+                        p,
+                        nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()),
+                    )
                 } else {
                     None
                 },

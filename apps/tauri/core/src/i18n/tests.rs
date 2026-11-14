@@ -57,8 +57,11 @@ fn every_english_text_has_german_french_and_spanish() {
 
 #[test]
 fn dutch_and_english_share_placeholders() {
-    let bad: Vec<String> =
-        uses().into_iter().filter(|(_, nl, en)| placeholders(nl) != placeholders(en)).map(|(f, nl, en)| format!("{f}: {nl} | {en}")).collect();
+    let bad: Vec<String> = uses()
+        .into_iter()
+        .filter(|(_, nl, en)| placeholders(nl) != placeholders(en))
+        .map(|(f, nl, en)| format!("{f}: {nl} | {en}"))
+        .collect();
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
