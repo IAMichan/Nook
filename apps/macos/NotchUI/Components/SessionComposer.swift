@@ -77,7 +77,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     /// The same composer with a suggested next message as ghost text: Tab puts it in the box (and calls `onAccept`),
-    /// typing anything else or Escape calls `onDismiss`. Nil shows the placeholder as before.
+    /// Escape calls `onDismiss`. Typing hides it until the box is empty again. Nil shows the placeholder as before.
     func suggesting(_ text: String?, onAccept: @escaping () -> Void, onDismiss: @escaping () -> Void) -> Self {
         var copy = self
         copy.suggestion = text.map { ($0, onAccept, onDismiss) }
@@ -321,11 +321,8 @@ struct SessionComposer<Controls: View>: View {
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
         fieldSession.record(old: oldText, new: newText, separate: extras?.model.applying ?? false)
-        // Typing dismisses the suggestion; taking it with Tab has already called `accept`.
-        if let suggestion, oldText != newText {
-            let body = ComposerAttachments.split(newText).body
-            if !body.isEmpty, body != suggestion.text { suggestion.dismiss() }
-        }
+        // Typing only hides the suggestion (it is drawn while the box is empty): clear the box again and it is back, so
+        // a key pressed by accident does not cost it. Escape dismisses it; taking it with Tab has already called `accept`.
         styleMarkdown()
         guard let extras else { return }
         // Only typing proposes a name (`ComposerInlineName`) or asks for the rest of the sentence (`ComposerCompleter`):
