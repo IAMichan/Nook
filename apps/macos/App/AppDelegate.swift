@@ -262,14 +262,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if status { menu.addItem(.separator()) }
 
-        // Actions.
-        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat), shortcut: .ask)
-        add(to: menu, title: tr("menu.talk"), action: #selector(talk), shortcut: .talk)
-        add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), shortcut: .lookAtScreen)
+        // Actions: open Nook's home, ask it something, and record a call, the things you reach for from the menu bar.
+        // Talking, looking at the screen and breathing along keep their shortcuts and live in the panel.
+        let home = add(to: menu, title: tr("menu.openPanel"), action: #selector(openWorkspace), key: "w")
+        home.keyEquivalentModifierMask = [.command, .option]
+        add(to: menu, title: tr("menu.ask"), action: #selector(openChat), shortcut: .ask)
         add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), shortcut: .recordCall)
-        add(to: menu, title: tr("buddy.menu.breathe"), action: #selector(breatheAlong))
-        let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
-        workspace.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
         if AutocompleteStore.shared.prefs.enabled {
@@ -397,10 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func playPause() { model.nowPlaying.control(.playPause) }
     @objc private func nextTrack() { model.nowPlaying.control(.next) }
-    @objc private func talk() { model.toggleVoice() }
-    @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func recordCall() { NoteTaker.shared.toggle() }
-    @objc private func breatheAlong() { model.breatheAlong() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func openWorkspace() { model.openWindow() }
     @objc private func quit() { NSApp.terminate(nil) }

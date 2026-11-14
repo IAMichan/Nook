@@ -9,6 +9,15 @@ enum SettingsLayout {
     static let pageWidth: CGFloat = 860
     /// Room above the sidebar's search for the window's traffic lights.
     static let trafficLightInset: CGFloat = 40
+    /// The size Settings opens at: the sidebar beside a full page column, tall enough for the tallest fixed card
+    /// (Coding agents' list and detail) with its page title, tabs and section header above it, so nothing is cut off.
+    static let defaultSize = CGSize(width: sidebarWidth + 1 + pageWidth, height: 840)
+
+    /// `defaultSize`, shrunk to fit the visible part of the screen the window opens on.
+    static func openingSize(on screen: NSScreen?) -> NSSize {
+        guard let visible = screen?.visibleFrame.size else { return defaultSize }
+        return NSSize(width: min(defaultSize.width, visible.width), height: min(defaultSize.height, visible.height))
+    }
 }
 
 /// The sidebar of Settings: a search row on top (⌘F or / puts the keyboard in it), then the pages in their
