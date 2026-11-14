@@ -35,6 +35,11 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Plans with Run, never run twice, Undo | ✓ | `src-tauri/src/commands/plans.rs` |
 | Main window like the Mac and the Claude app: list grouped Today / Yesterday / Previous 7 days / Older under the pinned, time-of-day greeting with a "waiting for you" line, title you rename in place, sidebar state remembered, sidebar as an overlay in a narrow window | ✓ (tested in unit tests and svelte-check; not run on a real window) | `lib/conversation-list.ts`, `components/NookList.svelte`, `components/Chat.svelte`, `views/Main.svelte` |
 | Onboarding (welcome card, three steps) | ✓ | `src/views/` |
+| Interface in the Mac's five languages (English by default or the system language; Dutch, German, French, Spanish; Settings › General › Language), tray menu included | ✓ (Rust error messages partly Dutch) | `lib/i18n.svelte.ts`, `lib/i18n/*.ts`, `lib/i18n.test.ts` |
+| Main window sidebar like the Mac (`PanelSidebar`): Search and Talk in the head; tabs Nook, Agents, Chats, and Music while something plays; Settings, Pull requests, Usage in the footer | ✓ (seen in a browser with a stubbed backend; not on a real window) | `views/Main.svelte`, `lib/shell-routes.ts` |
+| Empty chat like the Mac (`NookTab.emptyState`, `NookStarters`, `NookGlance`): date, greeting with what waits, For you, glance cards (agents, next event, now playing), starter grid | ✓ (no plan-limits card, no split view) | `components/Chat.svelte`, `ForYou.svelte`, `HomeGlance.svelte`, `StarterGrid.svelte` |
+| Settings like the Mac: groups, icons, search (Ctrl+F or /), breadcrumb bar, Overview page | ✓ (Appearance, Shortcuts, Instructions, Archive, Maintenance pages ○) | `views/Settings.svelte`, `views/settings/Overview.svelte` |
+| `NookTheme` tokens: type scale, spacing, radii, palette | ✓ (dark only; light theme ○) | `src/app.css` |
 | `AppleIntelligence`, `EmbeddedModel` (MLX), `MacReport` | — | Apple only; local thinking goes through Ollama or LM Studio |
 
 ## Connectors
