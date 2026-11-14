@@ -81,7 +81,7 @@ struct AgentSessionDetail: View {
         }
         // What the side panel hands to this session lands in the draft, to read before sending; also when it arrived
         // while this composer was not on screen.
-        .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in takeFromSidePanel() }
+        .onReceive(ComposerInbox.shared.arrivals) { takeFromSidePanel() }
         .composerFocusOnAppear($composerFocused)
         .onChange(of: selectionID) { _, id in
             composerFocused = true
