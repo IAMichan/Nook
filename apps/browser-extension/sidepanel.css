@@ -1,46 +1,123 @@
-/* Nook's side panel in the browser. Colors are Nook's own palette (NookPalette.nookDark / nookLight), so the panel
-   reads as the same app as the main window. State colors keep their meaning: mint = done, amber = waiting on you,
-   coral = error. */
+/* Nook's side panel in the browser, drawn as Nook's main window is: the same tokens as NookTheme (NookPalette), the
+   same radii, spacing grid and type scale. The values below are Nook's own theme; once Nook is connected the panel
+   takes the theme the user chose in Settings › Appearance (its colors, the ones set one by one, the accent, System /
+   Light / Dark and the density), sent as `look` and set on :root by sidepanel.js. State colors keep their meaning:
+   mint = done, amber = waiting on you, coral = error. */
 :root {
+  /* NookPalette.nookLight */
   --canvas: #fcfcfc;
+  --well: #fafafa;
   --surface: #ffffff;
+  --field: #ffffff;
   --graphite: #f4f4f5;
+  --smoke: #e4e4e7;
+  --row-hover: #f4f4f5;
+  --row-selected: #ebebed;
+  --bubble: #ebebed;
+  --composer: #ffffff;
+  --composer-tray: #ffffff;
+  --menu: #171717;
   --line: #e4e4e7;
-  --text: #27272a;
+  --line2: #d4d4d8;
+  --border: #e4e4e7;
+  --separator: #e4e4e7;
+  --field-stroke: #d4d4d8;
+  --paper: #18181b;
+  --text-strong: #27272a;
   --text-secondary: #52525c;
   --text-muted: #5c5c66;
-  --accent: #1e1e22;
-  --on-accent: #ffffff;
+  --text-tertiary: #62626c;
+  --blue: #1447e6;
   --mint: #006e4d;
   --amber: #973c00;
   --coral: #c10007;
-  --nook: #7c6cf0;
-  --radius-s: 6px;
-  --radius-m: 10px;
-  --radius-l: 14px;
+  --violet: #7008e7;
+  --accent: #1e1e22;
+  --on-accent: #ffffff;
+  --accent-hover: #3b3b3f;
+  --added: #007a55;
+  --removed: #c10007;
+
+  /* NookTheme.Radius */
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-bubble: 16px;
+  --radius-composer: 16px;
+
+  /* Settings › Appearance › Density: NookDensity.textScale and spacingScale. */
+  --text-scale: 1;
+  --space-scale: 1;
+
+  /* NookTheme.Spacing (4 pt grid); padding of rows and cards follows the density, as Spacing.scaled does. */
+  --space-xxs: 2px;
   --space-xs: 4px;
-  --space-s: 8px;
-  --space-m: 12px;
-  --space-l: 16px;
-  color-scheme: light dark;
+  --space-sm: 6px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --pad-md: calc(8px * var(--space-scale));
+  --pad-lg: calc(12px * var(--space-scale));
+  --pad-xl: calc(16px * var(--space-scale));
+
+  /* NookTheme.TextStyle */
+  --caption: calc(10.5px * var(--text-scale));
+  --detail: calc(12px * var(--text-scale));
+  --label: calc(11.5px * var(--text-scale));
+  --control: calc(13px * var(--text-scale));
+  --body: calc(14px * var(--text-scale));
+  --title: calc(15px * var(--text-scale));
+  --code: calc(13px * var(--text-scale));
+
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+
+  color-scheme: light;
 }
 
+/* NookPalette.nookDark, until Nook says which theme it shows. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --canvas: #000000;
+    --well: #0a0a0a;
     --surface: #111111;
+    --field: #0d0d0d;
     --graphite: #191a1d;
-    --line: #262626;
-    --text: #e5e5e5;
+    --smoke: #242424;
+    --row-hover: #141415;
+    --row-selected: #1c1c1e;
+    --bubble: #1e1e1e;
+    --composer: #111111;
+    --composer-tray: #0d0d0d;
+    --menu: #171717;
+    --line: #1a1a1a;
+    --line2: #262626;
+    --border: #1a1a1a;
+    --separator: #1f1f1f;
+    --field-stroke: #262626;
+    --paper: #f5f5f5;
+    --text-strong: #e5e5e5;
     --text-secondary: #a1a1a1;
     --text-muted: #8f8f8f;
-    --accent: #f4f3f7;
-    --on-accent: #0b0b0d;
+    --text-tertiary: #8f8f8f;
+    --blue: #5daacc;
     --mint: #55d2a3;
     --amber: #f0b65a;
     --coral: #ff6467;
+    --violet: #b0a2e6;
+    --accent: #f4f3f7;
+    --on-accent: #0b0b0d;
+    --accent-hover: #d7d6d9;
+    --added: #00d492;
+    --removed: #ff6467;
+    color-scheme: dark;
   }
 }
+
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 
@@ -51,139 +128,274 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--canvas);
-  color: var(--text);
-  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--text-strong);
+  font: var(--detail)/1.3 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .25s var(--ease), color .25s var(--ease);
 }
 
 [hidden] { display: none !important; }
 
+::selection { background: color-mix(in srgb, var(--blue) 35%, transparent); }
+
+/* Thin scrollbars, as macOS draws them. */
+* { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+
+/* MARK: Header */
+
 .top {
   display: flex;
   align-items: center;
-  gap: var(--space-s);
-  padding: var(--space-m) var(--space-l);
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-md);
+  padding: var(--pad-lg) var(--pad-xl);
+  border-bottom: 1px solid var(--separator);
 }
 
-.top h1 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
-.top img { border-radius: var(--radius-s); }
+.top h1 { flex: 1; margin: 0; font-size: var(--title); font-weight: 600; color: var(--paper); letter-spacing: -.01em; }
+.top .face { border-radius: var(--radius-chip); }
 
+/* A status chip, as `StatusChip`: a dot in the state's color and a quiet label. */
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 10px;
-  border-radius: 999px;
+  gap: var(--space-sm);
+  padding: 3px var(--space-md);
+  border-radius: var(--radius-chip);
   background: var(--graphite);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--label);
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
 .pill.ok::before { background: var(--mint); }
 .pill.wait::before { background: var(--amber); }
 .pill.bad::before { background: var(--coral); }
+.pill.ok { color: var(--mint); background: color-mix(in srgb, var(--mint) 12%, transparent); }
+.pill.wait { color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.pill.bad { color: var(--coral); background: color-mix(in srgb, var(--coral) 12%, transparent); }
+
+/* MARK: Cards */
 
 .card {
-  margin: var(--space-m) var(--space-l) 0;
-  padding: var(--space-m);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
+  margin: var(--pad-lg) var(--pad-xl) 0;
+  padding: var(--pad-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
-.setup h2 { margin: 0 0 var(--space-s); font-size: 13px; }
-.setup ol { margin: 0; padding-left: 18px; color: var(--text-secondary); }
+.setup h2 { margin: 0 0 var(--space-md); font-size: var(--body); font-weight: 500; color: var(--paper); }
+.setup ol { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: var(--detail); line-height: 1.45; }
 .setup li + li { margin-top: var(--space-xs); }
+.setup .note { margin: var(--space-md) 0 0; font-family: var(--mono); font-size: var(--caption); user-select: all; }
 
-.row { display: flex; align-items: center; gap: var(--space-m); }
-.row + .row { margin-top: var(--space-m); padding-top: var(--space-m); border-top: 1px solid var(--line); }
+.row { display: flex; align-items: center; gap: var(--space-lg); }
+.row + .row { margin-top: var(--pad-lg); padding-top: var(--pad-lg); border-top: 1px solid var(--separator); }
 .grow { flex: 1; min-width: 0; }
-.site-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note { color: var(--text-muted); font-size: 12px; }
+.site-name {
+  font-size: var(--body);
+  font-weight: 500;
+  color: var(--paper);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note { color: var(--text-secondary); font-size: var(--detail); }
+.site .note { margin-top: var(--space-xxs); }
 .note.wait { color: var(--amber); }
 
-.switch { position: relative; width: 34px; height: 20px; flex: none; }
+/* A switch, as macOS draws it in Settings: mint when on. */
+.switch { position: relative; width: 32px; height: 18px; flex: none; }
 .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s; pointer-events: none; }
+.switch span {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--smoke);
+  transition: background .2s var(--ease); pointer-events: none;
+}
 .switch span::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s;
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: #ffffff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .2s var(--ease);
 }
 .switch input:checked + span { background: var(--mint); }
 .switch input:checked + span::after { transform: translateX(14px); }
-.switch input:focus-visible + span { outline: 2px solid var(--nook); outline-offset: 2px; }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .switch input:disabled + span { opacity: .45; }
 
+/* MARK: Buttons */
+
 button {
-  font: inherit;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  padding: 5px 12px;
-  background: var(--graphite);
-  color: var(--text);
+  font: 500 var(--control)/1.2 var(--sans);
+  border: 1px solid var(--field-stroke);
+  border-radius: var(--radius-control);
+  padding: 5px var(--space-lg);
+  background: var(--field);
+  color: var(--text-strong);
   cursor: pointer;
+  transition: background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
 }
-button:disabled { opacity: .5; cursor: default; }
-button:focus-visible { outline: 2px solid var(--nook); outline-offset: 2px; }
-button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
-button.quiet { background: transparent; }
-button.warn { color: var(--amber); border-color: var(--amber); }
+button:hover:not(:disabled) { background: var(--row-hover); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+button.quiet { background: transparent; border-color: transparent; color: var(--text-secondary); }
+button.quiet:hover:not(:disabled) { background: var(--row-hover); color: var(--text-strong); }
+button.small { padding: 4px var(--space-md); font-size: var(--label); }
+button.warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+button.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 18%, transparent); }
+
+/* The round 32 pt send and stop buttons of Nook's composer. */
+button.round {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border-color: transparent;
+}
+button.round svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+button.send { background: var(--accent); color: var(--on-accent); }
+button.send:hover:not(:disabled) { background: var(--accent-hover); }
+button.send:disabled { background: var(--smoke); color: var(--text-tertiary); opacity: 1; }
+button.stop { background: var(--paper); color: var(--canvas); }
+button.stop svg { fill: currentColor; stroke: none; }
+
+/* MARK: Conversation */
 
 .chat {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-l);
+  padding: var(--pad-xl);
   display: flex;
   flex-direction: column;
-  gap: var(--space-m);
+  gap: var(--pad-lg);
 }
 
-.intro { margin: auto 0; color: var(--text-muted); text-align: center; padding: 0 var(--space-l); }
+.intro {
+  margin: auto 0;
+  padding: 0 var(--space-xl);
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: var(--body);
+  line-height: 1.55;
+}
 
-.message { max-width: 92%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message {
+  max-width: 92%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--body);
+  line-height: 1.55;
+  color: var(--text-strong);
+  animation: arrive .2s var(--ease);
+}
+/* Your message in a bubble, Nook's answer as plain reading text, as in Nook Chat. */
 .message.you {
   align-self: flex-end;
-  padding: var(--space-s) var(--space-m);
-  border-radius: var(--radius-l);
-  background: var(--graphite);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-bubble);
+  background: var(--bubble);
+  color: var(--paper);
 }
 .message.nook { align-self: flex-start; }
 .message.failed { color: var(--coral); }
-.message .status, .message .on-mac { display: block; margin-top: var(--space-xs); color: var(--text-muted); font-size: 12px; }
+.message .status, .message .on-mac { display: block; margin-top: var(--space-xs); color: var(--text-secondary); font-size: var(--detail); line-height: 1.3; }
 .message .on-mac { color: var(--amber); }
-.message a { color: inherit; }
-.message code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--graphite); padding: 0 4px; border-radius: var(--radius-s); }
+.message strong { font-weight: 600; color: var(--paper); }
+.message a { color: var(--blue); text-decoration: none; }
+.message a:hover { text-decoration: underline; }
+.message code {
+  font: var(--code) var(--mono);
+  background: var(--graphite);
+  padding: 1px 5px;
+  border-radius: var(--radius-chip);
+}
 
-.dots { display: inline-flex; gap: 4px; }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: blink 1.2s infinite ease-in-out; }
+@keyframes arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.dots { display: inline-flex; gap: 4px; padding: var(--space-sm) 0; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-secondary); animation: blink 1.2s infinite ease-in-out; }
 .dots i:nth-child(2) { animation-delay: .2s; }
 .dots i:nth-child(3) { animation-delay: .4s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: .6; } }
 
-.activity { padding: 0 var(--space-l); border-top: 1px solid var(--line); }
-.activity summary { padding: var(--space-s) 0; color: var(--text-secondary); cursor: pointer; font-size: 12px; }
-.activity ul { list-style: none; margin: 0 0 var(--space-s); padding: 0; max-height: 160px; overflow-y: auto; }
-.activity li { display: flex; gap: var(--space-s); padding: 3px 0; font-size: 12px; color: var(--text-secondary); }
+/* MARK: Activity */
+
+.activity { padding: 0 var(--pad-xl); border-top: 1px solid var(--separator); }
+.activity summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--pad-md) 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--label);
+  font-weight: 500;
+  list-style: none;
+}
+.activity summary::-webkit-details-marker { display: none; }
+.activity summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform .2s var(--ease);
+}
+.activity details[open] summary::before { transform: rotate(45deg); }
+.activity summary:hover { color: var(--text-strong); }
+.activity summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-chip); }
+.activity ul { list-style: none; margin: 0 0 var(--pad-md); padding: 0; max-height: 160px; overflow-y: auto; }
+.activity li {
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-chip);
+  font-size: var(--detail);
+  color: var(--text-secondary);
+}
+.activity li:hover { background: var(--row-hover); }
 .activity li.failed { color: var(--coral); }
-.activity time { color: var(--text-muted); flex: none; font-variant-numeric: tabular-nums; }
+.activity time { color: var(--text-tertiary); flex: none; font-size: var(--caption); line-height: 1.6; font-variant-numeric: tabular-nums; }
 
-.composer {
-  padding: var(--space-m) var(--space-l) var(--space-l);
-  border-top: 1px solid var(--line);
-  background: var(--canvas);
+/* MARK: Composer */
+
+.composer { padding: var(--space-md) var(--pad-lg) var(--pad-lg); background: var(--canvas); }
+
+/* The composer box, as Nook's: the tray color at rest, the composer color with a stronger line while you type. */
+.composer-box {
+  border: 1px solid var(--field-stroke);
+  border-radius: var(--radius-composer);
+  background: var(--composer-tray);
+  padding: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);
+  transition: background-color .2s var(--ease), border-color .2s var(--ease);
 }
+.composer-box:focus-within { background: var(--composer); border-color: var(--line2); }
 .composer textarea {
+  display: block;
   width: 100%;
+  min-height: 40px;
+  max-height: 160px;
   resize: none;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  padding: var(--space-s) var(--space-m);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
+  border: 0;
+  padding: var(--space-xs) var(--space-xs) 0 0;
+  background: transparent;
+  color: var(--paper);
+  font: var(--body)/1.45 var(--sans);
+  outline: none;
 }
-.composer textarea:focus { outline: 2px solid var(--nook); outline-offset: -1px; }
-.composer-row { display: flex; align-items: center; gap: var(--space-s); margin-top: var(--space-s); }
+.composer textarea::placeholder { color: var(--text-tertiary); }
+.composer textarea:disabled { cursor: default; }
+.composer-row { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-sm); margin-left: calc(-1 * var(--space-sm)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .dots i { opacity: .6; }
+}

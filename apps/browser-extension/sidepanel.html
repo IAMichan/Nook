@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="top">
-    <img src="icons/nook-32.png" alt="" width="20" height="20">
+    <img class="face" src="icons/nook-32.png" alt="" width="22" height="22">
     <h1 data-i18n="appName">Nook</h1>
     <span id="status" class="pill" role="status"></span>
   </header>
@@ -46,18 +46,24 @@
 
   <section class="activity" aria-labelledby="activity-title">
     <details id="activity-box">
-      <summary id="activity-title" data-i18n="activityTitle"></summary>
+      <summary id="activity-title"><span data-i18n="activityTitle"></span></summary>
       <ul id="activity"></ul>
     </details>
   </section>
 
   <form id="composer" class="composer">
-    <textarea id="input" rows="2" data-i18n-placeholder="askPlaceholder"></textarea>
-    <div class="composer-row">
-      <button id="new-chat" type="button" class="quiet" data-i18n="newChat"></button>
-      <span class="grow"></span>
-      <button id="stop" type="button" class="quiet" data-i18n="stopAnswer" hidden></button>
-      <button id="send" type="submit" class="primary" data-i18n="send"></button>
+    <div class="composer-box">
+      <textarea id="input" rows="2" data-i18n-placeholder="askPlaceholder"></textarea>
+      <div class="composer-row">
+        <button id="new-chat" type="button" class="quiet small" data-i18n="newChat"></button>
+        <span class="grow"></span>
+        <button id="stop" type="button" class="round stop" hidden>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button id="send" type="submit" class="round send">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"/></svg>
+        </button>
+      </div>
     </div>
   </form>
 

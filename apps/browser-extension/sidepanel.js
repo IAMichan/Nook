@@ -1,7 +1,8 @@
 // The side panel: whether Nook is connected, whether Nook may work on the site in front, a pause for this whole
 // browser, a chat with Nook about the page, and what Nook did here lately. Questions go to Nook on the Mac and are
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
-import { inlineTokens, isAnswering, isBlocked, isRestricted, siteOf } from './lib/core.js';
+// It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
+import { cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf } from './lib/core.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -13,6 +14,8 @@ let conversation = null;
 let messages = [];
 let pollTimer = null;
 let windowId = null;
+let look = null;
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
 
 function send(message) {
   return chrome.runtime.sendMessage(message);
@@ -22,6 +25,37 @@ function send(message) {
 
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 for (const element of document.querySelectorAll('[data-i18n-placeholder]')) element.placeholder = t(element.dataset.i18nPlaceholder);
+for (const [id, key] of [['send', 'send'], ['stop', 'stopAnswer']]) {
+  $(id).setAttribute('aria-label', t(key));
+  $(id).title = t(key);
+}
+
+// MARK: - Nook's look
+
+/** Draws the panel in the theme Nook shows (or Nook's own until it said which), in dark or light as Nook is set. */
+function applyLook() {
+  const root = document.documentElement;
+  const dark = lookIsDark(look, systemDark.matches);
+  for (const property of [...root.style]) {
+    if (property.startsWith('--')) root.style.removeProperty(property);
+  }
+  if (!look) {
+    delete root.dataset.theme;
+    return;
+  }
+  root.dataset.theme = dark ? 'dark' : 'light';
+  for (const [name, value] of Object.entries(lookVariables(look, dark))) root.style.setProperty(name, value);
+}
+
+/** Asks Nook for its look again: when the panel opens or comes back into view, and now and then while it shows. */
+function refreshLook() {
+  if (document.visibilityState === 'visible') send({ type: 'look' }).catch(() => {});
+}
+
+systemDark.addEventListener('change', applyLook);
+document.addEventListener('visibilitychange', refreshLook);
+addEventListener('focus', refreshLook);
+setInterval(refreshLook, 15_000);
 
 // MARK: - Status, site and pause
 
@@ -181,9 +215,11 @@ function webHref(text) {
 function renderComposer() {
   const busy = isAnswering(messages);
   const connected = status.nook === 'connected';
+  const stoppable = busy && !!conversation;
   $('send').disabled = !connected || busy;
+  $('send').hidden = stoppable;
   $('input').disabled = !connected;
-  $('stop').hidden = !busy || !conversation;
+  $('stop').hidden = !stoppable;
   $('new-chat').hidden = !messages.length;
 }
 
@@ -233,8 +269,18 @@ $('composer').addEventListener('submit', (event) => {
   const text = input.value.trim();
   if (!text || $('send').disabled) return;
   input.value = '';
+  fitInput();
   ask(text);
 });
+
+/** The field grows with what you type, up to its maximum height, as Nook's composer does. */
+function fitInput() {
+  const input = $('input');
+  input.style.height = 'auto';
+  input.style.height = input.scrollHeight + 'px';
+}
+
+$('input').addEventListener('input', fitInput);
 
 $('input').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -269,6 +315,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     renderStatus();
   }
   if (area === 'session' && changes.activity) renderActivity();
+  if (area === 'local' && changes.look) {
+    look = cleanLook(changes.look.newValue);
+    applyLook();
+  }
   if (area === 'local' && (changes.paused || changes.blocked)) {
     options = {
       paused: changes.paused ? !!changes.paused.newValue : options.paused,
@@ -286,6 +336,9 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
 });
 
 (async () => {
+  // The look Nook had last, at once, so the panel never flashes in other colors; then Nook's look of now.
+  look = cleanLook((await chrome.storage.local.get('look')).look);
+  applyLook();
   windowId = (await chrome.windows.getCurrent().catch(() => null))?.id ?? null;
   const stored = await chrome.storage.session.get(['status', 'conversation']);
   status = stored.status || status;
@@ -296,6 +349,7 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   await renderActivity();
   renderMessages();
   await send({ type: 'connect' }).catch(() => {});
+  refreshLook();
   if (conversation) {
     const reply = await send({ type: 'chat', conversation }).catch(() => null);
     if (reply?.ok && reply.messages) {

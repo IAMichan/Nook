@@ -222,3 +222,62 @@ export function isAnswering(messages) {
   const last = messages[messages.length - 1];
   return !last.fromNook || !!last.streaming;
 }
+
+// MARK: - Nook's look
+
+/**
+ * The colors of Nook's theme the side panel draws, as its CSS variables (`--canvas`, `--text-strong`…). Nook sends them
+ * for dark and for light (`BrowserExtensionLook` on the Mac): the chosen theme, the colors set one by one, the accent.
+ */
+export const LOOK_TOKENS = [
+  'canvas', 'well', 'surface', 'field', 'graphite', 'smoke', 'row-hover', 'row-selected', 'bubble', 'composer',
+  'composer-tray', 'menu', 'line', 'line2', 'border', 'separator', 'field-stroke', 'paper', 'text-strong',
+  'text-secondary', 'text-muted', 'text-tertiary', 'blue', 'mint', 'amber', 'coral', 'violet', 'accent', 'on-accent',
+  'accent-hover', 'added', 'removed'
+];
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const clamp = (value, low, high, fallback) => (Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback);
+
+/**
+ * Nook's look as Nook sent it, checked: only known tokens, each a `#RRGGBB` (so a value can never become other CSS),
+ * the appearance one of system, light and dark, and the density's scales within reason. Null when it is not a look.
+ */
+export function cleanLook(raw) {
+  if (!raw || typeof raw !== 'object' || raw.ok === false) return null;
+  const side = (colors) => {
+    const out = {};
+    for (const token of LOOK_TOKENS) {
+      const value = colors && typeof colors === 'object' ? colors[token] : undefined;
+      if (typeof value === 'string' && HEX.test(value)) out[token] = value.toLowerCase();
+    }
+    return out;
+  };
+  const dark = side(raw.dark);
+  const light = side(raw.light);
+  if (!Object.keys(dark).length && !Object.keys(light).length) return null;
+  return {
+    appearance: ['system', 'light', 'dark'].includes(raw.appearance) ? raw.appearance : 'system',
+    textScale: clamp(raw.textScale, 0.85, 1.15, 1),
+    spacingScale: clamp(raw.spacingScale, 0.6, 1.4, 1),
+    dark,
+    light
+  };
+}
+
+/** Whether the panel shows dark: what Nook is set to, or the system's when Nook follows it (or no look is known yet). */
+export function lookIsDark(look, systemIsDark) {
+  if (look?.appearance === 'dark') return true;
+  if (look?.appearance === 'light') return false;
+  return !!systemIsDark;
+}
+
+/** The CSS variables for one appearance: `{ '--canvas': '#000000', …, '--text-scale': '1' }`. */
+export function lookVariables(look, dark) {
+  if (!look) return {};
+  const vars = {};
+  for (const [token, value] of Object.entries(dark ? look.dark : look.light)) vars['--' + token] = value;
+  vars['--text-scale'] = String(look.textScale);
+  vars['--space-scale'] = String(look.spacingScale);
+  return vars;
+}

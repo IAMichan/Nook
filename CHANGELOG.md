@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
+  type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
+  density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows
+  the theme too.
+
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
   it gets the same look and feel; nothing else of theirs changes.
