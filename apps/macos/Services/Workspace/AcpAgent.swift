@@ -676,9 +676,7 @@ struct AcpListedSession: Equatable, Sendable {
 enum AgentErrorText {
     /// The agent wants you to sign in first (ACP's "Authentication required", -32000).
     static func needsSignIn(_ message: String) -> Bool {
-        let text = message.lowercased()
-        return ["authentication required", "auth required", "auth_required", "unauthenticated", "not authenticated",
-                "please authenticate", "requires authentication", "not logged in", "login required"].contains { text.contains($0) }
+        FailureClassifier.saysSignIn(message.lowercased())
     }
 
     /// The conversation to continue is gone (cleared, made on another machine, or by an older version of the agent).
