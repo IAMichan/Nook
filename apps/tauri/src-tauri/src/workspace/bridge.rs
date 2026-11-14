@@ -24,6 +24,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
+mod nook;
+
 use super::terminals::{TerminalInfo, TerminalOwner};
 use super::WorkspaceState;
 use crate::agents::{lock, AgentsState};
@@ -304,6 +306,12 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
+        t @ (BridgeTool::NookTools
+        | BridgeTool::NookUse
+        | BridgeTool::NookChatList
+        | BridgeTool::NookChatRead
+        | BridgeTool::NookChatSend
+        | BridgeTool::TakeOverScreen) => nook::call(app, t, a, &caller, context).await,
     };
     result.unwrap_or_else(ToolResult::error)
 }
@@ -749,7 +757,7 @@ async fn pull_request_create(
 
 // MARK: Sessies
 
-fn session_list(app: &AppHandle, a: &Map<String, Value>) -> ToolResult {
+pub(crate) fn session_list(app: &AppHandle, a: &Map<String, Value>) -> ToolResult {
     let Some(ws) = workspace(app) else { return ToolResult::error("Nook is not ready.") };
     let limit = a.get("limit").and_then(Value::as_u64).unwrap_or(15).clamp(1, 50) as usize;
     let mut runs: Vec<WorkspaceRun> = ws.manager.runs().into_iter().filter(|r| !r.archived).collect();
@@ -778,7 +786,7 @@ fn session_list(app: &AppHandle, a: &Map<String, Value>) -> ToolResult {
 
 /// Een samenvatting van een andere sessie: wat gevraagd, beantwoord, uitgevoerd en gewijzigd werd. Begrensd, nooit
 /// het ruwe gesprek.
-fn session_read(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
+pub(crate) fn session_read(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
     let ws = workspace(app).ok_or("Nook is not ready.")?;
     let run = Uuid::parse_str(arg(a, "session_id"))
         .ok()

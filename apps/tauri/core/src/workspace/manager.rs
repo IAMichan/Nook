@@ -2219,6 +2219,21 @@ impl Manager {
         self.emit(out);
     }
 
+    /// Changes a session between turns, for features in their own files (handing it to another agent, `handoff.rs`).
+    /// `false` while it works or when it is gone; nothing changes then.
+    pub fn update_between_turns(&self, id: Uuid, change: impl FnOnce(&mut WorkspaceRun)) -> bool {
+        let mut s = self.lock();
+        let free = s.runs.iter().any(|r| r.id == id && !r.status.is_active()) && !s.processes.contains_key(&id);
+        if free {
+            Self::update(&mut s, id, change);
+        }
+        drop(s);
+        if free {
+            self.emit(Out(vec![ManagerEvent::Changed]));
+        }
+        free
+    }
+
     pub fn git(&self) -> Option<&Git> {
         self.git.as_ref()
     }

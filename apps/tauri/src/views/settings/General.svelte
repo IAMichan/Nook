@@ -1,27 +1,13 @@
 <script lang="ts">
-  // Algemeen: taal, plek van de balk, kleur, energie, sneltoetsen.
+  // General: language, where the bar sits, energy. The color is under Appearance, the shortcuts under Shortcuts.
   import { api } from "../../lib/api";
-  import { nook, accentCss } from "../../lib/state.svelte";
+  import { nook } from "../../lib/state.svelte";
   import { services, serviceEvents, type EnergyView } from "../../lib/services";
   import type { EnergyMode } from "../../lib/types";
   import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-  import ShortcutField from "../../components/ShortcutField.svelte";
   import { tr, APP_LANGUAGES, type AppLanguage } from "../../lib/i18n.svelte";
 
-  // Shortcuts another app already holds: Rust says which after every change, Settings shows it at the row.
-  let taken = $state<string[]>([]);
-  $effect(() => {
-    void s.shortcuts;
-    // Registering happens on save; ask a moment later.
-    const timer = setTimeout(() => api.shortcutProblems().then((p) => (taken = p)).catch(() => {}), 150);
-    return () => clearTimeout(timer);
-  });
-
   const s = $derived(nook.settings!);
-  const accents = [0xf4f3f7, 0x8b7bff, 0x46e0a6, 0xffb84d, 0xff8a5b, 0x5ab8ff, 0xff6bb5];
-  const shortcutNames = $derived<Record<string, string>>({
-    chat: tr("Chatten", "Chat"), talk: tr("Praten", "Talk"), window: tr("Hoofdvenster", "Main window"), lookAlong: tr("Meekijken", "Look along"),
-  });
 
   // Energy: one choice, what it means, and what Nook does right now.
   const energyModes: { id: EnergyMode; title: string; detail: string }[] = $derived([
@@ -89,14 +75,6 @@
     </label>
     <label class="row"><span>{tr("Groter paneel", "Larger panel")}</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
-  <div class="row">
-    <span>{tr("Kleur van Nook", "Nook's color")}</span>
-    <div class="swatches">
-      {#each accents as a (a)}
-        <button class="swatch" class:on={s.accentHex === a} style="background:{accentCss(a)}" aria-label={tr("Kleur", "Color")} onclick={() => nook.saveSettings({ accentHex: a })}></button>
-      {/each}
-    </div>
-  </div>
 </div>
 {#if nook.info?.capabilities.desktop}
   <h3>{tr("Energie", "Energy")}</h3>
@@ -113,18 +91,6 @@
       <span class="faint" class:light={energy && energy.plan.pace !== "full"}>{energy?.status ?? tr("Volle snelheid", "Full speed")}</span>
     </div>
     <p class="faint note">{tr("Nook werkt op de achtergrond zodat een antwoord direct klaar is: hij leest de tekst op je scherm, denkt mee en kijkt of je in een meeting zit. Dat kost een beetje stroom. Als Nook een stap terugdoet, leest een vraag het scherm alsnog meteen.", "Nook works in the background so an answer is ready right away: it reads the text on your screen, thinks along and checks whether you are in a meeting. That costs a little power. When Nook steps back, a question still reads the screen right away.")}</p>
-  </div>
-{/if}
-{#if nook.info?.capabilities.globalShortcuts}
-  <h3>{tr("Sneltoetsen", "Shortcuts")}</h3>
-  <div class="group">
-    {#each Object.entries(s.shortcuts) as [action, accel] (action)}
-      <div class="row">
-        <span>{shortcutNames[action] ?? action}</span>
-        <ShortcutField value={accel} taken={taken.includes(action)} onchange={(next) => nook.saveSettings({ shortcuts: { ...s.shortcuts, [action]: next } })} />
-      </div>
-    {/each}
-    <p class="faint note">{tr("Klik op een sneltoets en druk de nieuwe toetsen in. Is hij al bezet door een andere app, dan zie je dat hier meteen.", "Click a shortcut and press the new keys. If another app already uses it, you see that here right away.")}</p>
   </div>
 {/if}
       

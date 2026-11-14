@@ -40,7 +40,7 @@
   .line { display: grid; grid-template-columns: var(--num) var(--num) var(--marker) 1fr; align-items: start; }
   .num { color: var(--text3); font-size: 10.5px; text-align: right; padding-right: 7px; background: color-mix(in srgb, var(--smoke) 50%, transparent); user-select: none; }
   .marker { text-align: center; font-weight: 600; user-select: none; }
-  .code { white-space: pre-wrap; word-break: break-word; padding-right: 28px; color: #d9d7e0; }
+  .code { white-space: pre-wrap; word-break: break-word; padding-right: 28px; color: var(--text-strong); }
   .context .code { opacity: 0.82; }
   .add { background: color-mix(in srgb, var(--mint) 8%, transparent); }
   .add .num { background: color-mix(in srgb, var(--mint) 16%, transparent); }
@@ -50,7 +50,7 @@
   .remove .num { background: color-mix(in srgb, var(--coral) 16%, transparent); }
   .remove .marker { color: var(--coral); }
   .remove mark { background: color-mix(in srgb, var(--coral) 32%, transparent); color: inherit; border-radius: 2px; }
-  .hunk { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 0; font-size: 10.5px; color: #8ab4f8; background: rgba(138, 180, 248, 0.07); border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line2); }
+  .hunk { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 0; font-size: 10.5px; color: var(--blue); background: rgba(138, 180, 248, 0.07); border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line2); }
   .gutter2 { width: calc(var(--num) * 2); text-align: center; flex: none; opacity: 0.8; }
   .hlabel { padding-left: var(--marker); flex: none; }
   .section { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

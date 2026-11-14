@@ -7,7 +7,9 @@ pub mod brain;
 pub mod chat;
 pub mod companion;
 pub mod games;
+pub mod maintenance;
 pub mod plans;
+pub mod selection_ask;
 pub mod workspace;
 pub mod workspace_tools;
 

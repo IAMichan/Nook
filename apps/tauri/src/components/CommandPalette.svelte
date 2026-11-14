@@ -115,7 +115,7 @@
 
 <style>
   dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); padding: 0; margin: 12dvh auto auto; color: var(--paper); background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius); box-shadow: var(--shadow-popover); overflow: hidden; }
-  dialog::backdrop { background: #0009; backdrop-filter: blur(5px); }
+  dialog::backdrop { background: color-mix(in srgb, var(--canvas) 60%, transparent); backdrop-filter: blur(5px); }
   .palette { display: flex; flex-direction: column; max-height: calc(100dvh - 24dvh); }
   .search { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line2); color: var(--text2); }
   input { flex: 1; min-width: 0; padding: 6px 0; border: 0; background: transparent; box-shadow: none; font-size: 14px; }

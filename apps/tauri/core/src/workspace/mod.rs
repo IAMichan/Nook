@@ -3,6 +3,7 @@
 
 pub mod attention;
 pub mod bridge;
+pub mod bridge_nook;
 pub mod command;
 pub mod git;
 pub mod limits;

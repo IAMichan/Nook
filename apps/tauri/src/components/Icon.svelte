@@ -3,7 +3,8 @@
     name: "chat" | "agents" | "workspace" | "phone" | "settings" | "plus" | "search" | "sidebar" | "arrow" | "back" | "attach" | "mic" | "copy" | "lock" | "unlock" | "gamepad"
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
       | "code" | "sparkle" | "x" | "grip" | "tasks"
-      | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass";
+      | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass"
+      | "palette" | "keyboard" | "archive";
     size?: number;
   } = $props();
 </script>
@@ -56,6 +57,9 @@
   {:else if name === "eye"}<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
   {:else if name === "hand"}<path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
   {:else if name === "circle-check"}<circle cx="12" cy="12" r="9" /><path d="m9 12 2 2 4-4" />
+  {:else if name === "palette"}<path d="M12 3a9 9 0 0 0 0 18c1.1 0 1.7-.8 1.7-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.3-4-7.7-9-7.7Z" /><path d="M7.5 11.5h.01M10 7.5h.01M14.5 7.5h.01M17 11h.01" stroke-width="2.4" />
+  {:else if name === "keyboard"}<rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6 14h.01M17.5 14h.01M9 14h6" />
+  {:else if name === "archive"}<rect x="3" y="4" width="18" height="5" rx="1.5" /><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
   {:else if name === "tasks"}<rect x="4" y="4" width="16" height="16" rx="4" /><path d="m8.5 12 2.5 2.5 4.5-5" />
   {/if}
 </svg>

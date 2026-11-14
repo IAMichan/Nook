@@ -561,7 +561,8 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
         local_system_prompt(settings, env, text, &offered_with_discovery, &intent, researched, evidence)
     } else {
         system_prompt(settings, env, text)
-    } + &catalog;
+    } + &crate::instructions::prompt_block(settings)
+        + &catalog;
     let tools_text: usize =
         offered.iter().map(|t| t.name.len() + if profile.compact_descriptions { 80 } else { t.description.chars().count() } + 200).sum();
     // Grotere lokale modellen krijgen een langer geheugen van het gesprek, zodat vervolgvragen blijven werken.

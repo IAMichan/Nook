@@ -4,5 +4,6 @@
 use super::Row;
 
 mod base;
+mod maintenance;
 
-pub const ALL: &[&[Row]] = &[base::ROWS];
+pub const ALL: &[&[Row]] = &[base::ROWS, maintenance::ROWS];

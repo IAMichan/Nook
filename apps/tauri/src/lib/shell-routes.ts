@@ -52,13 +52,15 @@ export const routeViews: Partial<Record<Route, () => Promise<ViewModule>>> = {
 
 /// The Settings pages, in the order of the sidebar (`SettingsSection` on the Mac).
 export const settingsSections = [
-  "overview", "general", "voice", "games", "brain", "assistant", "memory", "autocomplete", "agents", "accounts", "companion", "privacy", "about",
+  "overview", "general", "appearance", "voice", "games", "shortcuts", "brain", "assistant", "memory", "instructions", "autocomplete", "agents",
+  "archive", "accounts", "companion", "privacy", "maintenance", "about",
 ] as const;
 export type SettingsSectionId = (typeof settingsSections)[number];
 
 /// Other names a button elsewhere may use for a Settings page.
 const sectionAliases: Record<string, SettingsSectionId> = {
   start: "overview", connections: "accounts", sound: "voice", iphone: "companion", gamer: "games",
+  look: "appearance", theme: "appearance", keys: "shortcuts", keybindings: "shortcuts", updates: "maintenance",
 };
 
 /// The Settings page a stored or requested name stands for; Overview for anything unknown.

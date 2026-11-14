@@ -42,6 +42,7 @@ export interface Settings {
   localOnlySources: string[];
   evidenceFirst: boolean;
   checkAnswers: boolean;
+  selectionAsk: boolean;
   useMemory: boolean;
   learnFromChats: boolean;
   onboardingDone: boolean;
@@ -73,6 +74,14 @@ export interface Settings {
   startLocalBrain: boolean;
   trayHintShown: boolean;
   mainWindow: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
+  /** The windows' look (Settings › Appearance); old files stay dark. */
+  theme: "system" | "light" | "dark";
+  /** How much room text and rows get. */
+  density: "compact" | "comfortable" | "spacious";
+  /** The default answer style (Settings › Instructions). */
+  answerStyle: "standard" | "concise" | "explanatory" | "formal" | "casual";
+  /** The user's own standing instructions, sent with every question. */
+  instructions: string;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.

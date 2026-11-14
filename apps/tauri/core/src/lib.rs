@@ -12,6 +12,8 @@ pub mod connectors;
 pub mod error;
 pub mod games;
 pub mod i18n;
+pub mod instructions;
+pub mod maintenance;
 pub mod nooks;
 pub mod paths;
 pub mod platform;

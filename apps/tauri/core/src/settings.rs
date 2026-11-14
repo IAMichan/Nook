@@ -83,6 +83,8 @@ pub struct Settings {
     pub local_only_sources: BTreeSet<String>,
     pub evidence_first: bool,
     pub check_answers: bool,
+    /// A small bar above words you select anywhere in Nook asks, explains or translates them (`SelectionAsk`).
+    pub selection_ask: bool,
     pub use_memory: bool,
     pub learn_from_chats: bool,
     pub onboarding_done: bool,
@@ -125,6 +127,14 @@ pub struct Settings {
     pub tray_hint_shown: bool,
     /// Where the main window was, in physical pixels, so it opens there again.
     pub main_window: Option<WindowPlacement>,
+    /// The windows' look (Settings › Appearance): "system", "light" or "dark". Files from before it existed stay dark.
+    pub theme: String,
+    /// How much room text and rows get (`NookDensity` on the Mac): "compact", "comfortable" or "spacious".
+    pub density: String,
+    /// The default answer style (`ResponseStyle` on the Mac, Settings › Instructions); see `crate::instructions`.
+    pub answer_style: String,
+    /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
+    pub instructions: String,
 }
 
 /// The main window's last place and size on the desktop.
@@ -183,6 +193,7 @@ impl Default for Settings {
             local_only_sources: BTreeSet::new(),
             evidence_first: false,
             check_answers: true,
+            selection_ask: true,
             use_memory: true,
             learn_from_chats: true,
             onboarding_done: false,
@@ -205,6 +216,10 @@ impl Default for Settings {
             start_local_brain: true,
             tray_hint_shown: false,
             main_window: None,
+            theme: "dark".into(),
+            density: "comfortable".into(),
+            answer_style: "standard".into(),
+            instructions: String::new(),
         }
     }
 }
@@ -418,6 +433,18 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"quietWhileSharing":"hide","energyMode":"saver"}"#).unwrap();
         assert_eq!(s.quiet_while_sharing, QuietBehavior::Hide);
         assert_eq!(s.energy_mode, EnergyMode::Saver);
+    }
+
+    #[test]
+    fn old_settings_files_keep_the_dark_look() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert_eq!(s.theme, "dark");
+        assert_eq!(s.density, "comfortable");
+        assert_eq!(s.answer_style, "standard");
+        assert!(s.instructions.is_empty());
+        let s: Settings = serde_json::from_str(r#"{"theme":"light","instructions":"Call me Sam."}"#).unwrap();
+        assert_eq!(s.theme, "light");
+        assert_eq!(s.instructions, "Call me Sam.");
     }
 
     #[test]

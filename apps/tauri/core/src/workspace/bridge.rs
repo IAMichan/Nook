@@ -22,6 +22,13 @@ pub enum BridgeTool {
     PullRequestCreate,
     SessionList,
     SessionRead,
+    // Nook itself (`bridge_nook`).
+    NookTools,
+    NookUse,
+    NookChatList,
+    NookChatRead,
+    NookChatSend,
+    TakeOverScreen,
 }
 
 /// Wat een aanroep kan veranderen: niets, iets zichtbaars op deze computer, of iets daarbuiten.
@@ -37,7 +44,7 @@ pub const SERVER_NAME: &str = "nook";
 pub const TOOL_PREFIX: &str = "mcp__nook__";
 
 impl BridgeTool {
-    pub const ALL: [BridgeTool; 11] = [
+    pub const ALL: [BridgeTool; 17] = [
         Self::WorkspaceInfo,
         Self::TerminalRun,
         Self::TerminalRead,
@@ -49,6 +56,12 @@ impl BridgeTool {
         Self::PullRequestCreate,
         Self::SessionList,
         Self::SessionRead,
+        Self::NookTools,
+        Self::NookUse,
+        Self::NookChatList,
+        Self::NookChatRead,
+        Self::NookChatSend,
+        Self::TakeOverScreen,
     ];
 
     pub fn name(self) -> &'static str {
@@ -64,6 +77,7 @@ impl BridgeTool {
             Self::PullRequestCreate => "pull_request_create",
             Self::SessionList => "session_list",
             Self::SessionRead => "session_read",
+            t => super::bridge_nook::name(t),
         }
     }
 
@@ -78,6 +92,7 @@ impl BridgeTool {
             | Self::SessionRead => Effect::Read,
             Self::TerminalRun | Self::TerminalStop | Self::BrowserOpen => Effect::Local,
             Self::PullRequestCreate => Effect::Outward,
+            t => super::bridge_nook::effect(t),
         }
     }
 
@@ -101,12 +116,13 @@ impl BridgeTool {
             Self::PullRequestCreate => "Pull request",
             Self::SessionList => "Nook-sessies",
             Self::SessionRead => "Lees sessie",
+            t => super::bridge_nook::label(t),
         }
     }
 
     /// Het meest zeggende argument: het commando, het adres, de titel of de terminal.
     pub fn detail(input: &Value) -> Option<String> {
-        ["command", "url", "title", "terminal_id", "session_id"]
+        ["command", "url", "title", "terminal_id", "session_id", "tool", "message", "reason"]
             .iter()
             .find_map(|k| input.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(str::to_string))
     }
@@ -124,6 +140,7 @@ impl BridgeTool {
             Self::PullRequestCreate => "Proposes a pull request for the current branch of your folder. The user approves it in Nook first; Nook then pushes the branch and opens the pull request through GitHub's API with the user's own connection (or GitHub's page in Nook's browser to finish it). Use this instead of `gh pr create`, also when gh reports a rate limit. Commit your work before calling this. Returns the link.",
             Self::SessionList => "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read.",
             Self::SessionRead => "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed.",
+            t => super::bridge_nook::summary(t),
         }
     }
 
@@ -171,6 +188,7 @@ impl BridgeTool {
             Self::SessionRead => {
                 object(json!({"session_id": {"type": "string", "description": "The session id from session_list."}}), &["session_id"])
             }
+            t => super::bridge_nook::schema(t),
         }
     }
 
@@ -257,6 +275,9 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, command: Option<RiskLeve
     if !enabled {
         return Verdict::Refuse(Reason::Disabled);
     }
+    if super::bridge_nook::TOOLS.contains(&tool) {
+        return super::bridge_nook::verdict(tool, caller, true);
+    }
     if tool.effect() == Effect::Read {
         return Verdict::Allow;
     }
@@ -340,7 +361,7 @@ pub fn terminal_tail(text: &str, lines: usize, limit: usize) -> String {
 }
 
 /// De toelichting voor de agent, na je eigen instructies.
-pub const INSTRUCTIONS: &str = "You are running inside Nook, a desktop app the user is watching while you work. Nook's workspace is available through the `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open and verify them with browser_read (its text and console), and when the work is committed and ready, propose a pull request with pull_request_create (the user approves it in Nook). Always open pull requests that way, never with `gh pr create --web` or by opening GitHub's page in the user's browser; when `gh` reports a rate limit, call pull_request_create, which uses GitHub's API instead. Short commands whose output you need right away can still run in your own shell.";
+pub const INSTRUCTIONS: &str = "You are running inside Nook, a desktop app the user is watching while you work. Nook's workspace is available through the `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open and verify them with browser_read (its text and console), and when the work is committed and ready, propose a pull request with pull_request_create (the user approves it in Nook). nook_tools and nook_use reach Nook's own tools and connectors (actions wait for the user's approval), nook_chat_list, nook_chat_read and nook_chat_send reach Nook Chat, and take_over_screen lets you read the user's screen for a while. Always open pull requests that way, never with `gh pr create --web` or by opening GitHub's page in the user's browser; when `gh` reports a rate limit, call pull_request_create, which uses GitHub's API instead. Short commands whose output you need right away can still run in your own shell.";
 
 /// Hoe een sessie die Nook draait de brug krijgt: de MCP-server op de opdrachtregel van de agent.
 #[derive(Debug, Clone, PartialEq, Eq)]

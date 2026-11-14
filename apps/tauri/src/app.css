@@ -102,6 +102,68 @@
   color-scheme: dark;
 }
 
+/* Nook in light, 1:1 with NookPalette.nookLight on macOS: an off-white canvas, white cards, zinc lines and zinc-900
+   text, the state colors a few shades deeper so they read on white. Set by Settings › Appearance (`lib/theme.ts`) on
+   the main window only: the bar stays dark in every theme, as the notch on the Mac does. */
+:root[data-theme="light"] {
+  --canvas: #fcfcfc;
+  --well: #fafafa;
+  --surface: #ffffff;
+  --sidebar: #fafafa;
+  --row-hover: #f4f4f5;
+  --row-selected: #ebebed;
+  --shadow-popover: 0 12px 36px #18181b26;
+  --graphite: #f4f4f5;
+  --smoke: #e4e4e7;
+  --field: #ffffff;
+  --line: #e4e4e7;
+  --line2: #d4d4d8;
+  --border: #e4e4e7;
+  --separator: #e4e4e7;
+  --hairline: #ededef;
+  --field-stroke: #d4d4d8;
+  --row-rest: #fafafa;
+  --paper: #18181b;
+  --text-strong: #27272a;
+  --ink: #ffffff;
+  --text2: #52525c;
+  --text3: #62626c;
+  --text-muted: #5c5c66;
+  --chat-stamp: #4e5a55;
+  --blue: #1447e6;
+  --iris: #1e1e22;
+  --on-iris: #ffffff;
+  --mint: #006e4d;
+  --amber: #973c00;
+  --coral: #c10007;
+  --violet: #7008e7;
+  --music: #a84a18;
+  --mint-soft: #007a55;
+  --coral-soft: #b91c1c;
+  --added: #007a55;
+  --removed: #c10007;
+  --bubble: #ebebed;
+  --chat-mine: #d2efe2;
+  --chat-theirs: #f0f0f2;
+  --composer: #ffffff;
+  --composer-tray: #ffffff;
+  --menu: #ffffff;
+  --syntax-keyword: #7a45b5;
+  --syntax-string: #3d7a2e;
+  --syntax-comment: #8a8f96;
+  --syntax-number: #9a5a12;
+  --syntax-type: #1d6e93;
+  --syntax-property: #3b5da6;
+  --syntax-tag: #a33a6c;
+  --syntax-attribute: #86690f;
+  color-scheme: light;
+}
+
+/* Density (Settings › Appearance › Text and layout, `NookDensity` on the Mac): the whole window a step smaller or
+   larger. The Mac scales type by 0.93 or 1.07; zoom scales the spacing along with it. */
+:root[data-density="compact"] body:not(.bar) #app { zoom: 0.93; height: calc(100% / 0.93); }
+:root[data-density="spacious"] body:not(.bar) #app { zoom: 1.07; height: calc(100% / 1.07); }
+
 * { box-sizing: border-box; }
 
 html, body {

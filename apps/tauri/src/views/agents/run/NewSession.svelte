@@ -491,8 +491,8 @@
   .pill { background: none; border: none; padding: 3px 8px; font-size: 12.5px; color: var(--text2); border-radius: 8px; }
   .pill:hover:not(:disabled) { background: var(--smoke); color: var(--paper); }
   .pill.static:hover { background: none; color: var(--text2); }
-  .hot { color: #ff9b9b; }
-  .sep { width: 1px; height: 16px; background: #3a3a44; margin: 0 3px; }
+  .hot { color: var(--coral-soft); }
+  .sep { width: 1px; height: 16px; background: var(--line2); margin: 0 3px; }
   .spacer { flex: 1; }
   .pop { position: relative; display: inline-block; }
   .menu { position: absolute; top: 30px; left: 0; z-index: 20; background: var(--graphite); border: 1px solid var(--line2); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 220px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); font-size: 12.5px; font-weight: 400; text-align: left; }
