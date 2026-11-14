@@ -153,8 +153,11 @@ function node(token) {
       return strong;
     }
     case 'link': {
+      // Only a web address becomes a link: never a javascript: or data: URL, whatever the text says.
+      const href = webHref(token.href);
+      if (!href) return document.createTextNode(token.value);
       const link = document.createElement('a');
-      link.href = token.href;
+      link.href = href;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.textContent = token.value;
@@ -163,6 +166,16 @@ function node(token) {
     default:
       return document.createTextNode(token.value);
   }
+}
+
+function webHref(text) {
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
 }
 
 function renderComposer() {
