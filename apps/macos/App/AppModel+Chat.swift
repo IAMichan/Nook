@@ -490,6 +490,14 @@ extension AppModel {
             let split = FollowUps.split(plan.text)
             var rawBody = split.body
 
+            // A quiet scheduled check that found nothing new: no retry and no notice; the run removes the conversation.
+            let schedules = ScheduledTaskStore.shared
+            if schedules.isQuietRun(conversation), NookSchedule.isNothingNew(rawBody), plan.actions.isEmpty,
+               chat.message(id)?.mails.isEmpty ?? true {
+                schedules.noteNothingNew(conversation)
+                rawBody = tr("sched.nook.nothingNew")
+            }
+
             // A small brain sometimes invents a number, time or address. Nook compares those with everything it was given
             // and tool results, and has the answer written again when one is found nowhere.
             if settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
@@ -648,6 +656,8 @@ extension AppModel {
         // Asked from the notch (the Double Tap field, a notice's field): you wait for it there.
         let followed = NotchFollow.shared.conversations.remove(id) != nil
         let watching = viewModel.isInSight(.chat) && chat.activeID == id
+        // A quiet scheduled check that found nothing new does not disturb.
+        if ScheduledTaskStore.shared.foundNothingNew(id) { return }
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview

@@ -322,6 +322,17 @@ enum NookSchedule {
         var title: String
         var prompt: String
         var rule: ScheduleRule
+        /// Only speak up when something new needs the user: a run that finds nothing leaves no conversation and no notice.
+        var quiet = false
+    }
+
+    /// What a quiet run answers when nothing new needs the user (`runNote`); Nook then drops that run without a notice.
+    static let nothingNew = "NOTHING_NEW"
+
+    /// The answer is the "nothing new" word, alone (also with markup or a full stop around it).
+    static func isNothingNew(_ answer: String) -> Bool {
+        let bare = answer.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols))
+        return bare.uppercased().replacingOccurrences(of: " ", with: "_") == nothingNew
     }
 
     /// Nook Chat runs on the user's brain, and each run reads sources and writes an answer: more often than every quarter
@@ -379,7 +390,10 @@ enum NookSchedule {
         guard problems.isEmpty, let rule else { return (nil, problems) }
         var title = text("title")
         if title.isEmpty { title = prompt.split(whereSeparator: \.isNewline).first.map { String($0.prefix(60)) } ?? "" }
-        return (Draft(title: String(title.prefix(80)), prompt: prompt, rule: rule), [])
+        // A check every so many minutes is only worth hearing about when it finds something; an overview at a set time
+        // always says how things stand.
+        let quiet = (input["quiet"] as? Bool) ?? (text("quiet").lowercased() == "true" ? true : kind == .interval)
+        return (Draft(title: String(title.prefix(80)), prompt: prompt, rule: rule, quiet: quiet), [])
     }
 
     /// "08:00", "8:30", "8.30", "8u30", "8h" or "8" → hour and minute.
@@ -449,9 +463,49 @@ enum NookSchedule {
         }
     }
 
-    /// What Nook adds to the prompt of a run, for the brain only (`ReplyContext.note`): nobody is watching, so Nook does
-    /// the whole job in one answer, and prepares what the user approves instead of asking questions first.
-    static func runNote(title: String) -> String {
-        "This request is the user's own scheduled task \"\(title)\", which Nook runs by itself; the user is not watching and reads the answer later from a notice. Do the whole task in one answer without asking questions first: look everything up yourself (for mail: inbox_mail, then read_mail for what matters). Start with a short overview of what happened, most important first. For every mail or message that needs an answer from the user, write the reply ready to send: compose_mail once per mail, with reply_to set to its id, in the language of the sender and the user's own style, so the user only has to click Send. Propose other actions as usual; nothing is sent or changed without the user's approval. When nothing needs the user, say so in one line."
+    /// What Nook adds to the prompt of a run, for the brain only (`ReplyContext.note`): nobody is watching, so Nook works
+    /// as the user's secretary. It looks through every source the task is about, says what matters, and prepares every
+    /// step the user has to take as a proposal (a draft to send, an action to approve), so the user only says yes or what
+    /// to change. `since`: the previous run, so a recurring task reports what is new. `quiet`: answer `nothingNew` when
+    /// nothing new needs the user.
+    static func runNote(title: String, since: Date? = nil, quiet: Bool = false) -> String {
+        var parts = [
+            "This request is the user's own scheduled task \"\(title)\", which Nook runs by itself; the user is not watching and reads the answer later from a notice.",
+            "Work as their personal secretary and do the whole task in one answer, without asking questions first.",
+            "Look everything up yourself in every source the task is about. When it asks for everything or names no source, check mail (inbox_mail), chats in every chat app (unread and unanswered ones), the calendar (today and what comes, new invitations), reminders and open loops, pull requests, coding agents that wait for the user, and connected services; open what matters in full."
+        ]
+        if let since {
+            parts.append("The previous run was at \(iso(since)): report what is new or changed since then, plus what still waits for the user.")
+        }
+        parts += [
+            "Start with a short overview, most important first, grouped per topic, not per source.",
+            "For everything that needs the user, prepare the step so they only approve it or say what to change: a reply ready to send for every mail (compose_mail with reply_to set to its id, one per mail) and for every chat message (whatsapp_send or chat_send), accepting or moving an appointment or making one (calendar tools), a reminder or open loop for every commitment or deadline, a review or merge for a pull request that is ready, an answer for a coding agent that waits. Write each draft in the language of the person it goes to and in the user's own style.",
+            "Nothing is sent or changed without the user's approval; never say you did something you only proposed.",
+            "End with what the user has to decide, one short line each."
+        ]
+        parts.append(quiet
+            ? "When nothing new needs the user, answer only \(nothingNew) and nothing else: Nook then does not disturb them."
+            : "When nothing needs the user, say so in one line.")
+        return parts.joined(separator: " ")
+    }
+
+    /// The personal secretary in one click: a briefing each morning, a quiet check at midday that only speaks up when
+    /// something new needs the user, and a wrap-up at the end of the working day that prepares tomorrow. Fixed times, so
+    /// nothing runs (and costs) at night. The prompts are in the user's language, since they are the request Nook answers.
+    static func secretary() -> [Draft] {
+        [
+            Draft(title: tr("automation.secretary.morning.title"), prompt: tr("automation.secretary.morning.prompt"),
+                  rule: .fixedTime(hour: 8, minute: 0, weekdays: [])),
+            Draft(title: tr("automation.secretary.midday.title"), prompt: tr("automation.secretary.midday.prompt"),
+                  rule: .fixedTime(hour: 13, minute: 0, weekdays: [2, 3, 4, 5, 6]), quiet: true),
+            Draft(title: tr("automation.secretary.evening.title"), prompt: tr("automation.secretary.evening.prompt"),
+                  rule: .fixedTime(hour: 17, minute: 30, weekdays: [2, 3, 4, 5, 6]))
+        ]
+    }
+
+    private static func iso(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 }

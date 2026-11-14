@@ -17,6 +17,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   by the run itself. Nook's own tasks run without the switch for agent tasks, a morning overview the Mac slept through
   runs when it wakes, and you can also pick *Nook Chat* as the destination in Settings › Automation › Scheduled tasks.
 
+- Nook as your personal secretary: automations work across everything Nook sees (mail, every chat app, calendar,
+  reminders, pull requests, agents, connected services). Each run reports what is new since the last one and prepares
+  every reply and action so you only approve or say what to change. Checks through the day can stay quiet until
+  something new needs you, and *Set up personal secretary* (or asking for one in the chat) adds a morning briefing, a
+  quiet midday check and an end-of-day wrap-up.
+
 - Better mail in Nook Chat: replies go out as Mail's own reply to the message (same thread and account) instead of a new
   mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
   mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.

@@ -14,6 +14,11 @@ struct ScheduledTasksView: View {
     @State private var editing: EditorTarget?
     @State private var deleting: ScheduledTask?
 
+    /// Every task of the secretary is there already.
+    private var hasSecretary: Bool {
+        NookSchedule.secretary().allSatisfy { draft in store.tasks.contains { $0.target.isNook && $0.title == draft.title } }
+    }
+
     private struct EditorTarget: Identifiable {
         let id = UUID()
         var existing: ScheduledTask?
@@ -59,6 +64,12 @@ struct ScheduledTasksView: View {
             if !store.tasks.isEmpty {
                 Button(tr("sched.new")) { editing = EditorTarget(existing: nil) }
                     .controlSize(.large)
+            }
+            // The personal secretary in one click: a morning briefing, a quiet midday check and a wrap-up for Nook Chat.
+            if !hasSecretary {
+                Button(tr("automation.secretary.add")) { AppModel.addSecretary() }
+                    .controlSize(.large)
+                    .help(tr("automation.secretary.help"))
             }
             Spacer()
             Button(tr("settings2.done"), action: onClose)
@@ -281,6 +292,8 @@ private struct ScheduledTaskEditor: View {
     @State private var destination: Destination
     @State private var sessionID: UUID?
     @State private var fresh: Bool
+    /// Nook Chat only speaks up when something new needs the user.
+    @State private var quiet: Bool
     @State private var rules: WebhookRules
     @State private var showsDeliveries = false
     @StateObject private var secretCopied = CopiedMoment()
@@ -303,6 +316,7 @@ private struct ScheduledTaskEditor: View {
         _destination = State(initialValue: destination)
         _sessionID = State(initialValue: sessionID)
         _fresh = State(initialValue: fresh)
+        _quiet = State(initialValue: existing.map { ScheduledTaskStore.shared.isQuiet($0.id) } ?? false)
         _path = State(initialValue: path)
         _provider = State(initialValue: provider)
         _rules = State(initialValue: existing.map { ScheduledTaskStore.shared.webhookRules(for: $0.id) } ?? WebhookRules())
@@ -375,6 +389,14 @@ private struct ScheduledTaskEditor: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        Toggle(tr("automation.sched.quiet"), isOn: $quiet)
+                            .compactSwitch()
+                        Text(tr("automation.sched.quiet.hint"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 field(tr("sched.field.schedule")) { scheduleEditor }
                 if kind == .webhook {
@@ -766,7 +788,8 @@ private struct ScheduledTaskEditor: View {
         if cleaned.coalesceSeconds > 0 {
             cleaned.coalesceSeconds = min(max(cleaned.coalesceSeconds, WebhookRules.coalesceRange.lowerBound), WebhookRules.coalesceRange.upperBound)
         }
-        store.save(task, permission: kind == .webhook || destination == .nook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules())
+        store.save(task, permission: kind == .webhook || destination == .nook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules(),
+                   quiet: destination == .nook && quiet)
         onDone()
     }
 

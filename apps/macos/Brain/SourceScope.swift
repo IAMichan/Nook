@@ -497,7 +497,7 @@ enum SourceCapabilities {
         "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
         "chat_inbox": "chats van al je chatapps lezen", "chat_send": "chatbericht sturen",
         "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "mac_status": "processor, geheugen, batterij en schijf", "network_status": "IP-adressen van deze Mac", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
-        "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)", "schedule_task": "automatisering maken (jij keurt goed)", "list_scheduled_tasks": "automatiseringen bekijken",
+        "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)", "schedule_task": "automatisering maken (jij keurt goed)", "set_up_secretary": "persoonlijke secretaris instellen (jij keurt goed)", "list_scheduled_tasks": "automatiseringen bekijken",
         "trash_mail": "mail naar prullenmand", "mark_mail": "mail markeren (gelezen, vlag)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen", "read_open_app": "app naast de chat lezen",

@@ -445,7 +445,7 @@ struct ChatIntent: Equatable {
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
-        .schedule: ["schedule_task", "list_scheduled_tasks"],
+        .schedule: ["schedule_task", "set_up_secretary", "list_scheduled_tasks"],
         .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
@@ -467,7 +467,7 @@ struct ChatIntent: Equatable {
     /// een overleg" also matches the calendar, which comes first).
     static func schedules(_ text: String) -> Bool {
         let every = #"\b(elke|iedere|every|each|jeden|jede|chaque|tous les|toutes les|cada|todos los|todas las)\s+(dag|ochtend|morgen|middag|avond|nacht|week|maand|werkdag|uur|kwartier|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|day|morning|afternoon|evening|night|week|month|weekday|workday|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tag|abend|woche|monat|werktag|stunde|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|jour|jours|matin|soir|semaine|mois|heure|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|d[ií]a|d[ií]as|ma[ñn]ana|tarde|noche|semana|mes|hora|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"#
-        let named = #"\b(dagelijks|wekelijks|maandelijks|daily|weekly|monthly|täglich|wöchentlich|monatlich|quotidien(ne)?|hebdomadaire|diario|diariamente|semanal)\b|automatiser|automatisering|\bautomation|\bautomate\b|automatisier|automatización|automatizar|geplande taak|scheduled task|geplante aufgabe|tâche planifiée|tarea programada|\broutine\b"#
+        let named = #"\b(dagelijks|wekelijks|maandelijks|daily|weekly|monthly|täglich|wöchentlich|monatlich|quotidien(ne)?|hebdomadaire|diario|diariamente|semanal)\b|automatiser|automatisering|\bautomation|\bautomate\b|automatisier|automatización|automatizar|geplande taak|scheduled task|geplante aufgabe|tâche planifiée|tarea programada|\broutine\b|secretaresse|secretaris|\bsecretary|sekretär|secrétaire|secretari[oa]\b|persoonlijke assistent|personal assistant|persönliche[rn]? assistent|houd (alles|me) bij|keep (track of|me on top of) (everything|it all)"#
         return text.range(of: every, options: .regularExpression) != nil || text.range(of: named, options: .regularExpression) != nil
     }
 

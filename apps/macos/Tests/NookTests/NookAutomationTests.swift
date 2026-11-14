@@ -112,7 +112,48 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertTrue(note.contains("without asking questions first"))
     }
 
+    func testTheRunWorksAsASecretaryAcrossEverySource() {
+        let note = NookSchedule.runNote(title: "Middagcheck", since: now, quiet: true)
+        for part in ["personal secretary", "chats in every chat app", "calendar", "pull requests", "coding agents",
+                     "whatsapp_send or chat_send", "approve it or say what to change", "The previous run was at", NookSchedule.nothingNew] {
+            XCTAssertTrue(note.contains(part), part)
+        }
+        let open = NookSchedule.runNote(title: "Ochtend")
+        XCTAssertFalse(open.contains(NookSchedule.nothingNew), "an overview always answers")
+        XCTAssertFalse(open.contains("previous run"))
+    }
+
+    func testNothingNewIsRecognizedAlone() {
+        XCTAssertTrue(NookSchedule.isNothingNew("NOTHING_NEW"))
+        XCTAssertTrue(NookSchedule.isNothingNew("**nothing new.**\n"))
+        XCTAssertFalse(NookSchedule.isNothingNew("NOTHING_NEW, but Lisa wrote about the invoice"))
+    }
+
+    func testChecksThroughTheDayAreQuietByDefault() {
+        XCTAssertEqual(NookSchedule.parse(["prompt": "p", "schedule": "interval", "every_minutes": 60], now: now).draft?.quiet, true)
+        XCTAssertEqual(NookSchedule.parse(["prompt": "p", "schedule": "daily", "time": "08:00"], now: now).draft?.quiet, false)
+        XCTAssertEqual(NookSchedule.parse(["prompt": "p", "schedule": "daily", "time": "08:00", "quiet": true], now: now).draft?.quiet, true)
+    }
+
+    func testTheSecretaryCoversTheDayWithoutNightRuns() {
+        let tasks = NookSchedule.secretary()
+        XCTAssertEqual(tasks.count, 3)
+        XCTAssertEqual(tasks.map(\.rule), [.fixedTime(hour: 8, minute: 0, weekdays: []),
+                                           .fixedTime(hour: 13, minute: 0, weekdays: [2, 3, 4, 5, 6]),
+                                           .fixedTime(hour: 17, minute: 30, weekdays: [2, 3, 4, 5, 6])])
+        XCTAssertEqual(tasks.map(\.quiet), [false, true, false], "only the midday check stays silent when nothing is new")
+        // The texts are the user's own language (tr); every task has a name and a request of its own.
+        XCTAssertEqual(Set(tasks.map(\.title)).count, 3)
+        XCTAssertTrue(tasks.allSatisfy { !$0.prompt.isEmpty && $0.prompt != $0.title })
+    }
+
     // MARK: Intent
+
+    func testAskingForASecretaryOffersIt() {
+        for text in ["wees mijn persoonlijke secretaris", "I want a secretary that keeps track of everything"] {
+            XCTAssertTrue(ChatIntent.detect(text).tools.contains("set_up_secretary"), text)
+        }
+    }
 
     func testRecurringRequestsOfferTheSchedulingTools() {
         for text in ["Check elke ochtend om 8 mijn mail en zet antwoorden klaar", "every weekday summarize my inbox",
