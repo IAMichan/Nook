@@ -28,7 +28,7 @@ final class NotchController {
         positionPanel()
     }
 
-    let viewModel = NotchViewModel()
+    let viewModel = PanelViewModel()
     private var panel: NotchPanel?
     private var geometry = NotchGeometry.placeholder
     private var monitors: [Any] = []
@@ -47,7 +47,7 @@ final class NotchController {
 
     /// Notch on every screen: the other screens show an idle copy. When idle, the real Nook moves
     /// to the screen with the mouse, so you can open it there.
-    private var mirrors: [String: (panel: NotchPanel, viewModel: NotchViewModel)] = [:]
+    private var mirrors: [String: (panel: NotchPanel, viewModel: PanelViewModel)] = [:]
     private weak var app: AppModel?
 
     private var settings: AppSettings { AppSettings.shared }
@@ -512,7 +512,7 @@ final class NotchController {
         // When Nook follows the mouse to another screen, the copy that stood there moves to the screen Nook left
         // instead of being torn down and built again: no new window has to render its first frame, and what it shows
         // keeps running without a hitch.
-        var spare: [(panel: NotchPanel, viewModel: NotchViewModel)] = []
+        var spare: [(panel: NotchPanel, viewModel: PanelViewModel)] = []
         for (key, mirror) in mirrors where !wantedKeys.contains(key) {
             spare.append(mirror)
             mirrors[key] = nil
@@ -532,7 +532,7 @@ final class NotchController {
                 mirrors[key] = existing
                 continue
             }
-            let mirrorModel = NotchViewModel()
+            let mirrorModel = PanelViewModel()
             mirrorModel.canvas = Self.mirrorSize
             mirrorModel.app = app
             mirrorModel.geometry = mirrorGeometry

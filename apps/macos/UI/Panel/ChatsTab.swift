@@ -388,7 +388,7 @@ final class ChatsCountsMemo {
 /// read in Nook (which stays after a restart); "Mark as read in <app>" passes that on to the app itself.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     /// Shows the panel footer at the foot of the leftmost column (under the sidebar's views and apps), where Agents has it
     /// under its sessions, so the refresh and update button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?

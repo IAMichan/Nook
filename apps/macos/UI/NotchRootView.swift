@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The entire notch: a single black shape that changes size, with Nook always on the left.
 struct NotchRootView: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     /// The notch's state, size and strips, which the view model publishes apart from the rest.
     @ObservedObject private var surface: NotchSurface
     /// For the accent, which builds the content anew. Not `AppModel`: it publishes a few times a second while agents work,
@@ -12,7 +12,7 @@ struct NotchRootView: View {
     @State private var orbMotion = NookMotion()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(viewModel: NotchViewModel) {
+    init(viewModel: PanelViewModel) {
         self.viewModel = viewModel
         surface = viewModel.surface
     }
@@ -116,7 +116,7 @@ struct NotchRootView: View {
 
     /// Nook without a bar, in the same ring as the closed notch and the open panel.
     private var bareOrb: some View {
-        let side = NotchViewModel.floatingOrbSide
+        let side = PanelViewModel.floatingOrbSide
         return RestingNook(viewModel: viewModel, pointerInside: viewModel.pointerInside, orbSize: 28, ringSide: side,
                            motion: orbMotion)
             .frame(width: side, height: side)
@@ -449,7 +449,7 @@ struct NotchRootView: View {
 /// Nook in the resting notch (idle, music, or floating and bare) inside his task ring: thinking along while an agent or a
 /// chat works, waiting when one asks for you, and at rest only looking up when the pointer comes near.
 private struct RestingNook: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let pointerInside: Bool
     let orbSize: CGFloat
     /// The most room the ring may take.
@@ -520,7 +520,7 @@ private struct NowPlayingBars: View {
 /// A card in the notch, with the app's replies, drafts and attachments.
 private struct NotchCard: View {
     /// Not observed: the card only calls it.
-    let viewModel: NotchViewModel
+    let viewModel: PanelViewModel
     let card: NookCard
     let paused: Bool
     @EnvironmentObject private var app: AppModel
@@ -546,7 +546,7 @@ private struct NotchCard: View {
 /// Nook in the expanded notch. In the open panel he takes the tab's mood (its agents, its chats), so this observes the
 /// app; a card gives its own.
 private struct ExpandedOrb: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab?
     let mood: NookMood
     let size: CGFloat
@@ -596,7 +596,7 @@ struct PanelOrb: View {
         return max(ringBottom - PanelView.headerHeight, 0) + NookTheme.Spacing.lg
     }
 
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let mood: NookMood
     let size: CGFloat
     var ring = true
@@ -784,7 +784,7 @@ extension PanelOrb {
 /// double-click it to go back to the size each tab (or a conversation card) starts at. The top stays under the camera. A small grip in each bottom
 /// corner shows that it can be done, and the edge under the pointer lights up.
 private struct NotchResizeHandles: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     /// How far into the notch a side reaches: inside the margin around the content, so nothing there is covered.
     private let thickness: CGFloat = 12
     private let corner: CGFloat = 32
@@ -874,7 +874,7 @@ private struct ResizeGrip: Shape {
 private extension View {
     /// In floating mode, you can drag Nook by this component. Tapping continues to work as expected.
     /// With ⌥ held, the drag attaches the window you drop Nook on to the chat instead (any placement).
-    func floatingDrag(_ viewModel: NotchViewModel) -> some View {
+    func floatingDrag(_ viewModel: PanelViewModel) -> some View {
         simultaneousGesture(
             DragGesture(minimumDistance: 4)
                 .onChanged { _ in
@@ -924,7 +924,7 @@ private struct TrackCover: View {
 /// and margins in every strip, so they read as one kind of thing.
 private struct StripLine<Content: View>: View {
     var trailing: CGFloat = NookTheme.Spacing.xl
-    /// The height the notch makes room for under itself (see `NotchViewModel`'s size for each strip).
+    /// The height the notch makes room for under itself (see `PanelViewModel`'s size for each strip).
     var height: CGFloat = 40
     @ViewBuilder var content: () -> Content
 

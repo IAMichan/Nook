@@ -4,7 +4,7 @@ import SwiftUI
 /// "Add project" in the Agents list: the button asks the Agents tab for `AddProjectPalette`, the same kind of palette the
 /// new-session button opens.
 struct AddProjectButton: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
 
     var body: some View {
         Button { viewModel.requestAddProject() } label: { PanelHeaderIcon(symbol: "folder.badge.plus", active: viewModel.addsProject) }

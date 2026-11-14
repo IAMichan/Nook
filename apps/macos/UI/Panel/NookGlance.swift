@@ -10,7 +10,7 @@ struct GlanceAgent: Identifiable, Equatable {
         static func < (lhs: State, rhs: State) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    /// What `NotchViewModel.selectedAgentID` takes to open it: the session's id, or "run:<uuid>" for a Nook run.
+    /// What `PanelViewModel.selectedAgentID` takes to open it: the session's id, or "run:<uuid>" for a Nook run.
     var id: String
     /// The agent's display name, for its logo ("Claude Code", "Codex").
     var agent: String

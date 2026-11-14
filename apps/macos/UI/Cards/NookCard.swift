@@ -53,7 +53,7 @@ extension ChoiceOption {
     }
 }
 
-/// A prompt with options. `id` references a handler that calls `NotchViewModel.choose`.
+/// A prompt with options. `id` references a handler that calls `PanelViewModel.choose`.
 struct ChoiceSet: Equatable {
     var id: String
     var options: [ChoiceOption]

@@ -8,7 +8,7 @@ struct SidePullRequestTab: Identifiable, Equatable {
     var request: PullRequestOpenRequest?
 }
 
-/// What a session had open in its side and bottom panels when you went to another one (`NotchViewModel.sessionLayouts`).
+/// What a session had open in its side and bottom panels when you went to another one (`PanelViewModel.sessionLayouts`).
 struct SessionLayout {
     var sideTool: SessionTool
     var sideTabs: [SessionTool]
@@ -26,7 +26,7 @@ struct SessionLayout {
 }
 
 /// What only the notch itself draws: its state and size, the pointer on it, and the strip under it. Published apart from
-/// the rest of `NotchViewModel`, which the main window observes: a card, a notice, the pointer on the notch, or dictation
+/// the rest of `PanelViewModel`, which the main window observes: a card, a notice, the pointer on the notch, or dictation
 /// updating its card several times a second redraws the notch, not the whole window as well. Read and written through
 /// the view model's properties of the same names.
 @MainActor
@@ -55,8 +55,10 @@ final class NotchSurface: ObservableObject {
     @Published var noticeSeconds: TimeInterval?
 }
 
+/// The state of the panel every surface shows (the main window, the notch, sheets): its tab, open sessions, sheets,
+/// notices and layout. What only the notch draws lives apart, in `NotchSurface`.
 @MainActor
-final class NotchViewModel: ObservableObject {
+final class PanelViewModel: ObservableObject {
     /// The notch's own shape and strips, published apart (see `NotchSurface`). Written only when they change; the
     /// state and the strip's stamp on every write, as showing the same state again redraws the notch on purpose.
     let surface = NotchSurface()
@@ -145,7 +147,7 @@ final class NotchViewModel: ObservableObject {
 
     /// Assigns only a new value: a `@Published` write publishes even when nothing changed, and a session switch writes
     /// most panel properties back to what they already are.
-    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<NotchViewModel, Value>, to value: Value) {
+    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<PanelViewModel, Value>, to value: Value) {
         if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
@@ -276,8 +278,8 @@ final class NotchViewModel: ObservableObject {
 
     /// A tool is open in one panel at a time (a terminal or the web view can only be in one place): opening it in one
     /// closes its tab in the other, which then shows its next tab or the list of tools.
-    private func take(_ tool: SessionTool, from shown: ReferenceWritableKeyPath<NotchViewModel, SessionTool>,
-                      tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>) {
+    private func take(_ tool: SessionTool, from shown: ReferenceWritableKeyPath<PanelViewModel, SessionTool>,
+                      tabs: ReferenceWritableKeyPath<PanelViewModel, [SessionTool]>) {
         guard self[keyPath: tabs].contains(tool) else { return }
         self[keyPath: tabs].removeAll { $0 == tool }
         if self[keyPath: shown] == tool { self[keyPath: shown] = self[keyPath: tabs].first ?? .picker }
@@ -452,7 +454,7 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// A task open inside the panel (new session, changes, commit…). Resizes the panel to give it room.
-    @Published var sheet: NotchSheet? {
+    @Published var sheet: PanelSheet? {
         didSet {
             guard sheet != oldValue else { return }
             withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
@@ -462,7 +464,7 @@ final class NotchViewModel: ObservableObject {
 
     /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`). Remembered,
     /// so the window opens where you left it.
-    @Published var windowTab: PanelTab = NotchViewModel.savedWindowTab {
+    @Published var windowTab: PanelTab = PanelViewModel.savedWindowTab {
         didSet { UserDefaults.standard.set(windowTab.rawValue, forKey: "window.lastTab") }
     }
 
@@ -475,7 +477,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
     /// A task open in the main window (changes, commit…): the window's counterpart of `sheet`.
-    @Published var windowSheet: NotchSheet?
+    @Published var windowSheet: PanelSheet?
 
     /// While the main window is open (and the panel is not), the tabs and tasks you ask for open there instead of in the
     /// notch, also when it is behind other windows or minimized: View on a notch card brings the window forward on it.
@@ -836,7 +838,7 @@ final class NotchViewModel: ObservableObject {
     /// it at once. `button` and `action` add the strip's own button next to the OK (View, Open). `inline`: an agent
     /// notice that stays in the notch's own row when compact.
     func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, inline: Bool = false,
-                agent: String? = nil, seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
+                agent: String? = nil, seconds: TimeInterval = PanelViewModel.doneSeconds, action: (() -> Void)? = nil) {
         doneButtonTitle = button
         doneButtonAction = action
         doneTone = tone
@@ -1114,7 +1116,7 @@ final class NotchViewModel: ObservableObject {
 
     /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab; in the main window while that is
     /// open.
-    func open(_ sheet: NotchSheet) {
+    func open(_ sheet: PanelSheet) {
         if routesToWindow {
             windowTab = .agents
             windowSheet = sheet
@@ -1339,7 +1341,7 @@ final class NotchViewModel: ObservableObject {
     }
 }
 
-/// A notice shown in the open panel's bar; see `NotchViewModel.notify`.
+/// A notice shown in the open panel's bar; see `PanelViewModel.notify`.
 struct PanelNotice: Identifiable {
     let id = UUID()
     let message: String

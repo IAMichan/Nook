@@ -77,7 +77,7 @@ struct NookToast: Identifiable, Equatable {
 /// top-right corner under the header, and only there: the key window's, else the one you opened last. Up to
 /// `ToastCenter.limit` toasts show at once as a stack: the newest in front, the older ones peeking out under it, spread
 /// out while the pointer is on the stack; more wait their turn. With none of the surfaces on screen, the notch shows
-/// them one at a time in its own confirmation strip (`NotchViewModel.showToast`). The same message twice only restarts
+/// them one at a time in its own confirmation strip (`PanelViewModel.showToast`). The same message twice only restarts
 /// its timer. Errors stay longest, and every toast stays while the pointer is on the stack. Like every notice that
 /// closes by itself, it ends in the OK with the countdown ring of that time (`NookNotice`).
 ///

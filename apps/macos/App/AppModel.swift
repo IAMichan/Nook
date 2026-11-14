@@ -253,7 +253,7 @@ final class AppModel: ObservableObject {
     @Published var loops: [OpenLoop] = []
     @Published var upcoming: [CalEvent] = []
 
-    var viewModel: NotchViewModel { notch.viewModel }
+    var viewModel: PanelViewModel { notch.viewModel }
 
     var bag = Set<AnyCancellable>()
     var hotKeys: [HotKey] = []

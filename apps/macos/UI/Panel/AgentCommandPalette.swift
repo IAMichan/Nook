@@ -9,7 +9,7 @@ import SwiftUI
 /// actions; ↑/↓ move, Return runs, Esc closes (or goes back from a list it stepped into).
 struct AgentCommandPalette: View {
     @EnvironmentObject private var app: AppModel
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     /// The rows of the Agents list, running and earlier.
     let sessions: [AgentListItem]
     /// The session that is open, if one is.
@@ -25,7 +25,7 @@ struct AgentCommandPalette: View {
     @State private var sublist: Sublist?
     @FocusState private var focused: Bool
 
-    init(viewModel: NotchViewModel, sessions: [AgentListItem], current: AgentListItem?, startsInProjects: Bool = false,
+    init(viewModel: PanelViewModel, sessions: [AgentListItem], current: AgentListItem?, startsInProjects: Bool = false,
          close: @escaping () -> Void) {
         self.viewModel = viewModel
         self.sessions = sessions

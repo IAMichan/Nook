@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// The Nook tab: home and chat in one. An empty conversation shows your day and suggestions; a running one the thread.
 struct NookChatTab: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
 
@@ -15,7 +15,7 @@ struct NookChatTab: View {
 
 /// The chat, shared by the notch and the main window. `compact` is the notch version: a narrower list of Nooks.
 struct NookChatView: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     @ObservedObject var chat: NookChat
     var compact = true
     /// Shows the panel footer under the list of Nooks, where Agents has it under its sessions, so the refresh and update

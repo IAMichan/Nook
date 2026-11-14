@@ -9,7 +9,7 @@ import AppKit
 /// session put it away with the button at the end of its title row or the left toggle in the session's header.
 struct AgentsTab: View {
     @Environment(\.panelSidebar) private var sidebar
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
@@ -176,7 +176,7 @@ struct AgentsTab: View {
         }
         .onChange(of: selectedID(selection)) { _, new in
             if Self.isSession(new) { SessionHistory.shared.opened(new) }
-            // The session you left is marked seen by `NotchViewModel.selectedAgentID`. The one you open, and the reads
+            // The session you left is marked seen by `PanelViewModel.selectedAgentID`. The one you open, and the reads
             // of its neighbours, wait until its first frame is drawn: each visit redraws the whole tab.
             Task { @MainActor in
                 await Task.yield()

@@ -23,7 +23,7 @@ final class UIConsistencyTests: XCTestCase {
         "UI/Workspace/WorkspaceComponents.swift",
         // A command's own terminal colors (256-color cube, RGB) in a tool call's output.
         "UI/Workspace/TerminalColors.swift",
-        "UI/Pills/Music/MusicControls.swift",
+        "UI/Panel/Music/MusicControls.swift",
         "App/MCPSettingsSection.swift",
         "App/Settings/SettingsStyle.swift",
         "App/Settings/SettingsView+Appearance.swift",
@@ -131,7 +131,7 @@ final class UIConsistencyTests: XCTestCase {
     /// previous, is the one exception.
     func testSearchFieldsAreTheSharedComponent() {
         let found = offenders(#"Image\((systemName|icon): "magnifyingglass"\)"#) {
-            $0 == "UI/Components/PanelBlocks.swift" || $0 == "UI/Pills/TimelineFind.swift"
+            $0 == "UI/Components/PanelBlocks.swift" || $0 == "UI/Panel/TimelineFind.swift"
         }
         XCTAssertEqual(found, [], "use NookSearchField (UI/Components/PanelBlocks.swift)")
     }
@@ -147,7 +147,7 @@ final class UIConsistencyTests: XCTestCase {
 
     /// Files that still name a `Label`'s icon with `systemImage:` while another change rewrites them (the chats). Move
     /// each off this list once that work lands; keep in step with `LABEL_SYSTEM_IMAGE_PENDING` in `scripts/ui-lint.sh`.
-    private static let labelSystemImagePending = ["UI/Chat/", "UI/Components/Chat", "UI/Pills/Chats"]
+    private static let labelSystemImagePending = ["UI/Chat/", "UI/Components/Chat", "UI/Panel/Chats"]
 
     /// A `Label`'s icon goes through `Image(icon:)` too: `Label(_:icon:)` (`NookIcon.swift`), never
     /// `Label(_:systemImage:)`, which draws the raw SF Symbol beside Nook's Lucide icons.
@@ -211,7 +211,7 @@ final class UIConsistencyTests: XCTestCase {
     /// `PullRequestIcon`, and the drawn marks only through `PullRequestStateIcon` or `NookSymbol`.
     func testPullRequestIconsAreTheSharedComponent() {
         let found = offenders(#""arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\("#) {
-            ["UI/Components/PullRequestIcons.swift", "UI/Components/NookSymbol.swift", "UI/Pills/AgentsExtras.swift"].contains($0)
+            ["UI/Components/PullRequestIcons.swift", "UI/Components/NookSymbol.swift", "UI/Panel/AgentsExtras.swift"].contains($0)
         }
         XCTAssertEqual(found, [], "use PullRequestIcon / PullRequestStateIcon (UI/Components/PullRequestIcons.swift)")
     }

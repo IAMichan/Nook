@@ -70,7 +70,7 @@ enum SessionTool: String {
 /// When the agent started a process or opened a page that you have not looked at yet, the side panel's icon carries a
 /// small dot. The same goes for a plan or another output the agent made.
 struct SessionToolSwitch: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     /// The session's folder; empty means no terminal and no changes, only the browser.
     let directory: String
     /// The agent made a plan or another output you have not seen yet.
@@ -237,8 +237,8 @@ private enum SessionWorkbenchSize {
 
 /// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
 struct SessionPanelSlot {
-    let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
-    let tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>
+    let tool: ReferenceWritableKeyPath<PanelViewModel, SessionTool>
+    let tabs: ReferenceWritableKeyPath<PanelViewModel, [SessionTool]>
     let closeHelp: String
 
     @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
@@ -252,7 +252,7 @@ struct SessionPanelSlot {
 /// file in the File tab (`SessionSideLink`). With room to spare the session panel is a card
 /// on the right of the conversation until you close it, with the tool panel to its right.
 struct SessionWorkbench<Conversation: View>: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let directory: String
     /// A session Nook runs: its changes open in its own review, with comments for the agent.
     var runID: UUID? = nil
@@ -580,7 +580,7 @@ struct SessionWorkbench<Conversation: View>: View {
             closeTab(tool, in: slot)
             return
         }
-        if slot.tool == \NotchViewModel.bottomTool { viewModel.bottomTool = .conversation } else { viewModel.toggleSidePanel() }
+        if slot.tool == \PanelViewModel.bottomTool { viewModel.bottomTool = .conversation } else { viewModel.toggleSidePanel() }
     }
 
     /// Whether a panel shows the Changes tab.
@@ -740,9 +740,9 @@ struct SessionWorkbench<Conversation: View>: View {
                          showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
                          closeTab: { closeSessionTab($0, in: slot) },
                          close: {
-                             if slot.tool == \NotchViewModel.sessionTool { viewModel.toggleSidePanel() } else { viewModel.bottomTool = .conversation }
+                             if slot.tool == \PanelViewModel.sessionTool { viewModel.toggleSidePanel() } else { viewModel.bottomTool = .conversation }
                          },
-                         subThread: slot.tool == \NotchViewModel.sessionTool ? shownSubThread : nil,
+                         subThread: slot.tool == \PanelViewModel.sessionTool ? shownSubThread : nil,
                          openSubThreadHere: openSubThreadHere,
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
@@ -760,7 +760,7 @@ struct SessionWorkbench<Conversation: View>: View {
                              }
                          })
             .environment(\.sidePanelTakesFocus, panelTakesFocus)
-            .focusArea(slot.tool == \NotchViewModel.bottomTool ? .bottomPanel : .sidePanel)
+            .focusArea(slot.tool == \PanelViewModel.bottomTool ? .bottomPanel : .sidePanel)
     }
 
     /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
@@ -790,7 +790,7 @@ struct SessionWorkbench<Conversation: View>: View {
         let visible = tabs(slot)
         guard let index = visible.firstIndex(of: item) else { return }
         let rest = visible.filter { $0 != item }
-        viewModel.closedSessionTabs.push(ClosedSessionTab(tool: item, bottom: slot.tool == \NotchViewModel.bottomTool,
+        viewModel.closedSessionTabs.push(ClosedSessionTab(tool: item, bottom: slot.tool == \PanelViewModel.bottomTool,
                                                           pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }

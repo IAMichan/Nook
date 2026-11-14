@@ -5,7 +5,7 @@ import SwiftUI
 /// a separate window. Settings (the gear) is the one place for configuration. The main window shows this same panel
 /// (`inWindow`), with the window's own tab and task and more room.
 struct PanelView: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab
     /// Room on the left of the header row for Nook, who sits there in the notch; the content below runs full width.
     var headerInset: CGFloat = 0
@@ -50,7 +50,7 @@ struct PanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let sheet {
-                NotchSheetView(sheet: sheet, headerInset: headerInset, close: closeSheet) {
+                PanelSheetView(sheet: sheet, headerInset: headerInset, close: closeSheet) {
                     closeSheet()
                     if !inWindow { viewModel.show(.idle) }
                 }
@@ -266,7 +266,7 @@ struct PanelView: View {
     }
 
     /// The task open over the tab: the notch's, or the main window's.
-    private var sheet: NotchSheet? { inWindow ? viewModel.windowSheet : viewModel.sheet }
+    private var sheet: PanelSheet? { inWindow ? viewModel.windowSheet : viewModel.sheet }
 
     private func closeSheet() {
         if inWindow { viewModel.windowSheet = nil } else { viewModel.sheet = nil }
@@ -400,10 +400,10 @@ private final class MeasuredWidth {
 /// compact notice in the panel's top-right corner, on top of the toasts, instead of a card over the whole notch. Hidden
 /// while the session that asks is on screen, which shows the whole request itself.
 struct PanelApprovalBar: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab
     /// The task open over the tab, if any: the session behind it is not on screen.
-    let sheet: NotchSheet?
+    let sheet: PanelSheet?
     @ObservedObject var hub: AgentHub
     /// Not observed: it changes with every streamed token, and `AppModel` already redraws when a session it runs asks
     /// for an approval or has a question.
@@ -541,8 +541,8 @@ struct PanelApprovalBar: View {
 
 /// A task inside the notch or the main window: one clear title, Back to return, and the task itself. Escape also goes
 /// back.
-struct NotchSheetView: View {
-    let sheet: NotchSheet
+struct PanelSheetView: View {
+    let sheet: PanelSheet
     /// Room on the left of the title row, as in the panel header.
     var headerInset: CGFloat = 0
     /// Back: returns to the tab.

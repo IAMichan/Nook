@@ -43,7 +43,7 @@ OWN_COLORS=(
   "UI/Chat/ChatChartView.swift"
   "UI/Workspace/WorkspaceComponents.swift"
   "UI/Workspace/TerminalColors.swift"  # a command's own terminal colors (256-color cube, RGB)
-  "UI/Pills/Music/MusicControls.swift"
+  "UI/Panel/Music/MusicControls.swift"
   "App/MCPSettingsSection.swift"
   "App/Settings/SettingsStyle.swift"
   "App/Settings/SettingsView+Appearance.swift"
@@ -54,7 +54,7 @@ OWN_COLORS=(
 LABEL_SYSTEM_IMAGE_PENDING=(
   "UI/Chat/"
   "UI/Components/Chat"
-  "UI/Pills/Chats"
+  "UI/Panel/Chats"
 )
 
 status=0
@@ -92,7 +92,7 @@ grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\
   | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
 
 grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' UI App --include='*.swift' \
-  | grep -v -e '^UI/Components/PanelBlocks.swift:' -e '^UI/Pills/TimelineFind.swift:' \
+  | grep -v -e '^UI/Components/PanelBlocks.swift:' -e '^UI/Panel/TimelineFind.swift:' \
   | report "search fields are a NookSearchField (no magnifying glass and text field built inline)"
 
 grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' UI App --include='*.swift' \
@@ -116,7 +116,7 @@ grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\
   | report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)"
 
 grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' UI App --include='*.swift' \
-  | grep -v -e '^UI/Components/PullRequestIcons.swift:' -e '^UI/Components/NookSymbol.swift:' -e '^UI/Pills/AgentsExtras.swift:' \
+  | grep -v -e '^UI/Components/PullRequestIcons.swift:' -e '^UI/Components/NookSymbol.swift:' -e '^UI/Panel/AgentsExtras.swift:' \
   | report "pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)"
 
 grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)' UI App --include='*.swift' \

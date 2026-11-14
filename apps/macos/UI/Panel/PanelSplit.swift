@@ -91,7 +91,7 @@ struct PanelSplitButton: View {
 /// The second tab of split view, on the right of the current one: its name, a button that swaps it with the main tab,
 /// one that moves it into a window of its own, and the close button, over the tab itself.
 struct PanelSplitPane: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab
     let inWindow: Bool
     /// Makes this the main tab, and the main tab the one beside it.
@@ -117,7 +117,7 @@ struct PanelSplitPane: View {
 
 /// A tab as it shows beside another one or in a window of its own, without the footer the main tab has.
 struct PanelTabContent: View {
-    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab
     let inWindow: Bool
     @EnvironmentObject private var app: AppModel
