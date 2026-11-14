@@ -208,9 +208,10 @@ def sync(folder, wanted):
 selection = None
 try:
     changed = changed_files(base or "auto")
-except (OSError, subprocess.CalledProcessError):
+except (OSError, subprocess.CalledProcessError) as error:
     if base is not None:
-        raise
+        detail = (getattr(error, "stderr", None) or str(error)).strip()
+        sys.exit(f"core-tests: cannot list the change since {base}: {detail}")
     changed = None  # not a Git checkout: the full run needs no change list
 if base is not None and changed is not None:
     selection = select(changed)

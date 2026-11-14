@@ -14,9 +14,24 @@ MAX_BYTES=$((2 * 1024 * 1024))
 # Directories that may hold large vendored or media files on purpose.
 LARGE_OK=(apps/macos/Resources/ docs/assets/)
 
+# `git diff --name-only` writes a path with a non-ASCII letter, a quote or a backslash in C-style quotes
+# ("docs/caf\303\251.png"); read as is, no such file exists and the size check skipped it. printf turns the \ooo, \\,
+# \" and \t escapes back into the path (the same as in scripts/ci-changes.sh).
+unquote() {
+  local path="$1"
+  if [[ "$path" == \"*\" ]]; then
+    path="${path:1:${#path}-2}"
+    # shellcheck disable=SC2059 # the path is the format on purpose; its % are doubled first
+    printf -- "${path//\%/%%}"
+  else
+    printf '%s' "$path"
+  fi
+}
+
 problems=0
 while IFS= read -r file; do
   [ -n "$file" ] || continue
+  file="$(unquote "$file")"
   case "$file" in
     *.log | *.xcresult/* | */.DS_Store | .DS_Store | .scratch/* | */DerivedData/* | .derived-data/* | */xcuserdata/*)
       echo "::error file=$file::Generated file: remove it from the pull request (keep evidence in the PR description or .scratch/)."

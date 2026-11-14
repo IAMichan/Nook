@@ -31,8 +31,9 @@
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors, and LABEL_SYSTEM_IMAGE_PENDING to
 # UIConsistencyTests.labelSystemImagePending.
 set -uo pipefail
-# `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
-shopt -s lastpipe
+# `report` reads each check from a process substitution, so it runs in this shell and the status it sets is the one
+# the script exits with. (Not `cmd | report` with `shopt -s lastpipe`: macOS's /bin/bash 3.2 has no lastpipe, so
+# report ran in a subshell there and the script passed whatever it found.)
 cd "$(dirname "$0")/../apps/macos"
 
 OWN_COLORS=(
@@ -67,78 +68,59 @@ report() {  # $1 = rule, stdin = offending lines
   fi
 }
 
-grep -rnE '\.font\(\s*\.system\(\s*size:' NotchUI App --include='*.swift' | grep -v '^NotchUI/Theme/NookTheme.swift' \
-  | report "type comes from NookTheme.font / mono / rounded (no Font.system(size:))"
+report "type comes from NookTheme.font / mono / rounded (no Font.system(size:))" < <(grep -rnE '\.font\(\s*\.system\(\s*size:' NotchUI App --include='*.swift' | grep -v '^NotchUI/Theme/NookTheme.swift')
 
 exclude=(-e '^NotchUI/Character/')
 for file in "${OWN_COLORS[@]}"; do exclude+=(-e "^$file:"); done
-grep -rnE '\b(NS)?Color\(\s*(hex|red|white|\.sRGB)\b' NotchUI App --include='*.swift' | grep -v "${exclude[@]}" \
-  | report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))"
+report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))" < <(grep -rnE '\b(NS)?Color\(\s*(hex|red|white|\.sRGB)\b' NotchUI App --include='*.swift' | grep -v "${exclude[@]}")
 
-grep -rnE '(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
-  | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
-  | report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)"
+report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)" < <(grep -rnE '(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
+  | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift')
 
-grep -rnE '\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' NotchUI App --include='*.swift' \
-  | grep -v '^NotchUI/Theme/NookTheme.swift' \
-  | report "text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))"
+report "text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))" < <(grep -rnE '\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookTheme.swift')
 
-grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b|return \.(red|orange|yellow|green|secondary|tertiary)\b' \
-  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
-  | report "state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)"
+report "state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)" < <(grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b|return \.(red|orange|yellow|green|secondary|tertiary)\b' \
+  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift')
 
-grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:' \
-  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
-  | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
+report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))" < <(grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:' \
+  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift')
 
-grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' NotchUI App --include='*.swift' \
-  | grep -v -e '^NotchUI/Components/PanelBlocks.swift:' -e '^NotchUI/Pills/TimelineFind.swift:' \
-  | report "search fields are a NookSearchField (no magnifying glass and text field built inline)"
+report "search fields are a NookSearchField (no magnifying glass and text field built inline)" < <(grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' NotchUI App --include='*.swift' \
+  | grep -v -e '^NotchUI/Components/PanelBlocks.swift:' -e '^NotchUI/Pills/TimelineFind.swift:')
 
-grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' NotchUI App --include='*.swift' \
-  | grep -v '^NotchUI/Theme/NookIcon.swift:' \
-  | report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)"
+report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)" < <(grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookIcon.swift:')
 
 pending=()
 for prefix in "${LABEL_SYSTEM_IMAGE_PENDING[@]}"; do pending+=(-e "^$prefix"); done
-grep -rnE '\bsystemImage:' NotchUI App --include='*.swift' | grep -v "${pending[@]}" \
-  | report "labels draw their icon through Label(_:icon:) (no Label(_:systemImage:))"
+report "labels draw their icon through Label(_:icon:) (no Label(_:systemImage:))" < <(grep -rnE '\bsystemImage:' NotchUI App --include='*.swift' | grep -v "${pending[@]}")
 
-grep -rnE 'RoundedRectangle\(cornerRadius:' NotchUI App --include='*.swift' \
-  | grep -v '^NotchUI/Theme/NookTheme.swift:' \
-  | report "rounded shapes come from NookTheme.shape / .roundedBackground / .roundedStroke / .roundedClip (no RoundedRectangle built inline)"
+report "rounded shapes come from NookTheme.shape / .roundedBackground / .roundedStroke / .roundedClip (no RoundedRectangle built inline)" < <(grep -rnE 'RoundedRectangle\(cornerRadius:' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookTheme.swift:')
 
-grep -rnE '\.(background|overlay|contentShape|clipShape)\(Capsule\(' NotchUI App --include='*.swift' \
-  | report "chips and buttons sit on NookTheme.Radius.chip / .control (no Capsule behind words; Capsule is for bars and tracks)"
+report "chips and buttons sit on NookTheme.Radius.chip / .control (no Capsule behind words; Capsule is for bars and tracks)" < <(grep -rnE '\.(background|overlay|contentShape|clipShape)\(Capsule\(' NotchUI App --include='*.swift')
 
-grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
-  | grep -v '^NotchUI/Components/PanelBlocks.swift:' \
-  | report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)"
+report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)" < <(grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Components/PanelBlocks.swift:')
 
-grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' NotchUI App --include='*.swift' \
-  | grep -v -e '^NotchUI/Components/PullRequestIcons.swift:' -e '^NotchUI/Components/NookSymbol.swift:' -e '^NotchUI/Pills/AgentsExtras.swift:' \
-  | report "pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)"
+report "pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)" < <(grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' NotchUI App --include='*.swift' \
+  | grep -v -e '^NotchUI/Components/PullRequestIcons.swift:' -e '^NotchUI/Components/NookSymbol.swift:' -e '^NotchUI/Pills/AgentsExtras.swift:')
 
-grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)' NotchUI App --include='*.swift' \
-  | report "buttons show the pointing hand (.nookPlain / .nookBorderless / .nookProminent / .nookLink, not the system styles)"
+report "buttons show the pointing hand (.nookPlain / .nookBorderless / .nookProminent / .nookLink, not the system styles)" < <(grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)' NotchUI App --include='*.swift')
 
-grep -rnE '\.textFieldStyle\(\s*\.roundedBorder\s*\)' App --include='*.swift' | grep -E '^App/(Settings/|[^/]*Settings)' \
-  | report "Settings text fields use .settingsField() (no system .roundedBorder)"
+report "Settings text fields use .settingsField() (no system .roundedBorder)" < <(grep -rnE '\.textFieldStyle\(\s*\.roundedBorder\s*\)' App --include='*.swift' | grep -E '^App/(Settings/|[^/]*Settings)')
 
-grep -rnE '\.menuStyle\(\s*\.(borderlessButton|button)\s*\)' NotchUI App --include='*.swift' \
-  | report "menus show the pointing hand (.nookBorderlessButton / .nookButton, not the system menu styles)"
+report "menus show the pointing hand (.nookBorderlessButton / .nookButton, not the system menu styles)" < <(grep -rnE '\.menuStyle\(\s*\.(borderlessButton|button)\s*\)' NotchUI App --include='*.swift')
 
-grep -rnE -A3 'Image\(icon: "chevron\.(right|down|up|left)"\)' NotchUI App --include='*.swift' \
+report "folding chevrons are a DisclosureChevron (no chevron image with a rotationEffect of its own)" < <(grep -rnE -A3 'Image\(icon: "chevron\.(right|down|up|left)"\)' NotchUI App --include='*.swift' \
   | grep -E '^[^:]+-[0-9]+-.*\.rotationEffect\(' \
-  | grep -v -e '^NotchUI/Components/HoverReveal.swift-' -e '^NotchUI/Shared/PanelParts.swift-' \
-  | report "folding chevrons are a DisclosureChevron (no chevron image with a rotationEffect of its own)"
+  | grep -v -e '^NotchUI/Components/HoverReveal.swift-' -e '^NotchUI/Shared/PanelParts.swift-')
 
-grep -rnE -A1 '\.opacity\(.+ \? 1 : 0\)\s*$' NotchUI App --include='*.swift' \
+report "controls hidden at rest use .revealOnHover (no opacity and allowsHitTesting by hand)" < <(grep -rnE -A1 '\.opacity\(.+ \? 1 : 0\)\s*$' NotchUI App --include='*.swift' \
   | grep -E '^[^:]+-[0-9]+-\s*\.allowsHitTesting\(' \
-  | grep -v '^NotchUI/Components/HoverReveal.swift-' \
-  | report "controls hidden at rest use .revealOnHover (no opacity and allowsHitTesting by hand)"
+  | grep -v '^NotchUI/Components/HoverReveal.swift-')
 
-grep -rnE 'dateFormat\s*=\s*"H{1,2}:mm"' NotchUI App --include='*.swift' \
-  | report "clock times come from NookDates.clock / clockOrDay / dayAndClock (no DateFormatter of a view's own for HH:mm)"
+report "clock times come from NookDates.clock / clockOrDay / dayAndClock (no DateFormatter of a view's own for HH:mm)" < <(grep -rnE 'dateFormat\s*=\s*"H{1,2}:mm"' NotchUI App --include='*.swift')
 
 exit $status

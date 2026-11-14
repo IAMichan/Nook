@@ -20,8 +20,9 @@ BASE=""
 HEAD_REV="HEAD"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base) BASE="${2:-}"; shift 2 ;;
-    --head) HEAD_REV="${2:-}"; shift 2 ;;
+    # `shift 2` with only the flag left shifts nothing, and the loop never ended.
+    --base) BASE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --head) HEAD_REV="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) SCENARIO="$1"; shift ;;
   esac
