@@ -62,9 +62,8 @@ struct MemoryItem: Codable, Equatable, Identifiable {
     func currentStrength(at now: Date = Date()) -> Double {
         if pinned || origin == .told || origin == .imported { return strength }
         let reference = max(updated, lastUsed ?? updated)
-        let days = max(0, now.timeIntervalSince(reference) / 86_400)
-        let halfLife: Double = kind == .lesson ? 45 : 90
-        return strength * pow(0.5, days / halfLife)
+        let halfLifeDays: Double = kind == .lesson ? 45 : 90
+        return Decay.value(strength, elapsed: now.timeIntervalSince(reference), halfLife: halfLifeDays * 86_400)
     }
 }
 

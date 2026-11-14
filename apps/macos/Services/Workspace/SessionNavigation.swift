@@ -77,8 +77,7 @@ struct SessionUsage: Codable, Equatable, Sendable {
     /// A session never opened scores 0.
     func score(_ id: String, now: Date = Date()) -> Double {
         guard let entry = entries[id] else { return 0 }
-        let days = max(0, now.timeIntervalSince(entry.last)) / 86_400
-        return (1 + log2(Double(entry.count))) * pow(0.5, days)
+        return Decay.value(1 + log2(Double(entry.count)), elapsed: now.timeIntervalSince(entry.last), halfLife: 86_400)
     }
 }
 

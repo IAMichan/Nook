@@ -243,6 +243,7 @@ targets:
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+ChatFollowUp.swift
+      - path: Core/I18n+Attention.swift
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+WorktreeCleanup.swift
@@ -392,6 +393,9 @@ targets:
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
       - path: Services/NoticePacer.swift
+      - path: Core/DecayedCounter.swift
+      - path: Services/Attention/AttentionFeedback.swift
+      - path: Services/Attention/AttentionContext.swift
       - path: Services/Attention/AppCatalog.swift
       - path: Core/TextKit.swift
       - path: Services/AgentStatusNotice.swift

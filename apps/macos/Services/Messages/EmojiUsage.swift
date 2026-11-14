@@ -9,11 +9,8 @@ import Foundation
 final class EmojiUsage {
     static let shared = EmojiUsage()
 
-    struct Entry: Codable, Equatable {
-        /// The decayed score at `last`.
-        var score: Double
-        var last: Date
-    }
+    /// The decayed score at `last` (`DecayedCounter`'s entry, saved as before).
+    typealias Entry = DecayedCounter<String>.Entry
 
     /// How many the picker shows: two rows of nine.
     static let shownCount = 18
@@ -41,7 +38,7 @@ final class EmojiUsage {
 
     /// `entry`'s score as of `now`.
     static func score(_ entry: Entry, at now: Date) -> Double {
-        entry.score * pow(0.5, max(0, now.timeIntervalSince(entry.last)) / halfLife)
+        Decay.value(entry.score, elapsed: now.timeIntervalSince(entry.last), halfLife: halfLife)
     }
 
     /// Counts one choice of `character`.
