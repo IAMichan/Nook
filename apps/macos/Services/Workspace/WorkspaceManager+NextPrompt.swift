@@ -11,6 +11,22 @@ extension WorkspaceManager {
         nextPrompts[id]?.shown(for: NextPromptSuggestion.turnKey(timeline(id)))
     }
 
+    /// What decides whether a suggestion can be written: the composer asks again whenever it changes, so one is written
+    /// when the turn's last reply lands after the status flipped, and when an approval, question or queued message clears.
+    struct NextPromptTrigger: Equatable {
+        var status: RunStatus?
+        var turn: UUID?
+        var holds: Bool
+    }
+
+    func nextPromptTrigger(_ id: UUID) -> NextPromptTrigger {
+        NextPromptTrigger(status: run(id)?.status, turn: NextPromptSuggestion.turnKey(timeline(id)), holds: nextPromptHolds(id))
+    }
+
+    private func nextPromptHolds(_ id: UUID) -> Bool {
+        !(approvals[id]?.isEmpty ?? true) || !(questions[id]?.isEmpty ?? true) || !(queued[id]?.isEmpty ?? true)
+    }
+
     /// The session's composer is on screen: writes a suggestion for its finished turn when the gate allows it.
     func requestNextPrompt(_ id: UUID, composerEmpty: Bool) {
         let events = timeline(id)
@@ -18,7 +34,7 @@ extension WorkspaceManager {
         let turn = reply.id
         let gate = NextPromptSuggestion.Gate(
             enabled: settings.suggestNextPrompt, turnCompleted: run.status == .completed, composerEmpty: composerEmpty,
-            holds: !(approvals[id]?.isEmpty ?? true) || !(questions[id]?.isEmpty ?? true) || !(queued[id]?.isEmpty ?? true),
+            holds: nextPromptHolds(id),
             delegated: run.delegation != nil, alreadyTried: nextPrompts[id]?.turn == turn,
             stale: Date().timeIntervalSince(reply.date) > NextPromptSuggestion.Gate.freshFor)
         guard gate.allows else { return }
@@ -71,7 +87,7 @@ extension WorkspaceManager {
 
     /// The generator chosen in Settings writes it from the timeline; on the agent route a Claude Code session's own
     /// model writes it, at low effort (`NextPromptSuggestion.agentModel`).
-    private func writeNextPrompt(_ id: UUID, run: WorkspaceRun, events: [RunEvent], turn: UUID) {
+    private func writeNextPrompt(_ id: UUID, run: WorkspaceRun, events: [RunEvent], turn: UUID, retry: Bool = true) {
         guard let prompt = NextPromptSuggestion.prompt(NextPromptSuggestion.messages(events)) else {
             nextPrompts[id] = NextPromptState(turn: turn, phase: .done)
             return
@@ -87,6 +103,11 @@ extension WorkspaceManager {
                                                  effort: NextPromptSuggestion.agentEffort, timeout: 60)
             guard !Task.isCancelled, self.nextPrompts[id]?.turn == turn, self.nextPrompts[id]?.phase == .writing else { return }
             self.nextPromptTasks[id] = nil
+            // The request failed (a timeout, a busy generator): one more try before the turn goes without.
+            if answer == nil, retry {
+                self.writeNextPrompt(id, run: run, events: events, turn: turn, retry: false)
+                return
+            }
             let text = (answer?["prompt"] as? String).flatMap(NextPromptSuggestion.clean)
             self.nextPrompts[id] = NextPromptState(turn: turn, phase: text.map { .ready($0) } ?? .done)
         }

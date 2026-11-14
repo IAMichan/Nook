@@ -150,6 +150,17 @@ final class TextGeneratorTests: XCTestCase {
         XCTAssertFalse(long.contains("ab"))
     }
 
+    /// A long turn of tool calls and replies still reaches back to your messages, so a prompt is always written.
+    func testNextPromptMessagesReachBackToYourMessages() throws {
+        let replies = (1...300).flatMap { [RunEvent(kind: .tool, text: "Bash · ls", tool: "Bash"), RunEvent(kind: .assistant, text: "step \($0)")] }
+        let events = [RunEvent(kind: .user, text: "fix the build")] + replies
+        let messages = NextPromptSuggestion.messages(events)
+        XCTAssertEqual(messages.first, NextPromptSuggestion.Message(role: .user, text: "fix the build"))
+        XCTAssertEqual(messages.last?.text, "step 300")
+        XCTAssertEqual(messages.count, 41, "the last 40 replies and your message")
+        XCTAssertNotNil(NextPromptSuggestion.prompt(messages))
+    }
+
     func testNextPromptClean() {
         XCTAssertEqual(NextPromptSuggestion.clean(#"{"prompt":"  \"Add a test for it\"  "}"#), "Add a test for it")
         XCTAssertEqual(NextPromptSuggestion.clean("Prompt: run   the\tbuild\nsecond line"), "run the build")

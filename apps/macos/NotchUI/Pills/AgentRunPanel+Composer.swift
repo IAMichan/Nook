@@ -68,6 +68,13 @@ extension AgentRunPanel {
         return derived.createdPullRequest.flatMap { PullRequestWatch.canWatch($0) ? $0 : nil }
     }
 
+    private var draftIsEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// The suggested next prompt for a finished turn, when the gate allows it (`requestNextPrompt`).
+    private func requestNextPrompt() {
+        workspace.requestNextPrompt(runID, composerEmpty: draftIsEmpty)
+    }
+
     private func saveQueuedEdit() {
         guard editingQueued != nil else { return }
         let restored = workspace.endEditQueued(runID, save: true, text: draft)
@@ -322,10 +329,10 @@ extension AgentRunPanel {
                             onDismiss: { workspace.dismissNextPrompt(runID) })
                 .images($composerState.images)
                 .zIndex(1)
-                // Asked for only while this composer is on screen and empty: a finished turn, once.
-                .onChange(of: run.status, initial: true) { _, _ in
-                    workspace.requestNextPrompt(runID, composerEmpty: composerState.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                // Asked for only while this composer is on screen and empty: a finished turn, once. Asked again when the
+                // turn's last reply lands, a hold clears or the box is emptied, so a finished turn always gets one.
+                .onChange(of: workspace.nextPromptTrigger(runID), initial: true) { _, _ in requestNextPrompt() }
+                .onChange(of: draftIsEmpty) { _, _ in requestNextPrompt() }
                 // Files dropped on this session's row in the list: pictures as pictures, other files as references.
                 .onReceive(app.viewModel.$filesToAttach) { drop in
                     guard let drop, drop.session == runID else { return }
