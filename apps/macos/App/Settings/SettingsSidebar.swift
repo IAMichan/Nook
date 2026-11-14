@@ -118,7 +118,7 @@ struct SettingsSidebar: View {
                     .padding(.vertical, NookTheme.Spacing.xl)
             }
             ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
-                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.title,
+                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.trail,
                                    selected: index == active) {
                     active = index
                     open(hits)
@@ -141,8 +141,9 @@ struct SettingsSidebar: View {
                             .padding(.bottom, NookTheme.Spacing.xxs)
                     }
                     ForEach(group.sections) { section in
-                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.title,
-                                           selected: app.settingsSection == section, badge: badges[section] ?? 0) {
+                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.pageTitle,
+                                           selected: app.settingsSection.host == section,
+                                           badge: badges[section] ?? 0) {
                             guard app.settingsSection != section else { return }
                             app.settingsSection = section
                         }
@@ -197,8 +198,9 @@ struct SettingsSidebarRow: View {
     }
 }
 
-/// The bar over a page: where you are (Settings › group › page), the ⓘ that explains the page, and on the
-/// right Restore defaults. Adding sits in the header of the list it adds to ("+ Add machine"), not here.
+/// The bar over a page: where you are (Settings › page) and on the right Restore defaults. What the page holds is
+/// written at the top of the page itself (`SettingsPageIntro`), not hidden here. Adding sits in the header of the list
+/// it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
@@ -212,18 +214,12 @@ struct SettingsPageBar: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Text(tr("settings.crumb.root")).foregroundStyle(NookTheme.textTertiary)
             crumbChevron
-            if let group = section.group.title {
-                Text(group).foregroundStyle(NookTheme.textTertiary)
-                crumbChevron
-            }
-            Text(section.title)
+            Text(section.pageTitle)
                 .foregroundStyle(NookTheme.paper)
-                .help(section.subtitle)
-            if let info = section.info { SettingsInfoButton(text: info) }
             Spacer(minLength: NookTheme.Spacing.lg)
             if let restore = SettingsRestore(section) {
                 // Put this page's own settings back to how Nook ships, after asking.
-                ConfirmedButton(question: tr("settings.restore.question", section.title), confirmTitle: tr("settings.general.restore"),
+                ConfirmedButton(question: tr("settings.restore.question", section.pageTitle), confirmTitle: tr("settings.general.restore"),
                                 action: {
                                     restore.run()
                                     ToastCenter.shared.success(tr("settings.general.restored"))
@@ -247,6 +243,82 @@ struct SettingsPageBar: View {
             .font(NookTheme.font(9, .semibold))
             .foregroundStyle(NookTheme.textMuted)
             .accessibilityHidden(true)
+    }
+}
+
+/// The top of every Settings page: its name in large type and one line on what it holds. A page of several subjects
+/// adds a bar with one button per subject; the one shown is lit, and under the bar one line says what that subject is
+/// for. So a page shows one subject at a time and stays short, and you see what is there before reading a row.
+struct SettingsPageIntro: View {
+    let section: SettingsSection
+    /// The subject shown.
+    let part: SettingsSection
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Text(section.pageTitle)
+                    .font(NookTheme.TextStyle.display)
+                    .foregroundStyle(NookTheme.paper)
+                    .accessibilityAddTraits(.isHeader)
+                Text(section.pageSubtitle)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if section.parts.count > 1 {
+                    ChipFlow(spacing: NookTheme.Spacing.xs) {
+                        ForEach(section.parts) { item in
+                            SettingsPartTab(part: item, selected: item == part)
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.sm)
+                    if part != section {
+                        Text(part.subtitle)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let info = part.info {
+                    Text(info)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .settingsBareSection()
+    }
+}
+
+/// One subject of a page in the bar at its top: its symbol and name, lit while it is shown. A click shows it.
+struct SettingsPartTab: View {
+    let part: SettingsSection
+    let selected: Bool
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        Button {
+            guard !selected else { return }
+            app.settingsSection = part
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: part.sidebarSymbol)
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                Text(part.title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textStrong)
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .hoverRowFill(selected: selected, radius: NookTheme.Radius.chip, rest: NookTheme.surface)
+            .roundedStrokeBorder(selected ? NookTheme.textTertiary : NookTheme.separator, radius: NookTheme.Radius.chip)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .help(part.subtitle)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

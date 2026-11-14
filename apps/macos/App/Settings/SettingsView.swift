@@ -4,11 +4,11 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings pages, in the order of the sidebar: Nook's own pages first, then
-/// what it thinks with, the coding agents, code, everything it is linked to, and maintenance and About last. Each subject
-/// lives in exactly one place and each page holds one subject, short enough to take in at once: a page that grew past a
-/// few groups is split into pages of its own (never tabs), and a list that grows with your data can be
-/// searched.
+/// The subjects of Settings, in the order of the sidebar. The sidebar lists 17 pages; a page that holds several
+/// subjects (`parts`) shows one at a time, picked in the bar at the top of the page (as t3code's provider list picks one
+/// provider), so every page stays short and every subject is at most two clicks away. `app.settingsSection` is the
+/// subject shown; its `host` is the page lit in the sidebar. A subject is never a page you can only reach from another
+/// page, and a link elsewhere in Nook (`.sound`, `.permissions`) opens its page with that subject picked.
 /// A page whose main step is adding something (a chat app, a connection, a machine) has that button in the header of
 /// its list.
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -23,7 +23,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     /// The sidebar groups, each a handful of pages. The first and the last have no heading: space alone sets them apart.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, typing, agents, code, connect, privacy, system
+        case nook, intelligence, agents, connect, system
 
         var id: String { rawValue }
 
@@ -35,31 +35,65 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             }
         }
 
+        /// The pages in the sidebar. Every other subject is a part of one of them (`SettingsSection.parts`).
         var sections: [SettingsSection] {
             switch self {
-            // Nook itself: how it behaves, where and how it shows, notifies and sounds, and its keys.
-            case .nook: return [.start, .general, .appearance, .notch, .notifications, .notificationApps, .sound, .shortcuts]
-            // The AI Nook thinks with, what it does with it, and what it remembers.
-            case .intelligence: return [.brain, .assistant, .memory, .instructions]
-            // Completing what you type, one page per part, and dictating.
-            case .typing: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
-                                  .autocompleteStats, .dictation]
-            // The coding agents, how their sessions start and behave, what runs by itself, what they used, and what was put away.
-            case .agents: return [.agents, .sessions, .automation, .usage, .archive]
-            // Where the agents work and what comes out of it.
-            case .code: return [.projects, .worktrees, .openIn, .pullRequests]
-            // Everything Nook is linked to: chat apps, services, the iPhone and other machines.
-            case .connect: return [.chats, .connections, .iphone, .machines]
-            // What Nook may see and send, and what it did.
-            case .privacy: return [.privacy, .permissions, .onDevice, .activityLog]
-            // Keeping Nook up to date and healthy, and what it is.
-            case .system: return [.maintenance, .about]
+            // Nook itself: how it behaves and where it shows, how it looks, notifies and sounds, and its keys.
+            case .nook: return [.start, .general, .appearance, .notifications, .shortcuts]
+            // The AI Nook thinks with, what it does with it, and how it helps you type.
+            case .intelligence: return [.brain, .assistant, .autocomplete]
+            // The coding agents, their sessions, what runs by itself, and the projects they work in.
+            case .agents: return [.agents, .sessions, .automation, .projects]
+            // Everything Nook is linked to, and what it may see and send.
+            case .connect: return [.chats, .connections, .iphone, .privacy]
+            // Keeping Nook up to date and healthy, and what Nook is.
+            case .system: return [.maintenance]
             }
         }
     }
 
-    /// The group a page is in, for its breadcrumb.
-    var group: Group { Group.allCases.first { $0.sections.contains(self) } ?? .nook }
+    /// The subjects a sidebar page holds besides itself, in order; nil for a page of one subject.
+    private var hostedParts: [SettingsSection]? {
+        switch self {
+        case .general: return [.general, .notch]
+        case .notifications: return [.notifications, .notificationApps, .sound]
+        case .assistant: return [.assistant, .memory, .instructions]
+        case .autocomplete: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
+                                    .autocompleteStats, .dictation]
+        case .agents: return [.agents, .usage]
+        case .sessions: return [.sessions, .worktrees, .openIn, .archive]
+        case .projects: return [.projects, .pullRequests]
+        case .iphone: return [.iphone, .machines]
+        case .privacy: return [.privacy, .permissions, .onDevice, .activityLog]
+        case .maintenance: return [.maintenance, .about]
+        default: return nil
+        }
+    }
+
+    /// What this page shows, top to bottom: the page's own subject first, then the others that live on it.
+    var parts: [SettingsSection] { hostedParts ?? [self] }
+
+    /// The sidebar page this subject lives on: itself, or the page that holds it.
+    var host: SettingsSection {
+        SettingsSection.allCases.first { $0.hostedParts?.contains(self) == true } ?? self
+    }
+
+    /// Pages whose name says more than their first subject's ("Typing" holds autocomplete and dictation).
+    private static let renamedPages: Set<SettingsSection> = [.autocomplete, .projects, .iphone, .privacy, .maintenance]
+
+    /// The name of the page in the sidebar and over the page.
+    var pageTitle: String { Self.renamedPages.contains(self) ? tr("settings.page.\(rawValue)") : title }
+
+    /// What the whole page holds, in one line under its name.
+    var pageSubtitle: String { hostedParts != nil ? tr("settings.page.\(rawValue).sub") : subtitle }
+
+    /// Where a subject is, for a search result: its page, and the subject's own name when it is a part of a larger page.
+    var trail: String {
+        host == self ? pageTitle : "\(host.pageTitle) › \(title)"
+    }
+
+    /// The sidebar group of the page this subject lives on.
+    var group: Group { Group.allCases.first { $0.sections.contains(host) } ?? .nook }
 
     var id: String { rawValue }
 
@@ -69,7 +103,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var symbol: String { tileSymbol }
 
-    /// What a whole page is about and how it treats your data, behind the ⓘ next to its title; nil for most pages.
+    /// What a subject is about and how it treats your data, shown under its name; nil for most.
     var info: String? {
         switch self {
         case .connections, .chats: return tr("connect.intro")
@@ -124,7 +158,9 @@ struct SettingsView: View {
         // Once per redraw: both read every linked source and chat app, and the sidebar, header and Overview all use them.
         let problems = ConnectionProblems.current(app)
         let needs = attention(problems: problems)
-        let section = app.settingsSection
+        // The page in the sidebar, and the subject of it that is shown.
+        let section = app.settingsSection.host
+        let part = section.parts.contains(app.settingsSection) ? app.settingsSection : section
         // A sidebar of pages on the left, and on the right a bar with where you are over the page itself,
         // a centered column of titled groups.
         HStack(spacing: 0) {
@@ -139,7 +175,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 SettingsPageBar(section: section)
                 NookDivider()
-                page(section, attention: needs, problems: problems.filter { !$0.isChat }.count)
+                page(section, part: part, attention: needs, problems: problems.filter { !$0.isChat }.count)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(NookTheme.canvas)
@@ -158,7 +194,7 @@ struct SettingsView: View {
         .onChange(of: app.settingsProjectScope) { _, _ in takeProjectScope() }
         .onChange(of: app.settingsSection) { _, _ in
             refreshTick += 1
-            if app.settingsSection == .agents || app.settingsSection == .usage {
+            if app.settingsSection.host == .agents {
                 app.adoptAccounts()
                 app.history.refresh()
             }
@@ -180,11 +216,14 @@ struct SettingsView: View {
         app.settingsProjectScope = nil
     }
 
-    /// One page: its groups, in one column of readable width. A setting found with the search is scrolled to and lit.
-    private func page(_ section: SettingsSection, attention needs: [AttentionItem], problems: Int) -> some View {
+    /// One page: what it is at the top (with the bar of its subjects on a page of several), then the subject shown, in
+    /// one column of readable width. A setting found with the search is scrolled to and lit.
+    private func page(_ section: SettingsSection, part: SettingsSection, attention needs: [AttentionItem],
+                      problems: Int) -> some View {
         ScrollViewReader { proxy in
             Form {
-                detail(for: section, attention: needs, problems: problems)
+                SettingsPageIntro(section: section, part: part)
+                detail(for: part, attention: needs, problems: problems)
             }
             .formStyle(SettingsFormStyle())
             // Every row reads at the panel's body size; captions and notes set their own smaller style.
@@ -194,9 +233,10 @@ struct SettingsView: View {
         }
         .frame(maxWidth: SettingsLayout.pageWidth)
         .frame(maxWidth: .infinity)
-        // Rebuilt for a new page or language. Not for the accent: Appearance is drawn in this view's own body, so it
-        // redraws in the new color without the Form being rebuilt (which would scroll back to the top on every swatch click or color picker drag).
-        .id("\(section.rawValue)-\(settings.appLanguage.rawValue)")
+        // Rebuilt for a new page, subject or language. Not for the accent: Appearance is drawn in this view's own body,
+        // so it redraws in the new color without the Form being rebuilt (which would scroll back to the top on every
+        // swatch click or color picker drag).
+        .id("\(section.rawValue)-\(part.rawValue)-\(settings.appLanguage.rawValue)")
     }
 
     /// `attention` and `problems` are what the body worked out once for this redraw.

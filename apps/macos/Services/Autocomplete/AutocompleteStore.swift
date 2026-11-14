@@ -279,7 +279,7 @@ final class AutocompleteStore: ObservableObject {
 }
 
 /// The tabs of Settings › Autocomplete.
-/// The pages of Settings › Typing › Autocomplete (`SettingsSection.autocomplete…`).
+/// The pages of Settings › Autocomplete and its detail pages (`SettingsSection.autocomplete…`).
 enum AutocompleteSettingsTab: String, CaseIterable, Identifiable {
     case general, apps, style, playground, stats
 
