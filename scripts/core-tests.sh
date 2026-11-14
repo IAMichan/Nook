@@ -76,6 +76,7 @@ if [ "$(uname)" != "Darwin" ]; then
     "Brain/ChartRescue.swift"
     "Brain/MarkdownBlock.swift"
     "Services/Workspace/RunPullRequestLinks.swift"
+    "Services/Workspace/PullRequestAsked.swift"
     "Services/Updates/Ed25519Verifier.swift"
     "Services/Autocomplete/CompletionSealing.swift"
     "../../packages/protocol/Sources/CompanionSeal.swift"

@@ -543,6 +543,7 @@ targets:
       - path: Services/Workspace/PullRequestMentions.swift
       - path: Services/Workspace/PullRequestStatus.swift
       - path: Services/Workspace/PullRequestBodyCheck.swift
+      - path: Services/Workspace/PullRequestAsked.swift
       - path: Services/Workspace/ScheduledTasks.swift
       - path: Services/Workspace/WorktreeOrigin.swift
       - path: Services/Workspace/WorktreeMove.swift
