@@ -37,7 +37,6 @@ struct TranscriptConversation: View {
     @Environment(\.sessionSide) private var sideLink
     /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
     @State private var scroll = ScrollModel()
-    @StateObject private var pinRoom = TurnPinRoom()
     @State private var atEnd = true
     /// The conversation is taller than the view: only then the rail with your messages shows.
     @State private var overflows = false
@@ -151,12 +150,11 @@ struct TranscriptConversation: View {
                                     TimelineNewDivider()
                                     self.row(row)
                                 }
-                                .pinProbe(row.id, room: pinRoom)
                                 .countsAsDrawnRow(drawnRows, id: row.id)
                                 .id(row.id)
                             } else {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
-                                self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom)
+                                self.row(row, ruled: row.id != beforeNew)
                                     .countsAsDrawnRow(drawnRows, id: row.id).id(row.id)
                             }
                         }
@@ -170,12 +168,11 @@ struct TranscriptConversation: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.top, NookTheme.Spacing.xs)
                         }
-                        TurnPinSpacer(room: pinRoom)
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .scrollTargetLayout()
-                    // The conversation's own space, so the room under a message you sent is measured between rows.
-                    .coordinateSpace(name: TurnPinRoom.space)
+                    // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
+                    .coordinateSpace(name: TimelineSpace.name)
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
@@ -190,15 +187,13 @@ struct TranscriptConversation: View {
                 .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
                 .scrollIndicators(.never)
                 .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
-                    ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
-                                container: geometry.containerSize.height,
-                                insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+                    ScrollFrame(geometry)
                 } action: { old, frame in
-                    pinRoom.update(frame)
                     keepEnd(old, frame, proxy)
                 }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
+                    // Within the toolbar and composer around the view: forgetting the toolbar left the pill up at the end.
+                    ScrollFrame(geometry).nearEnd
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
                     if nowAtEnd { scroll.reachedEnd() }
@@ -216,10 +211,9 @@ struct TranscriptConversation: View {
                         } else if attempt == 0 {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         } else {
-                            // Still blank at the end: let go of the room held under a sent message, land on the last row
+                            // Still blank at the end: follow the end again, land on the last row
                             // itself (one the lazy stack must draw), and only then on the very end.
                             scroll.jumpedToEnd()
-                            pinRoom.release()
                             // Scrolling brought nothing back: a new scroll view, which opens at its end.
                             if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
                             if let lastRow = rows.last?.id { proxy.scrollTo(lastRow, anchor: .bottom) }
@@ -269,15 +263,8 @@ struct TranscriptConversation: View {
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in
-                    // The reply filled the view: follow it from here.
-                    scroll.contentGrew(toolActivityStarted: true, overflows: pinRoom.height == 0)
                     if scroll.shouldFollowEnd { scrollToEnd(proxy) }
                 }
-                // A new message of yours, at the end while you were there, stands near the top with the reply under it.
-                .onChange(of: derived.marks.last?.row) { old, row in
-                    if old != nil, let row, scroll.shouldFollowEnd { pinSent(row, proxy) }
-                }
-                .onChange(of: scroll.anchorMessageID) { _, id in if id == nil { pinRoom.release() } }
                 // Always the end once it has loaded, with what is new since your last visit under its line.
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {
@@ -414,20 +401,6 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// Brings a message near the top of the view, with room under it for the reply, until you scroll away. The room
-    /// follows once the message is laid out; the view only goes to its end, again while the layout settles.
-    private func pinSent(_ row: String, _ proxy: ScrollViewProxy) {
-        let id = UUID()
-        pinRoom.hold(row: row)
-        scroll.sent(messageID: id)
-        for delay in [0.0, 0.1, 0.25, 0.4] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard scroll.anchorMessageID == id else { return }
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-        }
-    }
-
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
         guard !shown.isEmpty || footer != nil else { return }
         proxy.scrollTo("bottom", anchor: .bottom)
@@ -438,11 +411,10 @@ struct TranscriptConversation: View {
     /// which changes the inset rather than the content. Either happens at the end without you, so the conversation stays
     /// there; only moving while the sizes stay the same is you scrolling away (a mouse wheel too, which reports no phase).
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        let resized = new.content != old.content || new.container != old.container || new.insetBottom != old.insetBottom
-        if resized {
+        if new.resized(from: old) {
             // At the end before the change counts too: a landing on what is new that fits on screen ends there as well.
             let wasAtEnd = old.maxOffset - old.offset <= 1
-            guard scroll.mode != .anchoringNewTurn, scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle,
+            guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle,
                   new.maxOffset - new.offset > 0.5 else { return }
             scroll.reachedEnd()
             var still = Transaction()
@@ -450,7 +422,7 @@ struct TranscriptConversation: View {
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             return
         }
-        if scroll.shouldFollowEnd, new.offset < old.offset - 0.5, new.maxOffset - new.offset > 48 { scroll.userScrolled() }
+        if scrollPhase.value != .animating, let reaction = scroll.reaction(movedFrom: old, to: new) { scroll.apply(reaction) }
     }
 
     /// Once the conversation has loaded: its very end, with what came in since your last visit under its line. Scrolls
