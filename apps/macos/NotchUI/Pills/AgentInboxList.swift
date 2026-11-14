@@ -66,12 +66,6 @@ struct AgentInboxList: View {
         return max(shelfMaxHeight, listHeight * workingShelfShare)
     }
 
-    private static let wakeFormat: DateFormatter = {
-        let format = DateFormatter()
-        format.dateFormat = "HH:mm"
-        return format
-    }()
-
     // MARK: Rows
 
     private func row(_ item: AgentListItem) -> InboxRow {
@@ -672,7 +666,7 @@ struct AgentInboxList: View {
                 item: item, now: now, selected: current == item.id,
                 receded: entry.receded, pinned: entry.row.pinned, woke: entry.woke, slim: slim,
                 grouped: grouped,
-                wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", Self.wakeFormat.string(from: $0)) } : nil,
+                wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", NookDates.clock($0)) } : nil,
                 project: grouped ? nil : project,
                 actions: AgentRowActions(
                     pinned: entry.row.pinned,

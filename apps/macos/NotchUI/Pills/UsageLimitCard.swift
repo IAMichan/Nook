@@ -180,11 +180,11 @@ struct UsageLimitCard: View {
         guard let reset = run.limitResetAt else {
             guard auto, let due = workspace.limitResumeDue(run) else { return tr("ws.limit.unknown") }
             if due <= now { return tr("ws.limit.resumingSoon") }
-            let clock = due.formatted(date: Calendar.current.isDateInToday(due) ? .omitted : .abbreviated, time: .shortened)
+            let clock = AgentFormat.upcoming(due, now: now)
             return tr("ws.limit.retriesAt", clock, AgentPathFormat.duration(due.timeIntervalSince(now)))
         }
         if reset <= now { return auto ? tr("ws.limit.resumingSoon") : tr("ws.limit.free") }
-        let clock = reset.formatted(date: Calendar.current.isDateInToday(reset) ? .omitted : .abbreviated, time: .shortened)
+        let clock = AgentFormat.upcoming(reset, now: now)
         let wait = AgentPathFormat.duration(reset.timeIntervalSince(now))
         return auto ? tr("ws.limit.resumesAt", clock, wait) : tr("ws.limit.resetsAt", clock, wait)
     }

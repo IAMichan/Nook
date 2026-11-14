@@ -2,39 +2,15 @@ import Foundation
 
 /// Text formatting shared by the agent views: durations, reset times, session titles and model names.
 enum AgentFormat {
-    private static let formatterLock = NSLock()
-    private static var cachedLanguage: String = ""
-    private static var cachedTimeFormatter = DateFormatter()
-    private static var cachedDayFormatter = DateFormatter()
-    private static var cachedWeekdayFormatter = DateFormatter()
     private static let tagStripperRegex = try? NSRegularExpression(pattern: "<[^>]*>?")
     private static let titleTrimSet = CharacterSet(charactersIn: "#*-:· ")
 
-    private static func updateFormattersIfNeeded() {
-        let lang = I18n.shared.language.rawValue
-        guard cachedLanguage != lang else { return }
-        cachedLanguage = lang
-        let locale = Locale(identifier: lang)
-        cachedTimeFormatter.locale = locale
-        cachedTimeFormatter.dateFormat = "HH:mm"
-        cachedDayFormatter.locale = locale
-        cachedDayFormatter.dateFormat = "EEE d MMM"
-        cachedWeekdayFormatter.locale = locale
-        cachedWeekdayFormatter.dateFormat = "EEEEEE"
-    }
-
     private static func formatTime(_ date: Date) -> String {
-        formatterLock.lock()
-        defer { formatterLock.unlock() }
-        updateFormattersIfNeeded()
-        return cachedTimeFormatter.string(from: date)
+        NookDates.clock(date)
     }
 
     private static func formatDay(_ date: Date) -> String {
-        formatterLock.lock()
-        defer { formatterLock.unlock() }
-        updateFormattersIfNeeded()
-        return cachedDayFormatter.string(from: date)
+        NookDates.formatter("EEE d MMM", locale: NookDates.appLocale).string(from: date)
     }
 
     /// "< 1 min", "12 min", "1 h 20 m", "3 d".
@@ -90,10 +66,7 @@ enum AgentFormat {
     }
 
     static func weekdayLetter(_ date: Date) -> String {
-        formatterLock.lock()
-        defer { formatterLock.unlock() }
-        updateFormattersIfNeeded()
-        return cachedWeekdayFormatter.string(from: date)
+        NookDates.formatter("EEEEEE", locale: NookDates.appLocale).string(from: date)
     }
 
     /// A live session's title: what it was first asked (its transcript's title, else the first prompt Nook heard), so a

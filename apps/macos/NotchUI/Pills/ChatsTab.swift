@@ -1434,17 +1434,10 @@ struct ChatsRow: View, Equatable {
             && lhs.rowAction?.title == rhs.rowAction?.title
     }
 
-    fileprivate static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
     private var when: String {
         // A chat on the phone whose last message the gateway did not date.
         guard entry.last > .distantPast else { return "" }
-        return Calendar.current.isDateInToday(entry.last) ? Self.time.string(from: entry.last)
-            : ChatTimeline.dayLabel(entry.last, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
+        return NookDates.clockOrDay(entry.last)
     }
 
     var body: some View {
@@ -1555,8 +1548,7 @@ private struct ChatsHoverCard: View {
 
     private var when: String {
         guard entry.last > .distantPast else { return "" }
-        return Calendar.current.isDateInToday(entry.last) ? ChatsRow.time.string(from: entry.last)
-            : ChatTimeline.dayLabel(entry.last, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
+        return NookDates.clockOrDay(entry.last)
     }
 
     var body: some View {
@@ -1781,12 +1773,6 @@ private struct ChatsDetail: View, Equatable {
         unreadAtOpen = 0
     }
 
-    private static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
     /// The key of a chat's unsent answer in `ComposerDraftStore`.
     private static func draftKey(_ chatID: String) -> String { "chat:" + chatID }
 
@@ -1833,7 +1819,7 @@ private struct ChatsDetail: View, Equatable {
 
     private var bubbles: [ChatBubble] {
         let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id]) { thread in
-            thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
+            thread.map { ChatBubble.bubbles($0) { NookDates.clock($0) } } ?? []
         }
         return outbox.bubbles(hiddenMessages.visible(all, in: entry.id) { $0.id }, chat: entry.id)
     }

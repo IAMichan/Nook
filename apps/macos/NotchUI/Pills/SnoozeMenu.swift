@@ -56,10 +56,7 @@ enum SnoozeText {
 
     /// "Until the usage limit resets (14:30)", with the date when it is not today.
     static func untilReset(_ reset: Date) -> String {
-        let clock = Calendar.current.isDateInToday(reset)
-            ? reset.formatted(date: .omitted, time: .shortened)
-            : reset.formatted(date: .abbreviated, time: .shortened)
-        return tr("automation.snooze.limitReset", clock)
+        tr("automation.snooze.limitReset", AgentFormat.upcoming(reset))
     }
 }
 

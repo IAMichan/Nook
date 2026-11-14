@@ -196,9 +196,8 @@ extension AppModel {
             ChatNoticeRulesStore.shared.setHidden(true, chat: id)
             self?.viewModel.dismissCard(id: token)
         }
-        let time = Self.chatBubbleTime
         // The newest a bridged chat keeps (a chat only notifications bring keeps every message: its newest that many).
-        let bubbles = ChatBubble.bubbles(thread, last: ChatInbox.keep) { time.string(from: $0) }
+        let bubbles = ChatBubble.bubbles(thread, last: ChatInbox.keep) { NookDates.clock($0) }
         let unread = thread.unread > 1 ? " · \(tr("whatsapp.card.unread", thread.unread))" : ""
         let card = NookCard(
             id: token,
@@ -241,13 +240,6 @@ extension AppModel {
         // follows the chat as that comes in.
         if fresh || opened { Task { await openedChat(entry) } }
     }
-
-    /// "14:05" under each bubble: one formatter for every redraw, not a new one each time.
-    static let chatBubbleTime: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
 
     /// Read on a chat's card, by your own click: read in Nook, and in its app too where answering does so for that app
     /// (Settings › Chats) and something was new.
