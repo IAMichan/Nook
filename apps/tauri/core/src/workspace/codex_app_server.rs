@@ -272,7 +272,11 @@ impl CodexDriver {
                     self.context_window = Some(w as u64);
                 }
                 self.usage_seen += 1;
-                step.event(ClaudeEvent::Usage { message_id: format!("codex-{}", self.usage_seen), tokens: counts(usage.get("last")), model: None });
+                step.event(ClaudeEvent::Usage {
+                    message_id: format!("codex-{}", self.usage_seen),
+                    tokens: counts(usage.get("last")),
+                    model: None,
+                });
             }
             "turn/completed" => {
                 let turn = p.get("turn").cloned().unwrap_or(Value::Null);
@@ -308,7 +312,10 @@ impl CodexDriver {
             }
             "reasoning" if finished => {
                 let parts = |k: &str| -> Vec<String> {
-                    item.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+                    item.get(k)
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default()
                 };
                 let summary = parts("summary");
                 let text = if summary.is_empty() { parts("content") } else { summary }.join("\n\n").trim().to_string();
@@ -344,7 +351,12 @@ impl CodexDriver {
                     .unwrap_or_default();
                 let names: Vec<&str> = changes.iter().map(|(p, _)| p.rsplit(['/', '\\']).next().unwrap_or(p)).collect();
                 if !finished {
-                    step.event(ClaudeEvent::ToolUse { id, name: "apply_patch".into(), input: json!({"description": names.join(", ")}), nested: false });
+                    step.event(ClaudeEvent::ToolUse {
+                        id,
+                        name: "apply_patch".into(),
+                        input: json!({"description": names.join(", ")}),
+                        nested: false,
+                    });
                 } else {
                     step.event(ClaudeEvent::ToolResult { id, output: String::new(), is_error: failed });
                     if !failed {
@@ -390,17 +402,24 @@ impl CodexDriver {
         let text = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let key = format!("codex-{}", id.text());
         let (kind, tool, input) = match method {
-            "item/commandExecution/requestApproval" => {
-                (ApprovalKind::Command, "shell".to_string(), json!({"command": text("command"), "cwd": text("cwd"), "reason": text("reason")}))
-            }
+            "item/commandExecution/requestApproval" => (
+                ApprovalKind::Command,
+                "shell".to_string(),
+                json!({"command": text("command"), "cwd": text("cwd"), "reason": text("reason")}),
+            ),
             "execCommandApproval" => {
                 let command = super::models::tool_summary::command(&json!({"command": p.get("command")})).unwrap_or_default();
-                (ApprovalKind::LegacyCommand, "shell".to_string(), json!({"command": command, "cwd": text("cwd"), "reason": text("reason")}))
+                (
+                    ApprovalKind::LegacyCommand,
+                    "shell".to_string(),
+                    json!({"command": command, "cwd": text("cwd"), "reason": text("reason")}),
+                )
             }
             "item/fileChange/requestApproval" | "applyPatchApproval" => {
                 let kind = if method == "applyPatchApproval" { ApprovalKind::LegacyPatch } else { ApprovalKind::FileChange };
                 let reason = text("reason");
-                let description = if reason.is_empty() { tr("Bestandswijzigingen toepassen", "Apply file changes").to_string() } else { reason };
+                let description =
+                    if reason.is_empty() { tr("Bestandswijzigingen toepassen", "Apply file changes").to_string() } else { reason };
                 (kind, "apply_patch".to_string(), json!({"description": description, "path": text("grantRoot")}))
             }
             "mcpServer/elicitation/request" => {
@@ -473,7 +492,12 @@ pub fn counts(raw: Option<&Value>) -> TokenCounts {
     let raw = raw.cloned().unwrap_or(Value::Null);
     let n = |k: &str| number(raw.get(k)).unwrap_or(0.0).max(0.0) as u64;
     let cached = n("cachedInputTokens");
-    TokenCounts { input: n("inputTokens").saturating_sub(cached), output: n("outputTokens"), cache_read: cached, cache_write: n("cacheWriteInputTokens") }
+    TokenCounts {
+        input: n("inputTokens").saturating_sub(cached),
+        output: n("outputTokens"),
+        cache_read: cached,
+        cache_write: n("cacheWriteInputTokens"),
+    }
 }
 
 impl Driver for CodexDriver {
@@ -536,14 +560,18 @@ impl Driver for CodexDriver {
     }
 
     fn interrupt(&mut self) -> Vec<String> {
-        let mut lines: Vec<String> = self.approvals.drain().map(|(_, (id, kind))| {
-            let answer = match kind {
-                ApprovalKind::McpTool => json!({"action": "cancel"}),
-                ApprovalKind::LegacyCommand | ApprovalKind::LegacyPatch => json!({"decision": "abort"}),
-                ApprovalKind::Command | ApprovalKind::FileChange => json!({"decision": "cancel"}),
-            };
-            WIRE.response(&id, answer)
-        }).collect();
+        let mut lines: Vec<String> = self
+            .approvals
+            .drain()
+            .map(|(_, (id, kind))| {
+                let answer = match kind {
+                    ApprovalKind::McpTool => json!({"action": "cancel"}),
+                    ApprovalKind::LegacyCommand | ApprovalKind::LegacyPatch => json!({"decision": "abort"}),
+                    ApprovalKind::Command | ApprovalKind::FileChange => json!({"decision": "cancel"}),
+                };
+                WIRE.response(&id, answer)
+            })
+            .collect();
         if let (Some(thread), Some(turn)) = (self.thread.clone(), self.turn.clone()) {
             lines.push(self.request(Call::Other, "turn/interrupt", json!({"threadId": thread, "turnId": turn})));
         }
@@ -607,7 +635,9 @@ mod tests {
         d.receive(r#"{"method":"turn/started","params":{"turn":{"id":"t-1"}}}"#);
         let steer = d.steer("also docs").unwrap();
         assert_eq!(sent(&steer[0])["params"]["expectedTurnId"], "t-1");
-        let s = d.receive(r#"{"id":"r9","method":"item/commandExecution/requestApproval","params":{"itemId":"c1","command":"rm -rf build","cwd":"/w"}}"#);
+        let s = d.receive(
+            r#"{"id":"r9","method":"item/commandExecution/requestApproval","params":{"itemId":"c1","command":"rm -rf build","cwd":"/w"}}"#,
+        );
         match &claude(&s)[0] {
             ClaudeEvent::PermissionRequest { request_id, tool, input, suggestions, .. } => {
                 assert_eq!((request_id.as_str(), tool.as_str()), ("codex-r9", "shell"));

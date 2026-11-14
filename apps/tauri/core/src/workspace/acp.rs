@@ -437,16 +437,21 @@ impl AcpDriver {
             .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string))
             .collect();
         let mode_option = option("mode");
-        let offered: Vec<String> = mode_option.as_ref().map(&values).unwrap_or_default().into_iter().chain(mode_ids.clone()).collect();
+        let offered: Vec<String> = mode_option.as_ref().map(values).unwrap_or_default().into_iter().chain(mode_ids.clone()).collect();
         let wanted = match self.provider {
             RunProvider::Antigravity => Some(antigravity::mode(self.mode, self.permission).to_string()),
             _ if self.mode == ExecutionMode::Plan => offered.iter().find(|m| m.to_lowercase().contains("plan")).cloned(),
             _ => None,
         };
-        let applied = mode_option.as_ref().and_then(current).or_else(|| self.info.pointer("/modes/currentModeId").and_then(Value::as_str).map(str::to_string));
+        let applied = mode_option
+            .as_ref()
+            .and_then(current)
+            .or_else(|| self.info.pointer("/modes/currentModeId").and_then(Value::as_str).map(str::to_string));
         if let Some(mode) = wanted.filter(|m| Some(m) != applied.as_ref() && offered.contains(m)) {
             match &mode_option {
-                Some(o) => steps.push(("session/set_config_option".into(), json!({"sessionId": session, "configId": o.get("id"), "value": mode}))),
+                Some(o) => {
+                    steps.push(("session/set_config_option".into(), json!({"sessionId": session, "configId": o.get("id"), "value": mode})))
+                }
                 None => steps.push(("session/set_mode".into(), json!({"sessionId": session, "modeId": mode}))),
             }
         }
@@ -534,7 +539,9 @@ impl AcpDriver {
                 }
                 let _ = method;
                 let session = result.get("sessionId").and_then(Value::as_str).map(str::to_string).or(loading.clone());
-                let Some(session) = session else { return self.fail(step, tr("De agent opende geen sessie.", "The agent opened no session.").into()) };
+                let Some(session) = session else {
+                    return self.fail(step, tr("De agent opende geen sessie.", "The agent opened no session.").into());
+                };
                 self.fresh = loading.is_none();
                 self.session = Some(session.clone());
                 self.info = result;
@@ -547,7 +554,11 @@ impl AcpDriver {
             Call::Setting => self.proceed(step),
             Call::Prompt => {
                 if let Some(e) = error {
-                    return if self.stopping { self.finish(step, false, "cancelled", String::new(), TurnUsage::default()) } else { self.fail(step, e) };
+                    return if self.stopping {
+                        self.finish(step, false, "cancelled", String::new(), TurnUsage::default())
+                    } else {
+                        self.fail(step, e)
+                    };
                 }
                 let reason = result.get("stopReason").and_then(Value::as_str).unwrap_or("end_turn").to_string();
                 let usage = prompt_usage(&result);
@@ -560,14 +571,22 @@ impl AcpDriver {
                     if antigravity::should_continue(&reason, self.replied, self.stopping, self.continuations) {
                         self.continuations += 1;
                         step.events.push(DriverEvent::System(
-                            tr("Antigravity stopte zonder antwoord; Nook vraagt hem verder te gaan.", "Antigravity stopped without replying; Nook asks it to carry on.").into(),
+                            tr(
+                                "Antigravity stopte zonder antwoord; Nook vraagt hem verder te gaan.",
+                                "Antigravity stopped without replying; Nook asks it to carry on.",
+                            )
+                            .into(),
                         ));
                         let text = antigravity::continuation(self.tool_calls);
                         return self.send_prompt(step, text);
                     }
                 }
                 let failed = reason == "refusal";
-                let message = if failed { tr("De agent weigerde deze opdracht.", "The agent refused this request.").to_string() } else { String::new() };
+                let message = if failed {
+                    tr("De agent weigerde deze opdracht.", "The agent refused this request.").to_string()
+                } else {
+                    String::new()
+                };
                 self.finish(step, failed, &reason, message, usage);
             }
             Call::Other => {}
@@ -652,10 +671,16 @@ impl AcpDriver {
                     .and_then(Value::as_array)
                     .into_iter()
                     .flatten()
-                    .filter_map(|o| Some((o.get("optionId")?.as_str()?.to_string(), o.get("kind").and_then(Value::as_str).unwrap_or("").to_string())))
+                    .filter_map(|o| {
+                        Some((o.get("optionId")?.as_str()?.to_string(), o.get("kind").and_then(Value::as_str).unwrap_or("").to_string()))
+                    })
                     .collect();
                 // The session's rights already allow it: answered at once, as the agent would not have asked.
-                let kind = if call.kind.is_empty() { self.tool_names.get(&call.id).map(|_| "other").unwrap_or("other").to_string() } else { call.kind.clone() };
+                let kind = if call.kind.is_empty() {
+                    self.tool_names.get(&call.id).map(|_| "other").unwrap_or("other").to_string()
+                } else {
+                    call.kind.clone()
+                };
                 if auto_allows(&kind, self.permission, self.mode) {
                     step.replies.push(WIRE.response(&id, permission_outcome(&options, true, false)));
                     return;
@@ -856,9 +881,13 @@ mod tests {
         let answer = sent(&d.decide("acp-7", false, false)[0]);
         assert_eq!(answer["result"]["outcome"]["optionId"], "no");
         let s = d.receive(r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"c2","kind":"edit","status":"completed","content":[{"type":"diff","path":"/w/a.txt","oldText":"a","newText":"b"}]}}}"#);
-        assert!(claude(&s).iter().any(|e| matches!(e, ClaudeEvent::ToolUse { name, input, .. } if name == "Edit" && input["old_string"] == "a")));
+        assert!(claude(&s)
+            .iter()
+            .any(|e| matches!(e, ClaudeEvent::ToolUse { name, input, .. } if name == "Edit" && input["old_string"] == "a")));
         d.receive(r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"usage_update","used":5000,"size":200000}}}"#);
-        let s = d.receive(r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":10,"outputTokens":3,"thoughtTokens":2}}}"#);
+        let s = d.receive(
+            r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":10,"outputTokens":3,"thoughtTokens":2}}}"#,
+        );
         match claude(&s).last().unwrap() {
             ClaudeEvent::Result(r) => {
                 assert!(!r.is_error);
@@ -919,7 +948,10 @@ mod tests {
         d.receive(r#"{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{}}}"#);
         let s = d.receive(r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s","configOptions":[{"id":"m","category":"model","currentValue":"x","options":[]},{"id":"mode","category":"mode","currentValue":"build","options":[{"value":"build"},{"value":"plan"}]}]}}"#);
         let first = sent(&s.replies[0]);
-        assert_eq!((first["method"].as_str(), first["params"]["value"].as_str()), (Some("session/set_config_option"), Some("anthropic/sonnet")));
+        assert_eq!(
+            (first["method"].as_str(), first["params"]["value"].as_str()),
+            (Some("session/set_config_option"), Some("anthropic/sonnet"))
+        );
         let s = d.receive(r#"{"jsonrpc":"2.0","id":3,"result":{}}"#);
         assert_eq!(sent(&s.replies[0])["params"]["value"], "plan");
         let s = d.receive(r#"{"jsonrpc":"2.0","id":4,"error":{"code":1,"message":"nope"}}"#);

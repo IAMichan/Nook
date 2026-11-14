@@ -83,7 +83,7 @@ fn names() -> Vec<String> {
 
 fn is_server(path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    names().iter().any(|n| *n == name) && is_program(path)
+    names().contains(&name) && is_program(path)
 }
 
 /// The ACP server: the program Nook found when it is the server itself, else one in Nook's tools folder (any release
@@ -135,7 +135,8 @@ pub fn prepare(profile_id: &str, server: &str, account: &BTreeMap<String, String
     let paths = Paths::current();
     let profile = account.get("GEMINI_HOME").filter(|h| !h.is_empty()).map(PathBuf::from).unwrap_or_else(|| paths.profile(profile_id));
     let settings = profile.join("antigravity-acp");
-    let failed = |e: std::io::Error| trf("Antigravity klaarzetten lukte niet: {error}", "Couldn't prepare Antigravity: {error}", &[("error", &e)]);
+    let failed =
+        |e: std::io::Error| trf("Antigravity klaarzetten lukte niet: {error}", "Couldn't prepare Antigravity: {error}", &[("error", &e)]);
     std::fs::create_dir_all(&settings).map_err(failed)?;
     crate::paths::restrict(&profile, 0o700);
     let file = settings.join("settings.json");
@@ -145,8 +146,11 @@ pub fn prepare(profile_id: &str, server: &str, account: &BTreeMap<String, String
     std::fs::create_dir_all(paths.temp()).map_err(failed)?;
     // The server calls BROWSER for its sign-in page; Nook opens that page itself once it checked the address.
     let helper = paths.browser_helper();
-    std::fs::write(&helper, if cfg!(windows) { "@exit /b 0\r\n" } else { "#!/bin/sh\n# Nook opens Google's sign-in page itself.\nexit 0\n" })
-        .map_err(failed)?;
+    std::fs::write(
+        &helper,
+        if cfg!(windows) { "@exit /b 0\r\n" } else { "#!/bin/sh\n# Nook opens Google's sign-in page itself.\nexit 0\n" },
+    )
+    .map_err(failed)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

@@ -21,6 +21,7 @@ use crate::i18n::{tr, trf};
 
 /// What a driver hands the manager for one line of the agent's output.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum DriverEvent {
     /// The same events as Claude Code's stream: text, thinking, tools, approvals, questions, the end of the turn.
     Claude(ClaudeEvent),
@@ -85,7 +86,13 @@ pub fn plan(input: &CommandInput) -> Result<Planned, String> {
                 Ok(Planned {
                     spec: command::spec(input),
                     driver: None,
-                    note: Some(tr("Deze Codex heeft geen bruikbare app-server; Nook gebruikt codex exec.", "This Codex has no usable app-server; Nook uses codex exec.").into()),
+                    note: Some(
+                        tr(
+                            "Deze Codex heeft geen bruikbare app-server; Nook gebruikt codex exec.",
+                            "This Codex has no usable app-server; Nook uses codex exec.",
+                        )
+                        .into(),
+                    ),
                 })
             }
         }
@@ -105,9 +112,12 @@ pub fn plan(input: &CommandInput) -> Result<Planned, String> {
 pub fn session_executable(provider: RunProvider, found: Option<String>) -> Option<String> {
     match provider {
         RunProvider::Antigravity => super::antigravity::server(found.as_deref().unwrap_or("")),
-        RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini | RunProvider::Opencode | RunProvider::Cursor | RunProvider::Grok => {
-            found
-        }
+        RunProvider::Claude
+        | RunProvider::Codex
+        | RunProvider::Gemini
+        | RunProvider::Opencode
+        | RunProvider::Cursor
+        | RunProvider::Grok => found,
     }
 }
 
@@ -361,10 +371,7 @@ mod tests {
 
     #[test]
     fn messages() {
-        assert_eq!(
-            parse(r#"{"id":3,"result":{"ok":true}}"#),
-            Some(Message::Response { id: 3, result: json!({"ok": true}), error: None })
-        );
+        assert_eq!(parse(r#"{"id":3,"result":{"ok":true}}"#), Some(Message::Response { id: 3, result: json!({"ok": true}), error: None }));
         assert_eq!(
             parse(r#"{"jsonrpc":"2.0","id":4,"error":{"code":-32000,"message":"Authentication required"}}"#),
             Some(Message::Response { id: 4, result: Value::Null, error: Some("Authentication required".into()) })

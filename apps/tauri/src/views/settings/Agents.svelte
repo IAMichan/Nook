@@ -8,14 +8,16 @@
   import DiffView from "../agents/DiffView.svelte";
   import AgentsUsage from "./AgentsUsage.svelte";
   import AgentsWorkspace from "./AgentsWorkspace.svelte";
+  import AgentsAutomation from "./AgentsAutomation.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
-  type Tab = "link" | "accounts" | "usage" | "workspace";
+  type Tab = "link" | "accounts" | "usage" | "workspace" | "automation";
   const tabs: { id: Tab; title: string; component?: Component }[] = $derived([
     { id: "link", title: tr("Koppelen", "Link") },
     { id: "accounts", title: tr("Accounts", "Accounts") },
     { id: "usage", title: tr("Gebruik", "Usage"), component: AgentsUsage },
     { id: "workspace", title: tr("Werkruimte", "Workspace"), component: AgentsWorkspace },
+    { id: "automation", title: tr("Automatisering", "Automation"), component: AgentsAutomation },
   ]);
   let tab = $state<Tab>((localStorage.getItem("settings.agents.tab") as Tab) || "link");
   $effect(() => {

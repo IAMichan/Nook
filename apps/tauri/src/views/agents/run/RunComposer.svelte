@@ -7,6 +7,7 @@
     type PermissionPolicy, type WorkspaceRun,
   } from "../../../lib/workspace/api";
   import Icon from "../../../components/Icon.svelte";
+  import HandOff from "./HandOff.svelte";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { contextLevel, contextPercent, oneLine } from "../../../lib/workspace/timeline";
@@ -24,7 +25,7 @@
   let draft = $state("");
   let editing = $state<string | null>(null);
   let savedDraft = "";
-  let menu = $state<"" | "more" | "permission" | "effort" | "model">("");
+  let menu = $state<"" | "more" | "permission" | "effort" | "model" | "handoff">("");
   let modelDraft = $state("");
   let collapsed = $state(false);
   let textarea = $state<HTMLTextAreaElement>();
@@ -184,10 +185,13 @@
             {/if}
             <button onclick={() => { menu = ""; onrename(); }}>{tr("Wijzig naam", "Rename")}</button>
             <button disabled={!run.repoRoot} onclick={() => { menu = ""; onchanges(); }}>{tr("Wijzigingen bekijken", "View changes")}</button>
+            <button disabled={active} onclick={() => (menu = "handoff")}>{tr("Overdragen aan een andere agent…", "Hand off to another agent…")}</button>
             <hr />
             <button disabled={active} onclick={() => { menu = ""; workspace.act(() => workspaceApi.archive(run.id, !run.archived)); }}>{run.archived ? tr("Haal uit archief", "Unarchive") : tr("Archiveer", "Archive")}</button>
             <button class="danger" disabled={active} onclick={() => { menu = ""; ondelete(); }}>{tr("Verwijder", "Delete")}</button>
           </div>
+        {:else if menu === "handoff"}
+          <HandOff {run} onclose={() => (menu = "")} />
         {/if}
       </div>
       <div class="pop">

@@ -100,7 +100,7 @@
     if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
     if (config.isolation === "worktree" && !config.baseBranch) return tr("Kies een basis-branch.", "Choose a base branch.");
     if (project?.verdict !== "ok") return project?.verdictMessage || tr("Kies een map.", "Choose a folder.");
-    if (!provider?.supported) return tr("Nook kan {agent} op dit platform nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.", "Nook can't drive {agent} itself on this platform yet. Claude Code, Codex and Gemini CLI it can.", { agent: provider?.name ?? config.provider });
+    if (!provider?.supported) return tr("Nook kan {agent} op dit platform niet zelf aansturen; dat kan op een computer.", "Nook can't drive {agent} itself on this platform; it can on a computer.", { agent: provider?.name ?? config.provider });
     if (!provider?.executable) return tr("{agent} staat niet op deze computer.", "{agent} isn't installed on this computer.", { agent: provider?.name ?? config.provider });
     if (config.isolation === "folder" && !allowShared && sharing.length) return tr("Kies een worktree of bevestig de gedeelde map.", "Choose a worktree or confirm the shared folder.");
     return null;
