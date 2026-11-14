@@ -128,6 +128,10 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// the subscribed connection (`CompanionResponse.inboxChat`), instead of the phone asking every few seconds
     /// (`CompanionFeature.liveChats`). Answered like `inboxChat`.
     case watchChat
+    /// Nook's conversation the phone has open (`conversation`; nil when it closed it): its messages follow by themselves
+    /// over the subscribed connection while Nook writes (`CompanionResponse.messagesConversation`), instead of the phone
+    /// asking every second or two (`CompanionFeature.liveConversation`). Answered like `chat`.
+    case watchConversation
     /// The pictures of chats (`items`: chat ids, at most `ChatAvatar.batch`), small enough to travel in one answer
     /// (`CompanionResponse.avatars`, `CompanionFeature.avatars`).
     case avatars
@@ -243,9 +247,11 @@ enum CompanionFeature {
     /// The Mac answers `avatars` for "app:<id>" with the chat app's icon (`ChatAvatar.appPrefix`), and lists a chat's
     /// photo from Contacts as its picture when the chat has none of its own.
     static let appIcons = "appIcons"
+    /// The Mac takes `watchConversation`: the open Nook conversation's messages follow by themselves, as Nook writes them.
+    static let liveConversation = "liveConversation"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -430,6 +436,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var pull: PullDetailDigest? = nil
     /// On an update the Mac sends by itself: the chat `inboxLines` belong to (`watchChat`).
     var inboxChat: String? = nil
+    /// On an update the Mac sends by itself: the Nook conversation `messages` belong to (`watchConversation`).
+    var messagesConversation: String? = nil
     /// The pictures of `avatars`; a chat without one (any more) is left out.
     var avatars: [ChatAvatar]? = nil
     /// With `history`: where the next page starts, nil on the last page.

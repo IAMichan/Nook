@@ -36,6 +36,7 @@ final class CompanionServer: ObservableObject {
     /// the message that tells them.
     private var revoking: Set<String> = []
     private var watch: AnyCancellable?
+    private var conversationWatch: AnyCancellable?
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
     private var timelinePushRunning = false
@@ -52,6 +53,11 @@ final class CompanionServer: ObservableObject {
                                                      app.chat.objectWillChange)
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
+        // The open Nook conversation follows faster: while Nook writes, the phone gets its words as the Mac shows them,
+        // at most every 150 ms (`pushConversations`). Without a phone watching one, nothing is read.
+        conversationWatch = app.chat.objectWillChange
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.pushConversations() } }
         apply()
         KeepAwake.shared.attach(app: app)
     }
@@ -473,6 +479,31 @@ final class CompanionServer: ObservableObject {
             update.seq = peer.seq
             send(update, key: key, deviceID: deviceID, on: peer.transport)
         }
+        pushConversations()
+    }
+
+    /// Sends every phone that has one of Nook's conversations open (`watchConversation`) its messages when they changed
+    /// since it last got them, only to a phone that may see Nook's chats.
+    private func pushConversations() {
+        guard let app, streams.contains(where: { $0.watchConversation != nil }) else { return }
+        var read: [String: [ChatLine]] = [:]
+        for peer in streams {
+            guard let conversation = peer.watchConversation, let key = peer.key, let deviceID = peer.deviceID,
+                  let id = peer.streamID, scopes(of: deviceID).contains(.nookChat) else { continue }
+            if read[conversation] == nil {
+                guard let uuid = UUID(uuidString: conversation), let found = app.chat.conversation(uuid) else {
+                    peer.watchConversation = nil
+                    peer.sentMessages = nil
+                    continue
+                }
+                read[conversation] = lines(found)
+            }
+            guard let messages = read[conversation], messages != peer.sentMessages else { continue }
+            peer.sentMessages = messages
+            peer.seq += 1
+            send(CompanionResponse(id: id, ok: true, messages: messages, seq: peer.seq, messagesConversation: conversation),
+                 key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
+        }
     }
 
     // MARK: The open session, live
@@ -708,6 +739,8 @@ final class CompanionServer: ObservableObject {
             return inboxMark(request, app: app)
         case .watchChat:
             return await watchChat(request, deviceID: deviceID, app: app)
+        case .watchConversation:
+            return watchConversation(request, deviceID: deviceID, app: app)
         case .avatars:
             return await avatars(request)
         case .pulls:
@@ -861,6 +894,9 @@ final class CompanionPeer {
     var watchChat: String?
     var sentChatLines: [InboxLine]?
     var sentChatTyping: [InboxTypist]?
+    /// Nook's conversation the phone has open (`watchConversation`), and its messages as the phone has them.
+    var watchConversation: String?
+    var sentMessages: [ChatLine]?
     /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
     var compression = false
 

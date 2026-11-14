@@ -366,7 +366,7 @@ struct CommandReceipts: Sendable {
              .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork:
             return true
         case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
-             .pulls, .pull, .history, .fileData, .watchChat, .avatars, .entry:
+             .pulls, .pull, .history, .fileData, .watchChat, .watchConversation, .avatars, .entry:
             return false
         }
     }

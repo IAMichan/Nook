@@ -48,6 +48,7 @@ enum CompanionScopes {
         .watchChat: .scope(.chats), .avatars: .scope(.chats),
         .music: .scope(.music),
         .chats: .scope(.nookChat), .chat: .scope(.nookChat), .ask: .scope(.nookChat), .chatStop: .scope(.nookChat),
+        .watchConversation: .scope(.nookChat),
     ]
 
     /// The scope each `CompanionFeature` belongs to; a feature not listed is about the connection and always offered.
@@ -59,6 +60,7 @@ enum CompanionScopes {
         CompanionFeature.history: .read, CompanionFeature.filePreview: .operate, CompanionFeature.fullTranscript: .read,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
         CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats, CompanionFeature.appIcons: .chats,
+        CompanionFeature.liveConversation: .nookChat,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.
@@ -111,6 +113,7 @@ enum CompanionScopes {
         if !granted.contains(.nookChat) {
             response.conversations = nil
             response.messages = nil
+            response.messagesConversation = nil
         }
         if let features = response.features {
             response.features = features.filter { featureScopes[$0].map(granted.contains) ?? true }

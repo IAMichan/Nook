@@ -71,6 +71,23 @@ final class CompanionScopesTests: XCTestCase {
         XCTAssertFalse(features.contains(CompanionFeature.avatars))
     }
 
+    /// The open Nook conversation follows live only for a phone that may see Nook's chats.
+    func testALiveConversationNeedsTheNookChatScope() {
+        XCTAssertTrue(CompanionScopes.allows(.watchConversation, granted: [.nookChat]))
+        XCTAssertFalse(CompanionScopes.allows(.watchConversation, granted: [.read, .chats]))
+        XCTAssertFalse(CommandReceipts.keeps(.watchConversation), "watching is read afresh every time")
+        var response = CompanionResponse(id: "r", ok: true, features: CompanionFeature.all)
+        response.messages = [ChatLine(id: "m", fromNook: true, text: "Hi", date: 0, streaming: true, status: "", failed: false, onMac: false)]
+        response.messagesConversation = "c"
+        let redacted = CompanionScopes.redact(response, granted: [.read, .chats])
+        XCTAssertNil(redacted.messages)
+        XCTAssertNil(redacted.messagesConversation)
+        XCTAssertFalse((redacted.features ?? []).contains(CompanionFeature.liveConversation))
+        let kept = CompanionScopes.redact(response, granted: [.nookChat])
+        XCTAssertEqual(kept.messagesConversation, "c")
+        XCTAssertTrue((kept.features ?? []).contains(CompanionFeature.liveConversation))
+    }
+
     /// A full batch of pictures, at their largest and in base64, still fits one frame with room for the rest.
     func testABatchOfPicturesFitsOneFrame() {
         let base64 = (ChatAvatar.maxBytes * 4 + 2) / 3

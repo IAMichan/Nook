@@ -55,6 +55,8 @@ final class CompanionClient: ObservableObject {
     private(set) var watchedSession: String?
     /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
     private(set) var watchedChat: String?
+    /// Nook's conversation open on screen, followed live (`watchConversation`); watched again after a reconnect.
+    private(set) var watchedConversation: String?
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
     /// Messages your Mac refused, per session, to edit and send again or to drop, so a
@@ -666,6 +668,7 @@ final class CompanionClient: ObservableObject {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
         if let chat = watchedChat { await watchChat(chat) }
+        if let conversation = watchedConversation { await watchConversation(conversation) }
         await LiveActivities.shared.reconcile(sessions)
         takeShares()
         await drainOutbox()
@@ -698,6 +701,7 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest.versioned(.list), quiet: true)
         if let session = watchedSession { await watchSession(session) }
         if let chat = watchedChat { await watchChat(chat) }
+        if let conversation = watchedConversation { await watchConversation(conversation) }
         await refreshInbox()
         if can(CompanionFeature.chat), allows(.nookChat) { await loadChats() }
     }
@@ -1155,6 +1159,26 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .watchChat), quiet: true)
     }
 
+    /// Opens one of Nook's conversations live (`CompanionOp.watchConversation`): the Mac answers with its messages, then
+    /// sends Nook's words by itself as it writes them. False when this Mac cannot, and the screen asks instead.
+    @discardableResult
+    func watchConversation(_ conversationID: String) async -> Bool {
+        watchedConversation = conversationID
+        guard await supports(CompanionFeature.liveConversation), phase == .connected else { return false }
+        return await perform(CompanionRequest(op: .watchConversation, conversation: conversationID), quiet: true)?.ok == true
+    }
+
+    /// The conversation left the screen: the Mac stops sending it (unless another one opened meanwhile).
+    func unwatchConversation(_ conversationID: String) async {
+        guard watchedConversation == conversationID else { return }
+        watchedConversation = nil
+        guard can(CompanionFeature.liveConversation), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watchConversation), quiet: true)
+    }
+
+    /// Whether the open Nook conversation follows live right now, so its screen need not ask.
+    var conversationIsLive: Bool { can(CompanionFeature.liveConversation) && phase == .connected && channel != nil }
+
     /// Whether the Chats tab and Nook's conversations follow live right now, so their screens need not ask.
     var chatsAreLive: Bool { can(CompanionFeature.liveChats) && phase == .connected && channel != nil }
 
@@ -1344,7 +1368,8 @@ final class CompanionClient: ObservableObject {
         }
         if let files = response.diff, let session = req.session, diffs[session] != files { diffs[session] = files }
         if let list = response.conversations, list != conversations { conversations = list }
-        if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
+        if let lines = response.messages, let conversation = response.messagesConversation ?? response.created ?? req.conversation,
+           chatLines[conversation] != lines {
             chatLines[conversation] = lines
         }
         if let chats = response.inbox {

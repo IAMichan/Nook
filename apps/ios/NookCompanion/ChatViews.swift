@@ -247,15 +247,22 @@ struct ChatView: View {
             id = created
             waitingFor = nil
         }
-        // Quick while Nook writes, slow while it waits for you; a new chat starts the loop once it has an id.
+        // Live from a Mac that sends the open conversation by itself (`liveConversation`): Nook's words show as it writes
+        // them. Otherwise, or while the connection is down, asked for: quick while Nook writes, slow while it waits for
+        // you. A new chat starts the loop once it has an id.
         .task(id: id) {
             guard let id else { return }
             while !Task.isCancelled {
+                if client.conversationIsLive, await client.watchConversation(id) {
+                    while !Task.isCancelled, client.conversationIsLive { try? await Task.sleep(for: .seconds(2)) }
+                    continue
+                }
                 await client.loadChat(id)
                 let writing = client.chatLines[id]?.last?.streaming == true
                 try? await Task.sleep(for: .seconds(writing ? 1.5 : 6))
             }
         }
+        .onDisappear { if let id { Task { await client.unwatchConversation(id) } } }
     }
 
 
