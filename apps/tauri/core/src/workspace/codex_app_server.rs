@@ -570,6 +570,7 @@ mod tests {
             fork_session: false,
             account_environment: BTreeMap::new(),
             run_id: "run-1".into(),
+            profile_id: "default".into(),
             bridge: None,
             effort: Some("high".into()),
         }

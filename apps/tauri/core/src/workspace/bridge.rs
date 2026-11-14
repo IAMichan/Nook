@@ -77,7 +77,9 @@ impl BridgeTool {
             Self::PullRequestCreate => "pull_request_create",
             Self::SessionList => "session_list",
             Self::SessionRead => "session_read",
-            t => super::bridge_nook::name(t),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::TakeOverScreen) => {
+                super::bridge_nook::name(t)
+            }
         }
     }
 
@@ -92,7 +94,9 @@ impl BridgeTool {
             | Self::SessionRead => Effect::Read,
             Self::TerminalRun | Self::TerminalStop | Self::BrowserOpen => Effect::Local,
             Self::PullRequestCreate => Effect::Outward,
-            t => super::bridge_nook::effect(t),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::TakeOverScreen) => {
+                super::bridge_nook::effect(t)
+            }
         }
     }
 
@@ -116,7 +120,9 @@ impl BridgeTool {
             Self::PullRequestCreate => "Pull request",
             Self::SessionList => "Nook-sessies",
             Self::SessionRead => "Lees sessie",
-            t => super::bridge_nook::label(t),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::TakeOverScreen) => {
+                super::bridge_nook::label(t)
+            }
         }
     }
 
@@ -140,7 +146,7 @@ impl BridgeTool {
             Self::PullRequestCreate => "Proposes a pull request for the current branch of your folder. The user approves it in Nook first; Nook then pushes the branch and opens the pull request through GitHub's API with the user's own connection (or GitHub's page in Nook's browser to finish it). Use this instead of `gh pr create`, also when gh reports a rate limit. Commit your work before calling this. Returns the link.",
             Self::SessionList => "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read.",
             Self::SessionRead => "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed.",
-            t => super::bridge_nook::summary(t),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::TakeOverScreen) => super::bridge_nook::summary(t),
         }
     }
 
@@ -188,7 +194,9 @@ impl BridgeTool {
             Self::SessionRead => {
                 object(json!({"session_id": {"type": "string", "description": "The session id from session_list."}}), &["session_id"])
             }
-            t => super::bridge_nook::schema(t),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::TakeOverScreen) => {
+                super::bridge_nook::schema(t)
+            }
         }
     }
 

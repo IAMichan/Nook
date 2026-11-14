@@ -86,7 +86,7 @@
 <style>
   .filter { width: 100%; max-width: 360px; }
   .caption { font: var(--text-label); color: var(--text3); padding-top: var(--space-12); }
-  .settings :global(.group) .row { padding: var(--space-12) 0; }
+  .row { padding: var(--space-12) 0; }
   .keys { display: inline-flex; gap: var(--space-4); }
   kbd { font: var(--text-label); color: var(--text-strong); background: var(--smoke); border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: var(--radius-chip); padding: 1px 7px; min-width: 22px; text-align: center; }
 </style>

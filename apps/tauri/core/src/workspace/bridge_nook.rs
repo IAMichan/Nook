@@ -15,9 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 
 use super::bridge::{BridgeCaller, BridgeTool, Effect, Reason, Verdict};
-use super::models::{
-    branch_name, is_plausible_branch_name, ExecutionMode, IsolationMode, NewRunConfig, RunProvider,
-};
+use super::models::{branch_name, is_plausible_branch_name, ExecutionMode, IsolationMode, NewRunConfig, RunProvider};
 use super::settings::WorkspaceSettings;
 use crate::i18n::{tr, trf};
 use crate::nooks::{ChatMessage, Conversation, StepState};
@@ -315,12 +313,7 @@ pub fn chat_list(conversations: &[Conversation], limit: usize, kept: &BTreeSet<S
 }
 
 /// `nook_chat_read`: the last messages of one conversation, with what Nook proposed and what became of it.
-pub fn chat_read(
-    conversation: &Conversation,
-    limit: usize,
-    kept: &BTreeSet<String>,
-    summarize: &dyn Fn(&str, &Value) -> String,
-) -> String {
+pub fn chat_read(conversation: &Conversation, limit: usize, kept: &BTreeSet<String>, summarize: &dyn Fn(&str, &Value) -> String) -> String {
     let mut parts = vec![format!(
         "# Nook Chat: {}\nId: {}{}",
         conversation.title,
@@ -428,7 +421,11 @@ pub fn start_config(
         return Err(tr("Geef de opdracht voor de agent.", "Give the task for the agent.").into());
     }
     let asked = text("agent");
-    let named = if asked.is_empty() { None } else { Some(provider_named(&asked).ok_or_else(|| trf("Onbekende agent \"{name}\".", "Unknown agent \"{name}\".", &[("name", &asked)]))?) };
+    let named = if asked.is_empty() {
+        None
+    } else {
+        Some(provider_named(&asked).ok_or_else(|| trf("Onbekende agent \"{name}\".", "Unknown agent \"{name}\".", &[("name", &asked)]))?)
+    };
 
     let projects = projects(settings, exists);
     let wanted = text("folder");
@@ -449,9 +446,7 @@ pub fn start_config(
 
     let choices = settings.folder_choices.get(&folder);
     // Without a named agent: the one last used in this folder while it can run here, else the default.
-    let provider = named.unwrap_or_else(|| {
-        choices.map(|c| c.provider).filter(|p| available(*p)).unwrap_or(settings.default_provider)
-    });
+    let provider = named.unwrap_or_else(|| choices.map(|c| c.provider).filter(|p| available(*p)).unwrap_or(settings.default_provider));
     if !available(provider) {
         return Err(trf(
             "{agent} staat niet op deze computer of is niet ingelogd.",

@@ -22,8 +22,13 @@
   import AgentsSettings from "./settings/Agents.svelte";
   import AutocompleteSettings from "./settings/Autocomplete.svelte";
   import GamesSettings from "./settings/Games.svelte";
+  import Appearance from "./settings/Appearance.svelte";
+  import Shortcuts from "./settings/Shortcuts.svelte";
+  import Instructions from "./settings/Instructions.svelte";
+  import Archive from "./settings/Archive.svelte";
+  import Maintenance from "./settings/Maintenance.svelte";
 
-  type IconName = "home" | "settings" | "voice" | "gamepad" | "brain" | "sparkle" | "memory" | "pencil" | "terminal" | "link" | "phone" | "hand" | "note";
+  type IconName = "home" | "settings" | "voice" | "gamepad" | "brain" | "sparkle" | "memory" | "pencil" | "terminal" | "link" | "phone" | "hand" | "note" | "palette" | "keyboard" | "message" | "archive" | "wrench";
   type GroupId = "nook" | "intelligence" | "typing" | "agents" | "connect" | "privacy" | "system";
 
   interface Section {
@@ -52,16 +57,21 @@
   const sections: Section[] = [
     { id: "overview", group: "nook", icon: "home", title: () => tr("Overzicht", "Overview"), component: Overview },
     { id: "general", group: "nook", icon: "settings", title: () => tr("Algemeen", "General"), component: General },
+    { id: "appearance", group: "nook", icon: "palette", title: () => tr("Weergave", "Appearance"), component: Appearance },
     { id: "voice", group: "nook", icon: "voice", title: () => tr("Stem en geluid", "Voice & sound"), component: Voice },
     { id: "games", group: "nook", icon: "gamepad", title: () => "Gamer Mode", component: GamesSettings },
+    { id: "shortcuts", group: "nook", icon: "keyboard", title: () => tr("Sneltoetsen", "Shortcuts"), component: Shortcuts },
     { id: "brain", group: "intelligence", icon: "brain", title: () => tr("Brein", "Brain"), component: Brain },
     { id: "assistant", group: "intelligence", icon: "sparkle", title: () => tr("Assistent", "Assistant"), component: Assistant },
     { id: "memory", group: "intelligence", icon: "memory", title: () => tr("Geheugen", "Memory"), component: Memory },
+    { id: "instructions", group: "intelligence", icon: "message", title: () => tr("Instructies", "Instructions"), component: Instructions },
     { id: "autocomplete", group: "typing", icon: "pencil", title: () => tr("Aanvullen", "Autocomplete"), component: AutocompleteSettings, when: desktop },
     { id: "agents", group: "agents", icon: "terminal", title: () => "Coding agents", component: AgentsSettings },
+    { id: "archive", group: "agents", icon: "archive", title: () => tr("Archief", "Archive"), component: Archive },
     { id: "accounts", group: "connect", icon: "link", title: () => tr("Accounts & koppelingen", "Accounts & connections"), component: Accounts },
     { id: "companion", group: "connect", icon: "phone", title: () => "Companion", component: Companion, when: desktop },
     { id: "privacy", group: "privacy", icon: "hand", title: () => tr("Privacy & beveiliging", "Privacy & security"), component: Privacy },
+    { id: "maintenance", group: "system", icon: "wrench", title: () => tr("Onderhoud", "Maintenance"), component: Maintenance },
     { id: "about", group: "system", icon: "note", title: () => tr("Over Nook", "About Nook"), component: About },
   ];
 

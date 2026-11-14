@@ -1,11 +1,19 @@
 //! Handing work to a coding agent (`Delegation.swift` and `AppModel+AgentSessionTools.swift` on the Mac).
 //!
-//! Two ways in: Nook Chat starts a session on a task (`start_agent_session`, an action the user approves in the
-//! chat's plan first), and a session delegates a focused subtask to a child session. The rules here keep both safe: a
-//! child never has more rights than its parent, the agent sees only the task (not the chat or the parent's
-//! conversation), and the chain is bounded. No processes here; the app starts the session through the manager.
+//! A session delegates a focused subtask to a child session (the bridge's `delegate_task`); Nook Chat starting a
+//! session on a task is `start_agent_session` in `src-tauri/src/tools/agents.rs`. The rules here keep delegation safe:
+//! a child never has more rights than its parent, it sees only the task (not the parent's conversation), and the chain
+//! is bounded. No processes here; the app starts the child through the manager.
 
-use super::models::{ExecutionMode, PermissionPolicy, RunProvider};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use super::manager::Manager;
+use super::models::{ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
 
 /// What a delegated task is for. It only changes the instruction the agent gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,9 +82,9 @@ impl Denial {
                 format!("That agent does not offer the rights \"{p:?}\" without asking. Choose other rights or another agent.")
             }
             Self::TooDeep => format!("Delegated tasks can go {MAX_DEPTH} levels deep at most. Do this part yourself."),
-            Self::TooManyChildren => format!(
-                "Already {MAX_ACTIVE_CHILDREN} delegated tasks are running. Wait for one to finish before delegating more."
-            ),
+            Self::TooManyChildren => {
+                format!("Already {MAX_ACTIVE_CHILDREN} delegated tasks are running. Wait for one to finish before delegating more.")
+            }
         }
     }
 }
@@ -123,7 +131,8 @@ pub fn resolve(
         if permission.is_some() {
             return Err(Denial::Unsupported(chosen));
         }
-        chosen = offered.iter().copied().filter(|p| rank(*p) <= rank(chosen)).max_by_key(|p| rank(*p)).ok_or(Denial::Unsupported(chosen))?;
+        chosen =
+            offered.iter().copied().filter(|p| rank(*p) <= rank(chosen)).max_by_key(|p| rank(*p)).ok_or(Denial::Unsupported(chosen))?;
     }
     Ok((chosen_mode, chosen))
 }
@@ -144,30 +153,115 @@ pub fn child_prompt(task: &str, role: Role) -> String {
     [task.trim(), role.instruction(), CHILD_NOTE].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join("\n\n")
 }
 
-/// The agent Nook Chat asked for: its id or its name in any case; empty is the user's default.
-pub fn agent_named(asked: &str, default: RunProvider) -> Option<RunProvider> {
-    let asked = asked.trim().to_lowercase();
-    if asked.is_empty() {
-        return Some(default);
-    }
-    RunProvider::ALL.into_iter().find(|p| p.id() == asked || p.display_name().to_lowercase() == asked)
+/// The link from a child session to the session that delegated to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Link {
+    pub parent: Uuid,
+    /// 1 for a child of a session you started, 2 for its child.
+    pub depth: usize,
+    /// A repeated call with the same key returns the same child instead of starting a second one.
+    #[serde(default)]
+    pub key: String,
 }
 
-/// The folder Nook Chat asked for, only among folders the user already worked in (favorites first, then recent):
-/// the same path, or a folder with that name. Empty is the most recent one. Nook Chat never opens a new folder by
-/// itself, so a session cannot start somewhere the user never chose.
-pub fn folder_named(wanted: &str, known: &[String]) -> Option<String> {
-    let wanted = wanted.trim().trim_end_matches(['/', '\\']);
-    if wanted.is_empty() {
-        return known.first().cloned();
+/// `delegations.json` next to the sessions: child → link.
+pub struct Links {
+    file: PathBuf,
+    links: Mutex<BTreeMap<Uuid, Link>>,
+}
+
+impl Links {
+    pub fn new(directory: &Path) -> Self {
+        let file = directory.join("delegations.json");
+        let links = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        Self { file, links: Mutex::new(links) }
     }
-    let name = |p: &str| p.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or_default().to_lowercase();
-    known
-        .iter()
-        .find(|p| p.trim_end_matches(['/', '\\']) == wanted)
-        .or_else(|| known.iter().find(|p| name(p) == wanted.to_lowercase()))
-        .or_else(|| known.iter().find(|p| name(p) == name(wanted)))
-        .cloned()
+
+    pub fn link(&self, child: Uuid) -> Option<Link> {
+        self.links.lock().ok()?.get(&child).cloned()
+    }
+
+    /// How deep `session` is: 0 for a session you started.
+    pub fn depth(&self, session: Uuid) -> usize {
+        self.link(session).map_or(0, |l| l.depth)
+    }
+
+    pub fn children(&self, parent: Uuid) -> Vec<Uuid> {
+        self.links.lock().map(|l| l.iter().filter(|(_, v)| v.parent == parent).map(|(k, _)| *k).collect()).unwrap_or_default()
+    }
+
+    fn child_with_key(&self, parent: Uuid, key: &str) -> Option<Uuid> {
+        if key.is_empty() {
+            return None;
+        }
+        self.links.lock().ok()?.iter().find(|(_, v)| v.parent == parent && v.key == key).map(|(k, _)| *k)
+    }
+
+    fn insert(&self, child: Uuid, link: Link) {
+        let Ok(mut links) = self.links.lock() else { return };
+        links.insert(child, link);
+        if let Ok(bytes) = serde_json::to_vec_pretty(&*links) {
+            let _ = crate::paths::write_atomic(&self.file, &bytes);
+        }
+    }
+}
+
+/// What a session asks for when it delegates.
+#[derive(Debug, Clone, Default)]
+pub struct Request {
+    pub task: String,
+    pub title: String,
+    pub role: Option<Role>,
+    /// Another agent than the parent's; `None` is the parent's own.
+    pub agent: Option<RunProvider>,
+    pub mode: Option<ExecutionMode>,
+    pub permission: Option<PermissionPolicy>,
+    pub key: String,
+}
+
+/// Starts a child session in the parent's folder with at most the parent's rights. Returns the child's id (the same
+/// child again for a repeated key). `profile`: the user's account for an agent the parent does not run itself.
+pub fn delegate(
+    manager: &Arc<Manager>,
+    links: &Links,
+    parent: Uuid,
+    request: Request,
+    profile: &dyn Fn(RunProvider) -> String,
+) -> Result<Uuid, String> {
+    let run = manager.run(parent).ok_or("Delegating works from a session that Nook runs.")?;
+    if let Some(existing) = links.child_with_key(parent, request.key.trim()) {
+        return Ok(existing);
+    }
+    let task = request.task.trim();
+    if task.is_empty() {
+        return Err("Give the task for the delegated session.".into());
+    }
+    let active = links.children(parent).into_iter().filter(|c| manager.run(*c).is_some_and(|r| r.status.is_active())).count();
+    let depth = links.depth(parent);
+    if let Some(denial) = admit(depth, active) {
+        return Err(denial.message());
+    }
+    let role = request.role.unwrap_or(Role::General);
+    let provider = request.agent.unwrap_or(run.provider);
+    let (mode, permission) =
+        resolve(run.mode, run.permission, request.mode, request.permission, role, provider).map_err(|d| d.message())?;
+    let config = NewRunConfig {
+        title: if request.title.trim().is_empty() { super::models::title_from(task, 60) } else { request.title.trim().into() },
+        task: child_prompt(task, role),
+        provider,
+        profile_id: if provider == run.provider { run.profile_id.clone() } else { profile(provider) },
+        model: if provider == run.provider { run.model.clone() } else { String::new() },
+        mode,
+        permission,
+        isolation: IsolationMode::Folder,
+        project_path: run.working_directory.clone(),
+        ..NewRunConfig::default()
+    };
+    let child = manager.start(config, true)?;
+    links.insert(child, Link { parent, depth: depth + 1, key: request.key.trim().to_string() });
+    manager.note(child, &crate::i18n::trf("Gedelegeerd door ‘{parent}’", "Delegated by “{parent}”", &[("parent", &run.title)]));
+    Ok(child)
 }
 
 #[cfg(test)]
@@ -203,16 +297,20 @@ mod tests {
     }
 
     #[test]
-    fn finds_the_agent_and_folder_nook_chat_asked_for() {
-        assert_eq!(agent_named("", RunProvider::Codex), Some(RunProvider::Codex));
-        assert_eq!(agent_named("Claude Code", RunProvider::Codex), Some(RunProvider::Claude));
-        assert_eq!(agent_named("gemini", RunProvider::Codex), Some(RunProvider::Gemini));
-        assert_eq!(agent_named("hal", RunProvider::Codex), None);
-        let known = vec!["/home/me/code/app".to_string(), "/home/me/code/site/".to_string()];
-        assert_eq!(folder_named("", &known).as_deref(), Some("/home/me/code/app"));
-        assert_eq!(folder_named("Site", &known).as_deref(), Some("/home/me/code/site/"));
-        assert_eq!(folder_named("/home/me/code/app/", &known).as_deref(), Some("/home/me/code/app"));
-        assert_eq!(folder_named("~/elsewhere/app", &known).as_deref(), Some("/home/me/code/app"));
-        assert_eq!(folder_named("/etc", &known), None);
+    fn links_remember_depth_and_children() {
+        let dir = std::env::temp_dir().join(format!("nook-delegation-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (parent, child, grandchild) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let links = Links::new(&dir);
+        links.insert(child, Link { parent, depth: 1, key: "k".into() });
+        links.insert(grandchild, Link { parent: child, depth: 2, key: String::new() });
+        let again = Links::new(&dir);
+        assert_eq!(again.depth(parent), 0);
+        assert_eq!(again.depth(grandchild), 2);
+        assert_eq!(again.children(parent), vec![child]);
+        assert_eq!(again.child_with_key(parent, "k"), Some(child));
+        assert_eq!(again.child_with_key(parent, ""), None);
+        assert_eq!(admit(again.depth(grandchild), 0), Some(Denial::TooDeep));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use super::bridge::BridgeLaunch;
 use super::command::{self, CommandInput};
+use super::driver;
 use super::git::{self, Git, GitStatus, Worktree};
 use super::limits;
 use super::models::*;
@@ -142,6 +143,8 @@ struct Proc {
     pid: Option<u32>,
     input: Option<mpsc::UnboundedSender<Input>>,
     kill: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Codex app-server or ACP: the conversation over JSON-RPC (`driver::Driver`). `None` for a stream or one-shot agent.
+    driver: Option<Box<dyn driver::Driver>>,
 }
 
 #[derive(Default)]
@@ -527,13 +530,8 @@ impl Manager {
         Ok(id)
     }
 
-    fn check_supported(&self, provider: RunProvider) -> Result<(), String> {
-        if provider.uses_acp() && provider != RunProvider::Gemini {
-            return Err(format!(
-                "Nook kan {} op dit platform nog niet zelf aansturen (dat gaat over ACP). Claude Code, Codex en Gemini CLI wel.",
-                provider.display_name()
-            ));
-        }
+    /// Every agent runs here: Claude Code over its stream, Codex over app-server, the rest over ACP (`driver`).
+    fn check_supported(&self, _provider: RunProvider) -> Result<(), String> {
         Ok(())
     }
 
@@ -793,15 +791,26 @@ impl Manager {
         let ok = {
             let mut s = self.lock();
             let provider = s.runs.iter().find(|r| r.id == id).map(|r| r.provider);
-            if provider != Some(RunProvider::Claude) {
+            if !provider.is_some_and(|p| p.capabilities().steering) {
                 return false;
             }
             let Some(input) = s.processes.get(&id).and_then(|p| p.input.clone()) else { return false };
-            if input.send(Input::Line(parsers::claude_user_message(text, true))).is_err() {
-                return false;
+            // Over a driver (Codex's `turn/steer`) or Claude Code's stream; `None`: not now (`codex exec`, no turn yet).
+            let lines = match s.processes.get_mut(&id).map(|p| p.driver.as_mut()) {
+                Some(Some(d)) => d.steer(text),
+                _ if provider == Some(RunProvider::Claude) => Some(vec![parsers::claude_user_message(text, true)]),
+                _ => None,
+            };
+            let Some(lines) = lines else { return false };
+            for line in lines {
+                if input.send(Input::Line(line)).is_err() {
+                    return false;
+                }
             }
-            if let Some(t) = s.turns.get_mut(&id) {
-                t.steered = true;
+            if provider == Some(RunProvider::Claude) {
+                if let Some(t) = s.turns.get_mut(&id) {
+                    t.steered = true;
+                }
             }
             Self::finish_live_text(&mut s, id);
             Self::append(&mut s, id, RunEvent::new(EventKind::User, text), &mut out);
@@ -823,8 +832,12 @@ impl Manager {
     }
 
     fn launch_turn(self: &Arc<Self>, id: Uuid, prompt: String, executable: String, show_prompt: bool) {
+        // Does this version of the agent have its server? Asked once per program, before the lock.
+        if let Some(provider) = self.run(id).map(|r| r.provider) {
+            driver::warm(provider, &executable);
+        }
         let mut out = Out::default();
-        let spec = {
+        let (spec, mut turn_driver) = {
             let mut s = self.lock();
             if s.processes.contains_key(&id) {
                 return;
@@ -846,16 +859,42 @@ impl Manager {
                 fork_session: s.fork_next.contains(&id),
                 account_environment: (self.hooks.account_environment)(&run.profile_id),
                 run_id: id.to_string(),
+                profile_id: run.profile_id.clone(),
                 bridge: (self.hooks.bridge)(),
                 effort: run.effort.clone(),
             };
-            let spec = command::spec(&input);
             if show_prompt {
                 Self::append(&mut s, id, RunEvent::new(EventKind::User, prompt.clone()), &mut out);
             }
-            spec
+            match driver::plan(&input) {
+                Ok(planned) => {
+                    if let Some(note) = planned.note {
+                        if !s.events.get(&id).is_some_and(|l| l.iter().any(|e| e.text == note)) {
+                            Self::append(&mut s, id, RunEvent::new(EventKind::System, note), &mut out);
+                        }
+                    }
+                    (planned.spec, planned.driver)
+                }
+                Err(message) => {
+                    if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
+                        if !run.status.is_active() {
+                            run.move_to(RunStatus::Preparing, None, Utc::now());
+                        }
+                        run.move_to(RunStatus::Failed, Some(message.clone()), Utc::now());
+                    }
+                    s.dirty_runs = true;
+                    Self::append(&mut s, id, RunEvent::new(EventKind::Error, message), &mut out);
+                    drop(s);
+                    out.push(ManagerEvent::Changed);
+                    self.emit(out);
+                    return;
+                }
+            }
         };
-        let base: BTreeMap<String, String> = std::env::vars().collect();
+        let mut base: BTreeMap<String, String> = std::env::vars().collect();
+        for key in turn_driver.as_ref().map(|d| d.removed_environment()).unwrap_or_default() {
+            base.remove(*key);
+        }
         let env = command::environment(&base, &spec.executable, &spec.extra_environment);
         let mut cmd = tokio::process::Command::new(&spec.executable);
         cmd.args(&spec.arguments)
@@ -900,7 +939,10 @@ impl Manager {
             let mut s = self.lock();
             s.generation += 1;
             let generation = s.generation;
-            s.processes.insert(id, Proc { generation, pid, input: spec.keeps_input_open.then(|| tx.clone()), kill: Some(kill_tx) });
+            s.processes.insert(
+                id,
+                Proc { generation, pid, input: spec.keeps_input_open.then(|| tx.clone()), kill: Some(kill_tx), driver: turn_driver.take() },
+            );
             s.fork_next.remove(&id);
             s.turns.insert(id, TurnState { started: Some(Utc::now()), ..Default::default() });
             let now = Utc::now();
@@ -1006,7 +1048,28 @@ impl Manager {
             }
             let before = s.events.get(&id).map_or(0, Vec::len);
             let Some(provider) = s.runs.iter().find(|r| r.id == id).map(|r| r.provider) else { return };
+            let stepped = s.processes.get_mut(&id).and_then(|p| p.driver.as_mut()).map(|d| d.receive(line));
+            let driven = stepped.is_some();
+            if let Some(step) = stepped {
+                if let Some(input) = s.processes.get(&id).and_then(|p| p.input.clone()) {
+                    for reply in step.replies {
+                        let _ = input.send(Input::Line(reply));
+                    }
+                }
+                for event in step.events {
+                    match event {
+                        driver::DriverEvent::Claude(event) => {
+                            let (done, close) = Self::handle_claude(&mut s, id, event, &mut out);
+                            finished |= done;
+                            close_input |= close;
+                        }
+                        driver::DriverEvent::FileChange { path, kind } => Self::record_file_change(&mut s, id, &path, &kind, &mut out),
+                        driver::DriverEvent::System(text) => Self::append(&mut s, id, RunEvent::new(EventKind::System, text), &mut out),
+                    }
+                }
+            }
             match provider {
+                _ if driven => {}
                 RunProvider::Claude => {
                     for event in parsers::parse_claude(line) {
                         let (done, close) = Self::handle_claude(&mut s, id, event, &mut out);
@@ -1031,6 +1094,16 @@ impl Manager {
                     if let Some(input) = &p.input {
                         let _ = input.send(Input::Close);
                     }
+                }
+                // A server that stays up after its input closed is ended after a moment, so the next turn can start.
+                if driven {
+                    let manager = self.clone();
+                    self.runtime.spawn(async move {
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        if manager.same_process(id, generation) {
+                            manager.force_kill(id);
+                        }
+                    });
                 }
             }
             // Elke nieuwe tool-regel in de tijdlijn is een tool die de agent gebruikte.
@@ -1741,19 +1814,26 @@ impl Manager {
                 t.stopping = true;
             }
             let claude = s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.provider == RunProvider::Claude);
+            // Codex (`turn/interrupt`) and ACP (`session/cancel`) are asked to end the turn the way Claude Code is.
+            let polite: Option<Vec<String>> = match s.processes.get_mut(&id).and_then(|p| p.driver.as_mut()) {
+                Some(d) => Some(d.interrupt()),
+                None if claude => Some(vec![parsers::claude_interrupt(&format!("nook-stop-{}", &Uuid::new_v4().simple().to_string()[..8]))]),
+                None => None,
+            };
             Self::expire_approvals(&mut s, id, &mut out);
             Self::drop_questions(&mut s, id, &mut out);
             Self::append(&mut s, id, RunEvent::new(EventKind::System, "Stoppen…"), &mut out);
-            (pid, input, generation, claude)
+            (pid, input, generation, polite)
         };
         self.emit(out);
-        let (pid, input, generation, claude) = target;
+        let (pid, input, generation, polite) = target;
         let manager = self.clone();
         self.runtime.spawn(async move {
-            if claude {
+            if let Some(lines) = polite {
                 if let Some(i) = &input {
-                    let _ =
-                        i.send(Input::Line(parsers::claude_interrupt(&format!("nook-stop-{}", &Uuid::new_v4().simple().to_string()[..8]))));
+                    for line in lines {
+                        let _ = i.send(Input::Line(line));
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(2_500)).await;
                 if !manager.same_process(id, generation) {
@@ -1810,7 +1890,13 @@ impl Manager {
             let allow = decision != ApprovalDecision::Deny && decision != ApprovalDecision::Terminal;
             self.recap.note(|r, now| r.decision(allow, now));
             let rules = (decision == ApprovalDecision::Always && pending.can_always()).then_some(pending.suggestions.clone()).flatten();
-            let _ = input.send(Input::Line(parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), "")));
+            let lines = match s.processes.get_mut(&run_id).and_then(|p| p.driver.as_mut()) {
+                Some(d) => d.decide(request_id, allow, rules.is_some()),
+                None => vec![parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), "")],
+            };
+            for line in lines {
+                let _ = input.send(Input::Line(line));
+            }
             if let Some(l) = s.approvals.get_mut(&run_id) {
                 l.retain(|p| p.id != request_id);
             }
@@ -1866,7 +1952,13 @@ impl Manager {
             let input = s.processes.get(&run_id).and_then(|p| p.input.clone()).ok_or("De agent draait niet meer.")?;
             let answers: Vec<(String, Vec<String>)> =
                 q.items.iter().zip(selections).map(|(i, sel)| (i.question.clone(), sel.clone())).collect();
-            let _ = input.send(Input::Line(parsers::claude_question_answer(request_id, &q.input, &answers)));
+            let lines = match s.processes.get_mut(&run_id).and_then(|p| p.driver.as_mut()) {
+                Some(d) => d.answer(request_id, &answers).unwrap_or_default(),
+                None => vec![parsers::claude_question_answer(request_id, &q.input, &answers)],
+            };
+            for line in lines {
+                let _ = input.send(Input::Line(line));
+            }
             if let Some(l) = s.questions.get_mut(&run_id) {
                 l.retain(|x| x.id != request_id);
             }

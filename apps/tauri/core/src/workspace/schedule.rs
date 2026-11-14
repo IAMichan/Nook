@@ -305,13 +305,7 @@ impl ScheduledTask {
     }
 
     /// The row after a run ended: records the outcome and plans the next run from the finish time.
-    pub fn finishing<Tz: TimeZone>(
-        &self,
-        status: ScheduledRunStatus,
-        error: Option<String>,
-        finished: DateTime<Utc>,
-        tz: &Tz,
-    ) -> Self {
+    pub fn finishing<Tz: TimeZone>(&self, status: ScheduledRunStatus, error: Option<String>, finished: DateTime<Utc>, tz: &Tz) -> Self {
         let mut copy = self.clone();
         copy.last_run = Some(finished);
         copy.last_status = Some(status);
@@ -631,10 +625,7 @@ mod tests {
     fn fire_keys_differ_per_trigger_and_moment() {
         let id = Uuid::new_v4();
         let at = utc("2026-03-02T10:00:00Z");
-        assert_ne!(
-            ScheduledTask::fire_key(id, at, ScheduleTrigger::Schedule),
-            ScheduledTask::fire_key(id, at, ScheduleTrigger::Manual)
-        );
+        assert_ne!(ScheduledTask::fire_key(id, at, ScheduleTrigger::Schedule), ScheduledTask::fire_key(id, at, ScheduleTrigger::Manual));
         assert_eq!(ScheduledTask::fire_key(id, at, ScheduleTrigger::Schedule), ScheduledTask::fire_key(id, at, ScheduleTrigger::Schedule));
     }
 }

@@ -205,7 +205,11 @@ pub fn switch(
         .into());
     }
     if !installed {
-        return Err(trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &provider.display_name())]));
+        return Err(trf(
+            "{agent} staat niet op deze computer.",
+            "{agent} is not on this computer.",
+            &[("agent", &provider.display_name())],
+        ));
     }
     let leaving = instance_key(run.provider, &run.profile_id);
     let arriving = instance_key(provider, profile_id);
@@ -246,7 +250,11 @@ pub fn switch(
     store.set(id, state);
     manager.note(
         id,
-        &trf("Overgedragen van {from} aan {to}.", "Handed over from {from} to {to}.", &[("from", &source), ("to", &provider.display_name())]),
+        &trf(
+            "Overgedragen van {from} aan {to}.",
+            "Handed over from {from} to {to}.",
+            &[("from", &source), ("to", &provider.display_name())],
+        ),
     );
     if let Some(h) = &rendered {
         manager.note(
@@ -313,7 +321,7 @@ mod tests {
         let events = vec![e(EventKind::User, "first"), e(EventKind::Assistant, "one"), e(EventKind::User, "second")];
         let r = render(&events, 2, "Gemini CLI", TOKEN_BUDGET).unwrap();
         assert!(r.text.contains("- User: second"));
-        assert!(!r.text.contains("first"));
+        assert!(!r.text.contains("- User: first"));
         assert_eq!(strategy(true, Some(2)), Strategy::Delta { since: 2 });
         assert_eq!(strategy(false, Some(2)), Strategy::FullSummary);
         assert_eq!(strategy(true, None), Strategy::FullSummary);

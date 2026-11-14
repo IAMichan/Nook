@@ -137,15 +137,20 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
     }
     let summary = tools::summarize(&name, &input);
     let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let card_title = trf("{agent} wil iets doen met Nook", "{agent} wants to do something with Nook", &[("agent", &caller.agent)]);
     let allowed = ws
         .bridge
         .ask(
             app,
             caller,
             BridgeTool::NookUse,
-            trf("{agent} wil iets doen met Nook", "{agent} wants to do something with Nook", &[("agent", &caller.agent)]),
+            card_title,
             rules::action_detail(&summary, &input),
-            tr("Het gebeurt in je eigen apps en koppelingen, precies zoals hier staat.", "It happens in your own apps and connections, exactly as shown here.").into(),
+            tr(
+                "Het gebeurt in je eigen apps en koppelingen, precies zoals hier staat.",
+                "It happens in your own apps and connections, exactly as shown here.",
+            )
+            .into(),
             &context.connection,
         )
         .await;
@@ -224,7 +229,8 @@ fn nook_chat_list(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult,
 fn nook_chat_read(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
     let kept = kept(app);
     let id = super::arg(a, "conversation_id").to_string();
-    let conversation = app.state::<AppState>().with_chat(|c| c.get(&id).cloned()).ok_or("No such conversation. Use an id from nook_chat_list.")?;
+    let conversation =
+        app.state::<AppState>().with_chat(|c| c.get(&id).cloned()).ok_or("No such conversation. Use an id from nook_chat_list.")?;
     Ok(data(&rules::chat_read(&conversation, limit(a, 20, 60), &kept, &|tool, input| tools::summarize(tool, input))))
 }
 
@@ -260,15 +266,21 @@ async fn nook_chat_send(app: &AppHandle, a: &Map<String, Value>, caller: &Bridge
     }
     let title = target.as_ref().and_then(|id| state.with_chat(|c| c.get(id).map(|conv| conv.title.clone())));
     let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let card_title =
+        trf("{agent} wil iets vragen in Nook Chat", "{agent} wants to ask something in Nook Chat", &[("agent", &caller.agent)]);
     let allowed = ws
         .bridge
         .ask(
             app,
             caller,
             BridgeTool::NookChatSend,
-            trf("{agent} wil iets vragen in Nook Chat", "{agent} wants to ask something in Nook Chat", &[("agent", &caller.agent)]),
+            card_title,
             title.map(|t| format!("*{t}*\n\n{message}")).unwrap_or_else(|| message.clone()),
-            tr("Nook antwoordt met je eigen bronnen; wat Nook voorstelt te doen, wacht daarna nog op jou.", "Nook answers with your own sources; anything Nook proposes to do still waits for you.").into(),
+            tr(
+                "Nook antwoordt met je eigen bronnen; wat Nook voorstelt te doen, wacht daarna nog op jou.",
+                "Nook answers with your own sources; anything Nook proposes to do still waits for you.",
+            )
+            .into(),
             &context.connection,
         )
         .await;
@@ -343,22 +355,13 @@ async fn take_over_screen(app: &AppHandle, a: &Map<String, Value>, caller: &Brid
     }
     let minutes = ScreenGrant::minutes(a.get("minutes").and_then(Value::as_i64));
     let ws = workspace(app).ok_or("Nook is not ready.")?;
-    let allowed = ws
-        .bridge
-        .ask(
-            app,
-            caller,
-            BridgeTool::TakeOverScreen,
-            trf("{agent} wil je scherm lezen", "{agent} wants to read your screen", &[("agent", &caller.agent)]),
-            reason.clone(),
-            trf(
-                "{minutes} minuten lang, alleen lezen: Nook klikt en typt niet voor agents.",
-                "For {minutes} minutes, read-only: Nook does not click or type for agents.",
-                &[("minutes", &minutes)],
-            ),
-            &context.connection,
-        )
-        .await;
+    let card_note = trf(
+        "{minutes} minuten lang, alleen lezen: Nook klikt en typt niet voor agents.",
+        "For {minutes} minutes, read-only: Nook does not click or type for agents.",
+        &[("minutes", &minutes)],
+    );
+    let card_title = trf("{agent} wil je scherm lezen", "{agent} wants to read your screen", &[("agent", &caller.agent)]);
+    let allowed = ws.bridge.ask(app, caller, BridgeTool::TakeOverScreen, card_title, reason.clone(), card_note, &context.connection).await;
     if !allowed {
         audit(app, BridgeTool::TakeOverScreen, caller, &reason, "niet toegestaan");
         return Err(refusal(Reason::NeedsReview).into());

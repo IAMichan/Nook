@@ -5,5 +5,6 @@ use super::Row;
 
 mod base;
 mod maintenance;
+mod nook_tools;
 
-pub const ALL: &[&[Row]] = &[base::ROWS, maintenance::ROWS];
+pub const ALL: &[&[Row]] = &[base::ROWS, maintenance::ROWS, nook_tools::ROWS];

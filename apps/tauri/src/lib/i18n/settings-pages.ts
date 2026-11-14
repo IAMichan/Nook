@@ -1,0 +1,171 @@
+// Settings › Appearance, Shortcuts, Instructions, Archive, Maintenance and About. Where the Mac has the same text
+// (I18n+LookThemes, I18n+Instructions, the archive and about keys), its translation is used.
+import type { Table } from "./catalog";
+
+export const table: Table = {
+  // Sidebar and Appearance
+  "Appearance": { de: "Darstellung", fr: "Apparence", es: "Apariencia" },
+  "Instructions": { de: "Anweisungen", fr: "Instructions", es: "Instrucciones" },
+  "Maintenance": { de: "Wartung", fr: "Maintenance", es: "Mantenimiento" },
+  "Theme": { de: "Thema", fr: "Thème", es: "Tema" },
+  "System": { de: "System", fr: "Système", es: "Sistema" },
+  "Light": { de: "Hell", fr: "Clair", es: "Claro" },
+  "Dark": { de: "Dunkel", fr: "Sombre", es: "Oscuro" },
+  "Density": { de: "Dichte", fr: "Densité", es: "Densidad" },
+  "Comfortable": { de: "Komfortabel", fr: "Confortable", es: "Cómoda" },
+  "Spacious": { de: "Großzügig", fr: "Aérée", es: "Amplia" },
+  "Text and layout": { de: "Text und Layout", fr: "Texte et mise en page", es: "Texto y diseño" },
+  "How much room text and rows get. Compact fits more on screen; spacious reads easier.": {
+    de: "Wie viel Platz Text und Zeilen bekommen. Kompakt zeigt mehr auf dem Bildschirm; großzügig liest sich ruhiger.",
+    fr: "La place accordée au texte et aux lignes. Compacte en affiche davantage à l’écran ; aérée se lit plus facilement.",
+    es: "Cuánto espacio tienen el texto y las filas. Compacta muestra más en pantalla; amplia se lee con más calma.",
+  },
+  "System follows your computer's light or dark mode. The bar stays dark in every theme, as the notch of a Mac does.": {
+    de: "System folgt dem hellen oder dunklen Modus deines Computers. Die Leiste bleibt in jedem Thema dunkel, wie die Notch eines Mac.",
+    fr: "Système suit le mode clair ou sombre de votre ordinateur. La barre reste sombre dans chaque thème, comme l’encoche d’un Mac.",
+    es: "Sistema sigue el modo claro u oscuro de tu ordenador. La barra se queda oscura en todos los temas, como la muesca de un Mac.",
+  },
+  "The color of the main buttons. In light, Nook's soft white turns near-black so it stays readable.": {
+    de: "Die Farbe der wichtigsten Tasten. Im hellen Modus wird Nooks sanftes Weiß fast schwarz, damit es lesbar bleibt.",
+    fr: "La couleur des boutons principaux. En clair, le blanc doux de Nook devient presque noir pour rester lisible.",
+    es: "El color de los botones principales. En claro, el blanco suave de Nook se vuelve casi negro para seguir siendo legible.",
+  },
+
+  // Shortcuts
+  "Everywhere": { de: "Überall", fr: "Partout", es: "En todas partes" },
+  "In Nook": { de: "In Nook", fr: "Dans Nook", es: "En Nook" },
+  "Filter shortcuts": { de: "Kurzbefehle filtern", fr: "Filtrer les raccourcis", es: "Filtrar atajos" },
+  "No shortcut matches.": { de: "Kein Kurzbefehl passt.", fr: "Aucun raccourci ne correspond.", es: "Ningún atajo coincide." },
+  "Search and navigation": { de: "Suchen und Navigieren", fr: "Recherche et navigation", es: "Búsqueda y navegación" },
+  "Writing": { de: "Schreiben", fr: "Écriture", es: "Escritura" },
+  "Command palette": { de: "Befehlspalette", fr: "Palette de commandes", es: "Paleta de comandos" },
+  "Search conversations, or settings in Settings": {
+    de: "Unterhaltungen durchsuchen, in den Einstellungen die Einstellungen",
+    fr: "Rechercher dans les conversations, ou dans les réglages depuis Réglages",
+    es: "Buscar en las conversaciones, o en los ajustes desde Ajustes",
+  },
+  "Go to a page in the sidebar": { de: "Zu einer Seite der Seitenleiste", fr: "Aller à une page de la barre latérale", es: "Ir a una página de la barra lateral" },
+  "Open Settings": { de: "Einstellungen öffnen", fr: "Ouvrir les réglages", es: "Abrir Ajustes" },
+  "Stop the answer": { de: "Antwort stoppen", fr: "Arrêter la réponse", es: "Detener la respuesta" },
+  "Show or hide the conversations": { de: "Unterhaltungen ein- oder ausblenden", fr: "Afficher ou masquer les conversations", es: "Mostrar u ocultar las conversaciones" },
+  "New line": { de: "Neue Zeile", fr: "Nouvelle ligne", es: "Nueva línea" },
+  "Earlier questions": { de: "Frühere Fragen", fr: "Questions précédentes", es: "Preguntas anteriores" },
+  "Stop the answer while it is being written": {
+    de: "Antwort stoppen, während sie geschrieben wird",
+    fr: "Arrêter la réponse pendant qu’elle s’écrit",
+    es: "Detener la respuesta mientras se escribe",
+  },
+  "Run the plan that waits for you": { de: "Den Plan ausführen, der auf dich wartet", fr: "Exécuter le plan qui vous attend", es: "Ejecutar el plan que te espera" },
+  "Close a dialog or the palette": { de: "Ein Fenster oder die Palette schließen", fr: "Fermer une fenêtre ou la palette", es: "Cerrar un cuadro de diálogo o la paleta" },
+
+  // Instructions
+  "Answer style": { de: "Antwortstil", fr: "Style de réponse", es: "Estilo de respuesta" },
+  "Default style": { de: "Standardstil", fr: "Style par défaut", es: "Estilo predeterminado" },
+  "Standard": { de: "Standard", fr: "Standard", es: "Estándar" },
+  "Concise": { de: "Knapp", fr: "Concis", es: "Conciso" },
+  "Explanatory": { de: "Erklärend", fr: "Explicatif", es: "Explicativo" },
+  "Formal": { de: "Förmlich", fr: "Formel", es: "Formal" },
+  "Casual": { de: "Locker", fr: "Décontracté", es: "Informal" },
+  "Only the voice and the length change, never the facts.": {
+    de: "Nur Ton und Länge ändern sich, nie die Fakten.",
+    fr: "Seuls le ton et la longueur changent, jamais les faits.",
+    es: "Solo cambian el tono y la longitud, nunca los hechos.",
+  },
+  "Your instructions": { de: "Deine Anweisungen", fr: "Vos instructions", es: "Tus instrucciones" },
+  "For example: Call me Sam. Use metric units. Always add a short explanation to code.": {
+    de: "Zum Beispiel: Nenn mich Sam. Verwende metrische Einheiten. Erkläre Code immer kurz.",
+    fr: "Par exemple : Appelle-moi Sam. Utilise le système métrique. Ajoute toujours une courte explication au code.",
+    es: "Por ejemplo: Llámame Sam. Usa el sistema métrico. Añade siempre una breve explicación al código.",
+  },
+  "Saved": { de: "Gespeichert", fr: "Enregistré", es: "Guardado" },
+  "Saved when you leave the field.": { de: "Wird gespeichert, wenn du das Feld verlässt.", fr: "Enregistré quand vous quittez le champ.", es: "Se guarda al salir del campo." },
+  "Nook sends this text with every question, to the brain you chose. What you say in a question itself comes first. Don't put passwords or keys here.": {
+    de: "Nook schickt diesen Text mit jeder Frage an das Gehirn, das du gewählt hast. Was du in einer Frage selbst sagst, geht vor. Schreib hier keine Passwörter oder Schlüssel hinein.",
+    fr: "Nook envoie ce texte avec chaque question, au cerveau que vous avez choisi. Ce que vous dites dans une question passe en premier. N’y mettez ni mots de passe ni clés.",
+    es: "Nook envía este texto con cada pregunta, al cerebro que elegiste. Lo que digas en una pregunta tiene prioridad. No pongas aquí contraseñas ni claves.",
+  },
+
+  // Archive
+  "Search the archive": { de: "Archiv durchsuchen", fr: "Rechercher dans les archives", es: "Buscar en el archivo" },
+  "Nook conversations": { de: "Nook-Unterhaltungen", fr: "Conversations Nook", es: "Conversaciones de Nook" },
+  "No archived sessions": { de: "Keine archivierten Sitzungen", fr: "Aucune session archivée", es: "No hay sesiones archivadas" },
+  "No archived conversations": { de: "Keine archivierten Unterhaltungen", fr: "Aucune conversation archivée", es: "No hay conversaciones archivadas" },
+  "Delete all archived…": { de: "Alle archivierten löschen…", fr: "Tout supprimer des archives…", es: "Eliminar todo lo archivado…" },
+  "Delete {n} found…": { de: "{n} gefundene löschen…", fr: "Supprimer les {n} trouvés…", es: "Eliminar los {n} encontrados…" },
+  "Delete {n} archived sessions?": { de: "{n} archivierte Sitzungen löschen?", fr: "Supprimer {n} sessions archivées ?", es: "¿Eliminar {n} sesiones archivadas?" },
+  "Delete {n} archived conversations?": { de: "{n} archivierte Unterhaltungen löschen?", fr: "Supprimer {n} conversations archivées ?", es: "¿Eliminar {n} conversaciones archivadas?" },
+  "Delete {title} for good?": { de: "{title} endgültig löschen?", fr: "Supprimer {title} définitivement ?", es: "¿Eliminar {title} para siempre?" },
+  "Their history leaves Nook for good. Worktrees are cleaned up as when you delete one session. Sessions that are still working stay.": {
+    de: "Ihr Verlauf verschwindet endgültig aus Nook. Worktrees werden aufgeräumt wie beim Löschen einer einzelnen Sitzung. Sitzungen, die noch arbeiten, bleiben.",
+    fr: "Leur historique quitte Nook pour de bon. Les worktrees sont nettoyés comme lorsque vous supprimez une seule session. Les sessions encore en cours restent.",
+    es: "Su historial sale de Nook para siempre. Los worktrees se limpian igual que al eliminar una sola sesión. Las sesiones que siguen trabajando se quedan.",
+  },
+  "They leave Nook for good. Conversations Nook is still answering stay.": {
+    de: "Sie verschwinden endgültig aus Nook. Unterhaltungen, auf die Nook noch antwortet, bleiben.",
+    fr: "Elles quittent Nook pour de bon. Les conversations auxquelles Nook répond encore restent.",
+    es: "Salen de Nook para siempre. Las conversaciones que Nook aún está respondiendo se quedan.",
+  },
+  "Could not restore the session": { de: "Die Sitzung konnte nicht wiederhergestellt werden", fr: "Impossible de restaurer la session", es: "No se pudo restaurar la sesión" },
+  "Could not delete the session": { de: "Die Sitzung konnte nicht gelöscht werden", fr: "Impossible de supprimer la session", es: "No se pudo eliminar la sesión" },
+  "Could not restore the conversation": { de: "Die Unterhaltung konnte nicht wiederhergestellt werden", fr: "Impossible de restaurer la conversation", es: "No se pudo restaurar la conversación" },
+  "Could not delete the conversation": { de: "Die Unterhaltung konnte nicht gelöscht werden", fr: "Impossible de supprimer la conversation", es: "No se pudo eliminar la conversación" },
+
+  // Maintenance
+  "Updates": { de: "Updates", fr: "Mises à jour", es: "Actualizaciones" },
+  "Version": { de: "Version", fr: "Version", es: "Versión" },
+  "Versions": { de: "Versionen", fr: "Versions", es: "Versiones" },
+  "This version does not update itself yet. The newest one is on the releases page.": {
+    de: "Diese Version aktualisiert sich noch nicht selbst. Die neueste steht auf der Release-Seite.",
+    fr: "Cette version ne se met pas encore à jour toute seule. La plus récente est sur la page des versions.",
+    es: "Esta versión todavía no se actualiza sola. La más reciente está en la página de versiones.",
+  },
+  "Check for updates": { de: "Nach Updates suchen", fr: "Rechercher des mises à jour", es: "Buscar actualizaciones" },
+  "Data": { de: "Daten", fr: "Données", es: "Datos" },
+  "Data folder": { de: "Datenordner", fr: "Dossier de données", es: "Carpeta de datos" },
+  "Caches": { de: "Caches", fr: "Caches", es: "Cachés" },
+  "Service icons and short-lived audio files. Nook fetches them again when needed.": {
+    de: "Symbole von Diensten und kurzlebige Audiodateien. Nook holt sie bei Bedarf wieder.",
+    fr: "Les icônes des services et des fichiers audio éphémères. Nook les récupère à nouveau si besoin.",
+    es: "Iconos de servicios y archivos de audio de corta duración. Nook los vuelve a obtener cuando hace falta.",
+  },
+  "Export": { de: "Exportieren", fr: "Exporter", es: "Exportar" },
+  "Export…": { de: "Exportieren…", fr: "Exporter…", es: "Exportar…" },
+  "All settings as one file. Keys and passwords are not in it: they stay in your computer's secure storage.": {
+    de: "Alle Einstellungen als eine Datei. Schlüssel und Passwörter sind nicht darin: Sie bleiben im sicheren Speicher deines Computers.",
+    fr: "Tous les réglages dans un seul fichier. Les clés et mots de passe n’y sont pas : ils restent dans le stockage sécurisé de votre ordinateur.",
+    es: "Todos los ajustes en un solo archivo. Las claves y contraseñas no están dentro: se quedan en el almacenamiento seguro de tu ordenador.",
+  },
+  "Default settings": { de: "Standardeinstellungen", fr: "Réglages par défaut", es: "Ajustes predeterminados" },
+  "Puts everything back as on the first start. Your language, conversations, memory, connections and keys stay.": {
+    de: "Setzt alles zurück wie beim ersten Start. Deine Sprache, Unterhaltungen, dein Gedächtnis, deine Verbindungen und Schlüssel bleiben.",
+    fr: "Remet tout comme au premier démarrage. Votre langue, vos conversations, votre mémoire, vos connexions et vos clés restent.",
+    es: "Lo deja todo como en el primer inicio. Tu idioma, conversaciones, memoria, conexiones y claves se quedan.",
+  },
+  "Restore…": { de: "Zurücksetzen…", fr: "Restaurer…", es: "Restaurar…" },
+  "Settings restored": { de: "Einstellungen zurückgesetzt", fr: "Réglages restaurés", es: "Ajustes restaurados" },
+  "Settings saved to {path}": { de: "Einstellungen gespeichert unter {path}", fr: "Réglages enregistrés dans {path}", es: "Ajustes guardados en {path}" },
+  "{size} freed": { de: "{size} freigegeben", fr: "{size} libérés", es: "{size} liberados" },
+  "Useful to include when you report a problem.": {
+    de: "Praktisch zum Mitschicken, wenn du ein Problem meldest.",
+    fr: "Utile à joindre quand vous signalez un problème.",
+    es: "Útil para incluir cuando informas de un problema.",
+  },
+  "Could not clear the caches": { de: "Die Caches konnten nicht geleert werden", fr: "Impossible de vider les caches", es: "No se pudieron vaciar las cachés" },
+  "Could not export the settings": { de: "Die Einstellungen konnten nicht exportiert werden", fr: "Impossible d’exporter les réglages", es: "No se pudieron exportar los ajustes" },
+  "Could not open the folder": { de: "Der Ordner konnte nicht geöffnet werden", fr: "Impossible d’ouvrir le dossier", es: "No se pudo abrir la carpeta" },
+  "Could not restore the settings": { de: "Die Einstellungen konnten nicht zurückgesetzt werden", fr: "Impossible de restaurer les réglages", es: "No se pudieron restaurar los ajustes" },
+
+  // About
+  "App": { de: "App", fr: "App", es: "App" },
+  "Source code": { de: "Quellcode", fr: "Code source", es: "Código fuente" },
+  "What's new": { de: "Neuigkeiten", fr: "Nouveautés", es: "Novedades" },
+  "Report a problem": { de: "Problem melden", fr: "Signaler un problème", es: "Informar de un problema" },
+  "Legal": { de: "Rechtliches", fr: "Mentions légales", es: "Legal" },
+  "License": { de: "Lizenz", fr: "Licence", es: "Licencia" },
+  "Open source notices": { de: "Open-Source-Hinweise", fr: "Mentions open source", es: "Avisos de código abierto" },
+  "Nook is your buddy: the one calm place for everything that needs your attention (people, coding agents, music, your calendar and more), so you keep the overview and steer instead of chase.": {
+    de: "Nook ist dein Kumpel: der eine ruhige Ort für alles, was deine Aufmerksamkeit braucht (Menschen, Coding Agents, Musik, dein Kalender und mehr), damit du den Überblick behältst und steuerst, statt hinterherzulaufen.",
+    fr: "Nook est votre compagnon : l’endroit calme et unique pour tout ce qui demande votre attention (les gens, les agents de code, la musique, votre agenda et plus), pour garder la vue d’ensemble et piloter au lieu de courir après.",
+    es: "Nook es tu compañero: el único lugar tranquilo para todo lo que necesita tu atención (personas, agentes de código, música, tu calendario y más), para que mantengas la visión de conjunto y dirijas en lugar de perseguir.",
+  },
+};

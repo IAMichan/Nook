@@ -3,6 +3,7 @@
   // the data folder, caches, exporting and resetting the settings, the versions, and where updates come from. This
   // build has no updater of its own, so the newest version is on the releases page.
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { api } from "../../lib/api";
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import { toast } from "../../lib/toast.svelte";
@@ -44,7 +45,7 @@
     confirmReset = false;
     try {
       nook.settings = await maintenance.resetSettings();
-      nook.info = await import("../../lib/api").then((m) => m.api.appInfo());
+      nook.info = await api.appInfo();
       toast.success(tr("Instellingen teruggezet", "Settings restored"));
     } catch (e) {
       toast.error(tr("Kon de instellingen niet terugzetten", "Could not restore the settings"), e);
@@ -93,7 +94,7 @@
 <div class="group">
   {#if desktop}
     <div class="row">
-      <span>{tr("Exporteren", "Export")}<br /><small class="faint">{tr("Alle instellingen als één bestand. Sleutels en wachtwoorden staan er niet in: die blijven in de sleutelbos van je computer.", "All settings as one file. Keys and passwords are not in it: they stay in your computer's keychain.")}</small></span>
+      <span>{tr("Exporteren", "Export")}<br /><small class="faint">{tr("Alle instellingen als één bestand. Sleutels en wachtwoorden staan er niet in: die blijven in de beveiligde opslag van je computer.", "All settings as one file. Keys and passwords are not in it: they stay in your computer's secure storage.")}</small></span>
       <button onclick={exportSettings}>{tr("Exporteren…", "Export…")}</button>
     </div>
   {/if}
