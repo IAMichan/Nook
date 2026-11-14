@@ -365,11 +365,14 @@ struct DockedSessionPanel: View {
                 // The context and the limits, out of the composer: a card of its own under the panel.
                 SessionUsageCard(source: usage, boxed: true)
             }
+            // A page the agent opened rests under these cards.
+            .sessionBrowserDockCards()
             // The scroll view would cut off the cards' outline.
             .padding(.vertical, NookTheme.Spacing.xxs)
             .padding(.trailing, NookTheme.Spacing.sm)
         }
         .scrollIndicators(.never)
+        .sessionBrowserDockColumn()
         .task(id: "\(model.directory)|\(agentWorking)") { await model.follow(agentWorking: agentWorking) }
         .onChange(of: model.working) { _, working in
             if !working, let runID { workspace.refreshGit(runID) }
