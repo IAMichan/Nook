@@ -284,6 +284,10 @@ final class WorkspaceManager: ObservableObject {
     /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
     /// context size at that moment: an answer from before a later turn is not shown.
     @Published var contextUsages: [UUID: (usage: ContextUsage, contextTokens: Int?)] = [:]
+    /// Sessions whose agent could not be asked what fills its window (no process runs, or it answered with an error), with
+    /// the session's context size then: for that context the breakdown shows the estimate instead of a skeleton that never
+    /// fills. A later turn changes the size, so the agent is waited for again.
+    @Published var contextBreakdownMissing: [UUID: Int?] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -1398,6 +1402,7 @@ final class WorkspaceManager: ObservableObject {
         codexSubagents[id] = nil
         openPullRequests[id] = nil
         contextUsages[id] = nil
+        contextBreakdownMissing[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
