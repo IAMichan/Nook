@@ -134,6 +134,8 @@ function onHostMessage(message) {
 
 /** The tab a command works in: the one it names, else the one Nook worked in last, else the one in front. */
 async function targetTab(params) {
+  // Double Tap works in the tab the user looks at, never in the one Nook used last.
+  if (params.front) return frontTab();
   if (Number.isInteger(params.tab)) {
     try {
       return await chrome.tabs.get(params.tab);
@@ -149,6 +151,11 @@ async function targetTab(params) {
       // Closed since: fall back to the tab in front.
     }
   }
+  return frontTab();
+}
+
+/** The active tab of the window in front. */
+async function frontTab() {
   const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
   const [active] = await chrome.tabs.query({ active: true, windowId: window.id });
   if (!active) throw new Error('No tab is open in the browser.');
@@ -190,6 +197,14 @@ async function perform(method, params, tab) {
     case 'find': case 'read': case 'scroll':
       await use(tab);
       return agent(tab.id, method, params);
+    // Double Tap: read the form in front and fill it, without making it the tab Nook works in.
+    case 'form':
+      return agent(tab.id, method, params);
+    case 'fill': {
+      const result = await agent(tab.id, method, params);
+      if (result.ok) await settle(tab.id);
+      return result;
+    }
     case 'click': case 'type': case 'key': {
       await use(tab);
       await presence(tab.id);
@@ -455,8 +470,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onStartup.addListener(connect);
 chrome.runtime.onInstalled.addListener(connect);
-// A minute's alarm keeps trying while Nook is not there yet, also after the browser put this worker to sleep.
-chrome.alarms?.create('reconnect', { periodInMinutes: 1 });
+// The side panel does not have to be open: the browser wakes this worker for these events, so it is connected again by
+// the time the user switches to the browser or a tab and taps for Double Tap there.
+chrome.windows.onFocusChanged.addListener(() => { if (!port) connect(); });
+chrome.tabs.onActivated.addListener(() => { if (!port) connect(); });
+chrome.tabs.onUpdated.addListener((_id, change) => { if (!port && change.status === 'loading') connect(); });
+// A half-minute alarm (the shortest a browser allows) keeps trying while Nook is not there yet, also after the browser
+// put this worker to sleep.
+chrome.alarms?.create('reconnect', { periodInMinutes: 0.5 });
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === 'reconnect' && !port) connect();
 });

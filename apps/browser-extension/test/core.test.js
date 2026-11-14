@@ -112,3 +112,14 @@ test('the browser is named from its brands', () => {
 test('reconnecting backs off to at most half a minute', () => {
   assert.deepEqual([0, 1, 2, 5, 9].map(reconnectDelay), [1000, 2000, 4000, 30000, 30000]);
 });
+
+test('Double Tap reads a form freely and fills it only while Nook may act', () => {
+  const values = [{ ref: 'e1', value: 'Ada' }, { ref: 'e2', value: 'ada@example.com' }];
+  assert.equal(commandError({ method: 'form', params: { front: true } }, { url: 'https://example.com/signup' }), null);
+  assert.equal(commandError({ method: 'fill', params: { values } }, { url: 'https://example.com/signup' }), null);
+  assert.match(commandError({ method: 'fill', params: { values } }, { paused: true }), /paused/);
+  assert.match(commandError({ method: 'form', params: {} }, { blocked: ['example.com'], url: 'https://example.com' }), /switched Nook off/);
+  assert.match(commandError({ method: 'fill', params: { values: [] } }, {}), /needs values/);
+  assert.match(commandError({ method: 'fill', params: { values: [{ ref: 'e1' }] } }, {}), /needs ref/);
+  assert.equal(activityLine({ method: 'fill', params: { values } }, { ok: true, element: '2 fields' }).text, 'Double Tap filled in 2 fields');
+});

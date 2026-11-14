@@ -57,6 +57,24 @@ in front. When several browsers run the extension, `browser` picks one; otherwis
 approval card says what Nook will do and where. For example: *Click button "Send" · mail.example.com*. Nook takes the
 element's name from the last `chrome_find` (`BrowserExtensionRefs`).
 
+### Double Tap in the browser
+
+Double Tap (tap right ⌘ twice) uses the extension too, without the chat tools and without its side panel open. In a
+Chromium browser whose extension is connected, it asks the page agent in one call what the tab in front holds (`form`:
+every fillable field with its label, value and focus, the text around the fields, the buttons that could send the form,
+and the selection). The field's suggestions and the line above it ("Google Chrome · 4 empty fields · Via your browser")
+come from that, and "fill in the form" fills every field in one more call (`fill`), with React-safe value setters, and
+puts the cursor back where it was. Undo writes the old values back; Send clicks the form's own button, only from the
+result card. Both commands go through the same brakes as every other: while Nook is paused in that browser, or the site
+is switched off in the side panel, Double Tap leaves the page alone and says so. When the extension is not connected
+(or the page is one the browser keeps to itself), Double Tap reads and fills the page through the accessibility layer as
+before (`Services/DoubleTap/DoubleTapBrowserLogic.swift`, `DoubleTapBrowserTests`).
+
+The service worker keeps its port to Nook while the browser runs, side panel open or not. When the browser has put the
+worker to sleep, switching to the browser window or to another tab wakes it (`windows.onFocusChanged`,
+`tabs.onActivated`, `tabs.onUpdated`), and it connects again before you tap; a half-minute alarm (the shortest a browser
+allows) keeps trying in between.
+
 ## What keeps it safe
 
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions

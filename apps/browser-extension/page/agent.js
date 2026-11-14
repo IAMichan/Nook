@@ -347,6 +347,156 @@
     return { ok: true, text: `Pressed ${keyName} on ${describe(target)}${effect}.` };
   }
 
+  // MARK: Forms, for Double Tap
+
+  const FIELDS = 'input,textarea,select,[contenteditable=""],[contenteditable=true],[role=textbox],[role=searchbox],[role=combobox]';
+  /** Input types that hold no text Nook could write. */
+  const NOT_TEXT = new Set(['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio', 'range', 'color']);
+  const FORM_LIMIT = 80;
+  const PIECE_LIMIT = 600;
+
+  /** Double Tap's names for a field (`UIControl.role` on the Mac): field, textarea, combobox, search, password. */
+  function fieldRole(element) {
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'textarea' || element.isContentEditable) return 'textarea';
+    if (tag === 'select') return 'combobox';
+    const role = element.getAttribute('role');
+    if (role === 'combobox') return 'combobox';
+    if (role === 'searchbox') return 'search';
+    if (tag === 'input') {
+      const type = (element.type || 'text').toLowerCase();
+      if (type === 'password') return 'password';
+      if (type === 'search') return 'search';
+    }
+    return 'field';
+  }
+
+  function fieldValue(element) {
+    if (element.type === 'password') return '';
+    if (element.tagName === 'SELECT') return clean(element.selectedOptions?.[0]?.text || '');
+    if (element.isContentEditable) return String(element.innerText || '');
+    return String(element.value ?? '');
+  }
+
+  /** The button that sends the form a field is in (or the page's only form), never one that pays or deletes: Nook
+   *  decides that on the Mac (`DoubleTapLogic.submitButton`), so every candidate goes along with its label. */
+  function buttonsNear(fields) {
+    const forms = new Set(fields.map((f) => f.form || f.closest?.('form')).filter(Boolean));
+    const scope = forms.size === 1 ? [...forms][0] : document;
+    const buttons = Array.from(scope.querySelectorAll('button,input[type=submit],input[type=button],[role=button]'))
+      .filter((b) => shown(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true')
+      .slice(0, 60);
+    const preferred = buttons.findIndex((b) => b.type === 'submit' || b.getAttribute('type') === 'submit');
+    return { buttons: buttons.map((b) => ({ ref: refFor(b), label: clip(nameOf(b), 80) })), preferred };
+  }
+
+  /**
+   * The fillable fields of the page in front, for Double Tap: one JSON text with each field (its ref, role, label,
+   * value, focus), the page's text around them in reading order, the buttons that could send it, and what is selected
+   * or focused. Password values never leave the page.
+   */
+  function form() {
+    const fields = [];
+    const pieces = [];
+    const active = document.activeElement;
+    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    let skipUntil = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (skipUntil && skipUntil.contains(node)) continue;
+      skipUntil = null;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = clean(node.textContent);
+        const parent = node.parentElement;
+        if (!text || !parent || !shown(parent) || parent.closest('script,style,noscript,button,select,option')) continue;
+        if (pieces.length < PIECE_LIMIT && pieces[pieces.length - 1]?.text !== text) pieces.push({ text: clip(text, 300) });
+        continue;
+      }
+      const element = node;
+      if (!element.matches(FIELDS)) continue;
+      // A field's own text (a contenteditable body, a select's options) is its value, not text around it.
+      skipUntil = element;
+      if (fields.length >= FORM_LIMIT || !shown(element)) continue;
+      if (element.tagName === 'INPUT' && NOT_TEXT.has((element.type || 'text').toLowerCase())) continue;
+      if (element.isContentEditable && element.parentElement?.closest('[contenteditable=""],[contenteditable=true]')) continue;
+      const role = fieldRole(element);
+      const disabled = element.disabled || element.getAttribute('aria-disabled') === 'true';
+      const readOnly = element.readOnly || element.getAttribute('aria-readonly') === 'true';
+      const label = clip(nameOf(element) || clean(element.getAttribute('placeholder')) || clean(element.name), 120);
+      const entry = {
+        ref: refFor(element), role, label, value: clip(fieldValue(element), 4_000),
+        focused: element === active || element.contains(active), secure: role === 'password',
+        settable: !disabled && !readOnly, placeholder: clip(clean(element.getAttribute('placeholder')), 80),
+        autocomplete: clean(element.getAttribute('autocomplete')), type: clean(element.type || '')
+      };
+      if (element.tagName === 'SELECT') entry.options = Array.from(element.options).slice(0, 40).map((o) => clip(clean(o.text), 60));
+      pieces.push({ field: fields.length });
+      fields.push(entry);
+    }
+    const elements = fields.map((f) => elementOf.get(f.ref)?.deref()).filter(Boolean);
+    const { buttons, preferred } = buttonsNear(elements);
+    const focus = fields.find((f) => f.focused);
+    const page = {
+      title: document.title || '', url: location.href, fields, pieces, buttons, preferred,
+      selection: clip(clean(String(getSelection() || '')), 4_000),
+      focus: focus ? { role: focus.role, empty: !clean(focus.value), placeholder: focus.placeholder, secure: focus.secure } : null
+    };
+    return { ok: true, text: JSON.stringify(page) };
+  }
+
+  /** Writes a field's value the way `type` does, without the ring or scrolling: Double Tap writes many at once. */
+  function setValue(field, value) {
+    if (field.type === 'password' || field.disabled || field.readOnly) return false;
+    if (field.tagName === 'SELECT') {
+      const want = value.trim().toLowerCase();
+      // Empty (Undo): back to the list's empty choice, or to none.
+      const option = want
+        ? Array.from(field.options).find((o) => clean(o.text).toLowerCase() === want || o.value.toLowerCase() === want)
+          || Array.from(field.options).find((o) => clean(o.text).toLowerCase().includes(want))
+        : Array.from(field.options).find((o) => !clean(o.text));
+      if (option) field.value = option.value;
+      else if (!want) field.selectedIndex = -1;
+      else return false;
+    } else if (field.isContentEditable) {
+      field.focus?.({ preventScroll: true });
+      document.execCommand('selectAll', false, null);
+      if (value) document.execCommand('insertText', false, value);
+      else document.execCommand('delete', false, null);
+      return true;
+    } else if ('value' in field) {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set;
+      if (setter) setter.call(field, value);
+      else field.value = value;
+    } else {
+      return false;
+    }
+    field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    field.dispatchEvent(new Event('blur'));
+    return true;
+  }
+
+  /** Fills several fields in one go (`values`: [{ ref, value }]) and says which took their value. */
+  function fill(params = {}) {
+    const values = Array.isArray(params.values) ? params.values.slice(0, FORM_LIMIT) : [];
+    if (!values.length) return { ok: false, error: 'Nothing to fill in.' };
+    const written = [];
+    let first = null;
+    // A rich text field takes its text through the focus: the cursor goes back where the user had it afterwards.
+    const active = document.activeElement;
+    for (const item of values) {
+      const field = elementOf.get(String(item?.ref || ''))?.deref();
+      if (!field || !field.isConnected) continue;
+      if (setValue(field, String(item.value ?? ''))) {
+        written.push(item.ref);
+        first = first || field;
+      }
+    }
+    if (active && active !== document.activeElement) active.focus?.({ preventScroll: true });
+    if (first) mark(first);
+    if (!written.length) return { ok: false, error: 'The page did not take any of the values.' };
+    return { ok: true, element: `${written.length} field${written.length === 1 ? '' : 's'}`, text: JSON.stringify({ written }) };
+  }
+
   /** Whether text or an element is on the page (or gone) now; the service worker asks again until it is. */
   function condition(params = {}) {
     let found = true;
@@ -363,7 +513,7 @@
 
   function run(method, params) {
     try {
-      const handler = { find, read, click, type, scroll, key, condition }[method];
+      const handler = { find, read, click, type, scroll, key, condition, form, fill }[method];
       if (!handler) return { ok: false, error: `The page agent has no ${method}.` };
       return handler(params || {});
     } catch (error) {

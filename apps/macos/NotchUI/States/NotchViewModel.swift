@@ -1181,8 +1181,18 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// The size a card asks for: its content below the notch, with the margins around it.
+    /// Its width follows the look you chose in Settings: wider with larger text (density) and with the large panel.
     private func cardBase(_ card: NookCard) -> CGSize {
-        CGSize(width: card.compact ? 520 : 600, height: geometry.notchHeight + 14 + 22 + card.contentHeight)   // spacing below notch and bottom margin
+        CGSize(width: Self.cardWidth(compact: card.compact, textScale: CGFloat(NookTheme.density.textScale),
+                                     large: AppSettings.shared.panelLarge),
+               height: geometry.notchHeight + 14 + 22 + card.contentHeight)   // spacing below notch and bottom margin
+    }
+
+    /// A card's width: 520 for a compact card (the Double Tap field), 600 for the others, at the default density and
+    /// panel size; scaled with the text, and a step wider with the large panel.
+    static func cardWidth(compact: Bool, textScale: CGFloat, large: Bool) -> CGFloat {
+        let base: CGFloat = compact ? 520 : 600
+        return ((base * textScale) / 2).rounded() * 2 + (large ? 80 : 0)
     }
 
     /// The size a tab of the open panel starts at, before your own resize.
