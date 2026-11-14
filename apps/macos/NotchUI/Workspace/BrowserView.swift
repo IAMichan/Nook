@@ -1259,34 +1259,56 @@ extension BridgeCaller {
     }
 }
 
-/// The page an agent opened, small in the bottom right corner of its own session's chat, just above the composer, so
-/// you follow along without leaving the conversation. Only that session shows it; expanding opens the browser tab in the
-/// side panel, the cross puts it away until the agent opens a page again.
+/// The page an agent opened, small beside its own session's chat so you follow along without leaving the conversation:
+/// under the docked session panel's cards when that panel shows, otherwise in the chat's bottom right corner just above
+/// the composer. Only that session shows it; you can drag it anywhere over the row, expanding opens the browser tab in
+/// the side panel, and the cross puts it away until the agent opens a page again.
 struct SessionBrowserCorner: View {
     let runID: UUID?
     let directory: String
     /// The session shows the browser in a panel already.
     let hidden: Bool
-    /// The room the card may move in, from its resting place: how far it can go left and up.
-    var room: CGSize = CGSize(width: 10_000, height: 10_000)
-    /// How far it can go down from its resting place above the composer, over the composer to the chat's bottom edge.
-    var below: CGFloat = 0
-    /// How far it can go right from its resting place, over the panels beside the chat to the row's edge.
-    var right: CGFloat = 0
+    /// Where the card rests, in the row it floats over.
+    let rest: CGRect
+    /// Where it may be dragged to, in the same row.
+    let area: CGRect
     let expand: () -> Void
     @ObservedObject private var browsers = SessionBrowsers.shared
-    /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
+    /// Where you dragged the card to, from its resting place; it keeps that while the chat is open.
     @State private var moved: CGSize = .zero
     @State private var dragStart: CGSize?
 
+    /// Where the page this session's agent opened rests in the row: right under the docked session panel's cards, its right
+    /// edge on theirs, as long as it fits in that column; otherwise in the conversation's bottom right corner, above the
+    /// composer, narrower when the conversation is narrow.
+    static func rest(conversation: CGRect, dockColumn: CGRect?, dockCards: CGRect?, row: CGSize) -> CGRect {
+        let size = SessionBrowserCard.size
+        if let dockColumn, let dockCards {
+            let bottom = min(dockColumn.maxY, row.height) - NookTheme.Spacing.md
+            let top = min(dockCards.maxY + NookTheme.Spacing.md, bottom - size.height)
+            if top >= dockColumn.minY {
+                return CGRect(x: max(0, dockCards.maxX - size.width), y: top, width: size.width, height: size.height)
+            }
+        }
+        let width = min(size.width, max(240, conversation.width * 0.7))
+        return CGRect(x: conversation.maxX - NookTheme.Spacing.lg - width,
+                      y: conversation.maxY - NookTheme.Spacing.md - size.height,
+                      width: width, height: size.height)
+    }
+
+    /// Kept inside `area`; when the card is larger than it, it keeps to the area's top left.
     private func clamped(_ size: CGSize) -> CGSize {
-        CGSize(width: min(right, max(-room.width, size.width)), height: min(below, max(-room.height, size.height)))
+        let x = rest.minX + size.width, y = rest.minY + size.height
+        let clampedX = max(area.minX, min(area.maxX - rest.width, x))
+        let clampedY = max(area.minY, min(area.maxY - rest.height, y))
+        return CGSize(width: clampedX - rest.minX, height: clampedY - rest.minY)
     }
 
     var body: some View {
         let store = hidden ? nil : browsers.corner(BrowserSession(run: runID, directory: directory))
         let shown = store != nil
-        ZStack(alignment: .bottomTrailing) {
+        let offset = clamped(moved)
+        ZStack(alignment: .topLeading) {
             if let store {
                 SessionBrowserCard(store: store, directory: directory, expand: expand, close: { browsers.putAway(store) },
                                    drag: { translation in
@@ -1295,11 +1317,13 @@ struct SessionBrowserCorner: View {
                     moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
                 }, dragEnded: { dragStart = nil })
                     .id(ObjectIdentifier(store))
+                    .frame(width: rest.width)
                     // Clamped here too: a panel that closes takes the room the card was moved into with it.
-                    .offset(clamped(moved))
-                    .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+                    .offset(x: rest.minX + offset.width, y: rest.minY + offset.height)
+                    .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(NookTheme.reveal, value: shown)
     }
 }

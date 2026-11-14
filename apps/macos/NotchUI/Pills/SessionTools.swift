@@ -397,7 +397,9 @@ struct SessionWorkbench<Conversation: View>: View {
                         .overlayPreferenceValue(SessionComposerBounds.self) { composer in
                             GeometryReader { proxy in
                                 Color.clear
-                                    .anchorPreference(key: SessionBrowserRest.self, value: .bounds) { $0 }
+                                    .anchorPreference(key: SessionBrowserRest.self, value: .bounds) {
+                                        SessionBrowserRest.Value(conversation: $0)
+                                    }
                                     .padding(.bottom, composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0)
                             }
                         }
@@ -432,23 +434,22 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // A page this session's agent opened: small in the chat's bottom right corner, above the composer, and in no
-            // other chat. It floats over this row, not the conversation alone, so no panel beside the chat stops or hides it.
-            .overlayPreferenceValue(SessionBrowserRest.self) { rest in
+            // A page this session's agent opened: small under the docked session panel's cards, or without that panel in
+            // the chat's bottom right corner above the composer, and in no other chat. It floats over this row, not the
+            // conversation alone, so no panel beside the chat stops or hides it, and it can be dragged over all of them.
+            .overlayPreferenceValue(SessionBrowserRest.self) { places in
                 GeometryReader { proxy in
-                    let conversation = rest.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
-                    let above = max(0, proxy.size.height - conversation.maxY)
+                    let conversation = places.conversation.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
                     SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
-                                        room: CGSize(width: max(0, conversation.width - SessionBrowserCard.size.width - NookTheme.Spacing.lg * 2),
-                                                     height: max(0, conversation.height - SessionBrowserCard.size.height - NookTheme.Spacing.md)),
-                                        below: above, right: max(0, proxy.size.width - conversation.maxX)) {
+                                        rest: SessionBrowserCorner.rest(conversation: conversation,
+                                                                       dockColumn: docked ? places.dockColumn.map { proxy[$0] } : nil,
+                                                                       dockCards: docked ? places.dockCards.map { proxy[$0] } : nil,
+                                                                       row: proxy.size),
+                                        area: CGRect(x: conversation.minX + NookTheme.Spacing.lg, y: conversation.minY,
+                                                     width: max(0, proxy.size.width - conversation.minX - NookTheme.Spacing.lg),
+                                                     height: max(0, proxy.size.height - conversation.minY))) {
                         withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
                     }
-                    // In a narrow conversation the page covers part of it, not all of it.
-                    .frame(maxWidth: max(240, conversation.width * 0.7), alignment: .trailing)
-                    .padding(.trailing, proxy.size.width - conversation.maxX + NookTheme.Spacing.lg)
-                    .padding(.bottom, above + NookTheme.Spacing.md)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
             }
             .overlay {

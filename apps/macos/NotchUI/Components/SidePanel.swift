@@ -348,10 +348,36 @@ extension View {
     }
 }
 
-/// The conversation of a session above its composer: where the page its agent opened rests, for the row that floats it.
+/// Where the page a session's agent opened may rest, for the row that floats it: under the cards of the docked session
+/// panel (the panel and the context) when that panel shows, otherwise in the conversation above its composer.
 struct SessionBrowserRest: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+    struct Value {
+        /// The conversation above its composer.
+        var conversation: Anchor<CGRect>?
+        /// The docked session panel's column, and the cards in it.
+        var dockColumn: Anchor<CGRect>?
+        var dockCards: Anchor<CGRect>?
+    }
+
+    static let defaultValue = Value()
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        let next = nextValue()
+        value.conversation = next.conversation ?? value.conversation
+        value.dockColumn = next.dockColumn ?? value.dockColumn
+        value.dockCards = next.dockCards ?? value.dockCards
+    }
+}
+
+extension View {
+    /// The docked session panel's column, so a page the agent opened rests in it.
+    func sessionBrowserDockColumn() -> some View {
+        anchorPreference(key: SessionBrowserRest.self, value: .bounds) { SessionBrowserRest.Value(dockColumn: $0) }
+    }
+
+    /// The cards of the docked session panel: a page the agent opened rests just under them.
+    func sessionBrowserDockCards() -> some View {
+        anchorPreference(key: SessionBrowserRest.self, value: .bounds) { SessionBrowserRest.Value(dockCards: $0) }
+    }
 }
 
 /// The room a side panel of `width` takes with its drag line and gap.
