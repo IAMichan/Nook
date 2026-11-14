@@ -391,6 +391,11 @@ What each coding agent can do in Nook. `✓` = works, `–` = the agent does not
 `?` = not checked yet. A new feature for Claude Code adds a row here with every column filled in. A `?` is work to do:
 check the agent's protocol before you write `–`.
 
+The Tauri app (Windows, Linux) drives the same agents through one driver per transport (`RunProvider::transport()` in
+`apps/tauri/core/src/workspace/models.rs`: Claude stream-json, Codex app-server, ACP for Gemini CLI, OpenCode, Cursor,
+Grok, and Antigravity), so a feature built on the driver reaches every agent at once. Which rows it has so far is in
+[`TAURI.md`](TAURI.md) under *Agents and workspace*; Pi is not driven there yet.
+
 | Feature | Claude Code | Codex | Gemini CLI | Antigravity | OpenCode | Cursor | Grok | Pi | ACP agents |
 |---|---|---|---|---|---|---|---|--- |---|
 | Runs as a session in Nook | ✓ | ✓ (app-server) | ✓ (ACP) | ✓ (ACP) | ✓ (its own server, `opencode serve`, from 2.0.18: `OpenCodeServerHost`, `WorkspaceManager+OpenCodeServer`; ACP for an older OpenCode, a session on another Mac, or with Settings › Agents › "OpenCode via its own server" off) | ✓ (ACP) | ✓ (ACP) | ✓ (`pi --mode rpc`, one process per turn: `PiRPC`, `WorkspaceManager+Pi`) | ✓ |
