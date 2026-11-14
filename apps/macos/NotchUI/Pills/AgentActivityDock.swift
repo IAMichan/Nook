@@ -29,6 +29,9 @@ struct AgentActivityDock: View {
     var openPanel: (() -> Void)? = nil
     /// The session's agent processes: with them each running command says whether it still works.
     var agentPIDs: (() -> [Int32])? = nil
+    /// Settles a running command whose processes have been gone a while (`BackgroundCommandProbe.ended`): its agent never
+    /// said it ended, and without this its row would spin on.
+    var settleGone: ((UUID) -> Void)? = nil
 
     @State private var open = false
     @State private var chosen: Kind?
@@ -415,12 +418,15 @@ struct AgentActivityDock: View {
         let running = commands.filter(\.isRunning)
         guard let agentPIDs, !running.isEmpty else { return }
         var probes: [UUID: BackgroundCommandProbe] = [:]
+        var settled = Set<UUID>()
         while !Task.isCancelled {
             let roots = agentPIDs()
             let before = probes
-            let (read, after) = await Task.detached(priority: .utility) { () -> ([UUID: BackgroundCommandActivity], [UUID: BackgroundCommandProbe]) in
+            let (read, after, ended) = await Task.detached(priority: .utility) {
+                () -> ([UUID: BackgroundCommandActivity], [UUID: BackgroundCommandProbe], [UUID]) in
                 var probes = before
                 var read: [UUID: BackgroundCommandActivity] = [:]
+                var ended: [UUID] = []
                 let table = ProcessTable.read()
                 let now = Date().timeIntervalSinceReferenceDate
                 for command in running {
@@ -430,12 +436,14 @@ struct AgentActivityDock: View {
                                                   modified: BackgroundCommandActivityLabel.modified,
                                                   tail: { BackgroundCommandActivity.tail($0) })
                     probes[command.id] = probe
+                    if probe.ended(at: now) { ended.append(command.id) }
                 }
-                return (read, probes)
+                return (read, probes, ended)
             }.value
             guard !Task.isCancelled else { return }
             probes = after
             if read != activity { activity = read }
+            for id in ended where settled.insert(id).inserted { settleGone?(id) }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
     }
