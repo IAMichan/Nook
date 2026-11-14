@@ -61,9 +61,15 @@ struct AutocompleteSettingsSection: View {
                 case .stats:
                     statsSection
                 }
+            } else if page != .general {
+                // The other parts only matter while completing is on: one line that says so and the way to turn it on.
+                Section {
+                    StatusRow(title: tr("autocomplete.offTitle"), detail: tr("autocomplete.offDetail"), state: .todo) {
+                        Button(tr("autocomplete.turnOn")) { store.prefs.enabled = true; autocomplete.refresh() }
+                            .buttonStyle(.nookProminent)
+                    }
+                }
             }
-            // The other parts only matter while completing is on; they are left off the Typing page until then
-            // (`SettingsPartVisibility`), and the switch above turns it on.
         }
     }
 

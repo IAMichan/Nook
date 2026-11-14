@@ -5,6 +5,14 @@ import Foundation
 
 let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.panel.title": "Je agents",
+        "agents.panel.acp": "ACP-agents",
+        "agents.panel.acpSub": "Agents die je zelf toevoegt",
+        "agents.panel.link": "Koppelen met Nook",
+        "agents.panel.linkInfo": "Nook zet zijn hooks in de eigen instellingen van de agent, zodat voortgang en vragen bij Nook komen. De schakelaar koppelt of ontkoppelt; je ziet de wijziging eerst.",
+        "agents.panel.connection": "Hoe Nook ermee praat",
+        "agents.panel.followOnly": "Nook volgt %@ via zijn instellingenbestand: je ziet voortgang en vragen in Nook, terwijl sessies in de eigen app starten.",
+        "agents.panel.notFound": "Niet gevonden op deze Mac",
         "settings.page.autocomplete": "Typen",
         "settings.page.projects": "Projecten & pull requests",
         "settings.page.iphone": "Apparaten",
@@ -158,6 +166,14 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigen mix"
     ],
     .en: [
+        "agents.panel.title": "Your agents",
+        "agents.panel.acp": "ACP agents",
+        "agents.panel.acpSub": "Agents you add yourself",
+        "agents.panel.link": "Link with Nook",
+        "agents.panel.linkInfo": "Nook adds its hooks to the agent’s own settings, so its progress and questions reach Nook. The switch links or unlinks it; you see the change first.",
+        "agents.panel.connection": "How Nook talks to it",
+        "agents.panel.followOnly": "Nook follows %@ through its settings file: you see its progress and questions in Nook, while its sessions start in its own app.",
+        "agents.panel.notFound": "Not found on this Mac",
         "settings.page.autocomplete": "Typing",
         "settings.page.projects": "Projects & pull requests",
         "settings.page.iphone": "Devices",
@@ -311,6 +327,14 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "own mix"
     ],
     .de: [
+        "agents.panel.title": "Deine Agents",
+        "agents.panel.acp": "ACP-Agents",
+        "agents.panel.acpSub": "Agents, die du selbst hinzufügst",
+        "agents.panel.link": "Mit Nook verknüpfen",
+        "agents.panel.linkInfo": "Nook trägt seine Hooks in die Einstellungen des Agents ein, damit Fortschritt und Fragen bei Nook ankommen. Der Schalter verknüpft oder trennt; du siehst die Änderung vorher.",
+        "agents.panel.connection": "Wie Nook mit ihm spricht",
+        "agents.panel.followOnly": "Nook folgt %@ über seine Einstellungsdatei: Fortschritt und Fragen siehst du in Nook, Sitzungen starten in der eigenen App.",
+        "agents.panel.notFound": "Nicht auf diesem Mac gefunden",
         "settings.page.autocomplete": "Tippen",
         "settings.page.projects": "Projekte & Pull Requests",
         "settings.page.iphone": "Geräte",
@@ -464,6 +488,14 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigene Mischung"
     ],
     .fr: [
+        "agents.panel.title": "Vos agents",
+        "agents.panel.acp": "Agents ACP",
+        "agents.panel.acpSub": "Agents que vous ajoutez vous-même",
+        "agents.panel.link": "Lier à Nook",
+        "agents.panel.linkInfo": "Nook ajoute ses hooks aux réglages de l’agent, pour que sa progression et ses questions arrivent dans Nook. L’interrupteur lie ou délie ; vous voyez la modification d’abord.",
+        "agents.panel.connection": "Comment Nook lui parle",
+        "agents.panel.followOnly": "Nook suit %@ via son fichier de réglages : vous voyez sa progression et ses questions dans Nook, ses sessions démarrent dans sa propre app.",
+        "agents.panel.notFound": "Introuvable sur ce Mac",
         "settings.page.autocomplete": "Saisie",
         "settings.page.projects": "Projets et pull requests",
         "settings.page.iphone": "Appareils",
@@ -617,6 +649,14 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "mélange personnel"
     ],
     .es: [
+        "agents.panel.title": "Tus agentes",
+        "agents.panel.acp": "Agentes ACP",
+        "agents.panel.acpSub": "Agentes que añades tú",
+        "agents.panel.link": "Vincular con Nook",
+        "agents.panel.linkInfo": "Nook añade sus hooks a los ajustes del agente, para que su progreso y sus preguntas lleguen a Nook. El interruptor vincula o desvincula; ves el cambio antes.",
+        "agents.panel.connection": "Cómo le habla Nook",
+        "agents.panel.followOnly": "Nook sigue a %@ por su archivo de ajustes: ves su progreso y sus preguntas en Nook, y sus sesiones empiezan en su propia app.",
+        "agents.panel.notFound": "No encontrado en este Mac",
         "settings.page.autocomplete": "Escritura",
         "settings.page.projects": "Proyectos y pull requests",
         "settings.page.iphone": "Dispositivos",

@@ -246,13 +246,13 @@ struct SettingsPageBar: View {
     }
 }
 
-/// The top of every Settings page: its name in large type, one line on what it holds, what it means for your data
-/// when that matters, and for a page of several subjects a button per subject that scrolls to it. So you see what a
-/// page is for before reading a single row.
+/// The top of every Settings page: its name in large type and one line on what it holds. A page of several subjects
+/// adds a bar with one button per subject; the one shown is lit, and under the bar one line says what that subject is
+/// for. So a page shows one subject at a time and stays short, and you see what is there before reading a row.
 struct SettingsPageIntro: View {
     let section: SettingsSection
-    /// Marks the intro as the first subject's place, for a page whose first subject has no heading of its own.
-    var anchorsFirstPart = false
+    /// The subject shown.
+    let part: SettingsSection
 
     var body: some View {
         Section {
@@ -264,134 +264,61 @@ struct SettingsPageIntro: View {
                 Text(section.pageSubtitle)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let info = section.info {
+                if section.parts.count > 1 {
+                    ChipFlow(spacing: NookTheme.Spacing.xs) {
+                        ForEach(section.parts) { item in
+                            SettingsPartTab(part: item, selected: item == part)
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.sm)
+                    if part != section {
+                        Text(part.subtitle)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let info = part.info {
                     Text(info)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if section.parts.count > 1 {
-                    ChipFlow(spacing: NookTheme.Spacing.xs) {
-                        ForEach(section.parts) { part in
-                            SettingsPartChip(part: part)
-                        }
-                    }
-                    .padding(.top, NookTheme.Spacing.xs)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .modifier(OptionalSettingsAnchor(title: anchorsFirstPart ? section.title : nil))
         }
         .settingsBareSection()
     }
 }
 
-/// Marks a view as a setting's place only when it has a name, so two views never claim the same place.
-private struct OptionalSettingsAnchor: ViewModifier {
-    let title: String?
-
-    func body(content: Content) -> some View {
-        if let title {
-            content.settingsAnchor(title)
-        } else {
-            content
-        }
-    }
-}
-
-/// Whether a subject of a page shows right now: the parts of autocomplete only while completing is on.
-@MainActor
-enum SettingsPartVisibility {
-    static func shows(_ part: SettingsSection) -> Bool {
-        switch part {
-        case .autocompleteApps, .autocompleteStyle, .autocompletePlayground, .autocompleteStats:
-            return AutocompleteStore.shared.prefs.enabled
-        default:
-            return true
-        }
-    }
-}
-
-/// One subject of a page as a button at the top of that page: a click scrolls to the subject's heading.
-struct SettingsPartChip: View {
+/// One subject of a page in the bar at its top: its symbol and name, lit while it is shown. A click shows it.
+struct SettingsPartTab: View {
     let part: SettingsSection
-    /// Watched so the parts of autocomplete come and go with its switch.
-    @ObservedObject private var autocomplete = AutocompleteStore.shared
+    let selected: Bool
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        if SettingsPartVisibility.shows(part) {
-            chip
-        }
-    }
-
-    private var chip: some View {
         Button {
-            // Cleared first, so a second click on the same subject scrolls again.
-            SettingsHighlight.shared.key = nil
-            DispatchQueue.main.async { SettingsHighlight.shared.key = "settings.section.\(part.rawValue)" }
+            guard !selected else { return }
+            app.settingsSection = part
         } label: {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Image(icon: part.sidebarSymbol)
                     .font(NookTheme.font(11))
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
                 Text(part.title)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textStrong)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textStrong)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.xs)
-            .hoverRowFill(selected: false, radius: NookTheme.Radius.chip, rest: NookTheme.surface)
-            .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.chip)
+            .hoverRowFill(selected: selected, radius: NookTheme.Radius.chip, rest: NookTheme.surface)
+            .roundedStrokeBorder(selected ? NookTheme.textTertiary : NookTheme.separator, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
         .help(part.subtitle)
-    }
-}
-
-/// The heading of one subject on a page of several: a line above it, its tile, its name, what it is for, and what it
-/// means for your data when that matters. A search for the subject (or its button at the top) scrolls here.
-struct SettingsPartHeader: View {
-    let part: SettingsSection
-    /// Watched so the parts of autocomplete come and go with its switch.
-    @ObservedObject private var autocomplete = AutocompleteStore.shared
-
-    var body: some View {
-        if SettingsPartVisibility.shows(part) {
-            header
-        }
-    }
-
-    private var header: some View {
-        Section {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                NookDivider()
-                HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-                    SettingsTile(part, size: 30)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        Text(part.title)
-                            .font(NookTheme.TextStyle.heading)
-                            .foregroundStyle(NookTheme.paper)
-                        Text(part.subtitle)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let info = part.info {
-                            Text(info)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .settingsAnchor(part.title)
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isHeader)
-            }
-            .padding(.top, NookTheme.Spacing.lg)
-        }
-        .settingsBareSection()
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

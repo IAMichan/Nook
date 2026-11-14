@@ -4,13 +4,11 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// The subjects of Settings. Each subject lives in exactly one place, but a page holds every subject that belongs
-/// together, so a change never takes more than a click in the sidebar and a scroll: the sidebar lists 17 pages, and a
-/// page that holds several subjects (`parts`) shows them under each other, each under a heading that says what it is,
-/// with buttons at the top that jump to each. Never tabs, and never a page you can only reach from another page.
-///
-/// Every case stays addressable: opening a subject that lives on a larger page (`.sound`, `.permissions`) opens that
-/// page (`host`) and scrolls to the subject's heading.
+/// The subjects of Settings, in the order of the sidebar. The sidebar lists 17 pages; a page that holds several
+/// subjects (`parts`) shows one at a time, picked in the bar at the top of the page (as t3code's provider list picks one
+/// provider), so every page stays short and every subject is at most two clicks away. `app.settingsSection` is the
+/// subject shown; its `host` is the page lit in the sidebar. A subject is never a page you can only reach from another
+/// page, and a link elsewhere in Nook (`.sound`, `.permissions`) opens its page with that subject picked.
 /// A page whose main step is adding something (a chat app, a connection, a machine) has that button in the header of
 /// its list.
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -160,8 +158,9 @@ struct SettingsView: View {
         // Once per redraw: both read every linked source and chat app, and the sidebar, header and Overview all use them.
         let problems = ConnectionProblems.current(app)
         let needs = attention(problems: problems)
-        // A subject that lives on a larger page shows that page (`settlePage` moves there and scrolls to it).
+        // The page in the sidebar, and the subject of it that is shown.
         let section = app.settingsSection.host
+        let part = section.parts.contains(app.settingsSection) ? app.settingsSection : section
         // A sidebar of pages on the left, and on the right a bar with where you are over the page itself,
         // a centered column of titled groups.
         HStack(spacing: 0) {
@@ -176,7 +175,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 SettingsPageBar(section: section)
                 NookDivider()
-                page(section, attention: needs, problems: problems.filter { !$0.isChat }.count)
+                page(section, part: part, attention: needs, problems: problems.filter { !$0.isChat }.count)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(NookTheme.canvas)
@@ -191,11 +190,9 @@ struct SettingsView: View {
             refreshAgentStates()
             app.history.refresh()
             takeProjectScope()
-            settlePage()
         }
         .onChange(of: app.settingsProjectScope) { _, _ in takeProjectScope() }
         .onChange(of: app.settingsSection) { _, _ in
-            settlePage()
             refreshTick += 1
             if app.settingsSection.host == .agents {
                 app.adoptAccounts()
@@ -219,31 +216,14 @@ struct SettingsView: View {
         app.settingsProjectScope = nil
     }
 
-    /// A subject that lives on a larger page was asked for (`.sound`, `.permissions`): show its page and scroll to the
-    /// subject's heading, unless a search already asked for a setting on it.
-    private func settlePage() {
-        let asked = app.settingsSection
-        guard asked.host != asked else { return }
-        if SettingsHighlight.shared.key == nil {
-            SettingsHighlight.shared.key = "settings.section.\(asked.rawValue)"
-        }
-        app.settingsSection = asked.host
-    }
-
-    /// One page: what it is and holds at the top, then each of its subjects under its own heading, in one column of
-    /// readable width. A setting found with the search is scrolled to and lit.
-    private func page(_ section: SettingsSection, attention needs: [AttentionItem], problems: Int) -> some View {
-        // The first subject needs no heading of its own when the page already carries its name.
-        let firstNamed = section.pageTitle != section.title
-        return ScrollViewReader { proxy in
+    /// One page: what it is at the top (with the bar of its subjects on a page of several), then the subject shown, in
+    /// one column of readable width. A setting found with the search is scrolled to and lit.
+    private func page(_ section: SettingsSection, part: SettingsSection, attention needs: [AttentionItem],
+                      problems: Int) -> some View {
+        ScrollViewReader { proxy in
             Form {
-                SettingsPageIntro(section: section, anchorsFirstPart: !firstNamed)
-                ForEach(section.parts) { part in
-                    if part != section || firstNamed {
-                        SettingsPartHeader(part: part)
-                    }
-                    detail(for: part, attention: needs, problems: problems)
-                }
+                SettingsPageIntro(section: section, part: part)
+                detail(for: part, attention: needs, problems: problems)
             }
             .formStyle(SettingsFormStyle())
             // Every row reads at the panel's body size; captions and notes set their own smaller style.
@@ -253,9 +233,10 @@ struct SettingsView: View {
         }
         .frame(maxWidth: SettingsLayout.pageWidth)
         .frame(maxWidth: .infinity)
-        // Rebuilt for a new page or language. Not for the accent: Appearance is drawn in this view's own body, so it
-        // redraws in the new color without the Form being rebuilt (which would scroll back to the top on every swatch click or color picker drag).
-        .id("\(section.rawValue)-\(settings.appLanguage.rawValue)")
+        // Rebuilt for a new page, subject or language. Not for the accent: Appearance is drawn in this view's own body,
+        // so it redraws in the new color without the Form being rebuilt (which would scroll back to the top on every
+        // swatch click or color picker drag).
+        .id("\(section.rawValue)-\(part.rawValue)-\(settings.appLanguage.rawValue)")
     }
 
     /// `attention` and `problems` are what the body worked out once for this redraw.
