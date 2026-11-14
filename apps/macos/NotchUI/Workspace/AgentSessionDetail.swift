@@ -222,12 +222,14 @@ struct AgentSessionDetail: View {
                 ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
                              onSecret: { app.approvals.allow(approval, secret: $0) },
                              onDenyWithReason: { app.approvals.decide(approval, .deny, reason: $0) })
+                    .chatColumn()
                     .sessionComposerBounds()
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
                              onSecret: { app.approvals.allow(approval, secret: $0) })
+                    .chatColumn()
                     .sessionComposerBounds()
             } else if !app.demoMode, let question = app.hub.question(for: session.id) {
                 questionPanel(question).chatColumn().sessionComposerBounds()

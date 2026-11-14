@@ -54,25 +54,22 @@ struct ApprovalView: View {
         }
     }
 
+    /// In a conversation, where the composer was: a conversation card like a question's, so what waits on you reads as
+    /// one calm block (what it wants, the command, then what Always reaches beside the buttons).
     private var inlineBody: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             titleBlock
-            Group {
-                content
-                secretField
-                reasonField
-                scopeCaption
-                AdaptiveActionRow {
-                    Label(AgentDisplayState.approval.longWord, icon: "shield")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(approval.danger ? NookTheme.coral : NookTheme.amber)
-                } actions: {
-                    actions
-                }
+            content
+            secretField
+            reasonField
+            AdaptiveActionRow(readable: 160) {
+                // Without a scope the row still spans the card, so the buttons stay on the right.
+                if approval.canAlways, approval.alwaysScope != nil { scopeCaption } else { Color.clear.frame(height: 0) }
+            } actions: {
+                actions
             }
-            .padding(.leading, TranscriptStyle.workIndent)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .conversationCard(padding: NookTheme.Spacing.lg)
     }
 
     private var cardBody: some View {
@@ -97,10 +94,13 @@ struct ApprovalView: View {
                         radius: NookTheme.Radius.panel)
     }
 
+    /// A text field's fill: the well on the conversation card's field fill, the field on the notch card's surface.
+    private var fieldFill: Color { inline ? NookTheme.well : NookTheme.field }
+
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             headerIcon
-                .frame(width: inline ? TranscriptStyle.workIcon : 18, height: 18)
+                .frame(width: 18, height: 18)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -157,7 +157,7 @@ struct ApprovalView: View {
                         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                         .frame(minWidth: 160)
                         .frame(height: 30)
-                        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+                        .cardBackground(fieldFill, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
                         .onSubmit(allow)
                 }
                 if approval.secretKeepable {
@@ -206,7 +206,7 @@ struct ApprovalView: View {
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .padding(.vertical, NookTheme.Spacing.xs + NookTheme.Spacing.xxs)
                     .frame(minWidth: 160, minHeight: 30)
-                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+                    .cardBackground(fieldFill, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
                     .onSubmit(deny)
                     .onExitCommand {
                         writingReason = false
