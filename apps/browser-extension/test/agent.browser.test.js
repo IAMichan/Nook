@@ -87,11 +87,11 @@ test('while Nook works the user\'s own clicks wait, Nook\'s own pass, and a sign
       const run = (method, params = {}) => tab.evaluate(([m, p]) => window.__nookAgent.run(m, p), [method, params]);
       await tab.click('#ok'); // the cookie banner, as the user would
 
+      // The field has focus before Nook starts, so typing tests the key hold on its own, apart from clicks.
+      await tab.focus('#name');
       await tab.evaluate(() => window.__nookPresence.busy(10_000));
       await tab.click('#pay', { force: true }); // a real (trusted) click by the user
       assert.equal(await tab.textContent('#out'), '', 'the user\'s click waited');
-      await tab.keyboard.press('KeyA');
-      await tab.click('#name', { force: true });
       await tab.keyboard.type('xyz');
       assert.equal(await tab.inputValue('#name'), '', 'the user\'s typing waited too');
 

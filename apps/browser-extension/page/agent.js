@@ -468,7 +468,7 @@
     await reveal(field);
     const at = centerOf(field);
     const isSelect = field.tagName === 'SELECT';
-    await moveTo(at.x, at.y, `${say(isSelect ? 'cursorChoose' : 'cursorType')} · ${clip(value, 28) || short(field)}`, params._from);
+    await moveTo(at.x, at.y, `${(isSelect ? say('cursorChoose') : say('cursorType'))} · ${clip(value, 28) || short(field)}`, params._from);
     pulse();
     field.focus?.({ preventScroll: true });
     if (isSelect) {

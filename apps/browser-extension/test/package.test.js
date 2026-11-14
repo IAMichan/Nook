@@ -43,8 +43,9 @@ test('every text is there in all five languages', () => {
   const used = new Set();
   for (const file of ['sidepanel.html', 'sidepanel.js', 'page/presence.js', 'page/agent.js', 'manifest.json']) {
     const text = read(file);
-    for (const match of text.matchAll(/data-i18n(?:-placeholder)?="(\w+)"|\bt\('(\w+)'|getMessage\('(\w+)'|__MSG_(\w+)__/g)) {
-      used.add(match[1] || match[2] || match[3] || match[4]);
+    // say('…') is the page agent's own getMessage (the cursor's badge).
+    for (const match of text.matchAll(/data-i18n(?:-placeholder)?="(\w+)"|\bt\('(\w+)'|getMessage\('(\w+)'|\bsay\('(\w+)'|__MSG_(\w+)__/g)) {
+      used.add(match[1] || match[2] || match[3] || match[4] || match[5]);
     }
   }
   for (const key of used) assert.ok(english[key], `missing text ${key}`);
