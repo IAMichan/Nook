@@ -39,6 +39,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var chatID: String? = nil
     /// Person, group, status or channel, when its app says (`InboxThread.kind`).
     var kind: ChatKind? = nil
+    /// You pinned the chat in Nook (`ChatPins`): it stays on top of the list, under "Pinned", for every app.
+    var pinned = false
 
     /// New messages here.
     var unread: Int { read.count }
@@ -83,8 +85,8 @@ struct ChatsFocus: Equatable {
 }
 
 extension ChatsEntry {
-    /// Every chat that shows (`ChatCaptureService.isShown`), newest first, the same way for every app. The Chats tab and
-    /// the iPhone companion read the same list.
+    /// Every chat that shows (`ChatCaptureService.isShown`), the ones you pinned first, then newest first, the same way
+    /// for every app. The Chats tab and the iPhone companion read the same list.
     /// `row` makes a chat's row; the Chats tab passes one that keeps the rows of chats that did not change.
     @MainActor
     static func all(capture: ChatCaptureService, row: ((InboxThread) -> ChatsEntry)? = nil) -> [ChatsEntry] {
@@ -107,7 +109,10 @@ extension ChatsEntry {
             if thread.chatID == nil, let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             entries.append(row?(thread) ?? entry(thread, hidden: hidden))
         }
-        return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+        return entries.sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.last != b.last ? a.last > b.last : a.id < b.id
+        }
     }
 
     /// One chat as a row.
@@ -130,7 +135,7 @@ extension ChatsEntry {
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
                           members: thread.members, profile: thread.profile, handle: thread.handle, avatar: thread.avatar,
                           account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
-                          chatID: thread.chatID, kind: thread.kind)
+                          chatID: thread.chatID, kind: thread.kind, pinned: ChatPins.shared.isPinned(thread.id))
     }
 
     /// Of two threads holding the same newest message, the one to show: the one a bridge reads, else the fuller one.
@@ -223,6 +228,7 @@ final class ChatsEntryMemo {
                 capture.$sources.map { _ in () }.eraseToAnyPublisher(),
                 I18n.shared.objectWillChange.eraseToAnyPublisher(),
                 ChatHiddenMessages.shared.objectWillChange.eraseToAnyPublisher(),
+                ChatPins.shared.objectWillChange.eraseToAnyPublisher(),
                 ChatNoticeRulesStore.shared.objectWillChange.eraseToAnyPublisher(),
             ]
             // perf: only forgets the list (no state is written back), and every change must reach it.
@@ -397,6 +403,8 @@ struct ChatsTab: View {
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
     /// Who types where: each row gets its own line, so a row redraws only when its chat's line changed.
     @ObservedObject private var typing = ChatTypingCenter.shared
+    /// The chats you pinned: a pin moves a chat to the top of the list at once.
+    @ObservedObject private var pins = ChatPins.shared
     /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
     /// on a row that is in view already leaves the list where it is.
     @State private var revealSelection = false
@@ -1284,15 +1292,16 @@ struct ChatsTab: View {
     }
 }
 
-/// A group of the list: by when a chat last moved, as every chat app has it. What is new stands out in its row and
-/// under "New" in the sidebar, so reading a chat never moves it.
+/// A group of the list: the chats you pinned on top, then by when a chat last moved, as every chat app has it. What is
+/// new stands out in its row and under "New" in the sidebar, so reading a chat never moves it.
 enum ChatsGroup: Int, Comparable, CaseIterable {
-    case today, yesterday, week, month, earlier
+    case pinned, today, yesterday, week, month, earlier
 
     static func < (lhs: ChatsGroup, rhs: ChatsGroup) -> Bool { lhs.rawValue < rhs.rawValue }
 
     var title: String {
         switch self {
+        case .pinned: return tr("chats.group.pinned")
         case .today: return tr("chats.group.today")
         case .yesterday: return tr("chats.group.yesterday")
         case .week: return tr("chats.group.week")
@@ -1301,7 +1310,7 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
         }
     }
 
-    /// Where a chat goes: by its newest message.
+    /// Where a chat goes: on top when you pinned it, else by its newest message.
     static func of(_ entry: ChatsEntry, now: Date, calendar: Calendar = .current) -> ChatsGroup {
         Days(now: now, calendar: calendar).group(of: entry)
     }
@@ -1322,6 +1331,7 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
         }
 
         func group(of entry: ChatsEntry) -> ChatsGroup {
+            if entry.pinned { return .pinned }
             if entry.last >= today { return .today }
             if entry.last >= yesterday { return .yesterday }
             if entry.last >= week { return .week }
@@ -1640,8 +1650,9 @@ struct ChatsAvatar: View {
 }
 
 /// The chat on the right: who and which app on top, the messages as bubbles, and how to answer below.
-/// What a chat's app lets Nook do with the chat (pin, mute, archive) and removing it, after a yes: the same in a row's
-/// menu and in the open chat's "…" menu. Each group comes with its divider, and nothing shows where the app allows none.
+/// Pinning the chat on top of the list (in Nook, for every app), what its app lets Nook do with it (pin, mute, archive)
+/// and removing it, after a yes: the same in a row's menu and in the open chat's "…" menu. Each group comes with its
+/// divider, and nothing of the app's own shows where the app allows none.
 private struct ChatAppActions: View {
     let entry: ChatsEntry
     let app: AppModel
@@ -1656,6 +1667,9 @@ private struct ChatAppActions: View {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
         let route = app.chatRoute(for: entry)
         let abilities = app.chatAbilities(route)
+        // Pinning on top of Nook's own list works for every app, also one that lets no other app pin a chat.
+        Divider()
+        Button(tr(entry.pinned ? "chats.unpin" : "chats.pin")) { ChatPins.shared.toggle(entry.id) }
         if let route, abilities.pin || abilities.mute || abilities.archive {
             Divider()
             if abilities.pin {

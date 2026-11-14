@@ -453,6 +453,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatHiddenMessages(file: file).ids(in: "instagram|anna"), ["m2"], "a restart does not bring it back")
     }
 
+    @MainActor
+    func testChatsPinnedInNookStayPinnedForEveryApp() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pins-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let pins = ChatPins(file: file)
+        // Apps that let no other app pin a chat are pinned in Nook all the same.
+        for chat in ["messages|Anna", "mail|jan@example.com", "slack|general", "teams|Team"] { pins.setPinned(true, chat: chat) }
+        pins.toggle("slack|general")
+        XCTAssertTrue(pins.isPinned("messages|Anna"))
+        XCTAssertFalse(pins.isPinned("slack|general"), "toggling again lets it go")
+        XCTAssertFalse(pins.isPinned("telegram|Jan"), "only the chats you pinned")
+        XCTAssertEqual(ChatPins(file: file).pinned, ["messages|Anna", "mail|jan@example.com", "teams|Team"],
+                       "a restart keeps them")
+    }
+
     func testChatMovedBeforeItsMessageIsReadAgain() {
         let moved = Date(timeIntervalSince1970: 1_000)
         let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)

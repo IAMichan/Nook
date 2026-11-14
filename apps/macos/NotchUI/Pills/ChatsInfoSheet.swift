@@ -7,6 +7,8 @@ import SwiftUI
 struct ChatsInfoSheet: View {
     let entry: ChatsEntry
     @ObservedObject var capture: ChatCaptureService
+    /// The chats you pinned in Nook: the row says at once whether this one is.
+    @ObservedObject private var pins = ChatPins.shared
     /// Opens another chat (a group you share) in the Chats tab.
     let openChat: (String) -> Void
     /// Runs a change in the chat's app; the chat shows a failure.
@@ -150,12 +152,17 @@ struct ChatsInfoSheet: View {
         (thread.members ?? []).map { $0 == ChatMembership.me ? tr("chat.you") : $0 }.joined(separator: ", ")
     }
 
-    /// Pin, mute and archive in the app where it lets Nook, exporting the chat, and removing it (from Nook, or in its app).
+    /// Pinning on top of Nook's list (every app), pin, mute and archive in the app where it lets Nook, exporting the chat,
+    /// and removing it (from Nook, or in its app).
     @ViewBuilder
     private var chatActions: some View {
         let route = app.chatRoute(for: entry)
         let abilities = app.chatAbilities(route)
+        let pinned = pins.isPinned(entry.id)
         VStack(spacing: 0) {
+            ChatsInfoRow(symbol: pinned ? "pin.slash" : "pin", title: tr(pinned ? "chats.unpin" : "chats.pin")) {
+                pins.toggle(entry.id)
+            }
             if let route, abilities.pin {
                 ChatsInfoRow(symbol: abilities.pinned ? "pin.slash" : "pin",
                              title: tr(abilities.pinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
