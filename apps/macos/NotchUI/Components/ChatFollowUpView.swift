@@ -107,11 +107,11 @@ private struct ChatFollowUpRow: View {
                 Button(tr("chats.followUp.markWaiting")) { store.change { $0.markWaiting(chat: turn.chat, now: Date()) } }
             }
             Divider()
-            ForEach(ChatLaterOption.allCases) { option in
-                Button(tr("chats.snooze." + option.rawValue)) {
-                    store.change { $0.snooze(chat: turn.chat, until: option.date(from: Date())) }
-                }
-            }
+            // The snooze options of Settings › Sessions, the same menu a session's snooze shows.
+            SnoozeMenuItems(onUntil: { until in
+                store.change { $0.snooze(chat: turn.chat, until: until) }
+                AttentionFeedbackStore.shared.record(.snoozed, source: NoticeSource.chats.rawValue, app: turn.app, subject: turn.chat)
+            })
         } label: {
             Image(icon: "ellipsis")
                 .font(NookTheme.font(12, .semibold))

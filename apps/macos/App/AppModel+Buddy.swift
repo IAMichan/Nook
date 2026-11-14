@@ -5,8 +5,12 @@ import AppKit
 /// to say and when is decided by `BuddyPlanner`; this side gathers the signals and shows the moment below the notch.
 extension AppModel {
     func startBuddy() {
+        // The same half-minute timer looks at your chat follow-ups (at most once a minute, nothing when there are none).
         Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
-            Task { @MainActor in self?.buddyTick() }
+            Task { @MainActor in
+                self?.buddyTick()
+                self?.chatFollowUpTick()
+            }
         }
     }
 
@@ -39,8 +43,14 @@ extension AppModel {
         signals.finishedTotal = buddy.finishedTotal
         signals.birthday = NookMonthDay(stored: settings.birthday)
 
-        guard let moment = BuddyPlanner.next(signals, ledger: buddy.ledger),
+        // The day's budget and gaps are shared with Think Along's offers, and a moment keeps the notices' distance
+        // (`NoticePacer`): it never comes right after something else popped up.
+        let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: Self.momentSource)
+        guard noticePacer.permits(.moment, key: Self.momentSource, gapFactor: gapFactor, now: now),
+              let moment = BuddyPlanner.next(signals, ledger: buddy.ledger),
               viewModel.offerMoment(nookMoment(for: moment)) else { return }
+        noticePacer.record(key: Self.momentSource, now: now)
+        spendInterruption(.moment, now: now)
         buddy.ledger.roll(to: BuddyActivity.dayKey(now))
         buddy.ledger.record(moment, at: now)
         if moment.kind == .breakTime { buddy.activity.restartStretch(at: now) }
@@ -48,11 +58,10 @@ extension AppModel {
 
     /// In a meeting (an event going on in your calendar), on a call, recording one or sharing your screen: no moments,
     /// whatever you chose for the rest of the notch in Settings › Notifications.
+    /// The one reading of all of it (`AttentionContext.keepsNiceToHaveQuiet`), the quiet hours included.
     private func buddyShouldStayQuiet(at now: Date) -> Bool {
-        // All-day events (a holiday, someone's birthday) are not meetings.
-        let meeting = upcoming.contains { $0.start <= now && $0.end > now && $0.end.timeIntervalSince($0.start) < 12 * 3600 }
-        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(QuietPolicy.isCallApp) ?? false
-        return meeting || calling || quiet.situation.meeting || quiet.situation.sharing || NoteTaker.shared.isRecording
+        refreshAttention(now: now)
+        return AttentionNow.shared.context.keepsNiceToHaveQuiet
     }
 
     /// The moment as Nook shows it: his mood, his words in your language and tone,.
@@ -103,8 +112,12 @@ extension AppModel {
         return result
     }
 
+    /// The moments' name in the pacer and the feedback.
+    static let momentSource = "moments"
+
     /// The button on a moment.
     func performMomentAction(_ moment: NookMoment) {
+        if moment.action != nil { AttentionFeedbackStore.shared.record(.opened, source: Self.momentSource) }
         switch moment.action {
         case .breathe:
             buddy.activity.restartStretch(at: Date())

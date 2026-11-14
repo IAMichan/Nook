@@ -5,13 +5,10 @@ import AppKit
 /// does not hand over (Chromium without "Allow JavaScript from Apple Events") is read through the accessibility layer, the
 /// way VoiceOver reads it. A page that is open is never reported as missing.
 enum BrowserTabReader {
-    private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
-        ("Safari", "com.apple.Safari", true),
-        ("Google Chrome", "com.google.Chrome", false),
-        ("Microsoft Edge", "com.microsoft.edgemac", false),
-        ("Brave Browser", "com.brave.Browser", false),
-        ("Arc", "company.thebrowser.Browser", false)
-    ]
+    /// The browsers Nook reads (`AppCatalog.readableBrowsers`), in the order it tries them.
+    private static let browsers: [(name: String, bundle: String, safari: Bool)] = AppCatalog.readableBrowsers.map {
+        ($0.name, $0.bundleID, $0.engine == .webkit)
+    }
 
     /// `target`: a browser's name, or part of a tab's title or address ("FileSender", "bol.com"). Nil for the page shown
     /// in the browser the user works in.

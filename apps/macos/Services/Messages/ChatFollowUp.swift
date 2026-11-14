@@ -19,8 +19,8 @@ struct ChatFollowUpTurn: Equatable, Sendable {
     var lastText: String
     var unread: Int
 
-    /// The newest message asks something: a question mark ends a sentence in it.
-    var asksQuestion: Bool { lastText.contains("?") }
+    /// The newest message asks something (`TextKit.asksQuestion`).
+    var asksQuestion: Bool { TextKit.asksQuestion(lastText) }
 }
 
 extension ChatFollowUpTurn {
@@ -161,28 +161,27 @@ struct ChatScheduledSend: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-/// The times "snooze" and "scheduled send" offer, the same list everywhere.
+/// The fixed times "scheduled send" offers. Snoozing a chat offers the snooze options of Settings › Sessions instead
+/// (`SnoozeOption`, the same menu as a session's); each of these is one of those options too.
 enum ChatLaterOption: String, CaseIterable, Identifiable, Sendable {
     case inAnHour, thisEvening, tomorrowMorning, nextWeek
 
     var id: String { rawValue }
 
-    /// When it is, counted from `now`: this evening is 18:00 (tomorrow's when it is past), tomorrow morning 09:00, next
-    /// week Monday 09:00.
-    func date(from now: Date, calendar: Calendar = .current) -> Date {
+    /// The snooze option this is.
+    var option: SnoozeOption {
         switch self {
-        case .inAnHour:
-            return now.addingTimeInterval(3600)
-        case .thisEvening:
-            let evening = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now) ?? now.addingTimeInterval(3600)
-            return evening > now ? evening : calendar.date(byAdding: .day, value: 1, to: evening) ?? evening
-        case .tomorrowMorning:
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-            return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
-        case .nextWeek:
-            let next = calendar.nextDate(after: now, matching: DateComponents(hour: 9, minute: 0, weekday: 2),
-                                         matchingPolicy: .nextTime) ?? now.addingTimeInterval(7 * 24 * 3600)
-            return next
+        case .inAnHour: return .duration(minutes: 60)
+        case .thisEvening: return .time(.today, hour: 18)
+        case .tomorrowMorning: return .time(.tomorrow, hour: 9)
+        case .nextWeek: return .time(.monday, hour: 9)
         }
+    }
+
+    /// When it is, counted from `now`: this evening is 18:00 (tomorrow's when it is past), tomorrow morning 09:00, next
+    /// week Monday 09:00 (a week ahead on a Monday).
+    func date(from now: Date, calendar: Calendar = .current) -> Date {
+        if let end = option.end(from: now, calendar: calendar) { return end }
+        return SnoozeOption.time(.tomorrow, hour: 18).end(from: now, calendar: calendar) ?? now.addingTimeInterval(3600)
     }
 }

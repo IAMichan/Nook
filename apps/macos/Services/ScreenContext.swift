@@ -161,9 +161,10 @@ final class ScreenContext: ObservableObject {
     private func tick() async {
         guard enabled(), periodicReadsWanted(), hasPermission else { return }
         if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
-        // Idle away from Mac: skip capture.
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        guard idle < 180 else { return }
+        // Idle away from Mac: skip capture (`AttentionContext.nearbyWithin`).
+        let attention = AttentionSignals.current()
+        guard attention.readsScreen else { return }
+        let idle = attention.idle
         // A hot or busy Mac (a build on every core, Low Power Mode), or you are away: the timer's read waits. On battery or
         // in saver mode it comes less often. A question still reads the screen (`snapshot`), and switching apps still
         // reads the new window.

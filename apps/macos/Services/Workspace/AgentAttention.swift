@@ -134,22 +134,25 @@ enum SnoozePolicy {
         }
     }
 
-    /// The snooze choices of the menu: an hour, this evening (18:00, or tomorrow when it is later), tomorrow morning (09:00).
+    /// The snooze choices an agent's tool names (the workspace bridge): an hour, this evening (18:00, or tomorrow when it
+    /// is later), tomorrow morning (09:00). Each is one of the snooze options (`SnoozeOption`), the same ones the menus of
+    /// sessions and chats offer.
     enum Choice: String, CaseIterable, Sendable {
         case hour, evening, tomorrow
 
-        func end(from now: Date, calendar: Calendar = .current) -> Date {
+        /// The option this choice is.
+        var option: SnoozeOption {
             switch self {
-            case .hour:
-                return now.addingTimeInterval(3600)
-            case .evening:
-                let today = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now) ?? now.addingTimeInterval(3600)
-                return today > now ? today : (calendar.date(byAdding: .day, value: 1, to: today) ?? today)
-            case .tomorrow:
-                let start = calendar.startOfDay(for: now)
-                let day = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
-                return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day
+            case .hour: return .duration(minutes: 60)
+            case .evening: return .time(.today, hour: 18)
+            case .tomorrow: return .time(.tomorrow, hour: 9)
             }
+        }
+
+        func end(from now: Date, calendar: Calendar = .current) -> Date {
+            if let end = option.end(from: now, calendar: calendar) { return end }
+            // This evening, asked later than that: tomorrow evening.
+            return SnoozeOption.time(.tomorrow, hour: 18).end(from: now, calendar: calendar) ?? now.addingTimeInterval(3600)
         }
     }
 }

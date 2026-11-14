@@ -7,6 +7,7 @@ import AppKit
 /// what you share, or hidden until it is over.
 extension AppModel {
     func startQuietWatch() {
+        adoptPhoneQuietHours()
         // The first read goes the timer's way (off the main thread, and only when it matters), so it does not hold up
         // Nook's start and the main window opening with it. Leaving Nook out of captures applies right away all the same.
         if quietWatchNeeded { quietTimerTick() } else { applyQuiet(QuietSituation()) }
@@ -38,6 +39,7 @@ extension AppModel {
     /// share or a call takes a key or a click, and the first tick after it reads. The window list is only read while an
     /// app runs that can show a sharing bar. A changed choice still applies right away (`startQuietWatch`).
     private func quietTimerTick() {
+        refreshAttention()
         guard quietWatchNeeded else {
             // Nook was still quiet or hidden for a choice you just changed to "change nothing": one more read puts it back.
             if quiet.silent || quiet.excludedFromCapture || quiet.hidden { quietTick() }
@@ -54,7 +56,7 @@ extension AppModel {
         // energy plan's ten-second reading, so the first tick after a key or click reads. A share or meeting already going
         // on keeps being read, so its end is noticed.
         let calm = !quiet.situation.sharing && !quiet.situation.meeting
-        if calm, quietViewers == 0, SystemLoad.idleSeconds >= EnergySignals.awayAfter { return }
+        if calm, quietViewers == 0, AttentionNow.shared.context.isAway { return }
         let sharingPossible = RunningAppsWatch.shared.canShowSharingBar
         // The read (every window on screen, every audio process) runs off the main thread, so a slow WindowServer or
         // coreaudiod never holds up the notch, or the keys and clicks autocomplete's event tap waits on.
@@ -112,6 +114,39 @@ extension AppModel {
         } else {
             quietHiddenWindows.forEach { $0.orderFront(nil) }
             quietHiddenWindows = []
+        }
+    }
+
+    /// Quiet hours set for the phone before the Mac shared them become the Mac's (`NoticeRules.quietHours`), once.
+    private func adoptPhoneQuietHours() {
+        let adoptedKey = "noticeRules.quietHoursAdopted"
+        let defaults = UserDefaults.standard
+        var rules = settings.noticeRules
+        if rules.adoptingQuietHours(CompanionStore.shared.push.quietHours, adopted: defaults.bool(forKey: adoptedKey)) {
+            settings.noticeRules = rules
+        }
+        defaults.set(true, forKey: adoptedKey)
+    }
+
+    /// Refreshes the shared `AttentionContext`: the input and the lock, the app in front, an event going on in your
+    /// calendar, the quiet hours and what quiet mode read last. A few cheap reads every two seconds; nothing is published,
+    /// so no view redraws for it.
+    func refreshAttention(now: Date = Date()) {
+        let idle = SystemLoad.idleSeconds, locked = SystemLoad.isScreenLocked
+        let front = NSWorkspace.shared.frontmostApplication
+        let frontApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? "" : (front?.bundleIdentifier ?? "")
+        let inEvent = QuietPolicy.inEvent(upcoming.map { QuietPolicy.Event(start: $0.start, end: $0.end) }, now: now)
+        let quietHours = settings.noticeRules.quietHours?.contains(now) ?? false
+        let recording = NoteTaker.shared.isRecording
+        let situation = quiet.situation, silent = quiet.silent
+        AttentionNow.shared.update { context in
+            context = context.refreshed(idle: idle, locked: locked, frontApp: frontApp, at: now)
+            context.inEvent = inEvent
+            context.quietHours = quietHours
+            context.recording = recording
+            context.meeting = situation.meeting
+            context.sharing = situation.sharing
+            context.silent = silent
         }
     }
 

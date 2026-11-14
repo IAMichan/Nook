@@ -83,12 +83,8 @@ struct AgentStatusNotice: Equatable, Sendable {
     /// One line of at most `topicLimit` characters, cut at a word with an ellipsis.
     static func short(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let clean = line.trimmingCharacters(in: .whitespaces)
-        guard clean.count > topicLimit else { return clean }
         // One character is kept for the ellipsis, so the result never passes the limit.
-        let cut = clean.prefix(topicLimit - 1)
-        let word = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
-        return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
+        return TextKit.clip(line.trimmingCharacters(in: .whitespaces), to: topicLimit, wordBoundary: true)
     }
 }
 
@@ -142,10 +138,7 @@ enum BannerText {
 
     /// At most `limit` characters, cut at a word with an ellipsis.
     static func cut(_ text: String, to limit: Int) -> String {
-        guard text.count > limit else { return text }
-        let head = text.prefix(limit - 1)
-        let word = head.lastIndex(of: " ").map { head[..<$0] } ?? head
-        return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
+        TextKit.clip(text, to: limit, wordBoundary: true)
     }
 
     /// "Nook · Fix the login bug": where, and which session, in one short line.

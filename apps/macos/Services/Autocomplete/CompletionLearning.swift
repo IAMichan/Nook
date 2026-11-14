@@ -139,7 +139,7 @@ struct CompletionPhrases: Sendable {
     init(samples: [CompletionSamples.Sample], rejected: [String: Int] = [:], now: Date = Date()) {
         self.rejected = rejected
         for sample in samples {
-            let weight = pow(0.5, max(0, now.timeIntervalSince(sample.date)) / Self.halfLife)
+            let weight = Decay.value(1, elapsed: now.timeIntervalSince(sample.date), halfLife: Self.halfLife)
             // Suggestions stay on one line: phrases are learned within a line.
             for line in sample.text.split(whereSeparator: \.isNewline) {
                 let words = line.split(whereSeparator: \.isWhitespace).map(String.init)

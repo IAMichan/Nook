@@ -43,10 +43,7 @@ struct AutocompleteFieldSnapshot {
 /// cursor position.
 enum AutocompleteField {
     /// Browsers built on Chromium: they build their accessibility tree for web pages only when a client says it needs it.
-    private static let chromium: Set<String> = [
-        "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.canary", "com.brave.Browser", "com.microsoft.edgemac",
-        "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "ai.perplexity.comet", "com.openai.atlas"
-    ]
+    private static var chromium: Set<String> { AppCatalog.chromiumBundles }
 
     /// Asks the app to build its accessibility tree: Electron apps listen to AXManualAccessibility, Chromium browsers to
     /// AXEnhancedUserInterface. Once per process: the app keeps the setting until it quits, and asking again on every key
