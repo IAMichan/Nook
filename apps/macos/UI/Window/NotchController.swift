@@ -28,7 +28,8 @@ final class NotchController {
         positionPanel()
     }
 
-    let viewModel = PanelViewModel()
+    /// The shared panel's state, owned by `AppModel`; the notch shows it and writes its own surface into it.
+    let viewModel: PanelViewModel
     private var panel: NotchPanel?
     private var geometry = NotchGeometry.placeholder
     private var monitors: [Any] = []
@@ -51,6 +52,10 @@ final class NotchController {
     private weak var app: AppModel?
 
     private var settings: AppSettings { AppSettings.shared }
+
+    init(viewModel: PanelViewModel) {
+        self.viewModel = viewModel
+    }
 
     /// Left out of screen sharing, screenshots and recordings, or not (`applyQuiet`).
     private var captureSharing: NSWindow.SharingType = .readOnly
