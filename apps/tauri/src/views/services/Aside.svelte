@@ -2,6 +2,7 @@
   // Het venster naast de balk: een aanbod van meedenken als korte zin ("Zal ik dit in je agenda zetten?"), en de pil
   // van Flow terwijl je dicteert. Wijs naar het aanbod voor het hele voorstel met Doe maar, Nee of Niet in deze app.
   import { services, serviceEvents, type Nudge, type VoiceEvent } from "../../lib/services";
+  import { tr } from "../../lib/i18n.svelte";
   import Orb from "../../components/Orb.svelte";
 
   let nudge = $state<Nudge | null>(null);
@@ -48,10 +49,10 @@
 
   const flowLine = $derived(
     !flow ? "" :
-    flow.phase === "listening" ? (flow.text || "Luistert…") :
-    flow.phase === "working" ? "Netjes maken…" :
-    flow.phase === "error" ? (flow.error ?? "Dat lukte niet.") :
-    flow.result ? "Geplakt" : "Niets gehoord",
+    flow.phase === "listening" ? (flow.text || tr("Luistert…", "Listening…")) :
+    flow.phase === "working" ? tr("Netjes maken…", "Tidying up…") :
+    flow.phase === "error" ? (flow.error ?? tr("Dat lukte niet.", "That didn't work.")) :
+    flow.result ? tr("Geplakt", "Pasted") : tr("Niets gehoord", "Nothing heard"),
   );
 </script>
 
@@ -61,7 +62,7 @@
       <span class="mic" class:live={flow.phase === "listening"} style="--l:{flow.level}"></span>
       <span class="line">{flowLine}</span>
       {#if flow.phase === "listening"}
-        <button class="ghost x" title="Annuleren (Esc)" onclick={() => services.flowCancel()}>✕</button>
+        <button class="ghost x" title={tr("Annuleren (Esc)", "Cancel (Esc)")} onclick={() => services.flowCancel()}>✕</button>
       {/if}
     </div>
   {:else if nudge}
@@ -70,21 +71,21 @@
       <div class="pill">
         <Orb size={18} mood="seen" />
         <span class="line">{nudge.line}</span>
-        <button class="ghost x" title="Later" onclick={() => answer("later")}>✕</button>
+        <button class="ghost x" title={tr("Later", "Later")} onclick={() => answer("later")}>✕</button>
       </div>
       {#if open}
         <div class="detail">
-          <div class="context faint">Ik dacht mee · {nudge.app}</div>
-          <p>{nudge.body || "Zal ik dit voor je doen?"}</p>
+          <div class="context faint">{tr("Ik dacht mee · {app}", "A thought · {app}", { app: nudge.app })}</div>
+          <p>{nudge.body || tr("Zal ik dit voor je doen?", "Shall I do this for you?")}</p>
           {#if nudge.actions.length}
             <ul>
               {#each nudge.steps.length ? nudge.steps : nudge.actions.map((a) => a.tool.replaceAll("_", " ")) as step, i (i)}<li>{step}</li>{/each}
             </ul>
           {/if}
           <div class="buttons">
-            <button class="primary" onclick={() => answer(nudge!.actions.length ? "yes" : "open")}>{nudge.actions.length ? "Doe maar" : "Handig"}</button>
-            <button onclick={() => answer("no")}>Nee</button>
-            <button class="ghost" onclick={() => answer("mute")}>Niet in deze app</button>
+            <button class="primary" onclick={() => answer(nudge!.actions.length ? "yes" : "open")}>{nudge.actions.length ? tr("Doe maar", "Go ahead") : tr("Handig", "Handy")}</button>
+            <button onclick={() => answer("no")}>{tr("Nee", "No")}</button>
+            <button class="ghost" onclick={() => answer("mute")}>{tr("Niet in deze app", "Not in this app")}</button>
           </div>
         </div>
       {/if}

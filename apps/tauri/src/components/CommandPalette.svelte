@@ -7,6 +7,7 @@
   import Icon from "./Icon.svelte";
   import type { Route } from "../lib/shell-routes";
   import { onBack } from "../lib/mobile";
+  import { tr } from "../lib/i18n.svelte";
 
   let { onclose, onnavigate, companionEnabled = false }: {
     onclose: () => void;
@@ -36,13 +37,13 @@
   });
 
   const commands = $derived.by((): Command[] => [
-    { id: "new", title: "New Nook", icon: "plus", run: async () => { await nook.newNook(); onnavigate("chat"); } },
-    { id: "chat", title: "Open chat", icon: "chat", run: () => onnavigate("chat") },
-    { id: "agents", title: "Open agents", icon: "agents", run: () => onnavigate("agents") },
-    ...(nook.info?.capabilities.terminals ? [{ id: "workspace", title: "Open workspace", icon: "workspace", run: () => onnavigate("workspace") } satisfies Command] : []),
-    { id: "games", title: "Open Gamer Mode", icon: "gamepad", run: () => onnavigate("games") },
-    ...(companionEnabled ? [{ id: "companion", title: "Open companion", icon: "phone", run: () => onnavigate("companion") } satisfies Command] : []),
-    { id: "settings", title: "Open settings", icon: "settings", run: () => onnavigate("settings") },
+    { id: "new", title: tr("Nieuwe Nook", "New Nook"), icon: "plus", run: async () => { await nook.newNook(); onnavigate("chat"); } },
+    { id: "chat", title: tr("Chat openen", "Open chat"), icon: "chat", run: () => onnavigate("chat") },
+    { id: "agents", title: tr("Agents openen", "Open agents"), icon: "agents", run: () => onnavigate("agents") },
+    ...(nook.info?.capabilities.terminals ? [{ id: "workspace", title: tr("Werkplek openen", "Open workspace"), icon: "workspace", run: () => onnavigate("workspace") } satisfies Command] : []),
+    { id: "games", title: tr("Gamer Mode openen", "Open Gamer Mode"), icon: "gamepad", run: () => onnavigate("games") },
+    ...(companionEnabled ? [{ id: "companion", title: tr("Companion openen", "Open companion"), icon: "phone", run: () => onnavigate("companion") } satisfies Command] : []),
+    { id: "settings", title: tr("Instellingen openen", "Open settings"), icon: "settings", run: () => onnavigate("settings") },
   ]);
   const items = $derived<Command[]>([
     ...commands.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase())),
@@ -76,7 +77,7 @@
   async function choose(command: Command) {
     onclose();
     try { await command.run(); }
-    catch (e) { toast.error("Could not open that item", e); }
+    catch (e) { toast.error(tr("Kon dit niet openen", "Could not open that item"), e); }
   }
 
   function keys(e: KeyboardEvent) {
@@ -94,27 +95,27 @@
   }
 </script>
 
-<dialog bind:this={dialog} aria-label="Quick switcher" onclose={onclose} onkeydown={keys} onclick={(e) => { if (e.target === dialog) onclose(); }}>
+<dialog bind:this={dialog} aria-label={tr("Snel wisselen", "Quick switcher")} onclose={onclose} onkeydown={keys} onclick={(e) => { if (e.target === dialog) onclose(); }}>
   <div class="palette">
-    <div class="search"><Icon name="search" size={20} /><input bind:this={input} bind:value={query} role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="quick-switcher-results" aria-activedescendant={items.length ? `quick-switcher-option-${activeIndex}` : undefined} aria-label="Search actions and conversations" placeholder="Where would you like to go?" /><button class="ghost" onclick={onclose} aria-label="Close quick switcher">Esc</button></div>
+    <div class="search"><Icon name="search" size={20} /><input bind:this={input} bind:value={query} role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="quick-switcher-results" aria-activedescendant={items.length ? `quick-switcher-option-${activeIndex}` : undefined} aria-label={tr("Acties en gesprekken zoeken", "Search actions and conversations")} placeholder={tr("Waar wil je heen?", "Where would you like to go?")} /><button class="ghost" onclick={onclose} aria-label={tr("Snel wisselen sluiten", "Close quick switcher")}>Esc</button></div>
     <div class="results">
-      <div class="label">{query.trim() ? "RESULTS" : "QUICK ACTIONS & RECENT NOOKS"}</div>
-      <div id="quick-switcher-results" role="listbox" aria-label="Actions and conversations">
+      <div class="label">{query.trim() ? tr("RESULTATEN", "RESULTS") : tr("SNELLE ACTIES & RECENTE NOOKS", "QUICK ACTIONS & RECENT NOOKS")}</div>
+      <div id="quick-switcher-results" role="listbox" aria-label={tr("Acties en gesprekken", "Actions and conversations")}>
       {#each items as command, i (command.id)}
-        <button id={`quick-switcher-option-${i}`} role="option" aria-selected={i === activeIndex} tabindex="-1" class="result" class:active={i === activeIndex} data-index={i} onclick={() => choose(command)} onfocus={() => (selected = i)}><Icon name={command.icon} /><span>{command.title}</span><small>{command.id.startsWith("nook:") ? "Conversation" : "Action"}</small></button>
+        <button id={`quick-switcher-option-${i}`} role="option" aria-selected={i === activeIndex} tabindex="-1" class="result" class:active={i === activeIndex} data-index={i} onclick={() => choose(command)} onfocus={() => (selected = i)}><Icon name={command.icon} /><span>{command.title}</span><small>{command.id.startsWith("nook:") ? tr("Gesprek", "Conversation") : tr("Actie", "Action")}</small></button>
       {/each}
       </div>
-      {#if !items.length && !searching}<p class="empty" role="status">No matches. Try a different search.</p>{/if}
-      {#if searching}<p class="note" role="status">Searching conversations…</p>{/if}
-      {#if searchError}<p class="error" role="alert">Could not search conversations. Close and try again.</p>{/if}
+      {#if !items.length && !searching}<p class="empty" role="status">{tr("Niets gevonden. Probeer een andere zoekterm.", "No matches. Try a different search.")}</p>{/if}
+      {#if searching}<p class="note" role="status">{tr("Gesprekken doorzoeken…", "Searching conversations…")}</p>{/if}
+      {#if searchError}<p class="error" role="alert">{tr("Kon de gesprekken niet doorzoeken. Sluit en probeer het opnieuw.", "Could not search conversations. Close and try again.")}</p>{/if}
     </div>
-    <footer><span>↑ ↓ to navigate</span><span>Enter to open</span><span>Ctrl K to toggle</span></footer>
+    <footer><span>{tr("↑ ↓ om te bladeren", "↑ ↓ to navigate")}</span><span>{tr("Enter om te openen", "Enter to open")}</span><span>{tr("Ctrl K om te openen of sluiten", "Ctrl K to toggle")}</span></footer>
   </div>
 </dialog>
 
 <style>
   dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); padding: 0; margin: 12dvh auto auto; color: var(--paper); background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius); box-shadow: var(--shadow-popover); overflow: hidden; }
-  dialog::backdrop { background: #0009; backdrop-filter: blur(5px); }
+  dialog::backdrop { background: color-mix(in srgb, var(--canvas) 60%, transparent); backdrop-filter: blur(5px); }
   .palette { display: flex; flex-direction: column; max-height: calc(100dvh - 24dvh); }
   .search { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line2); color: var(--text2); }
   input { flex: 1; min-width: 0; padding: 6px 0; border: 0; background: transparent; box-shadow: none; font-size: 14px; }

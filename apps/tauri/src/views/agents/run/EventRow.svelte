@@ -3,6 +3,7 @@
   // uitkomst, gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels en het einde van een beurt.
   import Icon from "../../../components/Icon.svelte";
   import { renderMarkdown } from "../../../lib/markdown";
+  import { tr, locale } from "../../../lib/i18n.svelte";
   import type { RunEvent } from "../../../lib/workspace/api";
   import { toolLabel } from "../../../lib/workspace/timeline";
 
@@ -22,9 +23,9 @@
     onrevert?: () => void;
   } = $props();
 
-  const changeLabels: Record<string, string> = {
-    added: "toegevoegd", modified: "gewijzigd", deleted: "verwijderd", renamed: "hernoemd", written: "geschreven",
-  };
+  const changeLabels = $derived<Record<string, string>>({
+    added: tr("toegevoegd", "added"), modified: tr("gewijzigd", "modified"), deleted: tr("verwijderd", "deleted"), renamed: tr("hernoemd", "renamed"), written: tr("geschreven", "written"),
+  });
 
   type ToolIcon = "terminal" | "file" | "pencil" | "search" | "globe" | "bot" | "tasks" | "link" | "wrench";
   /// The Lucide icon for each kind of tool call.
@@ -41,11 +42,11 @@
     }
   }
 
-  const time = $derived(new Date(event.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  const time = $derived(new Date(event.date).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }));
   const longThought = $derived(event.text.length > 280 || event.text.split("\n").length > 4);
-  const approvalState: Record<string, string> = {
-    pending: "wacht", allowed: "toegestaan", denied: "geweigerd", expired: "verlopen",
-  };
+  const approvalState = $derived<Record<string, string>>({
+    pending: tr("wacht", "waiting"), allowed: tr("toegestaan", "allowed"), denied: tr("geweigerd", "denied"), expired: tr("verlopen", "expired"),
+  });
 
   function copy(text: string) {
     navigator.clipboard?.writeText(text).catch(() => {});
@@ -60,8 +61,8 @@
         <div class="markdown">{@html renderMarkdown(event.text)}</div>
       </div>
       <div class="meta">
-        {#if onrevert}<button class="metab" title="Zet de bestanden terug naar vóór dit bericht" onclick={onrevert}>Terugzetten</button>{/if}
-        <button class="metab" title="Kopieer" aria-label="Kopieer bericht" onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
+        {#if onrevert}<button class="metab" title={tr("Zet de bestanden terug naar vóór dit bericht", "Restore the files to before this message")} onclick={onrevert}>{tr("Terugzetten", "Restore")}</button>{/if}
+        <button class="metab" title={tr("Kopieer", "Copy")} aria-label={tr("Kopieer bericht", "Copy message")} onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
         <span>{time}</span>
       </div>
     </div>
@@ -71,17 +72,17 @@
       <div class="msg assistant"><div class="markdown">{@html renderMarkdown(event.text)}</div></div>
       <div class="meta">
         <span>{time}</span>
-        <button class="metab" title="Kopieer" aria-label="Kopieer antwoord" onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
+        <button class="metab" title={tr("Kopieer", "Copy")} aria-label={tr("Kopieer antwoord", "Copy answer")} onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
       </div>
     </div>
   {:else if event.kind === "thinking"}
     <button class="thinking" onclick={toggle}>
-      <span class="head"><Icon name="brain" size={13} /> {event.state === "running" ? "Denkt na…" : "Denkstappen"}{#if longThought}<span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>{/if}</span>
+      <span class="head"><Icon name="brain" size={13} /> {event.state === "running" ? tr("Denkt na…", "Thinking…") : tr("Denkstappen", "Thinking")}{#if longThought}<span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>{/if}</span>
       <span class="text" class:clamp={longThought && !expanded}>{event.text}</span>
     </button>
   {:else if event.kind === "tool"}
     <div class="tool">
-      <button class="line" onclick={toggle} title="Klik om invoer en uitkomst te zien">
+      <button class="line" onclick={toggle} title={tr("Klik om invoer en uitkomst te zien", "Click to see input and output")}>
         <span class="sym {event.state ?? 'done'}">{#if event.state === "running"}<span class="spin"><Icon name="loader" size={13} /></span>{:else if event.state === "failed"}<Icon name="x" size={13} />{:else}<Icon name={symbol(event.tool ?? "")} size={13} />{/if}</span>
         <span class="label">{event.text}</span>
         <span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>
@@ -89,28 +90,28 @@
       {#if expanded}
         {#if event.detail && event.detail !== "{}"}
           <div class="code">
-            <div class="code-head"><span>Invoer</span><button class="ghost tiny" onclick={() => copy(event.detail ?? "")}>Kopieer</button></div>
+            <div class="code-head"><span>{tr("Invoer", "Input")}</span><button class="ghost tiny" onclick={() => copy(event.detail ?? "")}>{tr("Kopieer", "Copy")}</button></div>
             <pre>{event.detail}</pre>
           </div>
         {/if}
         {#if event.output}
           <div class="code" class:failed={event.state === "failed"}>
-            <div class="code-head"><span>Uitkomst</span><button class="ghost tiny" onclick={() => copy(event.output ?? "")}>Kopieer</button></div>
+            <div class="code-head"><span>{tr("Uitkomst", "Output")}</span><button class="ghost tiny" onclick={() => copy(event.output ?? "")}>{tr("Kopieer", "Copy")}</button></div>
             <pre>{event.output}</pre>
           </div>
         {:else if event.state === "running"}
-          <span class="faint small">Loopt nog…</span>
+          <span class="faint small">{tr("Loopt nog…", "Still running…")}</span>
         {/if}
       {/if}
     </div>
   {:else if event.kind === "fileChange"}
-    <button class="file" onclick={() => openFile?.(event.detail ?? event.text)} title="Open de diff">
+    <button class="file" onclick={() => openFile?.(event.detail ?? event.text)} title={tr("Open de diff", "Open the diff")}>
       <span class="sym"><Icon name="pencil" size={13} /></span><span class="mono">{event.text}</span><span class="faint">{changeLabels[event.tool ?? "modified"] ?? event.tool}</span>
     </button>
   {:else if event.kind === "approval"}
     <button class="approval" onclick={toggle}>
       <span class="hand {event.state}"><Icon name="hand" size={13} /></span>
-      <span>{event.tool ? toolLabel(event.tool) : "tool"} vraagt toestemming</span>
+      <span>{tr("{tool} vraagt toestemming", "{tool} asks for permission", { tool: event.tool ? toolLabel(event.tool) : "tool" })}</span>
       <span class="mono faint label">{event.text}</span>
       <span class="st {event.state}">{approvalState[event.state ?? "pending"] ?? ""}</span>
     </button>
@@ -125,7 +126,7 @@
   {:else if event.kind === "result"}
     <div class="result">
       <span class="rule"></span>
-      <span>{event.state === "failed" ? "Beurt mislukt" : "Beurt klaar"}{event.text ? ` · ${event.text}` : ""}</span>
+      <span>{event.state === "failed" ? tr("Beurt mislukt", "Turn failed") : tr("Beurt klaar", "Turn done")}{event.text ? ` · ${event.text}` : ""}</span>
       <span class="rule"></span>
     </div>
   {/if}

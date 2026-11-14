@@ -11,7 +11,7 @@ Thanks for your interest in contributing to Nook! Bug reports, feature ideas, tr
 | **A Linux machine** | The Tauri app (Rust core, Svelte 5 UI), Wayland support, packaging | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An Android phone** | Install the APK from CI on a real device and report what works | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An iPhone** | The Nook Companion app (SwiftUI) | [iPhone Companion](#iphone-companion) |
-| **A second language** | Review or improve the Dutch, German, French, or Spanish strings, or translate the Tauri app (Dutch-only today) | [Translations](#translations) |
+| **A second language** | Review or improve the Dutch, German, French, or Spanish strings, in the Mac or the Tauri app | [Translations](#translations) |
 | **An eye for clear writing** | Docs, the README, error messages, onboarding copy | [Docs](#docs) |
 | **Ten minutes** | Try Nook and open an issue about anything confusing or broken; give the repo a ⭐ | [Reporting Issues](#reporting-issues) |
 
@@ -93,7 +93,7 @@ See [`apps/ios/README.md`](apps/ios/README.md) and [docs/COMPANION.md](docs/COMP
 ## Translations
 
 - **macOS app:** every user-facing string goes through `tr("key")` and lives in `apps/macos/Core/I18n*.swift` in five languages (`en`, `nl`, `de`, `fr`, `es`). English is the default. Native speakers reviewing the German, French, or Spanish strings are very welcome; a PR that only improves wording is a great first contribution. `I18nCoverageTests` (part of `./scripts/core-tests.sh`) checks that no key is missing and that placeholders such as `%@` and `%ld` match.
-- **Tauri app:** the interface is Dutch-only today. Bringing it to English and the other Mac languages is one of the most useful things you can do; check the [`help wanted`](https://github.com/IAMichan/nook/labels/help%20wanted) issues or open one to coordinate.
+- **Tauri app:** the same five languages, English by default. Write a visible string as `tr("Nederlands", "English")` with `{placeholders}` for values, and add German, French, and Spanish for its English text to a catalog in `apps/tauri/src/lib/i18n/`. `src/lib/i18n.test.ts` (`npm test`) checks that every text is translated and that placeholders match. Error messages from the Rust side are still partly Dutch; translating those is a welcome contribution.
 
 ## Docs
 

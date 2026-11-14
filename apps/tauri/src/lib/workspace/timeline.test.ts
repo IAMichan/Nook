@@ -59,7 +59,7 @@ describe("TimelinePresentation", () => {
     expect(parts(tools.tally).map((p) => p.category)).toEqual(["command", "edit"]);
     expect(tools.tally.counts.edit).toBe(1);
     expect(tools.tally.failed).toBe(false);
-    expect(sentence(tools.tally)).toBe("1 commando uitgevoerd en 1 bestand gewijzigd");
+    expect(sentence(tools.tally)).toBe("Ran 1 command and changed 1 file");
   });
 
   it("gives every block its own id", () => {
@@ -132,7 +132,7 @@ describe("TimelinePresentation", () => {
     const t = tally([
       event("tool", "a", { tool: "Bash" }), event("tool", "b", { tool: "Read" }), event("tool", "c", { tool: "Grep" }), event("tool", "d", { tool: "Grep" }),
     ]);
-    expect(sentence(t)).toBe("1 commando uitgevoerd, 1 bestand gelezen en nog 2 acties");
+    expect(sentence(t)).toBe("Ran 1 command, read 1 file and 2 more actions");
   });
 });
 
@@ -223,8 +223,8 @@ describe("plans, failures and durations", () => {
   it("formats durations like the Mac", () => {
     expect(duration(30)).toBe("< 1 min");
     expect(duration(12 * 60)).toBe("12 min");
-    expect(duration(125 * 60)).toBe("2u 5m");
-    expect(duration(120 * 60)).toBe("2u");
+    expect(duration(125 * 60)).toBe("2h 5m");
+    expect(duration(120 * 60)).toBe("2h");
     expect(duration(72 * 3600)).toBe("3 d");
   });
 });

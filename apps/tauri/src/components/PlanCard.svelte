@@ -4,6 +4,7 @@
   import { api } from "../lib/api";
   import { brainApi } from "../lib/brain";
   import type { ChatMessage, PlanStep } from "../lib/types";
+  import { tr } from "../lib/i18n.svelte";
 
   let { nookId, message, last = false }: { nookId: string; message: ChatMessage; last?: boolean } = $props();
   let steps = $state<PlanStep[]>([]);
@@ -39,13 +40,13 @@
     const s = message.actionStates[i];
     switch (s?.kind) {
       case "done": return { text: `✓ ${s.detail ?? ""}`, cls: "ok" };
-      case "verified": return { text: `✓ ${s.detail ?? ""} · gecontroleerd`, cls: "ok" };
+      case "verified": return { text: tr("✓ {detail} · gecontroleerd", "✓ {detail} · checked", { detail: s.detail ?? "" }), cls: "ok" };
       case "failed": return { text: `✗ ${s.detail ?? ""}`, cls: "bad" };
-      case "skipped": return { text: "Overgeslagen", cls: "faint" };
-      case "notRun": return { text: "Niet uitgevoerd (een eerdere stap mislukte)", cls: "faint" };
-      case "duplicate": return { text: `Al uitgevoerd op ${s.detail}; niet herhaald`, cls: "warn" };
-      case "approved": return { text: "Goedgekeurd, wacht op zijn beurt", cls: "muted" };
-      case "running": return { text: "Bezig…", cls: "muted" };
+      case "skipped": return { text: tr("Overgeslagen", "Skipped"), cls: "faint" };
+      case "notRun": return { text: tr("Niet uitgevoerd (een eerdere stap mislukte)", "Not run (an earlier step failed)"), cls: "faint" };
+      case "duplicate": return { text: tr("Al uitgevoerd op {when}; niet herhaald", "Already run on {when}; not repeated", { when: s.detail ?? "" }), cls: "warn" };
+      case "approved": return { text: tr("Goedgekeurd, wacht op zijn beurt", "Approved, waiting for its turn"), cls: "muted" };
+      case "running": return { text: tr("Bezig…", "Working…"), cls: "muted" };
       default: return { text: "", cls: "" };
     }
   }
@@ -101,8 +102,8 @@
 
   const title = $derived(
     editable
-      ? message.actions.length === 1 ? "VOORSTEL · CONTROLEER EN KEUR GOED" : `PLAN · ${message.actions.length} STAPPEN · CONTROLEER EN KEUR GOED`
-      : planState === "running" ? "BEZIG" : planState === "cancelled" ? "GEANNULEERD" : "UITGEVOERD",
+      ? message.actions.length === 1 ? tr("VOORSTEL · CONTROLEER EN KEUR GOED", "PROPOSAL · REVIEW AND APPROVE") : tr("PLAN · {n} STAPPEN · CONTROLEER EN KEUR GOED", "PLAN · {n} STEPS · REVIEW AND APPROVE", { n: message.actions.length })
+      : planState === "running" ? tr("BEZIG", "RUNNING") : planState === "cancelled" ? tr("GEANNULEERD", "CANCELLED") : tr("UITGEVOERD", "DONE"),
   );
 </script>
 
@@ -119,15 +120,15 @@
     <div class="step" class:off={!included[i]}>
       <label class="main">
         <input type="checkbox" checked={included[i]} disabled={!editable || finished(i)}
-          title={included[i] ? "Deze stap overslaan" : "Deze stap toch uitvoeren"}
+          title={included[i] ? tr("Deze stap overslaan", "Skip this step") : tr("Deze stap toch uitvoeren", "Run this step after all")}
           onchange={(e) => brainApi.planInclude(nookId, message.id, i, e.currentTarget.checked)} />
         <span class="num">{i + 1}</span>
         <span>{step?.summary ?? action.tool}</span>
         {#if step?.tag}<span class="tag">{step.tag}</span>{/if}
       </label>
-      <button class="ghost tiny" onclick={() => (open[i] = !open[i])}>{open[i] ? "Minder" : "Alle details"}</button>
+      <button class="ghost tiny" onclick={() => (open[i] = !open[i])}>{open[i] ? tr("Minder", "Less") : tr("Alle details", "All details")}</button>
       {#if label.text}<div class="result {label.cls}">{label.text}
-        {#if message.actionStates[i]?.kind === "duplicate"}<button class="ghost tiny" onclick={() => brainApi.planRunAgain(nookId, message.id, i)}>Toch nog een keer</button>{/if}
+        {#if message.actionStates[i]?.kind === "duplicate"}<button class="ghost tiny" onclick={() => brainApi.planRunAgain(nookId, message.id, i)}>{tr("Toch nog een keer", "Run again anyway")}</button>{/if}
       </div>{/if}
       {#each message.actionProblems[i] ?? [] as problem (problem)}<div class="result bad">⚠ {problem}</div>{/each}
       {#if open[i] && step}
@@ -142,11 +143,11 @@
                 {:else}
                   <input bind:value={editing[token]} use:focusField onkeydown={(e) => e.key === "Enter" && saveField(i, field.key)} />
                 {/if}
-                <button class="tiny" onclick={() => saveField(i, field.key)}>Klaar</button>
+                <button class="tiny" onclick={() => saveField(i, field.key)}>{tr("Klaar", "Done")}</button>
               {:else}
                 <span class="value" class:multi={field.multiline}>{field.value}</span>
                 {#if field.editable && editable && !finished(i)}
-                  <button class="ghost tiny" onclick={() => (editing[token] = field.value)}>Aanpassen</button>
+                  <button class="ghost tiny" onclick={() => (editing[token] = field.value)}>{tr("Aanpassen", "Edit")}</button>
                 {/if}
               {/if}
             </div>
@@ -161,9 +162,9 @@
   {/if}
   {#if editable}
     <div class="buttons">
-      <button class="ghost" onclick={() => api.cancelPlan(nookId, message.id)}>Annuleer</button>
-      <button class="primary" disabled={!included.some(Boolean) || blocked} title={blocked ? "Los eerst de problemen bij de stappen op" : ""} onclick={run}>
-        {planState === "failed" ? "Verder met de rest" : "Uitvoeren"}{#if last}<kbd>Ctrl ↵</kbd>{/if}
+      <button class="ghost" onclick={() => api.cancelPlan(nookId, message.id)}>{tr("Annuleer", "Cancel")}</button>
+      <button class="primary" disabled={!included.some(Boolean) || blocked} title={blocked ? tr("Los eerst de problemen bij de stappen op", "Fix the problems in the steps first") : ""} onclick={run}>
+        {planState === "failed" ? tr("Verder met de rest", "Continue with the rest") : tr("Uitvoeren", "Run")}{#if last}<kbd>Ctrl ↵</kbd>{/if}
       </button>
     </div>
   {/if}

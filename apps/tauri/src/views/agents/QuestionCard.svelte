@@ -2,6 +2,7 @@
   // Een meerkeuzevraag van een agent (AskUserQuestion), vraag voor vraag. "In terminal" laat de agent het zelf vragen.
   import { agentApi, type QuestionRequest } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { tr } from "../../lib/i18n.svelte";
 
   let { request }: { request: QuestionRequest } = $props();
   let index = $state(0);
@@ -46,7 +47,7 @@
 <div class="question">
   <div class="context faint">
     <span class="dot waiting"></span>
-    {request.agentName} · {request.project} vraagt{#if item.header} · {item.header}{/if}{#if request.items.length > 1} · {index + 1} van {request.items.length}{/if}
+    {request.agentName} · {tr("{project} vraagt", "{project} asks", { project: request.project })}{#if item.header} · {item.header}{/if}{#if request.items.length > 1} · {tr("{n} van {total}", "{n} of {total}", { n: index + 1, total: request.items.length })}{/if}
   </div>
   <div class="title">{item.question}</div>
   <div class="options">
@@ -64,9 +65,9 @@
     {/each}
   </div>
   <div class="buttons">
-    <button class="ghost" onclick={terminal}>In terminal</button>
+    <button class="ghost" onclick={terminal}>{tr("In terminal", "In terminal")}</button>
     <span class="spacer"></span>
-    {#if item.multiSelect}<button class="primary" disabled={busy || !chosen.length} onclick={() => next(chosen)}>Verstuur</button>{/if}
+    {#if item.multiSelect}<button class="primary" disabled={busy || !chosen.length} onclick={() => next(chosen)}>{tr("Verstuur", "Send")}</button>{/if}
   </div>
 </div>
 

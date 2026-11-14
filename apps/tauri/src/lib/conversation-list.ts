@@ -1,4 +1,5 @@
 import type { Conversation, ConversationSummary } from "./types";
+import { tr } from "./i18n.svelte";
 
 export type ConversationGroupId = "pinned" | "today" | "yesterday" | "previous7" | "older";
 
@@ -11,9 +12,15 @@ export function dayBucket(updated: string, now: Date = new Date()): Exclude<Conv
   return time >= day(8) ? "previous7" : "older";
 }
 
-const GROUP_TITLES: Record<ConversationGroupId, string> = {
-  pinned: "Pinned", today: "Today", yesterday: "Yesterday", previous7: "Previous 7 days", older: "Older",
-};
+function groupTitle(id: ConversationGroupId): string {
+  switch (id) {
+    case "pinned": return tr("Vastgezet", "Pinned");
+    case "today": return tr("Vandaag", "Today");
+    case "yesterday": return tr("Gisteren", "Yesterday");
+    case "previous7": return tr("Afgelopen 7 dagen", "Previous 7 days");
+    case "older": return tr("Ouder", "Older");
+  }
+}
 
 /** Pinned first, then the rest by age as the Claude app lists them: Today, Yesterday, Previous 7 days, Older. */
 export function conversationGroups(items: ConversationSummary[], activeId: string | null, now: Date = new Date()) {
@@ -24,7 +31,7 @@ export function conversationGroups(items: ConversationSummary[], activeId: strin
   return ids
     .map((id) => ({
       id,
-      title: GROUP_TITLES[id],
+      title: groupTitle(id),
       items: id === "pinned" ? visible.filter((item) => item.pinned).sort(recentFirst) : rest.filter((item) => dayBucket(item.updated, now) === id),
     }))
     .filter((group) => group.items.length);

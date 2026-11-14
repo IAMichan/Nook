@@ -22,7 +22,7 @@
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
   import { barDraft } from "../lib/draft.svelte";
-  import { tr, english } from "../lib/i18n.svelte";
+  import { tr, english, appLanguage, APP_LANGUAGES } from "../lib/i18n.svelte";
   import { heard } from "../components/Orb.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
@@ -207,11 +207,13 @@
     await reading;
   }
 
-  // One click flips the interface and Nook's answers between Dutch and English.
+  // One click moves the interface (and Nook's answers, unless they follow the question) to the next language.
   function toggleLanguage() {
-    const next = english() ? "nl" : "en";
-    nook.saveSettings({ appLanguage: next, language: next });
+    const codes = APP_LANGUAGES.map((l) => l.code);
+    const next = codes[(codes.indexOf(appLanguage()) + 1) % codes.length];
+    nook.saveSettings(nook.settings?.language === "auto" ? { appLanguage: next } : { appLanguage: next, language: next });
   }
+  const nextLanguage = $derived(APP_LANGUAGES[(APP_LANGUAGES.findIndex((l) => l.code === appLanguage()) + 1) % APP_LANGUAGES.length].name);
 
   // "Laat Nook antwoorden" on a WhatsApp card: the new Nook opens in the Nook tab.
   function openNookFromCard(id: string) {
@@ -455,7 +457,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill strip" onmousedown={drag}>
       <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
-      <span class="message">{compactNotice(card.name, card.project, card.status, english())}</span>
+      <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
         <button class="ghost" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>
@@ -487,7 +489,7 @@
     {#if chipVisible}
       <div class="chip">
         <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openByClick}>
-          {tr(`Bericht van ${chipName}`, `Message from ${chipName}`)}
+          {tr("Bericht van {name}", "Message from {name}", { name: chipName })}
         </button>
         <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={() => whatsapp.dismiss()}>×</button>
       </div>
@@ -501,7 +503,7 @@
           <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
-          <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "agents"} onclick={() => select("agents")}>{tr("Agents", "Agents")} {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
           {/if}
@@ -511,7 +513,7 @@
           {/if}
         </nav>
         <span class="spacer"></span>
-        <button class="ghost icon lang" title={tr("Taal: klik voor English", "Language: click for Nederlands")} onclick={toggleLanguage}>{english() ? "EN" : "NL"}</button>
+        <button class="ghost icon lang" title={tr("Taal: klik voor {next}", "Language: click for {next}", { next: nextLanguage })} onclick={toggleLanguage}>{appLanguage().toUpperCase()}</button>
         <button class="ghost icon lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
         <button class="ghost icon" title={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} onclick={() => api.showMain(nook.activeId ? `nook:${nook.activeId}` : "chat")}>⧉</button>
         <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Een mailconcept in de chat: aan te passen, en pas weg na een klik op Versturen (via je mailprogramma).
   import { brainApi, type MailDraft } from "../lib/brain";
+  import { tr } from "../lib/i18n.svelte";
 
   let { draft, nookId }: { draft: MailDraft; nookId: string } = $props();
   let edit = $state<MailDraft>({ id: "", to: "", cc: "", subject: "", body: "", state: "draft", error: "" });
@@ -45,31 +46,31 @@
 
 <div class="mail" class:sent>
   <div class="head">
-    <strong>✉ Mailconcept</strong>
-    <span class="faint">{sent ? "naar je mailprogramma gestuurd" : draft.state === "opened" ? "geopend in je mailprogramma" : "nog niet verstuurd"}</span>
+    <strong>✉ {tr("Mailconcept", "Email draft")}</strong>
+    <span class="faint">{sent ? tr("naar je mailprogramma gestuurd", "sent to your mail app") : draft.state === "opened" ? tr("geopend in je mailprogramma", "opened in your mail app") : tr("nog niet verstuurd", "not sent yet")}</span>
   </div>
   {#if editing}
-    <label>Aan <input bind:value={edit.to} placeholder="naam@voorbeeld.nl" /></label>
+    <label>{tr("Aan", "To")} <input bind:value={edit.to} placeholder={tr("naam@voorbeeld.nl", "name@example.com")} /></label>
     <label>Cc <input bind:value={edit.cc} /></label>
-    <label>Onderwerp <input bind:value={edit.subject} /></label>
+    <label>{tr("Onderwerp", "Subject")} <input bind:value={edit.subject} /></label>
     <textarea bind:value={edit.body} rows="8"></textarea>
   {:else}
-    <div class="row"><span class="faint">Aan</span> {draft.to || "—"}</div>
+    <div class="row"><span class="faint">{tr("Aan", "To")}</span> {draft.to || "—"}</div>
     {#if draft.cc}<div class="row"><span class="faint">Cc</span> {draft.cc}</div>{/if}
-    <div class="row"><span class="faint">Onderwerp</span> <strong>{draft.subject}</strong></div>
+    <div class="row"><span class="faint">{tr("Onderwerp", "Subject")}</span> <strong>{draft.subject}</strong></div>
     <div class="body">{draft.body}</div>
   {/if}
   {#if error || draft.error}<p class="err">{error ?? draft.error}</p>{/if}
   {#if !sent}
     <div class="buttons">
       {#if editing}
-        <button class="ghost" onclick={() => (editing = false)}>Annuleer</button>
-        <button onclick={save}>Bewaar</button>
+        <button class="ghost" onclick={() => (editing = false)}>{tr("Annuleer", "Cancel")}</button>
+        <button onclick={save}>{tr("Bewaar", "Save")}</button>
       {:else}
-        <button class="ghost" onclick={() => (editing = true)}>Aanpassen</button>
-        <button class="ghost" onclick={open}>Open in mailprogramma</button>
+        <button class="ghost" onclick={() => (editing = true)}>{tr("Aanpassen", "Edit")}</button>
+        <button class="ghost" onclick={open}>{tr("Open in mailprogramma", "Open in mail app")}</button>
       {/if}
-      <button class="primary" onclick={send} disabled={!edit.to.trim()}>Versturen</button>
+      <button class="primary" onclick={send} disabled={!edit.to.trim()}>{tr("Versturen", "Send")}</button>
     </div>
   {/if}
 </div>

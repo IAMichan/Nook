@@ -7,6 +7,7 @@
     connectorsApi, connectorEvents, health, summary,
     type Caps, type ConnectorInfo, type DeviceCode, type ServiceView,
   } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
   import HealthPill from "./HealthPill.svelte";
 
@@ -62,7 +63,7 @@
 
   async function save() {
     busy = true;
-    note = "Bewaard. Nook haalt de gegevens op…";
+    note = tr("Bewaard. Nook haalt de gegevens op…", "Saved. Nook is fetching the data…");
     try {
       current = (await connectorsApi.save(service.id, { ...drafts })) ?? current;
       for (const f of service.fields) if (f.secret) drafts[f.account] = "";
@@ -83,7 +84,7 @@
       drafts[secret.account] = text;
       await save();
     } catch {
-      note = "Er staat niets bruikbaars op je klembord.";
+      note = tr("Er staat niets bruikbaars op je klembord.", "There's nothing usable on your clipboard.");
     }
   }
 
@@ -155,7 +156,7 @@
       <ServiceIcon domain={service.domain} title={service.title} size={44} />
       <div>
         <h3>{service.title}</h3>
-        <p class="muted">{managing ? summary(current, service.tagline) : `Koppel ${service.title} in een paar eenvoudige stappen aan Nook.`}</p>
+        <p class="muted">{managing ? summary(current, service.tagline) : tr("Koppel {name} in een paar eenvoudige stappen aan Nook.", "Connect {name} to Nook in a few simple steps.", { name: service.title })}</p>
       </div>
     </header>
 
@@ -163,45 +164,45 @@
       {#if managing}
         <div class="line">
           <HealthPill health={h} />
-          {#if h === "broken" || h === "needsYou"}<button onclick={retry} disabled={busy}>Opnieuw proberen</button>{/if}
+          {#if h === "broken" || h === "needsYou"}<button onclick={retry} disabled={busy}>{tr("Opnieuw proberen", "Try again")}</button>{/if}
         </div>
         <label class="toggle">
-          <span><strong>Koppeling gebruiken</strong><br /><span class="faint">Wanneer ingeschakeld kan Nook deze dienst gebruiken voor context en acties.</span></span>
+          <span><strong>{tr("Koppeling gebruiken", "Use connection")}</strong><br /><span class="faint">{tr("Wanneer ingeschakeld kan Nook deze dienst gebruiken voor context en acties.", "When on, Nook can use this service for context and actions.")}</span></span>
           <input type="checkbox" checked={current?.on ?? true} onchange={(e) => setOn(e.currentTarget.checked)} />
         </label>
-        <h4>Sleutels & beveiliging</h4>
+        <h4>{tr("Sleutels & beveiliging", "Keys & security")}</h4>
         {#if replacing && isGithub}
           <!-- GitHub repairs by signing in again; a token stays available, tucked away. -->
           {@render githubButtons("github")}
-          <button class="link" onclick={() => (showToken = !showToken)}>{showToken ? "▾" : "▸"} Liever handmatig een token invullen?</button>
+          <button class="link" onclick={() => (showToken = !showToken)}>{showToken ? "▾" : "▸"} {tr("Liever handmatig een token invullen?", "Rather enter a token by hand?")}</button>
           {#if showToken}{@render fields()}{/if}
         {:else if replacing || service.fields.some((f) => !f.secret)}
           {@render fields()}
         {:else}
           <div class="line">
-            <span class="faint">🔒 Sleutel veilig bewaard in de kluis van je systeem</span>
-            <button onclick={() => (replacing = true)}>Vervang sleutel</button>
+            <span class="faint">🔒 {tr("Sleutel veilig bewaard in de kluis van je systeem", "Key stored safely in your system's keychain")}</span>
+            <button onclick={() => (replacing = true)}>{tr("Vervang sleutel", "Replace key")}</button>
           </div>
         {/if}
         {#if isGithub}{@render extraAccounts()}{/if}
       {:else}
         {#if isGithub}
           {@render githubButtons("github")}
-          <button class="link" onclick={() => (showToken = !showToken)}>{showToken ? "▾" : "▸"} Liever handmatig een token invullen?</button>
+          <button class="link" onclick={() => (showToken = !showToken)}>{showToken ? "▾" : "▸"} {tr("Liever handmatig een token invullen?", "Rather enter a token by hand?")}</button>
         {/if}
         {#if showToken}
           <ol class="steps">
             <li class:done={current?.configured}>
-              <strong>{service.signupUrl ? `Haal een sleutel op bij ${service.title}` : "Waar vind je dit?"}</strong>
+              <strong>{service.signupUrl ? tr("Haal een sleutel op bij {name}", "Get a key from {name}", { name: service.title }) : tr("Waar vind je dit?", "Where do you find this?")}</strong>
               <p class="muted">{service.help}</p>
-              {#if service.signupUrl}<button onclick={() => openUrl(service.signupUrl!)}>Open {service.title} ↗</button>{/if}
+              {#if service.signupUrl}<button onclick={() => openUrl(service.signupUrl!)}>{tr("Open {name}", "Open {name}", { name: service.title })} ↗</button>{/if}
             </li>
             <li class:done={current?.configured}>
-              <strong>{service.id === "icalfeeds" ? "Plak je ICS-adressen" : service.id === "customsources" ? "Zet je bronnen erin" : "Plak je sleutel of token"}</strong>
+              <strong>{service.id === "icalfeeds" ? tr("Plak je ICS-adressen", "Paste your ICS addresses") : service.id === "customsources" ? tr("Zet je bronnen erin", "Add your sources") : tr("Plak je sleutel of token", "Paste your key or token")}</strong>
               {@render fields()}
             </li>
             <li class:done={current?.status.state.kind === "ok"}>
-              <strong>Verbinding controleren</strong>
+              <strong>{tr("Verbinding controleren", "Check the connection")}</strong>
               {@render result()}
             </li>
           </ol>
@@ -213,7 +214,7 @@
       {#if note}<p class="note">{note}</p>{/if}
 
       {#if service.capabilities}
-        <button class="link" onclick={() => (showCaps = !showCaps)}>{showCaps ? "▾" : "▸"} Wat kan Nook met deze dienst?</button>
+        <button class="link" onclick={() => (showCaps = !showCaps)}>{showCaps ? "▾" : "▸"} {tr("Wat kan Nook met deze dienst?", "What can Nook do with this service?")}</button>
         {#if showCaps}<p class="muted">{service.capabilities}</p>{/if}
       {/if}
     </div>
@@ -221,15 +222,15 @@
     <footer>
       {#if current?.configured}
         {#if confirmDisconnect}
-          <span class="faint">Weet je zeker dat je deze koppeling wilt verwijderen?</span>
-          <button onclick={() => (confirmDisconnect = false)}>Annuleer</button>
-          <button class="danger" onclick={disconnect}>Ontkoppel</button>
+          <span class="faint">{tr("Weet je zeker dat je deze koppeling wilt verwijderen?", "Are you sure you want to remove this connection?")}</span>
+          <button onclick={() => (confirmDisconnect = false)}>{tr("Annuleer", "Cancel")}</button>
+          <button class="danger" onclick={disconnect}>{tr("Ontkoppel", "Disconnect")}</button>
         {:else}
-          <button class="danger" onclick={() => (confirmDisconnect = true)}>Ontkoppel</button>
+          <button class="danger" onclick={() => (confirmDisconnect = true)}>{tr("Ontkoppel", "Disconnect")}</button>
         {/if}
       {/if}
       <span class="spacer"></span>
-      <button class="primary" onclick={onclose}>{current?.status.state.kind === "ok" ? "Klaar" : "Sluit"}</button>
+      <button class="primary" onclick={onclose}>{current?.status.state.kind === "ok" ? tr("Klaar", "Done") : tr("Sluit", "Close")}</button>
     </footer>
   </div>
 </div>
@@ -240,77 +241,77 @@
       <label>
         {#if service.fields.length > 1}<span class="faint">{f.label}</span>{/if}
         {#if f.secret && service.id !== "customsources" && service.id !== "icalfeeds"}
-          <input type="password" placeholder={service.stored.includes(f.account) ? "Bewaard in je kluis" : f.placeholder} bind:value={drafts[f.account]} />
+          <input type="password" placeholder={service.stored.includes(f.account) ? tr("Bewaard in je kluis", "Stored in your keychain") : f.placeholder} bind:value={drafts[f.account]} />
         {:else if f.secret}
-          <textarea rows="3" placeholder={service.stored.includes(f.account) ? "Bewaard in je kluis (plak opnieuw om te vervangen)" : f.placeholder} bind:value={drafts[f.account]}></textarea>
+          <textarea rows="3" placeholder={service.stored.includes(f.account) ? tr("Bewaard in je kluis (plak opnieuw om te vervangen)", "Stored in your keychain (paste again to replace)") : f.placeholder} bind:value={drafts[f.account]}></textarea>
         {:else}
           <input placeholder={f.placeholder} bind:value={drafts[f.account]} />
         {/if}
       </label>
     {/each}
     <div class="line">
-      {#if service.fields.some((f) => f.secret)}<button onclick={paste} disabled={busy}>Plak van klembord</button>{/if}
-      <button class="primary" onclick={save} disabled={busy || !anyDraft}>Bewaar</button>
+      {#if service.fields.some((f) => f.secret)}<button onclick={paste} disabled={busy}>{tr("Plak van klembord", "Paste from clipboard")}</button>{/if}
+      <button class="primary" onclick={save} disabled={busy || !anyDraft}>{tr("Bewaar", "Save")}</button>
     </div>
   </div>
 {/snippet}
 
 {#snippet result()}
   {#if h === "notLinked"}
-    <p class="muted">Vul eerst je gegevens in bij stap 2.</p>
+    <p class="muted">{tr("Vul eerst je gegevens in bij stap 2.", "Fill in your details in step 2 first.")}</p>
   {:else if h === "busy"}
-    <p class="muted">Nook controleert of de verbinding werkt…</p>
+    <p class="muted">{tr("Nook controleert of de verbinding werkt…", "Nook is checking whether the connection works…")}</p>
   {:else if h === "working" || h === "needsYou"}
-    <p class="ok">✓ Gelukt! Nook is gekoppeld met {service.title}. {current?.status.headline ?? ""}</p>
+    <p class="ok">✓ {tr("Gelukt! Nook is gekoppeld met {name}.", "Done! Nook is connected to {name}.", { name: service.title })} {current?.status.headline ?? ""}</p>
   {:else}
     <p class="bad">⚠ {summary(current, service.tagline)}</p>
-    <button onclick={retry}>Opnieuw proberen</button>
+    <button onclick={retry}>{tr("Opnieuw proberen", "Try again")}</button>
   {/if}
 {/snippet}
 
 {#snippet githubButtons(account: string)}
   <div class="github">
     {#if caps.deviceFlow}
-      <button class="primary wide" onclick={() => signIn(account)}>Koppel met GitHub</button>
-      <p class="faint">De snelste manier: log in met één klik via je browser.</p>
+      <button class="primary wide" onclick={() => signIn(account)}>{tr("Koppel met GitHub", "Connect with GitHub")}</button>
+      <p class="faint">{tr("De snelste manier: log in met één klik via je browser.", "The fastest way: sign in with one click in your browser.")}</p>
     {/if}
     {#if device}
       <div class="code">
         <code>{device.userCode}</code>
-        <span class="muted">Plak deze code op GitHub. Hij staat al op je klembord.</span>
-        <button onclick={() => openUrl(device!.verificationUri)}>Open GitHub opnieuw</button>
+        <span class="muted">{tr("Plak deze code op GitHub. Hij staat al op je klembord.", "Paste this code on GitHub. It's already on your clipboard.")}</span>
+        <button onclick={() => openUrl(device!.verificationUri)}>{tr("Open GitHub opnieuw", "Open GitHub again")}</button>
       </div>
     {/if}
     {#if caps.ghCli}
-      <button class={caps.deviceFlow ? "" : "primary wide"} onclick={() => ghCli(account)} disabled={busy}>Gebruik mijn GitHub CLI-login</button>
-      <p class="faint">Heb je <code>gh auth login</code> al gedaan? Dan neemt Nook die login over, zonder token te plakken.</p>
+      <button class={caps.deviceFlow ? "" : "primary wide"} onclick={() => ghCli(account)} disabled={busy}>{tr("Gebruik mijn GitHub CLI-login", "Use my GitHub CLI sign-in")}</button>
+      <p class="faint">{tr("Heb je {cmd} al gedaan? Dan neemt Nook die login over, zonder token te plakken.", "Already ran {cmd}? Then Nook takes over that sign-in, no token to paste.", { cmd: "gh auth login" })}</p>
     {/if}
   </div>
 {/snippet}
 
 {#snippet extraAccounts()}
-  <h4>Accounts</h4>
+  <h4>{tr("Accounts", "Accounts")}</h4>
   {#each service.accounts as a (a.id)}
     <div class="account">
       <input
         value={a.label}
-        placeholder={a.primary ? "bijv. Persoonlijk" : "Naam"}
+        placeholder={a.primary ? tr("bijv. Persoonlijk", "e.g. Personal") : tr("Naam", "Name")}
         onchange={async (e) => { await connectorsApi.renameAccount(a.id, e.currentTarget.value); await reload(); }}
       />
-      <span class="faint">{a.identity ?? (a.hasToken ? "" : "geen token")}</span>
+      <span class="faint">{a.identity ?? (a.hasToken ? "" : tr("geen token", "no token"))}</span>
       {#if !a.primary}
-        <input type="password" placeholder={a.hasToken ? "Bewaard in je kluis" : "ghp_… / github_pat_…"} bind:value={accountTokens[a.id]} />
-        <button onclick={() => saveAccountToken(a.id)} disabled={busy || !accountTokens[a.id]?.trim()}>Bewaar</button>
-        {#if caps.ghCli}<button class="ghost" onclick={() => ghCli(a.id)} title="Neem de login van gh over">gh</button>{/if}
-        <button class="ghost danger" onclick={async () => { await connectorsApi.removeAccount(a.id); await reload(); }}>Verwijder</button>
+        <input type="password" placeholder={a.hasToken ? tr("Bewaard in je kluis", "Stored in your keychain") : "ghp_… / github_pat_…"} bind:value={accountTokens[a.id]} />
+        <button onclick={() => saveAccountToken(a.id)} disabled={busy || !accountTokens[a.id]?.trim()}>{tr("Bewaar", "Save")}</button>
+        {#if caps.ghCli}<button class="ghost" onclick={() => ghCli(a.id)} title={tr("Neem de login van gh over", "Take over the gh sign-in")}>gh</button>{/if}
+        <button class="ghost danger" onclick={async () => { await connectorsApi.removeAccount(a.id); await reload(); }}>{tr("Verwijder", "Remove")}</button>
       {/if}
     </div>
   {/each}
   <div class="line">
-    <input placeholder="Nog een account, bijv. Werk" bind:value={newAccount} />
-    <button onclick={addAccount}>Account toevoegen</button>
+    <input placeholder={tr("Nog een account, bijv. Werk", "Another account, e.g. Work")} bind:value={newAccount} />
+    <button onclick={addAccount}>{tr("Account toevoegen", "Add account")}</button>
   </div>
-  <p class="faint small">Met meer accounts kies je per chat welke mogen. Nook kiest zelf het account dat bij de vraag past; bij een actie staat het account altijd in het plan, en twijfelt Nook, dan vraagt hij het.</p>
+  <p class="faint small">{tr("Met meer accounts kies je per chat welke mogen. Nook kiest zelf het account dat bij de vraag past; bij een actie staat het account altijd in het plan, en twijfelt Nook, dan vraagt hij het.", "With more accounts you choose per chat which ones are allowed. Nook picks the account that fits the question; for an action the account is always in the plan, and when Nook isn't sure, it asks.")}</p>
 {/snippet}
 
 <style>

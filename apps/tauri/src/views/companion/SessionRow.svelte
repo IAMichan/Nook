@@ -1,6 +1,7 @@
 <script lang="ts">
   // Eén sessie in de lijst. Wat het eerst op je wacht ligt één tik weg: weigeren altijd, toestaan als het laag risico is.
   import { attentionColor, attentionWord, companion, type ClientView, type SessionDigest } from "../../lib/companion";
+  import { tr } from "../../lib/i18n.svelte";
 
   let { session, onopen, act }: { session: SessionDigest; onopen: () => void; act: (f: () => Promise<ClientView>) => Promise<void> } = $props();
   const approval = $derived(session.items.find((i) => i.kind === "approval"));
@@ -17,9 +18,9 @@
   </button>
   {#if approval}
     <div class="quick">
-      <button class="danger" onclick={() => act(() => companion.decide(session.id, approval.id, false))}>Weiger</button>
+      <button class="danger" onclick={() => act(() => companion.decide(session.id, approval.id, false))}>{tr("Weiger", "Deny")}</button>
       {#if approval.canAllow}
-        <button class="allow" onclick={() => act(() => companion.decide(session.id, approval.id, true))}>Sta toe</button>
+        <button class="allow" onclick={() => act(() => companion.decide(session.id, approval.id, true))}>{tr("Sta toe", "Allow")}</button>
       {/if}
     </div>
   {/if}

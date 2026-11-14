@@ -2,12 +2,15 @@
 //! achtergrond en melden zich met events: `nook-stream` (tekst terwijl hij geschreven wordt) en `nook-updated`.
 
 pub mod agents;
+pub mod automation;
 pub mod autocomplete;
 pub mod brain;
 pub mod chat;
 pub mod companion;
 pub mod games;
+pub mod maintenance;
 pub mod plans;
+pub mod selection_ask;
 pub mod workspace;
 pub mod workspace_tools;
 
@@ -68,6 +71,9 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let saved = state.update_settings(|s| *s = settings);
     #[cfg(desktop)]
     {
+        if before.app_language != saved.app_language {
+            crate::platform::desktop::refresh_tray(&app);
+        }
         if before.shortcuts != saved.shortcuts {
             crate::platform::desktop::register_shortcuts(&app);
         }

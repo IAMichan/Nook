@@ -3,6 +3,7 @@
   // stoppen, vervolgberichten en de keuzes voor de volgende beurt. Alles wat je anders in een terminal doet, gebeurt hier.
   import { untrack } from "svelte";
   import { agents } from "../../../lib/agents.svelte";
+  import { tr } from "../../../lib/i18n.svelte";
   import { projectName, workspaceApi, type RunEvent } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
@@ -52,7 +53,7 @@
     revertError = null;
     const can = await workspaceApi.canRevert(runId, e.date).catch(() => false);
     revertTarget = e;
-    if (!can) revertError = "Terugzetten kan alleen bij een sessie in een eigen worktree die niet bezig is.";
+    if (!can) revertError = tr("Terugzetten kan alleen bij een sessie in een eigen worktree die niet bezig is.", "Restoring only works for a session in its own worktree that isn't busy.");
   }
 
   async function revert() {
@@ -61,7 +62,7 @@
     try {
       await workspaceApi.revert(runId, revertTarget.date);
       revertTarget = null;
-      agents.confirm("Bestanden teruggezet naar een eerder punt.");
+      agents.confirm(tr("Bestanden teruggezet naar een eerder punt.", "Files restored to an earlier point."));
     } catch (e) {
       revertError = String(e);
     }
@@ -90,7 +91,7 @@
 </script>
 
 {#if !run}
-  <p class="faint">Deze sessie bestaat niet meer.</p>
+  <p class="faint">{tr("Deze sessie bestaat niet meer.", "This session no longer exists.")}</p>
 {:else}
   <div class="panel">
     <!-- The thread header: the project, a slash, the thread's name, and the thread's tools on the right. -->
@@ -99,18 +100,18 @@
       <span class="slash">/</span>
       {#if renaming}
         <!-- svelte-ignore a11y_autofocus -->
-        <input class="title-input" bind:value={titleDraft} placeholder="Naam van de sessie" autofocus
+        <input class="title-input" bind:value={titleDraft} placeholder={tr("Naam van de sessie", "Session name")} autofocus
           onkeydown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") renaming = false; }} onblur={rename} />
       {:else}
-        <button class="title" title="Dubbelklik om de naam te wijzigen" ondblclick={() => { titleDraft = run.title; renaming = true; }}><span class="name">{run.title}</span><span class="chev"><Icon name="chevron-down" size={14} /></span></button>
+        <button class="title" title={tr("Dubbelklik om de naam te wijzigen", "Double-click to rename")} ondblclick={() => { titleDraft = run.title; renaming = true; }}><span class="name">{run.title}</span><span class="chev"><Icon name="chevron-down" size={14} /></span></button>
       {/if}
       <span class="spacer"></span>
       {#if fraction > 0.6}
-        <span class="ctx" class:crit={fraction > 0.85} title="Hoe vol het contextvenster zat bij de laatste modelaanroep">ctx {Math.round(fraction * 100)}%</span>
+        <span class="ctx" class:crit={fraction > 0.85} title={tr("Hoe vol het contextvenster zat bij de laatste modelaanroep", "How full the context window was at the last model call")}>ctx {Math.round(fraction * 100)}%</span>
       {/if}
       {#if run.repoRoot}
-        <button class="ghost branch" class:on={view === "changes"} title="Wijzigingen bekijken" onclick={() => (view === "changes" ? (view = "chat") : openChanges())}>
-          <Icon name="branch" size={14} /><span class="bname">{run.branch ?? "geen branch"}</span>{#if run.changedFiles}<span class="files">{run.changedFiles}</span>{/if}{#if run.lastChangeAt && (!run.reviewedAt || run.reviewedAt < run.lastChangeAt) && run.changedFiles}<span class="dot unread"></span>{/if}
+        <button class="ghost branch" class:on={view === "changes"} title={tr("Wijzigingen bekijken", "View changes")} onclick={() => (view === "changes" ? (view = "chat") : openChanges())}>
+          <Icon name="branch" size={14} /><span class="bname">{run.branch ?? tr("geen branch", "no branch")}</span>{#if run.changedFiles}<span class="files">{run.changedFiles}</span>{/if}{#if run.lastChangeAt && (!run.reviewedAt || run.reviewedAt < run.lastChangeAt) && run.changedFiles}<span class="dot unread"></span>{/if}
         </button>
       {/if}
     </header>
@@ -129,22 +130,22 @@
       {#if revertTarget}
         <div class="confirm amber">
           <div class="ctext">
-            <strong>Bestanden terugzetten?</strong>
+            <strong>{tr("Bestanden terugzetten?", "Restore files?")}</strong>
             <span class:err={!!revertError} class:faint={!revertError}>
-              {revertError ?? `De bestanden in deze worktree gaan terug naar hoe ze waren vóór “${oneLine(revertTarget.text, 60)}”. Latere wijzigingen gaan verloren; het gesprek blijft.`}
+              {revertError ?? tr("De bestanden in deze worktree gaan terug naar hoe ze waren vóór “{message}”. Latere wijzigingen gaan verloren; het gesprek blijft.", "The files in this worktree go back to how they were before “{message}”. Later changes are lost; the conversation stays.", { message: oneLine(revertTarget.text, 60) })}
             </span>
           </div>
-          <button class="ghost" onclick={() => (revertTarget = null)}>Annuleer</button>
-          <button class="primary" disabled={!!revertError || reverting} onclick={revert}>{reverting ? "Bezig…" : "Zet terug"}</button>
+          <button class="ghost" onclick={() => (revertTarget = null)}>{tr("Annuleer", "Cancel")}</button>
+          <button class="primary" disabled={!!revertError || reverting} onclick={revert}>{reverting ? tr("Bezig…", "Restoring…") : tr("Zet terug", "Restore")}</button>
         </div>
       {:else if confirmDelete}
         <div class="confirm coral">
           <div class="ctext">
-            <strong>"{run.title}" verwijderen?</strong>
-            <span class="faint">Alleen uit Nook. Je map en bestanden blijven staan.</span>
+            <strong>{tr("“{title}” verwijderen?", "Delete “{title}”?", { title: run.title })}</strong>
+            <span class="faint">{tr("Alleen uit Nook. Je map en bestanden blijven staan.", "Only from Nook. Your folder and files stay where they are.")}</span>
           </div>
-          <button class="ghost" onclick={() => (confirmDelete = false)}>Annuleer</button>
-          <button class="primary" onclick={remove}>Verwijder</button>
+          <button class="ghost" onclick={() => (confirmDelete = false)}>{tr("Annuleer", "Cancel")}</button>
+          <button class="primary" onclick={remove}>{tr("Verwijder", "Delete")}</button>
         </div>
       {:else if question}
         {#key question.id}<QuestionCard request={question} />{/key}

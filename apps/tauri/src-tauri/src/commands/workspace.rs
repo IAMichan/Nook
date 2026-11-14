@@ -71,8 +71,13 @@ pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
                 provider: p,
                 name: p.display_name(),
                 capabilities: p.capabilities(),
-                executable: if desktop { nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()) } else { None },
-                supported: desktop && (!p.uses_acp() || p == RunProvider::Gemini),
+                executable: if desktop {
+                    nook_core::workspace::driver::session_executable(p, nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()))
+                } else {
+                    None
+                },
+                // Every agent runs here: Claude Code over its stream, Codex over app-server, the rest over ACP.
+                supported: desktop,
                 install_command: kind.install_command(),
             }
         })
@@ -127,7 +132,12 @@ pub async fn workspace_inspect(state: State<'_, WorkspaceState>, path: String) -
 
 /// Start een nieuwe sessie. `allowShared`: je bevestigde dat er al een sessie in deze map werkt.
 #[tauri::command]
-pub async fn workspace_start(state: State<'_, WorkspaceState>, mut config: NewRunConfig, allow_shared: bool) -> Res<String> {
+pub async fn workspace_start(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    mut config: NewRunConfig,
+    allow_shared: bool,
+) -> Res<String> {
     // De branchnaam komt uit de opdracht, pas op het moment van starten.
     if config.isolation == IsolationMode::Worktree && config.branch_name.trim().is_empty() {
         config.branch_name = nook_core::workspace::models::branch_name(&config.task, Uuid::new_v4());
@@ -140,6 +150,7 @@ pub async fn workspace_start(state: State<'_, WorkspaceState>, mut config: NewRu
     let m = state.manager.clone();
     let chosen = config.clone();
     let id = blocking(move || m.start(config, allow_shared)).await??;
+    crate::workspace::automation::title_new_session(&app, id, !chosen.title.trim().is_empty());
     let mut s = lock(&state.settings);
     s.remember_project(&chosen.project_path);
     s.default_provider = chosen.provider;

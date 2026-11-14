@@ -8,15 +8,16 @@
     type AutocompleteSettings, type AutocompleteStatus, type AutocompleteView, type AppRule, type TriState,
   } from "../../lib/autocomplete";
   import Playground from "./AutocompletePlayground.svelte";
+  import { tr } from "../../lib/i18n.svelte";
 
   type Tab = "general" | "apps" | "style" | "playground" | "stats";
-  const tabs: { id: Tab; title: string }[] = [
-    { id: "general", title: "Algemeen" },
-    { id: "apps", title: "Apps" },
-    { id: "style", title: "Stijl en context" },
-    { id: "playground", title: "Testen" },
-    { id: "stats", title: "Statistiek" },
-  ];
+  const tabs: { id: Tab; title: string }[] = $derived([
+    { id: "general", title: tr("Algemeen", "General") },
+    { id: "apps", title: tr("Apps", "Apps") },
+    { id: "style", title: tr("Stijl en context", "Style and context") },
+    { id: "playground", title: tr("Testen", "Try it") },
+    { id: "stats", title: tr("Statistiek", "Statistics") },
+  ]);
   let tab = $state<Tab>((localStorage.getItem("autocomplete.tab") as Tab) ?? "general");
   $effect(() => {
     localStorage.setItem("autocomplete.tab", tab);
@@ -80,12 +81,12 @@
 
   function statusLine(st: AutocompleteStatus | null): string {
     switch (st?.state) {
-      case "ready": return `Aan · ${st.engine}${st.local ? "" : " (extern)"}`;
-      case "checking": return "Model zoeken…";
-      case "paused": return "Gepauzeerd";
-      case "noModel": return "Nog geen model";
-      case "unsupported": return "Kan hier niet";
-      default: return "Uit";
+      case "ready": return st.local ? tr("Aan · {engine}", "On · {engine}", { engine: st.engine }) : tr("Aan · {engine} (extern)", "On · {engine} (external)", { engine: st.engine });
+      case "checking": return tr("Model zoeken…", "Looking for a model…");
+      case "paused": return tr("Gepauzeerd", "Paused");
+      case "noModel": return tr("Nog geen model", "No model yet");
+      case "unsupported": return tr("Kan hier niet", "Not possible here");
+      default: return tr("Uit", "Off");
     }
   }
 
@@ -111,11 +112,11 @@
     return [...seen, ...extra.map((id) => ({ id, name: id.replace(/\.exe$/i, "") }))];
   });
 
-  const tri: { id: TriState; title: string }[] = [
-    { id: "inherit", title: "Standaard" },
-    { id: "on", title: "Aan" },
-    { id: "off", title: "Uit" },
-  ];
+  const tri: { id: TriState; title: string }[] = $derived([
+    { id: "inherit", title: tr("Standaard", "Default") },
+    { id: "on", title: tr("Aan", "On") },
+    { id: "off", title: tr("Uit", "Off") },
+  ]);
 
   function appName(id: string): string {
     return view?.seenApps.find((a) => a.id === id)?.name ?? id.replace(/\.exe$/i, "");
@@ -123,17 +124,17 @@
 
   function minutes(m: number): string {
     const total = Math.round(m);
-    return total >= 60 ? `${Math.floor(total / 60)} u ${total % 60} min` : `${total} min`;
+    return total >= 60 ? tr("{h} u {m} min", "{h} h {m} min", { h: Math.floor(total / 60), m: total % 60 }) : tr("{m} min", "{m} min", { m: total });
   }
 
-  const keyLabel = (k: string) => (k === "" ? "Uit" : k);
+  const keyLabel = (k: string) => (k === "" ? tr("Uit", "Off") : k);
 </script>
 
-<h2>Aanvullen</h2>
+<h2>{tr("Aanvullen", "Autocomplete")}</h2>
 
 {#if !caps?.autocomplete}
-  <p class="muted">{caps?.notes?.autocomplete ?? "Aanvullen in elke app kan (nog) alleen op Windows."}</p>
-  <p class="faint note">De Testen-tab werkt wel: probeer daar hoe Nook je zinnen aanvult met je eigen model.</p>
+  <p class="muted">{caps?.notes?.autocomplete ?? tr("Aanvullen in elke app kan (nog) alleen op Windows.", "Autocomplete in every app only works on Windows (for now).")}</p>
+  <p class="faint note">{tr("De Testen-tab werkt wel: probeer daar hoe Nook je zinnen aanvult met je eigen model.", "The Try it tab does work: try there how Nook completes your sentences with your own model.")}</p>
 {/if}
 
 <div class="tabs">
@@ -144,10 +145,13 @@
   <div class="group">
     <label class="row">
       <span>
-        <strong>Zinnen aanvullen terwijl je typt</strong><br />
+        <strong>{tr("Zinnen aanvullen terwijl je typt", "Complete sentences as you type")}</strong><br />
         <small class="faint">
-          {ac.acceptWord || "Tab"} neemt het volgende woord, {ac.acceptAll || "Shift+Tab"} alles. Doortypen wat er staat houdt de rest;
-          elke andere toets stuurt het weg.
+          {tr(
+            "{word} neemt het volgende woord, {all} alles. Doortypen wat er staat houdt de rest; elke andere toets stuurt het weg.",
+            "{word} takes the next word, {all} everything. Typing what's there keeps the rest; any other key dismisses it.",
+            { word: ac.acceptWord || "Tab", all: ac.acceptAll || "Shift+Tab" },
+          )}
         </small>
       </span>
       <input type="checkbox" checked={ac.enabled} disabled={!caps?.autocomplete} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
@@ -159,129 +163,131 @@
           {#if status?.detail}<br /><small class={status.state === "noModel" ? "err" : "faint"}>{status.detail}</small>{/if}
         </span>
         {#if view?.paused}
-          <button onclick={async () => (view = await autocomplete.resume())}>Hervat</button>
+          <button onclick={async () => (view = await autocomplete.resume())}>{tr("Hervat", "Resume")}</button>
         {:else}
           <span class="inline">
-            <button onclick={async () => (view = await autocomplete.pause(60))}>Pauzeer een uur</button>
-            <button onclick={async () => (view = await autocomplete.pause(null))}>Pauzeer</button>
+            <button onclick={async () => (view = await autocomplete.pause(60))}>{tr("Pauzeer een uur", "Pause for an hour")}</button>
+            <button onclick={async () => (view = await autocomplete.pause(null))}>{tr("Pauzeer", "Pause")}</button>
           </span>
         {/if}
       </div>
     {/if}
   </div>
   <p class="faint note">
-    Terwijl je typt stelt een model op deze computer voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen woordlimiet,
-    geen abonnement, niets gaat je computer uit.
+    {tr(
+      "Terwijl je typt stelt een model op deze computer voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen woordlimiet, geen abonnement, niets gaat je computer uit.",
+      "As you type, a model on this computer suggests how your sentence goes on, as gray text at your cursor. No word limit, no subscription, nothing leaves your computer.",
+    )}
   </p>
 
-  <h3>Model</h3>
+  <h3>{tr("Model", "Model")}</h3>
   <div class="group">
     <label class="row">
-      <span>Een model op deze computer<br /><small class="faint">Ollama of LM Studio. Wat je typt blijft op deze computer.</small></span>
+      <span>{tr("Een model op deze computer", "A model on this computer")}<br /><small class="faint">{tr("Ollama of LM Studio. Wat je typt blijft op deze computer.", "Ollama or LM Studio. What you type stays on this computer.")}</small></span>
       <input type="radio" name="engine" checked={ac.engine === "local"} onchange={() => chooseEngine("local")} />
     </label>
     {#if ac.engine === "local"}
       <label class="row">
-        <span>Server</span>
+        <span>{tr("Server", "Server")}</span>
         <select value={ac.localServer} onchange={(e) => save({ localServer: e.currentTarget.value as AutocompleteSettings["localServer"] })}>
-          <option value="auto">Automatisch</option>
+          <option value="auto">{tr("Automatisch", "Automatic")}</option>
           <option value="ollama">Ollama</option>
           <option value="lmstudio">LM Studio</option>
         </select>
       </label>
       <label class="row">
-        <span>Model<br /><small class="faint">Automatisch kiest het model van je brein als dat lokaal is, anders een klein chatmodel.</small></span>
+        <span>{tr("Model", "Model")}<br /><small class="faint">{tr("Automatisch kiest het model van je brein als dat lokaal is, anders een klein chatmodel.", "Automatic picks your brain's model if it's local, otherwise a small chat model.")}</small></span>
         <select value={ac.model} onchange={(e) => save({ model: e.currentTarget.value })}>
-          <option value="">Automatisch</option>
+          <option value="">{tr("Automatisch", "Automatic")}</option>
           {#each models as m (m)}<option value={m}>{m}</option>{/each}
           {#if ac.model && !models.includes(ac.model)}<option value={ac.model}>{ac.model}</option>{/if}
         </select>
       </label>
-      {#if modelError}<p class="err note">{modelError} Installeer een lokaal model bij Instellingen › Brein.</p>{/if}
+      {#if modelError}<p class="err note">{modelError} {tr("Installeer een lokaal model bij Instellingen › Brein.", "Install a local model under Settings › Brain.")}</p>{/if}
     {/if}
     <label class="row">
       <span>
-        Het brein uit Instellingen › Brein<br />
-        <small class="faint">{nook.info?.brainLabel}{nook.info?.brainLocal ? "" : " — extern: wat je typt gaat dan naar die dienst."}</small>
+        {tr("Het brein uit Instellingen › Brein", "The brain from Settings › Brain")}<br />
+        <small class="faint">{nook.info?.brainLabel}{nook.info?.brainLocal ? "" : " — " + tr("extern: wat je typt gaat dan naar die dienst.", "external: what you type then goes to that service.")}</small>
       </span>
       <input type="radio" name="engine" checked={ac.engine === "brain"} onchange={() => chooseEngine("brain")} />
     </label>
     {#if confirmBrain}
       <div class="row confirm">
-        <span>Wat je typt, in elke app, gaat dan naar {nook.info?.brainLabel}. Wachtwoordvelden nooit.</span>
+        <span>{tr("Wat je typt, in elke app, gaat dan naar {brain}. Wachtwoordvelden nooit.", "What you type, in every app, then goes to {brain}. Password fields never do.", { brain: nook.info?.brainLabel ?? "" })}</span>
         <span class="inline">
-          <button class="primary" onclick={() => chooseEngine("brain")}>Ja, gebruik het externe brein</button>
-          <button onclick={() => { confirmBrain = false; load(); }}>Nee</button>
+          <button class="primary" onclick={() => chooseEngine("brain")}>{tr("Ja, gebruik het externe brein", "Yes, use the external brain")}</button>
+          <button onclick={() => { confirmBrain = false; load(); }}>{tr("Nee", "No")}</button>
         </span>
       </div>
     {/if}
   </div>
 
-  <h3>Voorstellen</h3>
+  <h3>{tr("Voorstellen", "Suggestions")}</h3>
   <div class="group">
     <label class="row">
-      <span>Hoogstens {ac.maxWords} woorden</span>
+      <span>{tr("Hoogstens {n} woorden", "At most {n} words", { n: ac.maxWords })}</span>
       <input type="range" min="1" max="20" value={ac.maxWords} onchange={(e) => save({ maxWords: Number(e.currentTarget.value) })} />
     </label>
     <label class="row">
-      <span>Hoe gretig<br /><small class="faint">Voorzichtig … Gretig</small></span>
+      <span>{tr("Hoe gretig", "How eager")}<br /><small class="faint">{tr("Voorzichtig … Gretig", "Careful … Eager")}</small></span>
       <input type="range" min="0" max="1" step="0.05" value={ac.eagerness} onchange={(e) => save({ eagerness: Number(e.currentTarget.value) })} />
     </label>
     <label class="row">
-      <span>Wachten na een toets: {ac.delayMilliseconds} ms</span>
+      <span>{tr("Wachten na een toets: {ms} ms", "Wait after a key: {ms} ms", { ms: ac.delayMilliseconds })}</span>
       <input type="range" min="20" max="400" step="10" value={ac.delayMilliseconds} onchange={(e) => save({ delayMilliseconds: Number(e.currentTarget.value) })} />
     </label>
     <label class="row">
-      <span>Midden in een regel<br /><small class="faint">Ook voorstellen als er al tekst achter de cursor staat. Een voorstel stopt waar die tekst begint.</small></span>
+      <span>{tr("Midden in een regel", "In the middle of a line")}<br /><small class="faint">{tr("Ook voorstellen als er al tekst achter de cursor staat. Een voorstel stopt waar die tekst begint.", "Also suggest when there's already text after the cursor. A suggestion stops where that text begins.")}</small></span>
       <input type="checkbox" checked={ac.midLine} onchange={(e) => save({ midLine: e.currentTarget.checked })} />
     </label>
     <label class="row">
-      <span>Spatie meenemen na een woord</span>
+      <span>{tr("Spatie meenemen na een woord", "Include the space after a word")}</span>
       <input type="checkbox" checked={ac.trailingSpace} onchange={(e) => save({ trailingSpace: e.currentTarget.checked })} />
     </label>
     <label class="row">
-      <span>Leestekens meenemen met een woord</span>
+      <span>{tr("Leestekens meenemen met een woord", "Include punctuation with a word")}</span>
       <input type="checkbox" checked={ac.punctuationWithWord} onchange={(e) => save({ punctuationWithWord: e.currentTarget.checked })} />
     </label>
   </div>
 
-  <h3>Toetsen</h3>
+  <h3>{tr("Toetsen", "Keys")}</h3>
   <div class="group">
     <label class="row">
-      <span>Volgende woord</span>
+      <span>{tr("Volgende woord", "Next word")}</span>
       <select value={ac.acceptWord} onchange={(e) => save({ acceptWord: e.currentTarget.value })}>
         {#each view?.acceptKeys ?? [] as k (k)}<option value={k}>{keyLabel(k)}</option>{/each}
       </select>
     </label>
     <label class="row">
-      <span>Alles</span>
+      <span>{tr("Alles", "Everything")}</span>
       <select value={ac.acceptAll} onchange={(e) => save({ acceptAll: e.currentTarget.value })}>
         {#each view?.acceptKeys ?? [] as k (k)}<option value={k}>{keyLabel(k)}</option>{/each}
-        <option value="">Uit</option>
+        <option value="">{tr("Uit", "Off")}</option>
       </select>
     </label>
     <label class="row">
       <span>Escape</span>
       <select value={ac.escape} onchange={(e) => save({ escape: e.currentTarget.value as AutocompleteSettings["escape"] })}>
-        <option value="dismiss">Voorstel wegsturen</option>
-        <option value="pauseBriefly">Ook 10 seconden pauzeren</option>
-        <option value="offUntilAppSwitch">Uit in deze app tot je wisselt</option>
+        <option value="dismiss">{tr("Voorstel wegsturen", "Dismiss the suggestion")}</option>
+        <option value="pauseBriefly">{tr("Ook 10 seconden pauzeren", "Also pause for 10 seconds")}</option>
+        <option value="offUntilAppSwitch">{tr("Uit in deze app tot je wisselt", "Off in this app until you switch")}</option>
       </select>
     </label>
   </div>
-  <p class="faint note">De toetsen worden alleen opgevangen terwijl er een voorstel staat; anders gaan ze gewoon naar de app.</p>
+  <p class="faint note">{tr("De toetsen worden alleen opgevangen terwijl er een voorstel staat; anders gaan ze gewoon naar de app.", "The keys are only caught while a suggestion is showing; otherwise they go to the app as usual.")}</p>
 {:else if tab === "apps"}
   <div class="group">
     <label class="row">
-      <span>In elke app<br /><small class="faint">Uit: alleen in apps die je hieronder aanzet.</small></span>
+      <span>{tr("In elke app", "In every app")}<br /><small class="faint">{tr("Uit: alleen in apps die je hieronder aanzet.", "Off: only in apps you turn on below.")}</small></span>
       <input type="checkbox" checked={ac.enabledByDefault} onchange={(e) => save({ enabledByDefault: e.currentTarget.checked })} />
     </label>
   </div>
 
-  <h3>Apps</h3>
+  <h3>{tr("Apps", "Apps")}</h3>
   <div class="group">
     {#if listedApps.length === 0}
-      <p class="faint note">Nog geen apps gezien. Typ in een app terwijl aanvullen aan staat; hij verschijnt dan hier.</p>
+      <p class="faint note">{tr("Nog geen apps gezien. Typ in een app terwijl aanvullen aan staat; hij verschijnt dan hier.", "No apps seen yet. Type in an app while autocomplete is on; it then shows up here.")}</p>
     {/if}
     {#each listedApps as a (a.id)}
       {@const rule = appRule(ac, a.id)}
@@ -289,7 +295,7 @@
         <button class="ghost appname" onclick={() => (openApp = openApp === a.id ? null : a.id)}>
           {a.name}
           <small class="faint">
-            {a.id}{offByDefault(a.id, view?.offByDefault ?? []) ? " · Standaard uit" : ""}{rule.instructions.trim() ? " · Met eigen uitleg" : ""}
+            {a.id}{offByDefault(a.id, view?.offByDefault ?? []) ? " · " + tr("Standaard uit", "Off by default") : ""}{rule.instructions.trim() ? " · " + tr("Met eigen uitleg", "With its own instructions") : ""}
           </small>
         </button>
         <input type="checkbox" checked={appOn(a.id)} onchange={(e) => saveRule(a.id, { enabled: e.currentTarget.checked ? "on" : "off" })} />
@@ -297,79 +303,83 @@
       {#if openApp === a.id}
         <div class="detail">
           <label class="row">
-            <span>Voorstellen</span>
+            <span>{tr("Voorstellen", "Suggestions")}</span>
             <select value={rule.enabled} onchange={(e) => saveRule(a.id, { enabled: e.currentTarget.value as TriState })}>
               {#each tri as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
             </select>
           </label>
           <label class="row">
-            <span>Midden in een regel</span>
+            <span>{tr("Midden in een regel", "In the middle of a line")}</span>
             <select value={rule.midLine} onchange={(e) => saveRule(a.id, { midLine: e.currentTarget.value as TriState })}>
               {#each tri as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
             </select>
           </label>
           <label class="row">
-            <span>Tab aan de app laten</span>
+            <span>{tr("Tab aan de app laten", "Leave Tab to the app")}</span>
             <input type="checkbox" checked={rule.leaveTab} onchange={(e) => saveRule(a.id, { leaveTab: e.currentTarget.checked })} />
           </label>
           <label class="column">
-            <span>Extra uitleg voor deze app (bijv. kort en los voor Slack)</span>
+            <span>{tr("Extra uitleg voor deze app (bijv. kort en los voor Slack)", "Extra instructions for this app (e.g. short and casual for Slack)")}</span>
             <textarea rows="2" value={rule.instructions} onchange={(e) => saveRule(a.id, { instructions: e.currentTarget.value })}></textarea>
           </label>
-          <button onclick={() => saveRule(a.id, { enabled: "inherit", midLine: "inherit", leaveTab: false, instructions: "" })}>Standaard</button>
+          <button onclick={() => saveRule(a.id, { enabled: "inherit", midLine: "inherit", leaveTab: false, instructions: "" })}>{tr("Standaard", "Default")}</button>
         </div>
       {/if}
     {/each}
     <div class="row">
-      <input placeholder="App toevoegen, bijv. Slack.exe" bind:value={newApp} onkeydown={(e) => e.key === "Enter" && addApp()} />
-      <button onclick={addApp}>Voeg toe</button>
+      <input placeholder={tr("App toevoegen, bijv. Slack.exe", "Add an app, e.g. Slack.exe")} bind:value={newApp} onkeydown={(e) => e.key === "Enter" && addApp()} />
+      <button onclick={addApp}>{tr("Voeg toe", "Add")}</button>
     </div>
   </div>
   <p class="faint note">
-    Zet de schakelaar uit voor apps waarin je geen voorstellen wilt. Terminals, code-editors en wachtwoordmanagers staan standaard
-    uit ({(view?.offByDefault ?? []).join(", ")}). Klik op een app voor eigen uitleg en Tab.
+    {tr(
+      "Zet de schakelaar uit voor apps waarin je geen voorstellen wilt. Terminals, code-editors en wachtwoordmanagers staan standaard uit ({apps}). Klik op een app voor eigen uitleg en Tab.",
+      "Turn the switch off for apps where you don't want suggestions. Terminals, code editors and password managers are off by default ({apps}). Click an app for its own instructions and Tab.",
+      { apps: (view?.offByDefault ?? []).join(", ") },
+    )}
   </p>
-  <p class="faint note">Websites: eigen regels per website komen nog; Nook ziet op Windows het adres van de browser nog niet.</p>
+  <p class="faint note">{tr("Websites: eigen regels per website komen nog; Nook ziet op Windows het adres van de browser nog niet.", "Websites: rules per website are coming; on Windows Nook can't see the browser's address yet.")}</p>
 {:else if tab === "style"}
-  <h3>Wat het model weet</h3>
+  <h3>{tr("Wat het model weet", "What the model knows")}</h3>
   <div class="group">
     <label class="row">
-      <span>App en venster<br /><small class="faint">De naam van de app en de venstertitel.</small></span>
+      <span>{tr("App en venster", "App and window")}<br /><small class="faint">{tr("De naam van de app en de venstertitel.", "The app's name and the window title.")}</small></span>
       <input type="checkbox" checked={ac.windowContext} onchange={(e) => save({ windowContext: e.currentTarget.checked })} />
     </label>
     <label class="row">
-      <span>Je geheugen<br /><small class="faint">Wat Nook over je onthoudt: je naam, je werk, de mensen om je heen. Zo vult hij namen en feiten goed in.</small></span>
+      <span>{tr("Je geheugen", "Your memory")}<br /><small class="faint">{tr("Wat Nook over je onthoudt: je naam, je werk, de mensen om je heen. Zo vult hij namen en feiten goed in.", "What Nook remembers about you: your name, your work, the people around you. That way it fills in names and facts correctly.")}</small></span>
       <input type="checkbox" checked={ac.memoryContext} onchange={(e) => save({ memoryContext: e.currentTarget.checked })} />
     </label>
     <label class="row">
-      <span>Het klembord<br /><small class="faint">Wat je net kopieerde (tot vijf minuten). Wachtwoorden uit een wachtwoordmanager worden overgeslagen.</small></span>
+      <span>{tr("Het klembord", "The clipboard")}<br /><small class="faint">{tr("Wat je net kopieerde (tot vijf minuten). Wachtwoorden uit een wachtwoordmanager worden overgeslagen.", "What you just copied (up to five minutes). Passwords from a password manager are skipped.")}</small></span>
       <input type="checkbox" checked={ac.clipboardContext} onchange={(e) => save({ clipboardContext: e.currentTarget.checked })} />
     </label>
   </div>
   <p class="faint note">
-    Alles blijft op deze computer: de tekst gaat alleen naar het model hier en wordt niet bewaard. Wachtwoordvelden worden nooit
-    gelezen, en in apps met meer rechten en op het beveiligde bureaublad doet Nook niets. Iets dat op een kaartnummer, IBAN, BSN of
-    sleutel lijkt wordt eerst weggehaald.
+    {tr(
+      "Alles blijft op deze computer: de tekst gaat alleen naar het model hier en wordt niet bewaard. Wachtwoordvelden worden nooit gelezen, en in apps met meer rechten en op het beveiligde bureaublad doet Nook niets. Iets dat op een kaartnummer, IBAN, BSN of sleutel lijkt wordt eerst weggehaald.",
+      "Everything stays on this computer: the text only goes to the model here and isn't kept. Password fields are never read, and Nook does nothing in apps with more rights or on the secure desktop. Anything that looks like a card number, IBAN, social security number or key is removed first.",
+    )}
   </p>
 
-  <h3>Jouw stijl</h3>
+  <h3>{tr("Jouw stijl", "Your style")}</h3>
   <div class="group">
     <label class="column">
-      <span>Over jou en hoe je schrijft</span>
-      <textarea rows="3" placeholder="Bijvoorbeeld: Ik ben Anna, ik werk bij een reisbureau. Ik schrijf kort en informeel, in het Nederlands." value={ac.instructions} onchange={(e) => save({ instructions: e.currentTarget.value })}></textarea>
+      <span>{tr("Over jou en hoe je schrijft", "About you and how you write")}</span>
+      <textarea rows="3" placeholder={tr("Bijvoorbeeld: Ik ben Anna, ik werk bij een reisbureau. Ik schrijf kort en informeel, in het Nederlands.", "For example: I'm Anna, I work at a travel agency. I write short and informal, in English.")} value={ac.instructions} onchange={(e) => save({ instructions: e.currentTarget.value })}></textarea>
     </label>
   </div>
 
-  <h3>Emoji</h3>
+  <h3>{tr("Emoji", "Emoji")}</h3>
   <div class="group">
     <label class="row">
-      <span>Emoji met een dubbele punt<br /><small class="faint">Typ : aan het begin van een woord voor emoji die bij je tekst passen, of zoek verder: :lach, :heart, :duim.</small></span>
+      <span>{tr("Emoji met een dubbele punt", "Emoji with a colon")}<br /><small class="faint">{tr("Typ : aan het begin van een woord voor emoji die bij je tekst passen, of zoek verder: :lach, :heart, :duim.", "Type : at the start of a word for emoji that fit your text, or search further: :laugh, :heart, :thumbs.")}</small></span>
       <input type="checkbox" checked={ac.emoji} onchange={(e) => save({ emoji: e.currentTarget.checked })} />
     </label>
     <label class="row">
-      <span>Huidskleur</span>
+      <span>{tr("Huidskleur", "Skin tone")}</span>
       <select value={String(ac.skinTone)} onchange={(e) => save({ skinTone: Number(e.currentTarget.value) })}>
-        <option value="0">👍 Geel</option>
+        <option value="0">👍 {tr("Geel", "Yellow")}</option>
         <option value="1">👍🏻</option>
         <option value="2">👍🏼</option>
         <option value="3">👍🏽</option>
@@ -378,68 +388,70 @@
       </select>
     </label>
     <label class="row">
-      <span>Personen in emoji</span>
+      <span>{tr("Personen in emoji", "People in emoji")}</span>
       <select value={String(ac.emojiGender)} onchange={(e) => save({ emojiGender: Number(e.currentTarget.value) })}>
-        <option value="0">🤷 Neutraal</option>
-        <option value="1">🤷‍♀️ Vrouw</option>
-        <option value="2">🤷‍♂️ Man</option>
+        <option value="0">🤷 {tr("Neutraal", "Neutral")}</option>
+        <option value="1">🤷‍♀️ {tr("Vrouw", "Woman")}</option>
+        <option value="2">🤷‍♂️ {tr("Man", "Man")}</option>
       </select>
     </label>
     <label class="row">
-      <span>Emoji voor emoticons<br /><small class="faint">Typ :-) of &lt;3 en Tab zet de emoji ervoor in de plaats.</small></span>
+      <span>{tr("Emoji voor emoticons", "Emoji for emoticons")}<br /><small class="faint">{tr("Typ :-) of <3 en Tab zet de emoji ervoor in de plaats.", "Type :-) or <3 and Tab puts the emoji in its place.")}</small></span>
       <input type="checkbox" checked={ac.emoticons} onchange={(e) => save({ emoticons: e.currentTarget.checked })} />
     </label>
   </div>
 
-  <h3>Spelling</h3>
+  <h3>{tr("Spelling", "Spelling")}</h3>
   <div class="group">
     <label class="row">
-      <span>Brits of Amerikaans, zoals jij schrijft<br /><small class="faint">Suggesties volgen je eigen Engelse spelling: colour of color, organise of organize.</small></span>
+      <span>{tr("Brits of Amerikaans, zoals jij schrijft", "British or American, the way you write")}<br /><small class="faint">{tr("Suggesties volgen je eigen Engelse spelling: colour of color, organise of organize.", "Suggestions follow your own English spelling: colour or color, organise or organize.")}</small></span>
       <input type="checkbox" checked={ac.matchSpelling} onchange={(e) => save({ matchSpelling: e.currentTarget.checked })} />
     </label>
   </div>
 
-  <h3>Nog niet op Windows</h3>
+  <h3>{tr("Nog niet op Windows", "Not on Windows yet")}</h3>
   <p class="faint note">
-    Wat er op je scherm staat, leren van wat je schrijft, typfouten verbeteren, andere woorden kiezen en het gedrag op batterij
-    komen later.
+    {tr(
+      "Wat er op je scherm staat, leren van wat je schrijft, typfouten verbeteren, andere woorden kiezen en het gedrag op batterij komen later.",
+      "What's on your screen, learning from what you write, fixing typos, choosing other words and behavior on battery come later.",
+    )}
   </p>
 {:else if tab === "playground"}
   <Playground />
 {:else if tab === "stats" && view}
   {@const st = view.stats}
   {#if st.total.takes === 0}
-    <p class="faint note">Nog niets aangevuld. Typ in een app en neem een voorstel met Tab.</p>
+    <p class="faint note">{tr("Nog niets aangevuld. Typ in een app en neem een voorstel met Tab.", "Nothing completed yet. Type in an app and take a suggestion with Tab.")}</p>
   {/if}
   <div class="tiles">
-    <div class="tile"><small class="faint">Vandaag</small><strong>{st.today.takes}×</strong><small>{st.today.words} woorden</small></div>
-    <div class="tile"><small class="faint">Deze week</small><strong>{st.week.takes}×</strong><small>{st.week.words} woorden</small></div>
-    <div class="tile"><small class="faint">Totaal</small><strong>{st.total.takes}×</strong><small>{st.total.words} woorden</small></div>
-    <div class="tile"><small class="faint">Voorstellen genomen</small><strong>{Math.round(st.acceptance * 100)}%</strong><small>{st.total.accepted} van {st.total.shown}</small></div>
+    <div class="tile"><small class="faint">{tr("Vandaag", "Today")}</small><strong>{st.today.takes}×</strong><small>{tr("{n} woorden", "{n} words", { n: st.today.words })}</small></div>
+    <div class="tile"><small class="faint">{tr("Deze week", "This week")}</small><strong>{st.week.takes}×</strong><small>{tr("{n} woorden", "{n} words", { n: st.week.words })}</small></div>
+    <div class="tile"><small class="faint">{tr("Totaal", "Total")}</small><strong>{st.total.takes}×</strong><small>{tr("{n} woorden", "{n} words", { n: st.total.words })}</small></div>
+    <div class="tile"><small class="faint">{tr("Voorstellen genomen", "Suggestions taken")}</small><strong>{Math.round(st.acceptance * 100)}%</strong><small>{tr("{taken} van {shown}", "{taken} of {shown}", { taken: st.total.accepted, shown: st.total.shown })}</small></div>
   </div>
-  <h3>Details</h3>
+  <h3>{tr("Details", "Details")}</h3>
   <div class="group">
-    <div class="row"><span>Typtijd bespaard</span><span>{minutes(st.minutesSaved)}</span></div>
-    <div class="row"><span>Tekens ingevuld</span><span>{st.total.characters}</span></div>
-    <div class="row"><span>Reeks</span><span>{st.streak} dagen op rij</span></div>
+    <div class="row"><span>{tr("Typtijd bespaard", "Typing time saved")}</span><span>{minutes(st.minutesSaved)}</span></div>
+    <div class="row"><span>{tr("Tekens ingevuld", "Characters filled in")}</span><span>{st.total.characters}</span></div>
+    <div class="row"><span>{tr("Reeks", "Streak")}</span><span>{tr("{n} dagen op rij", "{n} days in a row", { n: st.streak })}</span></div>
   </div>
   {#if st.topApps.length}
-    <h3>Waar je het meest aanvult</h3>
+    <h3>{tr("Waar je het meest aanvult", "Where you complete the most")}</h3>
     <div class="group">
       {#each st.topApps as [id, count] (id)}
-        <div class="row"><span>{appName(id)}</span><span class="faint">{count.takes}× · {count.words} woorden</span></div>
+        <div class="row"><span>{appName(id)}</span><span class="faint">{count.takes}× · {tr("{n} woorden", "{n} words", { n: count.words })}</span></div>
       {/each}
     </div>
   {/if}
-  <p class="faint note">Nook telt alleen hoe vaak: nooit wat je typte.</p>
+  <p class="faint note">{tr("Nook telt alleen hoe vaak: nooit wat je typte.", "Nook only counts how often: never what you typed.")}</p>
   {#if confirmReset}
     <div class="inline">
-      <span>Alle statistiek op nul zetten?</span>
-      <button class="primary" onclick={async () => { view = await autocomplete.resetStats(); confirmReset = false; }}>Zet op nul</button>
-      <button onclick={() => (confirmReset = false)}>Nee</button>
+      <span>{tr("Alle statistiek op nul zetten?", "Reset all statistics to zero?")}</span>
+      <button class="primary" onclick={async () => { view = await autocomplete.resetStats(); confirmReset = false; }}>{tr("Zet op nul", "Reset")}</button>
+      <button onclick={() => (confirmReset = false)}>{tr("Nee", "No")}</button>
     </div>
   {:else}
-    <button onclick={() => (confirmReset = true)}>Zet op nul</button>
+    <button onclick={() => (confirmReset = true)}>{tr("Zet op nul", "Reset")}</button>
   {/if}
 {/if}
 

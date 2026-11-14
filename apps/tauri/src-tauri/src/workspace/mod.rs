@@ -2,6 +2,7 @@
 //! Events naar de interface: `workspace-changed`, `workspace-timeline` (run-id), en via de agents-events
 //! `agent-approval`, `agent-approval-gone`, `agent-question`, `agent-question-gone` en `agent-attention`.
 
+pub mod automation;
 #[cfg(desktop)]
 pub mod bridge;
 pub mod bridge_cli;
@@ -58,7 +59,8 @@ pub fn setup(app: &AppHandle) {
             if !desktop {
                 return None;
             }
-            nook_core::agents::find_executable(provider.kind()).map(|p| p.to_string_lossy().into_owned())
+            let found = nook_core::agents::find_executable(provider.kind()).map(|p| p.to_string_lossy().into_owned());
+            nook_core::workspace::driver::session_executable(provider, found)
         }),
         account_environment: Box::new(move |profile_id| account_environment(&env_app, profile_id)),
         bridge: Box::new(move || {
@@ -91,6 +93,7 @@ pub fn setup(app: &AppHandle) {
     if desktop {
         bridge::listen(app);
     }
+    automation::setup(app);
     // Wegschrijven als er iets veranderde, en de worktrees af en toe opnieuw lezen.
     tauri::async_runtime::spawn(async move {
         let mut tick = 0u64;

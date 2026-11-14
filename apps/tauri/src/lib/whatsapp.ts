@@ -1,20 +1,21 @@
 // What the WhatsApp card in the bar shows, as plain helpers: the words for files and ticks, the time of a bubble, and
 // the per-chat list in the settings. Everything here comes from other people's messages, so it is only ever shown as
 // text (never as HTML) by the views.
+import { tr } from "./i18n.svelte";
 import type { WhatsAppChatKind, WhatsAppChatMode, WhatsAppMedia, WhatsAppMessage, WhatsAppReceipt, WhatsAppSettingsChat } from "./connectors";
 
 /** What a bubble calls a file that can be opened: a document by its name, anything else by its kind. */
 export function fileLabel(media: WhatsAppMedia): string | null {
   switch (media.kind) {
     case "document":
-      return media.name?.trim() || "Document";
+      return media.name?.trim() || tr("Document", "Document");
     case "image":
-      return "Foto";
+      return tr("Foto", "Photo");
     case "video":
-      return "Video";
+      return tr("Video", "Video");
     case "audio":
     case "voice":
-      return "Spraakbericht";
+      return tr("Spraakbericht", "Voice message");
     default:
       return null;
   }
@@ -23,10 +24,10 @@ export function fileLabel(media: WhatsAppMedia): string | null {
 /** The text of a bubble: a sticker, place or contact says what it is; a file shows as its own row instead. */
 export function bubbleText(message: WhatsAppMessage): string {
   const label: Partial<Record<WhatsAppMedia["kind"], string>> = {
-    sticker: "Sticker",
-    location: "Locatie",
-    contact: "Contact",
-    other: "Bijlage",
+    sticker: tr("Sticker", "Sticker"),
+    location: tr("Locatie", "Location"),
+    contact: tr("Contact", "Contact"),
+    other: tr("Bijlage", "Attachment"),
   };
   return [label[message.media?.kind ?? "none"], message.text].filter((part) => part && part.trim()).join(" ");
 }
@@ -36,15 +37,15 @@ export function bubbleText(message: WhatsAppMessage): string {
 export function ticks(receipt: WhatsAppReceipt | null | undefined): { symbol: string; title: string; tone: string } | null {
   switch (receipt) {
     case "pending":
-      return { symbol: "🕓", title: "Wordt verzonden", tone: "pending" };
+      return { symbol: "🕓", title: tr("Wordt verzonden", "Sending"), tone: "pending" };
     case "sent":
-      return { symbol: "✓", title: "Verzonden", tone: "sent" };
+      return { symbol: "✓", title: tr("Verzonden", "Sent"), tone: "sent" };
     case "delivered":
-      return { symbol: "✓✓", title: "Afgeleverd", tone: "delivered" };
+      return { symbol: "✓✓", title: tr("Afgeleverd", "Delivered"), tone: "delivered" };
     case "read":
-      return { symbol: "✓✓", title: "Gelezen", tone: "read" };
+      return { symbol: "✓✓", title: tr("Gelezen", "Read"), tone: "read" };
     case "failed":
-      return { symbol: "!", title: "Niet verzonden", tone: "failed" };
+      return { symbol: "!", title: tr("Niet verzonden", "Not sent"), tone: "failed" };
     default:
       return null;
   }
@@ -57,22 +58,23 @@ export function time(date: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** The card's context line: "WhatsApp · 3 nieuw" from two unread messages on. */
+/** The card's context line: "WhatsApp · 3 new" from two unread messages on. */
 export function context(unread: number): string {
-  return unread > 1 ? `WhatsApp · ${unread} nieuw` : "WhatsApp";
+  return unread > 1 ? tr("WhatsApp · {n} nieuw", "WhatsApp · {n} new", { n: unread }) : "WhatsApp";
 }
 
+/// Getters, so each read is in the current interface language.
 export const kindLabel: Record<WhatsAppChatKind, string> = {
-  person: "Persoon",
-  group: "Groep",
-  status: "Statusupdates",
-  channel: "Kanaal",
+  get person() { return tr("Persoon", "Person"); },
+  get group() { return tr("Groep", "Group"); },
+  get status() { return tr("Statusupdates", "Status updates"); },
+  get channel() { return tr("Kanaal", "Channel"); },
 };
 
 export const modeLabel: Record<WhatsAppChatMode, string> = {
-  automatic: "Automatisch",
-  loud: "Altijd",
-  muted: "Nooit",
+  get automatic() { return tr("Automatisch", "Automatic"); },
+  get loud() { return tr("Altijd", "Always"); },
+  get muted() { return tr("Nooit", "Never"); },
 };
 
 /** The chats under "Per chat" that fit the search (by name, ignoring case), hidden ones apart. */

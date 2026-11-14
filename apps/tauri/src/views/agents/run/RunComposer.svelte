@@ -7,7 +7,9 @@
     type PermissionPolicy, type WorkspaceRun,
   } from "../../../lib/workspace/api";
   import Icon from "../../../components/Icon.svelte";
+  import HandOff from "./HandOff.svelte";
   import { workspace } from "../../../lib/workspace/store.svelte";
+  import { tr } from "../../../lib/i18n.svelte";
   import { contextLevel, contextPercent, oneLine } from "../../../lib/workspace/timeline";
 
   let {
@@ -23,7 +25,7 @@
   let draft = $state("");
   let editing = $state<string | null>(null);
   let savedDraft = "";
-  let menu = $state<"" | "more" | "permission" | "effort" | "model">("");
+  let menu = $state<"" | "more" | "permission" | "effort" | "model" | "handoff">("");
   let modelDraft = $state("");
   let collapsed = $state(false);
   let textarea = $state<HTMLTextAreaElement>();
@@ -54,7 +56,7 @@
   const canSteer = $derived(active && !!caps?.steering);
   const steers = $derived(canSteer && steerDefault);
   const short = $derived(run.provider === "claude" ? "Claude" : workspace.provider(run.provider)?.name ?? run.provider);
-  const prompt = $derived(active ? (steers ? `${short} is bezig… typ om bij te sturen` : `${short} is bezig… typ een vervolg voor de wachtrij`) : "Stuur een vervolgbericht…");
+  const prompt = $derived(active ? (steers ? tr("{agent} is bezig… typ om bij te sturen", "{agent} is working… type to steer", { agent: short }) : tr("{agent} is bezig… typ een vervolg voor de wachtrij", "{agent} is working… type a follow-up for the queue", { agent: short })) : tr("Stuur een vervolgbericht…", "Send a follow-up…"));
   const fraction = $derived(run.usage.contextWindow && run.usage.contextTokens ? run.usage.contextTokens / run.usage.contextWindow : null);
   const levels = $derived(effortLevels(run.provider));
 
@@ -145,7 +147,7 @@
   {#if queue && queue.messages.length}
     <div class="queue">
       <button class="qhead" onclick={() => (collapsed = !collapsed)}>
-        <span class="chev" class:open={!collapsed}>›</span> In de wachtrij ({queue.messages.length})
+        <span class="chev" class:open={!collapsed}>›</span> {tr("In de wachtrij ({n})", "Queued ({n})", { n: queue.messages.length })}
       </button>
       {#if !collapsed}
         {#each queue.messages as m, i (m.id)}
@@ -153,69 +155,72 @@
             <span class="faint">{editing === m.id ? "✎" : "◷"}</span>
             <span class="qtext">{oneLine(m.text, 120)}</span>
             {#if queue.messages.length > 1}
-              <button class="icon" title="Omhoog" disabled={i === 0} onclick={() => queueAction(() => workspaceApi.queueMove(run.id, m.id, i - 1))}>↑</button>
-              <button class="icon" title="Omlaag" disabled={i === queue.messages.length - 1} onclick={() => queueAction(() => workspaceApi.queueMove(run.id, m.id, i + 1))}>↓</button>
+              <button class="icon" title={tr("Omhoog", "Up")} disabled={i === 0} onclick={() => queueAction(() => workspaceApi.queueMove(run.id, m.id, i - 1))}>↑</button>
+              <button class="icon" title={tr("Omlaag", "Down")} disabled={i === queue.messages.length - 1} onclick={() => queueAction(() => workspaceApi.queueMove(run.id, m.id, i + 1))}>↓</button>
             {/if}
-            <button class="icon" title="Bewerken" disabled={editing === m.id} onclick={() => beginEdit(m.id, m.text)}>✎</button>
-            {#if canSteer}<button class="icon" title="Nu bijsturen" disabled={editing === m.id} onclick={() => queueAction(() => workspaceApi.queueSteer(run.id, m.id))}>↳</button>{/if}
-            <button class="icon" title="Uit de wachtrij halen" onclick={() => { if (editing === m.id) cancelEdit(); queueAction(() => workspaceApi.queueRemove(run.id, m.id)); }}>✕</button>
+            <button class="icon" title={tr("Bewerken", "Edit")} disabled={editing === m.id} onclick={() => beginEdit(m.id, m.text)}>✎</button>
+            {#if canSteer}<button class="icon" title={tr("Nu bijsturen", "Steer now")} disabled={editing === m.id} onclick={() => queueAction(() => workspaceApi.queueSteer(run.id, m.id))}>↳</button>{/if}
+            <button class="icon" title={tr("Uit de wachtrij halen", "Remove from queue")} onclick={() => { if (editing === m.id) cancelEdit(); queueAction(() => workspaceApi.queueRemove(run.id, m.id)); }}>✕</button>
           </div>
         {/each}
         <div class="qnote">
-          <span class="faint">{queue.isHeld ? "De wachtrij is gepauzeerd na een fout of stop. Verstuur zelf of kies Nu versturen." : "Gaat vanzelf zodra de agent klaar is. Na een fout of stop wacht de rij op jou."}</span>
-          {#if !active}<button class="ghost" onclick={() => queueAction(() => workspaceApi.queueSendNow(run.id))}>Nu versturen</button>{/if}
+          <span class="faint">{queue.isHeld ? tr("De wachtrij is gepauzeerd na een fout of stop. Verstuur zelf of kies Nu versturen.", "The queue is paused after an error or stop. Send yourself or choose Send now.") : tr("Gaat vanzelf zodra de agent klaar is. Na een fout of stop wacht de rij op jou.", "Goes out on its own once the agent is done. After an error or stop the queue waits for you.")}</span>
+          {#if !active}<button class="ghost" onclick={() => queueAction(() => workspaceApi.queueSendNow(run.id))}>{tr("Nu versturen", "Send now")}</button>{/if}
         </div>
       {/if}
     </div>
   {/if}
 
   <div class="box">
-    <textarea bind:this={textarea} bind:value={draft} placeholder={editing ? "Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)" : prompt} rows="2" onkeydown={keydown}></textarea>
+    <textarea bind:this={textarea} bind:value={draft} placeholder={editing ? tr("Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)", "Edit the queued message (Enter saves, Esc cancels)") : prompt} rows="2" onkeydown={keydown}></textarea>
     <div class="bar">
       <div class="pop">
-        <button class="pill" title="Instellingen en acties" onclick={(e) => { e.stopPropagation(); menu = menu === "more" ? "" : "more"; }}>⋯</button>
+        <button class="pill" title={tr("Instellingen en acties", "Settings and actions")} onclick={(e) => { e.stopPropagation(); menu = menu === "more" ? "" : "more"; }}>⋯</button>
         {#if menu === "more"}
           <div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
             {#if active}
-              <button onclick={() => { menu = ""; workspace.act(() => workspaceApi.stop(run.id)); }}>Stop</button>
+              <button onclick={() => { menu = ""; workspace.act(() => workspaceApi.stop(run.id)); }}>{tr("Stop", "Stop")}</button>
             {:else if run.status === "failed" || run.status === "stopped"}
-              <button onclick={() => { menu = ""; workspace.act(() => workspaceApi.retry(run.id)); }}>Opnieuw</button>
+              <button onclick={() => { menu = ""; workspace.act(() => workspaceApi.retry(run.id)); }}>{tr("Opnieuw", "Retry")}</button>
             {/if}
-            <button onclick={() => { menu = ""; onrename(); }}>Wijzig naam</button>
-            <button disabled={!run.repoRoot} onclick={() => { menu = ""; onchanges(); }}>Wijzigingen bekijken</button>
+            <button onclick={() => { menu = ""; onrename(); }}>{tr("Wijzig naam", "Rename")}</button>
+            <button disabled={!run.repoRoot} onclick={() => { menu = ""; onchanges(); }}>{tr("Wijzigingen bekijken", "View changes")}</button>
+            <button disabled={active} onclick={() => (menu = "handoff")}>{tr("Overdragen aan een andere agent…", "Hand off to another agent…")}</button>
             <hr />
-            <button disabled={active} onclick={() => { menu = ""; workspace.act(() => workspaceApi.archive(run.id, !run.archived)); }}>{run.archived ? "Haal uit archief" : "Archiveer"}</button>
-            <button class="danger" disabled={active} onclick={() => { menu = ""; ondelete(); }}>Verwijder</button>
+            <button disabled={active} onclick={() => { menu = ""; workspace.act(() => workspaceApi.archive(run.id, !run.archived)); }}>{run.archived ? tr("Haal uit archief", "Unarchive") : tr("Archiveer", "Archive")}</button>
+            <button class="danger" disabled={active} onclick={() => { menu = ""; ondelete(); }}>{tr("Verwijder", "Delete")}</button>
           </div>
+        {:else if menu === "handoff"}
+          <HandOff {run} onclose={() => (menu = "")} />
         {/if}
       </div>
       <div class="pop">
-        <button class="pill" disabled={active} title={run.resolvedModel ?? "Model"} onclick={(e) => { e.stopPropagation(); modelDraft = run.model; menu = menu === "model" ? "" : "model"; }}>
+        <button class="pill" disabled={active} title={run.resolvedModel ?? tr("Model", "Model")} onclick={(e) => { e.stopPropagation(); modelDraft = run.model; menu = menu === "model" ? "" : "model"; }}>
           <span class="adot" style:background={workspace.provider(run.provider) ? undefined : "var(--text3)"}></span>
           {workspace.provider(run.provider)?.name ?? run.provider}{run.model ? ` · ${run.model}` : ""}
         </button>
         {#if menu === "model"}
           <div class="menu wide" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-            <div class="mhead">Model voor de volgende beurt</div>
-            <input bind:value={modelDraft} placeholder="standaard" onkeydown={(e) => e.key === "Enter" && saveModel()} />
-            <div class="mrow"><span class="faint">Leeg: de standaard van de agent.{#if run.resolvedModel} Nu: {run.resolvedModel}.{/if}</span><button class="primary" onclick={saveModel}>Bewaar</button></div>
+            <div class="mhead">{tr("Model voor de volgende beurt", "Model for the next turn")}</div>
+            <input bind:value={modelDraft} placeholder={tr("standaard", "default")} onkeydown={(e) => e.key === "Enter" && saveModel()} />
+            <div class="mrow"><span class="faint">{tr("Leeg: de standaard van de agent.", "Empty: the agent's default.")}{#if run.resolvedModel} {tr("Nu: {model}.", "Now: {model}.", { model: run.resolvedModel })}{/if}</span><button class="primary" onclick={saveModel}>{tr("Bewaar", "Save")}</button></div>
           </div>
         {/if}
       </div>
       <span class="sep"></span>
-      <button class="pill" disabled={active} title={modeHelp[run.mode] + " (klik om te wisselen tussen Agent en Plan)"}
+      <button class="pill" disabled={active} title={modeHelp[run.mode] + " " + tr("(klik om te wisselen tussen Agent en Plan)", "(click to switch between Agent and Plan)")}
         onclick={() => workspace.act(() => workspaceApi.configure(run.id, { mode: run.mode === "plan" ? "agent" : "plan" }))}>
-        {run.mode === "plan" ? "Plan" : "Agent"}
+        {run.mode === "plan" ? tr("Plan", "Plan") : tr("Agent", "Agent")}
       </button>
       <span class="sep"></span>
       <div class="pop">
         <button class="pill" class:hot={run.permission === "bypass" && run.mode !== "plan"} disabled={active || run.mode === "plan"}
           title={permissionHelp(run.permission, run.provider)} onclick={(e) => { e.stopPropagation(); menu = menu === "permission" ? "" : "permission"; }}>
-          {run.permission === "bypass" ? "🔓" : "🔒"} {run.mode === "plan" ? "Alleen lezen" : permissionLabels[run.permission]}
+          {run.permission === "bypass" ? "🔓" : "🔒"} {run.mode === "plan" ? tr("Alleen lezen", "Read only") : permissionLabels[run.permission]}
         </button>
         {#if menu === "permission"}
           <div class="menu wide" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-            <div class="mhead">Toegang</div>
+            <div class="mhead">{tr("Toegang", "Access")}</div>
             {#each caps?.policies ?? [] as p (p)}
               <button class="opt" class:chosen={run.permission === p} onclick={() => setPermission(p)}>
                 <span class:hot={p === "bypass"}>{permissionLabels[p]}</span>
@@ -228,7 +233,7 @@
       {#if levels.length}
         <span class="sep"></span>
         <div class="pop">
-          <button class="pill" disabled={active} title="Hoe diep de agent nadenkt, vanaf de volgende beurt" onclick={(e) => { e.stopPropagation(); menu = menu === "effort" ? "" : "effort"; }}>
+          <button class="pill" disabled={active} title={tr("Hoe diep de agent nadenkt, vanaf de volgende beurt", "How deeply the agent thinks, from the next turn")} onclick={(e) => { e.stopPropagation(); menu = menu === "effort" ? "" : "effort"; }}>
             {effortLabels[run.effort ?? ""]}
           </button>
           {#if menu === "effort"}
@@ -241,22 +246,22 @@
       {/if}
       <span class="spacer"></span>
       {#if fraction !== null && fraction > 0}
-        <span class="ctx {contextLevel(fraction)}" title="Hoe vol het contextvenster zat bij de laatste modelaanroep">ctx {contextPercent(fraction)}</span>
+        <span class="ctx {contextLevel(fraction)}" title={tr("Hoe vol het contextvenster zat bij de laatste modelaanroep", "How full the context window was at the last model call")}>ctx {contextPercent(fraction)}</span>
       {/if}
       {#if active}
         {#if draft.trim()}
-          <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? "Bijsturen: gaat nu naar de agent" : "In de wachtrij: gaat na deze beurt"}>{steers ? "Bijsturen" : "In de wachtrij"}</button>
+          <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? tr("Bijsturen: gaat nu naar de agent", "Steer: goes to the agent now") : tr("In de wachtrij: gaat na deze beurt", "Queue: goes after this turn")}>{steers ? tr("Bijsturen", "Steer") : tr("In de wachtrij", "Queue")}</button>
         {/if}
-        <button class="round stop" title="Stop de agent (Ctrl+.)" aria-label="Stop de agent" onclick={() => workspace.act(() => workspaceApi.stop(run.id))}><Icon name="stop" size={12} /></button>
+        <button class="round stop" title={tr("Stop de agent (Ctrl+.)", "Stop the agent (Ctrl+.)")} aria-label={tr("Stop de agent", "Stop the agent")} onclick={() => workspace.act(() => workspaceApi.stop(run.id))}><Icon name="stop" size={12} /></button>
       {:else if editing}
-        <button class="primary send" disabled={!draft.trim()} title="Bewaar het bericht in de wachtrij" onclick={send}>Bewaar</button>
+        <button class="primary send" disabled={!draft.trim()} title={tr("Bewaar het bericht in de wachtrij", "Save the queued message")} onclick={send}>{tr("Bewaar", "Save")}</button>
       {:else}
-        <button class="primary round" disabled={!draft.trim()} title="Stuur je bericht. De agent gaat verder in dezelfde sessie." aria-label="Stuur" onclick={send}><Icon name="arrow" size={16} /></button>
+        <button class="primary round" disabled={!draft.trim()} title={tr("Stuur je bericht. De agent gaat verder in dezelfde sessie.", "Send your message. The agent continues in the same session.")} aria-label={tr("Stuur", "Send")} onclick={send}><Icon name="arrow" size={16} /></button>
       {/if}
     </div>
   </div>
   {#if !active && run.mode === "plan"}
-    <p class="hint faint">Planmodus: de agent maakt alleen een plan. Zet de modus op Agent om het uit te laten voeren.</p>
+    <p class="hint faint">{tr("Planmodus: de agent maakt alleen een plan. Zet de modus op Agent om het uit te laten voeren.", "Plan mode: the agent only makes a plan. Switch the mode to Agent to have it carried out.")}</p>
   {/if}
   {#if workspace.error}<p class="err">{workspace.error}</p>{/if}
 </div>

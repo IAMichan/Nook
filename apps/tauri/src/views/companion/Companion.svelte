@@ -3,6 +3,7 @@
   // sessies je nodig hebben, en goedkeuren, antwoorden, een bericht sturen of stoppen.
   import { companion, sortSessions, type ClientView } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
+  import { tr } from "../../lib/i18n.svelte";
   import Pairing from "./Pairing.svelte";
   import SessionRow from "./SessionRow.svelte";
   import SessionDetail from "./SessionDetail.svelte";
@@ -50,7 +51,7 @@
 
 <div class="companion">
   {#if !view}
-    <p class="faint pad">Laden…</p>
+    <p class="faint pad">{tr("Laden…", "Loading…")}</p>
   {:else if !paired}
     <Pairing {view} onchange={(v) => (view = v)} />
   {:else if open}
@@ -58,22 +59,22 @@
   {:else}
     <header>
       <h2>{view.macName || "Nook"}</h2>
-      <button class="ghost icon" title="Ververs" disabled={refreshing} onclick={refresh}>↻</button>
-      <button class="ghost icon" title="Meer" onclick={() => (menu = !menu)}>⋯</button>
+      <button class="ghost icon" title={tr("Ververs", "Refresh")} disabled={refreshing} onclick={refresh}>↻</button>
+      <button class="ghost icon" title={tr("Meer", "More")} onclick={() => (menu = !menu)}>⋯</button>
     </header>
     {#if menu}
       <div class="menu">
-        <button class="danger" onclick={() => { menu = false; act(async () => companion.unpair()); }}>Ontkoppel van {view.macName || "deze computer"}</button>
+        <button class="danger" onclick={() => { menu = false; act(async () => companion.unpair()); }}>{tr("Ontkoppel van {name}", "Unpair from {name}", { name: view.macName || tr("deze computer", "this computer") })}</button>
       </div>
     {/if}
     <div class="list">
       {#if view.phase === "offline"}
-        <div class="banner">📡 {view.reason || "Zoeken naar je computer…"}</div>
+        <div class="banner">📡 {view.reason || tr("Zoeken naar je computer…", "Looking for your computer…")}</div>
       {/if}
       {#each sessions as s (s.id)}
         <SessionRow session={s} onopen={() => (open = s.id)} {act} />
       {:else}
-        {#if view.phase === "connected"}<p class="faint pad">Geen sessies.</p>{/if}
+        {#if view.phase === "connected"}<p class="faint pad">{tr("Geen sessies.", "No sessions.")}</p>{/if}
       {/each}
     </div>
   {/if}

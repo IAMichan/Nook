@@ -5,6 +5,7 @@
   import { isActive, workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import * as T from "../../../lib/workspace/timeline";
+  import { tr, locale } from "../../../lib/i18n.svelte";
   import Icon from "../../../components/Icon.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
@@ -62,14 +63,14 @@
   });
 
   function limitLine(): string {
-    if (!run.limitResetAt) return "Wanneer de limiet vrijkomt is onbekend; probeer het later zelf opnieuw.";
+    if (!run.limitResetAt) return tr("Wanneer de limiet vrijkomt is onbekend; probeer het later zelf opnieuw.", "It's unknown when the limit resets; try again yourself later.");
     const reset = Date.parse(run.limitResetAt);
-    if (reset <= now) return run.autoResume ? "De limiet is vrij; de sessie gaat zo verder." : "De limiet is weer vrij. Stuur een bericht om verder te gaan.";
+    if (reset <= now) return run.autoResume ? tr("De limiet is vrij; de sessie gaat zo verder.", "The limit has reset; the session continues shortly.") : tr("De limiet is weer vrij. Stuur een bericht om verder te gaan.", "The limit has reset. Send a message to continue.");
     const d = new Date(reset);
     const today = d.toDateString() === new Date(now).toDateString();
-    const clock = today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const clock = today ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const wait = T.duration((reset - now) / 1000);
-    return run.autoResume ? `Gaat verder om ${clock} (over ${wait})` : `Vrij om ${clock} (over ${wait})`;
+    return run.autoResume ? tr("Gaat verder om {time} (over {wait})", "Continues at {time} (in {wait})", { time: clock, wait }) : tr("Vrij om {time} (over {wait})", "Resets at {time} (in {wait})", { time: clock, wait });
   }
 
   // Nieuwe events volgen het einde, tenzij je weggescrold bent.
@@ -171,17 +172,17 @@
 <div class="wrap">
   {#if finding}
     <div class="find">
-      <input bind:this={findInput} bind:value={query} oninput={onquery} placeholder="Zoek in sessie"
+      <input bind:this={findInput} bind:value={query} oninput={onquery} placeholder={tr("Zoek in sessie", "Search session")}
         onkeydown={(e) => { if (e.key === "Enter") step(!e.shiftKey); if (e.key === "Escape") closeFind(); }} />
-      <span class="faint count">{found.state === "failed" ? "Te lang" : found.state === "noResults" ? "Niets gevonden" : T.countLabel(found, findIndex)}</span>
-      <button class="ghost" title="Vorige" onclick={() => step(false)}>↑</button>
-      <button class="ghost" title="Volgende" onclick={() => step(true)}>↓</button>
-      <button class="ghost" title="Sluit" onclick={closeFind}>✕</button>
+      <span class="faint count">{found.state === "failed" ? tr("Te lang", "Too long") : found.state === "noResults" ? tr("Niets gevonden", "Nothing found") : T.countLabel(found, findIndex)}</span>
+      <button class="ghost" title={tr("Vorige", "Previous")} onclick={() => step(false)}>↑</button>
+      <button class="ghost" title={tr("Volgende", "Next")} onclick={() => step(true)}>↓</button>
+      <button class="ghost" title={tr("Sluit", "Close")} onclick={closeFind}>✕</button>
     </div>
   {/if}
   <div class="scroll" bind:this={scroller} {onscroll} {onwheel}>
     <div class="thread-column rows">
-    {#if !shown.length}<p class="faint small">Nog niets in dit gesprek. Stuur een bericht om verder te gaan.</p>{/if}
+    {#if !shown.length}<p class="faint small">{tr("Nog niets in dit gesprek. Stuur een bericht om verder te gaan.", "Nothing in this conversation yet. Send a message to continue.")}</p>{/if}
 
     {#snippet eventView(e: RunEvent)}
       <div data-event={e.id}>
@@ -210,7 +211,7 @@
       {:else}
         <div class="group">
           <button class="summary" onclick={() => toggleBlock("fold:" + b.id)}>
-            <span class="sym"><Icon name="circle-check" size={13} /></span><span class="stext">{T.duration(b.seconds)} gewerkt</span>
+            <span class="sym"><Icon name="circle-check" size={13} /></span><span class="stext">{tr("{time} gewerkt", "Worked for {time}", { time: T.duration(b.seconds) })}</span>
             <span class="chev" class:open={open.has("fold:" + b.id)}><Icon name="chevron-right" size={13} /></span>
           </button>
           {#if open.has("fold:" + b.id)}
@@ -228,7 +229,7 @@
         <span class="spin" class:waiting>{#if waiting}<Icon name="hand" size={13} />{:else}<Icon name="loader" size={13} />{/if}</span>
         <div class="live-text">
           <div class="live-head">
-            <span class="label">{waiting ? (asking ? "Wacht op je antwoord…" : "Wacht op je goedkeuring…") : (liveLine.tool ?? "De agent werkt…")}</span>
+            <span class="label">{waiting ? (asking ? tr("Wacht op je antwoord…", "Waiting for your answer…") : tr("Wacht op je goedkeuring…", "Waiting for your approval…")) : (liveLine.tool ?? tr("De agent werkt…", "The agent is working…"))}</span>
             {#if run.turnStartedAt && !waiting}<span class="faint mono">{T.duration((now - Date.parse(run.turnStartedAt)) / 1000)}</span>{/if}
           </div>
           {#if liveLine.thought && !waiting}<div class="thought">{liveLine.thought}</div>{/if}
@@ -240,38 +241,38 @@
       <div class="recovery">
         <span class="rsym"><Icon name="hourglass" size={14} /></span>
         <div class="rtext">
-          <strong>Gebruikslimiet bereikt</strong>
+          <strong>{tr("Gebruikslimiet bereikt", "Usage limit reached")}</strong>
           <span class="faint">{limitLine()}</span>
         </div>
         {#if run.limitResetAt}
-          <button class="ghost" title={'Stuurt "Continue where you left off." zodra de limiet vrij is. Een eigen bericht annuleert dit.'}
+          <button class="ghost" title={tr("Stuurt \"Continue where you left off.\" zodra de limiet vrij is. Een eigen bericht annuleert dit.", "Sends \"Continue where you left off.\" once the limit resets. A message of your own cancels this.")}
             onclick={() => workspace.act(() => workspaceApi.setAutoResume(run.id, !run.autoResume))}>
-            {run.autoResume ? "Niet automatisch hervatten" : "Hervat bij reset"}
+            {run.autoResume ? tr("Niet automatisch hervatten", "Don't resume automatically") : tr("Hervat bij reset", "Resume at reset")}
           </button>
         {/if}
-        <button onclick={onretry}>Opnieuw</button>
+        <button onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
       </div>
     {:else if run.status === "failed" || run.status === "stopped"}
       <div class="recovery {run.status}">
         <span class="rsym"><Icon name={run.status === "failed" ? "alert" : "stop"} size={14} /></span>
         <div class="rtext">
-          <strong>{run.status === "failed" ? "Deze beurt is mislukt." : run.statusDetail === "interrupted" ? "Nook stopte terwijl de agent werkte; het proces draait niet meer." : "Je hebt deze beurt gestopt."}</strong>
+          <strong>{run.status === "failed" ? tr("Deze beurt is mislukt.", "This turn failed.") : run.statusDetail === "interrupted" ? tr("Nook stopte terwijl de agent werkte; het proces draait niet meer.", "Nook stopped while the agent was working; the process is no longer running.") : tr("Je hebt deze beurt gestopt.", "You stopped this turn.")}</strong>
           <span class="faint">
             {run.statusDetail && run.statusDetail !== "interrupted"
               ? run.statusDetail
               : run.providerSessionId
-                ? "Stuur een bericht of klik op Opnieuw: de agent gaat verder met dezelfde geschiedenis."
-                : "De agent meldde nog geen sessie; Opnieuw start de opdracht vanaf het begin."}
+                ? tr("Stuur een bericht of klik op Opnieuw: de agent gaat verder met dezelfde geschiedenis.", "Send a message or click Retry: the agent continues with the same history.")
+                : tr("De agent meldde nog geen sessie; Opnieuw start de opdracht vanaf het begin.", "The agent hasn't reported a session yet; Retry starts the task from the beginning.")}
           </span>
         </div>
-        {#if failure}<button class="ghost" onclick={() => reveal(failure)}>Ga naar fout</button>{/if}
-        <button onclick={onretry}>Opnieuw</button>
+        {#if failure}<button class="ghost" onclick={() => reveal(failure)}>{tr("Ga naar fout", "Go to error")}</button>{/if}
+        <button onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
       </div>
     {/if}
     </div>
   </div>
   {#if !follow && !atEnd && !finding}
-    <button class="to-end" onclick={() => { follow = true; toEnd(true); }}>Naar einde ↓</button>
+    <button class="to-end" onclick={() => { follow = true; toEnd(true); }}>{tr("Naar einde", "To the end")} ↓</button>
   {/if}
 </div>
 

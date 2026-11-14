@@ -5,6 +5,7 @@
   // error can be copied in one click.
   import { fly } from "svelte/transition";
   import { toast } from "../lib/toast.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   const symbols = { success: "✓", error: "!", warning: "!", info: "i" } as const;
   /// How far each older toast peeks out, how much smaller each step back is, and the room between spread-out toasts.
@@ -58,7 +59,7 @@
     class="stack"
     style:height="{height}px"
     role="region"
-    aria-label="Meldingen"
+    aria-label={tr("Meldingen", "Notifications")}
     onmouseenter={() => hover(true)}
     onmouseleave={() => hover(false)}
   >
@@ -86,11 +87,11 @@
             <button class="act" onclick={() => toast.act(current.id)}>{current.action.label}</button>
           {/if}
           {#if current.kind === "error" && current.detail}
-            <button class="icon" title="Melding kopiëren" aria-label="Melding kopiëren" onclick={() => copy(current.id)}>
+            <button class="icon" title={tr("Melding kopiëren", "Copy message")} aria-label={tr("Melding kopiëren", "Copy message")} onclick={() => copy(current.id)}>
               {copied === current.id ? "✓" : "⧉"}
             </button>
           {/if}
-          <button class="icon" title="Sluiten" aria-label="Sluiten" onclick={() => toast.dismiss(current.id)}>✕</button>
+          <button class="icon" title={tr("Sluiten", "Close")} aria-label={tr("Sluiten", "Close")} onclick={() => toast.dismiss(current.id)}>✕</button>
         </div>
       </div>
     {/each}

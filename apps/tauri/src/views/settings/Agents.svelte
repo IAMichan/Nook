@@ -8,14 +8,17 @@
   import DiffView from "../agents/DiffView.svelte";
   import AgentsUsage from "./AgentsUsage.svelte";
   import AgentsWorkspace from "./AgentsWorkspace.svelte";
+  import AgentsAutomation from "./AgentsAutomation.svelte";
+  import { tr } from "../../lib/i18n.svelte";
 
-  type Tab = "link" | "accounts" | "usage" | "workspace";
-  const tabs: { id: Tab; title: string; component?: Component }[] = [
-    { id: "link", title: "Koppelen" },
-    { id: "accounts", title: "Accounts" },
-    { id: "usage", title: "Gebruik", component: AgentsUsage },
-    { id: "workspace", title: "Werkruimte", component: AgentsWorkspace },
-  ];
+  type Tab = "link" | "accounts" | "usage" | "workspace" | "automation";
+  const tabs: { id: Tab; title: string; component?: Component }[] = $derived([
+    { id: "link", title: tr("Koppelen", "Link") },
+    { id: "accounts", title: tr("Accounts", "Accounts") },
+    { id: "usage", title: tr("Gebruik", "Usage"), component: AgentsUsage },
+    { id: "workspace", title: tr("Werkruimte", "Workspace"), component: AgentsWorkspace },
+    { id: "automation", title: tr("Automatisering", "Automation"), component: AgentsAutomation },
+  ]);
   let tab = $state<Tab>((localStorage.getItem("settings.agents.tab") as Tab) || "link");
   $effect(() => {
     localStorage.setItem("settings.agents.tab", tab);
@@ -56,11 +59,10 @@
     pending = null;
     try {
       const backup = await agentApi.applyLink(change.id);
-      const verb = change.install ? "gekoppeld" : "ontkoppeld";
       status =
-        `${change.title}: ${verb}.` +
-        (backup ? ` Backup: ${backup}.` : "") +
-        (change.install && change.title !== "Claude-abonnement in de balk" ? " Start de agent opnieuw zodat het werkt." : "");
+        (change.install ? tr("{title}: gekoppeld.", "{title}: linked.", { title: change.title }) : tr("{title}: ontkoppeld.", "{title}: unlinked.", { title: change.title })) +
+        (backup ? " " + tr("Backup: {path}.", "Backup: {path}.", { path: backup }) : "") +
+        (change.install && change.title !== "Claude-abonnement in de balk" ? " " + tr("Start de agent opnieuw zodat het werkt.", "Restart the agent so it takes effect.") : "");
     } catch (e) {
       error = String(e);
     }
@@ -74,8 +76,8 @@
 
   function stateText(i: Integration): string {
     switch (i.state.kind) {
-      case "installed": return `klaar · ${i.path}`;
-      case "outdated": return "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de balk";
+      case "installed": return tr("klaar · {path}", "ready · {path}", { path: i.path });
+      case "outdated": return tr("Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de balk", "Linked with an older version: update for permissions and questions in the bar");
       case "unreadable": return i.state.detail;
       default: return i.detail;
     }
@@ -96,7 +98,7 @@
   }
 
   async function removeProfile(p: AgentProfile) {
-    if (!confirm(`${p.title} uit Nook halen? De map ${p.displayHome} en de inlog blijven op je computer staan.`)) return;
+    if (!confirm(tr("{title} uit Nook halen? De map {folder} en de inlog blijven op je computer staan.", "Remove {title} from Nook? The folder {folder} and the login stay on your computer.", { title: p.title, folder: p.displayHome }))) return;
     try {
       await agentApi.removeProfile(p.id);
     } catch (e) {
@@ -113,16 +115,18 @@
 
   function account(p: AgentProfile): string {
     const a = agents.history?.accounts[p.id];
-    if (!a) return "niet ingelogd";
+    if (!a) return tr("niet ingelogd", "not signed in");
     return [a.name, a.organization, a.plan].filter(Boolean).join(" · ");
   }
 </script>
 
-<h2>Agents</h2>
+<h2>{tr("Agents", "Agents")}</h2>
 {#if !local}
   <p class="muted">
-    Coding-agents draaien op je computer, niet op je telefoon. Open Nook op je Windows- of Linux-computer om Claude Code,
-    Codex en de andere agents te koppelen; op de telefoon zie je ze via de companion.
+    {tr(
+      "Coding-agents draaien op je computer, niet op je telefoon. Open Nook op je Windows- of Linux-computer om Claude Code, Codex en de andere agents te koppelen; op de telefoon zie je ze via de companion.",
+      "Coding agents run on your computer, not on your phone. Open Nook on your Windows or Linux computer to link Claude Code, Codex and the other agents; on your phone you see them through the companion.",
+    )}
   </p>
 {:else}
   <div class="tabs">
@@ -133,7 +137,7 @@
   {#if error}<p class="err">{error}</p>{/if}
 
   {#if tab === "link"}
-    <h3>Koppel je agents</h3>
+    <h3>{tr("Koppel je agents", "Link your agents")}</h3>
     <div class="group">
       {#each integrations.filter((i) => !i.profileId) as i (i.target)}
         <div class="row">
@@ -143,24 +147,25 @@
           </div>
           <div class="inline">
             {#if i.state.kind === "notInstalled"}
-              <button onclick={() => prepare(i, true)}>Koppel…</button>
+              <button onclick={() => prepare(i, true)}>{tr("Koppel…", "Link…")}</button>
             {:else if i.state.kind === "outdated"}
-              <button class="primary" onclick={() => prepare(i, true)}>Werk bij…</button>
-              <button onclick={() => prepare(i, false)}>Ontkoppel…</button>
+              <button class="primary" onclick={() => prepare(i, true)}>{tr("Werk bij…", "Update…")}</button>
+              <button onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
             {:else if i.state.kind === "installed"}
-              <button onclick={() => prepare(i, false)}>Ontkoppel…</button>
+              <button onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
             {/if}
           </div>
         </div>
       {/each}
     </div>
     <p class="faint note">
-      Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet,
-      dan doen de koppelingen niets. Toestemming geven vanuit de balk kan bij Claude Code en Codex; bij de andere agents
-      beslist Nook nooit iets.
+      {tr(
+        "Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet, dan doen de koppelingen niets. Toestemming geven vanuit de balk kan bij Claude Code en Codex; bij de andere agents beslist Nook nooit iets.",
+        "Nook first shows exactly what changes and makes a backup before anything is written. If Nook isn't running, the links do nothing. Granting permission from the bar works for Claude Code and Codex; for the other agents Nook never decides anything.",
+      )}
     </p>
     {#if integrations.some((i) => i.profileId)}
-      <h3>Extra accounts</h3>
+      <h3>{tr("Extra accounts", "Extra accounts")}</h3>
       <div class="group">
         {#each integrations.filter((i) => i.profileId) as i (i.target + i.profileId)}
           <div class="row">
@@ -169,9 +174,9 @@
               <div class="faint small">{stateText(i)}</div>
             </div>
             {#if i.state.kind === "installed"}
-              <button onclick={() => prepare(i, false)}>Ontkoppel…</button>
+              <button onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
             {:else if i.state.kind !== "unreadable"}
-              <button onclick={() => prepare(i, true)}>{i.state.kind === "outdated" ? "Werk bij…" : "Koppel…"}</button>
+              <button onclick={() => prepare(i, true)}>{i.state.kind === "outdated" ? tr("Werk bij…", "Update…") : tr("Koppel…", "Link…")}</button>
             {/if}
           </div>
         {/each}
@@ -185,39 +190,41 @@
           <div class="row">
             <div class="info">
               <div class="name">
-                {p.label || (p.home ? p.title : "Hoofdaccount")}
-                {#if p.preferred}<span class="badge">standaard</span>{/if}
+                {p.label || (p.home ? p.title : tr("Hoofdaccount", "Main account"))}
+                {#if p.preferred}<span class="badge">{tr("standaard", "default")}</span>{/if}
               </div>
               <div class="faint small">{account(p)} · {p.displayHome}</div>
               {#if kind === "claude" && p.auth === "apiKey"}
                 <div class="inline key">
-                  <input type="password" placeholder={p.hasKey ? "Sleutel staat in de kluis" : "sk-ant-…"} bind:value={keyInput[p.id]} />
-                  <button onclick={() => saveKey(p)}>{keyInput[p.id] ? "Bewaar" : p.hasKey ? "Wis" : "Bewaar"}</button>
+                  <input type="password" placeholder={p.hasKey ? tr("Sleutel staat in de kluis", "Key is in the keychain") : "sk-ant-…"} bind:value={keyInput[p.id]} />
+                  <button onclick={() => saveKey(p)}>{keyInput[p.id] ? tr("Bewaar", "Save") : p.hasKey ? tr("Wis", "Clear") : tr("Bewaar", "Save")}</button>
                 </div>
               {/if}
             </div>
             <div class="inline">
-              {#if !p.preferred}<button class="ghost" onclick={() => agentApi.preferProfile(p.id).then(load)}>Maak standaard</button>{/if}
+              {#if !p.preferred}<button class="ghost" onclick={() => agentApi.preferProfile(p.id).then(load)}>{tr("Maak standaard", "Make default")}</button>{/if}
               {#if kind === "claude"}
                 <select value={p.auth ?? "cli"} onchange={(e) => agentApi.setProfileAuth(p.id, e.currentTarget.value as "cli" | "apiKey").then(load)}>
-                  <option value="cli">Abonnement (inloggen)</option>
-                  <option value="apiKey">API-sleutel</option>
+                  <option value="cli">{tr("Abonnement (inloggen)", "Subscription (sign in)")}</option>
+                  <option value="apiKey">{tr("API-sleutel", "API key")}</option>
                 </select>
               {/if}
-              <button class="ghost" title="Inloggen in een terminal" onclick={() => agentApi.runInTerminal(p.loginCommand)}>Log in…</button>
-              {#if p.home}<button class="ghost danger" onclick={() => removeProfile(p)}>Haal weg</button>{/if}
+              <button class="ghost" title={tr("Inloggen in een terminal", "Sign in in a terminal")} onclick={() => agentApi.runInTerminal(p.loginCommand)}>{tr("Log in…", "Sign in…")}</button>
+              {#if p.home}<button class="ghost danger" onclick={() => removeProfile(p)}>{tr("Haal weg", "Remove")}</button>{/if}
             </div>
           </div>
         {/each}
         <div class="row">
-          <input placeholder="Naam van een extra account, bijvoorbeeld Werk" bind:value={newLabel[kind]} />
-          <button onclick={() => addProfile(kind)}>Voeg account toe</button>
+          <input placeholder={tr("Naam van een extra account, bijvoorbeeld Werk", "Name of an extra account, for example Work")} bind:value={newLabel[kind]} />
+          <button onclick={() => addProfile(kind)}>{tr("Voeg account toe", "Add account")}</button>
         </div>
       </div>
     {/each}
     <p class="faint note">
-      Elk account heeft een eigen map (bijvoorbeeld ~/.claude-werk) met een eigen inlog, zodat privé en werk naast elkaar
-      kunnen. Een API-sleutel staat alleen in de kluis van je systeem, nooit in een bestand.
+      {tr(
+        "Elk account heeft een eigen map (bijvoorbeeld ~/.claude-werk) met een eigen inlog, zodat privé en werk naast elkaar kunnen. Een API-sleutel staat alleen in de kluis van je systeem, nooit in een bestand.",
+        "Each account has its own folder (for example ~/.claude-work) with its own login, so personal and work can live side by side. An API key is only kept in your system's keychain, never in a file.",
+      )}
     </p>
   {:else if Current}
     <Current />
@@ -227,16 +234,16 @@
 {#if pending}
   <div class="modal" role="dialog" aria-modal="true">
     <div class="sheet">
-      <h3>{pending.install ? "Koppel" : "Ontkoppel"} {pending.title}</h3>
+      <h3>{pending.install ? tr("Koppel {title}", "Link {title}", { title: pending.title }) : tr("Ontkoppel {title}", "Unlink {title}", { title: pending.title })}</h3>
       {#if pending.unchanged}
-        <p class="muted">Er verandert niets.</p>
+        <p class="muted">{tr("Er verandert niets.", "Nothing changes.")}</p>
       {:else}
-        <p class="muted small">Dit verandert in {pending.path}. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.</p>
+        <p class="muted small">{tr("Dit verandert in {path}. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.", "This changes in {path}. Your own settings stay; a backup is made next to the file first.", { path: pending.path })}</p>
         <DiffView lines={pending.preview} max={360} />
       {/if}
       <div class="inline end">
-        <button class="ghost" onclick={cancel}>Annuleer</button>
-        <button class="primary" disabled={pending.unchanged} onclick={write}>{pending.install ? "Koppel" : "Ontkoppel"}</button>
+        <button class="ghost" onclick={cancel}>{tr("Annuleer", "Cancel")}</button>
+        <button class="primary" disabled={pending.unchanged} onclick={write}>{pending.install ? tr("Koppel", "Link") : tr("Ontkoppel", "Unlink")}</button>
       </div>
     </div>
   </div>

@@ -83,6 +83,8 @@ pub struct Settings {
     pub local_only_sources: BTreeSet<String>,
     pub evidence_first: bool,
     pub check_answers: bool,
+    /// A small bar above words you select anywhere in Nook asks, explains or translates them (`SelectionAsk`).
+    pub selection_ask: bool,
     pub use_memory: bool,
     pub learn_from_chats: bool,
     pub onboarding_done: bool,
@@ -125,6 +127,14 @@ pub struct Settings {
     pub tray_hint_shown: bool,
     /// Where the main window was, in physical pixels, so it opens there again.
     pub main_window: Option<WindowPlacement>,
+    /// The windows' look (Settings › Appearance): "system", "light" or "dark". Files from before it existed stay dark.
+    pub theme: String,
+    /// How much room text and rows get (`NookDensity` on the Mac): "compact", "comfortable" or "spacious".
+    pub density: String,
+    /// The default answer style (`ResponseStyle` on the Mac, Settings › Instructions); see `crate::instructions`.
+    pub answer_style: String,
+    /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
+    pub instructions: String,
 }
 
 /// The main window's last place and size on the desktop.
@@ -159,8 +169,8 @@ impl Default for Settings {
         shortcuts.insert("window".into(), "Alt+CommandOrControl+W".into());
         shortcuts.insert("lookAlong".into(), "Alt+CommandOrControl+N".into());
         Self {
-            app_language: "nl".into(),
-            language: "nl".into(),
+            app_language: system_language().into(),
+            language: system_language().into(),
             // Lokaal eerst: niets verlaat de computer tot de gebruiker zelf voor een externe AI kiest.
             provider: AIProvider::Ollama,
             provider_models: BTreeMap::new(),
@@ -183,6 +193,7 @@ impl Default for Settings {
             local_only_sources: BTreeSet::new(),
             evidence_first: false,
             check_answers: true,
+            selection_ask: true,
             use_memory: true,
             learn_from_chats: true,
             onboarding_done: false,
@@ -205,16 +216,36 @@ impl Default for Settings {
             start_local_brain: true,
             tray_hint_shown: false,
             main_window: None,
+            theme: "dark".into(),
+            density: "comfortable".into(),
+            answer_style: "standard".into(),
+            instructions: String::new(),
         }
     }
 }
 
 pub const ANSWER_LANGUAGES: [(&str, &str); 6] =
-    [("nl", "Nederlands"), ("en", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("auto", "Taal van mijn vraag")];
+    [("en", "English"), ("nl", "Nederlands"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("auto", "Taal van mijn vraag")];
+
+/// The interface languages, the same five as `AppLanguage` on the Mac.
+pub const APP_LANGUAGES: [&str; 5] = ["en", "nl", "de", "fr", "es"];
+
+/// The language Nook starts in: the system's preferred language when Nook speaks it, otherwise English (as on the Mac).
+pub fn system_language() -> &'static str {
+    let preferred = sys_locale::get_locale().unwrap_or_default().to_lowercase();
+    language_of_locale(&preferred)
+}
+
+fn language_of_locale(locale: &str) -> &'static str {
+    let code = locale.split(['-', '_', '.']).next().unwrap_or("");
+    APP_LANGUAGES.iter().copied().find(|c| *c == code).unwrap_or("en")
+}
 
 impl Settings {
     pub fn load() -> Self {
-        Self::load_from(&paths::settings_file())
+        let settings = Self::load_from(&paths::settings_file());
+        crate::i18n::set_language(&settings.app_language);
+        settings
     }
 
     pub fn load_from(path: &std::path::Path) -> Self {
@@ -222,6 +253,7 @@ impl Settings {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        crate::i18n::set_language(&self.app_language);
         self.save_to(&paths::settings_file())
     }
 
@@ -274,7 +306,7 @@ impl Settings {
                 None => "Respond in the language the user writes in.".into(),
             };
         }
-        let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("Nederlands");
+        let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("English");
         format!("Always respond in {name}, even if the data or tools are in a different language.")
     }
 
@@ -285,7 +317,7 @@ impl Settings {
         if ANSWER_LANGUAGES.iter().any(|(c, _)| *c == code && *c != "auto") {
             code
         } else {
-            "nl"
+            "en"
         }
     }
 
@@ -360,7 +392,17 @@ mod tests {
         assert_eq!(s.own_language(), "fr");
         s.language = "auto".into();
         s.app_language = "xx".into();
-        assert_eq!(s.own_language(), "nl");
+        assert_eq!(s.own_language(), "en");
+    }
+
+    #[test]
+    fn first_start_follows_the_system_language_or_english() {
+        assert_eq!(language_of_locale("nl-nl"), "nl");
+        assert_eq!(language_of_locale("de_de.utf-8"), "de");
+        assert_eq!(language_of_locale("fr"), "fr");
+        assert_eq!(language_of_locale("es-419"), "es");
+        assert_eq!(language_of_locale("ja-jp"), "en");
+        assert_eq!(language_of_locale(""), "en");
     }
 
     #[test]
@@ -391,6 +433,18 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"quietWhileSharing":"hide","energyMode":"saver"}"#).unwrap();
         assert_eq!(s.quiet_while_sharing, QuietBehavior::Hide);
         assert_eq!(s.energy_mode, EnergyMode::Saver);
+    }
+
+    #[test]
+    fn old_settings_files_keep_the_dark_look() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert_eq!(s.theme, "dark");
+        assert_eq!(s.density, "comfortable");
+        assert_eq!(s.answer_style, "standard");
+        assert!(s.instructions.is_empty());
+        let s: Settings = serde_json::from_str(r#"{"theme":"light","instructions":"Call me Sam."}"#).unwrap();
+        assert_eq!(s.theme, "light");
+        assert_eq!(s.instructions, "Call me Sam.");
     }
 
     #[test]

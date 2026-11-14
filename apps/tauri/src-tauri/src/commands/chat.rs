@@ -123,6 +123,8 @@ pub struct CardRun {
 
 tokio::task_local! {
     static CARD_RUN: CardRun;
+    /// A note for the brain that goes with this question but is never shown (`SelectionAsk.note` on the Mac).
+    static ASK_NOTE: String;
 }
 
 /// The card run this task answers for, if any.
@@ -156,12 +158,17 @@ pub fn ask(
     images: Vec<PromptImage>,
     attachment: Option<Attachment>,
 ) -> Result<Option<String>, String> {
-    ask_with(app, nook_id, raw, images, attachment, None)
+    ask_with(app, nook_id, raw, images, attachment, None, None)
+}
+
+/// A question with a hidden note for the brain beside it (asking about a selection: the quote is material).
+pub fn ask_with_note(app: &AppHandle, nook_id: &str, raw: &str, note: String) -> Result<Option<String>, String> {
+    ask_with(app, nook_id, raw, vec![], None, None, Some(note))
 }
 
 /// A prompt a card wrote (its button, not the user's words): answered like any question, but within `run`.
 pub fn ask_from_card(app: &AppHandle, nook_id: &str, text: &str, run: CardRun) -> Result<Option<String>, String> {
-    ask_with(app, nook_id, text, vec![], None, Some(run))
+    ask_with(app, nook_id, text, vec![], None, Some(run), None)
 }
 
 fn ask_with(
@@ -171,6 +178,7 @@ fn ask_with(
     images: Vec<PromptImage>,
     attachment: Option<Attachment>,
     card: Option<CardRun>,
+    note: Option<String>,
 ) -> Result<Option<String>, String> {
     let mut text = raw.trim().to_string();
     if text.is_empty() && images.is_empty() && attachment.is_none() {
@@ -232,6 +240,12 @@ fn ask_with(
     let (nid, mid) = (nook_id.to_string(), message_id.clone());
     let handle = tauri::async_runtime::spawn(async move {
         let answer = answer_question(&task_app, &nid, &mid, &text, &history, images, attachment, false, None);
+        let answer = async move {
+            match note {
+                Some(note) => ASK_NOTE.scope(note, answer).await,
+                None => answer.await,
+            }
+        };
         match card {
             Some(run) => CARD_RUN.scope(run, answer).await,
             None => answer.await,
@@ -546,6 +560,9 @@ pub async fn answer_question(
     });
 
     let mut request = text.to_string();
+    if let Ok(note) = ASK_NOTE.try_with(Clone::clone) {
+        request += &format!("\n\n({note})");
+    }
     if let Some(correction) = &correction {
         request += &format!("\n\n({correction} {})", settings.language_instruction(text));
     } else if retry {

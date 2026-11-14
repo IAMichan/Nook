@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Settings } from "./types";
+import { tr } from "./i18n.svelte";
 
 export type ChartKind = "bar" | "line" | "area" | "pie" | "point";
 
@@ -211,9 +212,9 @@ export function fileBase64(file: File): Promise<string> {
 /** Een korte tekst voor een opzoeking: "doorzocht (3)", "niets gevonden", "mislukt: …". */
 export function outcomeLabel(outcome: Outcome): string {
   switch (outcome.kind) {
-    case "running": return "bezig…";
-    case "found": return `doorzocht · ${outcome.detail}`;
-    case "empty": return "niets gevonden";
-    case "failed": return `mislukt: ${outcome.detail}`;
+    case "running": return tr("bezig…", "searching…");
+    case "found": return tr("doorzocht · {n}", "searched · {n}", { n: outcome.detail });
+    case "empty": return tr("niets gevonden", "nothing found");
+    case "failed": return tr("mislukt: {detail}", "failed: {detail}", { detail: outcome.detail });
   }
 }

@@ -5,7 +5,7 @@
   import { services, serviceEvents, type TodayItem, type RecapView, type NoteLive } from "../lib/services";
   import { nook, relativeTime } from "../lib/state.svelte";
   import { renderMarkdown } from "../lib/markdown";
-  import { tr, english } from "../lib/i18n.svelte";
+  import { tr, locale } from "../lib/i18n.svelte";
   import type { OpenLoop } from "../lib/types";
 
   let loops = $state<OpenLoop[]>([]);
@@ -83,7 +83,7 @@
       {#if recap.summary.prompts === 0 && recap.summary.sessions === 0}
         <p class="muted">{tr("Ik heb nog niets bijgehouden. Koppel je agents bij Instellingen › Agents, dan zie je hier wat ze voor je deden.", "I haven't tracked anything yet. Connect your agents under Settings › Agents and you'll see what they did for you here.")}</p>
       {:else}
-        <p><strong>{recap.summary.topAgent ? `${recap.summary.topAgent} ${tr("en co", "and co")}` : tr("Je agents", "Your agents")} {tr("werkten", "worked")} {recap.duration} {tr("voor je.", "for you.")}</strong></p>
+        <p><strong>{recap.summary.topAgent ? tr("{agent} en co werkten {duration} voor je.", "{agent} and co worked {duration} for you.", { agent: recap.summary.topAgent, duration: recap.duration }) : tr("Je agents werkten {duration} voor je.", "Your agents worked {duration} for you.", { duration: recap.duration })}</strong></p>
         <dl>
           {#each facts as [label, value] (label)}<dt>{label}</dt><dd>{value}</dd>{/each}
         </dl>
@@ -115,7 +115,7 @@
     <div class="loop">
       <button class="check" title={tr("Afvinken", "Check off")} onclick={() => done(loop.id)}>○</button>
       <span>{loop.title}</span>
-      {#if loop.due}<span class="faint">{new Date(loop.due).toLocaleString(english() ? "en-GB" : "nl-NL", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
+      {#if loop.due}<span class="faint">{new Date(loop.due).toLocaleString(locale(), { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
       {:else}<span class="faint">{relativeTime(loop.created)}</span>{/if}
     </div>
   {:else}

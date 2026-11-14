@@ -12,8 +12,8 @@ describe("companion", () => {
   });
 
   it("names the states like the iPhone app", () => {
-    expect(attentionWord("approval")).toBe("Wacht op toestemming");
-    expect(attentionWord("whatever")).toBe("Rust");
+    expect(attentionWord("approval")).toBe("Waiting for approval");
+    expect(attentionWord("whatever")).toBe("Idle");
     expect(canStop("working")).toBe(true);
     expect(canStop("ready")).toBe(false);
   });

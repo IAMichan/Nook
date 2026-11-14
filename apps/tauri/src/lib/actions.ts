@@ -298,20 +298,28 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
   const noLog = tr("GitHub bewaart geen log voor een run zonder jobs.", "GitHub keeps no log for a run without jobs.");
   switch (reason.kind) {
     case "replaced": {
-      const on = run.branch ? tr(` op ${run.branch}`, ` on ${run.branch}`) : "";
+      const text = run.branch
+        ? tr(
+            "Geannuleerd voordat er een job begon: een nieuwere run van {workflow} op {branch} (#{number}) nam zijn plaats in. {noLog}",
+            "Cancelled before any job started: a newer run of {workflow} on {branch} (#{number}) took its place. {noLog}",
+            { workflow: run.workflow, branch: run.branch, number: reason.number, noLog },
+          )
+        : tr(
+            "Geannuleerd voordat er een job begon: een nieuwere run van {workflow} (#{number}) nam zijn plaats in. {noLog}",
+            "Cancelled before any job started: a newer run of {workflow} (#{number}) took its place. {noLog}",
+            { workflow: run.workflow, number: reason.number, noLog },
+          );
       return {
-        text: tr(
-          `Geannuleerd voordat er een job begon: een nieuwere run van ${run.workflow}${on} (#${reason.number}) nam zijn plaats in. ${noLog}`,
-          `Cancelled before any job started: a newer run of ${run.workflow}${on} (#${reason.number}) took its place. ${noLog}`,
-        ),
-        link: reason.url ? { label: tr(`Open #${reason.number}`, `Open #${reason.number}`), url: reason.url } : null,
+        text,
+        link: reason.url ? { label: tr("Open #{number}", "Open #{number}", { number: reason.number }), url: reason.url } : null,
       };
     }
     case "cancelled":
       return {
         text: tr(
-          `Geannuleerd voordat er een job begon, door iemand of door een andere workflow. ${noLog}`,
-          `Cancelled before any job started, by someone or by another workflow. ${noLog}`,
+          "Geannuleerd voordat er een job begon, door iemand of door een andere workflow. {noLog}",
+          "Cancelled before any job started, by someone or by another workflow. {noLog}",
+          { noLog },
         ),
         link: null,
       };
@@ -319,8 +327,9 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
       const file = reason.path || tr("het workflowbestand", "the workflow file");
       return {
         text: tr(
-          `GitHub kon de workflow niet starten, bijna altijd door een fout in ${file}. De precieze fout staat alleen op de pagina van de run op GitHub.`,
-          `GitHub could not start the workflow, nearly always because of an error in ${file}. The exact error is only on the run's page on GitHub.`,
+          "GitHub kon de workflow niet starten, bijna altijd door een fout in {file}. De precieze fout staat alleen op de pagina van de run op GitHub.",
+          "GitHub could not start the workflow, nearly always because of an error in {file}. The exact error is only on the run's page on GitHub.",
+          { file },
         ),
         link: reason.file ? { label: tr("Workflowbestand", "Workflow file"), url: reason.file } : null,
       };
@@ -330,23 +339,22 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
     case "approval":
       return { text: tr("De run wacht op goedkeuring voordat er een job begint.", "The run waits for approval before any job starts."), link: null };
     default:
-      return { text: tr(`Deze run heeft geen jobs. ${noLog}`, `This run has no jobs. ${noLog}`), link: null };
+      return { text: tr("Deze run heeft geen jobs. {noLog}", "This run has no jobs. {noLog}", { noLog }), link: null };
   }
 }
 
 /// What started a run, in words people use; an event Nook does not know keeps GitHub's name.
 export function eventName(event: string): string {
-  const names: Record<string, [string, string]> = {
-    push: ["push", "push"],
-    pull_request: ["pull request", "pull request"],
-    pull_request_target: ["pull request", "pull request"],
-    workflow_dispatch: ["handmatig", "manual"],
-    release: ["release", "release"],
-    schedule: ["gepland", "scheduled"],
-    merge_group: ["merge-wachtrij", "merge queue"],
-    workflow_run: ["na workflow", "after workflow"],
-    repository_dispatch: ["dispatch", "dispatch"],
-  };
-  const name = names[event];
-  return name ? tr(name[0], name[1]) : event.replaceAll("_", " ");
+  switch (event) {
+    case "push": return "push";
+    case "pull_request":
+    case "pull_request_target": return "pull request";
+    case "workflow_dispatch": return tr("handmatig", "manual");
+    case "release": return "release";
+    case "schedule": return tr("gepland", "scheduled");
+    case "merge_group": return tr("merge-wachtrij", "merge queue");
+    case "workflow_run": return tr("na workflow", "after workflow");
+    case "repository_dispatch": return "dispatch";
+    default: return event.replaceAll("_", " ");
+  }
 }

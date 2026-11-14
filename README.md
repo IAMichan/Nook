@@ -111,7 +111,7 @@ What the Tauri app can do differs per platform:
 | Flow dictation and Call Notetaker | ✓ | ✓ (X11; system audio via PulseAudio/PipeWire) | — |
 | Companion | Server for the iPhone app | Server for the iPhone app | Phone side |
 
-Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calendar, Reminders, Mail, and Notes) stay on the Mac. [`docs/TAURI.md`](docs/TAURI.md) tracks, part by part, what has been ported from the Mac so far. The Tauri app's interface is Dutch-only for now.
+Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calendar, Reminders, Mail, and Notes) stay on the Mac. [`docs/TAURI.md`](docs/TAURI.md) tracks, part by part, what has been ported from the Mac so far. The Tauri app speaks the same five languages as the Mac.
 
 ---
 
@@ -426,7 +426,7 @@ nook/
 **Windows, Linux & Android**
 
 - **Early stage:** Not every Mac feature has been ported yet; [`docs/TAURI.md`](docs/TAURI.md) lists what is done, partial, or still to do.
-- **Interface language:** The Tauri app's interface is Dutch-only for now.
+- **Interface language:** English, Dutch, German, French, and Spanish, like the Mac. Some error messages from the Rust side are still in Dutch.
 - **Testing:** The Windows build compiles in CI but has not yet been run on a real Windows PC, and the Android APK is only built in CI.
 - **Wayland:** Global hotkeys and system-wide dictation need X11 on Linux.
 - **Android secrets:** Stored in a private app folder without backup; Android Keystore support is still to do.

@@ -5,7 +5,7 @@ import { api, events } from "./api";
 import { agentApi, agentEvents } from "./agents";
 import { connectorEvents, connectorsApi } from "./connectors";
 import { coachingText, games } from "./games";
-import { english, tr } from "./i18n.svelte";
+import { appLanguage, locale as uiLocale, tr } from "./i18n.svelte";
 import { inbox, type InboxProvider } from "./inbox.svelte";
 import type { InboxItem } from "./inbox";
 import { pullRequests } from "./pulls.svelte";
@@ -16,7 +16,7 @@ type Unlisten = Promise<() => void>;
 const unlisten = (...all: Unlisten[]) => () => all.forEach((u) => u.then((f) => f()));
 
 const HOUR = 3_600_000;
-const locale = () => (english() ? "en-GB" : "nl-NL");
+const locale = () => uiLocale();
 const clock = (d: Date) => d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 
 /// "today at 10:00", "tomorrow at 10:00", or "Tue 4 Nov, 10:00".
@@ -24,8 +24,8 @@ export function when(iso: string, now = new Date()): string {
   const d = new Date(iso);
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((day(d) - day(now)) / 86_400_000);
-  if (days === 0) return tr(`vandaag om ${clock(d)}`, `today at ${clock(d)}`);
-  if (days === 1) return tr(`morgen om ${clock(d)}`, `tomorrow at ${clock(d)}`);
+  if (days === 0) return tr("vandaag om {time}", "today at {time}", { time: clock(d) });
+  if (days === 1) return tr("morgen om {time}", "tomorrow at {time}", { time: clock(d) });
   return d.toLocaleString(locale(), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
@@ -71,7 +71,7 @@ const tasks: InboxProvider = {
           cared: true,
           weight: late || due - now < HOUR ? 2 : 1,
           title: l.title,
-          detail: late ? tr(`Was ${when(l.due!)}`, `Was due ${when(l.due!)}`) : tr(`Gepland ${when(l.due!)}`, `Due ${when(l.due!)}`),
+          detail: late ? tr("Was {when}", "Was due {when}", { when: when(l.due!) }) : tr("Gepland {when}", "Due {when}", { when: when(l.due!) }),
           at: l.due!,
           actions: [{ id: "done", label: tr("Afvinken", "Mark done") }],
         };
@@ -112,7 +112,7 @@ const calendar: InboxProvider = {
   },
   act: (item) => ({
     kind: "newNook",
-    ask: tr(`Help me me voor te bereiden op "${item.title}" (${item.detail}).`, `Help me prepare for "${item.title}" (${item.detail}).`),
+    ask: tr("Help me me voor te bereiden op \"{title}\" ({detail}).", "Help me prepare for \"{title}\" ({detail}).", { title: item.title, detail: item.detail ?? "" }),
   }),
   watch: (changed) => unlisten(connectorEvents.onChanged(changed)),
 };
@@ -129,7 +129,7 @@ const agents: InboxProvider = {
       source: "agents",
       type: "action_required",
       cared: true,
-      title: tr(`${a.agentName} vraagt toestemming`, `${a.agentName} needs your approval`),
+      title: tr("{agent} vraagt toestemming", "{agent} needs your approval", { agent: a.agentName }),
       detail: [a.title, a.project].filter(Boolean).join(" · "),
       at: a.created,
       actions: [{ id: a.sessionKey, label: tr("Bekijken", "Review") }],
@@ -140,7 +140,7 @@ const agents: InboxProvider = {
       source: "agents",
       type: "action_required",
       cared: true,
-      title: tr(`${q.agentName} heeft een vraag`, `${q.agentName} has a question`),
+      title: tr("{agent} heeft een vraag", "{agent} has a question", { agent: q.agentName }),
       detail: [q.items[0]?.question, q.project].filter(Boolean).join(" · "),
       at: new Date().toISOString(),
       actions: [{ id: q.sessionKey, label: tr("Beantwoorden", "Answer") }],
@@ -168,7 +168,7 @@ const messages: InboxProvider = {
           ref: c.id,
           source: "messages",
           type: "missed",
-          title: c.unread > 1 ? tr(`${c.name} · ${c.unread} berichten`, `${c.name} · ${c.unread} messages`) : c.name,
+          title: c.unread > 1 ? tr("{name} · {n} berichten", "{name} · {n} messages", { name: c.name, n: c.unread }) : c.name,
           detail: last?.text || tr("Nieuw bericht op WhatsApp", "New message on WhatsApp"),
           at: c.lastActivity,
           actions: [{ id: "reply", label: tr("Antwoord voorstellen", "Draft a reply") }, { id: "read", label: tr("Gelezen", "Mark read") }],
@@ -196,7 +196,7 @@ const code: InboxProvider = {
         source: "code",
         type: "action_required",
         title: p.title,
-        detail: tr(`${p.author} vraagt je review · ${p.repo}#${p.number}`, `${p.author} asked for your review · ${p.repo}#${p.number}`),
+        detail: tr("{author} vraagt je review · {repo}#{number}", "{author} asked for your review · {repo}#{number}", { author: p.author, repo: p.repo, number: p.number }),
         at: p.updated ?? new Date().toISOString(),
         actions: [{ id: "open", label: tr("Bekijken", "Review") }],
       })),
@@ -207,7 +207,7 @@ const code: InboxProvider = {
         type: "update",
         weight: 1,
         title: p.title,
-        detail: tr(`Checks mislukt · ${p.repo}#${p.number}`, `Checks failed · ${p.repo}#${p.number}`),
+        detail: tr("Checks mislukt · {repo}#{number}", "Checks failed · {repo}#{number}", { repo: p.repo, number: p.number }),
         at: p.updated ?? new Date().toISOString(),
         actions: [{ id: "open", label: tr("Bekijken", "View") }],
       })),
@@ -258,7 +258,7 @@ const gamerMode: InboxProvider = {
     const match = view.current;
     const insight = (view.analysis?.insights ?? []).filter((i) => i.severity !== "info").sort((a, b) => b.round - a.round)[0];
     if (!match || !insight) return [];
-    const { title, body } = coachingText(insight, english() ? "en" : "nl");
+    const { title, body } = coachingText(insight, appLanguage());
     return [{
       id: `coach:${match.id}:${insight.id}`,
       provider: "gamer_mode",

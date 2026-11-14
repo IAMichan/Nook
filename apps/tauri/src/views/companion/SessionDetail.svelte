@@ -1,6 +1,7 @@
 <script lang="ts">
   // Eén sessie: wat er op je wacht (goedkeuren of antwoorden), het laatste antwoord, een bericht sturen en stoppen.
   import { attentionColor, attentionWord, canStop, companion, type ClientView, type SessionDigest } from "../../lib/companion";
+  import { tr } from "../../lib/i18n.svelte";
 
   let { session, onback, act }: { session: SessionDigest | null; onback: () => void; act: (f: () => Promise<ClientView>) => Promise<void> } = $props();
   let message = $state("");
@@ -24,11 +25,11 @@
 
 <div class="detail">
   <header>
-    <button class="ghost back" onclick={onback} aria-label="Terug">‹</button>
-    <h2>{session?.title ?? "Sessie"}</h2>
+    <button class="ghost back" onclick={onback} aria-label={tr("Terug", "Back")}>‹</button>
+    <h2>{session?.title ?? tr("Sessie", "Session")}</h2>
   </header>
   {#if !session}
-    <p class="faint pad">Deze sessie is er niet meer.</p>
+    <p class="faint pad">{tr("Deze sessie is er niet meer.", "This session no longer exists.")}</p>
   {:else}
     <div class="body">
       <section>
@@ -38,17 +39,17 @@
 
       {#each session.items as item (item.id)}
         <section class="item">
-          <h3>{item.kind === "approval" ? "Toestemming" : "Vraag"}</h3>
+          <h3>{item.kind === "approval" ? tr("Toestemming", "Permission") : tr("Vraag", "Question")}</h3>
           <p>{item.title}</p>
           {#if item.detail}<p class="faint small">{item.detail}</p>{/if}
           {#if item.kind === "approval"}
             <div class="buttons">
-              <button class="danger" onclick={() => act(() => companion.decide(session.id, item.id, false))}>Weiger</button>
+              <button class="danger" onclick={() => act(() => companion.decide(session.id, item.id, false))}>{tr("Weiger", "Deny")}</button>
               {#if item.canAllow}
-                <button class="primary" onclick={() => act(() => companion.decide(session.id, item.id, true))}>Sta toe</button>
+                <button class="primary" onclick={() => act(() => companion.decide(session.id, item.id, true))}>{tr("Sta toe", "Allow")}</button>
               {/if}
             </div>
-            {#if !item.canAllow}<p class="warn small">Dit is riskant of onbekend: toestaan kan alleen op je computer.</p>{/if}
+            {#if !item.canAllow}<p class="warn small">{tr("Dit is riskant of onbekend: toestaan kan alleen op je computer.", "This is risky or unknown: you can only allow it on your computer.")}</p>{/if}
           {:else if item.canAllow}
             <div class="options">
               {#each item.options as option (option)}
@@ -56,38 +57,38 @@
               {/each}
             </div>
             <div class="own">
-              <input placeholder="Eigen antwoord" bind:value={answers[item.id]} onkeydown={(e) => e.key === "Enter" && answer(item.id, answers[item.id] ?? "")} />
-              <button disabled={!answers[item.id]?.trim()} onclick={() => answer(item.id, answers[item.id] ?? "")}>Stuur</button>
+              <input placeholder={tr("Eigen antwoord", "Your own answer")} bind:value={answers[item.id]} onkeydown={(e) => e.key === "Enter" && answer(item.id, answers[item.id] ?? "")} />
+              <button disabled={!answers[item.id]?.trim()} onclick={() => answer(item.id, answers[item.id] ?? "")}>{tr("Stuur", "Send")}</button>
             </div>
           {:else}
-            <p class="warn small">Meerdere vragen tegelijk: beantwoord ze op je computer.</p>
+            <p class="warn small">{tr("Meerdere vragen tegelijk: beantwoord ze op je computer.", "Several questions at once: answer them on your computer.")}</p>
           {/if}
         </section>
       {/each}
 
       {#if session.excerpt}
         <section>
-          <h3>Laatste antwoord</h3>
+          <h3>{tr("Laatste antwoord", "Latest reply")}</h3>
           <p class="excerpt">{session.excerpt}</p>
         </section>
       {/if}
 
       <section>
-        <h3>Stuur een bericht</h3>
-        <textarea rows="3" placeholder="Bericht aan de agent" bind:value={message}></textarea>
-        <button class="primary send" disabled={!message.trim()} onclick={send}>Verstuur</button>
+        <h3>{tr("Stuur een bericht", "Send a message")}</h3>
+        <textarea rows="3" placeholder={tr("Bericht aan de agent", "Message to the agent")} bind:value={message}></textarea>
+        <button class="primary send" disabled={!message.trim()} onclick={send}>{tr("Verstuur", "Send")}</button>
       </section>
 
       {#if canStop(session.attention)}
         <section>
           {#if confirmStop}
-            <p>De sessie stoppen?</p>
+            <p>{tr("De sessie stoppen?", "Stop the session?")}</p>
             <div class="buttons">
-              <button onclick={() => (confirmStop = false)}>Annuleer</button>
-              <button class="danger" onclick={() => { confirmStop = false; act(() => companion.stop(session.id)); }}>Stop de sessie</button>
+              <button onclick={() => (confirmStop = false)}>{tr("Annuleer", "Cancel")}</button>
+              <button class="danger" onclick={() => { confirmStop = false; act(() => companion.stop(session.id)); }}>{tr("Stop de sessie", "Stop the session")}</button>
             </div>
           {:else}
-            <button class="danger wide" onclick={() => (confirmStop = true)}>Stop</button>
+            <button class="danger wide" onclick={() => (confirmStop = true)}>{tr("Stop", "Stop")}</button>
           {/if}
         </section>
       {/if}

@@ -3,6 +3,7 @@
   // een map naar keuze, en de terminal zelf. Met `folder` alleen de terminals van die map (een sessie), met de scripts
   // van het project (nook.json) en de dev-servers die daar luisteren.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toolEvents, toolsApi, type DevServer, type ProjectScript, type TerminalInfo } from "../../lib/workspace/api";
   import TerminalView from "./TerminalView.svelte";
@@ -96,7 +97,7 @@
 
 {#if !available}
   <div class="empty">
-    <p>Terminals draaien op je computer, niet op je telefoon.</p>
+    <p>{tr("Terminals draaien op je computer, niet op je telefoon.", "Terminals run on your computer, not on your phone.")}</p>
   </div>
 {:else}
   <div class="terminals">
@@ -106,16 +107,16 @@
           <div class="tab" class:on={shown?.id === t.id}>
             <button class="name" onclick={() => (selected = t.id)} title={t.command ?? t.origin}>
               <span class="dot {t.running ? 'working' : ''}"></span>{t.title}
-              {#if !t.running}<span class="faint">gestopt ({t.exitCode ?? "?"})</span>{/if}
+              {#if !t.running}<span class="faint">{tr("gestopt ({code})", "stopped ({code})", { code: t.exitCode ?? "?" })}</span>{/if}
               {#if t.owner}<span class="faint">· {t.owner.agent}</span>{/if}
             </button>
-            <button class="x" title="Sluit" onclick={() => close(t.id)}>✕</button>
+            <button class="x" title={tr("Sluit", "Close")} onclick={() => close(t.id)}>✕</button>
           </div>
         {/each}
       </div>
       {#if folder && scripts.length}
         <span class="pop">
-          <button class="ghost" title="Scripts van dit project (nook.json)" onclick={(e) => { e.stopPropagation(); scriptsOpen = !scriptsOpen; }}>▶</button>
+          <button class="ghost" title={tr("Scripts van dit project (nook.json)", "Scripts of this project (nook.json)")} onclick={(e) => { e.stopPropagation(); scriptsOpen = !scriptsOpen; }}>▶</button>
           {#if scriptsOpen}
             <div class="menu">
               {#each scripts as s (s.id)}<button title={s.command} onclick={() => run(s)}>{s.name}</button>{/each}
@@ -123,8 +124,8 @@
           {/if}
         </span>
       {/if}
-      <button class="ghost" onclick={() => open(folder ?? null)}>+ Nieuwe terminal</button>
-      {#if !folder}<button class="ghost" onclick={inFolder}>In map…</button>{/if}
+      <button class="ghost" onclick={() => open(folder ?? null)}>+ {tr("Nieuwe terminal", "New terminal")}</button>
+      {#if !folder}<button class="ghost" onclick={inFolder}>{tr("In map…", "In folder…")}</button>{/if}
     </div>
     {#if servers.length}
       <div class="servers">
@@ -138,9 +139,9 @@
       {#key shown.id}<TerminalView id={shown.id} />{/key}
     {:else}
       <div class="empty">
-        <p>Nog geen terminal open</p>
-        <p class="faint">Open een terminal in een map, of kies bij een agentsessie Open terminal. Inloggen bij een agent gebeurt hier ook.</p>
-        <button onclick={() => open(folder ?? null)}>Nieuwe terminal</button>
+        <p>{tr("Nog geen terminal open", "No terminal open yet")}</p>
+        <p class="faint">{tr("Open een terminal in een map, of kies bij een agentsessie Open terminal. Inloggen bij een agent gebeurt hier ook.", "Open a terminal in a folder, or choose Open terminal on an agent session. Signing in to an agent happens here too.")}</p>
+        <button onclick={() => open(folder ?? null)}>{tr("Nieuwe terminal", "New terminal")}</button>
       </div>
     {/if}
   </div>

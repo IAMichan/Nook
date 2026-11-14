@@ -1,25 +1,43 @@
 <script lang="ts">
-  // De chat: berichten met mee-scrollen, startvragen die bij het moment passen, en de eerste keer een welkomstkaart
-  // die naar de drie instelstappen leidt.
+  // The chat: messages that follow the answer down, and while it is empty Nook's home (`NookTab.emptyState` on the
+  // Mac): the date, a greeting that says how much waits for you, "For you" (the inbox's top rows), "Where things
+  // stand" (agents, calendar, music) and starters. The first time, a welcome card leads to the three setup steps.
   import { brainApi } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
-  import { english, tr } from "../lib/i18n.svelte";
+  import { locale, tr } from "../lib/i18n.svelte";
+  import { inbox } from "../lib/inbox.svelte";
+  import { registerInboxSources } from "../lib/inbox-sources";
+  import type { Target } from "../lib/inbox";
+  import { renderMarkdown } from "../lib/markdown";
   import Composer from "./Composer.svelte";
   import MessageView from "./MessageView.svelte";
   import Onboarding from "./Onboarding.svelte";
-  import Orb from "./Orb.svelte";
+  import ForYou from "./ForYou.svelte";
+  import HomeGlance from "./HomeGlance.svelte";
+  import StarterGrid from "./StarterGrid.svelte";
 
-  let { compact = false, autofocus = false, onattention }: { compact?: boolean; autofocus?: boolean; onattention?: () => void } = $props();
+  let { compact = false, autofocus = false, onopen }: { compact?: boolean; autofocus?: boolean; onopen?: (target: Target) => void } = $props();
   let scroller: HTMLDivElement;
   let starters = $state<string[]>([]);
   let onboarding = $state(false);
+  /// A note a "For you" row opened, read right here.
+  let reading = $state<{ title: string; markdown: string } | null>(null);
 
   const empty = $derived(!nook.active || nook.active.messages.length === 0);
   const welcome = $derived(!!nook.settings && !nook.settings.onboardingDone && !compact);
   const caps = $derived(nook.info?.capabilities);
+  // The home's rows and cards are for the main window; the bar has its own Home tab.
+  const home = $derived(!compact && !!onopen);
 
   $effect(() => {
     if (empty) brainApi.suggestions().then((s) => (starters = s)).catch(() => (starters = []));
+  });
+
+  $effect(() => {
+    if (!home) return;
+    registerInboxSources();
+    inbox.start();
+    return () => inbox.stop();
   });
 
   // Follow the answer down while it comes in, but only while the view is at the bottom: someone who scrolled up to
@@ -40,12 +58,34 @@
     if (atEnd) queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
-  // A calm greeting for the time of day, the date, and one line on what waits for the user.
-  const hour = new Date().getHours();
-  const greeting = $derived(hour < 6 ? tr("Goedenacht", "Good night") : hour < 12 ? tr("Goedemorgen", "Good morning") : hour < 18 ? tr("Goedemiddag", "Good afternoon") : tr("Goedenavond", "Good evening"));
-  const dateLine = $derived(new Date().toLocaleDateString(english() ? "en" : "nl", { weekday: "long", day: "numeric", month: "long" }));
-  const waiting = $derived(nook.waiting);
-  const attention = $derived(waiting === 1 ? tr("1 gesprek wacht op je", "1 conversation is waiting for you") : tr(`${waiting} gesprekken wachten op je`, `${waiting} conversations are waiting for you`));
+  // "Monday 19 October", then a calm greeting with how many things wait for you.
+  let now = $state(new Date());
+  $effect(() => {
+    const timer = setInterval(() => (now = new Date()), 60_000);
+    return () => clearInterval(timer);
+  });
+  const dateLine = $derived.by(() => {
+    const line = now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" });
+    return line.charAt(0).toLocaleUpperCase(locale()) + line.slice(1);
+  });
+  const forYou = $derived(home ? inbox.ranked.shown.slice(0, 6) : []);
+  const greeting = $derived.by(() => {
+    const hour = now.getHours();
+    const hello = hour < 6 ? tr("Goedenacht", "Good night") : hour < 12 ? tr("Goedemorgen", "Good morning") : hour < 18 ? tr("Goedemiddag", "Good afternoon") : tr("Goedenavond", "Good evening");
+    const n = forYou.length;
+    if (n === 0) return tr("{hello}. Niets dat op je wacht.", "{hello}. Nothing waiting for you.", { hello });
+    const what = [
+      tr("Eén ding", "One thing"), tr("Twee dingen", "Two things"), tr("Drie dingen", "Three things"),
+      tr("Vier dingen", "Four things"), tr("Vijf dingen", "Five things"),
+    ][n - 1] ?? tr("{n} dingen", "{n} things", { n });
+    return tr("{hello}. {what} voor je.", "{hello}. {what} for you.", { hello, what });
+  });
+
+  function open(target: Target | void) {
+    if (!target) return;
+    if (target.kind === "markdown") reading = { title: target.title, markdown: target.markdown };
+    else onopen?.(target);
+  }
 
   const lastId = $derived(nook.active?.messages[nook.active.messages.length - 1]?.id);
 </script>
@@ -53,11 +93,18 @@
 <div class="chat" class:compact>
   <div class="messages" bind:this={scroller} onscroll={onScroll}><div class="reading-column">
     {#if empty}
-      <div class="empty">
-        <div class="welcome-orb"><Orb size={compact ? 44 : 64} movable /></div>
-        <div class="greeting"><span class="eyebrow">{dateLine}</span><h1>{greeting}</h1><p>{tr("Denk het door. Maak een plan. Zet de volgende stap.", "Think it through. Make a plan. Take the next step.")}</p></div>
-        {#if waiting && !compact}
-          <button class="attention" onclick={() => onattention?.()}><span class="dot waiting"></span>{attention}<span class="go">{tr("Bekijk", "Review")} →</span></button>
+      <div class="empty" class:home>
+        {#if !compact}
+          <div class="hello">
+            <span class="date">{dateLine}</span>
+            <h1>{home ? greeting : tr("Waar kan ik mee helpen?", "What can I help with?")}</h1>
+          </div>
+        {/if}
+        {#if reading}
+          <div class="reading">
+            <div class="reading-head"><span class="label">{reading.title}</span><button class="ghost" onclick={() => (reading = null)}>{tr("Sluiten", "Close")}</button></div>
+            <div class="markdown">{@html renderMarkdown(reading.markdown)}</div>
+          </div>
         {/if}
         {#if welcome}
           <div class="welcome">
@@ -72,12 +119,21 @@
               <button class="primary" onclick={() => (onboarding = true)}>{tr("Nook instellen", "Set up Nook")}</button>
             </div>
           </div>
-        {:else}
+        {:else if compact}
           <p class="empty-note">{tr("Je tools en ideeën, één gesprek verderop.", "Your tools and ideas, one conversation away.")}</p>
         {/if}
-        <div class="starters">
-          {#each starters as s (s)}<button onclick={() => nook.ask(s)}>{s}</button>{/each}
-        </div>
+        {#if home && forYou.length}
+          <div class="section-label">{tr("Voor jou", "For you")}</div>
+          <ForYou items={forYou} onopen={open} />
+        {/if}
+        {#if home}
+          <div class="section-label">{tr("Zo staat het ervoor", "Where things stand")}</div>
+          <HomeGlance onopen={open} />
+        {/if}
+        {#if starters.length}
+          {#if !compact}<div class="section-label">{tr("Begin met", "Start with")}</div>{/if}
+          <StarterGrid {starters} {compact} onask={(s) => nook.ask(s)} />
+        {/if}
       </div>
     {:else}
       {#each nook.active!.messages as message (message.id)}
@@ -94,37 +150,28 @@
   .chat { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .messages { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 28px 32px; min-height: 0; overflow-wrap: anywhere; }
   .reading-column { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 760px; margin: 0 auto; }
-  .empty { flex: 1; padding: 32px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-  .starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 520px; }
-  .starters button { border-radius: var(--radius-card); font-size: 12px; padding: 14px 16px; text-align: left; background: transparent; color: var(--text2); line-height: 1.5; }
-  .starters button:hover { color: var(--paper); }
-  .welcome { width: 100%; max-width: 520px; border: 1px solid var(--line2); background: var(--graphite); border-radius: var(--radius); padding: 18px; line-height: 1.6; display: flex; flex-direction: column; gap: 8px; }
+  /* The empty chat reads from the top left, as on the Mac: date, greeting, then the sections 24 px apart. */
+  .empty { display: flex; flex-direction: column; align-items: stretch; padding: var(--space-24) 0 var(--space-8); }
+  .hello { display: flex; flex-direction: column; gap: var(--space-4); padding: 0 var(--space-2); }
+  .date { font: var(--text-label); color: var(--text3); }
+  h1 { margin: 0; font: var(--text-display); color: var(--paper); letter-spacing: -0.2px; }
+  .section-label { font: var(--text-label); color: var(--text3); padding: var(--space-24) var(--space-2) var(--space-8); }
+  .welcome { margin-top: var(--space-24); border: 1px solid var(--line2); background: var(--graphite); border-radius: var(--radius-panel); padding: 18px; line-height: 1.6; display: flex; flex-direction: column; gap: var(--space-8); }
   .welcome p { margin: 0; }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font: var(--text-detail); }
   dt { color: var(--text3); }
   dd { margin: 0; color: var(--text2); }
   dd.ok { color: var(--mint); }
-  .buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .buttons { display: flex; justify-content: flex-end; gap: var(--space-8); }
+  .reading { margin-top: var(--space-24); background: var(--field); border-radius: var(--radius-panel); padding: var(--space-12) var(--space-16); }
+  .reading-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-bottom: var(--space-8); }
+  .reading-head .label { font: var(--text-title); }
   .err { color: var(--coral); padding: 6px 0; }
-  .welcome-orb { padding: 12px; }
-  .greeting { text-align: center; }
-  .eyebrow { font-size: 12px; color: var(--text3); }
-  .attention { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--line2); color: var(--text2); font-size: 12px; }
-  .attention:hover { color: var(--paper); }
-  .attention .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex: none; }
-  .attention .go { color: var(--text3); }
-  h1 { font-size: clamp(24px, 3vw, 34px); font-weight: 550; letter-spacing: -1.1px; margin: 12px 0 10px; }
-  .greeting p, .empty-note { font-size: 12px; line-height: 1.6; color: var(--text2); margin: 0; text-align: center; }
-  .empty-note { display: none; }
+  .empty-note { font: var(--text-detail); color: var(--text2); margin: 0 0 var(--space-12); text-align: center; }
   .compact .messages { padding: 12px 16px; }
-  .compact .empty { padding: 8px 0; gap: 10px; }
-  .compact .greeting, .compact .welcome-orb { display: none; }
-  .compact .empty-note { display: block; }
-  .compact .starters { display: flex; flex-wrap: wrap; justify-content: center; }
-  .compact .starters button { padding: 6px 12px; border-radius: 999px; }
+  .compact .empty { padding: 8px 0; justify-content: center; flex: 1; }
   @media (max-width: 640px) {
     .messages { padding: 20px 16px; }
-    .empty { padding: 20px 0; }
-    .starters { grid-template-columns: minmax(0, 1fr); }
+    .empty { padding: var(--space-16) 0; }
   }
 </style>

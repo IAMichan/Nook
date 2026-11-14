@@ -2,6 +2,7 @@
   // Koppelen met een Mac of pc: de QR-code scannen (camera) of de link plakken.
   import { companion, looksLikePairingLink, type ClientView } from "../../lib/companion";
   import { nook } from "../../lib/state.svelte";
+  import { tr } from "../../lib/i18n.svelte";
 
   let { view, onchange }: { view: ClientView; onchange: (v: ClientView) => void } = $props();
   let text = $state("");
@@ -25,38 +26,37 @@
       let permission = await scanner.checkPermissions();
       if (permission !== "granted") permission = await scanner.requestPermissions();
       if (permission !== "granted") {
-        scanError = "Zonder toegang tot de camera kun je de link plakken.";
+        scanError = tr("Zonder toegang tot de camera kun je de link plakken.", "Without camera access you can paste the link.");
         return;
       }
       const result = await scanner.scan({ formats: [scanner.Format.QRCode], windowed: false });
       if (looksLikePairingLink(result.content)) await pair(result.content);
-      else scanError = "Dat is geen koppelcode van Nook.";
+      else scanError = tr("Dat is geen koppelcode van Nook.", "That's not a Nook pairing code.");
     } catch (e) {
-      scanError = `Scannen lukte niet: ${e}`;
+      scanError = tr("Scannen lukte niet: {error}", "Scanning didn't work: {error}", { error: String(e) });
     }
   }
 </script>
 
 <div class="pairing">
-  <h2>Koppel met je computer</h2>
+  <h2>{tr("Koppel met je computer", "Pair with your computer")}</h2>
   <p class="muted">
-    Zet op je Mac of pc in Nook › Instellingen de companion aan (op de Mac: iPhone-metgezel) en kies ‘Koppel een
-    telefoon’. Scan dan de code, of plak de link. Je telefoon en computer moeten op hetzelfde wifi zitten.
+    {tr("Zet op je Mac of pc in Nook › Instellingen de companion aan (op de Mac: iPhone-metgezel) en kies ‘Koppel een telefoon’. Scan dan de code, of plak de link. Je telefoon en computer moeten op hetzelfde wifi zitten.", "On your Mac or PC, turn on the companion in Nook › Settings (on the Mac: iPhone companion) and choose ‘Pair a phone’. Then scan the code, or paste the link. Your phone and computer must be on the same Wi-Fi.")}
   </p>
   {#if android}
-    <button class="primary big" onclick={scan} disabled={view.phase === "pairing"}>Scan de code</button>
+    <button class="primary big" onclick={scan} disabled={view.phase === "pairing"}>{tr("Scan de code", "Scan the code")}</button>
     {#if scanError}<p class="err">{scanError}</p>{/if}
   {/if}
   <label class="field">
-    <span class="faint">Link</span>
+    <span class="faint">{tr("Link", "Link")}</span>
     <textarea bind:value={text} rows="3" placeholder="nook://pair?…" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
   </label>
   <label class="field">
-    <span class="faint">Naam van deze telefoon</span>
+    <span class="faint">{tr("Naam van deze telefoon", "Name of this phone")}</span>
     <input bind:value={name} maxlength="60" />
   </label>
   <button class="big" disabled={!text.trim() || view.phase === "pairing"} onclick={() => pair(text)}>
-    {view.phase === "pairing" ? "Koppelen…" : "Koppel"}
+    {view.phase === "pairing" ? tr("Koppelen…", "Pairing…") : tr("Koppel", "Pair")}
   </button>
 </div>
 
