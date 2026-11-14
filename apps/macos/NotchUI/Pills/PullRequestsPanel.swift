@@ -415,7 +415,7 @@ struct PullRequestsPanel: View {
     }
 
     /// A group of rows under a heading: a symbol, the name and the count, and a chevron at the end; a click folds it
-    /// shut. The rows stand on the page itself, each with a soft fill under the pointer or while open. Heading and rows
+    /// shut. The rows stand on the page itself, a line between each two, each with a soft fill under the pointer or while open. Heading and rows
     /// are siblings in the list's lazy stack, so a long group is built only as far as you scroll.
     @ViewBuilder
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
@@ -446,6 +446,8 @@ struct PullRequestsPanel: View {
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
         if open {
             ForEach(rows) { row in
+                // A line between two pull requests, as on GitHub, so each one reads as its own item.
+                if row.id != rows.first?.id { NookRowSeparator() }
                 PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
                                selected: selected == row.item.id, stack: stacks[row.item.id], now: now) {
                     self.open(account, row.item)
