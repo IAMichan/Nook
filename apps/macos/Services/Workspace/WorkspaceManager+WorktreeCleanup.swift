@@ -224,12 +224,20 @@ extension WorktreeCleanupReport {
 }
 
 extension WorkspaceManager {
-    /// At most this often: each sweep lists the temporary folders, scratchpads and DerivedData.
-    private static let buildLeftoversInterval: TimeInterval = 6 * 60 * 60
+    /// At most this often: each sweep lists the temporary folders, scratchpads, DerivedData and the worktrees' build
+    /// folders. Hourly, so a settled session's build goes about an hour after it settled (`BuildLeftovers.settledAge`).
+    private static let buildLeftoversInterval: TimeInterval = 60 * 60
+
+    /// The session is done with its worktree for now: its pull request merged, or it was archived or marked finished.
+    func hasSettled(_ run: WorkspaceRun) -> Bool {
+        PullRequestSync.shared.merged(run.id) || run.prWatch?.state == "merged"
+            || run.archived || FinishedSessions.shared.contains(FinishedSessions.key(run: run))
+    }
 
     /// Builds agents left where removing a worktree does not reach (see `BuildLeftovers`), and the installed
     /// dependencies of worktrees nobody used for a week. Every removal lands in the audit log. `force` skips the
-    /// interval (the disk runs low); `done` gets the bytes freed.
+    /// interval (the disk runs low), and then the build output of every worktree nothing works in right now goes after
+    /// an hour, not only a settled session's; `done` gets the bytes freed.
     func sweepBuildLeftovers(now: Date = Date(), force: Bool = false, done: ((Int64) -> Void)? = nil) {
         guard settings.buildLeftoverCleanup else { done?(0); return }
         if !force, let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
@@ -241,9 +249,18 @@ extension WorkspaceManager {
         let containers = [(settings.worktreeRoot, 2)] + Set(local.compactMap(\.repoRoot)).map { ($0 + "/.claude/worktrees", 1) }
         // In use within a week: a session runs or ran there, or a terminal is open there. Everything else is idle.
         let recent = now.addingTimeInterval(-BuildLeftovers.idleAge)
+        let terminals = openTerminalFolders?() ?? []
         let busy = local.filter { $0.status.isActive || processes[$0.id] != nil || $0.updatedAt > recent }
             .flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
-            + (openTerminalFolders?() ?? [])
+            + terminals
+        // Working right now: a turn or the agent's process, or a terminal open there.
+        let working = local.filter { $0.status.isActive || processes[$0.id] != nil }
+        let workingIDs = Set(working.map(\.id))
+        // A settled session's worktree, unless a session that is not settled (or is working) or a terminal holds it.
+        let settledPaths = local.filter { hasSettled($0) }.compactMap(\.worktreePath)
+        let unsettled = local.filter { !hasSettled($0) || workingIDs.contains($0.id) }
+            .flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) } + terminals
+        let workingNow = working.flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) } + terminals
         let mainCheckouts = Set(local.compactMap(\.repoRoot).map(WorkspacePathPolicy.normalize))
         Task.detached(priority: .background) { [weak self] in
             // One pool for the whole sweep: Foundation's path calls autorelease, and a task's thread may not drain them
@@ -259,7 +276,18 @@ extension WorkspaceManager {
                 }
                 let held = BuildLeftovers.heldFolders(busy)
                 let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, held: held, mainCheckouts: mainCheckouts) }
-                return BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
+                // Low on disk: every worktree nothing works in counts as settled; otherwise only a settled session's.
+                let settled: [URL]
+                if force {
+                    let heldNow = BuildLeftovers.heldFolders(workingNow)
+                    settled = worktrees.filter { BuildLeftovers.isIdle($0.path, held: heldNow, mainCheckouts: mainCheckouts) }
+                } else {
+                    let heldUnsettled = BuildLeftovers.heldFolders(unsettled)
+                    settled = settledPaths.map { URL(fileURLWithPath: $0) }
+                        .filter { BuildLeftovers.isIdle($0.path, held: heldUnsettled, mainCheckouts: mainCheckouts) }
+                }
+                return BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle),
+                                                      settledWorktrees: settled))
             }
             await MainActor.run { [weak self] in
                 for item in removed {
