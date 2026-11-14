@@ -836,6 +836,9 @@ struct BrowserView: View {
                     ToolbarIconButton(store.loading ? "xmark" : "arrow.clockwise", tr(store.loading ? "a11y.stopLoading" : "a11y.reload")) {
                         if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
                     }
+                    // Select an element: lit while on, the page highlights what the pointer is on.
+                    ToolbarIconButton("cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
+                                      enabled: store.webView.url != nil, selected: picking) { annotate() }
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(icon: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
@@ -854,8 +857,6 @@ struct BrowserView: View {
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
-                ToolbarIconButton(picking ? "xmark.circle" : "cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
-                                  enabled: store.webView.url != nil) { annotate() }
                 if session != nil {
                     ToolbarIconButton("text.badge.plus", tr("browser.addPage"), enabled: store.webView.url != nil && !asking) { addPage() }
                 }
