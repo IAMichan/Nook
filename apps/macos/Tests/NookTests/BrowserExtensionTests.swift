@@ -359,4 +359,48 @@ final class BrowserExtensionTests: XCTestCase {
         // Another machine never reaches the user's browser.
         XCTAssertFalse(RemoteBridge.allows(.nookUse))
     }
+
+    // MARK: - The look the side panel draws
+
+    func testTheLookCarriesTheChosenThemesColorsAndAccent() throws {
+        var choice = NookThemeChoice(mode: .system, darkTheme: "midnight", lightTheme: "paper")
+        choice.overrides.set("canvas", to: 0x123456, dark: true)
+        let look = BrowserExtensionLook.payload(choice: choice, themes: NookColorTheme.builtIn, accent: 0xF4F3F7,
+                                                defaultAccent: 0xF4F3F7, density: .compact, diffColors: .redGreen)
+        XCTAssertEqual(look["appearance"] as? String, "system")
+        XCTAssertEqual(look["density"] as? String, "compact")
+        XCTAssertEqual(look["textScale"] as? Double, NookDensity.compact.textScale)
+        let dark = try XCTUnwrap(look["dark"] as? [String: String])
+        let light = try XCTUnwrap(look["light"] as? [String: String])
+        // A color set one by one lies over the theme; the rest is the theme's own.
+        XCTAssertEqual(dark["canvas"], "#123456")
+        XCTAssertEqual(dark["paper"], NookColor.string(try XCTUnwrap(NookColorTheme.midnight.dark).paper))
+        XCTAssertEqual(light["canvas"], NookColor.string(try XCTUnwrap(NookColorTheme.paper.light).canvas))
+        // The default accent is each theme's own.
+        XCTAssertEqual(dark["accent"], NookColor.string(try XCTUnwrap(NookColorTheme.midnight.dark).accent))
+        XCTAssertEqual(light["accent"], NookColor.string(try XCTUnwrap(NookColorTheme.paper.light).accent))
+        // Every token goes along, each as #RRGGBB and nothing else.
+        for side in [dark, light] {
+            for token in BrowserExtensionLook.tokens { XCTAssertNotNil(side[token.css], token.css) }
+            for (name, value) in side {
+                XCTAssertNotNil(value.range(of: "^#[0-9A-F]{6}$", options: .regularExpression), "\(name): \(value)")
+            }
+        }
+    }
+
+    func testAChosenAccentShowsInBothAppearancesWithReadableTextOnIt() throws {
+        let look = BrowserExtensionLook.payload(choice: NookThemeChoice(), themes: NookColorTheme.builtIn, accent: 0x2F5BD3,
+                                                defaultAccent: 0xF4F3F7, density: .comfortable, diffColors: .blueOrange)
+        let dark = try XCTUnwrap(look["dark"] as? [String: String])
+        let light = try XCTUnwrap(look["light"] as? [String: String])
+        XCTAssertEqual(dark["accent"], "#2F5BD3")
+        XCTAssertEqual(light["accent"], "#2F5BD3")
+        XCTAssertEqual(dark["on-accent"], "#FFFFFF")
+        // Soft white (Nook's own accent in dark) takes dark text.
+        let nook = BrowserExtensionLook.payload(choice: NookThemeChoice(), themes: NookColorTheme.builtIn, accent: 0xF4F3F7,
+                                                defaultAccent: 0xF4F3F7, density: .comfortable, diffColors: .redGreen)
+        XCTAssertEqual((nook["dark"] as? [String: String])?["on-accent"], "#0B0B0D")
+        // Blue and orange diff colors follow the setting.
+        XCTAssertEqual(dark["added"], NookColor.string(NookPalette.nookDark.blue))
+    }
 }
