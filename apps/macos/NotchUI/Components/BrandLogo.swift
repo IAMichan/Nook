@@ -120,15 +120,30 @@ struct BrandMark: View {
     var size: CGFloat = 14
 
     var body: some View {
+        let paths = Self.paths(logo)
+        let style = logo.style
         Canvas { context, canvas in
             let scale = min(canvas.width, canvas.height) / 24
             let origin = CGPoint(x: (canvas.width - 24 * scale) / 2, y: (canvas.height - 24 * scale) / 2)
-            let point: (CGFloat, CGFloat) -> CGPoint = { CGPoint(x: origin.x + $0 * scale, y: origin.y + $1 * scale) }
-            for path in logo.paths(point) {
-                context.fill(path, with: .style(logo.style), style: FillStyle(eoFill: true))
+            // The same point as `origin + grid point * scale`: every mark is built from points alone (no radius or
+            // width), so scaling the path on the 24×24 grid draws exactly what building it at this size did.
+            let place = CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: origin.x, ty: origin.y)
+            for path in paths {
+                context.fill(path.applying(place), with: .style(style), style: FillStyle(eoFill: true))
             }
         }
         .frame(width: size, height: size)
+    }
+
+    /// Each brand's paths on the 24×24 grid, built once: a mark has up to hundreds of segments, and building them for
+    /// every draw of every mark (a list of sessions, a model menu) cost more than drawing them.
+    @MainActor private static var gridPaths: [BrandLogo: [Path]] = [:]
+
+    @MainActor private static func paths(_ logo: BrandLogo) -> [Path] {
+        if let cached = gridPaths[logo] { return cached }
+        let made = logo.paths { CGPoint(x: $0, y: $1) }
+        gridPaths[logo] = made
+        return made
     }
 }
 

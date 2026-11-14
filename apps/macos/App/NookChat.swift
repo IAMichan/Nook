@@ -229,10 +229,29 @@ struct Conversation: Identifiable, ConversationListItem {
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
         // One line for a notification or the strip: the citations' numbers mean nothing there.
-        let sample = String(Citations.sanitize(last.text, valid: []).prefix(240)).replacingOccurrences(of: "\n", with: " ")
+        let sample = Self.withoutCitations(last.text, keeping: 240).replacingOccurrences(of: "\n", with: " ")
         let cleaned = String(sample.unicodeScalars.filter { !Self.markdownStripSet.contains($0) })
             .trimmingCharacters(in: .whitespaces)
         return String(cleaned.prefix(80))
+    }
+
+    /// The first `length` characters of `text` with every citation taken out, as `Citations.sanitize` of the whole text
+    /// gives them. Only its start is read: the preview keeps 80 characters, and running the citation search over a long
+    /// answer on every redraw of a list cost far more than that. The start is cut before its last "[", so a citation is
+    /// never cut in half (its digits would be left behind); a citation holds no "[", so every one before the cut is
+    /// whole. The spaces before the cut go too, since a citation after it would take them out. When the citations took
+    /// out so much that fewer than `length` characters are left, the whole text is read.
+    static func withoutCitations(_ text: String, keeping length: Int) -> String {
+        var head = text.prefix(length + 160)
+        if head.endIndex < text.endIndex {
+            if let open = head.lastIndex(of: "[") { head = head[..<open] }
+            // A citation taken out takes the spaces before it along: they may belong to one after the cut.
+            while head.last == " " { head = head.dropLast() }
+        }
+        guard head.endIndex < text.endIndex else { return String(Citations.sanitize(text, valid: []).prefix(length)) }
+        let clean = Citations.sanitize(String(head), valid: [])
+        guard clean.count > length else { return String(Citations.sanitize(text, valid: []).prefix(length)) }
+        return String(clean.prefix(length))
     }
 
     /// Extracts a concise title from the initial user prompt.
@@ -292,12 +311,80 @@ final class NookChat: ObservableObject {
 
     /// The list as shown: with a search, and optionally the archive instead.
     func list(query: String, showArchived: Bool) -> [Conversation] {
-        ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
+        guard query.isEmpty else {
+            return ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
+        }
+        let order = listOrder()
+        let ids = showArchived ? order.archived() : order.active
+        guard !ids.isEmpty else { return [] }
+        let byID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
     }
 
     /// How many `list` would give, without sorting them: the archive shelf shows its count while it is closed.
     func count(query: String, showArchived: Bool) -> Int {
-        ConversationList.matching(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived).count
+        guard query.isEmpty else {
+            return ConversationList.matching(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived).count
+        }
+        let order = listOrder()
+        return showArchived ? order.archivedCount : order.active.count
+    }
+
+    /// What decides a conversation's place in the list without a search: whether it is listed, archived or pinned, and
+    /// when it was last touched. A streamed chunk changes none of these (`update` leaves `updated` alone while streaming).
+    /// Sorted by `ConversationList` itself, so the order is the one a search-less `visible` gives.
+    private struct ListSlot: Equatable, ConversationListItem {
+        let id: UUID
+        let listed: Bool
+        let archived: Bool
+        let pinned: Bool
+        let updated: Date
+        var title: String { "" }
+        var preview: String { "" }
+        var busy: Bool { false }
+    }
+
+    /// The order of the list without a search, kept until a conversation's place in it changes (`ListSlot`). The list,
+    /// the count of the archive and the ring around Nook ask for it on every redraw, and `conversations` publishes for
+    /// every streamed chunk: filtering and sorting every conversation each time was most of what drawing the list cost.
+    /// The ids are kept, not the conversations, so what a row shows (its preview, its status) is always the latest.
+    private final class ListOrder {
+        let slots: [ListSlot]
+        let active: [UUID]
+        let archivedCount: Int
+        private var sortedArchive: [UUID]?
+        private let sortArchive: () -> [UUID]
+
+        init(slots: [ListSlot], active: [UUID], archivedCount: Int, sortArchive: @escaping () -> [UUID]) {
+            self.slots = slots
+            self.active = active
+            self.archivedCount = archivedCount
+            self.sortArchive = sortArchive
+        }
+
+        /// The archive (up to 500) is sorted only once something shows it.
+        func archived() -> [UUID] {
+            if let sortedArchive { return sortedArchive }
+            let sorted = sortArchive()
+            sortedArchive = sorted
+            return sorted
+        }
+    }
+    private var listOrderMemo: ListOrder?
+
+    private func listOrder() -> ListOrder {
+        let slots = conversations.map {
+            ListSlot(id: $0.id, listed: !$0.isEmpty || $0.busy, archived: $0.archived, pinned: $0.pinned, updated: $0.updated)
+        }
+        if let memo = listOrderMemo, memo.slots == slots { return memo }
+        let listed = slots.filter(\.listed)
+        let active = ConversationList.visible(listed, query: "", showArchived: false).map(\.id)
+        let archivedCount = listed.lazy.filter(\.archived).count
+        let memo = ListOrder(slots: slots, active: active, archivedCount: archivedCount) {
+            ConversationList.visible(listed, query: "", showArchived: true).map(\.id)
+        }
+        listOrderMemo = memo
+        return memo
     }
 
     var hasArchived: Bool { conversations.contains { $0.archived && !$0.isEmpty } }

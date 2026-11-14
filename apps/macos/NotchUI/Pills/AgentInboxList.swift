@@ -33,6 +33,10 @@ struct AgentInboxList: View {
     @State private var clickedID: String?
     /// The past sessions by id, made again only when the history changes (`pastSession`).
     @State private var pastIndex = PastSessionIndex()
+    /// The sections, folders and shown order, made again only when what they come from changed (`listLayout`).
+    @State private var layoutMemo = InboxListMemo()
+    /// Each row's pull request badges, made again only when the pull requests or the row's own sources changed.
+    @State private var pullRequestMemo = InboxPullRequestMemo()
     /// ⌘ held for a moment: the first nine rows show the ⌘-number that opens them.
     @StateObject private var commandHold = CommandHoldMonitor()
     /// The list has the keyboard (F6): ↑/↓ move `keyRow` without opening it, Return opens it, ←/→ fold and unfold.
@@ -51,10 +55,15 @@ struct AgentInboxList: View {
     @State private var projectName = ""
     /// The favorite (pinned) and archived projects shape the folders.
     @ObservedObject private var projectSettings = WorkspaceSettings.shared
-    /// The height of each docked shelf's rows, so the shelf is as tall as they are (`dockedShelf`).
+    /// The height each docked shelf shows, its rows' height up to its limit (`dockedShelf`). Written only when that
+    /// changes: the raw heights are measured on every frame of a resize or an animation and kept in `measures`.
     @State private var shelfHeights: [InboxSection.Kind: CGFloat] = [:]
-    /// The height of the list with its docked shelves, so the Working shelf can grow with the sessions at work.
-    @State private var listHeight: CGFloat = 0
+    /// How tall the Working shelf may grow (`shelfLimit`), from the height of the list with its docked shelves, so it
+    /// can grow with the sessions at work. Written only when it changes, like `shelfHeights`.
+    @State private var workingLimit: CGFloat = AgentInboxList.shelfMaxHeight
+    /// The latest raw height of each shelf's rows, read during layout without redrawing the list (as
+    /// `PanelView.measuredWidth`), so a new Working limit can resize the shelf without a new measure.
+    @State private var measures = InboxMeasures()
     private static let shelfMaxHeight: CGFloat = 280
     /// The share of the list the Working shelf may take when more sessions work than fit in `shelfMaxHeight`.
     private static let workingShelfShare: CGFloat = 0.6
@@ -87,12 +96,66 @@ struct AgentInboxList: View {
         item.id.hasPrefix("run:") ? UUID(uuidString: String(item.id.dropFirst(4))) : nil
     }
 
+    /// The sections and their order, as `body` draws them. The list redraws up to four times a second while agents work
+    /// (every change of the app model) and every 30 seconds for the clock, but the layout changes far less often: it is
+    /// made again only when a row as the inbox sees it (`InboxRow`), a session's own fields, or one of the choices that
+    /// shape the list (pins, search, folds, folders, the settled page, the open session, the clock) changed.
+    private func listLayout() -> InboxListMemo.Layout {
+        let rows = (items + past).map(row)
+        let key = InboxListMemo.Key(
+            items: items, past: past, rows: rows, state: store.state, query: store.query, showWorking: store.showWorking,
+            now: now, settledLimit: settledLimit, current: current, groupByProject: store.groupByProject,
+            pinnedProjects: pinnedProjects, archivedProjects: archivedProjects, projects: projectFolders,
+            collapsedShelves: store.collapsedShelves, collapsedProjects: store.collapsedProjects,
+            openedThreads: store.openedThreads, foldedThreads: store.foldedThreads)
+        return layoutMemo.layout(for: key) {
+            let byID = Dictionary((items + past).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let visible = InboxSearch.filter(rows: rows, query: key.query)
+            let sections = InboxLayout.sections(rows: visible, state: key.state, showWorking: key.showWorking, now: key.now,
+                                                settledLimit: key.settledLimit, selectedID: key.current)
+            let groups = key.groupByProject
+                ? InboxLayout.projectGroups(sections, pinned: key.pinnedProjects, archived: key.archivedProjects) : []
+            return InboxListMemo.Layout(byID: byID, rows: rows, sections: sections, groups: groups, projects: key.projects,
+                                        shown: shownIDs(sections, groups: groups))
+        }
+    }
+
+    /// What every row's pull request badges are read from, compared once per redraw (`InboxPullRequestMemo`).
+    private var pullRequestSources: InboxPullRequestMemo.Sources {
+        InboxPullRequestMemo.Sources(
+            links: pullRequests.links, folderLinks: pullRequests.folderLinks, earlier: pullRequests.earlier,
+            added: pullRequests.added, dismissed: pullRequests.dismissed, statuses: pullRequestStatuses.statuses)
+    }
+
+    /// A row's pull request badges (`sessionPullRequests`), kept per row until the pull requests or what the row reads
+    /// them from changed: working them out filters and sorts the links, and for a session Nook does not run looks the
+    /// session up and searches its last reply for a link, for every row on every redraw.
+    private func pullRequestBadges(_ item: AgentListItem) -> SessionPullRequests {
+        var key = InboxPullRequestMemo.RowKey(branch: item.branch, path: item.path)
+        if let id = runID(item) {
+            let run = app.workspace.run(id)
+            key.watch = run?.prWatch
+            key.watches = run?.prWatches ?? []
+            key.opened = app.workspace.openPullRequests[id]
+            let events = app.workspace.events[id]
+            key.events = events?.count ?? 0
+            key.lastEvent = events?.last?.id
+        } else if item.id.hasPrefix("past:") {
+            key.reply = pastSession(item.id)?.lastReply
+        } else {
+            key.reply = pullRequestMemo.hubReply(item.id) {
+                Dictionary(app.hub.sessions.map { ($0.id, $0.lastReply) }, uniquingKeysWith: { first, _ in first })
+            }
+        }
+        return pullRequestMemo.badges(item.id, key: key) { sessionPullRequests(item, reply: key.reply) }
+    }
+
     /// The pull requests of a row, for its badge and the card that badge opens on hover: the ones the branch sync found for
     /// the session's branch (a session Nook runs by id, any other by folder), and for a session Nook runs also the ones of
     /// the branches and worktrees it worked on before, so a pull request it opened stays in view after it moved on. Until
     /// the sync has found one, the pull request the chat itself shows: the same one as the tray above its composer. Like
     /// that tray, the ones it works on besides its branches' (linked, or opened elsewhere and watched) count too.
-    private func sessionPullRequests(_ item: AgentListItem) -> SessionPullRequests {
+    private func sessionPullRequests(_ item: AgentListItem, reply: String?) -> SessionPullRequests {
         if let id = runID(item) {
             let earlier = pullRequestStatuses.current(pullRequests.earlier[id] ?? [])
             // An earlier branch's own request stays under that heading, not with these.
@@ -109,9 +172,7 @@ struct AgentInboxList: View {
            let links = pullRequests.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)], !links.isEmpty {
             return SessionPullRequests(current: pullRequestStatuses.current(links))
         }
-        let reply = item.id.hasPrefix("past:")
-            ? pastSession(item.id)?.lastReply
-            : app.hub.sessions.first { $0.id == item.id }?.lastReply
+        // The session's last reply, as `pullRequestBadges` read it: an earlier session's, or the running one's.
         let printed = reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
         return SessionPullRequests(current: pullRequestStatuses.current(printed))
     }
@@ -148,17 +209,15 @@ struct AgentInboxList: View {
     // MARK: Body
 
     var body: some View {
-        let all = items + past
-        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let rows = all.map(row)
-        let visible = InboxSearch.filter(rows: rows, query: store.query)
-        let sections = InboxLayout.sections(rows: visible, state: store.state, showWorking: store.showWorking, now: now,
-                                            settledLimit: settledLimit, selectedID: current)
-        let groups = store.groupByProject
-            ? InboxLayout.projectGroups(sections, pinned: pinnedProjects, archived: archivedProjects) : []
-        let projects = projectFolders
+        let layout = listLayout()
+        let byID = layout.byID
+        let rows = layout.rows
+        let sections = layout.sections
+        let groups = layout.groups
+        let projects = layout.projects
         // The rows as shown, top to bottom (a folded shelf only with the open session): what select all and a ⇧-click range go by.
-        let shown = shownIDs(sections, groups: groups)
+        let shown = layout.shown
+        let _ = pullRequestMemo.begin(pullRequestSources)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
@@ -228,7 +287,7 @@ struct AgentInboxList: View {
                     dockedShelf(section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredList($0) }
             .overlay(alignment: .bottom) { undoNotice }
             .animation(NookTheme.reveal, value: store.canUndo)
             if selection.isActive {
@@ -592,12 +651,36 @@ struct AgentInboxList: View {
                 // As tall as its rows, up to its limit (`shelfLimit`), then it scrolls. Measured: a flexible scroll view
                 // would take the whole limit and leave a gap between the header and a single row.
                 ScrollView(showsIndicators: false) {
-                    list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shelfHeights[section.kind] = $0 }
+                    list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredShelf(section.kind, $0) }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfLimit(section.kind, listHeight: listHeight)))
+                .frame(height: shelfHeights[section.kind] ?? 0)
             }
         }
+    }
+
+    /// The list was measured: the Working shelf's limit is written (and redraws the list) only when it changed, which
+    /// it does not while the list is shorter than the shelf's own maximum allows for.
+    private func measuredList(_ height: CGFloat) {
+        let limit = Self.shelfLimit(.working, listHeight: height).rounded(.down)
+        guard limit != workingLimit else { return }
+        workingLimit = limit
+        showShelfHeight(.working)
+    }
+
+    /// A shelf's rows were measured: the height it shows is written only when it changed.
+    private func measuredShelf(_ kind: InboxSection.Kind, _ height: CGFloat) {
+        measures.shelves[kind] = height
+        showShelfHeight(kind)
+    }
+
+    /// The height a shelf shows: its rows' height up to its limit, then it scrolls. Rounded up to a whole point, so a
+    /// row that grows by a fraction during an animation does not write it on every frame, and never cuts a row short.
+    private func showShelfHeight(_ kind: InboxSection.Kind) {
+        guard let raw = measures.shelves[kind] else { return }
+        let limit = kind == .working ? workingLimit : Self.shelfMaxHeight
+        let height = min(raw.rounded(.up), limit)
+        if shelfHeights[kind] != height { shelfHeights[kind] = height }
     }
 
     private func shelfHeader(_ section: InboxSection) -> some View {
@@ -685,7 +768,7 @@ struct AgentInboxList: View {
                     onSnoozeCustom: isRun ? { customSnooze = item } : nil,
                     onSettleSweep: { ids in sweepSettle(ids, unsettle: entry.row.settled, byID: byID) },
                     onWakeSweep: isRun && snoozeActive ? { ids in sweepWake(ids, byID: byID) } : nil),
-                pullRequests: sessionPullRequests(item),
+                pullRequests: pullRequestBadges(item),
                 jumpHint: jumpNumber(item.id),
                 keyFocused: listFocused && keyRow == item.id,
                 sweepOrigin: sweep.origin == item.id,
@@ -1375,6 +1458,114 @@ final class PastSessionIndex {
             }
         }
         return byKey["\(agent):\(id)"]
+    }
+}
+
+/// Shelf heights read during layout without redrawing the list that holds them (see `AgentInboxList.measures`).
+@MainActor
+private final class InboxMeasures {
+    var shelves: [InboxSection.Kind: CGFloat] = [:]
+}
+
+/// The Agents list's layout with what it was made from (`AgentInboxList.listLayout`). Held as a reference in `@State`, so
+/// keeping it redraws nothing. The key holds everything the layout reads; a change to any of it makes the layout again.
+@MainActor
+final class InboxListMemo {
+    struct Key: Equatable {
+        /// The sessions themselves: a row draws its item, so another branch or line count is a new layout too.
+        let items: [AgentListItem]
+        let past: [AgentListItem]
+        /// The rows as the inbox decisions see them (pins, finished marks, queued messages are read into these).
+        let rows: [InboxRow]
+        let state: InboxState
+        let query: String
+        let showWorking: Bool
+        let now: Date
+        let settledLimit: Int
+        let current: String
+        let groupByProject: Bool
+        let pinnedProjects: [String]
+        let archivedProjects: Set<String>
+        let projects: [String: String]
+        let collapsedShelves: Set<InboxSection.Kind>
+        let collapsedProjects: Set<String>
+        let openedThreads: Set<String>
+        let foldedThreads: Set<String>
+    }
+
+    struct Layout {
+        let byID: [String: AgentListItem]
+        let rows: [InboxRow]
+        let sections: [InboxSection]
+        let groups: [InboxProjectGroup]
+        let projects: [String: String]
+        let shown: [String]
+    }
+
+    private var key: Key?
+    private var layout: Layout?
+
+    func layout(for key: Key, make: () -> Layout) -> Layout {
+        if let layout, self.key == key { return layout }
+        let made = make()
+        self.key = key
+        layout = made
+        return made
+    }
+}
+
+/// Each row's pull request badges with what they were made from (`AgentInboxList.pullRequestBadges`). What all rows
+/// read (the branch sync and the newest statuses) is compared once per redraw (`begin`) and forgets every row when it
+/// changed; what one row reads (its watches and conversation, or the reply it printed) is that row's own key.
+@MainActor
+final class InboxPullRequestMemo {
+    struct Sources: Equatable {
+        let links: [UUID: [PullRequestLink]]
+        let folderLinks: [String: [PullRequestLink]]
+        let earlier: [UUID: [PullRequestLink]]
+        let added: [String: [PullRequestLink]]
+        let dismissed: [String: Set<String>]
+        let statuses: [String: PullRequestStatus]
+    }
+
+    struct RowKey: Equatable {
+        var branch: String?
+        var path: String
+        /// A session Nook runs: the pull requests it watches, the one it opened, and how far its conversation got.
+        var watch: PullRequestWatch? = nil
+        var watches: [PullRequestWatch] = []
+        var opened: URL? = nil
+        var events = 0
+        var lastEvent: UUID? = nil
+        /// Any other session: its last reply, which may print a link.
+        var reply: String? = nil
+    }
+
+    private var sources: Sources?
+    private var rows: [String: (key: RowKey, badges: SessionPullRequests)] = [:]
+    /// The running sessions' last replies by id, made at most once per redraw instead of a search of every session per row.
+    private var replies: [String: String]?
+
+    /// A redraw of the list starts: forgets every row when what they all read changed.
+    func begin(_ sources: Sources) {
+        replies = nil
+        guard sources != self.sources else { return }
+        self.sources = sources
+        rows = [:]
+    }
+
+    func hubReply(_ id: String, sessions: () -> [String: String]) -> String? {
+        if let replies { return replies[id] }
+        let made = sessions()
+        replies = made
+        return made[id]
+    }
+
+    func badges(_ id: String, key: RowKey, make: () -> SessionPullRequests) -> SessionPullRequests {
+        if let hit = rows[id], hit.key == key { return hit.badges }
+        let made = make()
+        rows[id] = (key, made)
+        return made
     }
 }
 
