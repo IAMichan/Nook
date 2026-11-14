@@ -478,7 +478,7 @@ struct ColorTokensSettings: View {
             }
             Picker(selection: $group) {
                 ForEach(NookColorToken.Group.allCases) { item in
-                    let changed = tokens(in: item).filter { overrides[$0.id] != nil }.count
+                    let changed = tokens(in: item).count(where: { overrides[$0.id] != nil })
                     Text(changed > 0
                          ? "\(tr("colors.group.\(item.rawValue)")) · \(tr("colors.changed", changed))"
                          : tr("colors.group.\(item.rawValue)"))

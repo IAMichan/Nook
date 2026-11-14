@@ -924,7 +924,7 @@ struct ChatsTab: View {
 
     private func makeViewCounts() -> [ChatsView: Int] {
         var counts: [ChatsView: Int] = [:]
-        for item in ChatsView.allCases { counts[item] = inApp.filter { item.shows($0.read) }.count }
+        for item in ChatsView.allCases { counts[item] = inApp.count(where: { item.shows($0.read) }) }
         return counts
     }
 

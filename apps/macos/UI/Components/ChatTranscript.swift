@@ -1005,7 +1005,7 @@ enum ChatAddressMenu {
 
     static func entries(for text: String) -> [NookMenuEntry] {
         let addresses = ChatFormat.addresses(text).prefix(limit)
-        let links = addresses.filter { $0.kind == .link }.count
+        let links = addresses.count(where: { $0.kind == .link })
         let mails = addresses.count - links
         return addresses.map { address in
             let text = address.text

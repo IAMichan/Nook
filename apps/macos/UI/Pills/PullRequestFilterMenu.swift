@@ -58,7 +58,7 @@ struct PullRequestFilterMenu: View {
         return filter.activeCount + typed.labels.count + typed.excludedLabels.count + typed.excludedRepos.count
             + [typed.author != nil && filter.author == nil, typed.draft != nil && filter.draft == .all,
                typed.review != nil && filter.review == .all, typed.checks != nil && filter.status == .any,
-               typed.repo != nil && filter.repo == nil].filter { $0 }.count
+               typed.repo != nil && filter.repo == nil].count(where: { $0 })
     }
 
     var body: some View {

@@ -302,7 +302,7 @@ extension AccountTag {
     }
 
     static func sharesAgent(_ profile: AgentProfile, linked: [AgentProfile]) -> Bool {
-        linked.filter { $0.kind == profile.kind && ($0.isEnabled || $0.id == profile.id) }.count > 1
+        linked.count(where: { $0.kind == profile.kind && ($0.isEnabled || $0.id == profile.id) }) > 1
     }
 }
 #endif

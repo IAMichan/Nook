@@ -35,7 +35,7 @@ struct PlanReview: View {
 
     /// Steps that went through. The per-step lines already say what happened, so a finished plan needs no repeat below.
     private var succeeded: Int {
-        message.actions.indices.filter { state($0).result != nil }.count
+        message.actions.indices.count(where: { state($0).result != nil })
     }
 
     private var finished: Bool {

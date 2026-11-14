@@ -30,7 +30,7 @@ struct Locator {
         return found.first
     }
 
-    @MainActor func count() -> Int { screen.elements().filter(match).filter { screen.isOnScreen($0) }.count }
+    @MainActor func count() -> Int { screen.elements().filter(match).count(where: { screen.isOnScreen($0) }) }
 
     /// Presses the element as VoiceOver does (`accessibilityPerformPress`). A missing element means the scenario could
     /// not run, not that the behavior is broken.

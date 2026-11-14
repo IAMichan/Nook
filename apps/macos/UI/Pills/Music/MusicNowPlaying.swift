@@ -252,7 +252,7 @@ private struct MusicTrackAbout: View {
         }
         facts.artistSeconds = artists[artist] ?? 0
         if facts.artistSeconds > 0 {
-            let rank = artists.values.filter { $0 > facts.artistSeconds }.count + 1
+            let rank = artists.values.count(where: { $0 > facts.artistSeconds }) + 1
             facts.artistRank = rank <= 10 ? rank : nil
         }
         return facts

@@ -88,7 +88,7 @@ struct NoticeLog: Equatable {
     private(set) var entries: [NoticeEntry] = []
 
     /// The entries you have not seen in the history yet.
-    var unseen: Int { entries.filter { !$0.seen }.count }
+    var unseen: Int { entries.count(where: { !$0.seen }) }
 
     /// Adds `entry` on top. An entry with the same key goes, and the oldest fall off past `limit` or `maxAge`.
     mutating func add(_ entry: NoticeEntry, now: Date = Date()) {

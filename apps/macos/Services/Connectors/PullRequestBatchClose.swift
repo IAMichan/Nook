@@ -69,6 +69,6 @@ enum PullRequestBatchClose {
             case .failed(let reason): failures.append((name(target), reason, false))
             }
         }
-        return Report(closed: outcomes.filter { $0.outcome.closed }.count, total: outcomes.count, failures: failures)
+        return Report(closed: outcomes.count(where: { $0.outcome.closed }), total: outcomes.count, failures: failures)
     }
 }

@@ -214,7 +214,7 @@ enum CommandRisk {
             return arguments.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.contains("C") } || has(["--compile"])
         case "uniq":
             // `uniq input output`: a second name is a file it writes.
-            return arguments.filter { !$0.hasPrefix("-") }.count > 1
+            return arguments.count(where: { !$0.hasPrefix("-") }) > 1
         case "git":
             // `--output` writes the diff to a file; an external diff or text conversion runs a program from git's config.
             return has(["--output", "--ext-diff", "--textconv"]) || lower.contains { $0.hasPrefix("--output") }

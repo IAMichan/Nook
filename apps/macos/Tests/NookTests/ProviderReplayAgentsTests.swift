@@ -359,7 +359,7 @@ final class ProviderReplayAgentsTests: XCTestCase {
         let mine = events.compactMap { if case .userMessage(let text) = $0 { return text } else { return nil } }
         XCTAssertEqual(mine, ["Say only: plan A stands", steer], "Pi took both messages in, in order")
         XCTAssertEqual(texts(events).last, "plan B it is")
-        XCTAssertEqual(events.filter { $0 == .started }.count, 1, "one run, steered")
+        XCTAssertEqual(events.count(where: { $0 == .started }), 1, "one run, steered")
     }
 
     func testPiTurnInterrupt() throws {

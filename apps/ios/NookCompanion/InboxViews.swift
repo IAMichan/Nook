@@ -56,7 +56,7 @@ struct InboxListView: View {
                                 NookSearchField(prompt: "Search chats", text: $query)
                                 HStack(spacing: Theme.Spacing.xs) {
                                     NookFilterChip(title: String(localized: "All"), selected: filter == .all) { filter = .all }
-                                    NookFilterChip(title: String(localized: "Unread"), count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
+                                    NookFilterChip(title: String(localized: "Unread"), count: client.inbox.count(where: { $0.unread > 0 }), selected: filter == .unread) { filter = .unread }
                                 }
                             }
                             if shown.isEmpty {

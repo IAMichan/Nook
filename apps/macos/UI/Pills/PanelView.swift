@@ -294,7 +294,7 @@ struct PanelView: View {
     /// shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays in the bar, even Music while nothing plays.
     private var tabItems: [NookTabBar<PanelTab>.Item] {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.hasMusic || tab == .music || splitTab == .music)
-        let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
+        let waiting = app.activeAgents.count(where: { $0.status == .waiting || $0.approvalID != nil })
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
                                       count: value == .agents ? waiting : 0,

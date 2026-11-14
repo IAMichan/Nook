@@ -59,7 +59,7 @@ enum ChatAppStates {
         let accounts = network?.accounts ?? []
         let own = ownLink(id)
         let linkedHere = !accounts.isEmpty || own != nil
-        let chats = chats ?? capture.inbox.threads.values.filter { $0.app == id }.count
+        let chats = chats ?? capture.inbox.threads.values.count(where: { $0.app == id })
         let isOn = capture.enabled && capture.sources.isOn(id)
         guard linkedHere else {
             return ChatAppState(id: id, name: app.name, site: app.site, linked: false, status: .notLinked,

@@ -208,7 +208,7 @@ struct SearchPanel: View {
                     ForEach(SessionScope.allCases, id: \.self) { scope in
                         // With a scope chosen the hits are its sessions only: the other one has no count to show.
                         let count = sessionScope == nil || sessionScope == scope
-                            ? center.hits.filter { $0.document.kind == .session && scope.keeps($0.document) }.count : nil
+                            ? center.hits.count(where: { $0.document.kind == .session && scope.keeps($0.document) }) : nil
                         NookFilterChip(title: scope.title, count: count, selected: sessionScope == scope) {
                             sessionScope = sessionScope == scope ? nil : scope
                         }

@@ -118,9 +118,9 @@ struct AgentActivityDock: View {
             let progress = RunTasks.progress(tasks)
             return (progress.done, progress.total, 0)
         case .subagents:
-            return (subagents.filter { !$0.isRunning }.count, subagents.count, subagents.filter(\.failed).count)
+            return (subagents.count(where: { !$0.isRunning }), subagents.count, subagents.filter(\.failed).count)
         case .commands:
-            return (commands.filter { !$0.isRunning }.count, commands.count, commands.filter(\.failed).count)
+            return (commands.count(where: { !$0.isRunning }), commands.count, commands.filter(\.failed).count)
         }
     }
 

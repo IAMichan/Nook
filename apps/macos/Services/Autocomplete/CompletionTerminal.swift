@@ -66,8 +66,8 @@ enum CompletionTerminal {
 
     /// A horizontal rule or the top or bottom of a box: mostly box-drawing characters.
     static func isRule(_ line: String) -> Bool {
-        let drawn = line.filter { "─━═╭╮╰╯┌┐└┘▔▁-".contains($0) }.count
-        let visible = line.filter { !$0.isWhitespace }.count
+        let drawn = line.count(where: { "─━═╭╮╰╯┌┐└┘▔▁-".contains($0) })
+        let visible = line.count(where: { !$0.isWhitespace })
         return drawn >= 8 && drawn * 10 >= visible * 8
     }
 

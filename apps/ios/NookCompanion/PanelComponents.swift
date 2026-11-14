@@ -100,7 +100,7 @@ final class TabRouter: ObservableObject {
         case .nook: return client.conversations.filter(\.waiting).count
         case .agents: return client.sessions.filter(SessionListView.needsYou).count
         // Chats with something unread, not every message: one busy group is one.
-        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        case .chats: return client.inbox.count(where: { $0.unread > 0 })
         case .pulls, .settings: return 0
         }
     }

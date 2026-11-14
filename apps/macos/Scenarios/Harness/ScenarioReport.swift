@@ -65,9 +65,9 @@ enum ScenarioReport {
 
     static func summary(_ results: [Result]) -> String {
         var lines = ["# Scenarios", ""]
-        let passed = results.filter { $0.status == .passed }.count
-        let failed = results.filter { $0.status == .failed }.count
-        let errors = results.filter { $0.status == .error }.count
+        let passed = results.count(where: { $0.status == .passed })
+        let failed = results.count(where: { $0.status == .failed })
+        let errors = results.count(where: { $0.status == .error })
         lines.append("\(passed) passed, \(failed) failed, \(errors) could not run.")
         lines.append("")
         for result in results {

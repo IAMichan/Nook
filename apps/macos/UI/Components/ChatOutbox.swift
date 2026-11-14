@@ -31,7 +31,7 @@ final class ChatOutbox: ObservableObject {
     /// Shows `text` in `chat` now; `shown` is what the chat shows at this moment. Returns the id to report back with.
     func add(_ text: String, quote: BubbleQuote?, chat: String, shown: [ChatBubble]) -> String {
         let waiting = items[chat] ?? []
-        let baseline = Self.mine(text, in: shown) + waiting.filter { $0.text == text }.count
+        let baseline = Self.mine(text, in: shown) + waiting.count(where: { $0.text == text })
         let item = Item(id: "outbox:" + UUID().uuidString, text: text, quote: quote, date: Date(), baseline: baseline)
         items[chat, default: []].append(item)
         return item.id
@@ -86,6 +86,6 @@ final class ChatOutbox: ObservableObject {
 
     /// How many of your messages in `shown` say `text`.
     nonisolated private static func mine(_ text: String, in shown: [ChatBubble]) -> Int {
-        shown.filter { $0.fromMe && !$0.local && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text }.count
+        shown.count(where: { $0.fromMe && !$0.local && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text })
     }
 }

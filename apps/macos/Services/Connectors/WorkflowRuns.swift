@@ -152,8 +152,8 @@ struct WorkflowRepoStatus: Equatable, Sendable {
     /// Nil for a repository without runs: its tab shows no mark.
     init?(runs: [WorkflowRun]) {
         guard let newest = runs.first else { return nil }
-        active = runs.filter { !$0.isCompleted }.count
-        failing = WorkflowRunParser.latestPerWorkflow(runs.filter(\.isCompleted)).values.filter { $0.outcome == .failing }.count
+        active = runs.count(where: { !$0.isCompleted })
+        failing = WorkflowRunParser.latestPerWorkflow(runs.filter(\.isCompleted)).values.count(where: { $0.outcome == .failing })
         running = runs.contains(where: \.running)
         if active > 0 { outcome = .pending }
         else if failing > 0 { outcome = .failing }

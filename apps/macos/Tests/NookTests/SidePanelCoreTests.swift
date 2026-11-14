@@ -84,7 +84,7 @@ final class SidePanelCoreTests: XCTestCase {
         let old = (1...30).map(String.init).joined(separator: "\n") + "\n"
         let new = old.replacingOccurrences(of: "\n2\n", with: "\ntwo\n").replacingOccurrences(of: "\n29\n", with: "\ntwenty-nine\n")
         let diff = ArtifactHistory.unifiedDiff(from: old, to: new, name: "n.txt")
-        XCTAssertEqual(diff.components(separatedBy: "\n").filter { $0.hasPrefix("@@") }.count, 2)
+        XCTAssertEqual(diff.components(separatedBy: "\n").count(where: { $0.hasPrefix("@@") }), 2)
     }
 
     // MARK: Hunks

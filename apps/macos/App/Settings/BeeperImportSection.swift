@@ -88,7 +88,7 @@ struct BeeperImportSheet: View {
         guard let imported = importer.imported else { return importer.isBusy ? .checking : .idle }
         let apps = importer.apps
         guard !apps.isEmpty else { return .passed(summary(imported)) }
-        let linked = apps.filter { ChatAppStates.state($0)?.linked == true }.count
+        let linked = apps.count(where: { ChatAppStates.state($0)?.linked == true })
         return .passed(tr("beeper.import.checkApps", linked, apps.count))
     }
 

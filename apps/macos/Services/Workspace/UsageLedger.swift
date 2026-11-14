@@ -325,7 +325,7 @@ struct UsageInsights: Equatable, Sendable {
         var counts = sessions
         if counts.isEmpty {
             for (agent, ends) in ledger.sessionEnds {
-                let count = ends.filter { $0 >= first && $0 <= end }.count
+                let count = ends.count(where: { $0 >= first && $0 <= end })
                 if count > 0 { counts[agent] = count }
             }
         }

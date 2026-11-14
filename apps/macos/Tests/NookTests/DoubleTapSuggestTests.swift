@@ -67,7 +67,7 @@ final class DoubleTapSuggestTests: XCTestCase {
         scene.focusEmpty = false
         let chips = texts(scene, recents: recents)
         XCTAssertEqual(chips.count, DoubleTapLogic.maxSuggestions)
-        XCTAssertEqual(chips.filter { $0 == "Improve this" }.count, 1, "a recent request already offered is not repeated")
+        XCTAssertEqual(chips.count(where: { $0 == "Improve this" }), 1, "a recent request already offered is not repeated")
         XCTAssertTrue(chips.contains("zet de vergadering van morgen een uur later"))
         XCTAssertEqual(texts(nil, recents: recents), recents, "with Nook in front: only what you asked lately")
     }

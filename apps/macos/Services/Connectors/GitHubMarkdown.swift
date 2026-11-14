@@ -80,7 +80,7 @@ enum GitHubMarkdown {
     // MARK: HTML
 
     private static func regex(_ pattern: String) -> NSRegularExpression? {
-        try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
+        RegexCache.regex(pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
     }
 
     private static let spanRegex = regex(#"`[^`\n]+`"#)

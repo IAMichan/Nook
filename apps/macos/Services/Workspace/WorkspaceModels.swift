@@ -702,7 +702,7 @@ enum RunTasks {
     static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
         let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending }
             ?? steps.last { $0.status != .cancelled } ?? steps.last
-        return (steps.filter { $0.status == .done }.count, steps.filter { $0.status != .cancelled }.count, current?.text ?? "")
+        return (steps.count(where: { $0.status == .done }), steps.count(where: { $0.status != .cancelled }), current?.text ?? "")
     }
 
     static func isFinished(_ steps: [RunTaskStep]?) -> Bool {

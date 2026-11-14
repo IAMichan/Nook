@@ -25,9 +25,9 @@ struct AttentionOverview: View {
 
     private var waiting: Int { client.sessions.filter(SessionListView.needsYou).count }
     private var working: Int {
-        client.sessions.filter { !SessionListView.needsYou($0) && $0.attention == "working" }.count
+        client.sessions.count(where: { !SessionListView.needsYou($0) && $0.attention == "working" })
     }
-    private var unread: Int { client.allows(.chats) ? client.inbox.filter { $0.unread > 0 }.count : 0 }
+    private var unread: Int { client.allows(.chats) ? client.inbox.count(where: { $0.unread > 0 }) : 0 }
     private var calm: Bool { waiting == 0 && working == 0 && unread == 0 }
 
     var body: some View {

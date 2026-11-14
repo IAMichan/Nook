@@ -504,7 +504,7 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(opening.count, 9)
         XCTAssertEqual(opening.first?.character, "🔥")
         XCTAssertEqual(opening.dropFirst().first?.character, "😂", "then the most used")
-        XCTAssertEqual(opening.filter { $0.character == "🔥" }.count, 1)
+        XCTAssertEqual(opening.count(where: { $0.character == "🔥" }), 1)
         XCTAssertEqual(CompletionEmojiCatalog.choices(for: "lachen", recent: [], limit: 9).first?.character, "😂")
         XCTAssertTrue(CompletionEmojiCatalog.choices(for: "zzzzqq", recent: [], limit: 9).isEmpty)
     }

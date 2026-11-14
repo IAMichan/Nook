@@ -549,7 +549,7 @@ final class PullRequestStore: ObservableObject {
                 if !detail.baseBranch.isEmpty { row.baseBranch = detail.baseBranch }
                 if !detail.nodeID.isEmpty { row.nodeID = detail.nodeID }
                 if !detail.checks.isEmpty {
-                    row.checksPassed = detail.checks.filter { $0.outcome == .passing || $0.outcome == .skipped }.count
+                    row.checksPassed = detail.checks.count(where: { $0.outcome == .passing || $0.outcome == .skipped })
                     row.checksTotal = detail.checks.count
                 }
                 row.url = detail.url ?? item.url

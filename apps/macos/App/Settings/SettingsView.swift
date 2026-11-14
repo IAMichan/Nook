@@ -167,7 +167,7 @@ struct SettingsView: View {
             SettingsSidebar(badges: [
                 .start: needs.count,
                 .chats: problems.filter(\.isChat).count,
-                .connections: problems.filter { !$0.isChat }.count,
+                .connections: problems.count(where: { !$0.isChat }),
                 .autocomplete: AutocompleteController.shared.needsAttention ? 1 : 0
             ])
             .frame(width: SettingsLayout.sidebarWidth)
@@ -175,7 +175,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 SettingsPageBar(section: section)
                 NookDivider()
-                page(section, part: part, attention: needs, problems: problems.filter { !$0.isChat }.count)
+                page(section, part: part, attention: needs, problems: problems.count(where: { !$0.isChat }))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(NookTheme.canvas)

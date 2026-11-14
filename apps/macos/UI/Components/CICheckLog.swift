@@ -222,7 +222,7 @@ struct CICheckLogView: View {
         if let text = log.text {
             let lines = CILogParser.lines(text)
             let problems = CILogParser.problems(lines)
-            let problemCount = problems.filter { $0.kind == .error || $0.kind == .warning }.count
+            let problemCount = problems.count(where: { $0.kind == .error || $0.kind == .warning })
             // A failed job opens on what went wrong; a log without errors opens whole.
             let onlyProblems = problemCount > 0 && !(showFullLog ?? false)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {

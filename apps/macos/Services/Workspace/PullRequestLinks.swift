@@ -478,7 +478,7 @@ struct PullRequestBadge: Equatable, Sendable {
         guard !links.isEmpty else { return nil }
         if links.count > 1, PullRequestStack.isStack(links: links) {
             // A stack wears its own mark while work is left in it, then the state it ended in.
-            let merged = links.filter { $0.state == .merged }.count
+            let merged = links.count(where: { $0.state == .merged })
             let glyph: Glyph = links.contains { $0.state.isOpen } ? .stack : merged > 0 ? .merged : .closed
             return PullRequestBadge(glyph: glyph, label: .stack(links.count, merged: merged))
         }
@@ -828,7 +828,7 @@ enum SessionBranches {
     static func folded(_ rows: [Row], open: Bool) -> (shown: [Row], hidden: Int, hiddenPullRequests: Int) {
         guard !open, rows.count > shownWhenFolded + 1 else { return (rows, 0, 0) }
         let hidden = rows.dropLast(shownWhenFolded)
-        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.filter { $0.pullRequest != nil }.count)
+        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.count(where: { $0.pullRequest != nil }))
     }
 }
 

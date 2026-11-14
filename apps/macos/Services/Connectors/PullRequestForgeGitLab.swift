@@ -536,8 +536,8 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
             let status = (item["new_file"] as? Bool) == true ? "added" : removed ? "removed" : renamed ? "renamed" : "modified"
             let patch = ((item["diff"] as? String) ?? "").trimmingCharacters(in: .newlines)
             let lines = patch.components(separatedBy: "\n")
-            return PullRequestFile(path: path, status: status, additions: lines.filter { $0.hasPrefix("+") }.count,
-                                   deletions: lines.filter { $0.hasPrefix("-") }.count, patch: patch.isEmpty ? nil : patch,
+            return PullRequestFile(path: path, status: status, additions: lines.count(where: { $0.hasPrefix("+") }),
+                                   deletions: lines.count(where: { $0.hasPrefix("-") }), patch: patch.isEmpty ? nil : patch,
                                    previousPath: renamed ? item["old_path"] as? String : nil, revision: removed ? "" : nil)
         }
     }

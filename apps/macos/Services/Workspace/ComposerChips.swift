@@ -80,7 +80,7 @@ enum ComposerChips {
         var removed = before[head..<(before.count - tail)].filter(\.isChip).map(\.source)
         let incoming = after[head..<(after.count - tail)]
         // Marks beyond the ones that stayed take the newest spares, in the order they were taken out.
-        let wanted = max(0, incoming.filter { $0 == mark }.count - removed.count)
+        let wanted = max(0, incoming.count(where: { $0 == mark }) - removed.count)
         var spares = Array(spares.suffix(wanted))
         var used = 0
         var middle = ""

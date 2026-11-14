@@ -97,7 +97,7 @@ enum ProjectFavicon {
             #"\brel\s*:\s*["'](?:icon|shortcut icon)["'][^{}]*?\bhref\s*:\s*["']([^"'?]+)"#,
         ]
         for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+            guard let regex = RegexCache.regex(pattern, options: .caseInsensitive),
                   let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                   let range = Range(match.range(at: 1), in: text) else { continue }
             let href = String(text[range])

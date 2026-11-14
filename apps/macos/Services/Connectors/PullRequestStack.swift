@@ -57,7 +57,7 @@ extension PullRequestStack {
     /// Where `item` stands in its stack, 1 at the bottom, how many there are, and how many of those merged.
     static func position(of item: PullRequestItem, in items: [PullRequestItem]) -> (index: Int, count: Int, merged: Int)? {
         guard let stack = history(of: item, in: items), let index = stack.firstIndex(where: { $0.id == item.id }) else { return nil }
-        return (index + 1, stack.count, stack.filter { $0.state == .merged }.count)
+        return (index + 1, stack.count, stack.count(where: { $0.state == .merged }))
     }
 
     /// Where every pull request of `items` stands in its stack, by id, for a whole list at once. The same answer as

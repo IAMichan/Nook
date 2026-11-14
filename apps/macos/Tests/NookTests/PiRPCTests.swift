@@ -12,11 +12,11 @@ final class PiRPCTests: XCTestCase {
     func testCommandsAreOneLineEachEndingInLF() {
         for line in [PiRPC.getState(), PiRPC.prompt("hi"), PiRPC.abort(), PiRPC.compact(), PiRPC.confirmResponse(requestID: "a", confirmed: true)] {
             XCTAssertTrue(line.hasSuffix("\n"))
-            XCTAssertEqual(line.filter { $0 == "\n" }.count, 1)
+            XCTAssertEqual(line.count(where: { $0 == "\n" }), 1)
         }
         // Newlines and U+2028 inside the text stay escaped or literal inside one line, never a second frame.
         let line = PiRPC.prompt("one\ntwo\u{2028}three")
-        XCTAssertEqual(line.filter { $0 == "\n" }.count, 1)
+        XCTAssertEqual(line.count(where: { $0 == "\n" }), 1)
         XCTAssertEqual(object(line)["message"] as? String, "one\ntwo\u{2028}three")
     }
 

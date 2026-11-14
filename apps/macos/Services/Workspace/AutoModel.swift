@@ -124,9 +124,9 @@ enum AutoModel {
     static func need(prompt: String, effort: String? = nil, previous: Tier? = nil) -> Tier {
         let text = " " + prompt.lowercased() + " "
         let length = prompt.trimmingCharacters(in: .whitespacesAndNewlines).count
-        let heavy = heavyWords.filter { contains(text, $0) }.count
-        let light = lightTaskWords.filter { contains(text, $0) }.count
-        let work = workWords.filter { contains(text, $0) }.count
+        let heavy = heavyWords.count(where: { contains(text, $0) })
+        let light = lightTaskWords.count(where: { contains(text, $0) })
+        let work = workWords.count(where: { contains(text, $0) })
         let technical = work > 0 || looksLikeCode(prompt)
         var tier: Tier = .standard
         if length > 1500 || heavy >= 2 || (heavy == 1 && length > 300) || (heavy == 1 && technical && length > 120) {

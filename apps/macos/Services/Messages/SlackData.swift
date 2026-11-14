@@ -271,7 +271,7 @@ enum SlackData {
     static func unread(_ messages: [(ts: Double, mine: Bool)], lastRead: String) -> Int {
         // Half a microsecond of slack: a `ts` that went through `Date` comes back a hair off.
         let read = (Double(lastRead) ?? 0) + 0.000_000_5
-        return messages.filter { !$0.mine && $0.ts > read }.count
+        return messages.count(where: { !$0.mine && $0.ts > read })
     }
 
     /// A message's id in Nook: its conversation and Slack's `ts` of it ("slack-D1-1700000010.000100").

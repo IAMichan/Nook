@@ -126,8 +126,8 @@ struct LineageGroups: Equatable, Sendable {
 
     var isEmpty: Bool { related.isEmpty && active.isEmpty && previous.isEmpty && sideChats.isEmpty }
     /// Delegated tasks at work, for the control's label.
-    var running: Int { active.filter { $0.node.status == .working }.count }
-    var runningSideChats: Int { sideChats.filter { $0.node.status == .working }.count }
+    var running: Int { active.count(where: { $0.node.status == .working }) }
+    var runningSideChats: Int { sideChats.count(where: { $0.node.status == .working }) }
     /// A related session waits for you.
     var needsYou: Bool {
         (active + sideChats).contains { $0.node.status == .approval || $0.node.status == .question }

@@ -593,7 +593,7 @@ enum UIDriver {
             if role == "text" { name = UIControl.stateText(role: role, value: rawValue) ?? name }
             if value == name { value = nil }
             let visible = bounds.map { $0.intersects(frame) } ?? true
-            let roomLeft = visible || items.filter { !$0.element.visible }.count < maxOffscreen
+            let roomLeft = visible || items.count(where: { !$0.element.visible }) < maxOffscreen
             if roomLeft, !name.isEmpty || ["field", "search", "textarea", "password", "combobox", "slider", "switch", "checkbox"].contains(role) {
                 let enabled: Bool = attribute(element, kAXEnabledAttribute) ?? true
                 items.append((UIControl.Element(

@@ -125,7 +125,7 @@ enum NoteBuilder {
             let near = others.filter { overlaps($0, line, margin: 1.5) }.flatMap { tokens($0.text) }
             guard !near.isEmpty else { return true }
             let pool = Set(near)
-            let shared = words.filter { pool.contains($0) }.count
+            let shared = words.count(where: { pool.contains($0) })
             return Double(shared) / Double(words.count) < 0.6
         }
     }
@@ -432,7 +432,7 @@ extension NoteBuilder {
                 if let id = ids[line.speaker] {
                     line.speaker = id
                 } else {
-                    let number = speakers.filter { !$0.isMe }.count + 2
+                    let number = speakers.count(where: { !$0.isMe }) + 2
                     let id = "p\(number)"
                     ids[line.speaker] = id
                     speakers.append(NoteSpeaker(id: id, name: personName(number), color: number - 1))

@@ -415,7 +415,7 @@ final class InboxLayoutTests: XCTestCase {
         child.parentID = "parent"
         let s = sections([row("parent", .ready), child])
         let all = s.flatMap(\.rows)
-        XCTAssertEqual(all.filter { $0.id == "child" }.count, 1)
+        XCTAssertEqual(all.count(where: { $0.id == "child" }), 1)
         XCTAssertEqual(all.first { $0.id == "child" }?.depth, 1)
     }
 

@@ -233,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let active = model.activeAgents
         if !active.isEmpty {
-            let waiting = active.filter { $0.status == .waiting || $0.approvalID != nil }.count
+            let waiting = active.count(where: { $0.status == .waiting || $0.approvalID != nil })
             let title = waiting > 0 ? tr("menu.agentsWaiting", active.count, waiting) : tr("menu.agentsRunning", active.count)
             add(to: menu, title: title, action: #selector(openAgents), icon: "sparkles")
             status = true

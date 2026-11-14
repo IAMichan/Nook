@@ -115,7 +115,7 @@ final class AgentAnnouncementsTests: XCTestCase {
         pacer.step("Editing b")
         pacer.step("Running tests")
         XCTAssertEqual(said, ["Reading a"])
-        XCTAssertEqual(timers.filter { !$0.cancelled }.count, 1)
+        XCTAssertEqual(timers.count(where: { !$0.cancelled }), 1)
         clock = clock.addingTimeInterval(AnnouncementPacer.gap)
         for timer in timers where !timer.cancelled { timer.run() }
         XCTAssertEqual(said, ["Reading a", "Running tests"])

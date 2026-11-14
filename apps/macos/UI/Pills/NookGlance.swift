@@ -70,7 +70,7 @@ struct HomeGlance: View {
         return app.connectedProfiles.compactMap { profile in
             guard let fullest = quota.limits(for: profile).max(by: { UsageLimitRows.used($0) < UsageLimitRows.used($1) })
             else { return nil }
-            let several = app.connectedProfiles.filter { $0.kind == profile.kind }.count > 1
+            let several = app.connectedProfiles.count(where: { $0.kind == profile.kind }) > 1
             let name = several ? "\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))" : profile.kind.shortName
             return GlanceLimit(id: profile.id, agent: profile.kind.shortName, name: name, window: fullest.window,
                                used: UsageLimitRows.used(fullest))
@@ -208,7 +208,7 @@ private struct GlanceAgentsCard: View {
     let agents: [GlanceAgent]
     let open: (String?) -> Void
 
-    private var waiting: Int { agents.filter { $0.state == .needsYou }.count }
+    private var waiting: Int { agents.count(where: { $0.state == .needsYou }) }
     private var working: Int { agents.count - waiting }
 
     private var status: String {

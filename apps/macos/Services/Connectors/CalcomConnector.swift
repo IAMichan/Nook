@@ -116,7 +116,7 @@ final class CalcomConnector: TokenCloudConnector {
         bookings = list
         loaded = true
         let calendar = Calendar.current
-        let today = list.filter { calendar.isDateInToday($0.start) }.count
+        let today = list.count(where: { calendar.isDateInToday($0.start) })
         let pending = list.filter { $0.needsConfirmation }
 
         let headline: String

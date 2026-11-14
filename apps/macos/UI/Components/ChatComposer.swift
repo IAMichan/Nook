@@ -574,7 +574,7 @@ struct ChatAttachPanel: View {
     /// How many tiles there are: photo and video share one.
     private var tileCount: Int {
         [sends.contains(.photo) || sends.contains(.video), sends.contains(.file), sends.contains(.audio),
-         sends.contains(.gif), sends.contains(.sticker)].filter { $0 }.count
+         sends.contains(.gif), sends.contains(.sticker)].count(where: { $0 })
     }
 
     private var hasMedia: Bool { tileCount > 0 }

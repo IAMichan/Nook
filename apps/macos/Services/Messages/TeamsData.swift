@@ -385,7 +385,7 @@ enum TeamsData {
     /// How many of these messages from others came after you last read the chat.
     static func unread(_ messages: [InboxMessage], readUntil: Date?) -> Int {
         guard let readUntil else { return 0 }
-        return messages.filter { !$0.isMine && $0.date > readUntil }.count
+        return messages.count(where: { !$0.isMine && $0.date > readUntil })
     }
 
     /// Teams' HTML as plain text: line breaks kept, tags dropped, the common entities back.

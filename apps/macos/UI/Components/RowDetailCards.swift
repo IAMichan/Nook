@@ -76,7 +76,7 @@ struct RowPullRequestCard: View {
     @State private var listHeight: CGFloat = 0
 
     /// Counted over all of them: this is what says how far a stack has landed.
-    private var merged: Int { pullRequests.all.filter { $0.state == .merged }.count }
+    private var merged: Int { pullRequests.all.count(where: { $0.state == .merged }) }
 
     var body: some View {
         // Less the room the list keeps above it for the lit fill, so the count sits as far from the first request as before.
@@ -226,9 +226,9 @@ private struct RowPullRequestSummary: View {
         if counted.isEmpty {
             HoverCardRow(symbol: "checklist", text: tr("agents.pr.checks.none"))
         } else {
-            let failing = counted.filter { $0.outcome == .failing }.count
-            let running = counted.filter { $0.outcome == .pending }.count
-            let passed = counted.filter { $0.outcome == .passing }.count
+            let failing = counted.count(where: { $0.outcome == .failing })
+            let running = counted.count(where: { $0.outcome == .pending })
+            let passed = counted.count(where: { $0.outcome == .passing })
             let parts = [failing > 0 ? tr("agents.pr.checks.failing", failing) : nil,
                          running > 0 ? tr("agents.pr.checks.running", running) : nil,
                          passed > 0 ? tr("agents.pr.checks.passed", passed) : nil].compactMap { $0 }

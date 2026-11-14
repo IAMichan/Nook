@@ -407,7 +407,7 @@ private struct NookHoverCard: View {
 
     private var planSummary: String? {
         guard !latestTasks.isEmpty else { return nil }
-        let done = latestTasks.filter { $0.status == .done }.count
+        let done = latestTasks.count(where: { $0.status == .done })
         return tr("nooks.card.tasks", done, latestTasks.count)
     }
 

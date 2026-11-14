@@ -18,7 +18,7 @@ final class CommitStyleTests: XCTestCase {
         XCTAssertTrue(rules.contains("- Add a thing"))
         XCTAssertTrue(rules.contains("- Fix the other"))
         XCTAssertFalse(rules.contains { $0.contains("Merge pull request") || $0.contains("Revert") })
-        XCTAssertEqual(rules.filter { $0 == "- Add a thing" }.count, 1)
+        XCTAssertEqual(rules.count(where: { $0 == "- Add a thing" }), 1)
         // Without history there is no style to follow.
         XCTAssertEqual(CommitStyle.repository.commitRules(recentSubjects: [], instructions: ""), [])
     }
