@@ -1039,8 +1039,12 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// older than `since`, and still unread. Oldest first, so the newest notice comes last.
     static func fresh(before: ChatInbox, after: ChatInbox, since: Date) -> [String] {
         after.threads.values.compactMap { thread -> (String, Date)? in
-            guard thread.unread > 0, let newest = thread.messages.last(where: \.isIncoming), newest.date >= since,
-                  before.threads[thread.id]?.messages.last(where: \.isIncoming)?.id != newest.id else { return nil }
+            guard thread.unread > 0 else { return nil }
+            let old = before.threads[thread.id]?.messages
+            // Unchanged messages (the same array, compared by identity first) hold no new message from someone else.
+            if let old, old == thread.messages { return nil }
+            guard let newest = thread.messages.last(where: \.isIncoming), newest.date >= since,
+                  old?.last(where: \.isIncoming)?.id != newest.id else { return nil }
             return (thread.id, newest.date)
         }
         .sorted { $0.1 < $1.1 }
@@ -1050,7 +1054,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// The dates of the messages `after` holds and `before` did not, in the chats of these apps: what one read brought.
     static func added(before: ChatInbox, after: ChatInbox, apps: Set<String>) -> [Date] {
         after.threads.values.filter { apps.contains($0.app) }.flatMap { thread -> [Date] in
-            let known = Set(before.threads[thread.id]?.messages.map(\.id) ?? [])
+            let old = before.threads[thread.id]?.messages
+            // A chat a read did not change (most of them) keeps the very same array: nothing to look through.
+            if let old, old == thread.messages { return [] }
+            let known = Set(old?.map(\.id) ?? [])
             return thread.messages.filter { !known.contains($0.id) }.map(\.date)
         }
     }
@@ -1858,11 +1865,9 @@ extension ChatInbox {
         return "\(who): \(text)"
     }
 
+    /// One formatter for every line of a transcript (`NookDates`' cache), not one per line.
     private static func stamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: date)
+        NookDates.formatter("yyyy-MM-dd HH:mm", locale: "en_US_POSIX").string(from: date)
     }
 }
 

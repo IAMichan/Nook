@@ -520,6 +520,25 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatInbox.fresh(before: after, after: after, since: since), [])
     }
 
+    func testOnlyChatsWhoseMessagesChangedCanBringSomethingNew() {
+        var before = ChatInbox()
+        before.add(notice("Anna", "hi", at: 0), id: "1")
+        before.add(notice("Ben", "yo", at: 5), id: "2")
+        var after = before
+        // Anna's message changes in place (edited: no new id), Ben's chat stays the very same, and Cas writes.
+        after.threads[ChatInbox.key(app: "telegram", chat: "Anna")]?.messages[0].text = "hi!"
+        after.add(notice("Cas", "hello", at: 10), id: "3")
+        XCTAssertEqual(ChatInbox.added(before: before, after: after, apps: ["telegram"]), [now.addingTimeInterval(10)])
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: after, since: now.addingTimeInterval(-600)),
+                       [ChatInbox.key(app: "telegram", chat: "Cas")])
+        // Messages equal to the ones before, held in another array, are no news either.
+        var rebuilt = before
+        let anna = ChatInbox.key(app: "telegram", chat: "Anna")
+        rebuilt.threads[anna]?.messages = Array(before.threads[anna]?.messages ?? [])
+        XCTAssertEqual(ChatInbox.added(before: before, after: rebuilt, apps: ["telegram"]), [])
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: rebuilt, since: now.addingTimeInterval(-600)), [])
+    }
+
     func testTheSameNotificationTwiceIsOneMessage() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "hi"), id: "1"))
