@@ -11,6 +11,7 @@ pub mod companion;
 pub mod connectors;
 pub mod error;
 pub mod games;
+pub mod i18n;
 pub mod nooks;
 pub mod paths;
 pub mod platform;

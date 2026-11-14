@@ -228,7 +228,9 @@ fn language_of_locale(locale: &str) -> &'static str {
 
 impl Settings {
     pub fn load() -> Self {
-        Self::load_from(&paths::settings_file())
+        let settings = Self::load_from(&paths::settings_file());
+        crate::i18n::set_language(&settings.app_language);
+        settings
     }
 
     pub fn load_from(path: &std::path::Path) -> Self {
@@ -236,6 +238,7 @@ impl Settings {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        crate::i18n::set_language(&self.app_language);
         self.save_to(&paths::settings_file())
     }
 
