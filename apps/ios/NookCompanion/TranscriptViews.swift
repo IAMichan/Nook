@@ -1,6 +1,6 @@
 import SwiftUI
 
-// A session's conversation, the Mac's `TranscriptConversation` (apps/macos/NotchUI/Pills/TranscriptTimeline.swift) made
+// A session's conversation, the Mac's `TranscriptConversation` (apps/macos/UI/Pills/TranscriptTimeline.swift) made
 // for the phone: your messages in a soft bubble on the right, the agent's answers as text on the left, its work as quiet
 // one-line rows in between, and a finished turn folded into "Worked for 1m 3s". A tap opens what a click opens on the Mac.
 

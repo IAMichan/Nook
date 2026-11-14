@@ -32,7 +32,7 @@ reviews:
           en, nl, de, fr and es in `apps/macos/Core/I18n*.swift`, with matching
           placeholders across all languages.
         - Reuse shared components from `docs/UI-COMPONENTS.md`; new shared views
-          belong in `apps/macos/NotchUI/Components`.
+          belong in `apps/macos/UI/Components`.
         - `AppModel.swift` is composition-only: feature logic belongs in dedicated
           services or `AppModel+*.swift` extensions.
         - Chat, notch cards and proactive suggestions must route through

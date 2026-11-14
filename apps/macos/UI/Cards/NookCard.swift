@@ -175,7 +175,7 @@ extension ChatBubble {
     }
 }
 
-/// How far your own message got, as WhatsApp shows it: the shared `MessageTicks` (NotchUI/Shared), also on the iPhone.
+/// How far your own message got, as WhatsApp shows it: the shared `MessageTicks` (UI/Shared), also on the iPhone.
 typealias BubbleTicks = MessageTicks
 
 extension MessageTicks {

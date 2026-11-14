@@ -1515,7 +1515,7 @@ struct ChatsRow: View, Equatable {
 
     private var row: some View {
         Button(action: action) {
-            // The shared row (NotchUI/Shared), the same as a chat's row on the iPhone.
+            // The shared row (UI/Shared), the same as a chat's row on the iPhone.
             ChatListRowContent(
                 name: entry.name, when: when,
                 // A chat on the phone that wrote nothing since Nook was linked: its newest message is being fetched

@@ -61,11 +61,11 @@ report "subscriptions to published state drop repeats (removeDuplicates / thrott
   ' "$file"
 done)
 
-report "endless animations run on a pausing .nookFrames timeline (no .repeatForever)" < <(grep -rnE '\.repeatForever\(' NotchUI App --include='*.swift')
+report "endless animations run on a pausing .nookFrames timeline (no .repeatForever)" < <(grep -rnE '\.repeatForever\(' UI App --include='*.swift')
 
-report "TimelineView(.animation) passes paused: so it stops when its content does" < <(grep -rnE 'TimelineView\(\.animation' NotchUI App --include='*.swift' | grep -v 'paused:')
+report "TimelineView(.animation) passes paused: so it stops when its content does" < <(grep -rnE 'TimelineView\(\.animation' UI App --include='*.swift' | grep -v 'paused:')
 
-report "looping animations are a LayerLoop; a .nookFrames timeline says why not (// perf: reason)" < <(sources | grep -E '^(NotchUI|App)/' | while read -r file; do
+report "looping animations are a LayerLoop; a .nookFrames timeline says why not (// perf: reason)" < <(sources | grep -E '^(UI|App)/' | while read -r file; do
   awk -v file="$file" '
     /TimelineView\(\.nookFrames/ && $0 !~ /^[ \t]*\/\// {
       if (prev !~ /\/\/ perf:/) printf "%s:%d:%s\n", file, NR, $0
@@ -83,6 +83,6 @@ report "symbols that loop are a LayerSymbol; a .symbolEffect says why not (// pe
   ' "$file"
 done)
 
-report "a name from a path is (path as NSString).lastPathComponent (no URL(fileURLWithPath:) stat for it)" < <(grep -rnE 'URL\(fileURLWithPath: [^()]+\)\.lastPathComponent' Core Services NotchUI App --include='*.swift')
+report "a name from a path is (path as NSString).lastPathComponent (no URL(fileURLWithPath:) stat for it)" < <(grep -rnE 'URL\(fileURLWithPath: [^()]+\)\.lastPathComponent' Core Services UI App --include='*.swift')
 
 exit $status

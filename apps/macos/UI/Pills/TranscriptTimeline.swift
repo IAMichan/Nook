@@ -884,11 +884,11 @@ private struct PromptCard: View {
 // MARK: Messages
 
 // Your messages and the agent's answers are the shared `TranscriptUserMessage` and `TranscriptReply`
-// (NotchUI/Components/TranscriptMessage.swift), the same as in the Nook chat.
+// (UI/Components/TranscriptMessage.swift), the same as in the Nook chat.
 
 // MARK: Work
 
-// The lines of the agent's work are the shared views in NotchUI/Components/TranscriptWork.swift, the same as in a
+// The lines of the agent's work are the shared views in UI/Components/TranscriptWork.swift, the same as in a
 // session Nook runs.
 
 /// Something that happened to the conversation, in sight also when its turn folds. A compaction is a quiet word across

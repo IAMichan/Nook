@@ -43,10 +43,10 @@ final class AgentParityTests: XCTestCase {
         "Brain/BrainService.swift": (1, "the brain's Claude Code subscription runs Claude Code's own CLI (AIProvider)"),
         "Brain/SubscriptionBrain.swift": (1, "Claude Code's executable is found by ClaudeCodeBrain (AIProvider)"),
         "Core/AppSettings.swift": (3, "Claude's model is stored as `model` from before providers had their own (AIProvider)"),
-        "NotchUI/Components/BrandLogo.swift": (1, "which brand marks are monochrome (a palette, not a feature)"),
-        "NotchUI/Pills/NewSessionComposer+BelowBox.swift": (1, "Antigravity has to be installed first"),
-        "NotchUI/Pills/NewSessionComposer.swift": (1, "Antigravity has to be installed first"),
-        "NotchUI/Workspace/UsageView.swift": (1, "only Gemini CLI reports usage per profile from disk"),
+        "UI/Components/BrandLogo.swift": (1, "which brand marks are monochrome (a palette, not a feature)"),
+        "UI/Pills/NewSessionComposer+BelowBox.swift": (1, "Antigravity has to be installed first"),
+        "UI/Pills/NewSessionComposer.swift": (1, "Antigravity has to be installed first"),
+        "UI/Workspace/UsageView.swift": (1, "only Gemini CLI reports usage per profile from disk"),
         "Services/AgentHistory.swift": (13, "where each agent keeps its files and logins on disk; `.acp` placeholder"),
         "Services/AgentHub+HookIngest.swift": (1, "Claude Code's hook id says which Claude runs it (desktop or CLI)"),
         "Services/AgentProfiles.swift": (3, "only Claude Code takes an API key per account"),
@@ -68,7 +68,7 @@ final class AgentParityTests: XCTestCase {
     private static let foundSingleAgentChecks: [String: [String]] = {
         let regexes = singleAgentChecks.map { try! NSRegularExpression(pattern: $0) }
         var result: [String: [String]] = [:]
-        for folder in ["App", "NotchUI", "Services", "Brain", "Core"] {
+        for folder in ["App", "UI", "Services", "Brain", "Core"] {
             let base = root.appendingPathComponent(folder)
             guard let walker = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {

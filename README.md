@@ -388,7 +388,7 @@ nook/
 ├── apps/
 │   ├── macos/               # Native macOS app (Swift, SwiftUI/AppKit, XcodeGen)
 │   │   ├── App/             # Entry point, menu bar, AppModel (+ modular extensions), Settings pages
-│   │   ├── NotchUI/         # Theme, Nook orb & task ring, shared PanelView (main window, notch, sheets), workspace UI
+│   │   ├── UI/              # Theme, Nook orb & task ring, shared PanelView (main window, notch, sheets), workspace UI
 │   │   ├── Services/        # Calendar, music, agent hub, approvals, quotas, workspace, MCP, Flow, Notes, Autocomplete
 │   │   ├── Brain/           # Model runtimes, unified ToolLoop, source scoping, CommandRisk, grounding, ActionGate
 │   │   ├── Core/            # Paths, AppSettings, Keychain (SecretStore), SQLite store, I18n (en/nl/de/fr/es)

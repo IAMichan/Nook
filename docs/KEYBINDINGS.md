@@ -7,7 +7,7 @@ shows what your file could not use, and the keys that claim the same chord.
 
 ## How a key is handled
 
-1. One local key monitor (`KeyCommandCenter`, `apps/macos/NotchUI/Components/KeyCommands.swift`) sees every key
+1. One local key monitor (`KeyCommandCenter`, `apps/macos/UI/Components/KeyCommands.swift`) sees every key
    pressed in a Nook window.
 2. It builds the **context** from what is on screen in that window:
    - `composerFocus`, `composerDraft` (the focused composer holds text), `turnRunning` (the agent is working): from the

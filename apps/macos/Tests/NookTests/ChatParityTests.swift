@@ -35,14 +35,14 @@ final class ChatParityTests: XCTestCase {
     /// The checks that stay, per file, and why. The number may only go down.
     private static let allowed: [String: (count: Int, reason: String)] = [
         "App/Settings/ChatAppSheet.swift": (1, "which apps Nook writes in itself: WhatsApp's link and the Slack and Telegram bridges"),
-        "NotchUI/Chat/EmbeddedAppView.swift": (1, "a URL scheme (whatsapp:), not an app id"),
+        "UI/Chat/EmbeddedAppView.swift": (1, "a URL scheme (whatsapp:), not an app id"),
         "Services/AgentTranscript.swift": (2, "the JSON key \"messages\" of a transcript, not an app"),
     ]
 
     private static let found: [String: [String]] = {
         let regexes = patterns.map { try! NSRegularExpression(pattern: $0) }
         var result: [String: [String]] = [:]
-        for folder in ["App", "NotchUI", "Services", "Brain", "Core"] {
+        for folder in ["App", "UI", "Services", "Brain", "Core"] {
             let base = root.appendingPathComponent(folder)
             guard let walker = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {

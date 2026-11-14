@@ -33,7 +33,7 @@ Claude Code / Codex ──stdio (MCP)──▶ nook-mcp (Perl) ──bridge.sock
 | MCP server script | `Services/Workspace/WorkspaceBridgeScript.swift` | Self-contained Perl script `nook-mcp` (`~/Library/Application Support/Nook/`, symlinked at `~/.nook/nook-mcp`). |
 | Bridge service | `Services/Workspace/WorkspaceBridge.swift` | Listens on `bridge.sock`, identifies the calling session, enforces `BridgePolicy`, requests approval, and executes tools. |
 | Process launcher | `Services/Workspace/AgentProcess.swift` | Automatically attaches `nook-mcp` to sessions launched by Nook. |
-| UI integration | `NotchUI/Pills/SessionTools.swift`, `TerminalSessions.swift`, `BrowserView.swift`, `AgentRunPanel.swift` | Activity dots, agent badges on terminal tabs, *"Opened by …"* banner in browser, inline approvals. |
+| UI integration | `UI/Pills/SessionTools.swift`, `TerminalSessions.swift`, `BrowserView.swift`, `AgentRunPanel.swift` | Activity dots, agent badges on terminal tabs, *"Opened by …"* banner in browser, inline approvals. |
 
 ### Connecting External Terminal Agents
 

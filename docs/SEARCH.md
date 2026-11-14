@@ -54,7 +54,7 @@ top; the rest are grouped by kind, and a chip (or Tab) keeps one kind.
 | Query parser, index, ranking, snippets and highlighting (Foundation-only, tested in `NookSearchTests`) | `apps/macos/Services/Search/NookSearch.swift` |
 | Background indexing and debounced searching; session transcripts and the agents' own transcript files read from disk once (again only when they change) and kept, the index filling in as they are read | `apps/macos/Services/Search/SearchCenter.swift` |
 | What is searched and where a hit opens | `apps/macos/App/AppModel+Search.swift` |
-| The panel | `apps/macos/NotchUI/Pills/SearchPanel.swift` |
+| The panel | `apps/macos/UI/Pills/SearchPanel.swift` |
 
 ## Deep links
 

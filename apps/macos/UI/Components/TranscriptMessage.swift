@@ -7,7 +7,7 @@ import AppKit
 // footer with its time and copy button. Change a message here and every conversation follows.
 
 // `TranscriptStyle`, `TranscriptUserBubble`, `transcriptFolded` and `TranscriptTime` are shared with the iPhone
-// (NotchUI/Shared/TranscriptParts.swift).
+// (UI/Shared/TranscriptParts.swift).
 
 /// What you wrote: pictures and attached files above a soft bubble on the right, a long message folded to its first lines, and on hover
 /// its time and a copy button under it (and "Edit from here" where the session can go back to before it). Sent while

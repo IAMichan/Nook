@@ -37,8 +37,8 @@ Shared/          what the app and the extension share (ActivityKit attributes, h
 
 The wire protocol, ChaCha20-Poly1305 sealing, and SHA-256/HMAC helpers are shared with the macOS app via [`packages/protocol`](../../packages/protocol).
 
-The design is shared too: the app compiles the Mac's theme (`apps/macos/NotchUI/Theme/NookTheme.swift`) and its shared
-components (`apps/macos/NotchUI/Shared`: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
+The design is shared too: the app compiles the Mac's theme (`apps/macos/UI/Theme/NookTheme.swift`) and its shared
+components (`apps/macos/UI/Shared`: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
 messages), so both apps look the same; see *Shared with the iPhone* in [`docs/UI-COMPONENTS.md`](../../docs/UI-COMPONENTS.md).
 To look at the screens without a Mac, run a Debug build with the launch arguments `-NookDemo` (sample sessions, chats and
 a conversation) and optionally `-NookDemoShow agents|session|chats|chat`.

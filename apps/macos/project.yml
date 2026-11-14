@@ -49,7 +49,7 @@ targets:
     platform: macOS
     sources:
       - path: App
-      - path: NotchUI
+      - path: UI
       - path: Demo
       - path: Core
       - path: Services
@@ -369,8 +369,8 @@ targets:
       - path: Services/Messages/Giphy.swift
       - path: Services/WhatsApp/WhatsAppSend.swift
       - path: Services/WhatsApp/WhatsAppExport.swift
-      - path: NotchUI/Window/NotchResize.swift
-      - path: NotchUI/Window/ScreenPick.swift
+      - path: UI/Window/NotchResize.swift
+      - path: UI/Window/ScreenPick.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
       - path: Brain/Memory.swift
@@ -386,8 +386,8 @@ targets:
       - path: Core/LineDiff.swift
       - path: Core/ArchivePurge.swift
       - path: Core/NookLook.swift
-      - path: NotchUI/Theme/NookPalette.swift
-      - path: NotchUI/Theme/NookLookShare.swift
+      - path: UI/Theme/NookPalette.swift
+      - path: UI/Theme/NookLookShare.swift
       - path: Core/NookMonthDay.swift
       - path: Services/BuddyMoments.swift
       - path: Services/QuietMode.swift

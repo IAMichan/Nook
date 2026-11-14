@@ -2,7 +2,7 @@ import SwiftUI
 
 // The phone's panel: its header, tabs, search field, composer and starters, drawn as the Mac's (docs/UI-COMPONENTS.md)
 // with touch instead of hover (a press lights what the pointer lights on the Mac) and room for a finger. The buttons,
-// badges, list parts and agent logos are not here: both apps compile those from apps/macos/NotchUI/Shared.
+// badges, list parts and agent logos are not here: both apps compile those from apps/macos/UI/Shared.
 
 // MARK: Logos
 

@@ -57,8 +57,8 @@ check ".github/workflows/ci.yml" ALL
 check "scripts/ci-changes.sh" ALL
 
 # The iPhone companion compiles some of the Mac app's files; a change to any of them must build iOS.
-check "apps/macos/NotchUI/Theme/NookTheme.swift" "macos core_tests ios"
-check "apps/macos/NotchUI/Shared/AgentRow.swift" "macos core_tests ios"
+check "apps/macos/UI/Theme/NookTheme.swift" "macos core_tests ios"
+check "apps/macos/UI/Shared/AgentRow.swift" "macos core_tests ios"
 while IFS= read -r shared; do
   probe="apps/${shared#../}"
   [ -d "$probe" ] && probe="$probe/Probe.swift"

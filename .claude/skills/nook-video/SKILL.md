@@ -8,7 +8,7 @@ description: Make a short video about Nook (an Instagram Reel, TikTok, YouTube S
 A Nook video looks like Nook and feels like Nook, and it is fun to watch: Nook itself (the orb) as the main
 character, a hook on the very first frame, the real notch UI on a near-black canvas, words that land on the beat, and a
 soft lo-fi groove under it. Catchy, never loud: no flashes, no hard hits, nothing that shouts. Calm by design, like
-the app (see the comment on `enum NookTheme` in `apps/macos/NotchUI/Theme/NookTheme.swift`).
+the app (see the comment on `enum NookTheme` in `apps/macos/UI/Theme/NookTheme.swift`).
 
 Reply in the user's language. Everything inside the video and the files in this skill is English unless the user asks
 for another language; Nook speaks English, Dutch, German, French and Spanish, so those are the languages to offer.

@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The components in NotchUI/Shared are compiled into both apps: Nook on the Mac and Nook Companion on the iPhone
+// The components in UI/Shared are compiled into both apps: Nook on the Mac and Nook Companion on the iPhone
 // (apps/ios/project.yml). They take everything from `NookTheme` (the iPhone's `Theme` under the same name) and differ
 // per platform only where the platform asks for it: the pointer and hover on the Mac, touch and Dynamic Type on the
 // phone. Change one here and both apps follow.

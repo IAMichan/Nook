@@ -24,7 +24,7 @@ Looking for something concrete? Check the issues labeled [`good first issue`](ht
 3. **Build and run** the part you're changing (see the platform sections below).
 4. **Make your change** and keep it focused on one topic.
 5. **Run the checks** for what you touched:
-   - macOS app or Swift core: `./scripts/core-tests.sh` (runs on Linux too), and `./scripts/ui-lint.sh` when you changed `apps/macos/NotchUI` or `apps/macos/App`.
+   - macOS app or Swift core: `./scripts/core-tests.sh` (runs on Linux too), and `./scripts/ui-lint.sh` when you changed `apps/macos/UI` or `apps/macos/App`.
    - Tauri app: the `npm` and `cargo` checks under [Windows, Linux & Android](#windows-linux--android-tauri).
 6. **Open a pull request** using the [PR template](.github/pull_request_template.md). Commits, branches, code, comments, and docs are written in English.
 7. **Link the issues it resolves.** Before opening the pull request, check the [open issues](https://github.com/IAMichan/nook/issues) for any your change resolves, and list them under *Related issues* as `Closes #123` so they close on merge. Use `Part of #123` when the issue stays open.
