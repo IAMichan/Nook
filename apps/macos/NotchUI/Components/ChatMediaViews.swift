@@ -751,9 +751,7 @@ struct ChatVideoControls: View {
                 bar
             }
         }
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
-        .animation(NookTheme.hover, value: visible)
+        .revealOnHover(visible, animated: true)
     }
 
     private var bar: some View {

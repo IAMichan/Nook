@@ -836,9 +836,7 @@ private struct ChatBubbleView: View, Equatable {
                     BubbleActionButton(symbol: "arrowshape.turn.up.left", label: tr("chat.reply"), action: onReply)
                 }
             }
-            .opacity(shown ? 1 : 0)
-            .allowsHitTesting(shown)
-            .animation(NookTheme.hover, value: shown)
+            .revealOnHover(shown, animated: true)
         }
     }
 

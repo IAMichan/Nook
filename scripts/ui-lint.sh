@@ -25,6 +25,9 @@
 #      likewise use .nookBorderlessButton / .nookButton.
 #  11. A Label's icon goes through Image(icon:) as well: Label(_:icon:) (NotchUI/Theme/NookIcon.swift), never
 #      Label(_:systemImage:). LABEL_SYSTEM_IMAGE_PENDING lists the chat files another change is rewriting.
+#  12. A section that folds open turns a DisclosureChevron, a control hidden at rest uses .revealOnHover
+#      (NotchUI/Components/HoverReveal.swift), and a clock time comes from NookDates.clock (Core/RelativeTime.swift).
+#      PanelParts.swift keeps its own chevron: the iPhone app shares it, and there it follows Dynamic Type.
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors, and LABEL_SYSTEM_IMAGE_PENDING to
 # UIConsistencyTests.labelSystemImagePending.
 set -uo pipefail
@@ -121,5 +124,18 @@ grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link
 
 grep -rnE '\.menuStyle\(\s*\.(borderlessButton|button)\s*\)' NotchUI App --include='*.swift' \
   | report "menus show the pointing hand (.nookBorderlessButton / .nookButton, not the system menu styles)"
+
+grep -rnE -A3 'Image\(icon: "chevron\.(right|down|up|left)"\)' NotchUI App --include='*.swift' \
+  | grep -E '^[^:]+-[0-9]+-.*\.rotationEffect\(' \
+  | grep -v -e '^NotchUI/Components/HoverReveal.swift-' -e '^NotchUI/Shared/PanelParts.swift-' \
+  | report "folding chevrons are a DisclosureChevron (no chevron image with a rotationEffect of its own)"
+
+grep -rnE -A1 '\.opacity\(.+ \? 1 : 0\)\s*$' NotchUI App --include='*.swift' \
+  | grep -E '^[^:]+-[0-9]+-\s*\.allowsHitTesting\(' \
+  | grep -v '^NotchUI/Components/HoverReveal.swift-' \
+  | report "controls hidden at rest use .revealOnHover (no opacity and allowsHitTesting by hand)"
+
+grep -rnE 'dateFormat\s*=\s*"H{1,2}:mm"' NotchUI App --include='*.swift' \
+  | report "clock times come from NookDates.clock / clockOrDay / dayAndClock (no DateFormatter of a view's own for HH:mm)"
 
 exit $status

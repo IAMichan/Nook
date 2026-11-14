@@ -195,8 +195,7 @@ struct QueuedMessagesStrip: View {
         .overlay(alignment: .trailing) {
             actions(message, index: index, isEditing: isEditing)
                 .rowActionsBackdrop(fill)
-                .opacity(showsActions ? 1 : 0)
-                .allowsHitTesting(showsActions)
+                .revealOnHover(showsActions)
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xs)

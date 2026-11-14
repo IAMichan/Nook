@@ -365,8 +365,7 @@ struct HoverActionsRow<Content: View, Idle: View, Actions: View>: View {
                     .opacity(shown ? 0 : 1)
                     .accessibilityHidden(shown)
                 HStack(spacing: NookTheme.Spacing.xs) { actions() }
-                    .opacity(shown ? 1 : 0)
-                    .allowsHitTesting(shown)
+                    .revealOnHover(shown)
             }
         }
         .contentShape(Rectangle())
