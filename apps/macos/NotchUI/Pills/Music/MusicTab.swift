@@ -51,7 +51,8 @@ enum MusicSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .home: return "house"
-        case .nowPlaying: return "play.circle"
+        // The equalizer's bars, as beside a playing track everywhere in Nook: a play button reads as "press to play".
+        case .nowPlaying: return "waveform.path"
         case .search: return "magnifyingglass"
         case .queue: return "list.bullet"
         case .playlists: return "music.note.list"

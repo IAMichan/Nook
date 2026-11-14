@@ -471,6 +471,7 @@ enum NookIcon {
         "wand.and.stars": "wand-sparkles",
         "waveform": "audio-waveform",
         "waveform.badge.mic": "audio-lines",
+        "waveform.path": "audio-lines",
         "wifi": "wifi",
         "wifi.exclamationmark": "wifi-off",
         "wrench": "wrench",
