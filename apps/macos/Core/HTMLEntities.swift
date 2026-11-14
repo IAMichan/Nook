@@ -1,6 +1,6 @@
 import Foundation
 
-/// HTML character references decoded in one pass: numeric ones ("&#233;", "&#xE9;") and the named ones mail, chat apps,
+/// HTML character references written (`escape`) and read (`decode`). Decoded in one pass: numeric ones ("&#233;", "&#xE9;") and the named ones mail, chat apps,
 /// GitHub and web pages use. One pass decodes each reference once, so an escaped one stays text: "&amp;lt;" is "&lt;",
 /// not "<". Unknown names are left as they are.
 enum HTMLEntities {
@@ -10,6 +10,23 @@ enum HTMLEntities {
     ]
 
     private static let reference = try? NSRegularExpression(pattern: "&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z]{2,8}));")
+
+    /// Text for an HTML page or attribute: `&`, `<`, `>`, `"` and `'` written as references, in one pass.
+    static func escape(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.utf8.count)
+        for character in text {
+            switch character {
+            case "&": out += "&amp;"
+            case "<": out += "&lt;"
+            case ">": out += "&gt;"
+            case "\"": out += "&quot;"
+            case "'": out += "&#39;"
+            default: out.append(character)
+            }
+        }
+        return out
+    }
 
     static func decode(_ text: String) -> String {
         guard text.contains("&"), let reference else { return text }

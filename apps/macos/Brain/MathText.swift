@@ -139,23 +139,6 @@ enum MathText {
         return nil
     }
 
-    /// Text for an HTML page: `&`, `<`, `>`, `"` and `'` written as entities.
-    static func escapeHTML(_ text: String) -> String {
-        var out = ""
-        out.reserveCapacity(text.count)
-        for c in text {
-            switch c {
-            case "&": out += "&amp;"
-            case "<": out += "&lt;"
-            case ">": out += "&gt;"
-            case "\"": out += "&quot;"
-            case "'": out += "&#39;"
-            default: out.append(c)
-            }
-        }
-        return out
-    }
-
     /// The body of a page that shows `text` with its formulas: text as escaped HTML with its bold, italic and code, each
     /// formula as an element that holds its TeX (`data-tex`) for KaTeX to typeset. `display` makes the whole text one
     /// display formula (a ```math block or a `$$` block).
@@ -171,12 +154,12 @@ enum MathText {
     }
 
     private static func formula(_ tex: String, display: Bool) -> String {
-        "<span class=\"tex\(display ? " display" : "")\" data-tex=\"\(escapeHTML(tex))\">\(escapeHTML(tex))</span>"
+        "<span class=\"tex\(display ? " display" : "")\" data-tex=\"\(HTMLEntities.escape(tex))\">\(HTMLEntities.escape(tex))</span>"
     }
 
     /// Plain Markdown text as HTML: `**bold**`, `*italic*` / `_italic_`, `` `code` `` and line breaks; everything escaped.
     static func inlineHTML(_ text: String) -> String {
-        var html = escapeHTML(text)
+        var html = HTMLEntities.escape(text)
         func replace(_ pattern: String, _ template: String) {
             html = html.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
         }

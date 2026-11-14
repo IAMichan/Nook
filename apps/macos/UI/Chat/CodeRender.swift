@@ -61,7 +61,7 @@ struct CodeRenderView: NSViewRepresentable {
         coordinator.shown = code
         switch language.lowercased() {
         case "mermaid":
-            view.loadHTMLString(Self.mermaidScript == nil ? "<pre>\(MermaidPage.escaped(code))</pre>" : MermaidPage.html(code), baseURL: nil)
+            view.loadHTMLString(Self.mermaidScript == nil ? "<pre>\(HTMLEntities.escape(code))</pre>" : MermaidPage.html(code), baseURL: nil)
         case "svg":
             view.loadHTMLString("<!doctype html><html><body style=\"margin:0;background:#fff\">\(code)</body></html>", baseURL: nil)
         default:

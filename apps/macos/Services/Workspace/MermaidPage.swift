@@ -6,16 +6,12 @@ import Foundation
 enum MermaidPage {
     static let policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:"
 
-    static func escaped(_ code: String) -> String {
-        code.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-    }
-
     static func html(_ code: String) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(policy)">
         <style>body{margin:0;padding:12px;background:#0F0F13;color:#F4F3F7;font-family:-apple-system}</style></head>
-        <body><pre class="mermaid">\(escaped(code))</pre>
+        <body><pre class="mermaid">\(HTMLEntities.escape(code))</pre>
         <script>mermaid.initialize({startOnLoad:true,theme:'dark',securityLevel:'strict'});</script></body></html>
         """
     }

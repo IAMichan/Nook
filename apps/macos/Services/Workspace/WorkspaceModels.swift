@@ -883,13 +883,10 @@ enum PullRequestNews {
     /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
     /// words. The agent can read the whole comment on GitHub; the line says what it is about.
     static func plain(_ text: String, limit: Int = 300) -> String {
-        var result = plainRules.reduce(text) { result, rule in
+        let stripped = plainRules.reduce(text) { result, rule in
             rule.regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: rule.template)
         }
-        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
-            result = result.replacingOccurrences(of: entity, with: character)
-        }
-        let words = result.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let words = HTMLEntities.decode(stripped).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return ToolSummary.oneLine(words, limit)
     }
 

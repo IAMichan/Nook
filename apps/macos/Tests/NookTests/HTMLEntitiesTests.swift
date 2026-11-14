@@ -19,4 +19,11 @@ final class HTMLEntitiesTests: XCTestCase {
         XCTAssertEqual(HTMLEntities.decode("no references"), "no references")
         XCTAssertEqual(HTMLEntities.decode("&#1114112;"), "&#1114112;", "past the last code point")
     }
+
+    func testEscapeMakesTextSafeAndDecodesBack() {
+        let text = #"<a href="x">Tom & 'Jerry'</a>"#
+        XCTAssertEqual(HTMLEntities.escape(text), "&lt;a href=&quot;x&quot;&gt;Tom &amp; &#39;Jerry&#39;&lt;/a&gt;")
+        XCTAssertEqual(HTMLEntities.decode(HTMLEntities.escape(text)), text)
+        XCTAssertEqual(HTMLEntities.escape("plain café"), "plain café")
+    }
 }
