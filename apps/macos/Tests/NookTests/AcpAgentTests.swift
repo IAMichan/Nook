@@ -532,4 +532,20 @@ final class AcpAgentTests: XCTestCase {
         ]
         XCTAssertEqual(AgentLogLines.withoutLog(lines), ["Quota exceeded for gemini-4-argon-high", "Traceback (most recent call last):"])
     }
+
+    /// Grok lists its earlier sessions as every ACP agent does: from the agent (`session/list`) when its `initialize`
+    /// offers the list, never from disk.
+    func testGrokListsPastSessionsLikeEveryAcpAgent() {
+        for provider in [RunProvider.grok, .acp, .opencode] {
+            XCTAssertEqual(provider.capabilities.pastSessions, .agent, provider.rawValue)
+            XCTAssertTrue(provider.usesACP, provider.rawValue)
+        }
+        XCTAssertTrue(AcpSessionCapabilities(initialize: ["agentCapabilities": ["sessionCapabilities": ["list": [String: Any]()]]]).list)
+        XCTAssertFalse(AcpSessionCapabilities(initialize: ["agentCapabilities": ["sessionCapabilities": [String: Any]()]]).list)
+        let page = AcpListedSession.page(["sessions": [["sessionId": "s1", "cwd": "/p", "title": "Fix", "updatedAt": "2026-10-19T14:03:11.482Z"]],
+                                          "nextCursor": "n"])
+        XCTAssertEqual(page.sessions.first?.updated, NookDates.stamp("2026-10-19T14:03:11.482Z"))
+        XCTAssertNotNil(page.sessions.first?.updated)
+        XCTAssertEqual(page.next, "n")
+    }
 }
