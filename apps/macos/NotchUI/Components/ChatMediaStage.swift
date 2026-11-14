@@ -150,17 +150,7 @@ private struct ChatVideoStageView: View {
     }
 
     private func stageButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(icon: symbol)
-                .font(NookTheme.font(12, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(NookTheme.ink.opacity(0.55)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.nookPlain)
-        .help(label)
-        .accessibilityLabel(label)
+        MediaOverlayButton(symbol, label: label, size: .medium, action: action)
     }
 }
 

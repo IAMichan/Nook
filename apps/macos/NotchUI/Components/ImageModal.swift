@@ -61,17 +61,7 @@ struct ImageModal: View {
     }
 
     private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(icon: symbol)
-                .font(NookTheme.font(11, .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.black.opacity(0.55)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.nookPlain)
-        .help(label)
-        .accessibilityLabel(label)
+        MediaOverlayButton(symbol, label: label, action: action)
     }
 }
 
