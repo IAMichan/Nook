@@ -215,19 +215,46 @@ struct PullRequestLiveStateIcon: View {
 }
 
 extension PullRequestStatusStore {
-    /// Keeps a shown pull request current until the task that runs it ends, every `followInterval`. Places showing the
-    /// same one share the reads: a read by any of them, the branch sync or a watch counts for all (`refresh` skips while
-    /// the last one is younger than the interval). Nothing is read while the badge's window is hidden (`gate`) or nobody
-    /// is at the Mac; the first tick back catches up.
+    /// Keeps a shown pull request current until the task that runs it ends, every `followInterval` (sooner while it is
+    /// about to change). Places showing the same one share the reads: a read by any of them, the branch sync or a watch
+    /// counts for all (`refresh` skips while the last one is younger than the interval). Nothing is read while the
+    /// badge's window is hidden (`gate`) or nobody is at the Mac; the moment it shows again, you are back, or a turn ends
+    /// (`wakeFollowers`), it reads at once instead of waiting out its interval, so what shows is never a stale look.
     static func follow(_ url: URL, gate: AttentionGate? = nil) async {
+        var early = false
         while !Task.isCancelled {
             await gate?.waitUntilSeen()
-            let settled = shared.status(url).map { $0.glyph == .merged || $0.glyph == .closed } ?? false
             let plan = EnergyMonitor.shared.plan
-            let interval = followInterval(settled: settled, plan: plan)
-            if !EnergyMonitor.shared.signals.idle { await shared.refresh(url, maxAge: min(interval, 20 * plan.slowdown)) }
-            try? await Task.sleep(for: .seconds(interval))
+            let interval = followInterval(shared.status(url), plan: plan)
+            if !EnergyMonitor.shared.signals.idle {
+                // Woken early: read even when another place read a few seconds ago, unless that was just now.
+                await shared.refresh(url, maxAge: early ? 3 : min(interval, 20 * plan.slowdown))
+            }
+            early = await wait(interval, gate: gate)
         }
+    }
+
+    /// Waits `seconds`, in short steps so it can end early (`readEarly`). True when it ended early. While the window is
+    /// hidden it waits without a timer and ends the moment it shows again.
+    private static func wait(_ seconds: TimeInterval, gate: AttentionGate?) async -> Bool {
+        let step: TimeInterval = 5
+        let wakes = shared.wakeCount
+        // Away at any point of the wait: coming back reads at once.
+        var wasIdle = EnergyMonitor.shared.signals.idle
+        var left = seconds
+        while left > 0, !Task.isCancelled {
+            if let gate, gate.isHidden {
+                await gate.waitUntilSeen()
+                return true
+            }
+            let nap = min(step, left)
+            try? await Task.sleep(for: .seconds(nap), tolerance: .seconds(1))
+            left -= nap
+            let idle = EnergyMonitor.shared.signals.idle
+            if readEarly(wasIdle: wasIdle, isIdle: idle, wakesBefore: wakes, wakesNow: shared.wakeCount) { return true }
+            wasIdle = wasIdle || idle
+        }
+        return false
     }
 }
 

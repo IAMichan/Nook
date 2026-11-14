@@ -176,6 +176,8 @@ extension WorkspaceManager {
     /// whether or not it is watched, so it shows above the composer also when its branch is one Nook does not follow.
     func noticeCreatedPullRequest(_ id: UUID) {
         followAddedWorktree(id)
+        // The turn may have pushed, merged or closed a pull request: the ones shown read again now, not at their next tick.
+        PullRequestStatusStore.shared.wakeFollowers()
         guard let all = events[id], let made = RunPullRequestLinks.created(in: all, before: &pullRequestWatcher.beforeTurn[id]) else { return }
         if let ref = PullRequestRef.parse(made.absoluteString) { noticePullRequests(id, [ref], mustExist: false) }
         pullRequestCreated?(id, made)

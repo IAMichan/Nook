@@ -136,4 +136,29 @@ final class PullRequestStatusTests: XCTestCase {
         XCTAssertEqual(PullRequestStatus(glyph: .open, checks: "").ci, .unknown)
         XCTAssertNil(PullRequestStatus(glyph: .open, checks: nil).ci, "no read yet: the row keeps the list's checks")
     }
+
+    /// The tray above the composer reads sooner while the request is about to change, so it never lags behind a click.
+    func testAShownPullRequestReadsSoonerWhileItIsAboutToChange() {
+        let plan = EnergyPlan.fullSpeed
+        let clean = PullRequestMergeFacts(state: "clean")
+        XCTAssertEqual(PullRequestStatusStore.followInterval(nil, plan: plan), 10, "no read yet")
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .open, checks: "pending", merge: clean), plan: plan), 10)
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .open, checks: "success", merge: PullRequestMergeFacts(state: "unknown")), plan: plan), 10,
+                       "GitHub still works out whether it merges")
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .open, checks: "success", merge: nil), plan: plan), 10)
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .open, checks: "success", merge: clean), plan: plan), 30)
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .merged, checks: nil), plan: plan), 900)
+        XCTAssertEqual(PullRequestStatusStore.followInterval(PullRequestStatus(glyph: .closed, checks: "pending"), plan: plan), 900)
+    }
+
+    func testAFollowerReadsAtOnceWhenYouAreBackOrATurnEnds() {
+        XCTAssertFalse(PullRequestStatusStore.readEarly(wasIdle: false, isIdle: false, wakesBefore: 1, wakesNow: 1))
+        XCTAssertTrue(PullRequestStatusStore.readEarly(wasIdle: true, isIdle: false, wakesBefore: 1, wakesNow: 1), "back at the Mac")
+        XCTAssertFalse(PullRequestStatusStore.readEarly(wasIdle: false, isIdle: true, wakesBefore: 1, wakesNow: 1))
+        XCTAssertTrue(PullRequestStatusStore.readEarly(wasIdle: false, isIdle: false, wakesBefore: 1, wakesNow: 2), "a turn ended")
+        let store = PullRequestStatusStore()
+        let before = store.wakeCount
+        store.wakeFollowers()
+        XCTAssertNotEqual(store.wakeCount, before)
+    }
 }
