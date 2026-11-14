@@ -420,6 +420,15 @@ final class WorkspaceBridge: ObservableObject {
             audit(tool, caller, Self.summary(arguments), "geweigerd: tools off for this agent")
             return .error(BridgeAccess.refusal(tool, agent: caller.agent))
         }
+        // The same browser tool in the user's own browser: it runs as nook_use with the extension's chrome_* tool, so it
+        // passes that tool's gates too (access level, remote callers, the Nook apps group, approval for every action).
+        if BridgeUserBrowser.wanted(arguments), let use = BridgeUserBrowser.nookUseArguments(for: tool, arguments) {
+            // Another machine is refused before it can learn whether a browser is connected here.
+            if caller.remote { return .error(RemoteBridge.refusal) }
+            let extensionService = BrowserExtensionService.shared
+            guard extensionService.enabled, !extensionService.connected.isEmpty else { return .error(BridgeUserBrowser.notConnected) }
+            return await call(.nookUse, use, context)
+        }
         if !tool.asksInHandler, let refused = await centralGate(tool, arguments, caller, context) { return refused }
         do {
             switch tool {

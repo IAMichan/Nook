@@ -293,4 +293,70 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertNil(BrowserExtensionPanel.Page(["title": "No address"]))
         XCTAssertTrue(BrowserExtensionPanel.note(page: nil, browser: "").contains("cannot read"))
     }
+
+    // MARK: - The browser_* bridge tools in the user's own browser
+
+    func testEveryBrowserBridgeToolCanGoToTheUsersBrowser() {
+        let browserTools = BridgeTool.allCases.filter { $0.capability == .browser }
+        XCTAssertEqual(browserTools.count, 7)
+        for tool in browserTools {
+            let name = BridgeUserBrowser.chromeTool(for: tool)
+            XCTAssertNotNil(name.flatMap(BrowserExtensionTools.definition), "\(tool.rawValue) has a chrome_* tool")
+            let properties = tool.schema["properties"] as? [String: Any]
+            XCTAssertNotNil(properties?[BridgeUserBrowser.key], "\(tool.rawValue) offers in: user")
+        }
+        XCTAssertNil(BridgeUserBrowser.chromeTool(for: .terminalRun))
+        XCTAssertNil(BridgeUserBrowser.nookUseArguments(for: .terminalRun, ["in": "user"]))
+        XCTAssertNil((BridgeTool.terminalRun.schema["properties"] as? [String: Any])?[BridgeUserBrowser.key])
+    }
+
+    func testOnlyInUserGoesToTheUsersBrowser() {
+        XCTAssertTrue(BridgeUserBrowser.wanted(["in": "user"]))
+        XCTAssertTrue(BridgeUserBrowser.wanted(["in": " User "]))
+        XCTAssertFalse(BridgeUserBrowser.wanted(["in": "nook"]))
+        XCTAssertFalse(BridgeUserBrowser.wanted([:]))
+        XCTAssertFalse(BridgeUserBrowser.wanted(["in": true]))
+    }
+
+    func testABrowserCallBecomesNookUseWithTheChromeToolsArguments() throws {
+        let open = try XCTUnwrap(BridgeUserBrowser.nookUseArguments(for: .browserOpen, ["in": "user", "url": "https://example.com", "tab": 4]))
+        XCTAssertEqual(open["tool"] as? String, "chrome_open")
+        let openInput = try XCTUnwrap(open["arguments"] as? [String: Any])
+        XCTAssertEqual(openInput["url"] as? String, "https://example.com")
+        XCTAssertEqual(openInput["tab"] as? Int, 4)
+        XCTAssertNil(openInput["in"], "the bridge's own argument stays behind")
+
+        let wait = try XCTUnwrap(BridgeUserBrowser.nookUseArguments(for: .browserWaitFor, ["in": "user", "text": "Done", "timeout_seconds": 5]))
+        let waitInput = try XCTUnwrap(wait["arguments"] as? [String: Any])
+        XCTAssertEqual(wait["tool"] as? String, "chrome_wait")
+        XCTAssertEqual(waitInput["timeout"] as? Int, 5, "chrome_wait counts in timeout")
+        XCTAssertNil(waitInput["timeout_seconds"])
+        let definition = try XCTUnwrap(BrowserExtensionTools.definition("chrome_wait"))
+        guard case .success(let params) = BrowserExtensionTools.params(for: definition, waitInput) else { return XCTFail("valid") }
+        XCTAssertEqual(params["timeout"] as? Int, 5)
+        XCTAssertEqual(params["text"] as? String, "Done")
+
+        let type = try XCTUnwrap(BridgeUserBrowser.nookUseArguments(for: .browserType, ["in": "user", "ref": "e3", "value": "hi", "submit": true]))
+        XCTAssertEqual(type["tool"] as? String, "chrome_type")
+        let typeDefinition = try XCTUnwrap(BrowserExtensionTools.definition("chrome_type"))
+        guard case .success(let typed) = BrowserExtensionTools.params(for: typeDefinition, (type["arguments"] as? [String: Any]) ?? [:]) else {
+            return XCTFail("valid")
+        }
+        XCTAssertEqual(typed["ref"] as? String, "e3")
+        XCTAssertEqual(typed["submit"] as? Bool, true)
+
+        let shot = try XCTUnwrap(BridgeUserBrowser.nookUseArguments(for: .browserScreenshot, ["in": "user", "max_width": 800]))
+        XCTAssertEqual(shot["tool"] as? String, "chrome_screenshot")
+        XCTAssertNil((shot["arguments"] as? [String: Any])?["max_width"])
+        XCTAssertEqual(BridgeUserBrowser.nookUseArguments(for: .browserSnapshot, ["in": "user"])?["tool"] as? String, "chrome_find")
+    }
+
+    func testTheUsersBrowserKeepsTheNookUseRules() {
+        let caller = BridgeCaller(kind: .external, agent: "Codex", title: "", directory: "/tmp", mode: nil, permission: .bypass)
+        // An action in the user's own browser waits for them, whatever the session's rights; a read runs directly.
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: caller, nookAction: true), .ask(.action))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: caller, nookAction: false), .allow)
+        // Another machine never reaches the user's browser.
+        XCTAssertFalse(RemoteBridge.allows(.nookUse))
+    }
 }

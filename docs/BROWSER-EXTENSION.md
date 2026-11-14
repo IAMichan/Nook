@@ -43,6 +43,15 @@ a page until Nook is asked, and the extension sends nothing anywhere but to Nook
 | `chrome_key` | Presses a key (Enter, Escape, Tab, arrows…) | yes |
 | `chrome_close` | Closes a tab Nook opened (only those in Nook's group) | yes |
 
+Coding agents also reach these tools without `nook_use`: Nook's own browser tools (`browser_open`, `browser_read`,
+`browser_screenshot`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for`) take `in: "user"` to work
+in your browser instead of Nook's (`BridgeUserBrowser`). They become `chrome_open`, `chrome_read`, `chrome_screenshot`,
+`chrome_find`, `chrome_click`, `chrome_type` and `chrome_wait`, and run as `nook_use` with every rule of that path:
+actions still wait for your approval whatever the session's rights, an agent on another machine never gets them, and
+switching off **Nook's apps** for an agent switches them off too. `tab` and `browser` go along as the `chrome_*` tools
+take them. The other tools (`chrome_tabs`, `chrome_key`, `chrome_scroll`, `chrome_console`, `chrome_close`) stay behind
+`nook_use`, so the tool list every request carries does not grow.
+
 A command goes to the tab it names (`tab`), else to the tab Nook worked in last, else to the active tab of the window
 in front. When several browsers run the extension, `browser` picks one; otherwise the one you used last gets it. The
 approval card says what Nook will do and where. For example: *Click button "Send" · mail.example.com*. Nook takes the
@@ -84,7 +93,7 @@ Nook's commands ─────────┘                                  
                                                                                   ▼
                                    BrowserExtensionHub ◀── browser.sock (UnixSocketServer) ── BrowserExtensionService
                                           ▲
-                     BrowserExtensionConnector (chrome_* tools) ── Nook Chat, Think Along, nook_use for agents
+                     BrowserExtensionConnector (chrome_* tools) ── Nook Chat, Think Along, nook_use and browser_* in: "user" for agents
 ```
 
 - **Host** (`BrowserExtensionHost`). This is a Perl script, like `nook-mcp`, with no logic of its own. The browser

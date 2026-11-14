@@ -715,3 +715,55 @@ enum BridgeSecret {
         return result + rest
     }
 }
+
+/// The `browser_*` tools with `in: "user"`: the same call in the user's own browser (Chrome, Brave, Edge, Arc…) through
+/// Nook's extension instead of in Nook's browser. The call becomes `nook_use` with the matching `chrome_*` tool
+/// (`BrowserExtensionTools`), so it takes every rule of that path: the extension must be connected, the privacy level
+/// must let agents have the source, an agent on another machine never gets it, and opening, clicking and typing always
+/// wait for the user's approval, whatever the session's rights.
+enum BridgeUserBrowser {
+    /// The argument that picks the browser.
+    static let key = "in"
+    static let user = "user"
+
+    /// The property every `browser_*` tool takes. `tab` and `browser` go along as `chrome_*` takes them.
+    static let property: [String: Any] = [
+        "type": "string", "enum": ["nook", user],
+        "description": "user: the user's own Chrome/Arc/Brave/Edge via Nook's extension, signed in (tab, browser as in chrome_* via nook_tools); actions always need approval."
+    ]
+
+    /// Whether the call is meant for the user's own browser.
+    static func wanted(_ arguments: [String: Any]) -> Bool {
+        BridgeArgs.string(arguments[key])?.lowercased() == user
+    }
+
+    /// The `chrome_*` tool a `browser_*` tool becomes.
+    static func chromeTool(for tool: BridgeTool) -> String? {
+        switch tool {
+        case .browserOpen: return "chrome_open"
+        case .browserRead: return "chrome_read"
+        case .browserScreenshot: return "chrome_screenshot"
+        case .browserSnapshot: return "chrome_find"
+        case .browserClick: return "chrome_click"
+        case .browserType: return "chrome_type"
+        case .browserWaitFor: return "chrome_wait"
+        default: return nil
+        }
+    }
+
+    /// The `nook_use` arguments for the call: the `chrome_*` tool and the arguments it knows, named as it names them.
+    static func nookUseArguments(for tool: BridgeTool, _ arguments: [String: Any]) -> [String: Any]? {
+        guard let name = chromeTool(for: tool) else { return nil }
+        var input = arguments
+        input.removeValue(forKey: key)
+        // browser_wait_for counts in timeout_seconds, chrome_wait in timeout.
+        if let seconds = input.removeValue(forKey: "timeout_seconds"), input["timeout"] == nil { input["timeout"] = seconds }
+        // browser_screenshot sizes its picture itself; the extension takes the tab as it is.
+        input.removeValue(forKey: "max_width")
+        return ["tool": name, "arguments": input]
+    }
+
+    /// What an agent hears when no browser has the extension connected.
+    static let notConnected = "Nook's extension is not connected in any of the user's browsers. Ask the user to connect it "
+        + "(Nook › Settings › Editor & browser › Nook in your browser), or leave out in: \"user\" to use Nook's own browser."
+}

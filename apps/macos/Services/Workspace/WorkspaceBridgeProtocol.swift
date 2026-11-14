@@ -250,6 +250,17 @@ enum BridgeTool: String, CaseIterable, Sendable {
     }
 
     var schema: [String: Any] {
+        var schema = ownSchema
+        // Every browser tool also works in the user's own browser, through Nook's extension (BridgeUserBrowser).
+        if BridgeUserBrowser.chromeTool(for: self) != nil {
+            var properties = (schema["properties"] as? [String: Any]) ?? [:]
+            properties[BridgeUserBrowser.key] = BridgeUserBrowser.property
+            schema["properties"] = properties
+        }
+        return schema
+    }
+
+    private var ownSchema: [String: Any] {
         func object(_ properties: [String: Any], required: [String] = []) -> [String: Any] {
             var schema: [String: Any] = ["type": "object", "properties": properties]
             if !required.isEmpty { schema["required"] = required }
@@ -814,7 +825,7 @@ struct BridgeLaunch: Equatable, Sendable {
     You are running inside Nook, a Mac app the user watches while you work. Its `nook` MCP tools: terminal_run and \
     terminal_read for dev servers and watchers (the user sees them; short commands still run in your own shell); \
     browser_open, browser_snapshot (refs for browser_click and browser_type), browser_read and browser_screenshot for \
-    Nook's browser; pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
+    Nook's browser (in: "user" for the user's browser); pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
     GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
     side work to another agent (it sees only your brief; its result comes back as a message, so never poll); device_open, device_list and \
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
