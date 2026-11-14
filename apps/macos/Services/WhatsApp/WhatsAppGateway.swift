@@ -1611,7 +1611,7 @@ enum WAWebhook {
             id: id, chat: chat, sender: from,
             senderName: nonEmpty(p["sender_display_name"]) ?? nonEmpty(p["from_name"]) ?? "",
             text: text, media: gowaMedia(p),
-            date: WADate.rfc3339(p["timestamp"] as? String) ?? Date(),
+            date: ChatJSON.date(p["timestamp"]) ?? Date(),
             fromMe: p["is_from_me"] as? Bool ?? false)
         let poll = WAPollData.gowa(p["poll"])
         if poll.poll != nil || poll.vote != nil {
@@ -1656,7 +1656,7 @@ enum WAWebhook {
               let type = p["type"] as? String else { return .ignored }
         let jids = (p["jids"] as? [String] ?? []).filter { !$0.isEmpty }
         guard !jids.isEmpty else { return .ignored }
-        let date = WADate.rfc3339(json["timestamp"] as? String) ?? WADate.rfc3339(p["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.date(json["timestamp"]) ?? ChatJSON.date(p["timestamp"]) ?? Date()
         switch type {
         case "join", "leave":
             return .message(.membership(chat: chat, type == "join" ? .joined : .gone, by: nil, people: jids, date: date, me: me))
@@ -1675,7 +1675,7 @@ enum WAWebhook {
         guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]), let name = nonEmpty(p["name"]) else {
             return .ignored
         }
-        let date = WADate.rfc3339(json["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.date(json["timestamp"]) ?? Date()
         return .message(.groupChange(chat: chat, .renamed, by: nonEmpty(p["name_set_by"]), text: name, date: date, me: me))
     }
 
@@ -1781,7 +1781,7 @@ enum WAWebhook {
             senderName: nonEmpty(contact?["name"]) ?? nonEmpty(contact?["pushName"]) ?? "",
             text: (d["body"] as? String) ?? "",
             media: openwaMedia(type, filename: nonEmpty(media?["filename"])),
-            date: WADate.epoch(d["timestamp"]) ?? Date(),
+            date: ChatJSON.epoch(seconds: d["timestamp"]) ?? Date(),
             fromMe: fromMe)
         if let poll = WAPollData.openwa(d["poll"]) {
             message.poll = poll
@@ -1828,7 +1828,7 @@ enum WAWebhook {
         guard !people.isEmpty else { return .ignored }
         let actor = nonEmpty(d["actorId"])
         let joined = json["event"] as? String == "group.join"
-        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.epoch(seconds: d["timestamp"]) ?? ChatJSON.date(d["timestamp"]) ?? Date()
         return .message(.membership(chat: chat, joined ? .added : .removed, by: actor, people: people, date: date, me: me))
     }
 
@@ -1838,7 +1838,7 @@ enum WAWebhook {
         guard let d = json["data"] as? [String: Any], let chat = nonEmpty(d["groupId"]) ?? nonEmpty(d["chatId"]),
               let changes = d["changes"] as? [String: Any] else { return .ignored }
         let actor = nonEmpty(d["actorId"])
-        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.epoch(seconds: d["timestamp"]) ?? ChatJSON.date(d["timestamp"]) ?? Date()
         if let subject = nonEmpty(changes["subject"]) {
             return .message(.groupChange(chat: chat, .renamed, by: actor, text: subject, date: date, me: me))
         }
@@ -2088,7 +2088,7 @@ enum WAGOWA {
         guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [] }
         return list.compactMap { c in
             guard let jid = c["jid"] as? String, !jid.isEmpty else { return nil }
-            return (jid, (c["name"] as? String) ?? "", WADate.rfc3339(c["last_message_time"] as? String) ?? .distantPast)
+            return (jid, (c["name"] as? String) ?? "", ChatJSON.date(c["last_message_time"]) ?? .distantPast)
         }
     }
 
@@ -2108,7 +2108,7 @@ enum WAGOWA {
         func field(_ key: String) -> Any? { info[key] ?? info[key.lowercased()] }
         func date(_ key: String) -> Date? {
             // Go's zero time ("0001-01-01T00:00:00Z") means WhatsApp did not say.
-            WADate.rfc3339(field(key) as? String).flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
+            ChatJSON.date(field(key)).flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
         }
         let topicDeleted = field("TopicDeleted") as? Bool == true
         return WAGroupProfile(about: topicDeleted ? nil : ChatProfile.text(field("Topic") as? String),
@@ -2200,7 +2200,7 @@ enum WAGOWA {
                 id: id, chat: chat, sender: (m["sender_jid"] as? String) ?? chat,
                 senderName: nonEmpty(m["sender_display_name"]) ?? "",
                 text: text, media: gowaStoredMedia(m["media_type"] as? String, filename: nonEmpty(m["filename"])),
-                date: WADate.rfc3339(m["timestamp"] as? String) ?? .distantPast,
+                date: ChatJSON.date(m["timestamp"]) ?? .distantPast,
                 fromMe: m["is_from_me"] as? Bool ?? false)
             msg.chatName = WAJID.isGroup(chat) ? chatName : nil
             msg.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: me)
@@ -2336,7 +2336,7 @@ enum WAOpenWA {
     /// `GET /groups/{id}` → `{description, owner, createdAt (epoch s), isAnnounce, isReadOnly, participants}`: what it
     /// says of the group besides its people.
     static func groupProfile(_ obj: [String: Any]) -> WAGroupProfile {
-        WAGroupProfile(about: ChatProfile.text(obj["description"] as? String), created: WADate.epoch(obj["createdAt"]),
+        WAGroupProfile(about: ChatProfile.text(obj["description"] as? String), created: ChatJSON.epoch(seconds: obj["createdAt"]),
                        createdBy: nonEmpty(obj["owner"]), adminsOnly: obj["isAnnounce"] as? Bool, locked: obj["isReadOnly"] as? Bool)
     }
 
@@ -2380,7 +2380,7 @@ enum WAOpenWA {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
         return list.compactMap { c in
             guard let id = c["id"] as? String, !id.isEmpty else { return nil }
-            return (id, (c["name"] as? String) ?? "", (c["unreadCount"] as? Int) ?? 0, WADate.epoch(c["timestamp"]) ?? .distantPast)
+            return (id, (c["name"] as? String) ?? "", (c["unreadCount"] as? Int) ?? 0, ChatJSON.epoch(seconds: c["timestamp"]) ?? .distantPast)
         }
     }
 
@@ -2415,7 +2415,7 @@ enum WAOpenWA {
                 id: id, chat: chat, sender: nonEmpty(m["author"]) ?? (m["from"] as? String) ?? chat,
                 senderName: "", text: (m["body"] as? String) ?? "",
                 media: WAWebhook.openwaMedia(type, filename: nonEmpty(media?["filename"])),
-                date: WADate.epoch(m["timestamp"]) ?? .distantPast,
+                date: ChatJSON.epoch(seconds: m["timestamp"]) ?? .distantPast,
                 fromMe: m["direction"] as? String == "outgoing")
             msg.chatName = nonEmpty(m["chatName"])
             if msg.fromMe { msg.receipt = (m["status"] as? String).flatMap(WAReceipt.init(status:)) }
@@ -2495,26 +2495,6 @@ enum WAMembers {
         members.filter { member in
             !(me.map(member.matches) ?? false) && !selves.contains { member.ids.contains($0) }
         }
-    }
-}
-
-enum WADate {
-    static func rfc3339(_ s: String?) -> Date? {
-        guard let s, !s.isEmpty else { return nil }
-        return standard.date(from: s) ?? NookDates.isoFractional.date(from: s)
-    }
-
-    static func iso(_ date: Date) -> String { standard.string(from: date) }
-
-    /// Default options, UTC; never changed, so one serves every message.
-    private static let standard = ISO8601DateFormatter()
-
-    /// Epoch seconds, as a number or a numeric string.
-    static func epoch(_ v: Any?) -> Date? {
-        if let n = v as? Double, n > 0 { return Date(timeIntervalSince1970: n) }
-        if let n = v as? Int, n > 0 { return Date(timeIntervalSince1970: TimeInterval(n)) }
-        if let s = v as? String, let n = Double(s), n > 0 { return Date(timeIntervalSince1970: n) }
-        return nil
     }
 }
 

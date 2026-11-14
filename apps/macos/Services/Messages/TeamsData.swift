@@ -81,8 +81,7 @@ enum TeamsData {
     static func token(_ json: [String: Any], now: Date = Date()) -> TokenResult {
         if let access = json["access_token"] as? String {
             // A number, whole or not (Microsoft sends a whole one), or a numeral; an hour when it says nothing.
-            let value = json["expires_in"]
-            let expires = (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? String).flatMap(Double.init) ?? 3600
+            let expires = ChatJSON.number(json["expires_in"]) ?? 3600
             return .token(access: access, refresh: json["refresh_token"] as? String, expires: now.addingTimeInterval(expires))
         }
         switch json["error"] as? String {
@@ -213,14 +212,10 @@ enum TeamsData {
                let sent = ChatJSON.date(message["createdDateTime"]) {
                 let detail = message["eventDetail"] as? [String: Any] ?? [:]
                 if let change = membership(detail, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.membership = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, membership: change)
                 }
                 if let change = groupChange(detail, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.groupChange = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, groupChange: change)
                 }
             }
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
@@ -374,9 +369,14 @@ enum TeamsData {
     /// announce a message in the list a few seconds before the chat's own messages show it; a chat read too early must
     /// be read again. System notices count too, since the list announces those as well.
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
+        caughtUp(newest: (json["value"] as? [[String: Any]] ?? []).compactMap { ChatJSON.date($0["createdDateTime"]) }.max(), last: last)
+    }
+
+    /// Whether the newest message read is the one the chat list announced (`last`), for Graph and for the website
+    /// (`TeamsWebData.caughtUp`) alike. The list and the messages round the same moment differently (milliseconds or
+    /// not), so a second's difference is the same message.
+    static func caughtUp(newest: Date?, last: Date?) -> Bool {
         guard let last else { return true }
-        let newest = (json["value"] as? [[String: Any]] ?? []).compactMap { ChatJSON.date($0["createdDateTime"]) }.max()
-        // The list and the messages round the same moment differently (milliseconds or not).
         return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
     }
 

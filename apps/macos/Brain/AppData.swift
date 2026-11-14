@@ -37,11 +37,8 @@ enum AppData {
         return ""
     }
 
-    static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let text = value as? String { return Double(text) }
-        return nil
-    }
+    /// A number however a row writes it (`ChatJSON.number`).
+    static func number(_ value: Any?) -> Double? { ChatJSON.number(value) }
 
     /// Apple stores dates as seconds since 2001-01-01; Messages since 2017 in nanoseconds.
     static func appleDate(_ raw: Double) -> Date {

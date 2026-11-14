@@ -50,14 +50,7 @@ enum TelegramData {
         (object["@type"] as? String) ?? ""
     }
 
-    static func int64(_ value: Any?) -> Int64? {
-        if let number = value as? Int64 { return number }
-        if let number = value as? Int { return Int64(number) }
-        if let number = value as? NSNumber { return number.int64Value }
-        if let number = value as? Double { return Int64(number) }
-        if let text = value as? String { return Int64(text) }
-        return nil
-    }
+    static func int64(_ value: Any?) -> Int64? { ChatJSON.int64(value) }
 
     /// The JSON object of a string TDLib returned; nil when it is none.
     static func object(_ json: String) -> [String: Any]? {
@@ -174,8 +167,7 @@ enum TelegramData {
         }
         return (object["viewers"] as? [[String: Any]] ?? []).compactMap { viewer in
             guard let user = int64(viewer["user_id"]) else { return nil }
-            let seconds = int64(viewer["view_date"]) ?? 0
-            return (user, seconds > 0 ? Date(timeIntervalSince1970: Double(seconds)) : nil)
+            return (user, ChatJSON.epoch(seconds: viewer["view_date"]))
         }
     }
 
@@ -299,23 +291,16 @@ enum TelegramData {
     /// whether it is yours. Someone added, removed, joining or leaving shows as a line in the chat (`membership`); nil
     /// for a message without anything to show (another service message, a pinned notice). `me`: your own user id.
     static func message(_ object: [String: Any], chat: Chat, users: [Int64: String], me: Int64? = nil) -> InboxMessage? {
-        guard type(object) == "message", let id = int64(object["id"]) else { return nil }
+        // A message without a date (a scheduled one) is not shown: it would stand at 1 January 1970.
+        guard type(object) == "message", let id = int64(object["id"]), let date = ChatJSON.epoch(seconds: object["date"]) else { return nil }
         let content = object["content"] as? [String: Any] ?? [:]
         if let change = membership(content, sender: senderUser(object), mine: object["is_outgoing"] as? Bool == true,
                                    users: users, me: me) {
-            var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", text: "",
-                                       date: Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0)),
-                                       fromMe: change.by == ChatMembership.me)
-            message.membership = change
-            return message
+            return .notice(id: "telegram-\(chat.id)-\(id)", date: date, membership: change)
         }
         if let change = groupChange(content, sender: senderUser(object), mine: object["is_outgoing"] as? Bool == true,
                                     users: users, me: me) {
-            var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", text: "",
-                                       date: Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0)),
-                                       fromMe: change.by == ChatMembership.me)
-            message.groupChange = change
-            return message
+            return .notice(id: "telegram-\(chat.id)-\(id)", date: date, groupChange: change)
         }
         let attached = file(content)
         let asked = poll(content)
@@ -324,7 +309,6 @@ enum TelegramData {
         guard let text, !text.isEmpty || attached != nil || asked != nil else { return nil }
         let mine = object["is_outgoing"] as? Bool == true
         let sender = mine || !chat.isGroup ? "" : senderUser(object).flatMap { users[$0] } ?? ""
-        let date = Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0))
         var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
                                    media: attached?.media, poll: asked)
         message.receipt = receipt(object, readOutbox: chat.readOutbox)

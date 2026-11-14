@@ -77,9 +77,8 @@ enum TeamsWebData {
             token = String(token.dropFirst(prefix.count))
         }
         guard !token.isEmpty, let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return nil }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
         return Session(base: String(url[range]), token: token,
-                      expires: exp.map(Date.init(timeIntervalSince1970:)) ?? now.addingTimeInterval(3600),
+                      expires: ChatJSON.epoch(seconds: claims["exp"]) ?? now.addingTimeInterval(3600),
                       me: id.hasPrefix("8:") ? id : "8:" + id)
     }
 
@@ -107,15 +106,13 @@ enum TeamsWebData {
     static func isSpacesToken(_ token: String, now: Date = Date()) -> Bool {
         guard let claims = claims(token), let audience = claims["aud"] as? String,
               audience.contains("api.spaces.skype.com") else { return false }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
-        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+        return ChatJSON.epoch(seconds: claims["exp"]).map { $0 > now } ?? true
     }
 
     /// A session token itself (it says who you are) that has not run out, as the website may keep it.
     static func isSkypeToken(_ token: String, now: Date = Date()) -> Bool {
         guard let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return false }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
-        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+        return ChatJSON.epoch(seconds: claims["exp"]).map { $0 > now } ?? true
     }
 
     /// The session for a session token found on its own, with the chat service of `region` ("emea").
@@ -182,7 +179,7 @@ enum TeamsWebData {
                                       readUntil: readUntil(conversation["properties"] as? [String: Any]))
             // When the chat was made (`createdat`, milliseconds) and by whom (`creator`), for a group chat.
             if !oneOnOne {
-                let created = Double("\(thread["createdat"] ?? "")").map { Date(timeIntervalSince1970: $0 / 1000) }
+                let created = ChatJSON.epoch(millis: thread["createdat"])
                 let creator = (thread["creator"] as? String).flatMap { $0 == me ? ChatMembership.me : nil }
                 let profile = ChatProfile(created: created, createdBy: creator)
                 chat.profile = profile.isEmpty ? nil : profile
@@ -195,8 +192,8 @@ enum TeamsWebData {
     /// Until when you read a chat: the first part of its "consumption horizon", in milliseconds.
     static func readUntil(_ properties: [String: Any]?) -> Date? {
         guard let horizon = properties?["consumptionhorizon"] as? String,
-              let first = horizon.split(separator: ";").first, let ms = Double(first), ms > 0 else { return nil }
-        return Date(timeIntervalSince1970: ms / 1000)
+              let first = horizon.split(separator: ";").first else { return nil }
+        return ChatJSON.epoch(millis: String(first))
     }
 
     /// Who a message is from: the last part of its "from" address ("…/contacts/8:orgid:…").
@@ -225,14 +222,10 @@ enum TeamsWebData {
                let sent = date(message) {
                 let content = (message["content"] as? String) ?? ""
                 if let change = membership(type, content, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.membership = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, membership: change)
                 }
                 if type.lowercased() == "threadactivity/topicupdate", let change = topicUpdate(content, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.groupChange = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, groupChange: change)
                 }
             }
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
@@ -694,8 +687,6 @@ enum TeamsWebData {
 
     /// Whether the messages already list the newest one the chat list announced (see `TeamsData.caughtUp`).
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
-        guard let last else { return true }
-        let newest = (json["messages"] as? [[String: Any]] ?? []).compactMap(date).max()
-        return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
+        TeamsData.caughtUp(newest: (json["messages"] as? [[String: Any]] ?? []).compactMap(date).max(), last: last)
     }
 }

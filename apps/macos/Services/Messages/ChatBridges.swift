@@ -1056,14 +1056,10 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             // picture) keep only an id or a name in their text, which would read as a message: they are left out.
             let date = AppData.appleDate(AppData.number(row["date"]) ?? 0)
             if let change = AppData.whatsAppGroupChange(row, contacts: contacts) {
-                var line = InboxMessage(id: "wadesktop-\(id)", text: "", date: date, fromMe: change.by == ChatMembership.me)
-                line.groupChange = change
-                return line
+                return .notice(id: "wadesktop-\(id)", date: date, groupChange: change)
             }
             guard let change = AppData.whatsAppMembership(row, contacts: contacts) else { return nil }
-            var line = InboxMessage(id: "wadesktop-\(id)", text: "", date: date, fromMe: change.by == ChatMembership.me)
-            line.membership = change
-            return line
+            return .notice(id: "wadesktop-\(id)", date: date, membership: change)
         }
         var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
         if ChatFormat.isBlank(text) { text = "" }

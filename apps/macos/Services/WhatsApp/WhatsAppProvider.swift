@@ -354,7 +354,7 @@ actor GOWAProvider: WhatsAppProvider {
         for chat in chats.prefix(8) where chat.last > date {
             let data = try await scoped("GET", "/chat/\(WAHTTP.pathComponent(chat.jid))/messages", query: [
                 URLQueryItem(name: "limit", value: "10"),
-                URLQueryItem(name: "start_time", value: WADate.iso(date)),
+                URLQueryItem(name: "start_time", value: ChatJSON.iso(date)),
             ])
             out += WAGOWA.messages(data, me: me).map { m in
                 var m = m

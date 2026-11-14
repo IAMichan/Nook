@@ -424,6 +424,21 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var isEdited: Bool { edited == true }
     var isDeleted: Bool { deleted == true }
 
+    /// A line about who came into the group or went (`membership`), the same in every app: yours when you did it.
+    static func notice(id: String, date: Date, membership: ChatMembership) -> InboxMessage {
+        var line = InboxMessage(id: id, text: "", date: date, fromMe: membership.by == ChatMembership.me)
+        line.membership = membership
+        return line
+    }
+
+    /// A line about the group itself changing (`groupChange`), the same in every app: yours when you did it, unless the
+    /// app says whose it is (`fromMe`).
+    static func notice(id: String, date: Date, groupChange: ChatGroupChange, fromMe: Bool? = nil) -> InboxMessage {
+        var line = InboxMessage(id: id, text: "", date: date, fromMe: fromMe ?? (groupChange.by == ChatMembership.me))
+        line.groupChange = groupChange
+        return line
+    }
+
     /// What stays of the message once it was deleted for everyone: who wrote it and when. Someone else's keeps what it
     /// said as far as Nook had it (text, file, poll, quote, emoji), so you can still read it, marked "Deleted" as an
     /// edited one says "Edited"; your own says only that you deleted it. A mail keeps its text either way: deleting it
