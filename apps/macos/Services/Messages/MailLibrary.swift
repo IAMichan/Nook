@@ -8,11 +8,29 @@ import Foundation
 ///
 /// Both readers of Mail use it: the Chats tab (`MailBridge`) and the Mail connector (`MailConnector`).
 enum MailLibrary {
-    /// Mail's index on this Mac, or nil when there is none.
+    /// Mail's index on this Mac, or nil when there is none. Finding it lists ~/Library/Mail, and one round of the Chats
+    /// tab asks the index a question per mailbox, so the answer is kept for `pathReuse`: Mail's folder only moves when
+    /// macOS installs a new Mail. The queries themselves share one open connection (`AppDatabaseConnections`).
     static var databasePath: String? {
+        let now = Date()
+        pathLock.lock()
+        if let found, now.timeIntervalSince(found.at) < pathReuse {
+            pathLock.unlock()
+            return found.path
+        }
+        pathLock.unlock()
         let library = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
-        return MailIndex.root(library: library).map(MailIndex.databasePath(root:))
+        let path = MailIndex.root(library: library).map(MailIndex.databasePath(root:))
+        pathLock.lock()
+        found = (path, now)
+        pathLock.unlock()
+        return path
     }
+
+    /// How long a found (or missing) index counts: also how soon Full Disk Access given meanwhile is noticed.
+    private static let pathReuse: TimeInterval = 60
+    private static let pathLock = NSLock()
+    private nonisolated(unsafe) static var found: (path: String?, at: Date)?
 
     private static func query(_ sql: String) async -> [[String: Any]]? {
         guard let path = databasePath else { return nil }

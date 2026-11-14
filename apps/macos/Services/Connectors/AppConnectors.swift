@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 import Contacts
-import SQLite3
 import os
 
 // MARK: Apps without an API of their own
@@ -27,7 +26,7 @@ enum AppDatabase {
         if case .failure(let error) = output, isLocked(error) {
             // Still locked: read the database file as it is on disk. The newest messages may still be in the app's
             // write-ahead log, but an answer from nearly everything beats none.
-            output = await run(path: snapshotURI(path), sql: sql)
+            output = await run(path: snapshotURI(path), sql: sql, snapshot: true)
             complete = false
         }
         switch output {
@@ -58,63 +57,16 @@ enum AppDatabase {
         return message.contains("database is locked") || message.contains("database is busy")
     }
 
-    private static func run(path: String, sql: String) async -> Result<[[String: Any]], Error> {
-        await withCheckedContinuation { continuation in
+    /// One read-only query in Nook itself (`AppDatabaseConnections`). It used to start a `sqlite3` process for every
+    /// read, which for the chat bridges (every few seconds) cost far more than the query; a plain path now reuses that
+    /// file's open connection, and the unchanging-file fallback (`snapshotURI`) opens one of its own for its one read.
+    private static func run(path: String, sql: String, snapshot: Bool = false) async -> Result<[[String: Any]], Error> {
+        guard snapshot else { return await AppDatabaseConnections.shared.query(path, sql) }
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: read(path: path, sql: sql))
+                continuation.resume(returning: AppDatabaseSQL.once(path, sql))
             }
         }
-    }
-
-    /// One read-only query in Nook itself, waiting up to 3 seconds for a lock the app holds. It used to start a `sqlite3`
-    /// process for every read, which for the chat bridges (every few seconds) cost far more than the query. The rows come
-    /// back as `sqlite3 -json` gave them: numbers as `NSNumber`, text as `String`, NULL as `NSNull`. `path` may be a
-    /// `file:` URI (`snapshotURI`).
-    private static func read(path: String, sql: String) -> Result<[[String: Any]], Error> {
-        var db: OpaquePointer?
-        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK, let db else {
-            let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unable to open database file"
-            sqlite3_close(db)
-            return .failure(failure(message))
-        }
-        defer { sqlite3_close(db) }
-        sqlite3_busy_timeout(db, 3000)
-        var prepared: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &prepared, nil) == SQLITE_OK, let statement = prepared else {
-            return .failure(failure(String(cString: sqlite3_errmsg(db))))
-        }
-        defer { sqlite3_finalize(statement) }
-        let columns = sqlite3_column_count(statement)
-        var rows: [[String: Any]] = []
-        while true {
-            let step = sqlite3_step(statement)
-            if step == SQLITE_DONE { break }
-            guard step == SQLITE_ROW else { return .failure(failure(String(cString: sqlite3_errmsg(db)))) }
-            var row: [String: Any] = [:]
-            for index in 0..<columns {
-                let name = String(cString: sqlite3_column_name(statement, index))
-                switch sqlite3_column_type(statement, index) {
-                case SQLITE_INTEGER: row[name] = NSNumber(value: sqlite3_column_int64(statement, index))
-                case SQLITE_FLOAT: row[name] = NSNumber(value: sqlite3_column_double(statement, index))
-                case SQLITE_TEXT, SQLITE_BLOB:
-                    // The pointer first, then its length (SQLite's order, so no conversion runs in between).
-                    let bytes = sqlite3_column_blob(statement, index)
-                    let count = Int(sqlite3_column_bytes(statement, index))
-                    if let bytes, count > 0 {
-                        row[name] = String(decoding: UnsafeRawBufferPointer(start: bytes, count: count), as: UTF8.self)
-                    } else {
-                        row[name] = ""
-                    }
-                default: row[name] = NSNull()
-                }
-            }
-            rows.append(row)
-        }
-        return .success(rows)
-    }
-
-    private static func failure(_ message: String) -> Error {
-        NSError(domain: "nook.appdatabase", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     static func noAccess(_ app: String) -> NookError {
