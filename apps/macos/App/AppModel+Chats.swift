@@ -141,9 +141,19 @@ extension AppModel {
         }
         // Nothing new from them (your own answer, new ticks): nothing to tell.
         guard !line.isEmpty else { return }
+        // A chat you snoozed (Follow up › Later) keeps quiet until its time; the history has the message already.
+        guard !ChatFollowUpStore.shared.follow.isSnoozed(id, now: Date()) else { return }
+        // A question in a private chat, or a mention in a group that is otherwise quiet, may pass a burst of other
+        // pop-ups (`ChatNoticePriority`); never the gaps or the rules.
+        let rules = ChatNoticeRulesStore.shared.rules
+        let newest = thread.messages.last(where: { !$0.isMine })
+        let priority = ChatNoticePriority.raises(kind: thread.noticeKind, mentionsMe: newest?.mentionsMe == true,
+                                                 asksQuestion: TextKit.asksQuestion(newest?.text ?? ""),
+                                                 quietByKind: rules.kindIsQuiet(thread.noticeKind, app: thread.app),
+                                                 mode: rules.mode(for: id))
         let open: () -> Void = { [weak self] in self?.presentChat(id, asked: true) }
-        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, title: thread.name, subtitle: context,
-                      body: line,
+        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, priority: priority, title: thread.name,
+                      subtitle: context, body: line,
                       card: { [weak self] in self?.showChatCard(id, opened: false) },
                       strip: { [weak self] in
                           self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)
@@ -191,9 +201,13 @@ extension AppModel {
         viewModel.register("\(token)#nook") { [weak self] in self?.letNookAnswer(id) }
         viewModel.register("\(token)#open") { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
         viewModel.register("\(token)#app") { [weak self] in self?.openChatApp(thread.app) }
-        viewModel.register("\(token)#quiet") { ChatNoticeRulesStore.shared.setMode(.muted, for: id) }
+        viewModel.register("\(token)#quiet") {
+            ChatNoticeRulesStore.shared.setMode(.muted, for: id)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.chats.rawValue, app: thread.app, subject: id)
+        }
         viewModel.register("\(token)#hide") { [weak self] in
             ChatNoticeRulesStore.shared.setHidden(true, chat: id)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.chats.rawValue, app: thread.app, subject: id)
             self?.viewModel.dismissCard(id: token)
         }
         let time = Self.chatBubbleTime

@@ -113,13 +113,16 @@ struct NoticePacer: Sendable {
     /// Whether a notice may pop up now. `key` names what it is about ("agent:<id>", "chat:<id>"). `urgent`: it waits on
     /// you, and always may. `calm`: how long the notch must have been free of other pop-ups (a suggestion waits longer).
     /// `gapFactor`: the gaps grow for what you keep turning away (`AttentionFeedback.gapFactor`), never shrink.
-    func permits(key: String, urgent: Bool = false, calm: TimeInterval = 0, gapFactor: Double = 1, now: Date = Date()) -> Bool {
+    /// `priority`: a chat that asks you something or names you (`ChatNoticePriority`) may pass a full burst; the gaps still
+    /// hold.
+    func permits(key: String, urgent: Bool = false, priority: Bool = false, calm: TimeInterval = 0, gapFactor: Double = 1,
+                 now: Date = Date()) -> Bool {
         if urgent { return true }
         let factor = max(1, gapFactor)
         let recent = shown.filter { now.timeIntervalSince($0.date) < Self.burstWindow }
         if let last = recent.last, now.timeIntervalSince(last.date) < max(Self.gap * factor, calm) { return false }
         if recent.contains(where: { $0.key == key && now.timeIntervalSince($0.date) < Self.sameKeyGap * factor }) { return false }
-        return recent.count < Self.burstLimit
+        return priority || recent.count < Self.burstLimit
     }
 
     /// `permits`, and for an offer or a moment also the day's budget (`InterruptionBudget.allows`).
@@ -131,14 +134,14 @@ struct NoticePacer: Sendable {
 
     /// The first moment `permits` lets a notice about `key` through, from `now` on (`now` itself when it does already).
     /// A chat held back pops up then, if it still has news, instead of only waiting in the list.
-    func nextPermitted(key: String, calm: TimeInterval = 0, gapFactor: Double = 1, now: Date = Date()) -> Date {
+    func nextPermitted(key: String, priority: Bool = false, calm: TimeInterval = 0, gapFactor: Double = 1, now: Date = Date()) -> Date {
         let factor = max(1, gapFactor)
         let recent = shown.filter { now.timeIntervalSince($0.date) < Self.burstWindow }
         var at = now
         if let last = recent.last { at = max(at, last.date.addingTimeInterval(max(Self.gap * factor, calm))) }
         if let same = recent.last(where: { $0.key == key }) { at = max(at, same.date.addingTimeInterval(Self.sameKeyGap * factor)) }
         // The burst has room again once enough of it left the window that one more fits.
-        if recent.count >= Self.burstLimit {
+        if !priority, recent.count >= Self.burstLimit {
             at = max(at, recent[recent.count - Self.burstLimit].date.addingTimeInterval(Self.burstWindow))
         }
         return at
@@ -156,8 +159,9 @@ struct NoticePacer: Sendable {
     }
 
     /// `permits`, and when it does, `record`.
-    mutating func allow(key: String, urgent: Bool = false, calm: TimeInterval = 0, gapFactor: Double = 1, now: Date = Date()) -> Bool {
-        guard permits(key: key, urgent: urgent, calm: calm, gapFactor: gapFactor, now: now) else { return false }
+    mutating func allow(key: String, urgent: Bool = false, priority: Bool = false, calm: TimeInterval = 0, gapFactor: Double = 1,
+                        now: Date = Date()) -> Bool {
+        guard permits(key: key, urgent: urgent, priority: priority, calm: calm, gapFactor: gapFactor, now: now) else { return false }
         record(key: key, now: now)
         return true
     }

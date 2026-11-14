@@ -5,8 +5,12 @@ import AppKit
 /// to say and when is decided by `BuddyPlanner`; this side gathers the signals and shows the moment below the notch.
 extension AppModel {
     func startBuddy() {
+        // The same half-minute timer looks at your chat follow-ups (at most once a minute, nothing when there are none).
         Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
-            Task { @MainActor in self?.buddyTick() }
+            Task { @MainActor in
+                self?.buddyTick()
+                self?.chatFollowUpTick()
+            }
         }
     }
 

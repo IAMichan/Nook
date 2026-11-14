@@ -36,9 +36,11 @@ extension AppModel {
     ///
     /// `banner` is what its macOS notification adds: where it leads, its buttons (Reply, Mark as read, Open …). Its
     /// group and how much it may interrupt follow from the source when the banner leaves them out.
+    /// `priority`: a chat that asks you something or names you (`ChatNoticePriority`): it may pass the pacer's burst
+    /// limit, never its gaps or the rules.
     @discardableResult
     func deliverNotice(_ source: NoticeSource, app: String = "", id: String, pace: String? = nil, urgent: Bool = false,
-                       title: String, subtitle: String = "",
+                       priority: Bool = false, title: String, subtitle: String = "",
                        body: String = "", sound: NookSound? = nil, watching: Bool = false, kind: NookToastKind = .info,
                        card: @escaping () -> Void, strip: @escaping () -> Void,
                        open: (() -> Void)? = nil, window: (() -> Void)? = nil, banner: NoticeBanner = NoticeBanner(),
@@ -53,10 +55,11 @@ extension AppModel {
         let key = pace ?? id
         // What you keep turning away from this source and app keeps a longer distance (`AttentionFeedback`).
         let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: source.rawValue, app: app)
-        guard onNotch || noticePacer.allow(key: key, urgent: urgent, gapFactor: gapFactor) else {
+        guard onNotch || noticePacer.allow(key: key, urgent: urgent, priority: priority, gapFactor: gapFactor) else {
             if let stillNew {
-                holdNotice(key: key, gapFactor: gapFactor, stillNew: stillNew) { [weak self] in
-                    _ = self?.deliverNotice(source, app: app, id: id, pace: pace, urgent: urgent, title: title, subtitle: subtitle,
+                holdNotice(key: key, priority: priority, gapFactor: gapFactor, stillNew: stillNew) { [weak self] in
+                    _ = self?.deliverNotice(source, app: app, id: id, pace: pace, urgent: urgent, priority: priority,
+                                            title: title, subtitle: subtitle,
                                             body: body, sound: sound, watching: watching, kind: kind, card: card, strip: strip,
                                             open: open, window: window, banner: banner, stillNew: stillNew)
                 }
@@ -97,9 +100,10 @@ extension AppModel {
     /// only, as before: a pop-up ten minutes after the message would be news to no one.
     static let heldNoticeLimit: TimeInterval = NoticePacer.sameKeyGap
 
-    private func holdNotice(key: String, gapFactor: Double, stillNew: @escaping () -> Bool, deliver: @escaping () -> Void) {
+    private func holdNotice(key: String, priority: Bool, gapFactor: Double, stillNew: @escaping () -> Bool,
+                            deliver: @escaping () -> Void) {
         Self.heldNotices.removeValue(forKey: key)?.cancel()
-        let wait = noticePacer.nextPermitted(key: key, gapFactor: gapFactor).timeIntervalSinceNow
+        let wait = noticePacer.nextPermitted(key: key, priority: priority, gapFactor: gapFactor).timeIntervalSinceNow
         guard wait <= Self.heldNoticeLimit else { return }
         Self.heldNotices[key] = Task { @MainActor in
             // A moment past the time itself, so the pacer's own comparison lets it through.
