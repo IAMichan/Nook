@@ -75,9 +75,15 @@ struct ChatTranscript: View, Equatable {
     @State private var openedAt = Date()
     /// Where the messages are and which ones a drag picked, for asking Nook about them (`TranscriptSelection`).
     @StateObject private var selection = TranscriptSelection()
+    /// Keeps the message you read in place while what is above it loads or changes size (`TranscriptReadingAnchor`).
+    @State private var reading = TranscriptReadingAnchor()
+    /// Where `reading` scrolls the chat to; in `@State`, so a scroll that writes it does not redraw the chat.
+    @State private var scrollTarget = TranscriptScrollTarget()
 
     /// The end of the chat, under its last message and whoever is typing: where the chat stays while you are there.
     private static let bottomID = "\u{1}bottom"
+    /// The scroll view's content, for where the stack of messages starts in it.
+    private static let contentSpace = "transcript.content"
     /// How long after opening a chat what comes in does not glide in.
     private static let settling: TimeInterval = 2
 
@@ -107,6 +113,10 @@ struct ChatTranscript: View, Equatable {
         if let newFrom, let index = bubbles.firstIndex(where: { $0.id == newFrom }) { start = min(start, max(index - 3, 0)) }
         return start == 0 ? bubbles : Array(bubbles[start...])
     }
+
+    /// Whether the message you read is held in place: not at the newest message, which follows the end instead, and
+    /// not while older messages are drawn or fetched, which put the old top message back themselves.
+    private var holdsReading: Bool { !atBottom && !loadingOlder && !drawingOlder }
 
     /// You moved the chat: what is drawn stays put from now on, so a new message does not push the oldest one out above
     /// what you read.
@@ -156,11 +166,16 @@ struct ChatTranscript: View, Equatable {
                         loadOlderButton { loadOlder(proxy) }
                     }
                     stack
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: {
+                            reading.stack(at: $0, holding: holdsReading)
+                        }
                     Color.clear
                         .frame(height: 0)
                         .id(Self.bottomID)
                 }
+                .coordinateSpace(.named(Self.contentSpace))
             }
+            .modifier(TranscriptScrollPosition(target: scrollTarget))
             .scrollIndicators(.never)
             // The messages stay inside the transcript: unclipped, a bubble scrolled past the top was drawn over the
             // chat's header above it.
@@ -193,6 +208,9 @@ struct ChatTranscript: View, Equatable {
                                          container: geometry.containerSize.height,
                                          content: geometry.contentSize.height)
             } action: { old, new in
+                reading.moved(from: old.offset, to: new.offset, container: new.container,
+                              sizesSame: new.content == old.content && new.container == old.container,
+                              holding: holdsReading)
                 // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
                 // message arriving), or its room shrank (the field grows with a longer message): it stays at the newest
                 // at once, so the messages move up with the field instead of slipping under it. `atBottom` counts as
@@ -264,6 +282,11 @@ struct ChatTranscript: View, Equatable {
             }
             // A chat opens at its newest message, also when its first layout took more than one pass.
             .onAppear {
+                reading.scroll = { [scrollTarget] y in
+                    var still = Transaction()
+                    still.disablesAnimations = true
+                    withTransaction(still) { scrollTarget.position.scrollTo(y: y) }
+                }
                 guard fills else { return }
                 var jump = Transaction()
                 jump.disablesAnimations = true
@@ -395,8 +418,12 @@ struct ChatTranscript: View, Equatable {
                             .background(TranscriptPickMark(selection: selection, id: bubble.id))
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TranscriptSelection.space)) } action: {
                                 selection.place(bubble.id, at: $0)
+                                reading.place(bubble.id, at: $0, holding: holdsReading)
                             }
-                            .onDisappear { selection.place(bubble.id, at: nil) }
+                            .onDisappear {
+                                selection.place(bubble.id, at: nil)
+                                reading.place(bubble.id, at: nil, holding: holdsReading)
+                            }
                             // A new run starts with room above it; the messages of one run sit close together, so who
                             // said what reads at a glance.
                             .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs))
@@ -2047,6 +2074,21 @@ private struct TranscriptScrollGeometry: Equatable {
     var nearTop: Bool { offset <= 80 }
     /// The newest message is in view, give or take a line.
     var nearBottom: Bool { content <= container || offset + container >= content - 60 }
+}
+
+/// The scroll target `TranscriptReadingAnchor` sets, observed only by the modifier that hands it to the scroll view:
+/// the chat itself does not redraw for each step of a scroll that writes it.
+@MainActor
+final class TranscriptScrollTarget: ObservableObject {
+    @Published var position = ScrollPosition()
+}
+
+private struct TranscriptScrollPosition: ViewModifier {
+    @ObservedObject var target: TranscriptScrollTarget
+
+    func body(content: Content) -> some View {
+        content.scrollPosition($target.position)
+    }
 }
 
 /// "Deleted" beside the time of a message its writer deleted for everyone that still shows what it said, as "Edited"
