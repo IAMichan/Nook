@@ -104,13 +104,12 @@ final class PullRequestActionState: ObservableObject {
 
 /// The ⋯ menu of a pull request, in Nook's own dropdown panel: refresh it, copy its link, number or checkout command,
 /// ask for reviews, edit it, mark it ready for review or turn it back into a draft, bring its branch up to date, close or
-/// reopen it. While GitHub is asked the ⋯ spins.
+/// reopen it. The refresh button next to it turns while GitHub is asked.
 /// What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
     @Environment(\.sessionContextTarget) private var session
-    var loading = false
     /// When the page last heard from GitHub, said in the menu's tooltip.
     var fetchedAt: Date? = nil
     var onRefresh: (() -> Void)? = nil
@@ -124,16 +123,10 @@ struct PullRequestMoreMenu: View {
 
     var body: some View {
         ComposerDropdown(width: 248) {
-            Group {
-                if loading {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(icon: "ellipsis")
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            .frame(width: 28, height: 28)
+            Image(icon: "ellipsis")
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         } content: {
             if let onRefresh {

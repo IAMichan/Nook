@@ -52,6 +52,9 @@ struct PullRequestDetailView: View {
     @State var behindBy: Int?
     /// The check whose steps and log the Summary shows in place of itself.
     @State var openCheck: PullRequestCheck?
+    /// Set by the refresh button until the read it asked for is done: the refresh arrows turn for that one, not for
+    /// the quiet reads every half minute.
+    @State var refreshAsked = false
     /// Files you marked as viewed; a mark lapses when a push changes the file.
     @State var viewed = PullRequestViewedFiles.load()
     /// The review guide written for this pull request, if any, and whether one is being written.
@@ -258,12 +261,19 @@ struct PullRequestDetailView: View {
             if shownStack.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
-                // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone
-                // watches the reads, so a poll draws the menu again and not the page.
+                // The refresh button and the ⋯ menu alone watch the reads, so a poll draws them again and not the page.
                 Observing(model.status) {
-                    PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt, onRefresh: {
-                        Task { await model.refresh(activity: true) }
-                    }, viewer: viewer, method: method, host: forgeRepository?.host ?? .github, onWriteGuide: {
+                    RefreshIconButton(label: tr("agents.pulls.refresh"), turning: refreshAsked && model.loading) {
+                        refreshAsked = true
+                        Task {
+                            await model.refresh(activity: true)
+                            // A read already running takes the ask along and keeps `loading` on until it is done.
+                            if !model.loading { refreshAsked = false }
+                        }
+                    }
+                    .onChange(of: model.loading) { _, loading in if !loading { refreshAsked = false } }
+                    PullRequestMoreMenu(state: actions, detail: detail, fetchedAt: model.fetchedAt,
+                                        viewer: viewer, method: method, host: forgeRepository?.host ?? .github, onWriteGuide: {
                         switchTo(.guide)
                         writeGuide(detail, key: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number))
                     })

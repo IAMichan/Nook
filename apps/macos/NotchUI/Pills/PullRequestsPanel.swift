@@ -203,14 +203,14 @@ struct PullRequestsPanel: View {
     private func list(selected: String?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             PanelListHeader(tr("agents.footer.pullRequests"), count: waitingCount) {
-                // Only a refresh you asked for (or a first load) spins; the quiet ones every half minute do not.
-                if store.showsProgress {
-                    ProgressView().controlSize(.small)
-                } else if let read = store.lastRead {
+                if !store.showsProgress, let read = store.lastRead {
                     PullRequestFreshness(date: read)
                 }
                 NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .pullRequests) }
-                NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
+                // Only a refresh you asked for (or a first load) turns it; the quiet ones every half minute do not.
+                RefreshIconButton(label: tr("agents.pulls.refresh"), turning: store.showsProgress) {
+                    Task { await store.refresh(force: true) }
+                }
             }
 
             if !store.loaded {
