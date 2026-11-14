@@ -107,6 +107,12 @@ export function commandError(command, state) {
     const error = targetError(params);
     if (error) return error;
   }
+  // scroll and key take a target too, but only optionally: when one is given it must be a real one, or a blank text
+  // would match the first element on the page and Nook would act on something it never meant.
+  if (['scroll', 'key'].includes(command.method) && ['ref', 'selector', 'text'].some((key) => params[key] !== undefined && params[key] !== null)) {
+    const error = targetError(params);
+    if (error) return error;
+  }
   if (command.method === 'type' && typeof params.value !== 'string') return 'type needs value: the text to enter.';
   if (command.method === 'key' && (typeof params.key !== 'string' || !params.key.trim())) return 'key needs key, such as "Enter", "Escape" or "Tab".';
   if (command.method === 'open') {
@@ -221,4 +227,44 @@ export function isAnswering(messages) {
   if (!messages?.length) return false;
   const last = messages[messages.length - 1];
   return !last.fromNook || !!last.streaming;
+}
+
+/**
+ * Runs async tasks one after another, so a read-modify-write of the extension's storage (the activity list, the tab
+ * groups per window) never loses a concurrent change. A failed task does not stop the ones after it.
+ */
+export function serial() {
+  let tail = Promise.resolve();
+  return (task) => {
+    const result = tail.then(task);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
+/**
+ * Whether a runtime message may reach the service worker's handler. The side panel (an extension page) may send every
+ * kind; a page (the presence strip's Stop button runs in the page's isolated world, and a page's renderer is never
+ * fully trusted) may only pause Nook, never resume it, ask Nook something, or switch a site back on.
+ */
+export function panelMessageAllowed(message, sender, extensionId) {
+  if (!message || typeof message !== 'object' || !sender || sender.id !== extensionId) return false;
+  const fromExtensionPage = !sender.tab && typeof sender.url === 'string' && sender.url.startsWith(`chrome-extension://${extensionId}/`);
+  if (fromExtensionPage) return true;
+  return message.type === 'pause' && message.paused === true;
+}
+
+/**
+ * The console entries collected in the page's main world, as text for Nook. That world belongs to the page, so the
+ * list may be anything the page put there: only real entries count, each as one clipped line.
+ */
+export function consoleText(entries, limit = 200) {
+  const list = Array.isArray(entries) ? entries.slice(-limit) : [];
+  const lines = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const level = entry.level === 'warn' ? 'warn' : 'error';
+    lines.push(`${level}: ${clip(typeof entry.text === 'string' ? entry.text : String(entry.text ?? ''), 2000)}`);
+  }
+  return lines.length ? lines.join('\n') : null;
 }
