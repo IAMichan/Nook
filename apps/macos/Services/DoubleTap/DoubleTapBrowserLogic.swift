@@ -50,19 +50,34 @@ extension DoubleTapLogic {
         return AppCatalog.browsers.contains { $0.bundleID == bundleID && $0.engine == .chromium }
     }
 
-    /// The connected browser that is the app in front (`appName` as macOS names it: "Google Chrome", "Brave Browser",
-    /// "Arc"), by the name its extension said hello with. With one browser connected and no name to tell, that one.
-    static func browserClient(appName: String, bundleID: String?, clients: [BrowserExtensionClient]) -> BrowserExtensionClient? {
+    /// The connected browser that is the app in front. First by process: the browser started its client's host, so the
+    /// host runs below the app's pid (`appPID`; `parent` reads the process table). That holds whatever name a browser
+    /// says hello with, so two browsers that both call themselves Chrome are told apart. A client whose host is running
+    /// but not below this app belongs to another browser. Only clients that cannot be traced (a host Nook cannot see)
+    /// are matched by name ("Google Chrome", "Brave" for "Brave Browser"), and with one of them left, that one.
+    static func browserClient(appName: String, bundleID: String?, appPID: Int32? = nil, clients: [BrowserExtensionClient],
+                              parent: (Int32) -> Int32? = ProcessTree.parent) -> BrowserExtensionClient? {
         guard isChromium(bundleID: bundleID), !clients.isEmpty else { return nil }
+        var untraced = clients
+        if let appPID, appPID > 1 {
+            if let traced = clients.first(where: { client in
+                client.hostPID.map { ProcessTree.descends($0, from: [appPID], parent: parent) } ?? false
+            }) { return traced }
+            untraced = clients.filter { client in
+                guard let host = client.hostPID else { return true }
+                return parent(host) == nil
+            }
+            guard !untraced.isEmpty else { return nil }
+        }
         let app = browserFold(appName)
-        if let exact = clients.first(where: { !$0.browser.isEmpty && browserFold($0.browser) == app }) { return exact }
+        if let exact = untraced.first(where: { !$0.browser.isEmpty && browserFold($0.browser) == app }) { return exact }
         // "Brave" says hello for "Brave Browser"; "Google Chrome" for "Google Chrome Beta" never wins over an exact match.
-        if let named = clients.first(where: { client in
+        if let named = untraced.first(where: { client in
             let name = browserFold(client.browser)
             return !name.isEmpty && name != "chromium" && (app.hasPrefix(name) || name.hasPrefix(app))
         }) { return named }
-        // Arc and Vivaldi often say hello as Chrome: with only one browser connected, that one is the one in front.
-        return clients.count == 1 ? clients.first : nil
+        // Arc and Vivaldi often say hello as Chrome: with only one browser left, that one is the one in front.
+        return untraced.count == 1 ? untraced.first : nil
     }
 
     private static func browserFold(_ text: String) -> String {

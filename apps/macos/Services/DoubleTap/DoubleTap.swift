@@ -478,7 +478,7 @@ final class DoubleTap: ObservableObject {
         let service = BrowserExtensionService.shared
         guard service.enabled else { return nil }
         return DoubleTapLogic.browserClient(appName: app.localizedName ?? "", bundleID: app.bundleIdentifier,
-                                            clients: service.connected)
+                                            appPID: app.processIdentifier, clients: service.connected)
     }
 
     /// The form in the browser's tab in front, or nil when the extension could not read it (asleep, paused, a page the

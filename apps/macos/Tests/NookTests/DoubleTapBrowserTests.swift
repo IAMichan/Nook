@@ -19,6 +19,26 @@ final class DoubleTapBrowserTests: XCTestCase {
                                                     clients: [client("c", "Google Chrome")])?.id, "c")
     }
 
+    func testTwoBrowsersThatBothSayChromeAreToldApartByProcess() {
+        // Chrome runs as pid 500 and Arc as pid 600; each started the host of its own extension (a helper in between).
+        let chrome = client("501-1700000000-0a1b", "Google Chrome")
+        let arc = client("611-1700000000-0c2d", "Google Chrome")
+        let parents: [Int32: Int32] = [501: 500, 611: 610, 610: 600, 500: 1, 600: 1]
+        let parent: (Int32) -> Int32? = { parents[$0] }
+        XCTAssertEqual(arc.hostPID, 611)
+        XCTAssertEqual(DoubleTapLogic.browserClient(appName: "Arc", bundleID: "company.thebrowser.Browser", appPID: 600,
+                                                    clients: [chrome, arc], parent: parent)?.id, arc.id)
+        XCTAssertEqual(DoubleTapLogic.browserClient(appName: "Google Chrome", bundleID: "com.google.Chrome", appPID: 500,
+                                                    clients: [arc, chrome], parent: parent)?.id, chrome.id)
+        // Arc in front without its own extension: Chrome's is not taken for it, though it is the only one connected.
+        XCTAssertNil(DoubleTapLogic.browserClient(appName: "Arc", bundleID: "company.thebrowser.Browser", appPID: 600,
+                                                  clients: [chrome], parent: parent))
+        // A host Nook cannot trace falls back to the browser's name.
+        let untraced = client("901-1700000000-0e3f", "Brave")
+        XCTAssertEqual(DoubleTapLogic.browserClient(appName: "Brave Browser", bundleID: "com.brave.Browser", appPID: 700,
+                                                    clients: [chrome, untraced], parent: parent)?.id, untraced.id)
+    }
+
     func testOnlyAChromiumBrowserUsesTheExtension() {
         let clients = [client("a", "Google Chrome")]
         XCTAssertNil(DoubleTapLogic.browserClient(appName: "Safari", bundleID: "com.apple.Safari", clients: clients))

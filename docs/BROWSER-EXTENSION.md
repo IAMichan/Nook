@@ -66,7 +66,11 @@ and the selection). The field's suggestions and the line above it ("Google Chrom
 come from that, and "fill in the form" fills every field in one more call (`fill`), with React-safe value setters, and
 puts the cursor back where it was. Undo writes the old values back; Send clicks the form's own button, only from the
 result card. Both commands go through the same brakes as every other: while Nook is paused in that browser, or the site
-is switched off in the side panel, Double Tap leaves the page alone and says so. When the extension is not connected
+is switched off in the side panel, Double Tap leaves the page alone and says so. Which connected browser is the one in front is
+decided by process, not by name: the browser starts the extension's host, the host's client id begins with its pid,
+and Nook checks that the host runs below the app in front (`ProcessTree`). So Chrome and Arc (which often says hello as
+Chrome) running side by side each get their own form, and a browser without the extension never borrows another's.
+When the extension is not connected
 (or the page is one the browser keeps to itself), Double Tap reads and fills the page through the accessibility layer as
 before (`Services/DoubleTap/DoubleTapBrowserLogic.swift`, `DoubleTapBrowserTests`).
 
