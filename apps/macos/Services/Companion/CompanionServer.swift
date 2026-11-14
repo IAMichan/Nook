@@ -37,6 +37,8 @@ final class CompanionServer: ObservableObject {
     private var revoking: Set<String> = []
     private var watch: AnyCancellable?
     private var conversationWatch: AnyCancellable?
+    /// A look at the live conversations is planned, after one waited for a slow connection.
+    private var conversationRetry = false
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
     private var timelinePushRunning = false
@@ -487,6 +489,7 @@ final class CompanionServer: ObservableObject {
     private func pushConversations() {
         guard let app, streams.contains(where: { $0.watchConversation != nil }) else { return }
         var read: [String: [ChatLine]] = [:]
+        var heldBack = false
         for peer in streams {
             guard let conversation = peer.watchConversation, let key = peer.key, let deviceID = peer.deviceID,
                   let id = peer.streamID, scopes(of: deviceID).contains(.nookChat) else { continue }
@@ -499,12 +502,40 @@ final class CompanionServer: ObservableObject {
                 read[conversation] = lines(found)
             }
             guard let messages = read[conversation], messages != peer.sentMessages else { continue }
+            // The network has not taken the last updates yet (a slow or shaky connection): wait, and send everything
+            // that changed meanwhile as one update once it has, so the phone never falls further and further behind.
+            if peer.transport.pending > Self.conversationBacklog {
+                heldBack = true
+                continue
+            }
+            var update = CompanionResponse(id: id, ok: true, seq: peer.seq + 1, messagesConversation: conversation)
+            switch ConversationDelta.change(from: peer.sentMessages, to: messages) {
+            case .same:
+                peer.sentMessages = messages
+                continue
+            case .append(let words):
+                update.messageAppend = words
+            case .tail(let after, let lines):
+                update.messages = lines
+                update.messagesAfter = after
+            }
             peer.sentMessages = messages
             peer.seq += 1
-            send(CompanionResponse(id: id, ok: true, messages: messages, seq: peer.seq, messagesConversation: conversation),
-                 key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
+            send(update, key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
+        }
+        // Nothing else may change after the last words (the answer is done): look again shortly.
+        if heldBack, !conversationRetry {
+            conversationRetry = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                self?.conversationRetry = false
+                self?.pushConversations()
+            }
         }
     }
+
+    /// More than this waiting on a phone's connection and the live conversation waits for it (`pushConversations`).
+    static let conversationBacklog = 24 * 1024
 
     // MARK: The open session, live
 
@@ -912,15 +943,26 @@ protocol CompanionTransport: AnyObject {
     func send(_ data: Data)
     /// Ends the connection; the server hears of it as for any other close.
     func cancel()
+    /// Bytes sent that the network did not take yet: high on a slow or shaky connection, where the live conversation
+    /// waits a moment and then goes as one update instead of piling up (`pushConversations`).
+    var pending: Int { get }
 }
 
 @MainActor
 final class TCPTransport: CompanionTransport {
     private let connection: NWConnection
+    private(set) var pending = 0
 
     init(_ connection: NWConnection) { self.connection = connection }
 
-    func send(_ data: Data) { connection.send(content: data, completion: .contentProcessed { _ in }) }
+    func send(_ data: Data) {
+        let size = data.count
+        pending += size
+        connection.send(content: data, completion: .contentProcessed { [weak self] _ in
+            Task { @MainActor in self?.pending -= size }
+        })
+    }
+
     func cancel() { connection.cancel() }
 }
 

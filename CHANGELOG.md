@@ -190,7 +190,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   every second. Commands on a page take one trip instead of two, clicks no longer wait a fixed time, and finding the
   buttons and fields on a long page is quicker. The page's text goes only to a brain that may see your browser.
 - Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
-  over the live connection instead of the phone asking every second and a half.
+  over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
+  connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a
+  lost update repairs itself.
 
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.

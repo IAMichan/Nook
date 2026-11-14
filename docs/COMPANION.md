@@ -199,7 +199,16 @@ The phone keeps one live connection to the Mac while the app is in front, modele
 - **Nook's conversation, live:** with a Mac that lists `liveConversation`, the Nook conversation open on the phone is
   watched (`watchConversation`, its `conversation`; nil when it closes). Its messages follow by themselves while Nook
   writes (`messages` with `messagesConversation`), at most every 150 ms, so the answer streams in as on the Mac, and the
-  conversation is watched again after a reconnect. Only a phone with the `nookChat` scope gets it. A Mac without
+  conversation is watched again after a reconnect. Built for a slow or shaky connection (`ConversationDelta`):
+  - While Nook writes, only its new words go (`messageAppend`: the message, the length it had, the words after it),
+    a few bytes instead of the conversation. Otherwise only the messages after the last one both sides have alike
+    (`messagesAfter`), as the session timeline does.
+  - When a phone's connection has not taken more than 24 KB of earlier updates yet (`CompanionTransport.pending`),
+    the Mac waits and sends everything that changed meanwhile as one update, so the phone never falls further and
+    further behind.
+  - After a reconnect the phone names its last finished message (`item`), and only what came after it comes back.
+  - An update that does not build on what the phone has is refused, and the phone asks for the conversation again; an
+    answer that stays quiet for 6 seconds while Nook writes is asked again from where the phone is. Only a phone with the `nookChat` scope gets it. A Mac without
   `liveConversation` is asked as before: every 1.5 seconds while Nook writes and every 6 seconds otherwise. Nook's
   browser extension follows its side panel's conversation the same way (`docs/BROWSER-EXTENSION.md`). The Tauri app
   serves only the first version of the protocol (no Nook chat) and so has nothing to follow.

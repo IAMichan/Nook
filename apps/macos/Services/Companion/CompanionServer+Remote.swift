@@ -461,12 +461,18 @@ extension CompanionServer {
             return CompanionResponse(id: request.id, ok: true)
         }
         var response = chat(request, app: app)
-        guard response.ok, let id = request.conversation else { return response }
+        guard response.ok, let id = request.conversation, let messages = response.messages else { return response }
         if let peer {
             peer.watchConversation = id
-            peer.sentMessages = response.messages
+            peer.sentMessages = messages
         }
         response.messagesConversation = id
+        // The phone still has the conversation up to its last finished message (`item`, after a reconnect): only what
+        // came after goes, which on a slow connection is the difference between a moment and a long wait.
+        if let resumed = ConversationDelta.resume(messages, from: request.item) {
+            response.messages = resumed.lines
+            response.messagesAfter = resumed.after
+        }
         return response
     }
 

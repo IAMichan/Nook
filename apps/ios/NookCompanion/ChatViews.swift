@@ -254,7 +254,11 @@ struct ChatView: View {
             guard let id else { return }
             while !Task.isCancelled {
                 if client.conversationIsLive, await client.watchConversation(id) {
-                    while !Task.isCancelled, client.conversationIsLive { try? await Task.sleep(for: .seconds(2)) }
+                    while !Task.isCancelled, client.conversationIsLive {
+                        try? await Task.sleep(for: .seconds(2))
+                        // An answer that went quiet on a shaky connection: asked again from where the phone is.
+                        if client.conversationStalled(id) { break }
+                    }
                     continue
                 }
                 await client.loadChat(id)

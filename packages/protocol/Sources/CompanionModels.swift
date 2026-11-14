@@ -438,6 +438,12 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var inboxChat: String? = nil
     /// On an update the Mac sends by itself: the Nook conversation `messages` belong to (`watchConversation`).
     var messagesConversation: String? = nil
+    /// When set, `messages` holds only the messages after this one, which replace whatever the phone has after it
+    /// (`ConversationDelta`); nil means `messages` is the whole conversation.
+    var messagesAfter: String? = nil
+    /// The words Nook wrote since the last update, for the message it is writing (`ConversationDelta`), instead of the
+    /// whole conversation again.
+    var messageAppend: ChatAppend? = nil
     /// The pictures of `avatars`; a chat without one (any more) is left out.
     var avatars: [ChatAvatar]? = nil
     /// With `history`: where the next page starts, nil on the last page.
@@ -975,6 +981,82 @@ struct DiffFileDigest: Codable, Equatable, Identifiable, Sendable {
     /// What one file's patch, and all of them together, may take in one answer.
     static let maxPatch = 40 * 1024
     static let maxTotal = 150 * 1024
+}
+
+/// New words at the end of the message Nook is writing: `text` goes after the first `at` characters (Unicode scalars) of
+/// that message, and `streaming` and `status` replace its own.
+struct ChatAppend: Codable, Equatable, Sendable {
+    var id: String
+    var at: Int
+    var text: String
+    var streaming: Bool
+    var status: String
+}
+
+/// How the open Nook conversation travels after the first answer to `watchConversation`, so it stays quick on a slow or
+/// shaky connection: while Nook writes only its new words go (`ChatAppend`, a few bytes), otherwise only the messages
+/// after the last one both sides have alike. The phone checks that each change builds on what it has; when it does not
+/// (it missed one), it asks for the conversation again.
+enum ConversationDelta {
+    enum Change: Equatable {
+        /// Nothing the phone does not have.
+        case same
+        case append(ChatAppend)
+        /// `lines` go after the message `after`; nil `after`: `lines` is the whole conversation.
+        case tail(after: String?, lines: [ChatLine])
+    }
+
+    /// What to send to move a phone that has `old` (nil: nothing yet) to `new`.
+    static func change(from old: [ChatLine]?, to new: [ChatLine]) -> Change {
+        guard let old else { return .tail(after: nil, lines: new) }
+        if old == new { return .same }
+        if let append = append(from: old, to: new) { return .append(append) }
+        guard let first = new.first, let start = old.firstIndex(where: { $0.id == first.id }) else { return .tail(after: nil, lines: new) }
+        var shared = 0
+        while shared < new.count, start + shared < old.count, old[start + shared] == new[shared] { shared += 1 }
+        guard shared > 0 else { return .tail(after: nil, lines: new) }
+        return .tail(after: new[shared - 1].id, lines: Array(new[shared...]))
+    }
+
+    /// Only the last message changed, and only by words added at its end (and its streaming or status).
+    private static func append(from old: [ChatLine], to new: [ChatLine]) -> ChatAppend? {
+        guard old.count == new.count, let before = old.last, let after = new.last, before.id == after.id,
+              old.dropLast() == new.dropLast(), before.fromNook == after.fromNook, before.date == after.date,
+              before.failed == after.failed, before.onMac == after.onMac else { return nil }
+        let had = before.text.unicodeScalars, has = after.text.unicodeScalars
+        guard has.count >= had.count, has.starts(with: had) else { return nil }
+        var added = String.UnicodeScalarView()
+        added.append(contentsOf: has.dropFirst(had.count))
+        return ChatAppend(id: after.id, at: had.count, text: String(added), streaming: after.streaming, status: after.status)
+    }
+
+    /// The phone's conversation after an update; nil when the update does not build on what it has (ask again).
+    static func apply(lines: [ChatLine]?, after: String?, append: ChatAppend?, to old: [ChatLine]?) -> [ChatLine]? {
+        if let append {
+            guard var current = old, var last = current.last, last.id == append.id, last.text.unicodeScalars.count == append.at else { return nil }
+            last.text += append.text
+            last.streaming = append.streaming
+            last.status = append.status
+            current[current.count - 1] = last
+            return current
+        }
+        guard let lines else { return old }
+        guard let after else { return lines }
+        guard let old, let index = old.lastIndex(where: { $0.id == after }) else { return nil }
+        return Array(old[...index]) + lines
+    }
+
+    /// The phone still has the conversation up to the finished message `id`: what came after, or nil when the Mac does
+    /// not have that message (any more) as a finished one, and sends it whole.
+    static func resume(_ lines: [ChatLine], from id: String?) -> (after: String, lines: [ChatLine])? {
+        guard let id, let index = lines.lastIndex(where: { $0.id == id }), !lines[index].streaming else { return nil }
+        return (id, Array(lines[(index + 1)...]))
+    }
+
+    /// The message a phone names to resume from: its last one that is finished.
+    static func resumePoint(_ lines: [ChatLine]?) -> String? {
+        lines?.last { !$0.streaming }?.id
+    }
 }
 
 /// How the open session's conversation travels after the first answer to `watch`: only the entries after the last one

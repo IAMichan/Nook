@@ -114,6 +114,8 @@ enum CompanionScopes {
             response.conversations = nil
             response.messages = nil
             response.messagesConversation = nil
+            response.messagesAfter = nil
+            response.messageAppend = nil
         }
         if let features = response.features {
             response.features = features.filter { featureScopes[$0].map(granted.contains) ?? true }
