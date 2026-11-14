@@ -73,6 +73,30 @@ final class TimelinePresentationTests: XCTestCase {
     }
 
     /// Files the agent handed you (SendUserFile) stay in sight next to the answer instead of folding into the work.
+    /// News about a watched pull request after a finished turn starts a turn of its own: the answer to your message stays
+    /// in sight next to the reply to the news, instead of folding under the work of one long turn.
+    func testPullRequestNewsAfterAFinishedTurnStartsATurnOfItsOwn() throws {
+        let news = event(.system, "Nieuws over de pull request:\nCodeRabbit commented", tool: "prwatch", at: 300)
+        let events = finishedTurn() + [
+            news,
+            event(.tool, "Bash · gh pr view", tool: "Bash", state: .done, at: 305),
+            event(.tool, "Bash · gh pr checks", tool: "Bash", state: .done, at: 310),
+            event(.assistant, "Er hoeft niets aangepast te worden.", state: .done, at: 320),
+            event(.result, "20s", state: .done, at: 321)
+        ]
+        XCTAssertEqual(TimelinePresentation.split(events).count, 2)
+        XCTAssertEqual(TimelinePresentation.lastTurn(events).first?.id, news.id)
+        let shown = TimelinePresentation.blocks(events, active: false).compactMap { block -> String? in
+            if case .event(let event) = block, event.kind == .assistant { return event.text }
+            return nil
+        }
+        XCTAssertEqual(shown, ["Opgelost.", "Er hoeft niets aangepast te worden."])
+
+        // News that comes while the turn still runs stays in it.
+        let running = Array(finishedTurn().dropLast(2)) + [news]
+        XCTAssertEqual(TimelinePresentation.split(running).count, 1)
+    }
+
     func testSharedFilesStayOutOfTheFold() throws {
         var turn = finishedTurn()
         let shared = event(.tool, "SendUserFile", tool: "SendUserFile",

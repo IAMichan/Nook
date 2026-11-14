@@ -305,28 +305,52 @@ enum TimelinePresentation {
     /// The last of `split`'s turns, found from the end: what the live line, the running command and the subagents read,
     /// without splitting the whole session for it.
     static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
-        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else { return events }
-        return Array(events[start...])
+        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else {
+            return split(events).last ?? events
+        }
+        // News about a pull request can start a turn inside the tail (see `split`): the tail is one turn or a few.
+        return split(Array(events[start...])).last ?? []
     }
 
     /// The turn the agent runs, for its live line: from the last message that started a turn (or wake), across every
     /// message you steered into it since. A steer starts a turn of its own in the timeline, but the agent goes on with
     /// what it did and reads the steer only after the tool that runs returns: the live line keeps showing that tool
-    /// instead of "Starting…" until then.
+    /// instead of "Starting…" until then. News about a pull request after a finished turn starts one too (see `split`).
     static func runningTurn(_ events: [RunEvent]) -> [RunEvent] {
         guard let start = events.lastIndex(where: { $0.kind == .user && $0.steer == nil || $0.kind == .system && $0.tool == "wake" })
         else { return events }
-        return Array(events[start...])
+        var from = start
+        var ended = false
+        for index in start..<events.count {
+            if ended && isNews(events[index]) { from = index; ended = false }
+            if events[index].kind == .result { ended = true }
+        }
+        return Array(events[from...])
     }
 
-    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
-    /// before the first one is a turn of its own.
+    /// A turn starts at each message of yours, where the agent woke up by itself after background work, and at news about
+    /// a watched pull request that came after the turn before it had ended (`isNews`); anything before the first one is
+    /// a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
+        var ended = false
         for event in events {
-            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
+            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty || ended && isNews(event) {
+                turns.append([event])
+                ended = false
+            } else {
+                turns[turns.count - 1].append(event)
+            }
+            if event.kind == .result { ended = true }
         }
         return turns
+    }
+
+    /// News about a pull request the session watches ("ws.prwatch.news"): Nook hands it to the agent without a message of
+    /// yours, so once the turn before it ended it starts a turn of its own. Folded into the earlier turn, that turn's answer
+    /// went under "Worked for…" and only the reply to the news stayed in sight.
+    static func isNews(_ event: RunEvent) -> Bool {
+        event.kind == .system && event.tool == "prwatch"
     }
 
     private static func present(_ turn: [RunEvent], open: Bool,
@@ -336,7 +360,7 @@ enum TimelinePresentation {
         let troubled = turn.contains { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
             || finished?.state == .failed
         // Fold only a turn that ended well: its answer stays, the work in between folds away.
-        guard !open, first.kind == .user, let finished, !troubled,
+        guard !open, first.kind == .user || isNews(first), let finished, !troubled,
               let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
             return group(turn, tally: tally)
         }
