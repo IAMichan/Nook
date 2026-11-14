@@ -1019,7 +1019,10 @@ enum ConversationDelta {
         guard let old else { return .tail(after: nil, lines: new) }
         if old == new { return .same }
         if let append = append(from: old, to: new) { return .append(append) }
-        guard let first = new.first, let start = old.firstIndex(where: { $0.id == first.id }) else { return .tail(after: nil, lines: new) }
+        // Only when both start at the same message: once the Mac's window of the newest messages moved on (the oldest
+        // dropped off), the phone takes the whole conversation, or it would keep what the Mac no longer has.
+        guard let first = new.first, old.first?.id == first.id else { return .tail(after: nil, lines: new) }
+        let start = 0
         var shared = 0
         while shared < new.count, start + shared < old.count, old[start + shared] == new[shared] { shared += 1 }
         guard shared > 0 else { return .tail(after: nil, lines: new) }

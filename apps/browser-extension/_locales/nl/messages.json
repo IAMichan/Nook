@@ -117,7 +117,7 @@
     "message": "Kiest"
   },
   "presenceBlocked": {
-    "message": "Nook is hier bezig; je klikken wachten tot het klaar is."
+    "message": "Nook is hier bezig; je klikken wachten tot het klaar is. Esc stopt Nook."
   },
   "presenceSignIn": {
     "message": "Log in op deze pagina; Nook gaat daarna vanzelf verder."

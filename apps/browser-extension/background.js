@@ -254,13 +254,21 @@ async function perform(method, params, tab, command) {
     case 'click': case 'type': case 'key': {
       await use(tab);
       await presence(tab.id, 'busy');
-      const result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
-      keepCursor(tab.id, result);
-      // Typing a password or a sign-in code is the user's: Nook waits for them to sign in, then goes on.
-      if (!result.ok && result.signIn) return waitForSignIn(tab.id, command, '');
-      if (!result.ok) return result;
-      // What the action did, and what can be used now: Nook takes its next step from this without looking again.
-      const after = await settle(tab.id);
+      // Listening for a tab the action opens starts before the action: a link can open one before the page answers.
+      const opened = openedFrom(tab.id);
+      let result;
+      let after;
+      try {
+        result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
+        keepCursor(tab.id, result);
+        // Typing a password or a sign-in code is the user's: Nook waits for them to sign in, then goes on.
+        if (!result.ok && result.signIn) return waitForSignIn(tab.id, command, '');
+        if (!result.ok) return result;
+        // What the action did, and what can be used now: Nook takes its next step from this without looking again.
+        after = await settle(tab.id, opened);
+      } finally {
+        opened.stop();
+      }
       let text = result.text;
       if (after.opened) text += ` It opened a new tab (tab ${after.tabId}); Nook works there now.`;
       const login = await signInWait(after.tabId, command, text);
@@ -382,36 +390,55 @@ function waitForLoad(tabId, timeout = LOAD_TIMEOUT) {
  * there. A link that opened a tab of its own: Nook goes on in that tab. Otherwise until the page stops changing (a
  * menu opening, results coming in), never a fixed wait.
  */
-async function settle(tabId) {
-  let opened = null;
-  const onCreated = (created) => {
-    if (created.openerTabId === tabId) opened = created;
-  };
-  chrome.tabs.onCreated.addListener(onCreated);
-  try {
-    for (const pause of [90, 160]) {
-      await new Promise((resolve) => setTimeout(resolve, pause));
-      if (opened) break;
-      const tab = await chrome.tabs.get(tabId).catch(() => null);
-      if (tab?.status === 'loading') {
-        await waitForLoad(tabId, 10_000);
-        return { tabId, navigated: true };
-      }
-    }
-  } finally {
-    chrome.tabs.onCreated.removeListener(onCreated);
+/** Notes a tab opened from `tabId` (a link with target=_blank) from now on, until `stop()`. */
+function openedFrom(tabId) {
+  const watch = { tab: null, stop: () => chrome.tabs.onCreated?.removeListener(onCreated) };
+  function onCreated(created) {
+    if (created.openerTabId === tabId && !watch.tab) watch.tab = created;
   }
+  chrome.tabs.onCreated?.addListener(onCreated);
+  return watch;
+}
+
+async function settle(tabId, watch = { tab: null }) {
+  for (const pause of [90, 160]) {
+    if (watch.tab) break;
+    await new Promise((resolve) => setTimeout(resolve, pause));
+    if (watch.tab) break;
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.status === 'loading') {
+      await waitForLoad(tabId, 10_000);
+      return { tabId, navigated: true };
+    }
+  }
+  const opened = watch.tab;
   if (opened) {
     await waitForLoad(opened.id, 10_000);
     await use(opened);
     return { tabId: opened.id, opened: true };
   }
-  await withTimeout(agent(tabId, 'quiet', {}), 2_000);
+  if (await mayRead(tabId)) await withTimeout(agent(tabId, 'quiet', {}), 2_000);
   return { tabId };
+}
+
+/**
+ * Whether Nook may still look at the page in this tab now: not paused, and its site not switched off or one of the
+ * browser's own pages. Checked again before every look Nook takes by itself, because an action can take the tab to
+ * another site than the one the command was checked for.
+ */
+async function mayRead(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab) return false;
+  const url = tab.url || tab.pendingUrl || '';
+  const { paused, blocked } = await settings();
+  return !paused && !isRestricted(url) && !isBlocked(url, blocked);
 }
 
 /** What the user sees on the page now, in short (page/agent.js `glance`); '' when the page does not answer in time. */
 async function glance(tabId) {
+  if (!(await mayRead(tabId))) {
+    return 'The page is now on a site the user switched Nook off for (or one of the browser\'s own pages); Nook did not look at it.';
+  }
   const look = await withTimeout(agent(tabId, 'glance', {}), 1_500);
   return look?.ok ? look.text : '';
 }
@@ -508,6 +535,7 @@ async function userElsewhere() {
 
 /** When the page now asks to sign in, waits for the user to do so (`waitForSignIn`); null when it does not. */
 async function signInWait(tabId, command, before) {
+  if (!(await mayRead(tabId))) return null;
   const state = await withTimeout(agent(tabId, 'signin', {}), 2_000);
   if (!state?.needed) return null;
   return waitForSignIn(tabId, command, before, state.site);
@@ -545,6 +573,11 @@ async function waitForSignIn(tabId, command, before = '', site = '') {
     if (now.status !== 'complete') {
       clear = 0;
       continue;
+    }
+    // Signing in took the tab to a site the user switched Nook off for: Nook stops looking there.
+    if (!(await mayRead(tabId))) {
+      await presence(tabId, 'release');
+      return { ok: true, text: `${before ? before + ' ' : ''}The user signed in; the page is now on a site they switched Nook off for, so Nook does not look at it. Tell the user what you wanted to do there.` };
     }
     const state = await withTimeout(agent(tabId, 'signin', {}), 2_000);
     clear = state && !state.needed ? clear + 1 : 0;

@@ -117,7 +117,7 @@
     "message": "Elige"
   },
   "presenceBlocked": {
-    "message": "Nook está trabajando aquí; tus clics esperan hasta que termine."
+    "message": "Nook está trabajando aquí; tus clics esperan hasta que termine. Esc detiene Nook."
   },
   "presenceSignIn": {
     "message": "Inicia sesión en esta página; Nook seguirá solo después."

@@ -19,7 +19,7 @@
   };
 
   const state = {
-    host: null, wrap: null, label: null, go: null, mode: 'idle', until: 0, timer: null, nudge: null, acting: false,
+    host: null, wrap: null, label: null, go: null, mode: 'idle', until: 0, timer: null, nudge: null,
     // The user pressed Continue after signing in; the service worker reads it here, so no page can claim it in a message.
     continued: false
   };
@@ -64,16 +64,7 @@
     state.go = root.querySelector('.go');
     const stop = root.querySelector('.stop');
     stop.textContent = say('presenceStop') || 'Stop';
-    stop.addEventListener('click', async () => {
-      // The strip only goes away once Nook is really paused: when the extension was reloaded or its worker cannot be
-      // reached, it stays, so the user never thinks Nook stopped while it did not.
-      try {
-        const reply = await chrome.runtime.sendMessage({ type: 'pause', paused: true });
-        if (reply?.ok) release();
-      } catch {
-        // "Extension context invalidated": this page outlived the extension that drew the strip.
-      }
-    });
+    stop.addEventListener('click', stopNook);
     state.go.textContent = say('presenceSignedIn') || 'Continue';
     state.go.addEventListener('click', () => {
       state.continued = true;
@@ -89,12 +80,27 @@
     document.documentElement.appendChild(host);
   }
 
+  /**
+   * Pauses Nook in this browser (Stop, or Escape while Nook works). The strip only goes away once Nook is really paused:
+   * when the extension was reloaded or its worker cannot be reached, it stays, so the user never thinks Nook stopped
+   * while it did not.
+   */
+  async function stopNook() {
+    try {
+      const reply = await chrome.runtime.sendMessage({ type: 'pause', paused: true });
+      if (reply?.ok) release();
+    } catch {
+      // "Extension context invalidated": this page outlived the extension that drew the strip.
+    }
+  }
+
   function show(text) {
     build();
     state.label.textContent = text;
     state.wrap.classList.toggle('login', state.mode === 'login');
     state.go.hidden = state.mode !== 'login';
-    requestAnimationFrame(() => state.wrap.classList.add('on'));
+    // A tab in the background runs this frame late: only when Nook still works or waits here by then.
+    requestAnimationFrame(() => { if (state.mode !== 'idle') state.wrap.classList.add('on'); });
     // A hidden tab draws no frames: show it at once there.
     if (document.hidden) state.wrap.classList.add('on');
   }
@@ -132,18 +138,23 @@
   const SAYS = new Set(['pointerdown', 'keydown', 'touchstart']);
 
   function hold(event) {
-    if (!event.isTrusted || state.mode !== 'busy' || Date.now() > state.until || state.acting) return;
+    if (!event.isTrusted || state.mode !== 'busy' || Date.now() > state.until) return;
     // The strip itself (Stop) always works.
     if (state.host && event.composedPath().includes(state.host)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    // Escape is Stop from the keyboard: Tab cannot reach the strip's button while the page's keys wait.
+    if (event.type === 'keydown' && event.key === 'Escape') {
+      stopNook();
+      return;
+    }
     if (SAYS.has(event.type)) nudge();
   }
 
   /** The user tried to click or type: say once, briefly, why nothing happens, then show the usual text again. */
   function nudge() {
     if (!state.wrap) return;
-    state.label.textContent = say('presenceBlocked') || 'Nook is working here; your clicks wait until it is done.';
+    state.label.textContent = say('presenceBlocked') || 'Nook is working here; your clicks wait until it is done. Esc stops Nook.';
     state.wrap.classList.remove('nudge');
     void state.wrap.offsetWidth;
     state.wrap.classList.add('nudge');
@@ -157,8 +168,6 @@
 
   globalThis.__nookPresence = Object.freeze({
     busy, signIn, release,
-    /** Set by the page agent while it acts, so its own focus and editing pass as well. */
-    acting(on) { state.acting = !!on; },
     get mode() { return state.mode; },
     get continued() { return state.continued; }
   });

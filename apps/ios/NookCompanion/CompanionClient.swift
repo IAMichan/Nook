@@ -61,6 +61,8 @@ final class CompanionClient: ObservableObject {
     private(set) var watchedChat: String?
     /// Nook's conversation open on screen, followed live (`watchConversation`); watched again after a reconnect.
     private(set) var watchedConversation: String?
+    /// The screen that watches it: a screen that went away only stops its own watch, never a newer screen's.
+    private var conversationOwner: UUID?
     /// When the watched conversation last changed on this phone: an answer that goes quiet for long is asked again.
     private(set) var conversationHeard = Date.distantPast
     /// The changed files of a session (`CompanionOp.diff`).
@@ -1209,8 +1211,9 @@ final class CompanionClient: ObservableObject {
     /// sends Nook's new words by itself as it writes them. With `resume`, only what came after the last finished message
     /// this phone has comes back. False when this Mac cannot, and the screen asks instead.
     @discardableResult
-    func watchConversation(_ conversationID: String, resume: Bool = true) async -> Bool {
+    func watchConversation(_ conversationID: String, resume: Bool = true, owner: UUID? = nil) async -> Bool {
         watchedConversation = conversationID
+        if let owner { conversationOwner = owner }
         guard await supports(CompanionFeature.liveConversation), phase == .connected else { return false }
         let from = resume ? ConversationDelta.resumePoint(chatLines[conversationID]) : nil
         let ok = await perform(CompanionRequest(op: .watchConversation, item: from, conversation: conversationID), quiet: true)?.ok == true
@@ -1226,9 +1229,10 @@ final class CompanionClient: ObservableObject {
     }
 
     /// The conversation left the screen: the Mac stops sending it (unless another one opened meanwhile).
-    func unwatchConversation(_ conversationID: String) async {
-        guard watchedConversation == conversationID else { return }
+    func unwatchConversation(_ conversationID: String, owner: UUID? = nil) async {
+        guard watchedConversation == conversationID, owner == nil || owner == conversationOwner else { return }
         watchedConversation = nil
+        conversationOwner = nil
         guard can(CompanionFeature.liveConversation), phase == .connected else { return }
         await perform(CompanionRequest(op: .watchConversation), quiet: true)
     }

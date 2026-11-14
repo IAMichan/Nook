@@ -281,9 +281,24 @@ async function ask(text) {
   conversation = reply.conversation || conversation;
   live = !!reply.live;
   await chrome.storage.session.set({ conversation }).catch(() => {});
+  // "New chat" while that was being stored: this answer belongs to the conversation that was left.
+  if (asked !== chatEpoch) return;
   applyMessages(reply.messages, reply.revision);
   follow();
 }
+
+/**
+ * Nook follows this panel's conversation for ten minutes after it last asked. While the panel is open it asks again
+ * every few minutes, also when Nook is not writing, so an answer that starts later (from Nook's own window, say) still
+ * comes here by itself.
+ */
+const RENEW_EVERY = 4 * 60_000;
+setInterval(async () => {
+  if (!conversation || !live || pollTimer) return;
+  const renewing = chatEpoch;
+  const reply = await send({ type: 'chat', conversation, watch: true }).catch(() => null);
+  if (renewing === chatEpoch && reply?.ok) applyMessages(reply.messages, reply.revision);
+}, RENEW_EVERY);
 
 /**
  * While Nook answers: Nook pushes every change (see the chatUpdate listener), and this only asks now and then in case a

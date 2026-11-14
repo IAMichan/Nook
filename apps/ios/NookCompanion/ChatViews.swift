@@ -181,6 +181,8 @@ struct ChatView: View {
     @State private var promptSent = false
     /// The question that started this chat waits in the outbox: its request id, until the Mac took it.
     @State private var waitingFor: String?
+    /// This screen's own watch of the conversation (`CompanionClient.watchConversation`).
+    @State private var watchOwner = UUID()
 
     init(conversationID: String?, prompt: String = "") {
         _id = State(initialValue: conversationID)
@@ -253,7 +255,7 @@ struct ChatView: View {
         .task(id: id) {
             guard let id else { return }
             while !Task.isCancelled {
-                if client.conversationIsLive, await client.watchConversation(id) {
+                if client.conversationIsLive, await client.watchConversation(id, owner: watchOwner) {
                     while !Task.isCancelled, client.conversationIsLive {
                         try? await Task.sleep(for: .seconds(2))
                         // An answer that went quiet on a shaky connection: asked again from where the phone is.
@@ -266,7 +268,7 @@ struct ChatView: View {
                 try? await Task.sleep(for: .seconds(writing ? 1.5 : 6))
             }
         }
-        .onDisappear { if let id { Task { await client.unwatchConversation(id) } } }
+        .onDisappear { if let id { Task { await client.unwatchConversation(id, owner: watchOwner) } } }
     }
 
 

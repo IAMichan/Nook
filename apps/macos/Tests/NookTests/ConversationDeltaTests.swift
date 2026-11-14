@@ -106,6 +106,17 @@ final class ConversationDeltaTests: XCTestCase {
         XCTAssertEqual(phone?.last?.streaming, false)
     }
 
+    /// The Mac keeps the newest 60 messages: when the oldest drops off, the phone ends with exactly what the Mac has.
+    func testWhenTheWindowMovesOnThePhoneTakesTheWholeConversation() {
+        let window = (1...60).map { line("m\($0)", "message \($0)") }
+        let moved = Array(window.dropFirst()) + [line("m61", "message 61")]
+        let change = ConversationDelta.change(from: window, to: moved)
+        XCTAssertEqual(change, .tail(after: nil, lines: moved))
+        guard case .tail(let after, let lines) = change else { return XCTFail("not a tail") }
+        XCTAssertEqual(ConversationDelta.apply(lines: lines, after: after, append: nil, to: window), moved)
+        XCTAssertEqual(ConversationDelta.apply(lines: lines, after: after, append: nil, to: window)?.count, 60)
+    }
+
     func testAPhoneWithoutTheNookChatScopeGetsNoneOfIt() {
         var response = CompanionResponse(id: "r", ok: true)
         response.messageAppend = ChatAppend(id: "a", at: 0, text: "x", streaming: true, status: "")

@@ -227,6 +227,12 @@
     return tag;
   }
 
+  /** A field whose value Nook never reads or types: a password, or a code to sign in with. */
+  function secret(field) {
+    return field.type === 'password' || /one-time-code/i.test(field.autocomplete || field.getAttribute?.('autocomplete') || '')
+      || /otp/i.test(field.name || '') || /otp/i.test(field.id || '');
+  }
+
   /** One line for an element in a snapshot. Passwords never show their value. */
   function line(element, ref) {
     const parts = [`[${ref}] ${roleOf(element)}`];
@@ -235,7 +241,7 @@
     const tag = element.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       if (element.placeholder && !name.includes(element.placeholder)) parts.push('placeholder=' + JSON.stringify(clip(element.placeholder, 60)));
-      if (element.type === 'password') {
+      if (secret(element)) {
         if (element.value) parts.push('value=(hidden)');
       } else if (element.type === 'checkbox' || element.type === 'radio') {
         parts.push(element.checked ? 'checked' : 'unchecked');
@@ -454,7 +460,7 @@
     const { found, error } = element(params);
     if (error) return { ok: false, error };
     const field = found.tagName === 'LABEL' && found.control ? found.control : found;
-    if (field.type === 'password' || /one-time-code/.test(field.autocomplete || '')) {
+    if (secret(field)) {
       return { ok: false, signIn: true, error: 'Nook does not type into password or sign-in code fields; the user signs in themselves.' };
     }
     if (field.disabled || field.readOnly) return { ok: false, error: `${describe(field)} cannot be edited.` };
@@ -484,8 +490,14 @@
         const steps = Math.min(8, value.length);
         const size = Math.ceil(value.length / steps);
         for (let index = size; index < value.length + size; index += size) {
+          // A page that replaced the field while Nook typed (some frameworks redraw it on input): stop, and say so
+          // below, rather than type the rest into a field nobody sees.
+          if (!field.isConnected) break;
           setValue(field, start + value.slice(0, index), value.slice(index - size, index));
           await sleep(18);
+        }
+        if (!field.isConnected) {
+          return { ok: false, cursor: where(), error: `The page replaced ${describe(field)} while Nook typed. Look with chrome_find and type again into the field that is there now.` };
         }
       } else {
         setValue(field, start + value, value);
@@ -666,16 +678,12 @@
   }
 
   async function run(method, params) {
-    const acting = ['click', 'type', 'key', 'scroll'].includes(method);
     try {
       const handler = { find, read, click, type, scroll, key, condition, quiet, glance, signin }[method];
       if (!handler) return { ok: false, error: `The page agent has no ${method}.` };
-      if (acting) globalThis.__nookPresence?.acting(true);
       return await handler(params || {});
     } catch (error) {
       return { ok: false, error: String(error?.message || error) };
-    } finally {
-      if (acting) globalThis.__nookPresence?.acting(false);
     }
   }
 

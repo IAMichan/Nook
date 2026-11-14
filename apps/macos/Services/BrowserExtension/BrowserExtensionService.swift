@@ -29,9 +29,10 @@ final class BrowserExtensionService: ObservableObject {
     private var watches: [UUID: Watch] = [:]
     private var watching: AnyCancellable?
 
+    /// The browsers that follow a conversation, each with the revision it has, so one browser reading the conversation
+    /// never counts as another one having it.
     private struct Watch {
-        var clients: Set<String>
-        var revision: String
+        var clients: [String: String]
         var until: Date
     }
 
@@ -224,9 +225,8 @@ final class BrowserExtensionService: ObservableObject {
     }
 
     private func watch(_ id: UUID, client: String, revision: String) {
-        var entry = watches[id] ?? Watch(clients: [], revision: revision, until: .distantPast)
-        entry.clients.insert(client)
-        entry.revision = revision
+        var entry = watches[id] ?? Watch(clients: [:], until: .distantPast)
+        entry.clients[client] = revision
         entry.until = Date().addingTimeInterval(Self.watchFor)
         watches[id] = entry
         guard watching == nil, let chat = app?.chat else { return }
@@ -249,10 +249,11 @@ final class BrowserExtensionService: ObservableObject {
             }
             let messages = lines(id)
             let revision = BrowserExtensionPanel.revision(messages)
-            guard revision != entry.revision else { continue }
-            entry.revision = revision
+            guard entry.clients.values.contains(where: { $0 != revision }) else { continue }
             let event: [String: Any] = ["kind": "chat", "conversation": id.uuidString, "messages": messages, "revision": revision]
-            entry.clients = entry.clients.filter { hub.push(event, to: $0, key: "chat:" + id.uuidString) }
+            for (client, has) in entry.clients where has != revision {
+                entry.clients[client] = hub.push(event, to: client, key: "chat:" + id.uuidString) ? revision : nil
+            }
             watches[id] = entry.clients.isEmpty ? nil : entry
         }
         if watches.isEmpty {

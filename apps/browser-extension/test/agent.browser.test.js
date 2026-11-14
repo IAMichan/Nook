@@ -123,6 +123,28 @@ test('while Nook works the user\'s own clicks wait, Nook\'s own pass, and a sign
       assert.equal(refused.signIn, true, 'Nook never types a password: it waits for the user');
       await tab.evaluate(() => document.getElementById('secret').remove());
       assert.equal((await run('signin')).needed, false, 'signed in: Nook goes on');
+
+      // A sign-in code the user typed never shows in what Nook reads.
+      await tab.evaluate(() => {
+        const code = document.createElement('input');
+        code.autocomplete = 'one-time-code';
+        code.setAttribute('aria-label', 'Code');
+        code.value = '483920';
+        document.querySelector('main').prepend(code);
+      });
+      const look = await run('find', { query: 'code' });
+      assert.match(look.text, /value=\(hidden\)/);
+      assert.doesNotMatch(look.text, /483920/);
+
+      // Escape is Stop from the keyboard while Nook works here.
+      await tab.evaluate(() => {
+        window.__sent = [];
+        window.chrome.runtime.sendMessage = async (message) => { window.__sent.push(message); return { ok: true }; };
+        window.__nookPresence.busy(10_000);
+      });
+      await tab.keyboard.press('Escape');
+      assert.deepEqual(await tab.evaluate(() => window.__sent), [{ type: 'pause', paused: true }]);
+      assert.equal(await tab.evaluate(() => window.__nookPresence.mode), 'idle', 'the page is the user\'s again');
     } finally {
       await browser.close();
     }

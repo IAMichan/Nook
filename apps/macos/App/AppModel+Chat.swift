@@ -348,6 +348,9 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        // The answer read the browser's page: recorded as using the browser extension, so it stays where that source
+        // stays (an agent never reads an answer built from a source kept on this Mac).
+        var readPage = false
         var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
@@ -365,6 +368,7 @@ extension AppModel {
             // Asked from the browser's side panel: the page it read goes along, so no tool round is spent reading it.
             let limit = settings.brainProfile.isSmall ? 8_000 : BrowserExtensionPanel.textLimit
             snapshot = ScreenSnapshot(appName: page.appName, windowTitle: page.windowTitle, text: String(page.text.prefix(limit)))
+            readPage = true
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (!selfContained && settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
@@ -407,6 +411,8 @@ extension AppModel {
             self?.chat.update(id) {
                 if !initialSources.isEmpty { $0.sources = initialSources }
                 $0.contextSources = summary.titles
+                let browser = SourceCatalog.title(SourceCatalog.browserExtension)
+                if readPage, !$0.contextSources.contains(browser) { $0.contextSources.append(browser) }
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
                 $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }
