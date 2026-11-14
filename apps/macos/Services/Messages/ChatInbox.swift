@@ -413,6 +413,9 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var membership: ChatMembership? = nil
     /// The group itself changed ("Ruben changed the group name to …"): a centred line like `membership`.
     var groupChange: ChatGroupChange? = nil
+    /// How important its writer marked it, when the app lets them (Teams' "important" and "urgent"); nil for a normal
+    /// message and in every app that has no such mark. Kept for the notice path, which does not use it yet.
+    var importance: ChatImportance? = nil
 
     var isMine: Bool { fromMe == true }
     /// A line about the group rather than a message: who is in it, or the group itself changed.
@@ -447,6 +450,7 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
         var gone = self
         gone.deleted = true
         gone.mentionsMe = nil
+        gone.importance = nil
         guard isMine, !MailChatData.isMail(id) else { return gone }
         gone.edited = nil
         gone.text = ""
@@ -559,6 +563,18 @@ enum ChatIDMigration {
             moved[now] = moved[now].map { merging($0, value) } ?? value
         }
         return moved
+    }
+}
+
+/// How important a message's writer marked it, the same names for every app (Teams' Graph `importance`: "high" is
+/// Teams' "important", "urgent" pings again until read). A normal message has none.
+enum ChatImportance: String, Codable, Sendable {
+    case high, urgent
+
+    /// Graph's word for it; nil for "normal" and anything else.
+    init?(graph value: Any?) {
+        guard let word = (value as? String)?.lowercased(), let importance = ChatImportance(rawValue: word) else { return nil }
+        self = importance
     }
 }
 
@@ -1339,6 +1355,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
             }
             if let readers = message.readers, thread.messages[index].readers != readers { thread.messages[index].readers = readers }
             if let mentions = message.mentionsMe, thread.messages[index].mentionsMe != mentions { thread.messages[index].mentionsMe = mentions }
+            if let importance = message.importance, thread.messages[index].importance != importance {
+                thread.messages[index].importance = importance
+            }
             if let reactions = message.reactions, thread.messages[index].reactions != reactions {
                 let old = thread.messages[index].reactions
                 thread.messages[index].reactions = reactions

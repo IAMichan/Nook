@@ -245,6 +245,8 @@ enum TeamsData {
             if message["lastEditedDateTime"] as? String != nil { inbox.edited = true }
             // Someone tagged you (Graph's `mentions`, each with the user it names): a quiet group still tells you.
             if !mine, chat.isGroup { inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs(message), me: me) }
+            // Marked important or urgent by who wrote it (Graph's `importance`), for the notice path to weigh later.
+            inbox.importance = ChatImportance(graph: message["importance"])
             inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
             inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool, name: String?) in
                 let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]

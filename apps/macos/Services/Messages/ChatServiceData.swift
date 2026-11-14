@@ -382,6 +382,11 @@ enum ChatServiceData {
                 inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))
             }
             if message["isEdited"] as? Bool == true { inbox.edited = true }
+            // Someone tagged you (Matrix's `m.mentions`, which the helper passes on as `mentions`, you as your own id in
+            // the chat): a quiet group still tells you, as WhatsApp's groups do.
+            if !mine, chat.isGroup {
+                inbox.mentionsMe = ChatMentions.mentionsMe(message["mentions"] as? [String] ?? [], me: chat.me)
+            }
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
