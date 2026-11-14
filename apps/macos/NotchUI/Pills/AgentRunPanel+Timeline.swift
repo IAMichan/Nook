@@ -173,7 +173,8 @@ extension AgentRunPanel {
                                            openConsole: CommandConsole.running(turn).map { command -> () -> Void in
                                                { sideLink.toggleConsole(command.id) }
                                            },
-                                           help: TimelinePresentation.live(turn).tool)
+                                           help: TimelinePresentation.live(turn).tool,
+                                           progress: turn.last(where: TimelinePresentation.isLive).flatMap { memo.progress[$0.id] })
                     }
                     // A usage limit ended the turn: its own card, with the reset and how to go on.
                     if UsageLimitCard.shows(run) {
