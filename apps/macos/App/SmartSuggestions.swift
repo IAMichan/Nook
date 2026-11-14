@@ -29,20 +29,34 @@ extension AppModel {
             add(100, "front", idea.text, .symbol(idea.symbol))
         }
 
-        // 2. An agent waiting on input or stuck: Today has the row to open it, this asks what it needs.
-        if let waiting = hub.sessions.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            add(95, "agent", tr("suggest.agent.waiting", waiting.name), .agent(waiting.name))
-        } else if let failed = hub.sessions.first(where: { $0.status == .failed }) {
-            add(90, "agent", tr("suggest.agent.failed", failed.name), .agent(failed.name))
+        let scorer = attentionScorer(now: now)
+
+        // 2. The agent that needs you most, by its state in the Agents list (`AgentAttention`, ranked by
+        // `AttentionScorer`): Today has the row to open it, this asks what it needs.
+        if let top = scorer.rank(agentAttention(now: now), by: \.attention).first {
+            let name = agentName(top)
+            if top.attention.needsYou == .failure {
+                add(90, "agent", tr("suggest.agent.failed", name), .agent(name))
+            } else {
+                add(95, "agent", tr("suggest.agent.waiting", name), .agent(name))
+            }
         }
 
-        // 3. GitHub: the pull request itself, not "what about GitHub?".
+        // 3. GitHub: the pull request itself, not "what about GitHub?". The connector marks a review asked of you
+        // ("review-") and a pull request whose checks fail ("pr-", bad); the scorer picks between them.
         if active.contains("github"), let github = connectors.source(id: "github") {
-            let items = github.status.items
-            if let review = items.first(where: { $0.id.hasPrefix("review-") }) {
-                add(88, "github", tr("suggest.github.review", Self.short(review.title, 34)), .source("github"))
-            } else if let broken = items.first(where: { $0.id.hasPrefix("pr-") && $0.tone == .bad }) {
-                add(86, "github", tr("suggest.github.failing", Self.short(broken.title, 30)), .source("github"))
+            var candidates: [(item: AttentionItem, text: String)] = []
+            for entry in github.status.items {
+                if entry.id.hasPrefix("review-") {
+                    candidates.append((AttentionItem(source: "github", id: entry.id, app: "github", subject: entry.id, needsYou: .review),
+                                       tr("suggest.github.review", Self.short(entry.title, 34))))
+                } else if entry.id.hasPrefix("pr-"), entry.tone == .bad {
+                    candidates.append((AttentionItem(source: "github", id: entry.id, app: "github", subject: entry.id, needsYou: .failure),
+                                       tr("suggest.github.failing", Self.short(entry.title, 30))))
+                }
+            }
+            if let best = scorer.rank(candidates, by: \.item).first {
+                add(best.item.needsYou == .review ? 88 : 86, "github", best.text, .source("github"))
             }
         }
 
@@ -109,6 +123,12 @@ extension AppModel {
             .filter { topics.insert($0.topic).inserted && texts.insert($0.suggestion.text.lowercased()).inserted }
             .prefix(4)
             .map { $0.suggestion }
+    }
+
+    /// The agent's name of a ranked agent item, as its logo and the suggestion say it ("Claude Code").
+    private func agentName(_ ranked: RankedTodayItem) -> String {
+        if case .agent(let name)? = ranked.row.logo { return name }
+        return ranked.attention.app
     }
 
     /// Relevant suggestions based on the active frontmost application.

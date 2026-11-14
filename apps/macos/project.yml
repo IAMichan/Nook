@@ -393,6 +393,7 @@ targets:
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
       - path: Services/NoticePacer.swift
+      - path: Services/Attention/AttentionItem.swift
       - path: Services/Messages/ChatFollowUpTick.swift
       - path: Services/Attention/ChatNoticePriority.swift
       - path: Services/ThinkAlongBackoff.swift
