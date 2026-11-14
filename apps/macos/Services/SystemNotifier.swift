@@ -20,9 +20,11 @@ struct NoticeBanner {
 }
 
 /// Shows notices as macOS notifications instead of on the notch, for every source set to "macOS notification" in
-/// Settings › Notifications (`NoticeRules`), and an agent's permission requests when agents are. A request whose whole command fits on the banner gets Allow and Deny there; anything you cannot
-/// fully see on a banner (a dangerous or long command, a file edit's diff, an MCP tool) only gets Deny and Show, so what
-/// is approved is always what was shown. A click on a notification opens it in the notch.
+/// Settings › Notifications (`NoticeRules`), and an agent's permission requests when agents are. A request whose whole
+/// command fits on the banner gets Allow and Deny there. One you cannot fully see on a banner (a long command, a file
+/// edit's diff, an MCP tool) gets Allow, Show and Deny: the banner says what it is about, Show opens it in full. A
+/// dangerous command only gets Show and Deny, so it is never allowed without being seen. A click on a notification
+/// opens it in the notch.
 ///
 /// Notifications are grouped per chat and per agent session, chats can be answered and marked read on the banner, and
 /// a notification goes away once what it says is handled anywhere (read in Nook or in its app, decided in the notch).
@@ -40,13 +42,14 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
         static let approval = "nook.approval"
         static let approvalAlways = "nook.approval.always"
         static let review = "nook.approval.review"
+        static let danger = "nook.approval.danger"
         static let notice = "nook.notice"
         static let reply = "nook.notice.reply"
         static let chat = "nook.notice.chat"
         static let chatReply = "nook.notice.chat.reply"
         /// Followed by the button's title: one category per app name ("Open Terminal", "Open Ghostty").
         static let appPrefix = "nook.notice.app."
-        static let approvals: Set<String> = [approval, approvalAlways, review]
+        static let approvals: Set<String> = [approval, approvalAlways, review, danger]
     }
 
     private enum Action: String {
@@ -126,12 +129,14 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
                                    intentIdentifiers: [], options: [.customDismissAction])
         }
         center.setNotificationCategories(Set(apps + [
-            // A banner shows its first two buttons, so Deny is always one of them.
+            // Deny is always on a request's banner.
             UNNotificationCategory(identifier: Category.approval, actions: [allow, deny], intentIdentifiers: [],
                                    options: [.customDismissAction]),
             UNNotificationCategory(identifier: Category.approvalAlways, actions: [allow, deny, always], intentIdentifiers: [],
                                    options: [.customDismissAction]),
-            UNNotificationCategory(identifier: Category.review, actions: [show, deny], intentIdentifiers: [],
+            UNNotificationCategory(identifier: Category.review, actions: [allow, show, deny], intentIdentifiers: [],
+                                   options: [.customDismissAction]),
+            UNNotificationCategory(identifier: Category.danger, actions: [show, deny], intentIdentifiers: [],
                                    options: [.customDismissAction]),
             UNNotificationCategory(identifier: Category.notice, actions: [], intentIdentifiers: [], options: [.customDismissAction]),
             UNNotificationCategory(identifier: Category.reply, actions: [reply], intentIdentifiers: [],
@@ -194,11 +199,13 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
             content.body = approval.command
             content.categoryIdentifier = approval.canAlways ? Category.approvalAlways : Category.approval
         } else {
-            // Decided after a click anyway, where it shows in full: the banner only says what it is about.
+            // Too much for a banner: it only says what it is about, Show opens it in full. A dangerous one is only
+            // decided after that look.
             let gist = approval.prose ? BannerText.gist(approval.command, limit: 120)
                 : BannerText.cut(approval.command.split(whereSeparator: \.isNewline).first.map(String.init) ?? "", to: 120)
-            content.body = [gist, tr("noticeDelivery.review")].filter { !$0.isEmpty }.joined(separator: "\n")
-            content.categoryIdentifier = Category.review
+            let hint = approval.danger ? tr("noticeDelivery.review") : ""
+            content.body = [gist, hint].filter { !$0.isEmpty }.joined(separator: "\n")
+            content.categoryIdentifier = approval.danger ? Category.danger : Category.review
         }
         post(id: approval.cardToken, content: content, handlers: Handlers(decide: decide, show: show, banner: banner),
              fallback: fallback)
