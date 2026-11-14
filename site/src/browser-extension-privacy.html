@@ -1,0 +1,64 @@
+<!-- @head title="Browser extension privacy · Nook" desc="The privacy policy of Nook's browser extension: what it reads, where it goes (only to Nook on your Mac), and what it never does." -->
+<!-- @sprite -->
+<!-- @nav -->
+<style>
+.policy{max-width:760px;margin:0 auto}
+.policy h2{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:48px 0 14px}
+.policy p,.policy li{font-size:16px;color:var(--t2);line-height:1.7}
+.policy p+p{margin-top:12px}
+.policy ul{margin:10px 0 0 20px;display:flex;flex-direction:column;gap:8px}
+.policy b{color:var(--strong);font-weight:500}
+.policy a{color:var(--blue)}
+.policy code{font:14px var(--mono);color:var(--strong)}
+.policy .updated{font-size:14px;color:var(--t3);margin-top:48px}
+</style>
+
+<header class="page-hero">
+  <div class="wrap">
+    <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Privacy</div>
+    <h1 class="rv d1">Nook in your browser: privacy policy</h1>
+    <p class="lede rv d2">Nook's browser extension connects your browser to the Nook app on your own Mac. It has no server of its own, no analytics and no tracking.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="policy">
+      <h2>What the extension handles</h2>
+      <ul>
+        <li><b>Page content.</b> The text, fields and buttons of a page, and a screenshot of the visible tab, only when you ask Nook about that page or give Nook a task in your browser.</li>
+        <li><b>Your tabs.</b> The titles and addresses of your open tabs, when Nook is asked which tabs are open.</li>
+        <li><b>Your settings.</b> The sites where you switched Nook off, and whether Nook is paused. These are stored in your browser.</li>
+        <li><b>The side panel.</b> Your conversation in the side panel and the list of what Nook did, kept only for the current browser session.</li>
+      </ul>
+
+      <h2>Where it goes</h2>
+      <p>Everything the extension reads goes only to the Nook app on your Mac, through the browser's native messaging. The extension sends nothing to the developer or to any server.</p>
+      <p>Nook answers with the model you chose in Nook. By default that is a model on your own Mac. If you chose a cloud model in Nook's settings, Nook sends your question and the page content it needs to that provider to answer you, under that provider's terms. With a privacy level that keeps personal sources on this Mac, a cloud model or a coding agent does not get Nook's browser tools at all. Read more about models and privacy levels on <a href="privacy.html">Nook's privacy page</a>.</p>
+
+      <h2>What it never does</h2>
+      <ul>
+        <li>It never types into password fields and never reads what is in them.</li>
+        <li>It never sells data, and never uses it for advertising or for anything other than answering you and carrying out the tasks you give.</li>
+        <li>It runs nothing on a page until you ask. Every action (opening a page, clicking, typing, pressing a key, closing a tab) waits for your approval in Nook first and is written to Nook's audit log.</li>
+        <li>It never touches the browser's own pages, local files or the web stores.</li>
+        <li>It loads no code from the internet: everything it runs ships inside the extension.</li>
+      </ul>
+
+      <h2>Your control</h2>
+      <p>In the side panel you can switch Nook off for any site, or pause it in the whole browser. To stop it completely, click <b>Disconnect</b> in Nook › Settings › Editor &amp; browser, or remove the extension from your browser. Removing it also removes the settings it stored.</p>
+
+      <h2>Open source</h2>
+      <p>The extension's code is public in <a href="https://github.com/IAMichan/nook/tree/main/apps/browser-extension"><code>apps/browser-extension</code></a>, and how it works is described in <a href="https://github.com/IAMichan/nook/blob/main/docs/BROWSER-EXTENSION.md">BROWSER-EXTENSION.md</a>.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about this policy: open an issue on <a href="https://github.com/IAMichan/nook/issues">GitHub</a>. Security issues: report them privately as described in the <a href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">security policy</a>.</p>
+
+      <p class="updated">Last updated: 14 November 2026</p>
+    </div>
+  </div>
+</section>
+
+<!-- @footer -->
+</body>
+</html>
