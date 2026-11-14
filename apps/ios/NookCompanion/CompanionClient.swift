@@ -28,6 +28,8 @@ final class CompanionClient: ObservableObject {
     @Published var openSession: String?
     /// The session whose screen is open, so a push about it arrives without a banner.
     var visibleSession: String?
+    /// A session opened to write to it ("Send a message" on a row): its screen puts the keyboard in its composer once.
+    var focusComposer: String?
     /// A `nook://prompt` link that was opened: the New session sheet shows with its text.
     @Published var pendingPrompt: PromptLink?
     /// A quick action from the app's icon, for `RootView` to act on once (`AppShortcut`).

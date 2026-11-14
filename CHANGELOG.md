@@ -11,6 +11,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook Companion's Agents list reads like the Mac's: the search and a view menu on one row, and sessions grouped by
+  project (on by default), each folder folding away and its **+** starting a new session right in that project. A long
+  press on a session offers Send a message, Stop and New session here, so you steer and start agents from the phone in
+  a tap or two; the New session sheet opens on what your Mac offers at once, and a session you just started opens
+  without a "This session is gone." in between.
+
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
   it gets the same look and feel; nothing else of theirs changes.
