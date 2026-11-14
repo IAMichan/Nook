@@ -14,6 +14,7 @@ struct ChatOptionsSection: View {
     @State private var giphyKey = ""
     @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
+    @AppStorage(AppModel.readInAppOnOpenKey) private var readInAppOnOpen = true
 
     var body: some View {
         Group {
@@ -34,6 +35,10 @@ struct ChatOptionsSection: View {
 
             Section {
                 SettingToggle(tr("chats.settings.readOnOpen"), detail: tr("chats.settings.readOnOpenDetail"), isOn: $readOnOpen)
+                if readOnOpen {
+                    SettingToggle(tr("chats.settings.readInAppOnOpen"), detail: tr("chats.settings.readInAppOnOpenDetail"),
+                                  isOn: $readInAppOnOpen)
+                }
             } header: {
                 Text(tr("chats.settings.reading"))
             }
