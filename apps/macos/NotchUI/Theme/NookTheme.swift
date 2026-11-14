@@ -623,7 +623,8 @@ extension View {
         overlay(NookTheme.shape(radius).strokeBorder(stroke, lineWidth: lineWidth))
     }
 
-    /// Clips the content to a rounded shape.
+    /// Clips the content to a rounded shape. Clip before drawing a rounded border, not after: clipping a border at the same
+    /// radius trims its anti-aliased outer edge in the curves, so the corners look dimmer than the straight sides.
     func roundedClip(_ radius: CGFloat) -> some View {
         clipShape(NookTheme.shape(radius))
     }

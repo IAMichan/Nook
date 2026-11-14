@@ -136,8 +136,8 @@ struct SelectionAskCard: View {
         }
         .frame(width: SelectionAskController.cardWidth)
         .composerFocusOnAppear($focused)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
         .roundedClip(NookTheme.Radius.panel)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
         .shadow(color: NookTheme.notch.opacity(0.5), radius: 14, y: 6)
     }
 

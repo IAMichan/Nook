@@ -73,8 +73,8 @@ private struct SettingsFormSection: View {
             }
         }
         .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
-        .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.panel)
         .roundedClip(NookTheme.Radius.panel)
+        .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.panel)
     }
 }
 

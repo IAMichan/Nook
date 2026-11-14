@@ -168,8 +168,8 @@ extension PullRequestDetailView {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.card)
         .roundedClip(NookTheme.Radius.card)
+        .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.card)
     }
 
     func readinessVerdict(_ readiness: PullRequestReadiness) -> (symbol: String, color: Color, title: String) {
