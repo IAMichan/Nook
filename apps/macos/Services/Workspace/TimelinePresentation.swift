@@ -422,6 +422,8 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
     var steps: [SubagentStep] = []
     /// The id its agent knows it by while it runs in the background (Claude Code's `agentId`): what Stop names.
     var taskID: String? = nil
+    /// How far it is while it runs, when earlier subagents of its kind say (`WorkProgress`).
+    var progress: WorkProgress? = nil
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
@@ -520,9 +522,20 @@ struct BackgroundCommandInfo: Identifiable, Equatable, Sendable {
     var state: RunEvent.State?
     var output: String?
     var started: Date
+    /// How far it is while it runs: what it printed, or how long it took before (`WorkProgress`).
+    var progress: WorkProgress? = nil
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
+
+    /// The command with what its latest reading found: the share done its output file reports (Claude Code writes what
+    /// a background command prints there, not into its call).
+    func reading(_ activity: BackgroundCommandActivity?) -> BackgroundCommandInfo {
+        guard isRunning, let reported = activity?.reported else { return self }
+        var command = self
+        command.progress = WorkProgress(reported: reported, started: started, expected: progress?.expected)
+        return command
+    }
 
     /// What the command printed, without the note an agent gets when it starts one in the background ("Command running
     /// in background with ID: b3k9. Output is being written to: … Read on that file path"), or when its call ran past

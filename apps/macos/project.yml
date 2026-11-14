@@ -604,6 +604,7 @@ targets:
       - path: Services/Workspace/TextClip.swift
       - path: Services/Workspace/TokenNumbers.swift
       - path: Services/Workspace/AgentProgress.swift
+      - path: Services/Workspace/WorkProgress.swift
       - path: Services/AppPrompt.swift
       - path: Services/PreToolGate.swift
       - path: Services/Workspace/CommandConsole.swift

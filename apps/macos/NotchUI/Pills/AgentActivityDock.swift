@@ -315,7 +315,7 @@ struct AgentActivityDock: View {
                 switch kind {
                 case .tasks: EmptyView()
                 case .subagents: if let agent = leadSubagent { SubagentElapsed(agent: agent) }
-                case .commands: if let command = leadCommand { SubagentElapsed(command: command) }
+                case .commands: if let command = leadCommand { SubagentElapsed(command: command.reading(activity[command.id])) }
                 }
             }
             .font(NookTheme.TextStyle.detail)
@@ -427,7 +427,8 @@ struct AgentActivityDock: View {
                     var probe = probes[command.id] ?? BackgroundCommandProbe()
                     read[command.id] = probe.read(command: command.command, output: command.output, roots: roots, table: table, at: now,
                                                   commandLine: BackgroundCommandActivityLabel.commandLine,
-                                                  modified: BackgroundCommandActivityLabel.modified)
+                                                  modified: BackgroundCommandActivityLabel.modified,
+                                                  tail: { BackgroundCommandActivity.tail($0) })
                     probes[command.id] = probe
                 }
                 return (read, probes)
@@ -607,7 +608,7 @@ struct BackgroundCommandRows: View {
                             .foregroundStyle(NookTheme.textTertiary)
                             .help(tr("ws.background.hasOutput"))
                     }
-                    SubagentElapsed(command: command)
+                    SubagentElapsed(command: command.reading(activity[command.id]))
                     DisclosureChevron(open: expanded, size: 8)
                 }
                 .frame(minHeight: 22)

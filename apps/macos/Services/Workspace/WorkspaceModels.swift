@@ -976,6 +976,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// For a switch of agent, model or effort (a `.system` event with tool "switch"): what the session ran before and
     /// after it. Nil for every other event.
     var change: ModelSwitch? = nil
+    /// For a tool call Nook saw run: when it settled (`noteEnd`), so the same work next time shows how far it is
+    /// (`WorkProgress`). Nil while it runs, for every other event, and in timelines saved before this existed.
+    var ended: Date? = nil
 
     /// How a message of yours reached a turn that was running.
     enum SteerKind: String, Codable, Sendable {

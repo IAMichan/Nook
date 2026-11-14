@@ -313,12 +313,15 @@ struct TranscriptLiveLine: View {
     /// Opens the terminal with the command that runs; nil when no command runs.
     var openConsole: (() -> Void)? = nil
     var help: String? = nil
+    /// How far the step that runs is, when Nook can tell (`WorkProgress`).
+    var progress: WorkProgress? = nil
 
-    /// What the line says about a step: the step, the terminal it opens and its tooltip.
+    /// What the line says about a step: the step, the terminal it opens, its tooltip and how far it is.
     private struct Shown {
         var activity: AgentActivity
         var openConsole: (() -> Void)?
         var help: String?
+        var progress: WorkProgress?
     }
 
     /// The last step the line showed. When it ends and nothing else runs yet, the line goes on showing it for a moment
@@ -333,8 +336,10 @@ struct TranscriptLiveLine: View {
         // circular reference to the CI runner's compiler.
         let current = self.activity
         let held = released ? nil : lastStep.flatMap { AgentActivity.holds($0.activity, before: current) ? $0 : nil }
-        let line = held ?? Shown(activity: current, openConsole: self.openConsole, help: self.help)
+        let line = held ?? Shown(activity: current, openConsole: self.openConsole, help: self.help, progress: self.progress)
         let activity = line.activity, openConsole = line.openConsole, help = line.help
+        // A step that ended and is only held on the line is not running: it has no progress to show.
+        let progress = held == nil ? line.progress : nil
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let tasks { TaskChecklistCard(steps: tasks) }
             if waiting {
@@ -345,15 +350,18 @@ struct TranscriptLiveLine: View {
                 TranscriptWorkLine(symbol: AgentActivityText.symbol(activity), label: AgentActivityText.headline(activity),
                                    tint: NookTheme.amber)
             } else {
-                TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
-                                   label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
-                                   live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
-                    .help(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
+                HStack(spacing: NookTheme.Spacing.md) {
+                    TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
+                                       label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
+                                       live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
+                        .help(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
+                    if let progress, activity.isStep { WorkProgressMark(progress: progress) }
+                }
             }
         }
         .onChange(of: self.activity, initial: true) { old, new in
             if new.isStep {
-                lastStep = Shown(activity: new, openConsole: self.openConsole, help: self.help)
+                lastStep = Shown(activity: new, openConsole: self.openConsole, help: self.help, progress: self.progress)
                 released = false
             } else if old.isStep {
                 ended += 1
