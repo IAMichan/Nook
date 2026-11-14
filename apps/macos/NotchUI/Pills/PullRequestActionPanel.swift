@@ -309,11 +309,7 @@ struct PullRequestActionPanel: View {
             }
             if let error = state.error {
                 HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-                    Text(error)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    InlineErrorText(error)
                     Spacer(minLength: 0)
                     // An action from the ⋯ menu has no panel of its own to close with it.
                     if state.panel == .none {

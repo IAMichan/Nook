@@ -130,11 +130,7 @@ struct MailDraftView: View {
             .padding(.top, NookTheme.Spacing.md)
 
             if case .failed(let message) = draft.state {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                InlineErrorText(message)
                     .padding(.top, 6)
             }
         }

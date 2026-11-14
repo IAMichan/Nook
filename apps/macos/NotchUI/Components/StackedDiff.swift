@@ -397,9 +397,7 @@ private struct StackedDiffBody<Content: View>: View {
             if let text, !text.isEmpty {
                 content(file, text)
             } else if let error {
-                Text(error)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
+                InlineErrorText(error)
                     .padding(NookTheme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if text != nil {

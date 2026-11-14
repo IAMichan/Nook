@@ -12,11 +12,8 @@ extension PullRequestDetailView {
         let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if writingGuide {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("agents.pr.guide.writing")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-                }
-                .padding(NookTheme.Spacing.lg)
+                BusyLine(tr("agents.pr.guide.writing"), font: NookTheme.TextStyle.body)
+                    .padding(NookTheme.Spacing.lg)
             } else if let guide {
                 if !guide.isCurrent(for: detail.headSHA) {
                     HStack(spacing: NookTheme.Spacing.md) {

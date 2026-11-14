@@ -358,10 +358,7 @@ struct PullRequestsPanel: View {
             if account.errorKind == .auth {
                 expiredCard.padding(.top, NookTheme.Spacing.sm)
             } else {
-                Text(error)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                InlineErrorText(error)
                     .padding(.horizontal, NookTheme.Spacing.xs)
                     .padding(.top, NookTheme.Spacing.sm)
             }
@@ -401,10 +398,7 @@ struct PullRequestsPanel: View {
             }
             .padding(.top, NookTheme.Spacing.xxs)
             if case .failed(let message) = gitHubSignIn.phase {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                InlineErrorText(message)
             }
         }
         .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)

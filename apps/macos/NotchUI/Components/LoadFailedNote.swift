@@ -31,10 +31,7 @@ struct LoadFailedNote<Extra: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(message)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
-                .fixedSize(horizontal: false, vertical: true)
+            InlineErrorText(message)
             HStack(spacing: NookTheme.Spacing.sm) {
                 SmallGhostButton(title: retryTitle, action: retry)
                 extra()

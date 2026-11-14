@@ -94,7 +94,7 @@ struct RunInspector: View {
                                       enabled: snapshot?.loading != true) { workspace.refreshGit(runID) }
                 }
                 if let error = snapshot?.error {
-                    Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
+                    InlineErrorText(error)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
                         NookTheme.shape(4).fill(WS.subtle).frame(height: 14)

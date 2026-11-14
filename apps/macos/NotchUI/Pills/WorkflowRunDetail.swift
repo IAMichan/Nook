@@ -199,9 +199,7 @@ struct WorkflowRunDetail: View {
     @ViewBuilder
     private var jobList: some View {
         if let failure, jobs.isEmpty {
-            Text(failure)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
+            InlineErrorText(failure)
                 .padding(.horizontal, NookTheme.Spacing.xs)
         } else if !loaded {
             // The jobs' shape while they are read: a heading and a few rows.

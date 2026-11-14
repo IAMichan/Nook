@@ -234,11 +234,7 @@ struct SessionPanel: View {
             if let confirmDefault { defaultBranchConfirmation(confirmDefault) }
             // A failed action shows as a toast; this is only the script form's own problem.
             if let message = error {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                InlineErrorText(message)
                     .padding(.horizontal, 10)
                     .padding(.vertical, NookTheme.Spacing.sm)
             }

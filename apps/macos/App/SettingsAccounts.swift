@@ -294,8 +294,7 @@ private struct ManageAccountSheet: View {
                 .disabled(progress?.isBusy == true)
 
                 if let progress, progress.isBusy {
-                    ProgressView().controlSize(.small)
-                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    BusyLine(progress.text, font: NookTheme.TextStyle.detail)
                 }
             }
             if case .failed(let message)? = progress {

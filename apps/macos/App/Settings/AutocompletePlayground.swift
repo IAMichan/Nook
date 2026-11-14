@@ -33,8 +33,7 @@ struct AutocompletePlaygroundSection: View {
                     .roundedStrokeBorder(.quaternary, radius: NookTheme.Radius.control)
                 HStack(spacing: NookTheme.Spacing.md) {
                     if playground.thinking {
-                        ProgressView().controlSize(.small)
-                        Text(tr("autocomplete.playground.thinking")).foregroundStyle(NookTheme.textSecondary)
+                        BusyLine(tr("autocomplete.playground.thinking"))
                     } else if playground.suggestion != nil {
                         Text(tr("autocomplete.playground.keys", store.prefs.acceptWord.label, store.prefs.acceptAll.label))
                             .foregroundStyle(NookTheme.textSecondary)

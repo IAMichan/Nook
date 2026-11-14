@@ -88,10 +88,7 @@ extension NewSessionComposer {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
         } else if let error {
-            Text(error)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
-                .fixedSize(horizontal: false, vertical: true)
+            InlineErrorText(error)
                 .padding(.horizontal, NookTheme.Spacing.md)
         } else if let linkNotice {
             Text(linkNotice)

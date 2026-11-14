@@ -260,8 +260,7 @@ struct PlanReview: View {
                     .disabled(blocked)
                 SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
             case .running:
-                ProgressView().controlSize(.small)
-                Text(tr("chat.plan.running")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                BusyLine(tr("chat.plan.running"), font: NookTheme.TextStyle.body)
             case .done(let result):
                 Image(icon: "checkmark").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.mint)
                 Text(result).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)

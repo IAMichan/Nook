@@ -140,8 +140,7 @@ private struct AcpRegistrySheet: View {
             SetupCheckStep(number: 2, title: tr("acp.step.check"), detail: checkDetail, state: checkState)
         } footer: {
             if installing {
-                ProgressView().controlSize(.small)
-                Text(tr("acp.install.busy")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                BusyLine(tr("acp.install.busy"), font: NookTheme.TextStyle.detail)
             }
             Spacer()
             Button(tr("button.cancel")) { dismiss() }

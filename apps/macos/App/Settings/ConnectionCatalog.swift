@@ -462,12 +462,8 @@ struct ServiceSignInSheet: View {
             switch status {
             case .connecting:
                 tagline
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("connect.waiting", service.name))
-                        .font(NookTheme.TextStyle.detail)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                BusyLine(tr("connect.waiting", service.name), tone: .inherited, font: NookTheme.TextStyle.detail)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(tr("button.cancel")) { signIn.cancel() }
             case .connected:
                 tagline

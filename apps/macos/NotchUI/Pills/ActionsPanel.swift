@@ -198,9 +198,7 @@ struct ActionsPanel: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if let error = store.error {
-                        Text(error)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.coralSoft)
+                        InlineErrorText(error)
                             .padding(.horizontal, NookTheme.Spacing.xs)
                             .padding(.bottom, NookTheme.Spacing.sm)
                     }

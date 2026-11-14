@@ -830,10 +830,7 @@ struct PullRequestDetailView: View {
     /// The summary is in, the timeline, commits and files are still on their way.
     var activityLoading: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ProgressView().controlSize(.small)
-                Text(tr("agents.pr.loadingActivity")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            }
+            BusyLine(tr("agents.pr.loadingActivity"), tone: .tertiary, font: NookTheme.TextStyle.detail)
             ForEach(0..<4, id: \.self) { _ in PullRequestGhostRow() }
             Spacer(minLength: 0)
         }

@@ -146,11 +146,7 @@ struct MailComposeView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if case .failed(let message) = draft.state {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                InlineErrorText(message)
             }
             HStack(spacing: NookTheme.Spacing.sm) {
                 if draft.state == .sent {

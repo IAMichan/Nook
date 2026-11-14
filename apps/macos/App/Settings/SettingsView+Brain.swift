@@ -260,8 +260,7 @@ extension SettingsView {
             }
             switch openRouter.phase {
             case .waiting:
-                ProgressView().controlSize(.small)
-                Text(tr("connect.waiting", "OpenRouter")).font(NookTheme.TextStyle.detail)
+                BusyLine(tr("connect.waiting", "OpenRouter"), tone: .inherited, font: NookTheme.TextStyle.detail)
                 Button(tr("button.cancel")) { openRouter.cancel() }
             default:
                 Button {
@@ -386,10 +385,7 @@ extension SettingsView {
             let path = SubscriptionBrain.executable(settings.provider)
             let account = app.history.profileAccounts[profile.id]
             if let progress, progress.isBusy {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(progress.text, font: NookTheme.TextStyle.detail)
             } else if path == nil {
                 StatusRow(title: tr("brain.sub.notInstalled", kind.name), detail: tr("brain.sub.notInstalledDetail", kind.name),
                           state: .warning) {

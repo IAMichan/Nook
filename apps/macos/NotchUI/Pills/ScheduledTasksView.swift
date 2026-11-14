@@ -381,9 +381,7 @@ private struct ScheduledTaskEditor: View {
                 }
             }
         } footer: {
-            Text(problem ?? "")
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
+            InlineErrorText(problem ?? "")
             Spacer()
             Button(tr("button.cancel"), action: onDone)
                 .keyboardShortcut(.cancelAction)
