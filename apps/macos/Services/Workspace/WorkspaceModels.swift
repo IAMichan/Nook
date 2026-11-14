@@ -883,24 +883,26 @@ enum PullRequestNews {
     /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
     /// words. The agent can read the whole comment on GitHub; the line says what it is about.
     static func plain(_ text: String, limit: Int = 300) -> String {
-        var result = text
-        let patterns: [(String, String)] = [
-            (#"<!--[\s\S]*?(-->|$)"#, " "),                // HTML comments, also one cut off
-            (#"<details>[\s\S]*?</details>"#, " "),        // folded sections
-            (#"!\[[^\]]*\]\([^)]*\)"#, " "),             // images and badges
-            (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),           // links: their words
-            (#"<[^>]*>"#, " "),                             // other tags
-            (#"(?m)^\s*(#+|>+|[-*_]{3,})\s*"#, " ")         // headings, quotes, rules
-        ]
-        for (pattern, template) in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            result = regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: template)
+        var result = plainRules.reduce(text) { result, rule in
+            rule.regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: rule.template)
         }
         for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
             result = result.replacingOccurrences(of: entity, with: character)
         }
         let words = result.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return ToolSummary.oneLine(words, limit)
+    }
+
+    /// The rewrites `plain` applies, in order. Compiled once: every pull request comment goes through them.
+    private static let plainRules: [(regex: NSRegularExpression, template: String)] = [
+        (#"<!--[\s\S]*?(-->|$)"#, " "),                // HTML comments, also one cut off
+        (#"<details>[\s\S]*?</details>"#, " "),        // folded sections
+        (#"!\[[^\]]*\]\([^)]*\)"#, " "),             // images and badges
+        (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),           // links: their words
+        (#"<[^>]*>"#, " "),                             // other tags
+        (#"(?m)^\s*(#+|>+|[-*_]{3,})\s*"#, " ")         // headings, quotes, rules
+    ].compactMap { pattern, template in
+        (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
     }
 
     /// Worth waking the agent for: something it can act on (failed CI, a merge conflict, reviews, comments), not a merge

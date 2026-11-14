@@ -116,6 +116,9 @@ enum ComposerMarkdownStyle {
 }
 
 extension ComposerLists {
+    /// A list item's opening: its indent, then a bullet or a number. A constant pattern, compiled once.
+    private static let listItem = try! NSRegularExpression(pattern: #"^([ \t]*)(?:[-*+]|\d{1,9}[.)])[ \t]"#)
+
     /// Tab and Shift+Tab on a list item: the lines the selection touches move in (two spaces) or out, when every one of
     /// them is a list item. Returns the new text and the selection moved along, or nil to leave Tab to the field.
     static func nest(_ text: String, selection: NSRange, outdent: Bool) -> (text: String, selection: NSRange)? {
@@ -129,11 +132,10 @@ extension ComposerLists {
             starts.append(line.location)
             location = NSMaxRange(line)
         } while location < NSMaxRange(lines)
-        let item = try! NSRegularExpression(pattern: #"^([ \t]*)(?:[-*+]|\d{1,9}[.)])[ \t]"#)
         var edits: [(at: Int, remove: Int, insert: String)] = []
         for start in starts {
             let line = ns.lineRange(for: NSRange(location: start, length: 0))
-            guard let match = item.firstMatch(in: text, range: line), match.range.location == start else { return nil }
+            guard let match = listItem.firstMatch(in: text, range: line), match.range.location == start else { return nil }
             let indent = match.range(at: 1)
             if outdent {
                 let leading = ns.substring(with: indent)

@@ -135,12 +135,19 @@ final class WebTools {
         return parseResults(html)
     }
 
+    // Constant patterns, compiled once. A regular expression is immutable and safe to share between threads.
+    nonisolated(unsafe) private static let resultLink = try? NSRegularExpression(
+        pattern: #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
+    nonisolated(unsafe) private static let resultSnippet = try? NSRegularExpression(
+        pattern: #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
+    nonisolated(unsafe) private static let numericEntity = try? NSRegularExpression(pattern: "&#(\\d{2,6});")
+    /// Named entities, `&amp;` last: decoding it first would turn "&amp;lt;" into "<" instead of "&lt;".
+    private nonisolated static let namedEntities = [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&#x27;", "'"),
+                                                    ("&nbsp;", " "), ("&apos;", "'"), ("&amp;", "&")]
+
     /// DuckDuckGo's HTML page: each result contains a link with class "result__a" and snippet text with class "result__snippet".
     nonisolated static func parseResults(_ html: String) -> [SearchResult] {
-        let linkPattern = #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#
-        let snippetPattern = #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#
-        guard let linkRegex = try? NSRegularExpression(pattern: linkPattern, options: [.dotMatchesLineSeparators]),
-              let snippetRegex = try? NSRegularExpression(pattern: snippetPattern, options: [.dotMatchesLineSeparators]) else { return [] }
+        guard let linkRegex = resultLink, let snippetRegex = resultSnippet else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         let links = linkRegex.matches(in: html, range: range)
         let snippets = snippetRegex.matches(in: html, range: range)
@@ -199,18 +206,17 @@ final class WebTools {
     }
 
     nonisolated static func decodeEntities(_ text: String) -> String {
+        guard text.contains("&") else { return text }
         var result = text
-        let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#x27;": "'", "&nbsp;": " ", "&apos;": "'"]
-        for (entity, value) in entities { result = result.replacingOccurrences(of: entity, with: value) }
-        // Numeric entities, e.g. &#233;
-        if let regex = try? NSRegularExpression(pattern: "&#(\\d{2,6});") {
-            let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed()
-            for match in matches {
+        // Numeric entities first (e.g. &#233;), so an escaped one ("&amp;#233;") stays text.
+        if let regex = numericEntity {
+            for match in regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed() {
                 guard let whole = Range(match.range, in: result), let digits = Range(match.range(at: 1), in: result),
                       let code = UInt32(result[digits]), let scalar = Unicode.Scalar(code) else { continue }
                 result.replaceSubrange(whole, with: String(Character(scalar)))
             }
         }
+        for (entity, value) in namedEntities { result = result.replacingOccurrences(of: entity, with: value) }
         return result
     }
 

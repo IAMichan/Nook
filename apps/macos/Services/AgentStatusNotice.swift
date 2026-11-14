@@ -108,17 +108,25 @@ enum BannerText {
 
     /// `text` without Markdown marks and with its links shortened, on one line.
     static func plain(_ text: String) -> String {
-        var line = text
-        // [title](url) → title
-        line = replace(#"\[([^\]]+)\]\([^)]+\)"#, in: line, with: "$1")
-        // A pull request or issue link → its number.
-        line = replace(#"https?://[^\s)]+/(?:pull|issues|merge_requests)/(\d+)[^\s)]*"#, in: line, with: "#$1")
-        // Any other link → its host.
-        line = replace(#"https?://(?:www\.)?([^/\s)]+)[^\s)]*"#, in: line, with: "$1")
-        line = replace(#"\*\*|__|`"#, in: line, with: "")
-        line = replace(#"^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)"#, in: line, with: "")
-        line = replace(#"\s+"#, in: line, with: " ")
+        let line = plainRules.reduce(text) { line, rule in
+            rule.regex.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: rule.template)
+        }
         return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The rewrites `plain` applies, in order. Compiled once: every banner and notice line goes through them.
+    private static let plainRules: [(regex: NSRegularExpression, template: String)] = [
+        // [title](url) → title
+        (#"\[([^\]]+)\]\([^)]+\)"#, "$1"),
+        // A pull request or issue link → its number.
+        (#"https?://[^\s)]+/(?:pull|issues|merge_requests)/(\d+)[^\s)]*"#, "#$1"),
+        // Any other link → its host.
+        (#"https?://(?:www\.)?([^/\s)]+)[^\s)]*"#, "$1"),
+        (#"\*\*|__|`"#, ""),
+        (#"^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)"#, ""),
+        (#"\s+"#, " ")
+    ].compactMap { pattern, template in
+        (try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])).map { ($0, template) }
     }
 
     /// Up to the end of the first sentence that says something (a few words at least): "Done. Tests pass." → "Done.".
@@ -155,8 +163,4 @@ enum BannerText {
         return cut(parts.dropFirst().joined(separator: " · "), to: subtitleLimit + 20)
     }
 
-    private static func replace(_ pattern: String, in text: String, with template: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return text }
-        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
-    }
 }
