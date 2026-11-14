@@ -128,7 +128,8 @@ final class AntigravityUsage: ObservableObject {
                     urls.append(directory.appendingPathComponent(name))
                 }
             }
-            urls.append(home.appendingPathComponent("oauth_creds.json"))
+            // Not `<home>/oauth_creds.json`: that is Gemini CLI's own sign-in in the same `~/.gemini`, so its quota
+            // would show as Antigravity's. Gemini CLI's limits are not read (see docs/INTEGRATIONS.md, Subscription limits).
         }
         for url in urls {
             guard let data = try? Data(contentsOf: url),
