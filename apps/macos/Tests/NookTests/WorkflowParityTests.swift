@@ -113,6 +113,22 @@ final class WorkflowParityTests: XCTestCase {
                                                                      link(2, .merged, updated: now)], since: nil), .merged, "the newest decides")
     }
 
+    /// A watch saw the merge before the branch sync did: the rules follow the badge, not the stale open link, also when
+    /// that link's last update lies before your latest message.
+    func testNewestReadSettlesBeforeTheBranchSync() {
+        let since = now.addingTimeInterval(-120)
+        let kept = [PullRequestLink(host: .github, repository: "o/r", number: 1, state: .open, updatedAt: since.addingTimeInterval(-60))]
+        var read = kept
+        read[0].state = .merged
+        let fresh = PullRequestSettlement.freshest(kept: kept, fresh: read)
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: kept, since: since), .open)
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: fresh, since: since), .merged)
+        // Unchanged: the kept update time still decides.
+        let landedEarlier = [PullRequestLink(host: .github, repository: "o/r", number: 1, state: .merged, updatedAt: since.addingTimeInterval(-60))]
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: PullRequestSettlement.freshest(kept: landedEarlier, fresh: landedEarlier),
+                                                             since: since), .none)
+    }
+
     // MARK: Sweep
 
     func testSweepTakesTheRowsBetweenOriginAndPointer() {

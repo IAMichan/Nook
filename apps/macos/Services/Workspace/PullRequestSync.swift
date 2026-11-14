@@ -161,9 +161,12 @@ final class PullRequestSync: ObservableObject {
         return landed >= since
     }
 
-    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`).
+    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`), with the
+    /// newest status of each (as the badge on its row shows it), not only what the last branch sync read.
     func autoSettleState(_ id: UUID, since: Date?) -> AutoSettlePolicy.PullRequestState {
-        PullRequestSettlement.autoSettleState(links: links[id] ?? [], since: since)
+        let kept = links[id] ?? []
+        let fresh = PullRequestSettlement.freshest(kept: kept, fresh: PullRequestStatusStore.shared.current(kept))
+        return PullRequestSettlement.autoSettleState(links: fresh, since: since)
     }
 
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
