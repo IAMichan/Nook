@@ -151,6 +151,14 @@ private struct RowPullRequestSummary: View {
     let link: PullRequestLink
     @State private var detail: PullRequestDetail?
     @State private var loading = false
+    /// The badge above reads the status every place shares; when that changes (checks done, merged), the rest of the card
+    /// is read again, so its checks line never says something else than the badge.
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
+
+    private var statusKey: String {
+        guard let url, let status = statuses.status(url) else { return link.id }
+        return [link.id, status.glyph.rawValue, status.checks ?? "-", status.merge?.state ?? "-"].joined(separator: "|")
+    }
 
     private var url: URL? { URL(string: link.url) }
     private var title: String { detail?.title ?? link.title ?? "#\(link.number)" }
@@ -202,7 +210,7 @@ private struct RowPullRequestSummary: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .task(id: link.id) { await load() }
+        .task(id: statusKey) { await load() }
     }
 
     /// "3 passed · 1 failing", with the mark of the worst outcome.
@@ -233,9 +241,10 @@ private struct RowPullRequestSummary: View {
 
     private func load() async {
         guard link.host == .github, !link.repository.isEmpty else { return }
-        if let cached = RowPullRequestCache.shared.fresh(link.id) {
-            detail = cached
-            return
+        // What was read before shows at once; a read of more than a few seconds ago is read again under it.
+        if let cached = RowPullRequestCache.shared.entry(link.id) {
+            detail = cached.detail
+            if Date().timeIntervalSince(cached.at) < RowPullRequestCache.freshFor, statusAgrees(cached.detail) { return }
         }
         guard let token = GitHubPullRequestDetail.token(accountID: nil) else { return }
         loading = true
@@ -245,19 +254,25 @@ private struct RowPullRequestSummary: View {
         PullRequestStatusStore.shared.record(read)
         detail = read
     }
+
+    /// Whether a kept read says what the shared status says now; a newer read elsewhere (a merge, finished checks) wins.
+    private func statusAgrees(_ kept: PullRequestDetail) -> Bool {
+        guard let url, let status = statuses.status(url) else { return true }
+        let state = PullRequestState(rawValue: kept.state.rawValue) ?? .open
+        return PullRequestStatus.glyph(state: state, conflicted: kept.conflicted) == status.glyph
+            && (status.checks == nil || PullRequestStatus.checks(kept.checks) == status.checks)
+    }
 }
 
-/// The pull requests the row cards read, for a minute: sweeping back over a row does not ask GitHub again.
+/// The pull requests the row cards read: shown at once when the card opens again, and read again under it once older
+/// than `freshFor`, so sweeping back over a row does not ask GitHub every time, yet never shows an old look.
 @MainActor
 private final class RowPullRequestCache {
     static let shared = RowPullRequestCache()
     private var entries: [String: (detail: PullRequestDetail, at: Date)] = [:]
-    private static let maxAge: TimeInterval = 60
+    static let freshFor: TimeInterval = 10
 
-    func fresh(_ id: String) -> PullRequestDetail? {
-        guard let entry = entries[id], Date().timeIntervalSince(entry.at) < Self.maxAge else { return nil }
-        return entry.detail
-    }
+    func entry(_ id: String) -> (detail: PullRequestDetail, at: Date)? { entries[id] }
 
     func store(_ detail: PullRequestDetail, for id: String) {
         entries[id] = (detail, Date())

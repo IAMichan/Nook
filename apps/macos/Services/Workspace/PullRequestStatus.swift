@@ -216,10 +216,36 @@ final class PullRequestStatusStore: ObservableObject {
         record(url: url, snapshot: snapshot, at: started)
     }
 
-    /// How often a shown pull request is read again (`follow`, in the app): every 30 seconds while it is open (as the
+    /// How often a shown pull request is read again (`follow`, in the app): every 10 seconds while it is about to change
+    /// (checks running, GitHub still working out whether it merges, or no read yet), every 30 while it is open (as the
     /// pull request page does), every 15 minutes once merged or closed (one read is several requests, and a session can
     /// show a merged one all day), stretched by the energy plan.
-    nonisolated static func followInterval(settled: Bool, plan: EnergyPlan) -> TimeInterval {
-        (settled ? 900 : 30) * plan.slowdown
+    nonisolated static func followInterval(_ status: PullRequestStatus?, plan: EnergyPlan) -> TimeInterval {
+        guard let status else { return 10 * plan.slowdown }
+        if status.glyph == .merged || status.glyph == .closed { return 900 * plan.slowdown }
+        return (status.isChanging ? 10 : 30) * plan.slowdown
+    }
+
+    // MARK: Waking the followers
+
+    /// Bumped by `wakeFollowers`: every shown pull request reads again within a few seconds instead of at its next tick.
+    private(set) var wakeCount = 0
+
+    /// Something just happened that may have changed the shown pull requests (a session's turn ended: it may have pushed,
+    /// merged or closed one), so each shown one reads again now rather than up to half a minute later.
+    func wakeFollowers() { wakeCount &+= 1 }
+
+    /// Whether a follower's wait between two reads ends early: you came back to the Mac, or `wakeFollowers` was called.
+    /// (A window that shows again ends it too; `AttentionGate` says that without a timer.)
+    nonisolated static func readEarly(wasIdle: Bool, isIdle: Bool, wakesBefore: Int, wakesNow: Int) -> Bool {
+        (wasIdle && !isIdle) || wakesBefore != wakesNow
+    }
+}
+
+extension PullRequestStatus {
+    /// About to change by itself: checks are running, or GitHub has not yet said whether it merges (just after a push).
+    var isChanging: Bool {
+        guard glyph != .merged, glyph != .closed else { return false }
+        return checks == nil || checks == "pending" || merge == nil || merge?.state == "unknown"
     }
 }

@@ -19,6 +19,7 @@ struct SessionPullRequestRow: View {
     let open: () -> Void
     @State private var armed = false
     @State private var running = false
+    @State private var gate = AttentionGate()
 
     /// What the list knows of it: only GitHub's pull requests are listed, so another forge's row has no checks.
     private var listed: (account: String, item: PullRequestItem)? {
@@ -93,6 +94,10 @@ struct SessionPullRequestRow: View {
                 }
             }
         }
+        // Read again while it shows, as the tray above the composer does (the reads are shared), so the panel keeps up
+        // also when the tray is not in view.
+        .attentionGate(gate)
+        .task(id: link.url) { if let url = URL(string: link.url) { await PullRequestStatusStore.follow(url, gate: gate) } }
         .task(id: armed) {
             guard armed else { return }
             try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -156,6 +161,8 @@ struct SessionPullRequestRow: View {
             do {
                 try await work()
                 await PullRequestStore.shared.refresh(force: true)
+                // A merge or "ready" changes what every place shows: they read it again now.
+                PullRequestStatusStore.shared.wakeFollowers()
             } catch {
                 ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(link.number)"))
             }
