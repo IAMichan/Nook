@@ -140,10 +140,6 @@ final class WebTools {
         pattern: #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
     nonisolated(unsafe) private static let resultSnippet = try? NSRegularExpression(
         pattern: #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
-    nonisolated(unsafe) private static let numericEntity = try? NSRegularExpression(pattern: "&#(\\d{2,6});")
-    /// Named entities, `&amp;` last: decoding it first would turn "&amp;lt;" into "<" instead of "&lt;".
-    private nonisolated static let namedEntities = [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&#x27;", "'"),
-                                                    ("&nbsp;", " "), ("&apos;", "'"), ("&amp;", "&")]
 
     /// DuckDuckGo's HTML page: each result contains a link with class "result__a" and snippet text with class "result__snippet".
     nonisolated static func parseResults(_ html: String) -> [SearchResult] {
@@ -154,7 +150,7 @@ final class WebTools {
         var results: [SearchResult] = []
         for (index, match) in links.enumerated() {
             guard let hrefRange = Range(match.range(at: 1), in: html), let titleRange = Range(match.range(at: 2), in: html) else { continue }
-            var href = decodeEntities(String(html[hrefRange]))
+            var href = HTMLEntities.decode(String(html[hrefRange]))
             if href.hasPrefix("//") { href = "https:" + href }
             // DuckDuckGo redirect: the actual target URL is in uddg.
             if let redirect = URLComponents(string: href), redirect.host?.contains("duckduckgo.com") == true,
@@ -201,23 +197,7 @@ final class WebTools {
     }
 
     nonisolated static func plain(_ html: String) -> String {
-        decodeEntities(html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
+        HTMLEntities.decode(html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
-
-    nonisolated static func decodeEntities(_ text: String) -> String {
-        guard text.contains("&") else { return text }
-        var result = text
-        // Numeric entities first (e.g. &#233;), so an escaped one ("&amp;#233;") stays text.
-        if let regex = numericEntity {
-            for match in regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed() {
-                guard let whole = Range(match.range, in: result), let digits = Range(match.range(at: 1), in: result),
-                      let code = UInt32(result[digits]), let scalar = Unicode.Scalar(code) else { continue }
-                result.replaceSubrange(whole, with: String(Character(scalar)))
-            }
-        }
-        for (entity, value) in namedEntities { result = result.replacingOccurrences(of: entity, with: value) }
-        return result
-    }
-
 }

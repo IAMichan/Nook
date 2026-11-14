@@ -420,6 +420,7 @@ targets:
       - path: Core/MemoryPressure.swift
       - path: Core/ByteBudgetCache.swift
       - path: Core/RegexCache.swift
+      - path: Core/HTMLEntities.swift
       - path: Core/NookPaths.swift
       - path: Core/ProcessRunner.swift
       - path: Core/SafeStorage.swift

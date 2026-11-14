@@ -504,7 +504,7 @@ enum TeamsWebData {
 
     /// An attribute's value with the entities HTML puts in an address ("&amp;") as they are meant.
     private static func unescaped(_ value: String) -> String {
-        value.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+        HTMLEntities.decode(value)
     }
 
     /// The other people who wrote in a chat, by name, in the order they first wrote: what a chat without a topic is

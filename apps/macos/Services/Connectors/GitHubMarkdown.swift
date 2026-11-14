@@ -160,20 +160,7 @@ enum GitHubMarkdown {
         text = replace(text, itemRegex) { _ in "\n- " }
         text = replace(text, blockRegex) { _ in "\n\n" }
         text = replace(text, inlineRegex) { _ in "" }
-        return replace(entities(text), placeholderRegex) { groups in Int(groups[1]).map { spans[$0] } ?? "" }
-    }
-
-    private static let namedEntities: [String: String] = [
-        "&nbsp;": " ", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&apos;": "'", "&#39;": "'", "&#x27;": "'",
-        "&mdash;": "—", "&ndash;": "–", "&hellip;": "…", "&rarr;": "→", "&larr;": "←", "&check;": "✓", "&times;": "×",
-    ]
-
-    private static func entities(_ text: String) -> String {
-        guard text.contains("&") else { return text }
-        var result = text
-        for (entity, value) in namedEntities { result = result.replacingOccurrences(of: entity, with: value) }
-        // Last, so "&amp;lt;" stays the literal text "&lt;".
-        return result.replacingOccurrences(of: "&amp;", with: "&")
+        return replace(HTMLEntities.decode(text), placeholderRegex) { groups in Int(groups[1]).map { spans[$0] } ?? "" }
     }
 
     /// Lines left with only spaces become empty, and runs of empty lines one.

@@ -395,10 +395,7 @@ enum TeamsData {
             text = text.replacingOccurrences(of: tag, with: "\n", options: .caseInsensitive)
         }
         text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
-            text = text.replacingOccurrences(of: entity, with: character)
-        }
-        return text.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+        return HTMLEntities.decode(text).replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
