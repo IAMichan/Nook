@@ -367,9 +367,8 @@ struct AddMCPServerWizardSheet: View {
                         SecureField(
                             key,
                             text: binding(for: key),
-                            prompt: Text(preset.envPlaceholders[key] ?? tr("mcp.wizard.keyPrompt"))
-                        )
-                        .textFieldStyle(.roundedBorder)
+                            prompt: Text(preset.envPlaceholders[key] ?? tr("mcp.wizard.keyPrompt")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                     }
                 }
                 if let url = preset.helpURL {
@@ -397,17 +396,16 @@ struct AddMCPServerWizardSheet: View {
     }
 
     private var nameField: some View {
-        TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
-            .textFieldStyle(.roundedBorder)
+        TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")).foregroundStyle(NookTheme.textTertiary))
+            .settingsField()
     }
 
     private var commandField: some View {
         TextField(
             isRemote ? "https://..." : "npx -y ...",
             text: $commandOrURL,
-            prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
-        )
-        .textFieldStyle(.roundedBorder)
+            prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github").foregroundStyle(NookTheme.textTertiary))
+        .settingsField()
     }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }

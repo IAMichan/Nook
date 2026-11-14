@@ -167,9 +167,9 @@ struct WhatsAppAddAccountSheet: View {
         } content: {
             SetupStep(number: 1, title: tr("whatsapp.accounts.nameStep"), done: added != nil) {
                 if added == nil {
-                    TextField("", text: $name, prompt: Text(tr("whatsapp.accounts.namePrompt")))
+                    TextField("", text: $name, prompt: Text(tr("whatsapp.accounts.namePrompt")).foregroundStyle(NookTheme.textTertiary))
                         .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .onSubmit(add)
                     // The step's button, under its field.
                     Button(tr("whatsapp.accounts.link"), action: add)

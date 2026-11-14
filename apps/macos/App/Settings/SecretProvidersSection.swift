@@ -66,17 +66,17 @@ struct SecretProviderSheet: View {
                 tokenField(tr("secrets.providers.serviceToken"), text: $serviceToken, stored: hasServiceToken,
                            account: SecretProviders.serviceAccountAccount)
                 labeled(tr("secrets.providers.connectHost")) {
-                    TextField("", text: $connectHost, prompt: Text("https://op-connect.example.com"))
+                    TextField("", text: $connectHost, prompt: Text("https://op-connect.example.com").foregroundStyle(NookTheme.textTertiary))
                         .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .onSubmit { SecretProviders.connectHost = connectHost }
                 }
                 tokenField(tr("secrets.providers.connectToken"), text: $connectToken, stored: hasConnectToken,
                            account: SecretProviders.connectTokenAccount)
                 labeled(tr("secrets.providers.probe")) {
-                    TextField("", text: $probe, prompt: Text("op://vault/item/field"))
+                    TextField("", text: $probe, prompt: Text("op://vault/item/field").foregroundStyle(NookTheme.textTertiary))
                         .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                 }
                 SettingNote(tr("secrets.providers.mode") + ": " + Self.modeText(config.mode))
             }
@@ -124,9 +124,9 @@ struct SecretProviderSheet: View {
     /// A token typed once: kept in the keychain on Return (or Done), never shown again; Remove under it forgets it.
     private func tokenField(_ title: String, text: Binding<String>, stored: Bool, account: String) -> some View {
         labeled(title) {
-            SecureField("", text: text, prompt: Text(stored ? tr("connector.savedInKeychain") : tr("secrets.providers.paste")))
+            SecureField("", text: text, prompt: Text(stored ? tr("connector.savedInKeychain") : tr("secrets.providers.paste")).foregroundStyle(NookTheme.textTertiary))
                 .labelsHidden()
-                .textFieldStyle(.roundedBorder)
+                .settingsField()
                 .onSubmit { save(text, account: account) }
             if stored {
                 Button(tr("secrets.providers.remove")) {

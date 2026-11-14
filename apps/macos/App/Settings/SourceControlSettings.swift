@@ -95,8 +95,8 @@ struct ProjectSourceControlRows: View {
                     }
                 }
                 .fixedSize()
-                TextField("", text: $emoji, prompt: Text(tr("sc.icon.emojiPrompt")))
-                    .textFieldStyle(.roundedBorder)
+                TextField("", text: $emoji, prompt: Text(tr("sc.icon.emojiPrompt")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .labelsHidden()
                     .accessibilityLabel(tr("sc.icon.emoji"))
                     .frame(width: 70)
@@ -191,11 +191,11 @@ struct ProjectNameRow: View {
 
     var body: some View {
         LabeledContent {
-            TextField("", text: $name, prompt: Text((path as NSString).lastPathComponent))
-                .textFieldStyle(.roundedBorder)
+            TextField("", text: $name, prompt: Text((path as NSString).lastPathComponent).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .labelsHidden()
                 .accessibilityLabel(tr("settings.projects.name"))
-                .frame(width: 220)
+                .frame(width: SettingsControl.fieldWidth)
                 .focused($focused)
                 .onSubmit(save)
                 .onChange(of: focused) { _, now in if !now { save() } }

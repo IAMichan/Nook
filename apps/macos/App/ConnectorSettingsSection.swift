@@ -486,13 +486,13 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         )
         if field.secret {
             SecureField(field.label, text: binding,
-                        prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder))
-                .textFieldStyle(.roundedBorder)
+                        prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .labelsHidden()
                 .onSubmit { save() }
         } else {
-            TextField(field.label, text: binding, prompt: Text(field.placeholder))
-                .textFieldStyle(.roundedBorder)
+            TextField(field.label, text: binding, prompt: Text(field.placeholder).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .labelsHidden()
                 .onSubmit { save() }
         }
@@ -636,8 +636,8 @@ struct ExtraAccountsView: View {
         // Shown inside the "Accounts" part of the sheet or row, which already names it.
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack {
-                TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
-                    .textFieldStyle(.roundedBorder)
+                TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
                 if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
                     Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
@@ -655,8 +655,8 @@ struct ExtraAccountsView: View {
                         }
                     }
                     .frame(width: 120, alignment: .leading)
-                    SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))
-                        .textFieldStyle(.roundedBorder)
+                    SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .onSubmit { save(account) }
                     Button(tr("button.save")) { save(account) }
                         .disabled((drafts[account.id] ?? "").isEmpty)
@@ -667,8 +667,8 @@ struct ExtraAccountsView: View {
                 }
             }
             HStack {
-                TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")))
-                    .textFieldStyle(.roundedBorder)
+                TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                 Button(tr("accounts.add")) {
                     AccountRegistry.shared.add(service: service, label: newLabel)
                     newLabel = ""

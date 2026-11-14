@@ -142,8 +142,8 @@ struct GitLabSetupSheet: View {
         SetupStep(number: 1, title: tr("gitlab.step.token"), done: saved) {
             DisclosureGroup(isExpanded: $showSelfHosted) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("gitlab.host"), text: $host)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("gitlab.host"), text: $host, prompt: Text(tr("gitlab.host")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .frame(maxWidth: 260)
                     SettingNote(tr("gitlab.selfHostedDetail"))
                 }
@@ -158,8 +158,8 @@ struct GitLabSetupSheet: View {
             SettingNote(tr("brain.key.autoPaste"))
         }
         SetupStep(number: 2, title: tr("gitlab.step.paste"), done: saved) {
-            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…"))
-                .textFieldStyle(.roundedBorder)
+            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…").foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .onSubmit(save)
             if let note {
                 SettingNote(note, tone: .error)
@@ -209,8 +209,8 @@ struct GitLabSetupSheet: View {
 
     private var tokenField: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…"))
-                .textFieldStyle(.roundedBorder)
+            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…").foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .onSubmit(save)
             HStack {
                 Button { pasteFromClipboard() } label: {

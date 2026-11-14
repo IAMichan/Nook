@@ -96,9 +96,9 @@ struct BeeperImportSheet: View {
     @ViewBuilder
     private var tokenStep: some View {
         StepAction(detail: tr("beeper.import.tokenDetail"), button: tr("beeper.import.openBeeper"), prominent: false) { openBeeper() }
-        SecureField("", text: $token, prompt: Text(tr("beeper.import.token")))
+        SecureField("", text: $token, prompt: Text(tr("beeper.import.token")).foregroundStyle(NookTheme.textTertiary))
             .labelsHidden()
-            .textFieldStyle(.roundedBorder)
+            .settingsField()
             .frame(maxWidth: .infinity)
             .onSubmit { saveToken() }
         Button(tr("chats.slack.save")) { saveToken() }

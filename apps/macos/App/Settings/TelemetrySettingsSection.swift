@@ -44,7 +44,7 @@ struct TelemetrySettingsSection: View {
             } else {
                 SettingFieldRow(tr("otel.signal." + signal.rawValue)) {
                     TextField(tr("otel.signal." + signal.rawValue), text: binding(signal),
-                              prompt: Text(verbatim: "http://localhost:4318" + signal.path))
+                              prompt: Text(verbatim: "http://localhost:4318" + signal.path).foregroundStyle(NookTheme.textTertiary))
                         .onSubmit { save(signal) }
                 }
             }
@@ -102,7 +102,7 @@ struct TelemetrySettingsSection: View {
         } else {
             HStack {
                 SettingFieldRow(tr("otel.headers")) {
-                    SecureField(tr("otel.headers"), text: $headersDraft, prompt: Text(verbatim: "Authorization=Bearer …"))
+                    SecureField(tr("otel.headers"), text: $headersDraft, prompt: Text(verbatim: "Authorization=Bearer …").foregroundStyle(NookTheme.textTertiary))
                         .onSubmit(saveHeaders)
                 }
                 Button(tr("button.save"), action: saveHeaders)

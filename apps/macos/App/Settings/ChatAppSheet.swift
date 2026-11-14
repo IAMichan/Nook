@@ -298,11 +298,11 @@ struct ChatLinkSteps: View {
                         if field.isSecret {
                             SecureField("", text: binding, prompt: Text(field.placeholder))
                         } else {
-                            TextField("", text: binding, prompt: Text(field.placeholder))
+                            TextField("", text: binding, prompt: Text(field.placeholder).foregroundStyle(NookTheme.textTertiary))
                         }
                     }
                     .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
+                    .settingsField()
                     .onSubmit { submit(fields) }
                 }
             }

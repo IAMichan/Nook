@@ -229,8 +229,8 @@ struct ForgeSetupSheet: View {
     private var connectContent: some View {
         SetupStep(number: 1, title: tr("codeHost.step.token"), done: saved) {
             if kind.fixedHost == nil {
-                TextField(tr("settings.forge.host"), text: $host)
-                    .textFieldStyle(.roundedBorder)
+                TextField(tr("settings.forge.host"), text: $host, prompt: Text(tr("settings.forge.host")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .frame(maxWidth: 260)
                     .onChange(of: host) { _, _ in failed = false; check = nil }
             }
@@ -240,8 +240,8 @@ struct ForgeSetupSheet: View {
             }
         }
         SetupStep(number: 2, title: tr("codeHost.step.paste"), done: saved) {
-            SecureField(tr("settings.forge.token"), text: $token, prompt: Text(kind.tokenPrompt))
-                .textFieldStyle(.roundedBorder)
+            SecureField(tr("settings.forge.token"), text: $token, prompt: Text(kind.tokenPrompt).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .onSubmit { if canSave { submit() } }
                 .onChange(of: token) { _, _ in failed = false }
             if failed {
@@ -303,8 +303,8 @@ struct ForgeSetupSheet: View {
     private var tokenField: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack {
-                SecureField(tr("settings.forge.token"), text: $token, prompt: Text(kind.tokenPrompt))
-                    .textFieldStyle(.roundedBorder)
+                SecureField(tr("settings.forge.token"), text: $token, prompt: Text(kind.tokenPrompt).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit { if canSave { submit() } }
                     .onChange(of: token) { _, _ in failed = false }
                 Button { paste() } label: {

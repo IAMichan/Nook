@@ -235,7 +235,7 @@ private struct AddMachineSheet: View {
                     }
                     .frame(maxHeight: 150)
                 }
-                TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
+                TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local").foregroundStyle(NookTheme.textTertiary)).settingsField()
                     .font(NookTheme.TextStyle.code)
                     .onChange(of: host) { _, value in
                         resetCheck()
@@ -245,8 +245,8 @@ private struct AddMachineSheet: View {
                 SettingNote(tr("remote.host"))
                 DisclosureGroup(tr("remote.portAndKey")) {
                     VStack(spacing: NookTheme.Spacing.sm) {
-                        TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
-                        TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519")).textFieldStyle(.roundedBorder)
+                        TextField(tr("remote.port"), text: $port, prompt: Text("22").foregroundStyle(NookTheme.textTertiary)).settingsField()
+                        TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519").foregroundStyle(NookTheme.textTertiary)).settingsField()
                             .font(NookTheme.TextStyle.code)
                     }
                     .padding(.top, NookTheme.Spacing.xs)
@@ -262,7 +262,7 @@ private struct AddMachineSheet: View {
             }
             SetupStep(number: 2, title: tr("remote.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 TextField(tr("remote.name"), text: Binding(get: { name }, set: { name = $0; namedByHand = true }),
-                          prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
+                          prompt: Text("buildbox").foregroundStyle(NookTheme.textTertiary)).settingsField()
             }
             SetupCheckStep(number: 3, detail: tr("remote.check.detail"), state: check, check: runCheck, disabled: !canAdd)
         } footer: {
