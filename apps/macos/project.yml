@@ -586,6 +586,9 @@ targets:
       - path: Services/Workspace/AgentAnnouncements.swift
       - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
+      - path: Services/Workspace/CanonicalTool.swift
+      - path: Services/Workspace/TextClip.swift
+      - path: Services/Workspace/TokenNumbers.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift
       - path: Services/PreToolGate.swift

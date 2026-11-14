@@ -7,27 +7,84 @@ enum EditPatch {
     /// A patch longer than this is cut: the diff panel is for reading, not for a generated file of megabytes.
     static let limit = 60_000
 
+    /// What a call changes, read from its input the same way for every agent (`CanonicalTool`): the texts an edit
+    /// replaced (Claude Code's `old_string`/`new_string` and MultiEdit's `edits`, Gemini CLI's replace, the
+    /// `old_str`/`new_str` of Copilot's and the Anthropic text editor's str_replace, an ACP agent's diffs), the whole
+    /// file a write or create put down, or a patch (Codex's `apply_patch`).
+    enum Change: Equatable {
+        case replace([Replacement])
+        case write(String)
+        case patch(String)
+    }
+
+    struct Replacement: Equatable {
+        var old: String
+        var new: String
+    }
+
+    static func change(tool: String, input: [String: Any]) -> Change? {
+        func replacement(_ object: [String: Any]) -> Replacement {
+            Replacement(old: (object["old_string"] as? String) ?? (object["old_str"] as? String) ?? "",
+                        new: (object["new_string"] as? String) ?? (object["new_str"] as? String) ?? "")
+        }
+        let written = (input["content"] as? String) ?? (input["file_text"] as? String) ?? (input["contents"] as? String)
+        switch CanonicalTool.kind(tool) {
+        case .edit:
+            if let edits = input["edits"] as? [[String: Any]] { return .replace(edits.map(replacement)) }
+            // str_replace_editor's create carries the whole file.
+            if let written, input["old_string"] == nil, input["old_str"] == nil { return .write(written) }
+            return .replace([replacement(input)])
+        case .write:
+            return written.map(Change.write)
+        case .patch:
+            let command = (input["command"] as? String).flatMap { $0.contains("*** Begin Patch") ? $0 : nil }
+            return ((input["input"] as? String) ?? (input["patch"] as? String) ?? command).map(Change.patch)
+        default:
+            return nil
+        }
+    }
+
     static func make(tool: String, input: [String: Any]) -> String? {
         let patch: String
-        switch tool.lowercased() {
-        case "edit" where input["edits"] == nil, "replace":
-            patch = hunk((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
-        case "multiedit", "edit":
-            guard let edits = input["edits"] as? [[String: Any]] else { return nil }
-            patch = edits.map { hunk(($0["old_string"] as? String) ?? "", ($0["new_string"] as? String) ?? "") }
-                .filter { !$0.isEmpty }.joined(separator: "\n")
-        case "write", "write_file":
-            guard let content = input["content"] as? String else { return nil }
+        switch change(tool: tool, input: input) {
+        case .replace(let replacements):
+            patch = replacements.map { hunk($0.old, $0.new) }.filter { !$0.isEmpty }.joined(separator: "\n")
+        case .write(let content):
             let added = lines(content)
             patch = added.isEmpty ? "" : (["@@ -0,0 +1,\(added.count) @@"] + added.map { "+" + $0 }).joined(separator: "\n")
-        case "apply_patch":
-            patch = (input["input"] as? String) ?? (input["patch"] as? String) ?? ""
-        default:
+        case .patch(let text):
+            patch = text
+        case nil:
             return nil
         }
         guard !patch.isEmpty else { return nil }
         return patch.count > limit ? String(patch.prefix(limit)) + "\n\\ " + "…" : patch
+    }
+
+    /// The lines a call changes, for an approval card's diff: the same change `make` reads, for every agent's edit,
+    /// write and patch. Nil when the input does not say what changed.
+    static func lineOps(tool: String, input: [String: Any]) -> [LineDiff.Op]? {
+        var ops: [LineDiff.Op] = []
+        switch change(tool: tool, input: input) {
+        case .replace(let replacements):
+            for item in replacements { ops += LineDiff.diff(LineDiff.lines(item.old), LineDiff.lines(item.new)) }
+        case .write(let content):
+            ops = LineDiff.lines(content).map { LineDiff.Op.add($0) }
+        case .patch(let text):
+            for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                if line.hasPrefix("***") || line.hasPrefix("@@") || line.hasPrefix("+++") || line.hasPrefix("---") { continue }
+                if line.hasPrefix("+") {
+                    ops.append(.add(String(line.dropFirst())))
+                } else if line.hasPrefix("-") {
+                    ops.append(.remove(String(line.dropFirst())))
+                } else if line.hasPrefix(" ") {
+                    ops.append(.same(String(line.dropFirst())))
+                }
+            }
+        case nil:
+            return nil
+        }
+        return ops.contains(where: { if case .same = $0 { return false } else { return true } }) ? ops : nil
     }
 
     /// One hunk from the text an edit replaced and what it put there, with up to `context` unchanged lines around it.

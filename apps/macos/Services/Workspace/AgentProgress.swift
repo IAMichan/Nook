@@ -202,7 +202,7 @@ enum AgentActivity: Equatable, Sendable {
         if SessionOutputs.taskTools.contains(tool) || SessionOutputs.taskTools.contains(tool.components(separatedBy: "__").last ?? "") {
             return .planning
         }
-        if Subagents.tools.contains(tool) {
+        if Subagents.isTool(tool) {
             return .delegating((input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback)
         }
         if ["websearch", "webfetch", "web_search", "web_fetch", "google_web_search"].contains(name) {

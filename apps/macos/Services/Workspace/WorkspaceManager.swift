@@ -1269,12 +1269,18 @@ final class WorkspaceManager: ObservableObject {
         return String(tail.prefix(800))
     }
 
-    func resultLine(_ usage: TurnUsage, denials: Int) -> String {
+    /// The line under a finished turn. Its cost is the one every agent's turn gets (`PriceTable.cost`): yours, the
+    /// agent's own, or an estimate from its tokens for agents that report none (Codex, Gemini CLI), marked as such.
+    func resultLine(_ usage: TurnUsage, denials: Int, for id: UUID? = nil) -> String {
         var parts: [String] = []
         if let seconds = usage.durationSeconds { parts.append(AgentPathFormat.duration(seconds)) }
         let tokens = usage.ownTokens
         if tokens > 0 { parts.append(TokenTally.format(tokens) + " tokens") }
-        if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
+        if settings.showCost {
+            let cost = run(id).map { $0.cost(of: usage, prices: UsagePrices.current()) }
+                ?? PriceTable().cost(for: usage, provider: "", model: "")
+            if let label = CostFormat.label(cost) { parts.append(label) }
+        }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }
         return parts.joined(separator: " · ")
     }

@@ -676,7 +676,7 @@ extension WorkspaceManager {
         if !stopped, failure == nil, !state.acpReplied, !state.unprompted {
             append(id, RunEvent(kind: .system, text: tr("ws.acp.silent", run(id)?.provider.displayName ?? "")))
         }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failure != nil ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failure != nil ? .failed : .done))
         expireApprovals(id)
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)

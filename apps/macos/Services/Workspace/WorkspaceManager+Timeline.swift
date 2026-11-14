@@ -16,8 +16,11 @@ extension WorkspaceManager {
                 turns[id]?.acpToolCalls += 1
             case .toolSucceeded(let name, let input, let paths):
                 var recorded: Set<String> = []
-                for change in ToolSummary.fileChanges(tool: name, input: input?.dictionary ?? [:]) where recorded.insert(change.path).inserted {
-                    recordFileChange(id, path: change.path, kind: change.kind)
+                // A patch names its files from the session's folder (Codex's apply_patch).
+                let cwd = run(id)?.workingDirectory ?? ""
+                for change in ToolSummary.fileChanges(tool: name, input: input?.dictionary ?? [:]) {
+                    let path = SessionProjects.absolute(change.path, cwd: cwd)
+                    if recorded.insert(path).inserted { recordFileChange(id, path: path, kind: change.kind) }
                 }
                 for path in paths where recorded.insert(path).inserted { recordFileChange(id, path: path, kind: "modified") }
                 // The agent merged or closed a pull request from the shell: its state shows now, for every agent alike.

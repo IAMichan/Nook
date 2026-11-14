@@ -64,7 +64,10 @@ final class ComposerDraftsTests: XCTestCase {
         XCTAssertEqual(s.entries.count, 10)
         XCTAssertEqual(s.entries.first?.text, "p2")
         s.push("\n  " + String(repeating: "a", count: 60) + "\nsecond")
-        XCTAssertEqual(s.entries.last?.title.count, 40)
+        // A word longer than the room is cut inside it; words are cut after a whole one (`TextClip.title`).
+        XCTAssertEqual(s.entries.last?.title, String(repeating: "a", count: 40) + "…")
+        XCTAssertEqual(PromptStash.Entry.title(of: "Rename the settings page and move every toggle under it"),
+                       "Rename the settings page and move every…")
         let back = try JSONDecoder().decode(PromptStash.self, from: JSONEncoder().encode(s))
         XCTAssertEqual(back, s)
     }

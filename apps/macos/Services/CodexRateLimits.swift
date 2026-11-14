@@ -123,21 +123,29 @@ enum CodexRateLimits {
         return snapshot
     }
 
-    /// The windows of an app-server rate limit snapshot (`rateLimits` of a read, or of an update).
-    static func windows(_ limits: [String: Any], at date: Date) -> CodexUsageSnapshot {
-        var snapshot = CodexUsageSnapshot(fiveHour: nil, weekly: nil, planType: limits["planType"] as? String,
-                                          updatedAt: date, source: .appServer)
+    /// The windows of a rate limit snapshot, wherever Codex wrote it: `rateLimits` of an app-server read or update
+    /// (camelCase), or `rate_limits` of a `token_count` line in its session log (snake_case). `date`: when it was
+    /// written, for a reset given in seconds from then.
+    static func windows(_ limits: [String: Any], at date: Date, source: CodexUsageSnapshot.Source = .appServer) -> CodexUsageSnapshot {
+        var snapshot = CodexUsageSnapshot(fiveHour: nil, weekly: nil,
+                                          planType: (limits["planType"] as? String) ?? (limits["plan_type"] as? String),
+                                          updatedAt: date, source: source)
         for (index, key) in ["primary", "secondary"].enumerated() {
-            guard let raw = limits[key] as? [String: Any], let percent = number(raw["usedPercent"]) else { continue }
-            let minutes = number(raw["windowDurationMins"]).map { Int($0) }
-            let window = CodexUsageSnapshot.Window(
-                usedPercent: percent,
-                resetsAt: number(raw["resetsAt"]).map { Date(timeIntervalSince1970: $0) },
-                windowMinutes: minutes
-            )
-            assign(window, minutes: minutes, isPrimary: index == 0, to: &snapshot)
+            guard let window = window(limits[key], at: date) else { continue }
+            assign(window, minutes: window.windowMinutes, isPrimary: index == 0, to: &snapshot)
         }
         return snapshot
+    }
+
+    /// One window (`primary`, `secondary`), in either spelling: its use, its length and when it resets (an absolute
+    /// time, or seconds from `date`). Nil without a use.
+    static func window(_ value: Any?, at date: Date) -> CodexUsageSnapshot.Window? {
+        guard let raw = value as? [String: Any],
+              let percent = number(raw["usedPercent"]) ?? number(raw["used_percent"]) else { return nil }
+        let minutes = (number(raw["windowDurationMins"]) ?? number(raw["window_minutes"])).map { Int($0) }
+        let reset = (number(raw["resetsAt"]) ?? number(raw["resets_at"])).map { Date(timeIntervalSince1970: $0) }
+            ?? (number(raw["resetsInSeconds"]) ?? number(raw["resets_in_seconds"])).map { date.addingTimeInterval($0) }
+        return CodexUsageSnapshot.Window(usedPercent: percent, resetsAt: reset, windowMinutes: minutes)
     }
 
     /// `rateLimitResetCredits`: `{availableCount, credits: [{status, expiresAt}]}`. Nil when Codex does not report them.
@@ -168,9 +176,5 @@ enum CodexRateLimits {
         if isShort { snapshot.fiveHour = window } else { snapshot.weekly = window }
     }
 
-    static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
+    static func number(_ value: Any?) -> Double? { JSONNumber.double(value) }
 }

@@ -49,7 +49,7 @@ extension WorkspaceManager {
                 }
             }
             if isError && !stopping { append(id, RunEvent(kind: .error, text: message ?? tr("ws.event.failed", "error"))) }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: isError && !stopping ? .failed : .done))
+            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: isError && !stopping ? .failed : .done))
             turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
         }
@@ -86,7 +86,7 @@ extension WorkspaceManager {
                 run.usage.add(usage)
                 run.move(to: stopping ? .stopped : .completed)
             }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: .done))
+            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: .done))
             turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
         case .failed(let message):

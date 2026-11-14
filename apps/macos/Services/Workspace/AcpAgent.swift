@@ -85,7 +85,7 @@ struct AcpToolCall: Equatable, Sendable {
 
     /// The call starts a subagent: Claude Code over ACP names its Task or Agent tool in `_meta` (its first report may
     /// come without input), and a call whose input hands a task to another agent (`subagentInput`) does too.
-    var launchesSubagent: Bool { Subagents.tools.contains(metaToolName ?? "") || subagentInput != nil }
+    var launchesSubagent: Bool { Subagents.isTool(metaToolName ?? "") || subagentInput != nil }
 
     /// The input of a call that starts a subagent, in the shape Nook's subagent rows read (Claude Code's Task:
     /// `description`, `prompt`, `subagent_type`): Claude Code over ACP passes its Task input as it is, Copilot names the
@@ -93,7 +93,7 @@ struct AcpToolCall: Equatable, Sendable {
     var subagentInput: JSONBox? {
         guard var raw = input?.object as? [String: Any], let prompt = raw["prompt"] as? String, !prompt.isEmpty else { return nil }
         let type = (raw["subagent_type"] as? String) ?? (raw["agent_type"] as? String)
-        guard type != nil || Subagents.tools.contains(metaToolName ?? "") else { return nil }
+        guard type != nil || Subagents.isTool(metaToolName ?? "") else { return nil }
         raw["subagent_type"] = type ?? "agent"
         return JSONBox(raw)
     }
@@ -124,10 +124,10 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(object)
     }
 
-    /// The tool name Nook's timeline groups by (see ToolCategory). A subagent's call is "Agent", as Claude Code's, so it
-    /// gets the subagent rows, the bar above the composer and the Subagents tab.
+    /// The tool name Nook's timeline groups by: an ACP kind under a spelling `CanonicalTool` knows. A subagent's call is
+    /// "Agent", as Claude Code's, so it gets the subagent rows, the bar above the composer and the Subagents tab.
     var toolName: String {
-        if launchesSubagent { return "Agent" }
+        if launchesSubagent { return CanonicalTool.subagentName }
         switch kind {
         case "execute": return "shell"
         case "edit", "delete", "move": return "edit"
@@ -659,12 +659,9 @@ struct AcpListedSession: Equatable, Sendable {
 
     /// One page of `session/list`, and the cursor of the next one. A session without id or folder is left out.
     static func page(_ result: [String: Any]) -> (sessions: [AcpListedSession], next: String?) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
         let sessions = ((result["sessions"] as? [[String: Any]]) ?? []).compactMap { entry -> AcpListedSession? in
             guard let id = entry["sessionId"] as? String, !id.isEmpty, let cwd = entry["cwd"] as? String, !cwd.isEmpty else { return nil }
-            let updated = (entry["updatedAt"] as? String).flatMap { formatter.date(from: $0) ?? plain.date(from: $0) }
+            let updated = (entry["updatedAt"] as? String).flatMap(NookDates.stamp)
             return AcpListedSession(id: id, cwd: cwd, title: (entry["title"] as? String) ?? "", updated: updated)
         }
         let next = (result["nextCursor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -676,9 +673,7 @@ struct AcpListedSession: Equatable, Sendable {
 enum AgentErrorText {
     /// The agent wants you to sign in first (ACP's "Authentication required", -32000).
     static func needsSignIn(_ message: String) -> Bool {
-        let text = message.lowercased()
-        return ["authentication required", "auth required", "auth_required", "unauthenticated", "not authenticated",
-                "please authenticate", "requires authentication", "not logged in", "login required"].contains { text.contains($0) }
+        FailureClassifier.saysSignIn(message.lowercased())
     }
 
     /// The conversation to continue is gone (cleared, made on another machine, or by an older version of the agent).

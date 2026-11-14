@@ -447,17 +447,7 @@ enum ClaudeStreamParser {
     }
 
     static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber {
-            // JSON booleans are also NSNumber; they do not count as numbers (0 or 1 do).
-            #if canImport(Darwin)
-            return CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : number.doubleValue
-            #else
-            // swift-corelibs-foundation (the tests on Linux): a JSON boolean is an NSNumber of type "c".
-            return String(cString: number.objCType) == "c" ? nil : number.doubleValue
-            #endif
-        }
-        if let text = value as? String { return Double(text) }
-        return nil
+        JSONNumber.double(value)
     }
 
     // MARK: Messages to Claude Code (stdin)
@@ -651,13 +641,12 @@ enum CodexStreamParser {
         case "turn.completed":
             var usage = TurnUsage()
             if let raw = object["usage"] as? [String: Any] {
-                let cached = Int(ClaudeStreamParser.number(raw["cached_input_tokens"]) ?? 0)
-                let input = Int(ClaudeStreamParser.number(raw["input_tokens"]) ?? 0)
                 // Codex includes cached tokens in input_tokens; separated so they are not double-counted.
-                usage.inputTokens = max(0, input - cached)
-                usage.cacheReadTokens = cached
-                usage.outputTokens = Int(ClaudeStreamParser.number(raw["output_tokens"]) ?? 0)
-                usage.contextTokens = input
+                let counts = TokenUsageSplit.codex(raw)
+                usage.inputTokens = counts.input
+                usage.cacheReadTokens = counts.cacheRead
+                usage.outputTokens = counts.output
+                usage.contextTokens = counts.input + counts.cacheRead
             }
             return [.turnCompleted(usage)]
         case "turn.failed":
@@ -778,13 +767,12 @@ enum GeminiStreamParser {
         case "result":
             var usage = TurnUsage()
             if let stats = object["stats"] as? [String: Any] {
-                // `input_tokens` includes the cached part; keep them apart like the other agents.
-                let cached = ClaudeStreamParser.number(stats["cached"]).map { Int($0) }
-                let input = ClaudeStreamParser.number(stats["input"]).map { Int($0) }
-                    ?? ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) - (cached ?? 0) }
-                usage.inputTokens = input
-                usage.cacheReadTokens = cached
-                usage.outputTokens = ClaudeStreamParser.number(stats["output_tokens"]).map { Int($0) }
+                // `input_tokens` includes the cached part, and thoughts count as output: the same split as the
+                // history read from its chat files (`TokenUsageSplit.gemini`).
+                let counts = TokenUsageSplit.gemini(stats)
+                usage.inputTokens = counts.input
+                usage.cacheReadTokens = stats["cached"] == nil ? nil : counts.cacheRead
+                usage.outputTokens = counts.output
                 usage.contextTokens = ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) }
                 usage.durationSeconds = ClaudeStreamParser.number(stats["duration_ms"]).map { $0 / 1000 }
             }

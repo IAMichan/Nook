@@ -159,4 +159,60 @@ final class SessionLivenessTests: XCTestCase {
         XCTAssertNil(SessionLiveness.readTurn(path: url.path + ".missing"))
         XCTAssertNil(SessionLiveness.readTurn(path: ""))
     }
+
+    // MARK: Agents whose transcripts do not mark a turn's end
+
+    private func write(_ text: String, ext: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("liveness-\(UUID().uuidString).\(ext)")
+        try Data(text.utf8).write(to: url)
+        return url
+    }
+
+    func testGeminiChatEndsAfterItsAnswer() throws {
+        let answered = try write(#"""
+        {"sessionId": "s", "messages": [
+          {"id": "1", "type": "user", "content": "fix it"},
+          {"id": "2", "type": "gemini", "content": "Done."}
+        ]}
+        """#, ext: "json")
+        defer { try? FileManager.default.removeItem(at: answered) }
+        XCTAssertEqual(SessionLiveness.readTurn(path: answered.path)?.turn, .answered)
+
+        let asked = try write(#"{"sessionId": "s", "messages": [{"id": "1", "type": "user", "content": "fix it"}]}"#, ext: "json")
+        defer { try? FileManager.default.removeItem(at: asked) }
+        XCTAssertEqual(SessionLiveness.readTurn(path: asked.path)?.turn, .open)
+    }
+
+    func testCursorTranscriptReadsThroughItsMessages() throws {
+        let lines = [
+            #"{"role":"user","message":{"content":[{"type":"text","text":"<user_query>fix it</user_query>"}]}}"#,
+            #"{"role":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Shell","input":{"command":"ls"}}]}}"#,
+        ]
+        let working = try write(lines.joined(separator: "\n") + "\n", ext: "jsonl")
+        defer { try? FileManager.default.removeItem(at: working) }
+        XCTAssertEqual(SessionLiveness.readTurn(path: working.path)?.turn, .open)
+        let done = try write((lines + [#"{"role":"assistant","message":{"content":[{"type":"text","text":"Fixed."}]}}"#])
+            .joined(separator: "\n") + "\n", ext: "jsonl")
+        defer { try? FileManager.default.removeItem(at: done) }
+        XCTAssertEqual(SessionLiveness.readTurn(path: done.path)?.turn, .answered)
+    }
+
+    func testAnAnswerSettlesOnlyAfterALongerQuiet() {
+        let now = Date()
+        let shortly = now.addingTimeInterval(-30)
+        XCTAssertNil(SessionLiveness.verdict(working: true, lastEvent: shortly, turn: .answered, transcriptModified: shortly,
+                                             missingScans: 0, now: now))
+        let long = now.addingTimeInterval(-(SessionLiveness.answeredDelay + 1))
+        XCTAssertEqual(SessionLiveness.verdict(working: true, lastEvent: long, turn: .answered, transcriptModified: long,
+                                               missingScans: 0, now: now), .turnEnded)
+    }
+
+    func testTurnFromMessages() {
+        var stopped = AgentChatMessage(id: "a", fromUser: false, text: "Working on it")
+        stopped.interrupted = true
+        XCTAssertEqual(SessionLiveness.lastTurn(of: [stopped]), .ended)
+        XCTAssertEqual(SessionLiveness.lastTurn(of: [AgentChatMessage(id: "e", notice: .error("API Error"))]), .ended)
+        XCTAssertEqual(SessionLiveness.lastTurn(of: [AgentChatMessage(id: "t", kind: .thinking, text: "hmm")]), .open)
+        XCTAssertEqual(SessionLiveness.lastTurn(of: []), .unknown)
+    }
 }

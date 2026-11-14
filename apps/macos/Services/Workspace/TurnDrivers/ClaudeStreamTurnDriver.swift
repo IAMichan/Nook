@@ -246,7 +246,7 @@ extension WorkspaceManager {
                     append(id, RunEvent(kind: .error, text: result.text.isEmpty ? tr("ws.event.failed", result.subtype) : result.text))
                 }
             }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials),
+            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials, for: id),
                                 state: result.isError && !stopping ? .failed : .done))
             expireApprovals(id)
             questions[id] = nil
