@@ -198,3 +198,34 @@ enum ForegroundPolicy {
         live && foreground == true && now.timeIntervalSince(lastHeard) <= heardWithin
     }
 }
+
+/// Approvals and questions answered on the phone, hidden from its lists at the tap, before the Mac confirms: the next
+/// one, or the session back at work, shows at once. For `window` seconds a list from the Mac that still holds one (an
+/// update made just before the Mac took the answer) does not bring it back; the phone unsettles it when the Mac could
+/// not take the answer.
+struct SettledItems: Sendable {
+    static let window: TimeInterval = 15
+    private(set) var answered: [String: Date] = [:]
+
+    mutating func settle(_ item: String, at now: Date) { answered[item] = now }
+
+    /// False when the item was not settled (or the window had already passed).
+    @discardableResult
+    mutating func unsettle(_ item: String) -> Bool { answered.removeValue(forKey: item) != nil }
+
+    /// `list` without the items answered in the last `window` seconds. A session left with nothing to ask reads as
+    /// working again, as on the Mac once the answer is in.
+    mutating func hiding(_ list: [SessionDigest], now: Date) -> [SessionDigest] {
+        guard !answered.isEmpty else { return list }
+        answered = answered.filter { now.timeIntervalSince($0.value) < Self.window }
+        guard !answered.isEmpty else { return list }
+        let answered = answered
+        return list.map { session in
+            guard session.items.contains(where: { answered[$0.id] != nil }) else { return session }
+            var copy = session
+            copy.items.removeAll { answered[$0.id] != nil }
+            if copy.items.isEmpty, ["approval", "input"].contains(copy.attention) { copy.attention = "working" }
+            return copy
+        }
+    }
+}

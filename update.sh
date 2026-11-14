@@ -19,6 +19,6 @@ if [ -n "$TEAM_ID" ]; then
 fi
 
 if [ -d Nook.xcodeproj ]; then
-  echo "Let op: ./Nook.xcodeproj is van vóór de monorepo en verwijst naar oude paden. Verwijder hem: rm -rf Nook.xcodeproj"
+  echo "Note: ./Nook.xcodeproj predates the monorepo and points to old paths. Remove it: rm -rf Nook.xcodeproj"
 fi
-echo "Klaar. Open apps/macos/Nook.xcodeproj (of apps/ios/NookCompanion.xcodeproj) en druk op ⌘R."
+echo "Done. Open apps/macos/Nook.xcodeproj (or apps/ios/NookCompanion.xcodeproj) and press ⌘R."

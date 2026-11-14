@@ -7,6 +7,7 @@
 //
 // Nothing here logs: no rooms, tokens or blobs.
 
+import { readLimited } from "./hooks.js";
 import { isRoom } from "./mux.js";
 
 /** Requests per window, per room (one paired phone of one Mac) and per device token (a phone paired with several Macs). */
@@ -141,13 +142,12 @@ function json(status, body) {
 export async function handlePush(request, env, deps) {
   if (!pushConfigured(env)) return json(501, { error: "push is not set up on this relay" });
   if (request.method !== "POST") return json(405, { error: "POST only" });
-  const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY) return json(413, { error: "too large" });
-  const text = await request.text();
-  if (text.length > MAX_BODY) return json(413, { error: "too large" });
+  // Read as it comes: a body without a length (chunked) is never buffered past the limit.
+  const raw = await readLimited(request, MAX_BODY);
+  if (raw === null) return json(413, { error: "too large" });
   let body;
   try {
-    body = JSON.parse(text);
+    body = JSON.parse(new TextDecoder().decode(raw));
   } catch {
     return json(400, { error: "not JSON" });
   }

@@ -233,4 +233,42 @@ final class CompanionResilienceTests: XCTestCase {
         response.revoked = true
         XCTAssertEqual(CompanionScopes.redact(response, granted: []).revoked, true)
     }
+
+    // MARK: Answered at the tap
+
+    private func waiting(_ items: [String], attention: String = "approval") -> SessionDigest {
+        SessionDigest(id: "s", title: "", agent: "", attention: attention, folder: "", branch: nil, updated: 0, excerpt: "",
+                      items: items.map { SessionDigest.Item(id: $0, kind: .approval, title: "", detail: "", canAllow: true, options: []) })
+    }
+
+    func testAnApprovalAnsweredHereLeavesTheListsAtOnceAndTheSessionWorksAgain() {
+        var settled = SettledItems()
+        let now = Date()
+        settled.settle("a", at: now)
+        let one = settled.hiding([waiting(["a"])], now: now)
+        XCTAssertEqual(one.first?.items.isEmpty, true)
+        XCTAssertEqual(one.first?.attention, "working")
+        // The next approval of the same session stays, and keeps it waiting on you.
+        let two = settled.hiding([waiting(["a", "b"])], now: now)
+        XCTAssertEqual(two.first?.items.map(\.id), ["b"])
+        XCTAssertEqual(two.first?.attention, "approval")
+    }
+
+    func testASettledItemComesBackAfterTheWindowOrWhenTheMacRefused() {
+        var settled = SettledItems()
+        let now = Date()
+        settled.settle("a", at: now)
+        XCTAssertEqual(settled.hiding([waiting(["a"])], now: now + SettledItems.window + 1).first?.items.map(\.id), ["a"])
+        XCTAssertTrue(settled.answered.isEmpty)
+        settled.settle("b", at: now)
+        XCTAssertTrue(settled.unsettle("b"))
+        XCTAssertFalse(settled.unsettle("b"))
+        XCTAssertEqual(settled.hiding([waiting(["b"])], now: now).first?.items.map(\.id), ["b"])
+    }
+
+    func testAFailedSessionKeepsItsStateWhenItsQuestionIsAnswered() {
+        var settled = SettledItems()
+        settled.settle("q", at: Date())
+        XCTAssertEqual(settled.hiding([waiting(["q"], attention: "failed")], now: Date()).first?.attention, "failed")
+    }
 }
