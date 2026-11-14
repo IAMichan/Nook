@@ -155,8 +155,9 @@ final class CompanionClient: ObservableObject {
     private var failures = 0
     /// Set to connect again at once instead of after a backoff: a better route answered, or the app is back after a break.
     private var replacing = false
-    /// Cuts a wait between attempts short (back in front, another network).
-    private var wakeRequested = false
+    /// The sleep of the wait between attempts that is going on, if any: cancelled to cut it short (back in front,
+    /// another network).
+    private var pauseSleep: Task<Void, Never>?
     /// A better route found while connected over a later one, tried first next; held back for a while when it then fails.
     private var preferredRoute: CompanionRoute?
     private var cooldowns = RouteCooldowns()
@@ -373,6 +374,7 @@ final class CompanionClient: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.cacheSave = nil
             guard self.activeMacID == id else { return }
+            // Copied here; encoded and written off the main thread (`CacheStore.save`).
             CacheStore.save(self.cache, mac: id)
         }
     }
@@ -468,16 +470,22 @@ final class CompanionClient: ObservableObject {
     /// Ends a wait between attempts; after a new network or the app coming back, the backoff starts over.
     private func wakeUp(resetBackoff: Bool) {
         if resetBackoff { failures = 0 }
-        wakeRequested = true
+        pauseSleep?.cancel()
     }
 
+    /// Waits between attempts with one sleep for the whole delay, which `wakeUp` (or the supervisor being cancelled)
+    /// ends early: checking a flag a few times a second woke the main thread all the while the Mac was out of reach.
+    /// A wake-up before the wait starts does not shorten it, as before.
     private func pause(_ seconds: TimeInterval) async {
-        let until = Date().addingTimeInterval(seconds)
-        wakeRequested = false
-        while Date() < until, !wakeRequested, !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+        let sleep = Task<Void, Never> { _ = try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000)) }
+        pauseSleep = sleep
+        await withTaskCancellationHandler {
+            await sleep.value
+        } onCancel: {
+            sleep.cancel()
         }
-        wakeRequested = false
+        // Another wait may have started meanwhile (a supervisor that replaced this one): that one stays cancellable.
+        if pauseSleep == sleep { pauseSleep = nil }
     }
 
     /// Wi-Fi to cellular, another Wi-Fi network, or back online: look again at once, check the connection, and whether a
@@ -1560,9 +1568,14 @@ final class CompanionClient: ObservableObject {
 
     private func exchange(_ req: CompanionRequest, link: PairingLink, route: CompanionRoute) async throws -> CompanionResponse {
         let framed = try CompanionChannel.frame(req, key: link.key, deviceID: PairedDevice.identifier(forKey: link.key))
-        let reply = try await Exchange.run(route: route, key: link.key, payload: framed)
-        let opened = try CompanionSeal.open(reply, pairingKey: link.key, direction: .response)
-        let response = try CompanionWire.decode(CompanionResponse.self, from: opened)
+        let key = link.key
+        let reply = try await Exchange.run(route: route, key: key, payload: framed)
+        // Opened and decoded off the main thread: a timeline, a diff, a file or a picture can be a large answer, and the
+        // live channel decodes on its own queue too (`CompanionChannel.handle`).
+        let response = try await Task.detached(priority: Task.currentPriority) {
+            let opened = try CompanionSeal.open(reply, pairingKey: key, direction: .response)
+            return try CompanionWire.decode(CompanionResponse.self, from: opened)
+        }.value
         guard response.id == req.id else { throw CompanionClientError.badRequest }
         ClockOffsets.learn(from: response, mac: PairedDevice.identifier(forKey: link.key))
         return response
