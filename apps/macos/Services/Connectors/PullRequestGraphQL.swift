@@ -11,10 +11,10 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     let repo: String
     let number: Int
     var title: String
-    let url: URL?
+    var url: URL?
     /// Variable so a pull request marked ready for review on its page shows so in its tab at once.
     var draft: Bool
-    let updated: Date?
+    var updated: Date?
     let author: String
     var ci: CI = .unknown
     var state: State = .open
@@ -38,6 +38,15 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     var baseBranch = ""
     /// GitHub's node id, which marking a draft ready for review needs.
     var nodeID = ""
+    /// When it was opened, for "opened 6m ago" on the row. Nil in a list saved before the row showed it.
+    var created: Date? = nil
+    /// How many comments it has on its conversation, for the count at the row's end.
+    var comments: Int? = nil
+    /// How the author stands in the repository (GitHub's `authorAssociation`: "OWNER", "MEMBER", "CONTRIBUTOR"…).
+    var authorRole = ""
+    /// The checks on its latest commit that passed (skipped and neutral ones count), and how many there are: "28/30".
+    var checksPassed: Int? = nil
+    var checksTotal: Int? = nil
 
     var id: String { "\(repo)#\(number)" }
     /// Lines changed in all, for the size sorts.
@@ -46,7 +55,8 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
 
 extension PullRequestItem {
     private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels,
-                                            labelColors, labelDescriptions, headBranch, baseBranch, nodeID }
+                                            labelColors, labelDescriptions, headBranch, baseBranch, nodeID, created, comments,
+                                            authorRole, checksPassed, checksTotal }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -65,7 +75,12 @@ extension PullRequestItem {
                   labelDescriptions: try c.decodeIfPresent([String: String].self, forKey: .labelDescriptions) ?? [:],
                   headBranch: try c.decodeIfPresent(String.self, forKey: .headBranch) ?? "",
                   baseBranch: try c.decodeIfPresent(String.self, forKey: .baseBranch) ?? "",
-                  nodeID: try c.decodeIfPresent(String.self, forKey: .nodeID) ?? "")
+                  nodeID: try c.decodeIfPresent(String.self, forKey: .nodeID) ?? "",
+                  created: try c.decodeIfPresent(Date.self, forKey: .created),
+                  comments: try c.decodeIfPresent(Int.self, forKey: .comments),
+                  authorRole: try c.decodeIfPresent(String.self, forKey: .authorRole) ?? "",
+                  checksPassed: try c.decodeIfPresent(Int.self, forKey: .checksPassed),
+                  checksTotal: try c.decodeIfPresent(Int.self, forKey: .checksTotal))
     }
 }
 
@@ -343,11 +358,14 @@ enum PullRequestGraphQL {
       mineClosedListed: viewer { pullRequests(states: [CLOSED, MERGED], first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...row } } }
     }
     fragment row on PullRequest {
-      id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
+      id number title url isDraft createdAt updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
+      authorAssociation
+      comments { totalCount }
       labels(first: 6) { nodes { name color description } }
       author { login }
       repository { nameWithOwner isArchived }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 1) { totalCount
+        checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }
     }
     """
 
@@ -518,6 +536,7 @@ enum PullRequestGraphQL {
             let commits = ((node["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             let commit = commits.last?["commit"] as? [String: Any]
             let rollup = (commit?["statusCheckRollup"] as? [String: Any])?["state"] as? String
+            let contexts = (commit?["statusCheckRollup"] as? [String: Any])?["contexts"] as? [String: Any]
             let labels = ((node["labels"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             return PullRequestItem(repo: repo, number: number, title: (node["title"] as? String) ?? "Untitled",
                                    url: (node["url"] as? String).flatMap(URL.init(string:)), draft: (node["isDraft"] as? Bool) ?? false,
@@ -534,8 +553,25 @@ enum PullRequestGraphQL {
                                    labelDescriptions: labelDescriptions(labels),
                                    headBranch: (node["headRefName"] as? String) ?? "",
                                    baseBranch: (node["baseRefName"] as? String) ?? "",
-                                   nodeID: (node["id"] as? String) ?? "")
+                                   nodeID: (node["id"] as? String) ?? "",
+                                   created: (node["createdAt"] as? String).flatMap(date),
+                                   comments: ((node["comments"] as? [String: Any])?["totalCount"] as? NSNumber)?.intValue,
+                                   authorRole: (node["authorAssociation"] as? String) ?? "",
+                                   checksPassed: contexts.map(passedChecks),
+                                   checksTotal: (contexts?["totalCount"] as? NSNumber)?.intValue)
         }
+    }
+
+    /// The checks that passed, from the rollup's counts by state: check runs that succeeded, were skipped or neutral,
+    /// and commit statuses that succeeded.
+    static func passedChecks(_ contexts: [String: Any]) -> Int {
+        func count(_ field: String, _ states: Set<String>) -> Int {
+            ((contexts[field] as? [[String: Any]]) ?? []).reduce(0) { sum, entry in
+                guard let state = entry["state"] as? String, states.contains(state) else { return sum }
+                return sum + ((entry["count"] as? NSNumber)?.intValue ?? 0)
+            }
+        }
+        return count("checkRunCountsByState", ["SUCCESS", "SKIPPED", "NEUTRAL"]) + count("statusContextCountsByState", ["SUCCESS"])
     }
 
     /// Name to color for GitHub's label nodes (GraphQL and REST both answer `name` and `color`).
