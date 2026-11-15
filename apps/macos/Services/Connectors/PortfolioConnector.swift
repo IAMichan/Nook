@@ -321,7 +321,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         // Wallet by wallet. An unknown network (from a newer version) or an entry that cannot be read is skipped instead of
         // losing the entire list, and the stored list is kept aside first (`SafeStorage`), so the next save loses nothing.
         let outcome = SafeStorage.decode(LossyArray<StoredWallet>.self, defaults: .standard, key: walletsKey, skipped: { list in
-            list.skipped + list.elements.filter { PortfolioNetwork(rawValue: $0.network) == nil }.count
+            list.skipped + list.elements.count(where: { PortfolioNetwork(rawValue: $0.network) == nil })
         })
         guard let stored = outcome.value?.elements else { return [] }
         return stored.compactMap { item in

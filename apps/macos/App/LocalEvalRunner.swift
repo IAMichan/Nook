@@ -80,8 +80,7 @@ final class LocalEvalRunner: ObservableObject {
     }
 
     private func remember(settings: AppSettings) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d MMM HH:mm"
+        let formatter = NookDates.formatter("d MMM HH:mm", locale: NookDates.appLocale)
         let mode = [settings.evidenceFirst ? "bewijs" : nil, settings.checkAnswers ? "controle" : nil].compactMap { $0 }.joined(separator: "+")
         let line = "\(formatter.string(from: Date())) · \(settings.brainLabel) · \(mode.isEmpty ? "basis" : mode) · \(passed)/\(total) · \(Int(totalSeconds)) s"
         history = Array(([line] + history).prefix(12))

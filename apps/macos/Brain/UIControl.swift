@@ -502,7 +502,7 @@ enum UIControl {
     static let fewControls = 3
 
     static func needsSeenText(_ elements: [Element]) -> Bool {
-        elements.filter { tier($0.role) <= 1 }.count < fewControls
+        elements.count(where: { tier($0.role) <= 1 }) < fewControls
     }
 
     /// A line of text Nook recognized in a screenshot of the window (on this Mac), with where it is on screen.

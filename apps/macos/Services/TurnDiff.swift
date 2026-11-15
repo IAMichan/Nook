@@ -163,7 +163,7 @@ enum EditPatch {
         func flush() {
             guard let path, !lines.isEmpty else { return }
             let body = lines.contains(where: { $0.hasPrefix("@@") }) ? lines
-                : ["@@ -\(added ? 0 : 1),\(lines.filter { !$0.hasPrefix("+") }.count) +1,\(lines.filter { !$0.hasPrefix("-") }.count) @@"] + lines
+                : ["@@ -\(added ? 0 : 1),\(lines.count(where: { !$0.hasPrefix("+") })) +1,\(lines.count(where: { !$0.hasPrefix("-") })) @@"] + lines
             files.append((path, body.joined(separator: "\n")))
         }
         for line in patch.components(separatedBy: "\n") {

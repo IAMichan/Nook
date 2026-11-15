@@ -1072,7 +1072,7 @@ struct WorkspaceSettingsSection: View {
 
     /// "All tools", or how many groups are on, for one agent.
     private func accessSummary(_ provider: RunProvider) -> String {
-        let on = BridgeCapability.allCases.filter { ws.bridgeAccess.isOn($0, agent: provider.rawValue) }.count
+        let on = BridgeCapability.allCases.count(where: { ws.bridgeAccess.isOn($0, agent: provider.rawValue) })
         let all = BridgeCapability.allCases.count
         return on == all ? tr("settings.bridge.access.all") : tr("settings.bridge.access.some", on, all)
     }

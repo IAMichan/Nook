@@ -497,7 +497,7 @@ final class BrainService {
         let words = Set(request.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 })
         func score(_ tool: ToolSpec) -> Int {
             let haystack = (tool.name.replacingOccurrences(of: "_", with: " ") + " " + tool.description).lowercased()
-            let overlap = words.filter { haystack.contains($0) }.count
+            let overlap = words.count(where: { haystack.contains($0) })
             return overlap * 10 + (core.contains(tool.name) ? 5 : 0)
         }
         // Scored once per tool, not twice per comparison.
@@ -510,7 +510,7 @@ final class BrainService {
     /// The search and read tools Nook itself ran for this question, as named in the context ("Notities (search_notes: 3 results)").
     static func researchTools(in context: String) -> [String] {
         guard let line = context.split(separator: "\n").first(where: { $0.hasPrefix("Nook searched for") || $0.hasPrefix("Nook looked in") }),
-              let regex = try? NSRegularExpression(pattern: #"\(([a-z0-9_]+):"#) else { return [] }
+              let regex = RegexCache.regex(#"\(([a-z0-9_]+):"#) else { return [] }
         let text = String(line)
         var names: [String] = []
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {

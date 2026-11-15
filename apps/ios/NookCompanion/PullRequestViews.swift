@@ -300,7 +300,7 @@ struct PullRequestDetailView: View {
 
     @ViewBuilder
     private func files(_ detail: PullDetailDigest) -> some View {
-        let viewed = detail.files.filter { $0.viewed == "viewed" }.count
+        let viewed = detail.files.count(where: { $0.viewed == "viewed" })
         Text("\(viewed) of \(detail.files.count) viewed").font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
         ForEach(detail.files) { file in
             PullFileCard(file: file, open: open.contains(file.path), canComment: detail.lineComments && mayAct,

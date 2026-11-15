@@ -1,5 +1,5 @@
 /* Nook video kit: the app's look for 1080x1920 social video.
-   Every value mirrors apps/macos/NotchUI/Theme/NookTheme.swift; the notch UI is drawn at 2.6x its size in the app
+   Every value mirrors apps/macos/UI/Theme/NookTheme.swift; the notch UI is drawn at 2.6x its size in the app
    (a 15 pt title becomes 40 px), so the panel reads like a close-up of the real one. Change a token there, change it here. */
 
 :root {

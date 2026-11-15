@@ -1244,7 +1244,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             let ids = Set(moved.values.flatMap { $0.map(\.id) })
             var source = thread
             source.messages.removeAll { ids.contains($0.id) }
-            source.unread = min(source.unread, source.messages.filter { !$0.isMine }.count)
+            source.unread = min(source.unread, source.messages.count(where: { !$0.isMine }))
             // What was unread there is unread in the group now.
             var freed = thread.unread - source.unread
             for (groupKey, messages) in moved {
@@ -1429,7 +1429,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             if let read {
                 // Read in Nook or answered: only what came in after that is new here, never more than the app itself
                 // counts. A chat Nook holds no messages of goes by when its app says it last had one.
-                let fresh = thread.messages.filter { $0.isIncoming && $0.date > read }.count
+                let fresh = thread.messages.count(where: { $0.isIncoming && $0.date > read })
                 thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
             } else if thread.markedUnread != nil {
                 // Marked unread by hand: only more from the app counts (new messages); its count going down is the app
@@ -1533,7 +1533,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             return
         }
         guard var thread = threads[id] else { return }
-        let fresh = thread.messages.filter { $0.isIncoming && $0.date > through }.count
+        let fresh = thread.messages.count(where: { $0.isIncoming && $0.date > through })
         thread.unread = fresh
         thread.readInNook = max(thread.readInNook ?? through, through)
         thread.readInApp = through

@@ -31,9 +31,12 @@ enum NudgeFilter {
         return dates.allSatisfy { $0.timeIntervalSince(now) > horizon }
     }
 
+    private static let numericDate = try? NSRegularExpression(
+        pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#)
+
     /// Numeric dates written in the text: "2027-09-20", "20-09-2027" or "20/9/2027". A portable backstop for the system's date detector.
     static func numericDates(in text: String) -> [Date] {
-        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#) else { return [] }
+        guard let regex = numericDate else { return [] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> Date? in

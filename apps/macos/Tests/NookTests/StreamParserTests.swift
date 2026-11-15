@@ -157,7 +157,7 @@ final class ClaudeStreamParserTests: XCTestCase {
     func testUserMessageShape() throws {
         let line = ClaudeStreamParser.userMessage("Hallo \"wereld\"\nregel 2")
         XCTAssertTrue(line.hasSuffix("\n"))
-        XCTAssertEqual(line.filter { $0 == "\n" }.count, 1, "exactly one line, even with embedded newlines in text")
+        XCTAssertEqual(line.count(where: { $0 == "\n" }), 1, "exactly one line, even with embedded newlines in text")
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         XCTAssertEqual(object["type"] as? String, "user")
         let message = try XCTUnwrap(object["message"] as? [String: Any])

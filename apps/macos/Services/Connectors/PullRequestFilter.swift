@@ -74,7 +74,7 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     var activeCount: Int {
         [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil,
          !hiddenRepos.isEmpty, account != nil, attention != nil]
-            .filter { $0 }.count + labels.count
+            .count(where: { $0 }) + labels.count
     }
 
     var isActive: Bool { parsed != PullRequestQuery() || activeCount > 0 }

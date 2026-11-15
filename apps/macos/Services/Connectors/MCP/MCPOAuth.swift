@@ -201,7 +201,7 @@ enum MCPOAuth {
     /// A parameter from a `WWW-Authenticate: Bearer resource_metadata="…", scope="…"` header.
     static func authenticateParameter(_ name: String, in header: String) -> String? {
         let pattern = "\(NSRegularExpression.escapedPattern(for: name))\\s*=\\s*(?:\"([^\"]*)\"|([^\\s,]+))"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        guard let regex = RegexCache.regex(pattern, options: .caseInsensitive) else { return nil }
         let range = NSRange(header.startIndex..., in: header)
         guard let match = regex.firstMatch(in: header, range: range) else { return nil }
         for group in [1, 2] {

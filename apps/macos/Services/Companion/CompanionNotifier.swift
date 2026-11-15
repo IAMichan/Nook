@@ -175,7 +175,7 @@ final class CompanionNotifier: ObservableObject {
     private func badge() -> Int {
         guard let app else { return 0 }
         let workspace = app.workspace
-        let runs = workspace.runs.filter { !(workspace.approvals[$0.id] ?? []).isEmpty || !(workspace.questions[$0.id] ?? []).isEmpty }.count
+        let runs = workspace.runs.count(where: { !(workspace.approvals[$0.id] ?? []).isEmpty || !(workspace.questions[$0.id] ?? []).isEmpty })
         // Terminal sessions and bridge requests that wait on you.
         let others = Set(app.approvals.pending.compactMap { CompanionAgents.sessionID($0, hub: app.hub) })
         return runs + others.count

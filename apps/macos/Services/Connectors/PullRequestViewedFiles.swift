@@ -52,7 +52,7 @@ struct PullRequestViewedFiles: Codable, Equatable, Sendable {
     }
 
     func viewedCount(_ files: [PullRequestFile], in pullRequest: String) -> Int {
-        files.filter { isViewed($0, in: pullRequest) }.count
+        files.count(where: { isViewed($0, in: pullRequest) })
     }
 
     mutating func setViewed(_ viewed: Bool, file: PullRequestFile, in pullRequest: String, now: Date = Date()) {
