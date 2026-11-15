@@ -91,6 +91,6 @@ struct TranscriptTime: View {
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
-            .help(date.formatted(date: .complete, time: .shortened))
+            .sharedTip(date.formatted(date: .complete, time: .shortened))
     }
 }

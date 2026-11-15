@@ -39,7 +39,7 @@ struct RenderedPageRow: View, Equatable {
                 TranscriptWorkLine(symbol: "macwindow", label: event.text, open: !hidden) {
                     withAnimation(NookTheme.reveal) { hidden.toggle() }
                 }
-                .help(tr("ws.page.help"))
+                .nookTip(tr("ws.page.help"))
                 if !hidden, html != nil { actions }
             }
             if !hidden, !missing || html != nil {

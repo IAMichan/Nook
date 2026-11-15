@@ -132,7 +132,7 @@ struct NookMoreMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }
-        .help(sharedText("card.more", "More"))
+        .sharedTip(sharedText("card.more", "More"))
         .accessibilityLabel(sharedText("card.more", "More"))
     }
 }

@@ -603,7 +603,7 @@ struct ChatAudioView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.nookPlain)
-            .help(player.failed ? tr("card.attachment.open") : (player.playing ? tr("chat.media.pause") : tr("chat.media.play")))
+            .nookTip(player.failed ? tr("card.attachment.open") : (player.playing ? tr("chat.media.pause") : tr("chat.media.play")))
             .accessibilityLabel("\(player.playing ? tr("chat.media.pause") : tr("chat.media.play")): \(name)")
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 // A sound file (an mp3, a song) says which; a voice message needs no name.
@@ -764,7 +764,7 @@ struct ChatVideoControls: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(label)
+            .nookTip(label)
             .accessibilityLabel("\(label): \(name)")
             Text(ChatAudioPlayer.clock(playback.elapsed))
                 .font(NookTheme.TextStyle.caption)
@@ -865,7 +865,7 @@ struct ChatNoticeLine: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.xs)
             .roundedBackground(NookTheme.chatTheirs, radius: NookTheme.Radius.control)
-            .help(time)
+            .nookTip(time)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, NookTheme.Spacing.xl)
             .textSelection(.enabled)

@@ -160,7 +160,7 @@ struct PullRequestCodeTab: View {
         .menuStyle(.nookBorderlessButton)
         .frame(maxWidth: 220, alignment: .leading)
         .fixedSize(horizontal: commit == nil, vertical: false)
-        .help(commit == nil ? tr("agents.pr.code.scope") : tr("agents.pr.code.wholeChangeOnly"))
+        .nookTip(commit == nil ? tr("agents.pr.code.scope") : tr("agents.pr.code.wholeChangeOnly"))
         .accessibilityLabel(tr("agents.pr.code.scope"))
     }
 
@@ -236,6 +236,6 @@ extension PullRequestDetailView {
             .font(NookTheme.TextStyle.code)
             .lineLimit(1)
             .truncationMode(.head)
-            .help(path)
+            .nookTip(path)
     }
 }

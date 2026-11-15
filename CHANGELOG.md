@@ -210,6 +210,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
+  after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
 - The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
   waiting a third of a second first, switching tabs shows the new one at once instead of animating both, the Changes
   tab lists files as soon as git knows them (before the slower branch comparison) and reads git once when it opens, the

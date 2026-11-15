@@ -138,7 +138,7 @@ struct PlanReview: View {
             Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
         case .verified:
             Image(icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
-                .help(tr("chat.plan.verified"))
+                .nookTip(tr("chat.plan.verified"))
         case .approved:
             Image(icon: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: 18)
         case .failed:
@@ -155,7 +155,7 @@ struct PlanReview: View {
                         .frame(width: 18)
                 }
                 .buttonStyle(.nookPlain)
-                .help(included(index) ? tr("chat.plan.exclude") : tr("chat.plan.include"))
+                .nookTip(included(index) ? tr("chat.plan.exclude") : tr("chat.plan.include"))
             } else {
                 Text("\(step.number)")
                     .font(NookTheme.TextStyle.caption)

@@ -179,6 +179,15 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use .nookBorderlessButton / .nookButton (NotchUI/Theme/NookTheme.swift)")
     }
 
+    /// Every tooltip has one look and one timing: `.nookTip` (or `.sharedTip` in `NotchUI/Shared`, `.composerTip` under a
+    /// composer, `.nookTipCard` for a richer card), never SwiftUI's own `.help`, which draws the system's own
+    /// tip after about a second. Only an item inside a menu keeps `.help` (AppKit draws its tooltip there; a Nook tip
+    /// cannot sit over a menu): mark that line `// menu item`.
+    func testTooltipsAreTheSharedComponent() {
+        let found = offenders(#"(^|[^A-Za-z0-9_])\.help\("#).filter { !$0.contains("// menu item") }
+        XCTAssertEqual(found, [], "use .nookTip / .sharedTip / .composerTip (NotchUI/Components/NookTooltip.swift)")
+    }
+
     /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.
     func testDividersAreTheSharedComponent() {
         let found = offenders(#"Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)"#) {

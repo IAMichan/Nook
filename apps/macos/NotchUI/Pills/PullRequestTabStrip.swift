@@ -72,7 +72,7 @@ private struct PullRequestTab: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("agents.pulls.tabs.close"))
+            .nookTip(tr("agents.pulls.tabs.close"))
             .accessibilityLabel(tr("agents.pulls.tabs.close"))
             Button(action: select) {
                 Text("#\(tab.item.number)")
@@ -92,7 +92,7 @@ private struct PullRequestTab: View {
         .contentShape(Rectangle())
         .nookClickable()
         .onTapGesture(perform: select)
-        .help(tab.item.repo + " #\(tab.item.number)" + (tab.item.title.isEmpty ? "" : " · " + tab.item.title))
+        .nookTip(tab.item.repo + " #\(tab.item.number)" + (tab.item.title.isEmpty ? "" : " · " + tab.item.title))
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 }

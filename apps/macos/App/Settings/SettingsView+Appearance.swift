@@ -400,7 +400,7 @@ extension SettingsView {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }

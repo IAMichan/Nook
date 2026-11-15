@@ -75,7 +75,7 @@ struct NookTabBar<Value: Hashable>: View {
                     .contentShape(shape)
                 }
                 .buttonStyle(.nookPlain)
-                .help(item.help ?? "")
+                .nookTip(item.help ?? "")
                 .accessibilityLabel(item.count > 0 ? item.title + ", \(item.count)" : item.title)
                 .accessibilityAddTraits(item.value == selected ? .isSelected : [])
                 .accessibilityValue(item.value == beside ? tr("split.beside") : "")

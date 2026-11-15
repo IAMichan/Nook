@@ -107,7 +107,7 @@ struct AutocompleteSettingsSection: View {
         case .noModel:
             StatusRow(title: tr("autocomplete.noModel"), detail: tr("autocomplete.noModelDetail"), state: .warning) {
                 if let model = downloads.downloading {
-                    ProgressView(value: downloads.progress).frame(width: 80).help(model.name)
+                    ProgressView(value: downloads.progress).frame(width: 80).nookTip(model.name)
                 } else {
                     Button(tr("autocomplete.download.named", recommended.name)) { start(recommended) }
                         .buttonStyle(.nookProminent)
@@ -257,7 +257,7 @@ struct AutocompleteSettingsSection: View {
                         }
                     }
                 }
-                .help(tr("autocomplete.lora.detail"))
+                .nookTip(tr("autocomplete.lora.detail"))
                 .onChange(of: store.prefs.loraAdapterPath) { _, _ in autocomplete.refresh() }
             }
         } header: {
@@ -314,10 +314,10 @@ struct AutocompleteSettingsSection: View {
                     Image(icon: "trash")
                 }
                 .buttonStyle(.nookBorderless)
-                .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
+                .nookTip(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
-        .help(file.url.path)
+        .nookTip(file.url.path)
     }
 
     private func trashQuestion(_ file: CompletionModelFile) -> String {
@@ -382,7 +382,7 @@ struct AutocompleteSettingsSection: View {
                         Image(icon: "trash")
                     }
                     .buttonStyle(.nookBorderless)
-                    .help(tr("autocomplete.download.delete"))
+                    .nookTip(tr("autocomplete.download.delete"))
                 }
             } else {
                 Button(tr("autocomplete.download")) { start(model) }
@@ -635,7 +635,7 @@ struct AutocompleteSettingsSection: View {
             Button(tr("settings2.manage")) { editingApp = app.bundleID }
                 .controlSize(.small)
             Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().compactSwitch()
-                .help(tr("autocomplete.enable"))
+                .nookTip(tr("autocomplete.enable"))
         }
     }
 
@@ -704,7 +704,7 @@ struct AutocompleteSettingsSection: View {
                 TextField(tr("autocomplete.apps.siteAdd"), text: $newSite).onSubmit(addSite)
                 Button(tr("autocomplete.apps.add"), action: addSite).disabled(cleanedSite(newSite) == nil)
                 if let last = autocomplete.lastSite, store.prefs.sites[last] == nil {
-                    Button(last) { store.prefs.sites[last] = CompletionSiteRule() }.help(tr("autocomplete.apps.addLast"))
+                    Button(last) { store.prefs.sites[last] = CompletionSiteRule() }.nookTip(tr("autocomplete.apps.addLast"))
                 }
             }
         } header: {
@@ -963,7 +963,7 @@ struct CompletionKeyRecorder: View {
                 if shortcut != fallback, !recording {
                     Button { shortcut = fallback } label: { Image(icon: "arrow.uturn.backward") }
                         .buttonStyle(.nookBorderless)
-                        .help(tr("shortcut.reset"))
+                        .nookTip(tr("shortcut.reset"))
                 }
             }
         }

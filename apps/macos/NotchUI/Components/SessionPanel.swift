@@ -706,7 +706,7 @@ private struct PanelRow: View {
                 if let menu {
                     Menu { menu } label: { chevron.frame(width: 30, height: 34).contentShape(Rectangle()) }
                         .composerMenu()
-                        .help(tr("a11y.more"))
+                        .nookTip(tr("a11y.more"))
                         .accessibilityLabel(tr("a11y.more"))
                 }
             } else if let menu {
@@ -728,7 +728,7 @@ private struct PanelRow: View {
         }
         .roundedBackground(hovering && enabled ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.card)
         .onHover { hovering = $0 }
-        .help(disabledReason ?? help ?? "")
+        .nookTip(disabledReason ?? help ?? "")
     }
 
     private var content: some View {

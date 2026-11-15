@@ -239,7 +239,7 @@ private struct ChatInkButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.nookPlain)
-        .help(tr("chat.review.ink." + ink.rawValue))
+        .nookTip(tr("chat.review.ink." + ink.rawValue))
         .accessibilityLabel(tr("chat.review.ink." + ink.rawValue))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

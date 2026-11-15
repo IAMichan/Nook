@@ -65,7 +65,7 @@ struct SubThreadStrip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(tr(isOpen ? "ws.subthread.close" : side.subThreadRoom ? "ws.subthread.open" : "ws.subthread.openHere"))
+        .nookTip(tr(isOpen ? "ws.subthread.close" : side.subThreadRoom ? "ws.subthread.open" : "ws.subthread.openHere"))
         .accessibilityAddTraits(isOpen ? .isSelected : [])
         .contextMenu {
             if side.subThreadRoom {
@@ -84,7 +84,7 @@ struct SubThreadStrip: View {
         return HStack(spacing: NookTheme.Spacing.sm) {
             if added + removed > 0 {
                 PullRequestLineCounts(additions: added, deletions: removed, font: NookTheme.mono(10.5))
-                    .help(tr("ws.subthread.changes", added, removed, files))
+                    .nookTip(tr("ws.subthread.changes", added, removed, files))
             } else if files > 0 {
                 Text(tr("ws.subthread.files", files)).foregroundStyle(NookTheme.textTertiary).fixedSize()
             }
@@ -106,7 +106,7 @@ struct SubThreadStrip: View {
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
             .fixedSize()
-            .help(tr(thread.status.isActive ? "ws.subthread.working" : "ws.subthread.worked", SubThreadStats.clockText(worked)))
+            .nookTip(tr(thread.status.isActive ? "ws.subthread.working" : "ws.subthread.worked", SubThreadStats.clockText(worked)))
     }
 
     /// Beside the main thread, or (`here`, or without room beside it) in its place.

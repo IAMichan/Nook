@@ -78,7 +78,7 @@ private struct MusicConnectionForm: View {
                                   icon: copiedRedirect.copied ? "checkmark" : "doc.on.doc")
                         }
                     }
-                    .help(tr("music.connect.redirectURI"))
+                    .nookTip(tr("music.connect.redirectURI"))
                 }
                 SetupStep(number: 2, title: tr("music.connect.stepClientID"),
                           done: !clientID.trimmingCharacters(in: .whitespaces).isEmpty) {

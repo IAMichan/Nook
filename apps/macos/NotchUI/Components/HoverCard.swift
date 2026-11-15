@@ -48,7 +48,7 @@ struct HoverCardButton<Label: View>: View {
         .buttonStyle(.nookPlain)
         .padding(-NookTheme.Spacing.xs)
         .pointerStyle(.link)
-        .help(help)
+        .nookTip(help)
         .accessibilityHint(help)
     }
 }

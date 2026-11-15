@@ -178,7 +178,7 @@ struct QueuedMessagesStrip: View {
                 Image(icon: "eraser")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
-                    .help(tr("ws.fresh.queued"))
+                    .nookTip(tr("ws.fresh.queued"))
                     .accessibilityLabel(tr("ws.fresh.queued"))
             }
             if !parts.images.isEmpty {

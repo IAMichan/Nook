@@ -303,7 +303,7 @@ struct PullRequestDetailView: View {
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .help(detail?.title ?? item.title)
+                    .nookTip(detail?.title ?? item.title)
             } else {
                 Button {
                     if let url = URL(string: (forgeRepository?.webOrigin ?? "https://github.com") + "/" + item.repo) { NSWorkspace.shared.open(url) }
@@ -311,7 +311,7 @@ struct PullRequestDetailView: View {
                     Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("agents.pr.openRepository", item.repo))
+                .nookTip(tr("agents.pr.openRepository", item.repo))
                 numberLink
             }
         }
@@ -331,7 +331,7 @@ struct PullRequestDetailView: View {
         }
         .buttonStyle(.nookPlain)
         .fixedSize()
-        .help(tr("agents.pulls.open"))
+        .nookTip(tr("agents.pulls.open"))
         .accessibilityLabel(tr("agents.pulls.open"))
         .contextMenu {
             GitHubLinkMenuItems(url: detail?.url ?? item.url)
@@ -352,7 +352,7 @@ struct PullRequestDetailView: View {
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .help(detail?.title ?? item.title)
+                    .nookTip(detail?.title ?? item.title)
                     .textSelection(.enabled)
             }
             let author = detail?.author ?? item.author
@@ -371,7 +371,7 @@ struct PullRequestDetailView: View {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .lineLimit(1)
-            .help(detail?.created.map { tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince($0))) } ?? "")
+            .nookTip(detail?.created.map { tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince($0))) } ?? "")
             if let detail {
                 branchLine(detail).padding(.top, NookTheme.Spacing.xxs)
             } else {
@@ -439,7 +439,7 @@ struct PullRequestDetailView: View {
             Text(command).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textMuted).lineLimit(1).truncationMode(.tail)
         }
         .buttonStyle(.nookPlain)
-        .help(tr("agents.pr.action.copyCheckout"))
+        .nookTip(tr("agents.pr.action.copyCheckout"))
         .layoutPriority(-1)
     }
 
@@ -447,7 +447,7 @@ struct PullRequestDetailView: View {
     var condensedLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             let author = detail?.author ?? item.author
-            if !author.isEmpty { GitHubAvatar(login: author, size: 16).help("@" + author) }
+            if !author.isEmpty { GitHubAvatar(login: author, size: 16).nookTip("@" + author) }
             if let updated = detail?.updated ?? item.updated {
                 Text(AgentFormat.short(Date().timeIntervalSince(updated))).monospacedDigit()
             }
@@ -498,7 +498,7 @@ struct PullRequestDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(behindText(detail))
+            .nookTip(behindText(detail))
             .popover(isPresented: $showBehind, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     Text(behindText(detail))
@@ -526,7 +526,7 @@ struct PullRequestDetailView: View {
                 .frame(width: 280, alignment: .leading)
             }
         } else {
-            name.help(stacked ? tr("agents.pr.base.stacked", detail.baseBranch) : detail.baseBranch)
+            name.nookTip(stacked ? tr("agents.pr.base.stacked", detail.baseBranch) : detail.baseBranch)
         }
     }
 
@@ -553,7 +553,7 @@ struct PullRequestDetailView: View {
                     Text((detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch).lineLimit(1).truncationMode(.middle)
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("agents.pr.copyBranch"))
+                .nookTip(tr("agents.pr.copyBranch"))
             }
             .font(NookTheme.mono(11.5))
             .foregroundStyle(NookTheme.textMuted)
@@ -577,7 +577,7 @@ struct PullRequestDetailView: View {
                 Text(compact ? "\(files)" : tr("agents.pr.filesCount", files))
             }
             .foregroundStyle(NookTheme.textTertiary)
-            .help(tr("agents.pr.filesCount", files))
+            .nookTip(tr("agents.pr.filesCount", files))
             if detail.additions > 0 || detail.deletions > 0 {
                 let split = breakdown(detail)
                 PullRequestLineCounts(additions: detail.additions, deletions: detail.deletions,
@@ -608,7 +608,7 @@ struct PullRequestDetailView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("agents.pr.write.open"))
+            .nookTip(tr("agents.pr.write.open"))
             .accessibilityLabel(tr("agents.pr.write.open"))
             Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
             ComposerDropdown(width: 220) {
@@ -623,7 +623,7 @@ struct PullRequestDetailView: View {
                                 title: tr(PullRequestActionPanel.verdictKey(verdict))) { openWriter(detail, review: verdict) }
                 }
             }
-            .help(tr("agents.pr.write.choose"))
+            .nookTip(tr("agents.pr.write.choose"))
             .accessibilityLabel(tr("agents.pr.write.choose"))
         }
         .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.smoke))
@@ -704,13 +704,13 @@ struct PullRequestDetailView: View {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
                     Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", icon: "bubble.left")
-                        .help(tr("agents.pr.count.comments"))
+                        .nookTip(tr("agents.pr.count.comments"))
                     Label("\(detail.commits.count)", icon: "circle.and.line.horizontal")
-                        .help(tr("agents.pr.count.commits"))
+                        .nookTip(tr("agents.pr.count.commits"))
                     if approvals > 0 {
                         Label("\(approvals)", icon: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
                             .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
-                            .help(tr("agents.pr.count.approvals"))
+                            .nookTip(tr("agents.pr.count.approvals"))
                     }
                 }
                 orderButton(newestFirst: $newestFirst)

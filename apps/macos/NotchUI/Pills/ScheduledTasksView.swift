@@ -610,7 +610,7 @@ private struct ScheduledTaskEditor: View {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(2)
-                            .help(record.deliveryID)
+                            .nookTip(record.deliveryID)
                     }
                 }
             }

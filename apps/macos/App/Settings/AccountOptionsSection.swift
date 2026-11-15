@@ -86,10 +86,10 @@ struct AccountOptionsSection: View {
                     }
                     Toggle(isOn: $row.sensitive) { Image(icon: "key.fill") }
                         .toggleStyle(.button)
-                        .help(tr("accounts.variables.secret"))
+                        .nookTip(tr("accounts.variables.secret"))
                     Button { rows.removeAll { $0.id == row.id }; saveVariables() } label: { Image(icon: "minus.circle") }
                         .buttonStyle(.nookPlain)
-                        .help(tr("accounts.variables.remove"))
+                        .nookTip(tr("accounts.variables.remove"))
                         .accessibilityLabel(tr("accounts.variables.remove"))
                 }
                 .onSubmit(saveVariables)

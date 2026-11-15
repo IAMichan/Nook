@@ -252,7 +252,7 @@ struct SettingsInfoButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(text)
+        .nookTip(text)
         .accessibilityLabel(tr("settings.info.more"))
         .accessibilityHint(text)
         .popover(isPresented: $shown, arrowEdge: .bottom) {
@@ -490,7 +490,7 @@ struct WorkspaceSettingsSection: View {
                     SettingNote(tr("sched.webhook.failed", message), tone: .warning)
                 }
                 Toggle(tr("sched.public.toggle"), isOn: $ws.scheduledWebhooksPublic)
-                    .help(tr("sched.public.help"))
+                    .nookTip(tr("sched.public.help"))
                 if ws.scheduledWebhooksPublic {
                     SettingNote(tr("sched.public.readable"), tone: .warning)
                     if relay.state == .noRelay { SettingNote(tr("sched.public.noRelay"), tone: .warning) }
@@ -552,7 +552,7 @@ struct WorkspaceSettingsSection: View {
                     ForEach(choices, id: \.self) { path in
                         let name = ws.projectDisplayName(path)
                         Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
-                            .tag(path).help(AgentPathFormat.tilde(path))
+                            .tag(path).help(AgentPathFormat.tilde(path))  // menu item: AppKit draws its tooltip
                     }
                 } label: {
                     SettingText("settings.projects.project")
@@ -669,7 +669,7 @@ struct WorkspaceSettingsSection: View {
                 })) {
                 ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
             }
-            .help(tr("settings.ws.browserSignIns.help"))
+            .nookTip(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
             SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
@@ -695,7 +695,7 @@ struct WorkspaceSettingsSection: View {
                 get: { resolved.submodules }, set: { ws.setOverride(.submodules, $0.rawValue, for: path) })) {
                 ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
             }
-            .help(tr("sc.submodules.help"))
+            .nookTip(tr("sc.submodules.help"))
         }
         inheritable(.autoPull, path) {
             Picker(tr("sc.autoPull"), selection: Binding(
@@ -703,7 +703,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("sc.autoPull.on")).tag(true)
                 Text(tr("sc.autoPull.off")).tag(false)
             }
-            .help(tr("sc.autoPull.help"))
+            .nookTip(tr("sc.autoPull.help"))
         }
         ProjectSourceControlRows(path: path)
     }
@@ -723,7 +723,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.scope.inherited"))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("settings.scope.inheritedHelp"))
+                    .nookTip(tr("settings.scope.inheritedHelp"))
             }
         }
     }
@@ -769,7 +769,7 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingText("settings.browser.signIns")
             }
-            .help(tr("settings.browser.signIns.detail"))
+            .nookTip(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
             BrowserHistoryRow()
             BrowserPasswordsRow()
@@ -930,7 +930,7 @@ struct WorkspaceSettingsSection: View {
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
                 }
             }
-            .help(tr("settings.ws.maxWorking.help"))
+            .nookTip(tr("settings.ws.maxWorking.help"))
             .onChange(of: ws.maxWorkingSessions) { _, _ in app.workspace.startWaitingTurns() }
         }
         // How the session list is laid out and confirming quit are on General.
@@ -990,7 +990,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
             Toggle(tr("settings.ws.buildLeftovers"), isOn: $ws.buildLeftoverCleanup)
-                .help(tr("settings.ws.buildLeftovers.help"))
+                .nookTip(tr("settings.ws.buildLeftovers.help"))
         } header: {
             SettingsSectionTitle(tr("ws.section.tidy"))
         }
@@ -1010,7 +1010,7 @@ struct WorkspaceSettingsSection: View {
             Picker(tr("settings.ws.worktreeKeepWhen"), selection: $ws.worktreeKeepWhen) {
                 ForEach(WorktreeCleanup.KeepWhen.allCases) { Text(tr("settings.ws.keepWhen." + $0.rawValue)).tag($0) }
             }
-            .help(tr("settings.ws.worktreeKeepWhen.help"))
+            .nookTip(tr("settings.ws.worktreeKeepWhen.help"))
             WorktreeCleanupReportView(workspace: app.workspace)
         } header: {
             SettingsSectionTitle(tr("ws.worktrees.title"), info: tr("settings.ws.worktreeCleanup.footer"))
@@ -1033,7 +1033,7 @@ struct WorkspaceSettingsSection: View {
         ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
             Button { link(provider) } label: { AgentName(provider.kind, name: provider.displayName) }
                 .controlSize(.small)
-                .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
+                .nookTip(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
         }
     }
 
@@ -1244,7 +1244,7 @@ private struct DefaultBrowserSection: View {
             } label: {
                 SettingText("browserDefault.target")
             }
-            .help(tr("browserDefault.target.help"))
+            .nookTip(tr("browserDefault.target.help"))
             if let error { SettingNote(error, tone: .error) }
         }
         .onAppear {

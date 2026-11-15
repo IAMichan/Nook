@@ -106,7 +106,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(item.help ?? item.title)
+            .nookTip(item.help ?? item.title)
             if item.pinned {
                 Image(icon: "pin.fill")
                     .font(NookTheme.font(8, .semibold))
@@ -266,7 +266,7 @@ struct SidePanelLauncher: View {
         .buttonStyle(.nookPlain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.5)
-        .help(item.disabledReason ?? item.title)
+        .nookTip(item.disabledReason ?? item.title)
         .onHover { inside in
             guard enabled, let index = available.firstIndex(where: { $0.id == item.id }) else { return }
             if inside { highlight = index } else if highlight == index { highlight = nil }
