@@ -345,16 +345,23 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(ArrivalQueue.fitted("kort"), "kort")
     }
 
-    func testAKeywordAtTheStartSurvivesAMerge() {
+    func testAKeywordAtTheStartSurvivesAMerge() throws {
         var queue = ArrivalQueue()
         let trigger = MessageTrigger(keywords: ["factuur"])
-        let long = (0...ArrivalQueue.perChat).map { message("lisa", "factuur " + String(repeating: "x", count: 3_000), at: TimeInterval($0)) }
+        // Each message is longer than a merged text may be, with the keyword only at its start.
+        let long = (0...ArrivalQueue.perChat).map {
+            message("lisa", "factuur " + String(repeating: "x", count: ArrivalQueue.textLimit + 500), at: TimeInterval($0))
+        }
         queue.enqueue(queue.admit(long, matching: trigger))
         XCTAssertEqual(queue.waiting.count, ArrivalQueue.perChat)
+        // The merge kept only the newest words: the keyword that admitted both messages is gone from its text.
+        let merged = try XCTUnwrap(queue.waiting.first { $0.text.hasPrefix(ArrivalQueue.shortened) })
+        XCTAssertFalse(merged.text.contains("factuur"))
+        XCTAssertFalse(trigger.matches(merged), "checking the words again would drop it")
         var taken: [ArrivedMessage] = []
         while !queue.isEmpty { taken += queue.takeBatch(matching: trigger) }
-        XCTAssertEqual(taken.count, ArrivalQueue.perChat, "the merged message, whose start was shortened away, still runs")
-        XCTAssertTrue(taken.contains { $0.text.hasPrefix(ArrivalQueue.shortened) })
+        XCTAssertEqual(taken.count, ArrivalQueue.perChat, "the merged message, whose keyword was shortened away, still runs")
+        XCTAssertTrue(taken.contains(merged))
     }
 
     func testAChangedFilterAfterAMergeKeepsWhatStillMatches() {
