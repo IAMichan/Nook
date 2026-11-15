@@ -51,7 +51,7 @@ struct BottomSplitHandle: View {
                 }
         )
         .onTapGesture(count: 2) { onReset() }
-        .help(tr("panel.resize"))
+        .nookTip(tr("panel.resize"))
         .accessibilityLabel(tr("panel.resize"))
     }
 }

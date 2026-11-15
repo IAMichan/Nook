@@ -62,7 +62,7 @@ struct UpdateFooterButton<Idle: View>: View {
                 }
                 .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
-                .help(look.help)
+                .nookTip(look.help)
                 .accessibilityLabel(look.help)
                 .popover(isPresented: $open, arrowEdge: .bottom) {
                     UpdatePanel { open = false }

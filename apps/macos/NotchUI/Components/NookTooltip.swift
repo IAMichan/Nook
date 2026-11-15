@@ -6,7 +6,7 @@ extension View {
     /// (the warm window), fading in over 100 ms. Drawn in a click-through child window, so a scroll view or a narrow
     /// column never clips it. Empty text or `enabled: false` installs nothing (no `.help("")`).
     ///
-    /// Use it instead of `.help` on symbol-only controls in lists, sidebars and toolbars: AppKit's own tooltip waits about
+    /// Every tooltip in the app uses it instead of `.help` (UIConsistencyTests checks): AppKit's own tooltip waits about
     /// a second and never swaps instantly. The text also goes to VoiceOver as the accessibility hint.
     func nookTip(_ text: String, edge: Edge = .top, enabled: Bool = true) -> some View {
         let active = enabled && !text.isEmpty

@@ -31,6 +31,13 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
   mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.
 
+- Nook Companion stays usable without your Mac: Nook's chats and the Chats tab are now kept on the iPhone with their
+  last messages, so every tab reads while the Mac is off, asleep or out of reach. What you write still waits on the
+  iPhone and goes as soon as the Mac is back. While offline, every conversation keeps an amber strip in sight saying
+  that no new messages or updates come in and that what you send is not sent yet, and each waiting message says
+  *Not sent yet · waiting for your Mac*. A chat the iPhone never kept says it opens once the Mac is connected, instead
+  of loading forever. The Android companion does the same, and its chat messages now wait in the outbox too.
+
 - The Android app is now the same companion as the iPhone app, with the same layout, look and words: once paired it
   opens on your Mac's tabs Nook, Agents and Chats, with what waits on you as cards, a session as its whole conversation
   in turns, approvals and questions above the composer (deny with a reason, Steer now or After this turn), New session,
@@ -228,6 +235,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
 - Your answer style and a space's instructions now reach the brain as your own instructions instead of inside the
   context marked as third-party data, so they are followed; the prompt names the date line correctly ("Now").
+- Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
+  after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
 - The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
   waiting a third of a second first, switching tabs shows the new one at once instead of animating both, the Changes
   tab lists files as soon as git knows them (before the slower branch comparison) and reads git once when it opens, the

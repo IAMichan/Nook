@@ -1570,7 +1570,7 @@ private struct InboxViewMenu: View {
             toggle("folder", tr("inbox.view.groupByProject"), on: store.groupByProject) { store.groupByProject.toggle() }
             toggle("bolt", tr("inbox.view.showWorking"), on: store.showWorking) { store.showWorking.toggle() }
         }
-        .help(tr("inbox.view"))
+        .nookTip(tr("inbox.view"))
         .accessibilityLabel(tr("inbox.view"))
     }
 

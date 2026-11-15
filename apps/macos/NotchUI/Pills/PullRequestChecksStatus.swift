@@ -38,7 +38,7 @@ struct PullRequestChecksStatus: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("agents.pr.status.checks"))
+            .nookTip(tr("agents.pr.status.checks"))
             .accessibilityLabel(tr("agents.pr.status.checks") + ": " + summary)
             .popover(isPresented: $showing, arrowEdge: .bottom) { list(outcome) }
         } else {
@@ -71,7 +71,7 @@ struct PullRequestChecksStatus: View {
                         }) {
                             HStack(spacing: NookTheme.Spacing.md) {
                                 CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 16)
-                                Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1).help(check.name)
+                                Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1).nookTip(check.name)
                                 Spacer(minLength: NookTheme.Spacing.sm)
                                 CICheckStatusText(check: check)
                             }

@@ -6023,6 +6023,62 @@
         }
       }
     },
+    "No new messages or updates come in until your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bis dein Mac verbunden ist, kommen keine neuen Nachrichten oder Updates an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No llegan mensajes ni actualizaciones nuevos hasta que tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun nouveau message ni mise à jour n’arrive tant que votre Mac n’est pas connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er komen geen nieuwe berichten of updates binnen tot je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "No new messages or updates come in, and what you send waits until your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es kommen keine neuen Nachrichten oder Updates an, und was du sendest, wartet, bis dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No llegan mensajes ni actualizaciones nuevos, y lo que envíes espera hasta que tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun nouveau message ni mise à jour n’arrive, et ce que vous envoyez attend le retour de votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er komen geen nieuwe berichten of updates binnen, en wat je verstuurt wacht tot je Mac terug is."
+          }
+        }
+      }
+    },
     "No plan limits reported" : {
       "localizations" : {
         "de" : {
@@ -6873,6 +6929,34 @@
         }
       }
     },
+    "Not sent yet · waiting for your Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht gesendet · wartet auf deinen Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no enviado · esperando a tu Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore envoyé · en attente de votre Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog niet verstuurd · wacht op je Mac"
+          }
+        }
+      }
+    },
     "Not set up on your Mac yet (Settings › iPhone companion)." : {
       "localizations" : {
         "de" : {
@@ -6925,6 +7009,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet"
+          }
+        }
+      }
+    },
+    "Nothing is kept on this iPhone yet. Your chats appear once your Mac is connected, and stay readable when it is not." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone ist noch nichts gespeichert. Deine Chats erscheinen, sobald dein Mac verbunden ist, und bleiben lesbar, wenn er es nicht ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay nada guardado en este iPhone. Tus chats aparecen cuando tu Mac está conectado y siguen legibles cuando no lo está."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’est encore gardé sur cet iPhone. Vos discussions apparaissent dès que votre Mac est connecté et restent lisibles quand il ne l’est pas."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er staat nog niets op deze iPhone. Je chats verschijnen zodra je Mac verbonden is en blijven leesbaar als hij dat niet is."
           }
         }
       }
@@ -7122,6 +7234,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uit: je bericht wacht tot de beurt klaar is."
+          }
+        }
+      }
+    },
+    "Offline: connect to your Mac to start a session." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Verbinde dich mit deinem Mac, um eine Sitzung zu starten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: conéctate a tu Mac para empezar una sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : connectez-vous à votre Mac pour démarrer une session."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: maak verbinding met je Mac om een sessie te starten."
+          }
+        }
+      }
+    },
+    "Offline: no new messages or updates come in." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Es kommen keine neuen Nachrichten oder Updates an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: no llegan mensajes ni actualizaciones nuevos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : aucun nouveau message ni mise à jour n’arrive."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: er komen geen nieuwe berichten of updates binnen."
+          }
+        }
+      }
+    },
+    "Offline: no new messages or updates come in. Last updated %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Es kommen keine neuen Nachrichten oder Updates an. Zuletzt aktualisiert %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: no llegan mensajes ni actualizaciones nuevos. Última actualización %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : aucun nouveau message ni mise à jour n’arrive. Dernière mise à jour %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: er komen geen nieuwe berichten of updates binnen. Laatst bijgewerkt %@."
+          }
+        }
+      }
+    },
+    "Offline: the session does not start yet. It waits on this iPhone and starts as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Die Sitzung startet noch nicht. Sie wartet auf diesem iPhone und startet, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: la sesión aún no empieza. Espera en este iPhone y empieza en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : la session ne démarre pas encore. Elle attend sur cet iPhone et démarre dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: de sessie start nog niet. Hij wacht op deze iPhone en start zodra je Mac terug is."
           }
         }
       }
@@ -10817,6 +11041,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze chat bestaat niet meer."
+          }
+        }
+      }
+    },
+    "This chat is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Chat ist noch nicht auf diesem iPhone gespeichert. Er öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este chat aún no está guardado en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette discussion n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze chat staat nog niet op deze iPhone. Hij opent zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "This conversation is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gespräch ist noch nicht auf diesem iPhone gespeichert. Es öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta conversación aún no está guardada en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette conversation n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit gesprek staat nog niet op deze iPhone. Het opent zodra je Mac verbonden is."
           }
         }
       }
@@ -15329,34 +15609,6 @@
         }
       }
     },
-    "Waiting for your Mac" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wartet auf deinen Mac"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esperando a tu Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En attente de votre Mac"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wacht op je Mac"
-          }
-        }
-      }
-    },
     "Yesterday" : {
       "localizations" : {
         "de" : {
@@ -16389,6 +16641,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Muestra lo que puedes hacer con esta sesión"
+          }
+        }
+      }
+    },
+    "What you send is not sent yet: it waits on this iPhone and goes as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was du sendest, ist noch nicht gesendet: Es wartet auf diesem iPhone und geht raus, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que envíes aún no se envía: espera en este iPhone y sale en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que vous envoyez n’est pas encore parti : il attend sur cet iPhone et part dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat je verstuurt is nog niet verzonden: het wacht op deze iPhone en gaat zodra je Mac terug is."
+          }
+        }
+      }
+    },
+    "You can send once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du kannst senden, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Podrás enviar cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pourrez envoyer dès que votre Mac sera connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je kunt versturen zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "Your answer only reaches the agent once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort erreicht den Agenten erst, wenn dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta solo llega al agente cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse n’atteint l’agent qu’une fois votre Mac connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord komt pas bij de agent aan als je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "Your chats show up here" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier erscheinen deine Chats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aquí aparecen tus chats"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos discussions s’affichent ici"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier verschijnen je chats"
           }
         }
       }

@@ -1024,6 +1024,10 @@ struct ConnectionLine: View {
                             Text("Last updated \(updated.formatted(date: .omitted, time: .shortened)) · not connected")
                                 .foregroundStyle(Theme.textTertiary)
                         }
+                        Text(client.writingWaits
+                             ? String(localized: "No new messages or updates come in, and what you send waits until your Mac is back.")
+                             : String(localized: "No new messages or updates come in until your Mac is connected."))
+                            .foregroundStyle(Theme.textTertiary)
                         if let hint = client.awayHint { Text(hint).foregroundStyle(Theme.textTertiary) }
                     }
                     Spacer(minLength: Theme.Spacing.md)

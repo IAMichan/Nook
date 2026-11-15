@@ -18,7 +18,7 @@ struct LineageControl: View {
             } content: {
                 rows(groups)
             }
-            .help(tr("lineage.control.help"))
+            .nookTip(tr("lineage.control.help"))
             .accessibilityLabel(label(groups))
         }
     }
@@ -78,7 +78,7 @@ struct LineageControl: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("lineage.stop", node.title))
+                .nookTip(tr("lineage.stop", node.title))
                 .accessibilityLabel(tr("lineage.stop", node.title))
             }
         }

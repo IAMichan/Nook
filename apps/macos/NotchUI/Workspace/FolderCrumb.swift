@@ -28,10 +28,10 @@ struct FolderCrumb: View {
                         Button(tr("ws.new.inThisWorktree"), action: startInWorktree)
                     }
                 }
-                .help(tr("inbox.project.newSession", name))
+                .nookTip(tr("inbox.project.newSession", name))
                 .accessibilityLabel(tr("inbox.project.newSession", name))
         } else {
-            label(NookTheme.textSecondary).help(AgentPathFormat.tilde(directory))
+            label(NookTheme.textSecondary).nookTip(AgentPathFormat.tilde(directory))
         }
     }
 

@@ -233,7 +233,7 @@ struct DropdownRow: View {
         .overlay(alignment: .trailing) { star }
         .opacity(disabledReason == nil ? 1 : 0.64)
         .onHover { hovering = $0 }
-        .help(disabledReason ?? "")
+        .nookTip(disabledReason ?? "")
     }
 
     @ViewBuilder
@@ -249,7 +249,7 @@ struct DropdownRow: View {
             }
             .buttonStyle(.nookPlain)
             .padding(.trailing, NookTheme.Spacing.xs)
-            .help(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
+            .nookTip(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
             .accessibilityLabel(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
         }
     }
@@ -441,7 +441,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(help(place))
+        .nookTip(help(place))
     }
 }
 

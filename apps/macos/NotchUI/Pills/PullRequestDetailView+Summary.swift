@@ -327,7 +327,7 @@ extension PullRequestDetailView {
             .background(Circle().fill(NookTheme.rowHover))
             .padding(2)
             .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1.5))
-            .help(tr("agents.pr.reviews.waiting", name))
+            .nookTip(tr("agents.pr.reviews.waiting", name))
     }
 
     /// The issues this pull request closes, one per line: open or closed in the state's color, the number (with its
@@ -361,7 +361,7 @@ extension PullRequestDetailView {
                 }
                 .buttonStyle(.nookPlain)
                 .disabled(issue.url == nil)
-                .help(issue.title)
+                .nookTip(issue.title)
             }
         }
     }
@@ -390,7 +390,7 @@ extension PullRequestDetailView {
         GitHubAvatar(login: login, size: 20)
             .padding(2)
             .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
-            .help(help)
+            .nookTip(help)
     }
 
     /// Unfolds the checks and scrolls the Summary down to them: they sit under the description, often out of sight.

@@ -33,6 +33,6 @@ private struct WindowCaptureTargetPicker: View {
         } label: {
             SettingText("windowCapture.target")
         }
-        .help(tr("windowCapture.target.help"))
+        .nookTip(tr("windowCapture.target.help"))
     }
 }

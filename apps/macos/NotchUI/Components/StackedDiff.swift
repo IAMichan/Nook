@@ -250,29 +250,33 @@ struct StackedDiffList<Content: View>: View {
         if found.state != .results { found.state = .searching }
         // Several files at a time instead of one after another: a branch of 60 files started 60 git reads in a row before
         // the first match showed. At most `Self.findReads` at once, so a huge branch does not start them all together.
-        let diff = diff, options = options, scope = scope
-        let texts = await withTaskGroup(of: (Int, String?).self) { group -> [String?] in
-            var texts = [String?](repeating: nil, count: files.count)
+        let diff = diff, options = options
+        // The cache belongs to the main actor, so it is read here before the reads start and filled here after them; only
+        // the files it does not hold are read from git in the group.
+        let keys = files.map { options.cacheKey(scope: scope, path: $0.path) }
+        let cached = keys.map { DiffCache.diff($0) }
+        let missing = cached.indices.filter { cached[$0] == nil }
+        let fresh = await withTaskGroup(of: (Int, String?).self) { group -> [Int: String] in
+            var fresh: [Int: String] = [:]
             var next = 0
             func start() {
-                guard next < files.count else { return }
-                let index = next, file = files[index]
+                guard next < missing.count else { return }
+                let index = missing[next], file = files[index]
                 next += 1
                 group.addTask {
-                    let key = options.cacheKey(scope: scope, path: file.path)
-                    if let cached = DiffCache.diff(key) { return (index, cached) }
-                    guard !Task.isCancelled, let fresh = try? await diff(file, options) else { return (index, nil) }
-                    DiffCache.store(fresh, key)
-                    return (index, fresh)
+                    guard !Task.isCancelled, let text = try? await diff(file, options) else { return (index, nil) }
+                    return (index, text)
                 }
             }
             for _ in 0..<Self.findReads { start() }
             for await (index, text) in group {
-                texts[index] = text
+                if let text { fresh[index] = text }
                 if !Task.isCancelled { start() }
             }
-            return texts
+            return fresh
         }
+        for (index, text) in fresh { DiffCache.store(text, keys[index]) }
+        let texts = cached.indices.map { cached[$0] ?? fresh[$0] }
         guard !Task.isCancelled else { return }
         let read = zip(files, texts).compactMap { file, text in text.map { (path: file.path, text: $0) } }
         // The rows are made off the main thread too, with the matches.
@@ -363,7 +367,7 @@ private struct StackedDiffHeader: View {
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                 .lineLimit(1)
                 .truncationMode(.head)
-                .help(file.previousPath.map { "\($0) → \(file.path)" } ?? file.path)
+                .nookTip(file.previousPath.map { "\($0) → \(file.path)" } ?? file.path)
             if let previous = file.previousPath {
                 Text("← " + (previous as NSString).lastPathComponent)
                     .font(NookTheme.TextStyle.caption)
@@ -555,6 +559,6 @@ private struct StackedDiffTreeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(row.path)
+        .nookTip(row.path)
     }
 }

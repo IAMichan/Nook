@@ -28,7 +28,7 @@ struct AutoSettleRulesRows: View {
                     Toggle(tr("settings.ws.autoSettleClosed"), isOn: rule(\.settleOnClosedPullRequest))
                     Stepper(tr("settings.ws.autoSettleDays", rules.inactivityDays), value: rule(\.inactivityDays), in: 1...30)
                     Toggle(tr("settings.ws.autoSettleKeepOpenPR"), isOn: rule(\.keepWithOpenPullRequest))
-                        .help(tr("settings.ws.autoSettleKeepOpenPR.help"))
+                        .nookTip(tr("settings.ws.autoSettleKeepOpenPR.help"))
                 }
             }
             .disabled(followsAll)

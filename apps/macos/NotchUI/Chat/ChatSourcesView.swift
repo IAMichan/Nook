@@ -106,7 +106,7 @@ struct SourcesDisclosure: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .help(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
+                .nookTip(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
                 .accessibilityLabel(summary(used: used, failed: failed, running: running)
                                     + (failed > 0 ? ", " + tr("chat.sources.unread", failed) : ""))
 
@@ -164,7 +164,7 @@ struct SourcesDisclosure: View {
                 Spacer(minLength: 6)
                 statusChip(group)
             }
-            .help(helpText(group))
+            .nookTip(helpText(group))
             if let failure {
                 failureView(failure)
             }
@@ -211,7 +211,7 @@ struct SourcesDisclosure: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let needed, !needed.isGranted(permissions) {
                 SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
-                    .help(tr("chat.notice.allowHelp"))
+                    .nookTip(tr("chat.notice.allowHelp"))
             } else if let onRetry {
                 SourceFixButton(title: tr("chat.retry"), symbol: "arrow.clockwise", prominent: false, action: onRetry)
             }
@@ -464,7 +464,7 @@ struct NoticeList: View {
                             .textSelection(.enabled)
                         if let needed = buttons[notice] {
                             SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
-                                .help(tr("chat.notice.allowHelp"))
+                                .nookTip(tr("chat.notice.allowHelp"))
                         }
                     }
                     Spacer(minLength: 0)
@@ -518,7 +518,7 @@ private struct ReferenceRow: View {
         .buttonStyle(.nookPlain)
         .disabled(!openable)
         .onHover { hovering = $0 }
-        .help(openable ? tr("chat.references.open") : tr("chat.references.noLink"))
+        .nookTip(openable ? tr("chat.references.open") : tr("chat.references.noLink"))
     }
 }
 

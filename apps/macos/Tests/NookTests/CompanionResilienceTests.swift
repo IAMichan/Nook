@@ -142,6 +142,48 @@ final class CompanionResilienceTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CompanionCache.self, from: data), cache)
     }
 
+    func testCacheKeepsChatsSettledSoTheyReadWithoutTheMac() throws {
+        var cache = CompanionCache()
+        let now = Date()
+        let nook = ChatDigest(id: "c1", title: "Plan", updated: 1, busy: true, waiting: false, preview: "…")
+        XCTAssertTrue(cache.record(conversations: [nook]))
+        XCTAssertEqual(cache.conversations.first?.busy, false, "read later, nothing is still being written")
+        XCTAssertFalse(cache.record(conversations: [nook]), "the same list changes nothing")
+
+        let answer = ChatLine(id: "l1", fromNook: true, text: "Half an answer", date: 1, streaming: true,
+                              status: "Looking in your calendar…", failed: false, onMac: false)
+        XCTAssertTrue(cache.record(chatLines: [answer], chat: "c1", at: now))
+        XCTAssertEqual(cache.allChatLines["c1"]?.first?.streaming, false)
+        XCTAssertEqual(cache.allChatLines["c1"]?.first?.status, "")
+        XCTAssertFalse(cache.record(chatLines: [answer], chat: "c1", at: now.addingTimeInterval(-1)), "never older over newer")
+
+        let chat = InboxChatDigest(id: "w1", app: "whatsapp", appName: "WhatsApp", name: "Sam", preview: "dinner?", last: 1,
+                                   unread: 1, canSend: true, ticks: nil, waitsInApp: false,
+                                   typing: [InboxTypist(name: "", kind: "text")])
+        XCTAssertTrue(cache.record(inbox: [chat]))
+        XCTAssertNil(cache.inbox.first?.typing, "who was typing is never true later")
+        let line = InboxLine(id: "m1", text: "dinner?", date: 1, sender: "", fromMe: false, reactions: [])
+        for index in 0...CompanionCache.maxChats { cache.record(inboxLines: [line], chat: "w\(index)", at: now) }
+        XCTAssertEqual(cache.allInboxLines.count, CompanionCache.maxChats, "the least recently opened chat goes past the limit")
+        XCTAssertNil(cache.allInboxLines["w0"])
+        let long = (0..<(CompanionCache.maxLines + 20)).map { InboxLine(id: "m\($0)", text: "", date: 0, sender: "", fromMe: false, reactions: []) }
+        cache.record(inboxLines: long, chat: "w9", at: now)
+        XCTAssertEqual(cache.allInboxLines["w9"]?.count, CompanionCache.maxLines)
+
+        let data = try JSONEncoder().encode(cache)
+        XCTAssertEqual(try JSONDecoder().decode(CompanionCache.self, from: data), cache)
+    }
+
+    func testACacheFromBeforeChatsWereKeptStillOpens() throws {
+        var old = CompanionCache()
+        old.record(sessions: [session("s")], at: Date())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        for key in ["conversations", "chatLines", "inbox", "inboxLines"] { json[key] = nil }
+        let decoded = try JSONDecoder().decode(CompanionCache.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.sessions.map(\.id), ["s"], "an update keeps the sessions the phone had")
+        XCTAssertTrue(decoded.inbox.isEmpty)
+    }
+
     func testResumeSendsFromTheLastEntryThePhoneHas() throws {
         let mac = [entry("a"), entry("b"), entry("c", "c, finished"), entry("d")]
         let resumed = try XCTUnwrap(TimelineDelta.resume(mac, from: "c"))

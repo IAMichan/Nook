@@ -1108,7 +1108,7 @@ struct ComposerPill: View {
             if let badge, density != .icons {
                 Image(icon: badge.symbol).font(NookTheme.font(12, .medium))
                     .padding(.leading, 2)
-                    .help(badge.help)
+                    .nookTip(badge.help)
                     .accessibilityLabel(badge.help)
             }
             if showsChevron && density == .full {
@@ -1327,7 +1327,7 @@ private struct ComposerTipModifier: ViewModifier {
                 .anchorPreference(key: ComposerTipKey.self, value: .bounds) { shown ? ComposerTip(text: text, anchor: $0) : nil }
                 .accessibilityHint(text)
         } else {
-            content.help(text)
+            content.nookTip(text)
         }
     }
 }
@@ -1341,7 +1341,7 @@ extension View {
     /// `composerTip` for a shared button that sits under a composer only sometimes; a plain tooltip otherwise.
     @ViewBuilder
     func composerTip(_ text: String, inComposer: Bool) -> some View {
-        if inComposer { composerTip(text) } else { help(text) }
+        if inComposer { composerTip(text) } else { nookTip(text) }
     }
 
     /// Draws the tips of the controls inside (`composerTip`) above the control the pointer rests on.

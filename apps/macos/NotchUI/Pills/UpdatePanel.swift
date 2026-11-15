@@ -463,6 +463,6 @@ private struct ChangeRow: View {
         .buttonStyle(.nookPlain)
         .disabled(url == nil)
         .onHover { hovering = $0 }
-        .help(change.title + " · " + change.author)
+        .nookTip(change.title + " · " + change.author)
     }
 }

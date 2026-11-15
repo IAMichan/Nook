@@ -243,7 +243,7 @@ private struct ModelPickerAddButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(help)
+        .nookTip(help)
     }
 }
 

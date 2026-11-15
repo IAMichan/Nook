@@ -34,7 +34,7 @@ struct UpdateSettingsSection: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(installing)
-                .help(tr("update.channel.detail"))
+                .nookTip(tr("update.channel.detail"))
                 SettingNote(channelNote(for: release))
                 if let manual = updater.manualRelease {
                     StatusRow(title: tr("update.release.manual.title", manual.version.description),

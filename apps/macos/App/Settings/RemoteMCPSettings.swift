@@ -61,7 +61,7 @@ struct RemoteMCPSettingsSection: View {
         }
         ConfirmedButton(tr("remotemcp.reset"), question: tr("remotemcp.reset.confirm")) { server.resetEverything() }
             .controlSize(.small)
-            .help(tr("remotemcp.reset.help"))
+            .nookTip(tr("remotemcp.reset.help"))
     }
 
     private func levelPicker(_ level: RemoteAccessLevel, set: @escaping (RemoteAccessLevel) -> Void) -> some View {
@@ -70,6 +70,6 @@ struct RemoteMCPSettingsSection: View {
         }
         .labelsHidden()
         .fixedSize()
-        .help(tr("remotemcp.level.help"))
+        .nookTip(tr("remotemcp.level.help"))
     }
 }

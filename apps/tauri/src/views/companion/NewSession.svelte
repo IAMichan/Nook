@@ -16,7 +16,8 @@
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
-  import { has, Feature } from "../../lib/companion";
+  import { has, Feature, writingWaits } from "../../lib/companion";
+  import { activeMac, cacheFor, saveSoon } from "../../lib/companion-cache";
   import { agentFor, projectFor, type PromptLink } from "../../lib/prompt-link";
 
   let { view, task: initial = "", link, onback, took, onstarted }: {
@@ -43,10 +44,15 @@
   let images = $state<string[]>([]);
   let menu = $state<{ anchor: DOMRect; sections: MenuItem[][] } | null>(null);
 
+  const offline = $derived(view.phase === "offline");
   $effect(() => {
     companion.call({ op: "options" }).then((r) => {
       took(r.view);
-      const o = r.response?.launch;
+      // What the computer offered last time, while it cannot be reached: the session can be written and wait.
+      const mac = activeMac(r.view);
+      const cache = cacheFor(mac);
+      if (r.response?.launch && cache) { cache.launch = r.response.launch; saveSoon(mac); }
+      const o = r.response?.launch ?? (r.view.phase === "offline" ? cache?.launch : undefined);
       if (!o) return (failed = true);
       options = o;
       agent = o.defaultAgent && o.agents.some((a) => a.id === o.defaultAgent) ? o.defaultAgent : (o.agents[0]?.id ?? "");
@@ -119,9 +125,14 @@
       <button class="heading" onclick={(e) => pick(e, [options!.projects.map((p) => ({ label: p.name, checked: p.path === project, onselect: () => (project = p.path) }))])}>
         {headingParts[0]}<span class="project">{chosenProject?.name}</span>{headingParts[1] ?? ""}
       </button>
+      {#if offline}
+        <Banner icon="wifi-off">{writingWaits(view)
+          ? tr("Offline: de sessie start nog niet. Hij wacht op deze telefoon en start zodra je Mac terug is.", "Offline: the session does not start yet. It waits on this phone and starts as soon as your Mac is back.")
+          : tr("Offline: maak verbinding met je Mac om een sessie te starten.", "Offline: connect to your Mac to start a session.")}</Banner>
+      {/if}
       <ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />
       <div class="composer">
-        <SessionComposer bind:value={task} placeholder={tr("Wat moet de agent doen?", "What should the agent do?")} minHeight={88} onsend={start} sending={starting} autofocus>
+        <SessionComposer bind:value={task} placeholder={tr("Wat moet de agent doen?", "What should the agent do?")} minHeight={88} onsend={start} sending={starting} canSend={!offline || writingWaits(view)} autofocus>
           {#snippet controls()}
             <ComposerPill label={chosenAgent?.name ?? ""} onclick={(e) => pick(e, [options!.agents.map((a) => ({ label: a.name, checked: a.id === agent, onselect: () => { agent = a.id; model = a.defaultModel ?? ""; } }))])}>
               {#snippet lead()}<AgentMark agent={chosenAgent?.name ?? ""} size={16} />{/snippet}

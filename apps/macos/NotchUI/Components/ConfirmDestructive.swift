@@ -49,7 +49,7 @@ extension ConfirmedButton where Label == Image {
 extension ConfirmedButton {
     /// The tooltip and the VoiceOver label of a symbol-only button.
     func labelled(_ title: String) -> some View {
-        help(title).accessibilityLabel(title)
+        nookTip(title).accessibilityLabel(title)
     }
 }
 

@@ -30,7 +30,7 @@ struct ShortcutRecorder: View {
                             Image(icon: "arrow.uturn.backward")
                         }
                         .buttonStyle(.nookBorderless)
-                        .help(tr("shortcut.reset"))
+                        .nookTip(tr("shortcut.reset"))
                         .accessibilityLabel(tr("shortcut.reset"))
                     }
                 }

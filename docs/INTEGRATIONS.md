@@ -658,6 +658,18 @@ comes in `InboxChatDigest.typing` for the list and `CompanionResponse.inboxTypin
 reads the same on both phones; replying follows `InboxChatDigest.canSend`. The Linux and Windows apps have no chat
 inbox of their own. If one gets one, it reads these same fields.
 
+## Platforms and offline
+
+Both companions stay usable while the Mac cannot be reached, the same way. The iPhone keeps what it saw last in
+`CompanionCache` (`packages/protocol/Sources/CompanionResilience.swift`); the Android companion keeps the same parts with
+the same limits in `apps/tauri/src/lib/companion-cache.ts`. Both keep the session list, the last session conversations,
+Nook's chats and the Chats tab's chats with their newest messages. Both show the amber strip over every composer
+(`OfflineStrip`) and *Not sent yet · waiting for your Mac* under every message that waits. The outbox takes the same
+requests on both: a message to a session or a chat, a new session, a question to Nook. It keeps them for the same time:
+a day for a session message, an hour for the rest (`CompanionOutbox.maxAge(for:)`, `outbox_max_age` in
+`apps/tauri/core/src/companion/client.rs`). This holds for every chat app and every coding agent alike. Windows and
+Linux have no companion of their own.
+
 ## Platforms and layouts
 
 The iPad layout of the companion (split view, keyboard shortcuts, dropping into a composer; *iPad* in

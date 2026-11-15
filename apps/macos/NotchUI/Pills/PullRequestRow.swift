@@ -83,7 +83,7 @@ struct PullRequestRow: View, Equatable {
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { PullRequestDetailModel.prefetch(accountID: accountID, item: item) }
         }
-        .help(tr(readable ? "agents.pulls.viewOrSelect" : "agents.pulls.view"))
+        .nookTip(tr(readable ? "agents.pulls.viewOrSelect" : "agents.pulls.view"))
         .accessibilityAddTraits(selected ? .isSelected : [])
         // Into a composer, or anywhere else that takes a link.
         .onDrag { NSItemProvider(object: (item.url?.absoluteString ?? "#\(item.number)") as NSString) }
@@ -127,7 +127,7 @@ struct PullRequestRow: View, Equatable {
                 }
             }
         }
-        .help(tr("agents.pr.action.more"))
+        .nookTip(tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .revealOnHover(hovering)
         .padding(.trailing, NookTheme.Spacing.sm)
@@ -144,12 +144,12 @@ struct PullRequestRow: View, Equatable {
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
-                        .help(item.title)
+                        .nookTip(item.title)
                     if linked?.watching == true, item.state == .open {
                         Image(icon: "eye")
                             .font(NookTheme.font(10, .medium))
                             .foregroundStyle(NookTheme.textTertiary)
-                            .help(tr("agents.pr.linked.watching"))
+                            .nookTip(tr("agents.pr.linked.watching"))
                     }
                     Group {
                         if linked != nil { branches } else { labels }
@@ -163,21 +163,21 @@ struct PullRequestRow: View, Equatable {
                     Text(verbatim: "#\(item.number)")
                         .monospacedDigit()
                         .fixedSize()
-                        .help(linked?.source ?? "")
+                        .nookTip(linked?.source ?? "")
                     if !item.author.isEmpty {
                         dot
                         HStack(spacing: NookTheme.Spacing.xs) {
                             GitHubAvatar(login: item.author, size: 14)
                             Text(item.author).lineLimit(1)
                         }
-                        .help("@" + item.author)
+                        .nookTip("@" + item.author)
                     }
                     if let opened = item.created ?? item.updated {
                         Text(Self.opened(now.timeIntervalSince(opened)))
                             .monospacedDigit()
                             .lineLimit(1)
                             .fixedSize()
-                            .help(opened.formatted(date: .abbreviated, time: .shortened))
+                            .nookTip(opened.formatted(date: .abbreviated, time: .shortened))
                     }
                     if let role = Self.roleKey(item.authorRole) {
                         NookTag(tr(role)).fixedSize()
@@ -187,7 +187,7 @@ struct PullRequestRow: View, Equatable {
                         Text(item.repo)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .help(item.repo)
+                            .nookTip(item.repo)
                             .layoutPriority(-1)
                     }
                     if let linked, linked.stackSize > 1 {
@@ -197,7 +197,7 @@ struct PullRequestRow: View, Equatable {
                             Text(verbatim: "\(linked.stackSize)").monospacedDigit()
                         }
                         .fixedSize()
-                        .help(tr("agents.pr.linked.stack", linked.stackSize))
+                        .nookTip(tr("agents.pr.linked.stack", linked.stackSize))
                     }
                     if let stack, linked == nil {
                         dot
@@ -210,7 +210,7 @@ struct PullRequestRow: View, Equatable {
                             }
                         }
                         .fixedSize()
-                        .help(stack.merged > 0 ? tr("agents.pulls.stack.positionMerged", stack.index, stack.count, stack.merged)
+                        .nookTip(stack.merged > 0 ? tr("agents.pulls.stack.positionMerged", stack.index, stack.count, stack.merged)
                             : tr("agents.pulls.stack.position", stack.index, stack.count))
                     }
                     if item.draft, item.state == .open {
@@ -248,7 +248,7 @@ struct PullRequestRow: View, Equatable {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize()
-                    .help(tr("agents.pulls.row.comments", comments))
+                    .nookTip(tr("agents.pulls.row.comments", comments))
                 }
             }
             // The ⋯ of a session's own list sits over this corner while the pointer is on the row.
@@ -291,7 +291,7 @@ struct PullRequestRow: View, Equatable {
                 Text(tr(Self.reviewKey(review))).lineLimit(1)
             }
             .fixedSize()
-            .help(tr(Self.reviewKey(review)))
+            .nookTip(tr(Self.reviewKey(review)))
         }
     }
 
@@ -307,7 +307,7 @@ struct PullRequestRow: View, Equatable {
                 }
             }
             .fixedSize()
-            .help(item.checksTotal.map { tr("agents.pulls.row.checks", item.checksPassed ?? 0, $0) }
+            .nookTip(item.checksTotal.map { tr("agents.pulls.row.checks", item.checksPassed ?? 0, $0) }
                 ?? tr("agents.pulls.status." + outcome.rawValue))
         }
     }
@@ -315,7 +315,7 @@ struct PullRequestRow: View, Equatable {
     /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears the conflict mark.
     private var stateMark: some View {
         PullRequestStateIcon(glyph: item.stateGlyph, size: .header)
-            .help(tr(stateKey))
+            .nookTip(tr(stateKey))
     }
 
     /// "feature → main" in mono, each cut in the middle.
@@ -328,7 +328,7 @@ struct PullRequestRow: View, Equatable {
                 Text(item.baseBranch).lineLimit(1).truncationMode(.middle)
             }
             .font(NookTheme.mono(10.5))
-            .help(item.headBranch + " → " + item.baseBranch)
+            .nookTip(item.headBranch + " → " + item.baseBranch)
         }
     }
 
@@ -369,7 +369,7 @@ extension PullRequestRow {
     var reviewMark: some View {
         if item.state == .open, let review = item.reviewIcon {
             PullRequestReviewIcon(review: review)
-                .help(tr(Self.reviewKey(review)))
+                .nookTip(tr(Self.reviewKey(review)))
         }
     }
 
@@ -398,6 +398,6 @@ struct PullRequestLineCounts: View {
         .monospacedDigit()
         .lineLimit(1)
         .fixedSize()
-        .help(tr("agents.pulls.linesChanged", additions, deletions))
+        .nookTip(tr("agents.pulls.linesChanged", additions, deletions))
     }
 }

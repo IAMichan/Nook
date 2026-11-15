@@ -436,6 +436,21 @@ mod tests {
         assert_eq!(answer.and_then(|a| a.message).as_deref(), Some("outbox"));
         assert_eq!(s.outbox.len(), 1);
         assert_eq!(s.outbox[0].text, "later");
+        // A message to a chat of the Chats tab waits too, with the chat it goes to.
+        let (s, answer) = phone
+            .call(client::ClientCall {
+                op: Some(CompanionOp::InboxSend),
+                item: Some("w1".into()),
+                text: Some("see you".into()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(answer.and_then(|a| a.message).as_deref(), Some("outbox"));
+        assert_eq!(s.outbox[1].item.as_deref(), Some("w1"));
+        assert_eq!(client::outbox_max_age(CompanionOp::InboxSend), 3600.0);
+        assert_eq!(client::outbox_max_age(CompanionOp::Send), client::OUTBOX_MAX_AGE);
+        let id = s.outbox[1].id.clone();
+        assert_eq!(phone.discard(&id).outbox.len(), 1);
         // Its push key is the one the Mac seals with (`RelayPush.pushKey`).
         assert_eq!(phone.push_keys()[0].mac, PairedDevice::identifier(&[3u8; KEY_LENGTH]));
         // It is kept across a restart of the app.

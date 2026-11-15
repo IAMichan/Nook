@@ -177,17 +177,17 @@ struct MemorySettingsSection: View {
             } label: {
                 Image(icon: editing == item.id ? "checkmark" : "pencil")
             }
-            .help(tr("memory.settings.edit"))
+            .nookTip(tr("memory.settings.edit"))
             .accessibilityLabel(tr("memory.settings.edit"))
             Button { app.memory.setPinned(item.id, !item.pinned) } label: {
                 Image(icon: item.pinned ? "pin.fill" : "pin")
             }
-            .help(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
+            .nookTip(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             .accessibilityLabel(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             Button { app.memory.setLocalOnly(item.id, !item.localOnly) } label: {
                 Image(icon: item.localOnly ? "lock.fill" : "lock.open")
             }
-            .help(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
+            .nookTip(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             .accessibilityLabel(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             ConfirmedButton(symbol: "trash", title: tr("memory.settings.delete"), question: tr("confirm.remove", Self.display(item))) {
                 app.memory.delete(item.id)

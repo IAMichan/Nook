@@ -297,7 +297,7 @@ struct PullRequestsPanel: View {
         }
         // ⌘F jumps to the search field.
         .keyCommand("chat.find") { searching = true }
-        .help(tr("agents.pulls.searchHelp"))
+        .nookTip(tr("agents.pulls.searchHelp"))
     }
 
     /// "12 of 40 shown · Clear", while something narrows the list.
@@ -442,7 +442,7 @@ struct PullRequestsPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
+        .nookTip(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
         if open {
             ForEach(rows) { row in

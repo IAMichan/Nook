@@ -69,7 +69,7 @@ struct ScheduledTasksView: View {
             if !hasSecretary {
                 Button(tr("automation.secretary.add")) { AppModel.addSecretary() }
                     .controlSize(.large)
-                    .help(tr("automation.secretary.help"))
+                    .nookTip(tr("automation.secretary.help"))
             }
             Spacer()
             Button(tr("settings2.done"), action: onClose)
@@ -713,7 +713,7 @@ private struct ScheduledTaskEditor: View {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(2)
-                            .help(record.deliveryID)
+                            .nookTip(record.deliveryID)
                     }
                 }
             }

@@ -45,7 +45,7 @@ struct UsageView: View {
                     UserDefaults.standard.set(UsageModalTab.limits.rawValue, forKey: UsageModalTab.storageKey)
                     showLimits = true
                 }
-                    .help(tr("limits.openHelp"))
+                    .nookTip(tr("limits.openHelp"))
                     .sheet(isPresented: $showLimits) { UsageLimitsModal { showLimits = false }.frame(width: 720).environmentObject(app) }
                 UsageRefreshButton()
             }

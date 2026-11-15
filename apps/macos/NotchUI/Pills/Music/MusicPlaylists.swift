@@ -74,7 +74,7 @@ struct MusicPlaylistsView: View {
             Spacer(minLength: 0)
             if sidebar == nil {
                 SmallGhostButton(title: "+ " + tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
-                    .help(tr("music.playlists.new"))
+                    .nookTip(tr("music.playlists.new"))
             }
         }
         .padding(.horizontal, MusicLayout.edge)
@@ -175,7 +175,7 @@ private struct MusicPlaylistDetailView: View {
                         SmallGhostButton(title: "+ " + tr("music.playlists.addSongs")) {
                             withAnimation(NookTheme.reveal) { adding.toggle() }
                         }
-                        .help(tr("music.playlists.addSongsHelp", playlist.name))
+                        .nookTip(tr("music.playlists.addSongsHelp", playlist.name))
                     }
                     if playlist.editable { moreMenu }
                     Spacer(minLength: NookTheme.Spacing.md)
@@ -208,7 +208,7 @@ private struct MusicPlaylistDetailView: View {
                 .contentShape(Rectangle())
         }
         .nookMenuButton()
-        .help(tr("music.playlists.more"))
+        .nookTip(tr("music.playlists.more"))
         .accessibilityLabel(tr("music.playlists.more"))
     }
 
@@ -453,7 +453,7 @@ struct MusicTrackRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("music.play"))
+            .nookTip(tr("music.play"))
             .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
             .accessibilityHint(tr("music.play"))
             actions
@@ -573,7 +573,7 @@ struct MusicTrackMenu: View {
         }
         .nookMenuButton()
         .onHover { hovering = $0 }
-        .help(tr("music.track.more"))
+        .nookTip(tr("music.track.more"))
         .accessibilityLabel(tr("music.track.more"))
     }
 }
@@ -663,7 +663,7 @@ struct MusicAddToPlaylistButton: View {
             }
             .nookMenuButton()
             .onHover { hovering = $0 }
-            .help(tr("music.playlists.addTo"))
+            .nookTip(tr("music.playlists.addTo"))
             .accessibilityLabel(tr("music.playlists.addTo"))
         }
     }
