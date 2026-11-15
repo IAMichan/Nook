@@ -244,6 +244,16 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(ArrivedMessage.added(before: nil, after: after, since: now.addingTimeInterval(60)).count, 0, "old messages on a first read do not count")
     }
 
+    func testTheIndexKeepsEveryToRecipient() {
+        let rows = MailIndex.recent([["id": NSNumber(value: 7), "date": NSNumber(value: 1_800_000_000), "subject": "Offerte",
+                                      "address": "lisa@x.nl", "name": "Lisa", "to_address": "me@x.nl", "to_name": NSNull(),
+                                      "to_all": "me@x.nl, bram@x.nl, anna@x.nl", "read": NSNumber(value: 0), "replied": NSNumber(value: 0),
+                                      "summary": "", "mailbox": "imap://x/INBOX"]])
+        XCTAssertEqual(rows.first?.recipient, "me@x.nl")
+        XCTAssertEqual(rows.first?.recipients, "me@x.nl, bram@x.nl, anna@x.nl")
+        XCTAssertTrue(MailIndex.recentSQL(box: 1, limit: 5).contains("group_concat(x.address, ', ')"))
+    }
+
     func testAReplyKeepsTheReviewedSubject() {
         let script = MailActions.replyScript(id: "a@x", body: "b", subject: "Re: Offerte (aangepast)", to: [], cc: [], openWindow: false)
         XCTAssertTrue(script.contains("set subject of m to \"Re: Offerte (aangepast)\""))

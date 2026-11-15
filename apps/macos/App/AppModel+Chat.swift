@@ -140,6 +140,8 @@ extension AppModel {
              in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
+        // A follow-up after a scheduled quiet check is the user's own question: it gets its answer and notice as usual.
+        ScheduledTaskStore.shared.turnStarted(in: conversation)
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
         // screen brain answers it (`ScreenBrain`), so the screen text never leaves the Mac. Everything else goes to the
         // chosen brain as always.

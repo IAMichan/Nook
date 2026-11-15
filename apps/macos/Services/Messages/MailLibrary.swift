@@ -212,7 +212,8 @@ enum MailLibrary {
                                                  body: await text(of: message, length: bodyLength))
                     row.indexID = message.id
                     row.indexMailbox = message.mailbox
-                    row.recipient = message.recipient
+                    // Every To address for read_mail; the first one with its name when the index gave no list.
+                    row.recipient = message.recipients.isEmpty ? message.recipient : message.recipients
                     rows.append(row)
                 }
             }

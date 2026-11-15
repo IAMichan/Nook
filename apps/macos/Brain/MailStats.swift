@@ -211,7 +211,7 @@ enum MailStats {
         /// Where Mail's index keeps it (its row and the url of the mailbox its file is in), to find its file; 0 without.
         var indexID: Int64 = 0
         var indexMailbox: String = ""
-        /// Whom it went to, from Mail's index (empty when the row came from a script), for `read_mail`'s "To:".
+        /// Everyone it went to (To), from Mail's index (empty when the row came from a script), for `read_mail`'s "To:".
         var recipient: String = ""
 
         /// Stable enough to remember a body between refreshes (the index shifts when new mail arrives).
