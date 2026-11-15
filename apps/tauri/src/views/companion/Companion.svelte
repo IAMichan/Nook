@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import {
     companion, has, may, needingYou, tabsFor, unreadChats, Feature,
-    parseCompanionLink, parseNotificationAction, routeWords, shortcutSessions, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
+    parseCompanionLink, parseNotificationAction, widgetData, type UsageAccount, routeWords, shortcutSessions, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
@@ -120,6 +120,7 @@
         if (shortcut.kind === "new") sheet = { kind: "new" };
         else if (shortcut.kind === "ask") open("home", { kind: "nook", id: null });
         else if (shortcut.kind === "chats") { tab = "chats"; screens.chats = null; }
+        else if (shortcut.kind === "agents") { tab = "agents"; screens.agents = null; }
         else {
           if (shortcut.mac && view?.macs?.some((m) => m.id === shortcut.mac && !m.active)) await switchTo(shortcut.mac);
           open("agents", { kind: "session", id: shortcut.id });
@@ -137,6 +138,33 @@
   const shortcutJson = $derived(view && paired ? JSON.stringify(shortcutSessions(view.sessions, view.macs?.find((m) => m.active)?.id)) : "[]");
   $effect(() => {
     window.NookAndroid?.setShortcuts?.(shortcutJson);
+  });
+
+  // The home screen widgets: written whenever the sessions or the limits change.
+  let accounts = $state<UsageAccount[]>([]);
+  let lastWidget = "";
+  $effect(() => {
+    if (!view || !paired || !window.NookAndroid?.setWidgetData) return;
+    const data = widgetData(view.sessions, accounts, view.macs?.find((m) => m.active)?.id);
+    const key = JSON.stringify({ ...data, updatedAt: 0 });
+    // Unchanged lists still say the app heard from the Mac, at most every ten minutes.
+    if (key === lastWidget && Date.now() - lastWidgetAt < 600_000) return;
+    lastWidget = key;
+    lastWidgetAt = Date.now();
+    window.NookAndroid.setWidgetData(JSON.stringify(data));
+  });
+  let lastWidgetAt = 0;
+  // The limits for the widget, from the Mac's usage, at most every ten minutes (as the iPhone's usage widget).
+  $effect(() => {
+    if (!connected || !has(view, Feature.usage) || !may(view, "read") || !window.NookAndroid?.setWidgetData) return;
+    const load = () => untrack(async () => {
+      const r = await companion.call({ op: "usage", item: "today" });
+      const usage = (r.response as { usage?: { accounts: UsageAccount[] } } | null)?.usage;
+      if (usage) accounts = usage.accounts;
+    });
+    load();
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), 600_000);
+    return () => clearInterval(timer);
   });
 
   // Push notifications (Android, `NookPush.kt`): the notification service gets each paired computer's push key, and

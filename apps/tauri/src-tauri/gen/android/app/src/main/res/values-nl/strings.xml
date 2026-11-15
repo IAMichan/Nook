@@ -7,4 +7,12 @@
     <string name="shortcut_new_session">"Nieuwe sessie"</string>
     <string name="shortcut_ask_nook">"Vraag Nook"</string>
     <string name="shortcut_answer_chat">"Beantwoord een chat"</string>
+    <string name="widget_agents_description">"Agents die werken of op je wachten"</string>
+    <string name="widget_limits_description">"Je planlimieten en wanneer ze terug zijn"</string>
+    <string name="widget_agents_title">"Agents"</string>
+    <string name="widget_limits_title">"Limieten"</string>
+    <string name="widget_agents_empty">"Niets werkt of wacht op je."</string>
+    <string name="widget_limits_empty">"Nog geen limieten gemeld."</string>
+    <string name="widget_stale">"Verouderd"</string>
+    <string name="widget_updated">"Bijgewerkt %s"</string>
 </resources>

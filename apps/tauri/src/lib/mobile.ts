@@ -19,6 +19,8 @@ declare global {
       takeNotification?(): string | null;
       /** The sessions that need you most, as shortcuts on the app's icon. */
       setShortcuts?(json: string): void;
+      /** What the home screen widgets show. */
+      setWidgetData?(json: string): void;
       /** Starts dictation in a BCP 47 language (empty: the phone's own); words come as event `nook-dictation`. */
       dictate?(language: string): void;
       stopDictating?(): void;

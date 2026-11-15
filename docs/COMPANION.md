@@ -187,6 +187,9 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
   (`res/xml/shortcuts.xml`, `NookAndroid.setShortcuts`, links `nook://companion/…`).
 - **Diagrams and math:** a Mermaid fence and `$…$`, `$$…$$` or a `math` fence draw as on the Mac (`lib/rich.ts`,
   the same Mermaid and KaTeX versions, loaded only when needed; nothing goes to a server).
+- **Widgets:** *Agents* (what works or waits on you, waiting first, at most five, "Out of date" ten minutes after the app
+  last heard from the Mac) and *Limits* (each account's plan limits and when they reset), written by the app with every
+  list it takes in (`NookAndroid.setWidgetData`, `NookWidgets.kt`); a row opens its session.
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 

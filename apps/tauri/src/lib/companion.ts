@@ -701,13 +701,13 @@ export function parseNotificationAction(json: string | null | undefined): Notifi
 }
 
 /** A link from the app icon's shortcuts or a widget (`nook://companion/…`). */
-export type CompanionLink = { kind: "new" } | { kind: "ask" } | { kind: "chats" } | { kind: "session"; id: string; mac: string | null };
+export type CompanionLink = { kind: "new" } | { kind: "ask" } | { kind: "chats" } | { kind: "agents" } | { kind: "session"; id: string; mac: string | null };
 
 export function parseCompanionLink(url: string): CompanionLink | null {
-  const m = /^nook:\/\/companion\/(new|ask|chats|session)\/?(?:\?(.*))?$/i.exec(url.trim());
+  const m = /^nook:\/\/companion\/(new|ask|chats|agents|session)\/?(?:\?(.*))?$/i.exec(url.trim());
   if (!m) return null;
   const what = m[1].toLowerCase();
-  if (what !== "session") return { kind: what as "new" | "ask" | "chats" };
+  if (what !== "session") return { kind: what as "new" | "ask" | "chats" | "agents" };
   const q = new URLSearchParams(m[2] ?? "");
   const id = q.get("id");
   return id && id.length <= 200 ? { kind: "session", id, mac: q.get("mac") } : null;
@@ -719,4 +719,16 @@ export function shortcutSessions(sessions: SessionDigest[], mac: string | undefi
     .filter((s) => s.items.length > 0 || needsYouState(s.attention))
     .slice(0, 2)
     .map((s) => ({ id: s.id, title: s.title, url: `nook://companion/session?id=${encodeURIComponent(s.id)}${mac ? `&mac=${encodeURIComponent(mac)}` : ""}` }));
+}
+
+/** What the home screen widgets show (`NookWidgets.kt`): the agents that work or wait on you, waiting ones first, at
+ * most five, and each account's limits. */
+export function widgetData(sessions: SessionDigest[], accounts: UsageAccount[], mac: string | undefined, now = Date.now()) {
+  const waiting = (s: SessionDigest) => s.items.length > 0 || needsYouState(s.attention);
+  const agents = sortSessions(sessions)
+    .filter((s) => waiting(s) || s.attention === "working")
+    .slice(0, 5)
+    .map((s) => ({ id: s.id, title: s.title, word: shortAttentionWord(s.items[0]?.kind === "approval" ? "approval" : s.items[0]?.kind === "question" ? "input" : s.attention), waiting: waiting(s) }));
+  const limits = accounts.flatMap((a) => a.limits.map((l) => ({ name: `${a.agent}${a.account ? ` · ${a.account}` : ""} · ${l.label}`, percent: Math.round(l.percent), resetsAt: l.resetsAt ?? 0 }))).slice(0, 5);
+  return { agents, limits, mac: mac ?? "", updatedAt: now };
 }

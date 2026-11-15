@@ -7,4 +7,12 @@
     <string name="shortcut_new_session">"Neue Sitzung"</string>
     <string name="shortcut_ask_nook">"Nook fragen"</string>
     <string name="shortcut_answer_chat">"Chat beantworten"</string>
+    <string name="widget_agents_description">"Agenten, die arbeiten oder auf dich warten"</string>
+    <string name="widget_limits_description">"Deine Planlimits und wann sie zurückgesetzt werden"</string>
+    <string name="widget_agents_title">"Agenten"</string>
+    <string name="widget_limits_title">"Limits"</string>
+    <string name="widget_agents_empty">"Nichts arbeitet oder wartet auf dich."</string>
+    <string name="widget_limits_empty">"Noch keine Limits gemeldet."</string>
+    <string name="widget_stale">"Veraltet"</string>
+    <string name="widget_updated">"Aktualisiert %s"</string>
 </resources>

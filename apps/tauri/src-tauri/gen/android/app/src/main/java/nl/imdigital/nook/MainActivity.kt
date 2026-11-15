@@ -259,6 +259,12 @@ class MainActivity : TauriActivity() {
       return text
     }
 
+    /** What the home screen widgets show (NookWidgets.kt). */
+    @JavascriptInterface
+    fun setWidgetData(json: String) {
+      NookWidgets.save(this@MainActivity, json)
+    }
+
     /** The sessions that need you most, as shortcuts on the app's icon: `[{"id", "title", "url"}]`, at most two. */
     @JavascriptInterface
     fun setShortcuts(json: String) {

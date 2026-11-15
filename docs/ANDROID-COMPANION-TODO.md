@@ -56,6 +56,11 @@ Check, and report what fails:
 - [ ] The back button closes menus, sheets and screens before leaving the app.
 - [ ] Share text from another app to Nook: it offers New session, Ask Nook or a session.
 - [ ] Settings › Nook on this phone opens Nook's own app; the phone icon in its tab bar goes back to the companion.
+- [ ] Touch and hold the app icon: New session, Ask Nook, Answer a chat and the sessions that need you.
+- [ ] The two widgets (Agents, Limits) on the home screen; a row opens its session.
+- [ ] A notification (after step 1 and 2): Allow, Deny and Reply act on the right Mac.
+- [ ] A tablet, or the phone on its side: the list beside what you opened.
+- [ ] Away from home with the Mac's relay on: the menu says "Connected through your relay".
 
 ### 4. A signing key (when you want to hand the APK out)
 
@@ -71,6 +76,7 @@ What the iPhone app does that the Android companion does not yet. Each follows t
 - **Allow, Deny and Reply without opening the app**: a notification's buttons now open the app, which acts and shows the
   session; the iPhone acts in the background.
 - **Live Activities on Android**: an ongoing notification for the agents that work, updated by the Mac's pushes.
+- **Check the Kotlin and Android resources** once the Android job runs (`MainActivity.kt`, `NookPush.kt`,
+  `NookWidgets.kt`, `res/`): they were written without an Android SDK in the session, so CI compiles them first.
 - **Check the build** of the Firebase parts once the Android job runs: `com.google.gms:google-services` 4.4.2 and the
   Firebase BoM 33.7.0 were chosen without being able to reach Google's Maven from the session that wrote them.
-- **Widgets** for the home screen (agent activity, plan limits).

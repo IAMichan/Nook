@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTimeline, attentionWord, parseCompanionLink, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyTimeline, attentionWord, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -128,5 +128,12 @@ describe("companion", () => {
     const list = shortcutSessions([session("a", "working", 3), session("b", "approval", 1), session("c", "failed", 2), session("d", "input", 4)], "m");
     expect(list.map((s) => s.id)).toEqual(["b", "d"]);
     expect(list[0].url).toBe("nook://companion/session?id=b&mac=m");
+  });
+
+  it("gives the widgets what works or waits, waiting first", () => {
+    const d = widgetData([session("w", "working", 5), session("i", "idle", 9), session("a", "approval", 1)], [{ id: "x", agent: "Claude", account: "Work", limits: [{ label: "Week", percent: 41.6, resetsAt: 100 }] }], "m", 7);
+    expect(d.agents.map((a) => [a.id, a.waiting])).toEqual([["a", true], ["w", false]]);
+    expect(d.limits).toEqual([{ name: "Claude · Work · Week", percent: 42, resetsAt: 100 }]);
+    expect(d.updatedAt).toBe(7);
   });
 });

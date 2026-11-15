@@ -53,6 +53,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Home screen widgets (NookWidgets.kt): agents that work or wait on you, and plan limits. -->
+        <receiver android:name=".AgentsWidget" android:exported="false" android:label="@string/widget_agents_title">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_agents" />
+        </receiver>
+        <receiver android:name=".LimitsWidget" android:exported="false" android:label="@string/widget_limits_title">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_limits" />
+        </receiver>
+
         <service
             android:name=".NookMessagingService"
             android:exported="false">

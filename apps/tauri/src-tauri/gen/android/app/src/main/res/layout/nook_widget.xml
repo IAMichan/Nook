@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A home screen widget of Nook (agents, or plan limits): a title, up to five rows, a quiet footer. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="14dp" android:background="@drawable/widget_background">
+    <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="#8F8F8F" android:textSize="12sp" android:textStyle="bold" />
+    <TextView android:id="@+id/row0" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="6dp" android:paddingBottom="6dp" android:textColor="#E5E5E5" android:textSize="14sp"
+        android:maxLines="1" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/row1" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="6dp" android:paddingBottom="6dp" android:textColor="#E5E5E5" android:textSize="14sp"
+        android:maxLines="1" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/row2" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="6dp" android:paddingBottom="6dp" android:textColor="#E5E5E5" android:textSize="14sp"
+        android:maxLines="1" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/row3" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="6dp" android:paddingBottom="6dp" android:textColor="#E5E5E5" android:textSize="14sp"
+        android:maxLines="1" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/row4" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="6dp" android:paddingBottom="6dp" android:textColor="#E5E5E5" android:textSize="14sp"
+        android:maxLines="1" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="8dp" android:textColor="#A1A1A1" android:textSize="13sp" />
+    <TextView android:id="@+id/footer" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="4dp" android:textColor="#8F8F8F" android:textSize="11sp" />
+</LinearLayout>
