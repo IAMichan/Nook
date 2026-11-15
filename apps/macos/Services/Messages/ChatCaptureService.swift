@@ -229,6 +229,11 @@ final class ChatCaptureService: ObservableObject {
             guard let self else { return }
             self.bridgeDue[self.serviceBridge.app] = nil
         }
+        // Slack's real-time line said a conversation changed: Slack is read now (or right after the read going on).
+        slackBridge.onChange = { [weak self] in
+            guard let self else { return }
+            self.readLive(self.slackBridge)
+        }
         // A change from the last moment before quitting is still written.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flushSave(wait: true) }
@@ -456,6 +461,7 @@ final class ChatCaptureService: ObservableObject {
         generation += 1
         telegramBridge.stop()
         serviceBridge.stop()
+        slackBridge.stop()
         status = .off
     }
 
@@ -631,6 +637,42 @@ final class ChatCaptureService: ObservableObject {
         Task { await read(bridge) }
     }
 
+    /// A bridge's app said this moment that something changed (Slack's real-time line, an update from TDLib): it reads
+    /// now, the same rule for every app, while its app is on and it can read. Several changes at once make one read, and
+    /// one more after it (`readNow`).
+    func readLive(_ bridge: ChatBridge) {
+        guard (enabled && sources.isOn(bridge.app)) || bridge.alwaysOn, bridge.isReady else { return }
+        // The first change is read at once; what follows in the next moment (a busy group, a catch-up after sleep) is
+        // one read after it, not one per change: each read merges and saves the inbox and redraws what shows it. A read
+        // going on takes the changes during it along in one more (`readNow`). The moment is longer as the energy plan
+        // slows down, and while no one can see the screen.
+        let id = bridge.bridgeID
+        guard !liveSoon.contains(id) else { return }
+        let plan = EnergyMonitor.shared.plan
+        let gap = plan.unseen ? Self.liveGapUnseen : Self.liveGap * plan.slowdown
+        let wait = liveReadAt[id].map { gap - Date().timeIntervalSince($0) } ?? 0
+        guard wait > 0 else {
+            liveReadAt[id] = Date()
+            readNow(bridge)
+            return
+        }
+        liveSoon.insert(id)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self else { return }
+            self.liveSoon.remove(id)
+            self.liveReadAt[id] = Date()
+            self.readNow(bridge)
+        }
+    }
+
+    /// Bridges with a live read coming (`readLive`), and when each last had one, by `bridgeID`.
+    private var liveSoon: Set<String> = []
+    private var liveReadAt: [String: Date] = [:]
+    /// The least time between two live reads of one bridge; while no one can see the screen, longer.
+    private static let liveGap: TimeInterval = 0.4
+    private static let liveGapUnseen: TimeInterval = 5
+
     /// Bridges told to read again while they were reading.
     private var readAgain: Set<String> = []
 
@@ -738,6 +780,10 @@ final class ChatCaptureService: ObservableObject {
             if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
             if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
             bridgeFailures[bridge.bridgeID] = nil
+            // The read made the bridge want to be read sooner (a message of yours now waits to be read, Teams and
+            // Snapchat): the next read comes at its new interval, not at the one set before this read began.
+            let sooner = Date().addingTimeInterval(Self.paced(bridge.interval, plan: EnergyMonitor.shared.plan, local: bridge.readsLocally))
+            if let due = bridgeDue[bridge.bridgeID], due > sooner { bridgeDue[bridge.bridgeID] = sooner }
             // The chat helper reads several apps: each one it brought in is bridged.
             let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
             if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
@@ -1014,6 +1060,15 @@ final class ChatCaptureService: ObservableObject {
         archive.write { store in
             guard let chat = store.chatID(key) else { return }
             store.transaction { deleted ? store.withdraw([id], chat: chat) : store.edit(id, chat: chat, to: text) }
+        }
+    }
+
+    /// Your messages of a chat its app says were read (`read` picks them, as "read up to here" does): the archive gives
+    /// them their blue ticks too, also those older than what the chat shows, so scrolling back shows them read.
+    func archiveRead(chat key: String, where read: @escaping @Sendable (InboxMessage) -> Bool) {
+        guard let archive = ChatArchive.shared else { return }
+        archive.write { store in
+            store.transaction { store.markRead(key, where: read) }
         }
     }
 

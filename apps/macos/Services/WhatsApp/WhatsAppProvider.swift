@@ -340,11 +340,16 @@ actor GOWAProvider: WhatsAppProvider {
     func registerWebhook(url: String, secret: String) async throws {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
-        let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
-            "webhook_url": url, "webhook_secret": secret,
-            "webhook_events": "message,message.ack,message.reaction,chat_presence",
-        ])
-        try check(data, code)
+        // Edits, deletions and group changes by name too; a GOWA that does not know one of those names is asked for the
+        // events it always had.
+        for events in [WAGOWA.webhookEvents, WAGOWA.webhookEventsBefore] {
+            let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
+                "webhook_url": url, "webhook_secret": secret, "webhook_events": events,
+            ])
+            if code == 400 || code == 422, events != WAGOWA.webhookEventsBefore { continue }
+            try check(data, code)
+            return
+        }
     }
 
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage] {
@@ -680,19 +685,19 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
-        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.receipt",
-                                                                       "message.reaction", "presence.update", "group.join", "group.leave",
-                                                                       "group.update"],
-                                            "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
         let hooks = (try? JSONSerialization.jsonObject(with: list)) as? [[String: Any]] ?? []
-        if let mine = hooks.first(where: { $0["url"] as? String == url }), let hookId = mine["id"] as? String {
-            let (data, code) = try await http.call("PUT", "/api/sessions/\(id)/webhooks/\(hookId)", json: body)
+        let hookId = hooks.first(where: { $0["url"] as? String == url })?["id"] as? String
+        // Edits, deletions and failed sends by name too; an OpenWA that does not know one of those names is asked for
+        // the events it always had.
+        for events in [WAOpenWA.webhookEvents, WAOpenWA.webhookEventsBefore] {
+            let body: [String: any Sendable] = ["url": url, "events": events, "secret": secret]
+            let path = hookId.map { "/api/sessions/\(id)/webhooks/\($0)" } ?? "/api/sessions/\(id)/webhooks"
+            let (data, code) = try await http.call(hookId == nil ? "POST" : "PUT", path, json: body)
+            if code == 400 || code == 422, events != WAOpenWA.webhookEventsBefore { continue }
             try check(data, code)
-        } else {
-            let (data, code) = try await http.call("POST", "/api/sessions/\(id)/webhooks", json: body)
-            try check(data, code)
+            return
         }
     }
 

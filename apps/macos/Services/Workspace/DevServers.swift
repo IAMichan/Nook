@@ -154,13 +154,16 @@ enum DevServerProbe {
     }
 
     /// The servers that answer as a page. A server the project names itself (`pid` 0, its `previewUrl`) is kept as is.
+    /// All at once: a port that does not answer (or is still starting) no longer holds up the ones after it.
     static func pages(_ servers: [DevServer]) async -> [DevServer] {
-        var kept: [DevServer] = []
-        for server in servers {
-            if server.pid == 0 { kept.append(server); continue }
-            if await cache.isPage(server) { kept.append(server) }
+        await withTaskGroup(of: (Int, Bool).self) { group in
+            for (index, server) in servers.enumerated() {
+                group.addTask { (index, server.pid == 0 ? true : await cache.isPage(server)) }
+            }
+            var keep = Set<Int>()
+            for await (index, page) in group where page { keep.insert(index) }
+            return servers.indices.filter(keep.contains).map { servers[$0] }
         }
-        return kept
     }
 
     private static let cache = ProbeCache()
@@ -193,6 +196,27 @@ enum DevServerProbe {
         configuration.timeoutIntervalForResource = 1.5
         return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }()
+
+    /// Waits until a server answers at `url` with any HTTP response (a page, a redirect, an error page: it is up), every
+    /// half second for at most `timeout` seconds. True when it answered, false when the time ran out or the task ended.
+    static func waitUntilUp(_ url: URL, timeout: TimeInterval = 30) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !Task.isCancelled, Date() < deadline {
+            if await responds(url) { return true }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        return false
+    }
+
+    private static func responds(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        return await withCheckedContinuation { continuation in
+            session.dataTask(with: request) { _, response, _ in
+                continuation.resume(returning: response is HTTPURLResponse)
+            }.resume()
+        }
+    }
 
     fileprivate static func ask(_ url: URL) async -> Bool {
         var request = URLRequest(url: url)

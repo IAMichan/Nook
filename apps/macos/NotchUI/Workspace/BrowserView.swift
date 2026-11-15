@@ -986,15 +986,24 @@ struct BrowserView: View {
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
-            if store.webView.url == nil && !store.loading {
-                WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)
-                if !servers.isEmpty { serverList }
-            }
             // A container of its own for each tab: a container holds one web view.
             WebViewHost(webView: store.webView)
                 .id(store.page.id)
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
                 .overlay { BrowserTakeoverOverlay(store: store) }
+                // The empty browser's note over the hidden page, in the middle of the tab: above it, the two split the
+                // height and the note sat in the top half.
+                .overlay {
+                    if store.webView.url == nil && !store.loading {
+                        VStack(spacing: 0) {
+                            WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"),
+                                         message: tr("workbench.browser.emptyMessage"), action: nil)
+                            if !servers.isEmpty { serverList }
+                        }
+                        // Clicks on the note stay on it, not on the hidden page under it.
+                        .contentShape(Rectangle())
+                    }
+                }
         }
         // Over the page, under the address bar: the pages you visited that fit what you type.
         .overlay(alignment: .topLeading) {

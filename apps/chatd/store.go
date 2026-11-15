@@ -21,6 +21,9 @@ type Store struct {
 	mediaDir string
 	// changed tells the live line which chat changed ("chat.upserted", "message.upserted", "message.deleted").
 	changed func(kind string, room id.RoomID)
+	// changedMessage says the same for a change to one message (an edit, a deletion, an emoji, a vote), with its id, so
+	// Nook reads that message again also when it is older than the newest ones it reads of the chat. Nil sends `changed`.
+	changedMessage func(kind string, room id.RoomID, message id.EventID)
 	// typing tells the live line that someone is typing in a chat (see Hub.Typing).
 	typing func(room id.RoomID, user id.UserID, name, kind string, timeout time.Duration)
 }
@@ -442,8 +445,14 @@ func (s *Store) Add(evtID id.EventID, room id.RoomID, sender id.UserID, evtType 
 		if redaction == nil || redaction.Redacts == "" {
 			return evtID, nil
 		}
+		// Taking back an emoji or a vote deletes that event: the message it was on is the one that changed.
+		about := redaction.Redacts
+		var on id.EventID
+		if s.db.QueryRow(`SELECT target FROM timeline WHERE id=? AND target<>''`, redaction.Redacts).Scan(&on) == nil {
+			about = on
+		}
 		_, err = s.db.Exec(`UPDATE timeline SET deleted=1 WHERE id=?`, redaction.Redacts)
-		s.changed("message.deleted", room)
+		s.changedAbout("message.deleted", room, about)
 		return evtID, err
 	case event.EventReaction:
 		if reaction, ok := content.Parsed.(*event.ReactionEventContent); ok {
@@ -462,14 +471,41 @@ func (s *Store) Add(evtID id.EventID, room id.RoomID, sender id.UserID, evtType 
 			}
 			edited, _ := json.Marshal(replacement)
 			_, err = s.db.Exec(`UPDATE timeline SET edited=? WHERE id=?`, string(edited), message.RelatesTo.GetReplaceID())
-			s.changed("message.upserted", room)
+			s.changedAbout("message.upserted", room, message.RelatesTo.GetReplaceID())
 			return evtID, err
 		}
 	}
 	_, err = s.db.Exec(`INSERT INTO timeline (id, room, sender, type, ts, content, target, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`, evtID, room, sender, evtType.Type, ts.UnixMilli(), string(raw), target, status)
-	s.changed("message.upserted", room)
+	// An emoji or a vote changes the message it is on.
+	s.changedAbout("message.upserted", room, target)
 	return evtID, err
+}
+
+// changedAbout tells the live line that `message` of `room` changed; an empty `message` (a new one) tells only the chat.
+func (s *Store) changedAbout(kind string, room id.RoomID, message id.EventID) {
+	if message != "" && s.changedMessage != nil {
+		s.changedMessage(kind, room, message)
+		return
+	}
+	s.changed(kind, room)
+}
+
+// MessagesByID are the shown messages of a room with these ids (at most 100), oldest first: those Nook reads again
+// after the live line said they changed.
+func (s *Store) MessagesByID(room id.RoomID, ids []id.EventID) ([]*Stored, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if len(ids) > 100 {
+		ids = ids[:100]
+	}
+	args := []any{room}
+	for _, i := range ids {
+		args = append(args, i)
+	}
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN (`+shownTypes+`) AND id IN (?`+
+		strings.Repeat(",?", len(ids)-1)+`) ORDER BY ts DESC`, args...)
 }
 
 // SetStatus records how far a message sent from Nook got (PENDING, SUCCESS, FAIL_RETRIABLE, FAIL_PERMANENT).
@@ -479,7 +515,7 @@ func (s *Store) SetStatus(evtID id.EventID, status, text string) {
 		return
 	}
 	_, _ = s.db.Exec(`UPDATE timeline SET status=?, status_text=? WHERE id=?`, status, text, evtID)
-	s.changed("message.upserted", room)
+	s.changedAbout("message.upserted", room, evtID)
 }
 
 func scanStored(row interface{ Scan(...any) error }) (*Stored, error) {

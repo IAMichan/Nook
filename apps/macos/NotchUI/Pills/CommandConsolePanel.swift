@@ -42,7 +42,10 @@ struct CommandConsolePanel: View {
     private var output: String { CommandConsole.output(event.output) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+        // Its colors and carriage returns worked out once per redraw, not once for each place that shows it.
+        let output = self.output
+        // No room of its own under the toolbar: `SidePanelToolbar` keeps the same gap under it as in every other tab.
+        VStack(alignment: .leading, spacing: 0) {
             toolbar
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
@@ -75,7 +78,7 @@ struct CommandConsolePanel: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
-                .onChange(of: event.output?.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: event.output?.utf8.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.id) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             }
         }

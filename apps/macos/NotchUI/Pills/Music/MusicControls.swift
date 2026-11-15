@@ -364,7 +364,8 @@ struct MusicToggleButton: View {
 /// Player volume: speaker icon (click to mute/unmute) and a draggable slider.
 struct MusicVolumeControl: View {
     let volume: Int
-    var width: CGFloat = 84
+    /// The slider's width; nil fills what the row leaves.
+    var width: CGFloat? = 84
     let onChange: (Int) -> Void
     @State private var dragValue: Int?
     @State private var beforeMute = 50

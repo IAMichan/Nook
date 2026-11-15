@@ -22,9 +22,9 @@ struct SessionOutputsPanel: View {
             } else if let current {
                 // Flat on the panel, like a pull request's page: no card of its own around it, lines part the rows.
                 VStack(spacing: 0) {
-                    if outputs.count > 1 {
+                    // The tab's bar, as in every tab: also with one output, so you see what it shows.
+                    SidePanelToolbar(divider: true) {
                         OutputTabStrip(outputs: outputs, current: current.id) { selection = $0 }
-                        NookDivider()
                     }
                     OutputViewer(output: current).id(current.id)
                 }
@@ -57,7 +57,7 @@ private struct OutputTabStrip: View {
                 withAnimation(NookTheme.scroll) { proxy.scrollTo(id) }
             }
         }
-        .frame(height: 32)
+        .frame(height: SidePanelMetrics.toolbar)
     }
 }
 
@@ -162,11 +162,7 @@ private struct OutputViewer: View {
         case .document:
             if let path = output.path { DocumentPreview(path: path, version: output.date) }
         case .image:
-            if let path = output.path, let image = PreviewImages.image(path, version: output.date) {
-                Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
-            } else {
-                missing
-            }
+            if let path = output.path { ImagePreview(path: path, version: output.date) } else { missing }
         case .video:
             if let path = output.path { VideoPreview(url: URL(fileURLWithPath: path)).id(output.date) }
         }
@@ -217,12 +213,48 @@ private enum PreviewImages {
         return cache
     }()
 
-    static func image(_ path: String, version: Date) -> NSImage? {
-        let key = "\(path)@\(version.timeIntervalSince1970)" as NSString
-        if let hit = cache.object(forKey: key) { return hit }
-        guard let image = NSImage(contentsOfFile: path) else { return nil }
-        cache.setObject(image, forKey: key)
-        return image
+    private static func key(_ path: String, _ version: Date) -> NSString { "\(path)@\(version.timeIntervalSince1970)" as NSString }
+
+    static func cached(_ path: String, version: Date) -> NSImage? { cache.object(forKey: key(path, version)) }
+
+    static func store(_ image: NSImage, _ path: String, version: Date) { cache.setObject(image, forKey: key(path, version)) }
+}
+
+/// A picture the agent made, read off the main thread: a large one written again no longer stalls the panel while it is
+/// read. The picture before stays in view until the new one is there.
+private struct ImagePreview: View {
+    let path: String
+    let version: Date
+    @State private var image: NSImage?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
+            } else if failed {
+                Text(tr("ws.outputs.missing")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).padding(14)
+            } else {
+                PatientSpinner()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: path + "@" + String(version.timeIntervalSince1970)) {
+            if let hit = PreviewImages.cached(path, version: version) {
+                image = hit
+                return
+            }
+            let path = self.path
+            let data = await Task.detached(priority: .userInitiated) { FileManager.default.contents(atPath: path) }.value
+            guard !Task.isCancelled else { return }
+            guard let data, let read = NSImage(data: data) else {
+                failed = image == nil
+                return
+            }
+            PreviewImages.store(read, path, version: version)
+            image = read
+            failed = false
+        }
     }
 }
 
@@ -230,9 +262,21 @@ private enum PreviewImages {
 private struct VideoPreview: View {
     let url: URL
     @State private var player: AVPlayer?
+    /// Whether the file is there, asked once instead of on every redraw.
+    @State private var exists: Bool?
 
     var body: some View {
-        if FileManager.default.fileExists(atPath: url.path) {
+        content.task(id: url) {
+            let path = url.path
+            exists = await Task.detached(priority: .userInitiated) { FileManager.default.fileExists(atPath: path) }.value
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if exists == nil {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if exists == true {
             Group {
                 if let player { InlinePlayer(player: player, fullScreen: true).padding(10) }
             }

@@ -11,6 +11,13 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- The Android app is now the same companion as the iPhone app, with the same layout, look and words: once paired it
+  opens on your Mac's tabs Nook, Agents and Chats, with what waits on you as cards, a session as its whole conversation
+  in turns, approvals and questions above the composer (deny with a reason, Steer now or After this turn), New session,
+  Nook's chat, the Chats tab (WhatsApp chats look like WhatsApp) and Settings. While it is open it follows your Mac live.
+  Nook on the phone itself is in Settings. Review a session's changes and comment on lines, work through pull requests
+  (review, merge, work on this), send pictures and dictate, as on the iPhone (see docs/COMPANION.md, *Android*).
+
 - Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
   type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
   density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows
@@ -198,6 +205,32 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 - Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
   after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
+- The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
+  waiting a third of a second first, switching tabs shows the new one at once instead of animating both, the Changes
+  tab lists files as soon as git knows them (before the slower branch comparison) and reads git once when it opens, the
+  Pull request tab's list no longer waits for git, and a file you come back to in the File tab shows at once. The pull
+  request page, its list and the Changes tab are drawn again only when what they show changed, not whenever something
+  else in the window does, and a panel that opens on a tab far down a long tab row scrolls that tab into view.
+- Every tab of the side panel on the right was gone over:
+  - **Outputs and Subagents** redraw only when what they show changed (one streaming subagent redraws only its
+    card), read pictures off the main thread, and start with the same bar as every other tab. The subagents' progress
+    stays in view while the list scrolls.
+  - **Changes** says "Reading git…" while it reads, instead of "The agent is working…", and "Nothing changed here." for
+    an empty branch or commit. A commit that cannot be found no longer spins forever.
+  - **File** no longer joins the whole file into one string on every redraw and every key while you edit. A file that
+    is gone offers to open another.
+  - **Browser** checks the folder's servers all at once and only while you can see the window. Its bar of servers is
+    there at once when you come back to the tab, and the empty browser's note sits in the middle of the tab.
+  - **Terminal**: an agent's command does its output work once per update, with the same spacing under its bar as the
+    other tabs. A project script with a preview opens its page as soon as the server answers, instead of after a fixed
+    four seconds (often too early, or needlessly late).
+  - **Artifact** starts with the same bar as every tab: the artifact's title, a spinner while it loads, and the
+    button that opens it in your browser.
+  - **⌘F in a diff** reads several files at once instead of one after another, so the first match shows sooner on a
+    large branch.
+  - Git's slower half (branches, the comparison with the base) runs at full priority while a panel waits for it or you
+    press refresh; the polling in the background stays at low priority.
+
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's

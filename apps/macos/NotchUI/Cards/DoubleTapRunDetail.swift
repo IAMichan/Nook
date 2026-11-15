@@ -17,7 +17,7 @@ struct DoubleTapRunDetail: View {
     var body: some View {
         // Long runs scroll inside the card instead of pushing its buttons out.
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.scaled(NookTheme.Spacing.md)) {
                 if !run.steps.isEmpty { steps(run) }
                 if !run.checks.isEmpty { checks(run) }
             }
@@ -32,13 +32,19 @@ struct DoubleTapRunDetail: View {
     }
 
     /// How tall the card's detail wants to be for `run`, so the card asks the notch for that room.
+    /// It follows the density you chose (Settings › Appearance): the rows grow and shrink with their text.
     static func height(of run: DoubleTapRun) -> CGFloat {
-        let steps = min(run.steps.count, recentSteps)
-        let checks = min(run.checks.count, firstChecks)
+        estimate(steps: run.steps.count, checks: run.checks.count, moreChecks: run.moreChecks,
+                 textScale: CGFloat(NookTheme.density.textScale))
+    }
+
+    static func estimate(steps total: Int, checks allChecks: Int, moreChecks: Int, textScale: CGFloat) -> CGFloat {
+        let steps = min(total, recentSteps)
+        let checks = min(allChecks, firstChecks)
         var height: CGFloat = 0
-        if steps > 0 { height += 22 + CGFloat(steps) * 22 + (run.steps.count > recentSteps ? 20 : 0) }
-        if checks > 0 { height += 22 + CGFloat(checks) * 56 + (run.checks.count + run.moreChecks > checks ? 20 : 0) }
-        return height
+        if steps > 0 { height += 22 + CGFloat(steps) * 22 + (total > recentSteps ? 20 : 0) }
+        if checks > 0 { height += 22 + CGFloat(checks) * 56 + (allChecks + moreChecks > checks ? 20 : 0) }
+        return (height * textScale).rounded()
     }
 
     // MARK: Steps
@@ -82,11 +88,11 @@ struct DoubleTapRunDetail: View {
             ProgressView().controlSize(.small).scaleEffect(0.7)
         case .done:
             Image(icon: "checkmark")
-                .font(NookTheme.font(10, .bold))
+                .font(NookTheme.textFont(10, .bold))
                 .foregroundStyle(NookTheme.textTertiary)
         case .failed:
             Image(icon: "xmark")
-                .font(NookTheme.font(10, .bold))
+                .font(NookTheme.textFont(10, .bold))
                 .foregroundStyle(NookTheme.coral)
         }
     }
@@ -123,8 +129,8 @@ struct DoubleTapRunDetail: View {
                         .textSelection(.enabled)
                         .nookTip(check.value)
                 }
-                .padding(.horizontal, NookTheme.Spacing.md)
-                .padding(.vertical, NookTheme.Spacing.sm)
+                .padding(.horizontal, NookTheme.Spacing.scaled(NookTheme.Spacing.md))
+                .padding(.vertical, NookTheme.Spacing.scaled(NookTheme.Spacing.sm))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .panelCard()
             }

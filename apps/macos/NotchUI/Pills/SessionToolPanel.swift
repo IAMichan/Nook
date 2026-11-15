@@ -62,8 +62,6 @@ struct SessionToolPanel: View {
     /// The browser's tabs with their titles, and the one in view, once the browser was started (it is not started for it).
     @State private var browserTabs: [BrowserStore.Tab] = []
     @State private var browserActive: UUID?
-    /// The panel still slides in: a pull request page it opens on waits with its full page until it is in place.
-    @State private var opening = true
 
     var browserSession: BrowserSession { BrowserSession(run: runID, directory: directory) }
     /// This session's browser, if it was started.
@@ -88,38 +86,60 @@ struct SessionToolPanel: View {
                     } else {
                         SessionTerminalsView(directory: directory).id(directory)
                     }
-                case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
-                case .subagents: SessionSubagentsPanel(agents: subagents, commands: commands)
+                case .outputs:
+                    SidePanelPane(key: OutputsPaneKey(outputs: outputs, selection: outputSelection)) {
+                        SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
+                    }
+                    .equatable()
+                case .subagents:
+                    SidePanelPane(key: SubagentsPaneKey(agents: subagents, commands: commands)) {
+                        SessionSubagentsPanel(agents: subagents, commands: commands)
+                    }
+                    .equatable()
                 case .changes:
                     // A session on another machine: git is there, and only its own review reads it (over ssh).
                     if let runID, workspace.run(runID)?.isRemote == true, diffSelection.source.isGit {
                         ChangesSheet(runID: runID, initialFile: nil, onClose: close).id(runID)
                     } else {
-                        TurnDiffPanel(turns: turns, selection: $diffSelection, directory: directory.isEmpty ? nil : directory,
-                                      runID: runID, load: loadDiff)
-                            .id(directory)
+                        SidePanelPane(key: ChangesPaneKey(turns: turns, selection: diffSelection, directory: directory,
+                                                          runID: runID, readsGit: loadDiff != nil)) {
+                            TurnDiffPanel(turns: turns, selection: $diffSelection, directory: directory.isEmpty ? nil : directory,
+                                          runID: runID, load: loadDiff)
+                        }
+                        .equatable()
+                        .id(directory)
                     }
                 case .pullRequest:
                     if let pullRequest {
                         // The page's own top bar starts with the arrow back to the list to pick another, so there is no
-                        // extra row above it.
+                        // extra row above it. The panel opens at once (`sidePanelsOpenAtOnce`), so the page shows what
+                        // it read right away instead of waiting out a slide that no longer happens.
                         let listed = PullRequestStore.shared.accounts.first { $0.id == pullRequest.account }
                             .map { $0.reviews + $0.mine + $0.watched } ?? []
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
-                                              stack: PullRequestStack.stack(of: pullRequest.item, in: listed) ?? [],
-                                              stackHistory: PullRequestStack.history(of: pullRequest.item, in: listed) ?? [],
-                                              onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
-                                              onUpdate: { updated in
-                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        }, onBack: showPullRequestList, waitsForPanel: opening, focus: pullRequest.focus)
-                            .id(pullRequest.account + " " + pullRequest.item.id)
+                        let stack = PullRequestStack.stack(of: pullRequest.item, in: listed) ?? []
+                        let stackHistory = PullRequestStack.history(of: pullRequest.item, in: listed) ?? []
+                        SidePanelPane(key: PullRequestPaneKey(request: pullRequest, stack: stack, stackHistory: stackHistory)) {
+                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
+                                                  stack: stack, stackHistory: stackHistory,
+                                                  onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
+                                                  onUpdate: { updated in
+                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            }, onBack: showPullRequestList, focus: pullRequest.focus)
+                        }
+                        .equatable()
+                        .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
-                        SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
+                        SidePanelPane(key: [directory, runID?.uuidString ?? ""]) {
+                            SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
+                        }
+                        .equatable()
                     }
                 case .artifact:
                     SessionArtifactPanel()
                 case .file:
-                    SessionFilePanel(directory: directory)
+                    // It follows the file store and its editor itself; the workbench redrawing around it changes nothing.
+                    SidePanelPane(key: directory) { SessionFilePanel(directory: directory) }
+                        .equatable()
                 case .subThread:
                     if let subThread {
                         // The whole session: its transcript and its own composer, to answer its questions right here.
@@ -138,14 +158,16 @@ struct SessionToolPanel: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The new tab is simply there: in the spring that moves the tab row's fill, the old and the new tab were both
+            // laid out on every frame (a page, a diff, a terminal), which made switching tabs feel slow.
+            .transaction(value: selectedTab) { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // What the agent opened here is in view now, also when it opens more while you look.
         .onAppear { bridge.markSeen(directory, tool.rawValue) }
-        .task {
-            try? await Task.sleep(for: NookTheme.tabSettle)
-            opening = false
-        }
         .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
         // Another session without a browser shows none of the last one's tabs.
@@ -295,6 +317,49 @@ struct SessionToolPanel: View {
     private func launch(_ item: SessionTool) {
         if item == .pullRequest { openPullRequest(nil) } else { show(item) }
     }
+}
+
+/// A tab's pane that is drawn again only when what it shows changed (`key`), not on every redraw of the workbench around
+/// it: another session's approval, a usage badge or a git button redrew the pull request page, its list with every
+/// filter and stack worked out again, and the Changes tab. The workbench makes new closures on each redraw, and they
+/// reach the same state, so they are left out of the comparison (as `SessionSideLink` does). What a pane observes itself
+/// (its store, its git) still redraws it as before.
+private struct SidePanelPane<Key: Equatable, Content: View>: View, Equatable {
+    let key: Key
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
+}
+
+/// What the Changes tab shows: the agent's turns, the choice in view, and where git is read.
+private struct ChangesPaneKey: Equatable {
+    let turns: [TurnDiff]
+    let selection: TurnDiffSelection
+    let directory: String
+    let runID: UUID?
+    /// Whether the turns' real diffs are read from the session's git snapshots (`loadDiff`).
+    let readsGit: Bool
+}
+
+/// What the Outputs tab shows: what the agent produced, and the one in view.
+private struct OutputsPaneKey: Equatable {
+    let outputs: [SessionOutput]
+    let selection: String?
+}
+
+/// What the Subagents tab shows: the subagents and the commands left running.
+private struct SubagentsPaneKey: Equatable {
+    let agents: [SubagentInfo]
+    let commands: [BackgroundCommandInfo]
+}
+
+/// What a pull request page shows: the pull request (and where a link pointed in it), and the stack it stands in.
+private struct PullRequestPaneKey: Equatable {
+    let request: PullRequestOpenRequest
+    let stack: [PullRequestItem]
+    let stackHistory: [PullRequestItem]
 }
 
 /// An open panel before any tab: the tools, one row each with the key that opens it.

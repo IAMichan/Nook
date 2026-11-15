@@ -109,10 +109,11 @@ final class CompanionStore: ObservableObject {
 
     var canPush: Bool { hasAPNsKey && APNsJWT.validIdentifier(apnsKeyID) && APNsJWT.validIdentifier(apnsTeamID) }
 
-    func setPush(device id: String, token: String?, production: Bool?) {
+    func setPush(device id: String, token: String?, production: Bool?, service: String? = nil) {
         guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
         devices[index].pushToken = token
         devices[index].pushProduction = token == nil ? nil : production
+        devices[index].pushService = token == nil ? nil : service
         save()
     }
 

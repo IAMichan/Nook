@@ -137,6 +137,8 @@ struct FileViewer: View {
         self.directory = directory
         self.openOther = openOther
         _editor = ObservedObject(wrappedValue: FileEditor.shared(target.path))
+        // The file as it was read last: back on the File tab it is there at once, and read again behind it.
+        _content = State(initialValue: FileViewRecent.content(target.path))
     }
 
     private var name: String { (target.path as NSString).lastPathComponent }
@@ -205,10 +207,9 @@ struct FileViewer: View {
                 case .preview:
                     QuickLookView(url: URL(fileURLWithPath: target.path))
                 case .folder, .missing:
-                    Text(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // With a way on: open another file, as the empty File tab offers.
+                    WSEmptyState(symbol: "doc.text", title: tr("ws.file.missing", AgentPathFormat.tilde(target.path)),
+                                 action: (tr("file.viewer.open"), pickFile))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -225,7 +226,9 @@ struct FileViewer: View {
                 return loaded
             }.value
             guard !Task.isCancelled else { return }
-            content = loaded
+            FileViewRecent.keep(loaded, for: path)
+            // The same as shown already (read again on the way back to the tab): nothing to draw again.
+            if loaded != content { content = loaded }
             if case .text(let lines, _) = loaded { histories.record(lines.joined(separator: "\n") + "\n", path: path) }
             // Long enough to be seen: a file that is written in a blink would flash the mark.
             if updating {
@@ -262,20 +265,21 @@ struct FileViewer: View {
     /// document, the diff against the version before, or code with its line numbers.
     @ViewBuilder
     private func textBody(lines: [String], tokens: [[SyntaxToken]]) -> some View {
-        let source = lines.joined(separator: "\n")
+        // The text as one string only for the previews that take it: joining up to 2 MB on every redraw (and every key
+        // while editing) cost the code view and the editor that never read it.
         if editor.editing && viewing == nil {
             FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
         } else if comparing, let viewing, let version = history.version(viewing) {
             ArtifactVersionDiff(old: history.previous(of: viewing)?.text ?? "", new: version.text, name: name)
         } else if previewing && kind.rendersInSandbox {
-            SandboxedPageView(html: kind.sandboxPage(for: source))
+            SandboxedPageView(html: kind.sandboxPage(for: lines.joined(separator: "\n")))
         } else if previewing && kind == .mermaid {
-            CodeRenderView(language: "mermaid", code: source)
+            CodeRenderView(language: "mermaid", code: lines.joined(separator: "\n"))
         } else if previewing && kind.rendersAsMarkdown {
             ScrollView(.vertical) {
                 // Lazy: only the blocks in view are built, so a long document with big tables opens at once. Equatable:
                 // the session redrawing around the panel leaves an unchanged document alone.
-                MarkdownView(text: MarkdownPreview.document(source, kind: kind), lazy: true)
+                MarkdownView(text: MarkdownPreview.document(lines.joined(separator: "\n"), kind: kind), lazy: true)
                     .equatable()
                     .environment(\.fileLinkBase, folder)
                     .environment(\.pullRequestLinksBeside, beside)
@@ -623,6 +627,27 @@ enum MarkdownPreview {
         let document = NotebookDocument.markdown(from: source) ?? source
         notebooks.set(document, for: source)
         return document
+    }
+}
+
+/// The last few files the viewer read, so a file shows at once when you come back to it (another tab and back, the
+/// same link again) instead of a spinner while it is read and tokenized anew. The viewer still reads it again behind
+/// that and shows any change; a handful only, since a file can hold up to `FileViewing.largestText`.
+@MainActor
+enum FileViewRecent {
+    private static let limit = 6
+    private static var entries: [(path: String, content: FileViewContent)] = []
+
+    static func content(_ path: String) -> FileViewContent? {
+        entries.first { $0.path == path }?.content
+    }
+
+    static func keep(_ content: FileViewContent, for path: String) {
+        entries.removeAll { $0.path == path }
+        // Only text is worth keeping: the rest is quick to tell again and Quick Look reads the file itself.
+        guard case .text = content else { return }
+        entries.insert((path, content), at: 0)
+        if entries.count > limit { entries.removeLast(entries.count - limit) }
     }
 }
 
