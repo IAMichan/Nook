@@ -86,8 +86,16 @@ struct SessionToolPanel: View {
                     } else {
                         SessionTerminalsView(directory: directory).id(directory)
                     }
-                case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
-                case .subagents: SessionSubagentsPanel(agents: subagents, commands: commands)
+                case .outputs:
+                    SidePanelPane(key: OutputsPaneKey(outputs: outputs, selection: outputSelection)) {
+                        SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
+                    }
+                    .equatable()
+                case .subagents:
+                    SidePanelPane(key: SubagentsPaneKey(agents: subagents, commands: commands)) {
+                        SessionSubagentsPanel(agents: subagents, commands: commands)
+                    }
+                    .equatable()
                 case .changes:
                     // A session on another machine: git is there, and only its own review reads it (over ssh).
                     if let runID, workspace.run(runID)?.isRemote == true, diffSelection.source.isGit {
@@ -331,6 +339,18 @@ private struct ChangesPaneKey: Equatable {
     let runID: UUID?
     /// Whether the turns' real diffs are read from the session's git snapshots (`loadDiff`).
     let readsGit: Bool
+}
+
+/// What the Outputs tab shows: what the agent produced, and the one in view.
+private struct OutputsPaneKey: Equatable {
+    let outputs: [SessionOutput]
+    let selection: String?
+}
+
+/// What the Subagents tab shows: the subagents and the commands left running.
+private struct SubagentsPaneKey: Equatable {
+    let agents: [SubagentInfo]
+    let commands: [BackgroundCommandInfo]
 }
 
 /// What a pull request page shows: the pull request (and where a link pointed in it), and the stack it stands in.
