@@ -274,12 +274,8 @@ struct SettingsPageIntro: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if section.parts.count > 1 {
-                    ChipFlow(spacing: NookTheme.Spacing.xs) {
-                        ForEach(section.parts) { item in
-                            SettingsPartTab(part: item, selected: item == part)
-                        }
-                    }
-                    .padding(.top, NookTheme.Spacing.sm)
+                    SettingsPartTabs(parts: section.parts, selected: part)
+                        .padding(.top, NookTheme.Spacing.sm)
                     if part != section {
                         Text(part.subtitle)
                             .font(NookTheme.TextStyle.detail)
@@ -300,34 +296,27 @@ struct SettingsPageIntro: View {
     }
 }
 
-/// One subject of a page in the bar at its top: its symbol and name, lit while it is shown. A click shows it.
-struct SettingsPartTab: View {
-    let part: SettingsSection
-    let selected: Bool
+/// The subjects of a page in the bar at its top: one segmented control (`NookTabBar`, `segmented`), each with its
+/// symbol and name, the shown one on a pill that slides to the next. It scrolls sideways when the window is too narrow
+/// for every subject, so a long page such as Typing never wraps onto a second row.
+struct SettingsPartTabs: View {
+    let parts: [SettingsSection]
+    /// The subject shown.
+    let selected: SettingsSection
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        Button {
-            guard !selected else { return }
-            app.settingsSection = part
-        } label: {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Image(icon: part.sidebarSymbol)
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
-                Text(part.title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textStrong)
-            }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .hoverRowFill(selected: selected, radius: NookTheme.Radius.chip, rest: NookTheme.surface)
-            .roundedStrokeBorder(selected ? NookTheme.textTertiary : NookTheme.separator, radius: NookTheme.Radius.chip)
-            .contentShape(Rectangle())
+        ScrollView(.horizontal, showsIndicators: false) {
+            NookTabBar(
+                items: parts.map { .init(value: $0, title: $0.title, symbol: $0.sidebarSymbol, help: $0.subtitle) },
+                selected: selected,
+                onSelect: { part in
+                    guard part != selected else { return }
+                    app.settingsSection = part
+                },
+                segmented: true)
         }
-        .buttonStyle(.nookPlain)
-        .nookTip(part.subtitle)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 }
 
