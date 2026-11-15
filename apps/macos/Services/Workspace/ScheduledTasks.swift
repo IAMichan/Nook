@@ -184,10 +184,11 @@ struct ArrivedMessage: Equatable, Sendable {
         }
     }
 
-    /// The messages that may go to the brain: all of them for a brain on this Mac; for an external brain only those
-    /// whose sources are not kept on this Mac (Settings › Privacy), the same rule every other source follows.
-    static func allowed(_ messages: [ArrivedMessage], privateSources: Set<String>, localBrain: Bool) -> [ArrivedMessage] {
-        guard !localBrain, !privateSources.isEmpty else { return messages }
+    /// The messages that may go to the brain: those whose sources are not kept on this Mac (Settings › Privacy). Also
+    /// with a brain on this Mac today: the brain a run answers with is read again while it runs, so a switch to an
+    /// external one halfway could otherwise carry the message along. A source kept here never starts an automation.
+    static func allowed(_ messages: [ArrivedMessage], privateSources: Set<String>) -> [ArrivedMessage] {
+        guard !privateSources.isEmpty else { return messages }
         return messages.filter { $0.sourceIDs.isDisjoint(with: privateSources) }
     }
 

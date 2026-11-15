@@ -329,10 +329,11 @@ final class ScheduledTaskStore: ObservableObject {
     /// answer's notice (`nookFinished`) and the run removes the conversation, so a check that finds nothing says nothing.
     private var quietRuns: Set<UUID> = []
     private var foundNothing: Set<UUID> = []
-    /// Conversations a scheduled run of Nook's is answering: their plans always wait for the user's click.
-    private var scheduledRuns: Set<UUID> = []
+    /// The answers (reply ids) scheduled runs of Nook's are writing: their plans always wait for the user's click, and
+    /// they are never spoken. By answer, not by conversation: a question the user asks there meanwhile is their own.
+    private var scheduledReplies: Set<UUID> = []
 
-    func isScheduledRun(_ conversation: UUID) -> Bool { scheduledRuns.contains(conversation) }
+    func isScheduledReply(_ reply: UUID) -> Bool { scheduledReplies.contains(reply) }
 
     func isQuietRun(_ conversation: UUID) -> Bool { quietRuns.contains(conversation) }
     func noteNothingNew(_ conversation: UUID) { if quietRuns.contains(conversation) { foundNothing.insert(conversation) } }
@@ -594,8 +595,11 @@ final class ScheduledTaskStore: ObservableObject {
         let conversation = app.chat.startInBackground()
         // "Run now" by hand always answers; a quiet check on its schedule only speaks up for something new.
         let quiet = isQuiet(task.id) && trigger != .manual
-        scheduledRuns.insert(conversation)
-        defer { quietRuns.remove(conversation); foundNothing.remove(conversation); scheduledRuns.remove(conversation) }
+        var replyID: UUID?
+        defer {
+            quietRuns.remove(conversation); foundNothing.remove(conversation)
+            if let replyID { scheduledReplies.remove(replyID) }
+        }
         // What came from a webhook is data from outside; the prompt the user wrote stays theirs.
         let note = NookSchedule.runNote(title: task.title, since: trigger == .message ? nil : previous, quiet: quiet,
                                         message: trigger == .message)
@@ -607,9 +611,11 @@ final class ScheduledTaskStore: ObservableObject {
         app.chat.rename(conversation, to: task.title)
         // The run's own answer: a question the user asks in this conversation meanwhile replaces it, and that answer is
         // theirs, never stopped by this run's deadline.
-        let replyID = app.replies[conversation]
+        let ownReply = app.replies[conversation]
+        replyID = ownReply
+        if let ownReply { scheduledReplies.insert(ownReply) }
         // `replies` forgets an answer once it ends; another id there is a newer answer.
-        func replaced() -> Bool { app.replies[conversation].map { $0 != replyID } ?? false }
+        func replaced() -> Bool { app.replies[conversation].map { $0 != ownReply } ?? false }
         func ownAnswerRuns() -> Bool { app.chat.isBusy(conversation) && !replaced() }
         let deadline = Date().addingTimeInterval(Self.nookRunLimit)
         while ownAnswerRuns(), Date() < deadline {
@@ -696,9 +702,9 @@ final class ScheduledTaskStore: ObservableObject {
         guard let trigger = task.rule.messageTrigger, var queue = messageQueues[task.id], !queue.isEmpty else { return }
         let taken = queue.takeBatch(matching: trigger)
         messageQueues[task.id] = queue
-        // A source kept on this Mac never reaches an external brain, also not through an automation: its messages go.
-        let batch = app.map { ArrivedMessage.allowed(taken, privateSources: $0.settings.privateSources,
-                                                     localBrain: $0.settings.selection.isLocal) } ?? taken
+        // A source kept on this Mac never reaches an external brain, also not through an automation: its messages go,
+        // whatever brain is chosen now (`ArrivedMessage.allowed`).
+        let batch = app.map { ArrivedMessage.allowed(taken, privateSources: $0.settings.privateSources) } ?? taken
         guard !batch.isEmpty else { return drainMessages(task.id) }
         let started = fire(task.id, scheduledFor: now, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: batch), now: now)
         if !started { messageQueues[task.id]?.enqueue(batch, first: true) }

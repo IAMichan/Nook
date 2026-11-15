@@ -442,7 +442,7 @@ extension AppModel {
         // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
         // answer may still be checked and written again: then it is read once it is final.
         // A scheduled run is never the spoken question, also while one waits for its answer in another conversation.
-        let scheduledRun = ScheduledTaskStore.shared.isScheduledRun(conversation)
+        let scheduledRun = ScheduledTaskStore.shared.isScheduledReply(id)
         let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil && !scheduledRun
             && !(settings.checkAnswers && settings.brainProfile.isSmall)
         var spokenQueue = SpokenText.Queue()
@@ -624,7 +624,7 @@ extension AppModel {
             // Actions the chosen access lets Nook do by itself start before the notice, so a notice only asks for a
             // click on what still waits for one.
             // A scheduled run's plan always waits for the user's own click, whatever the access level: nobody asked just now.
-            if !ScheduledTaskStore.shared.isScheduledRun(conversation),
+            if !ScheduledTaskStore.shared.isScheduledReply(id),
                canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
             nookFinished(conversation)
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).

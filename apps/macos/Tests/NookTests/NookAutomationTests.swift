@@ -265,10 +265,9 @@ final class NookAutomationTests: XCTestCase {
     func testAMessageKeptOnThisMacNeverReachesAnExternalBrain() {
         let whatsapp = arrived(app: "whatsapp"), mail = arrived(app: "mail"), telegram = arrived(app: "telegram")
         let all = [whatsapp, mail, telegram]
-        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["whatsapp"], localBrain: false).map(\.app), ["mail", "telegram"])
-        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["chats"], localBrain: false).map(\.app), ["mail"],
-                       "the chat inbox reads every chat app")
-        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["mail", "chats"], localBrain: true).count, 3, "a brain on this Mac reads all")
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["whatsapp"]).map(\.app), ["mail", "telegram"])
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["chats"]).map(\.app), ["mail"], "the chat inbox reads every chat app")
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: []).count, 3)
     }
 
     func testACorrectionKeepsTheAutomation() {
