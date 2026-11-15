@@ -49,6 +49,11 @@ struct InboxListView: View {
                                     WSEmptyState(symbol: "bubble.left.and.bubble.right", title: String(localized: "No chats yet"),
                                                message: String(localized: "New messages from WhatsApp and your other chat apps on your Mac show up here."))
                                 }
+                            } else if client.isOffline {
+                                // Nothing kept yet (a first launch away from the Mac): say so instead of an empty tab.
+                                WSEmptyState(symbol: "wifi.slash", title: String(localized: "Your chats show up here"),
+                                           message: String(localized: "Nothing is kept on this iPhone yet. Your chats appear once your Mac is connected, and stay readable when it is not."))
+                                    .appearsAfterDelay()
                             }
                         } else {
                             // Finding one among many; a short list needs no search or filter.
@@ -255,7 +260,13 @@ struct InboxChatView: View {
         ConversationScroll(followKey: followKey) { _ in
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 if lines.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
+                    if client.isOffline {
+                        OfflineNote(text: String(localized: "This chat is not kept on this iPhone yet. It opens once your Mac is connected."))
+                            .padding(.vertical, Theme.Spacing.xxl)
+                            .appearsAfterDelay()
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
+                    }
                 }
                 ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                     let previous = index > 0 ? lines[index - 1] : nil

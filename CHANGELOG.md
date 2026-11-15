@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook Companion stays usable without your Mac: Nook's chats and the Chats tab are now kept on the iPhone with their
+  last messages, so every tab reads while the Mac is off, asleep or out of reach. What you write still waits on the
+  iPhone and goes as soon as the Mac is back, and every composer and the New session sheet now say so. A chat the
+  iPhone never kept says it opens once the Mac is connected, instead of loading forever.
+
 - Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
   type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
   density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows

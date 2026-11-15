@@ -230,6 +230,22 @@ struct Banner: View {
     }
 }
 
+/// While the Mac cannot be reached: one quiet line, over a composer (what you write waits) or in place of what the phone
+/// did not keep.
+struct OfflineNote: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            Image(icon: "wifi.slash")
+            Text(text).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
+        .multilineTextAlignment(.leading)
+    }
+}
+
 /// A light tap for what you just did from the phone.
 enum Haptics {
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }

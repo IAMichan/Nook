@@ -51,7 +51,13 @@ struct SessionDetailView: View {
                         SectionHeader(title: String(localized: "Latest reply"))
                         TranscriptReply(text: session.excerpt, footer: false)
                     } else if client.can(CompanionFeature.timeline) {
-                        TranscriptLoading()
+                        if client.isOffline {
+                            OfflineNote(text: String(localized: "This conversation is not kept on this iPhone yet. It opens once your Mac is connected."))
+                                .padding(.top, Theme.Spacing.xxl)
+                                .appearsAfterDelay()
+                        } else {
+                            TranscriptLoading()
+                        }
                     }
                     // Messages that wait in the outbox until the Mac takes them.
                     let waiting = client.outbox.waiting(for: session.id)
@@ -635,7 +641,9 @@ struct NewSessionView: View {
     private var options: LaunchOptions? { client.launchOptions }
     private var chosenAgent: LaunchOptions.Agent? { options?.agents.first { $0.id == agent } }
     private var chosenProject: LaunchOptions.Project? { options?.projects.first { $0.path == project } }
-    private var canStart: Bool { !starting && chosenAgent != nil && chosenProject != nil }
+    private var canStart: Bool {
+        !starting && chosenAgent != nil && chosenProject != nil && !(client.isOffline && !client.writingWaits)
+    }
 
     var body: some View {
         NavigationStack {
@@ -680,6 +688,12 @@ struct NewSessionView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     NookMark(size: 44)
                     heading(options)
+                    if client.isOffline {
+                        OfflineNote(text: client.writingWaits
+                                    ? String(localized: "Not connected. The session waits on this iPhone and starts as soon as your Mac is back.")
+                                    : String(localized: "Connect to your Mac to start a session."))
+                            .appearsAfterDelay()
+                    }
                     ImageTray(images: $images)
                     VStack(spacing: 0) {
                         SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,

@@ -2849,6 +2849,62 @@
         }
       }
     },
+    "Connect to your Mac to send." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit deinem Mac, um zu senden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a tu Mac para enviar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous à votre Mac pour envoyer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maak verbinding met je Mac om te versturen."
+          }
+        }
+      }
+    },
+    "Connect to your Mac to start a session." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit deinem Mac, um eine Sitzung zu starten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a tu Mac para empezar una sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous à votre Mac pour démarrer une session."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maak verbinding met je Mac om een sessie te starten."
+          }
+        }
+      }
+    },
     "Connected" : {
       "localizations" : {
         "de" : {
@@ -6787,6 +6843,62 @@
         }
       }
     },
+    "Not connected. The session waits on this iPhone and starts as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden. Die Sitzung wartet auf diesem iPhone und startet, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión. La sesión espera en este iPhone y empieza en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté. La session attend sur cet iPhone et démarre dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden. De sessie wacht op deze iPhone en start zodra je Mac terug is."
+          }
+        }
+      }
+    },
+    "Not connected. What you send waits on this iPhone and goes as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden. Was du sendest, wartet auf diesem iPhone und geht raus, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión. Lo que envíes espera en este iPhone y sale en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté. Ce que vous envoyez attend sur cet iPhone et part dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden. Wat je verstuurt wacht op deze iPhone en gaat zodra je Mac terug is."
+          }
+        }
+      }
+    },
     "Not now" : {
       "localizations" : {
         "de" : {
@@ -6925,6 +7037,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet"
+          }
+        }
+      }
+    },
+    "Nothing is kept on this iPhone yet. Your chats appear once your Mac is connected, and stay readable when it is not." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone ist noch nichts gespeichert. Deine Chats erscheinen, sobald dein Mac verbunden ist, und bleiben lesbar, wenn er es nicht ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay nada guardado en este iPhone. Tus chats aparecen cuando tu Mac está conectado y siguen legibles cuando no lo está."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’est encore gardé sur cet iPhone. Vos discussions apparaissent dès que votre Mac est connecté et restent lisibles quand il ne l’est pas."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er staat nog niets op deze iPhone. Je chats verschijnen zodra je Mac verbonden is en blijven leesbaar als hij dat niet is."
           }
         }
       }
@@ -10817,6 +10957,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze chat bestaat niet meer."
+          }
+        }
+      }
+    },
+    "This chat is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Chat ist noch nicht auf diesem iPhone gespeichert. Er öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este chat aún no está guardado en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette discussion n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze chat staat nog niet op deze iPhone. Hij opent zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "This conversation is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gespräch ist noch nicht auf diesem iPhone gespeichert. Es öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta conversación aún no está guardada en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette conversation n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit gesprek staat nog niet op deze iPhone. Het opent zodra je Mac verbonden is."
           }
         }
       }
@@ -16389,6 +16585,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Muestra lo que puedes hacer con esta sesión"
+          }
+        }
+      }
+    },
+    "Your chats show up here" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier erscheinen deine Chats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aquí aparecen tus chats"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos discussions s’affichent ici"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier verschijnen je chats"
           }
         }
       }

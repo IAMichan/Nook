@@ -563,17 +563,29 @@ struct ComposerTray<Content: View>: View {
 
 /// Where a conversation's composer sits: at the bottom over the canvas, fading the messages out behind it.
 struct ComposerDock<Content: View>: View {
+    @EnvironmentObject private var client: CompanionClient
     /// The color the messages fade into: the canvas, or a chat's own wallpaper.
     var fill: Color = Theme.canvas
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.md)
-            .padding(.bottom, Theme.Spacing.md)
-            .background(LinearGradient(colors: [fill.opacity(0), fill], startPoint: .top,
-                                       endPoint: UnitPoint(x: 0.5, y: 0.3)))
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            // Without the Mac the app still reads and writes: what you send waits on this iPhone (the outbox) and
+            // goes once the Mac answers. A Mac too old for that takes nothing until it is connected again.
+            if client.isOffline {
+                OfflineNote(text: client.writingWaits
+                            ? String(localized: "Not connected. What you send waits on this iPhone and goes as soon as your Mac is back.")
+                            : String(localized: "Connect to your Mac to send."))
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .appearsAfterDelay()
+            }
+            content.disabled(client.isOffline && !client.writingWaits)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.md)
+        .background(LinearGradient(colors: [fill.opacity(0), fill], startPoint: .top,
+                                   endPoint: UnitPoint(x: 0.5, y: 0.3)))
     }
 }
 
