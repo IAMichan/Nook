@@ -1038,6 +1038,22 @@ struct WAInbox: Equatable, Sendable {
                 }
                 receiptLedger.record(conversation.messages[index])
             }
+            // In a private chat, reading a message reads everything you sent before it, as WhatsApp itself shows: a
+            // receipt often names only the newest of them, and the earlier ones would wait at two grey ticks.
+            let named = Set(ids)
+            if WAJID.kind(chatKey) == .person, status >= .read,
+               let newest = conversation.messages.lazy.filter({ $0.fromMe && named.contains($0.id) }).map(\.date).max() {
+                for index in conversation.messages.indices where conversation.messages[index].fromMe
+                    && conversation.messages[index].date < newest && !named.contains(conversation.messages[index].id) {
+                    let old = conversation.messages[index].receipt ?? .sent
+                    guard old >= .sent, old < status else { continue }
+                    conversation.messages[index].receipt = old.advanced(to: status)
+                    let reader = conversation.messages[index].readers[chatKey] ?? ChatReader(name: chatKey, receipt: .sent)
+                    conversation.messages[index].readers[chatKey] = reader.advanced(to: status, at: date)
+                    receiptLedger.record(conversation.messages[index])
+                    touched = true
+                }
+            }
             if touched { conversations[chatKey] = conversation; changed = chatKey }
             if pending.isEmpty { break }
         }
@@ -1892,7 +1908,8 @@ enum WAWebhook {
     private static func parseOpenWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
         guard let d = json["data"] as? [String: Any],
               let id = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"]),
-              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:)) else { return .ignored }
+              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:))
+                ?? ChatJSON.number(d["ack"]).flatMap({ WAReceipt(ack: Int($0)) }) else { return .ignored }
         let chat = (d["chatId"] as? String) ?? ""
         // In a group OpenWA's ack is the whole group's, as WhatsApp's own ticks; one naming a member is that member's.
         if WAJID.isGroup(chat), let member = nonEmpty(d["participant"]), status >= .delivered {
@@ -1988,6 +2005,13 @@ enum WAAvatar {
 }
 
 enum WAGOWA {
+    /// The webhook events Nook asks GOWA for: messages, their ticks and emoji, who is typing, a message edited or
+    /// deleted for everyone, and people coming and going in a group (newer GOWA versions send the last three only when
+    /// asked by name). `webhookEventsBefore` is what a GOWA that refuses one of those names is asked for instead; it
+    /// still says edits and deletions inside `message`.
+    static let webhookEvents = "message,message.ack,message.reaction,chat_presence,message.edited,message.revoked,message.deleted,group.participants"
+    static let webhookEventsBefore = "message,message.ack,message.reaction,chat_presence"
+
     /// Removes the files under `statics/media` and `statics/senditems` not modified within `age`, and the folders that
     /// leaves empty. Returns how many files went.
     @discardableResult
@@ -2338,6 +2362,15 @@ enum WAGOWARelease {
 }
 
 enum WAOpenWA {
+    /// The webhook events Nook asks OpenWA for: messages and their ticks (a failed send among them), emoji, who is
+    /// typing, a message edited or deleted for everyone, and the group's changes. `webhookEventsBefore` is asked for
+    /// instead when OpenWA refuses one of those names (an older version).
+    static let webhookEvents = ["message.received", "message.sent", "message.ack", "message.receipt", "message.failed",
+                                "message.edited", "message.revoked", "message.reaction", "presence.update",
+                                "group.join", "group.leave", "group.update"]
+    static let webhookEventsBefore = ["message.received", "message.sent", "message.ack", "message.receipt",
+                                      "message.reaction", "presence.update", "group.join", "group.leave", "group.update"]
+
     /// `GET /contacts/{id}` → `{name, pushName, number, isMyContact, isBlocked}`: the name they gave themselves and
     /// whether you blocked them.
     static func person(_ obj: [String: Any]) -> ChatProfile {

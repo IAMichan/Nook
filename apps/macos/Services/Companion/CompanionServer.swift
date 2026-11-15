@@ -636,6 +636,14 @@ final class CompanionServer: ObservableObject {
             audit("update_request", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
             return CompanionResponse(id: request.id, ok: true, message: "available")
         case .register:
+            if request.item == FCMToken.service {
+                // Nook on Android: a Firebase token, whose pushes go through the relay (`RelayPushRequest.service`).
+                guard let token = request.text, FCMToken.valid(token) else { return .failure(request.id, .badRequest) }
+                CompanionStore.shared.setPush(device: deviceID, token: token, production: true, service: FCMToken.service)
+                audit("push_registered", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+                return CompanionResponse(id: request.id, ok: true, macName: macName,
+                                         message: RelayPushClient.shared.reachable && CompanionStore.shared.push.enabled ? "push" : "nopush")
+            }
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
             CompanionStore.shared.setPush(device: deviceID, token: token.lowercased(), production: request.item != "development")

@@ -35,6 +35,21 @@ final class RelayPushTests: XCTestCase {
         XCTAssertNil(RelayPush.endpoint(relay: "http://example.com"))
     }
 
+    func testAndroidTokensGoAsFCM() throws {
+        let fcm = "dQw4w9WgXcQ:APA91b" + String(repeating: "x", count: 140)
+        XCTAssertTrue(FCMToken.valid(fcm))
+        XCTAssertFalse(FCMToken.valid(token), "too short for Firebase")
+        XCTAssertFalse(FCMToken.valid(fcm + "/../x"))
+        let request = try XCTUnwrap(RelayPush.request(envelope: Data(vector.utf8), room: room, token: fcm, production: true,
+                                                      collapse: nil, urgent: false, service: FCMToken.service))
+        XCTAssertEqual(request.token, fcm, "kept as it is, not lowercased")
+        XCTAssertEqual(request.service, "fcm")
+        XCTAssertNil(RelayPush.request(envelope: Data(vector.utf8), room: room, token: token, production: true, collapse: nil,
+                                       urgent: false, service: FCMToken.service), "an APNs token is no FCM token")
+        XCTAssertNil(RelayPush.request(envelope: Data(vector.utf8), room: room, token: fcm, production: true, collapse: nil, urgent: false),
+                     "an FCM token is no APNs token")
+    }
+
     func testReadsTheRelaysAnswer() {
         XCTAssertEqual(RelayPush.outcome(status: 200, body: Data(#"{"apns":200}"#.utf8)).outcome, .delivered)
         let gone = RelayPush.outcome(status: 200, body: Data(#"{"apns":410,"reason":"Unregistered"}"#.utf8))

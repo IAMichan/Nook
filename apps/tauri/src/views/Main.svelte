@@ -15,6 +15,8 @@
   import { parseRoute, reloadRoute, resumeRoute, routeTitles, routeViews, type Route } from "../lib/shell-routes";
   import { shellShortcut } from "../lib/shell-shortcuts";
   import { companion } from "../lib/companion";
+  import { companionHome, setLocal, shell } from "../lib/companion-shell.svelte";
+  import Companion from "./companion/Companion.svelte";
   import { onBack, setupMobile } from "../lib/mobile";
   import { gamer } from "../lib/gamer.svelte";
   import { pullRequests } from "../lib/pulls.svelte";
@@ -68,6 +70,13 @@
     companion.info().then((i) => (companionClient = i.client)).catch(() => {});
   });
 
+  // A paired Android phone is the companion, laid out as the iPhone app (`companion-shell`).
+  $effect(() => {
+    if (!android) return;
+    companion.client().then((v) => (shell.paired = v.phase === "connected" || v.phase === "offline")).catch(() => {});
+  });
+  const phoneShell = $derived(companionHome(android));
+
   // Music: a tab of its own while something plays (as in the bar and on the Mac).
   let playing = $state<NowPlaying | null>(null);
   let playingSince = $state(Date.now());
@@ -89,10 +98,16 @@
     if (!android || mobileReady) return;
     mobileReady = true;
     setupMobile(async (text) => {
+      // In the companion, shared text goes to the computer: a new session, a session or a question to Nook.
+      if (companionHome(android)) return void (shell.shared = text);
       route = "chat";
       await nook.newNook();
       showList = false;
       await nook.ask(text);
+    }, (url) => {
+      // A pairing code or a prompt link: the companion handles both, also to pair while Nook on the phone is open.
+      shell.link = url;
+      if (/^nook:\/\/(pair|companion)/i.test(url)) { setLocal(false); route = "companion"; }
     });
   });
 
@@ -200,6 +215,8 @@
   }
 
   function navigate(next: Route) {
+    // Back from Nook on the phone to the paired computer.
+    if (next === "companion" && android && shell.paired) return setLocal(false);
     route = next;
     if (next === "chat" && mobile) showList = false;
   }
@@ -250,6 +267,9 @@
 
 <svelte:window onkeydown={keys} bind:innerWidth={width} />
 
+{#if phoneShell}
+<div class="phone-shell"><Companion standalone /></div>
+{:else}
 <div class="main" class:mobile class:overlay>
   <nav class="rail" aria-label={tr("Hoofdnavigatie", "Main navigation")}>
     <div class="head">
@@ -340,6 +360,7 @@
     {/if}
   </section>
 </div>
+{/if}
 
 {#if paletteOpen}<CommandPalette onclose={() => (paletteOpen = false)} onnavigate={navigate} companionEnabled={companionClient} />{/if}
 
@@ -404,6 +425,8 @@
   @keyframes fade { from { opacity: 0; } }
   @keyframes slide { from { transform: translateX(-12px); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .main.overlay::after, .main.overlay .side-list { animation: none; } }
+  .phone-shell { height: 100vh; height: 100dvh; padding: var(--safe-top) var(--safe-right) 0 var(--safe-left); box-sizing: border-box; background: var(--canvas); }
+  :global(html.keyboard-open) .phone-shell { padding-bottom: var(--keyboard); }
   .main.mobile { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; padding: var(--safe-top) var(--safe-right) 0 var(--safe-left); }
   .main.mobile .rail { flex-direction: row; justify-content: space-around; align-items: center; padding: 4px 8px calc(4px + var(--safe-bottom)); order: 2; gap: 0; border-top: 1px solid var(--border); border-right: 0; }
   .main.mobile .head { display: none; }

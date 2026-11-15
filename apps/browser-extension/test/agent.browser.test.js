@@ -66,6 +66,16 @@ test('the page agent works on a real page and shows what it does', { skip: !chro
 
     const look = await run('glance');
     assert.match(look.text, /^Now: Testwinkel · Afrekenen \|/);
+
+    // Double Tap reads the form and fills it in one go, next to Nook's own stepped typing (each has its own setter).
+    const form = JSON.parse((await run('form')).text);
+    const city = form.fields.find((field) => field.label.includes('Plaats'));
+    assert.ok(city, 'the form names its fields');
+    const filled = await run('fill', { values: [{ ref: city.ref, value: 'Utrecht' }] });
+    assert.equal(filled.ok, true, filled.error);
+    assert.equal(await tab.inputValue('#city'), 'Utrecht');
+    assert.equal((await run('type', { text: 'Naam', value: 'Sam' })).ok, true);
+    assert.equal(await tab.inputValue('#name'), 'Sam', 'typing still goes in steps after a fill');
   } finally {
     await browser.close();
   }

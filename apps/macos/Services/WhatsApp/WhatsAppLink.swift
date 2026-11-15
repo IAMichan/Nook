@@ -649,6 +649,12 @@ final class WhatsAppLink: ObservableObject {
                     // plan slows down.
                     if Date().timeIntervalSince(lastChatList) > 300 * EnergyMonitor.shared.plan.slowdown {
                         await loadChats(provider, gen: gen)
+                    } else if gatewayCountsUnread, !EnergyMonitor.shared.plan.unseen,
+                              Date().timeIntervalSince(lastReadCheck) > Self.readCheckGap * EnergyMonitor.shared.plan.slowdown,
+                              waitsFreshly() {
+                        // A chat that just came in waits in Nook (its card or notification may be up): whether it was
+                        // read on the phone is asked often, not every five minutes.
+                        await checkReadOnPhone(provider, gen: gen)
                     }
                 case .needsQR:
                     if link != .needsQR { link = .needsQR }
@@ -832,6 +838,46 @@ final class WhatsAppLink: ObservableObject {
     /// that listing it would slow the Chats tab and search down.
     static let chatListLimit = 5000
 
+    /// When the phone's chat list was last asked only for what was read there (`checkReadOnPhone`).
+    private var lastReadCheck = Date.distantPast
+    /// How often that is asked while a chat waits in Nook, and how new its message must be: the phone's whole list is
+    /// read for it, so only while something just came in.
+    private static let readCheckGap: TimeInterval = 30
+    private static let readCheckFresh: TimeInterval = 900
+
+    /// A chat counts something new in Nook from a message of the last `readCheckFresh`.
+    private func waitsFreshly() -> Bool {
+        let fresh = Date().addingTimeInterval(-Self.readCheckFresh)
+        return inbox.conversations.values.contains { conversation in
+            conversation.unread > 0 && (conversation.messages.last { !$0.fromMe }?.date ?? .distantPast) > fresh
+        }
+    }
+
+    /// The chats the phone's list counts as read while Nook still counts something new in them: read there, so read in
+    /// Nook too (a gateway that counts unread messages itself, OpenWA, says it only that way).
+    private func passReadsOnPhone(_ list: [WAChatInfo]) {
+        guard gatewayCountsUnread else { return }
+        let read = inbox.readInGateway(list) { key in
+            self.carriedUnread[key].flatMap { $0.holds(readSince: self.readSince(key)) ? $0 : nil }
+        }
+        for key in read {
+            // A chat you marked unread after the list's newest message stays so: the phone's count of nothing is from
+            // before your mark.
+            if let mark = markedUnread[key], let listed = list.first(where: { $0.jid == key }) ?? known(key), listed.last <= mark { continue }
+            readElsewhere(key)
+        }
+    }
+
+    /// Only whether a chat that waits in Nook was read on the phone: the list's counts, nothing else of it.
+    private func checkReadOnPhone(_ provider: WhatsAppProvider, gen: Int) async {
+        lastReadCheck = Date()
+        guard let chats = try? await provider.chats(limit: Self.chatListLimit), gen == generation else { return }
+        passReadsOnPhone(chats.map {
+            WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned,
+                       muted: $0.muted)
+        })
+    }
+
     private func loadChats(_ provider: WhatsAppProvider, gen: Int) async {
         lastChatList = Date()
         let chats: [WAChatInfo]
@@ -858,17 +904,7 @@ final class WhatsAppLink: ObservableObject {
         await nameUnnamedGroups(provider, gen: gen)
         guard gen == generation else { return }
         // OpenWA sends no word when you read a chat on the phone: its count going to nothing says it.
-        if gatewayCountsUnread {
-            let read = inbox.readInGateway(knownChats) { key in
-                self.carriedUnread[key].flatMap { $0.holds(readSince: self.readSince(key)) ? $0 : nil }
-            }
-            for key in read {
-                // A chat you marked unread after the list's newest message stays so: the phone's count of nothing is
-                // from before your mark.
-                if let mark = markedUnread[key], let listed = known(key), listed.last <= mark { continue }
-                readElsewhere(key)
-            }
-        }
+        passReadsOnPhone(knownChats)
         // The list moved a chat on (its row goes under "Today") past the newest message Nook holds of it: that message
         // never came in live, so it is fetched, and the row gets its line and time.
         for chat in inbox.behind(knownChats, asked: caughtUp, liveSince: liveSince) {

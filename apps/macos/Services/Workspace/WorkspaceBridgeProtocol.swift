@@ -201,7 +201,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .renderPage:
             return "Renders a sandboxed, offline HTML chart, diagram, table or mock-up inline in your timeline (html, or path to an .html file whose local assets get embedded; inline CSS/JS/SVG/data URLs; <=512 KB; fixed height 80-1200 pt, default 360; no network or navigation). Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
-            return "Sends a message to another Nook session as an agent, not the user (mode: queue after its turn (default), auto, steer into the running turn, or restart). The user approves unless full rights. You cannot message yourself."
+            return "Sends a message to another Nook session as an agent, not the user (mode: queue after its turn (default), auto, steer into the running turn, or restart). Prefer queue: steer or restart only when the receiver must change its running work now. The receiver keeps its own task, so ask only what bears on it. The user approves unless full rights. You cannot message yourself."
         case .deviceList:
             return "Lists iOS Simulators and Android adb devices (android*), boot state, and which ones are open in Nook."
         case .deviceOpen:

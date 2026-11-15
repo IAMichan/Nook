@@ -31,6 +31,18 @@ struct DoubleTapScene: Equatable {
     var emptyFields = 0
     /// The text of the window in front, as the active brain may see it (for dates and for "summarize").
     var windowText = ""
+    /// Read by Nook's browser extension in the tab in front: it also fills the form there.
+    var viaExtension = false
+    /// An app Nook never reads or types in (a password manager, a terminal: `UIControl.isBlocked`).
+    var blocked = false
+}
+
+/// The line above the Double Tap field: where Nook will work and what it sees there.
+struct DoubleTapHint: Equatable {
+    var text: String
+    var symbol: String
+    /// "via your browser extension", when the extension reads and fills the page.
+    var badge: String?
 }
 
 /// One chip under the Double Tap field: the request it sends, and its symbol.
@@ -100,6 +112,34 @@ extension DoubleTapLogic {
             chips.append(DoubleTapSuggestion(text: recent, symbol: "clock.arrow.circlepath"))
         }
         return chips
+    }
+
+    /// The line above the field, before Nook read what is in front (`scene` nil, only the app's name known) and after:
+    /// the app, then what Nook can do there in a few words, so the field says what it is for before you type.
+    static func hint(app: String, scene: DoubleTapScene?, language: AppLanguage) -> DoubleTapHint {
+        let text = { (key: String, args: [CVarArg]) in I18n.text(key, args, for: language) }
+        let badge = scene?.viaExtension == true ? text("doubletap.hint.extension", []) : nil
+        guard !app.isEmpty else { return DoubleTapHint(text: text("doubletap.hint.anywhere", []), symbol: "sparkles", badge: nil) }
+        guard let scene else { return DoubleTapHint(text: text("doubletap.hint.reading", [app]), symbol: "eye", badge: nil) }
+        if scene.blocked { return DoubleTapHint(text: text("doubletap.write.blocked", [app]), symbol: "hand.raised", badge: nil) }
+        let selected = scene.selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        if scene.focus != .none, !selected.isEmpty {
+            let words = selected.split { $0.isWhitespace || $0.isNewline }.count
+            return DoubleTapHint(text: text(words == 1 ? "doubletap.hint.selectionOne" : "doubletap.hint.selection", [app, words]),
+                                 symbol: "text.quote", badge: badge)
+        }
+        if scene.emptyFields >= 2 || (scene.emptyFields == 1 && scene.focus == .field && !isReplyBox(scene)) {
+            return DoubleTapHint(text: text(scene.emptyFields == 1 ? "doubletap.hint.formOne" : "doubletap.hint.form",
+                                            [app, scene.emptyFields]),
+                                 symbol: "list.bullet.rectangle", badge: badge)
+        }
+        if scene.focus != .none, isReplyBox(scene) {
+            return DoubleTapHint(text: text("doubletap.hint.reply", [app]), symbol: "arrowshape.turn.up.left", badge: badge)
+        }
+        if scene.focus != .none {
+            return DoubleTapHint(text: text("doubletap.hint.cursor", [app]), symbol: "text.cursor", badge: badge)
+        }
+        return DoubleTapHint(text: text("doubletap.hint.window", [app]), symbol: "macwindow", badge: badge)
     }
 
     /// An empty box in a chat or mail app, or one whose placeholder asks for a message: where you answer someone.

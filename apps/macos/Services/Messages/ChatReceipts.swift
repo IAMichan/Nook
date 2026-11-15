@@ -23,6 +23,19 @@ enum ChatReceipt: Int, Codable, Comparable, Sendable {
         }
     }
 
+    /// whatsapp-web.js's numeric `ack`, which OpenWA passes on when it gives no status word: -1 failed, 0 pending,
+    /// 1 on the server, 2 on their phone, 3 read, 4 played.
+    init?(ack: Int) {
+        switch ack {
+        case -1: self = .failed
+        case 0: self = .pending
+        case 1: self = .sent
+        case 2: self = .delivered
+        case 3, 4: self = .read
+        default: return nil
+        }
+    }
+
     /// Ticks only move forward; a failure always shows.
     func advanced(to new: ChatReceipt) -> ChatReceipt {
         new == .failed || new > self ? new : self

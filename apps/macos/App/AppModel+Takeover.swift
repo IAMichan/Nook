@@ -134,8 +134,9 @@ extension AppModel {
             detail: .none,
             primary: close,
             secondary: CardAction(label: "", outcome: .dismiss),
-            // The box and the tray of choices under it; the notch grows with a longer text (`fitCompactCard`).
-            contentHeight: 92,
+            // The line above, the box and the tray of choices under it, at the density you chose; the notch grows with a
+            // longer text (`fitCompactCard`).
+            contentHeight: (116 * CGFloat(NookTheme.density.textScale)).rounded(),
             input: true,
             inputPrompt: tr("takeover.prompt.title"),
             focusesInput: true,
@@ -143,8 +144,10 @@ extension AppModel {
             escape: close
         )
         var shown = card
-        // What you asked lately right away; what Nook could do with the window in front follows once it is read.
+        // What you asked lately right away; what Nook could do with the window in front follows once it is read, and the
+        // line above the field says where Nook will work and, once read, what it sees there.
         shown.suggestions = Self.cardSuggestions(scene: nil)
+        shown.hint = Self.cardHint(app: DoubleTap.shared.askedInName ?? "", scene: nil)
         viewModel.show(.card(shown))
     }
 
@@ -153,9 +156,16 @@ extension AppModel {
     func showDoubleTapScene(_ scene: DoubleTapScene) {
         guard case .card(var card) = viewModel.state, card.id.hasPrefix(Self.takeoverCardPrefix) else { return }
         let suggestions = Self.cardSuggestions(scene: scene)
-        guard suggestions != card.suggestions else { return }
+        let hint = Self.cardHint(app: scene.app, scene: scene)
+        guard suggestions != card.suggestions || hint != card.hint else { return }
         card.suggestions = suggestions
+        card.hint = hint
         viewModel.updateCard(card)
+    }
+
+    private static func cardHint(app: String, scene: DoubleTapScene?) -> CardHint {
+        let hint = DoubleTapLogic.hint(app: app, scene: scene, language: I18n.shared.currentLanguage)
+        return CardHint(text: hint.text, symbol: hint.symbol, badge: hint.badge)
     }
 
     private static func cardSuggestions(scene: DoubleTapScene?) -> [CardSuggestion] {

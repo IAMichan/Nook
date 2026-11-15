@@ -18,6 +18,7 @@ pub mod seal;
 pub mod server;
 pub mod sessions;
 pub mod store;
+pub mod transport;
 
 pub use backend::{BackendSession, CompanionBackend, NoSessions};
 pub use models::*;
@@ -54,6 +55,7 @@ mod tests {
                     detail: "Bash".into(),
                     can_allow: CompanionPolicy::can_allow("Bash", Some(false)),
                     options: vec![],
+                    ..Default::default()
                 },
                 DigestItem {
                     id: "p2".into(),
@@ -62,6 +64,7 @@ mod tests {
                     detail: "Edit".into(),
                     can_allow: CompanionPolicy::can_allow("Edit", None),
                     options: vec![],
+                    ..Default::default()
                 },
                 DigestItem {
                     id: "q1".into(),
@@ -70,6 +73,7 @@ mod tests {
                     detail: "Opslag".into(),
                     can_allow: true,
                     options: vec!["SQLite".into(), "Postgres".into()],
+                    ..Default::default()
                 },
             ];
             items.retain(|i| !done.contains(&i.id));
@@ -85,6 +89,7 @@ mod tests {
                         updated: 20.0,
                         excerpt: "x".repeat(900),
                         items,
+                        ..Default::default()
                     },
                     active: true,
                     free_answers: vec![],
@@ -100,6 +105,7 @@ mod tests {
                         updated: 10.0,
                         excerpt: String::new(),
                         items: vec![],
+                        ..Default::default()
                     },
                     active: false,
                     free_answers: vec![],
@@ -147,7 +153,7 @@ mod tests {
         assert_eq!(phone.snapshot().phase, Phase::Unpaired);
 
         // Een verzonnen code werkt niet.
-        let fake = PairingLink { host: "127.0.0.1".into(), port, key: vec![5; 32], mac_name: "x".into() };
+        let fake = PairingLink { host: "127.0.0.1".into(), port, key: vec![5; 32], mac_name: "x".into(), ..Default::default() };
         let failed = phone.pair(&fake.url(), "Pixel").await;
         assert_eq!(failed.phase, Phase::Unpaired);
         assert!(failed.notice.unwrap().starts_with("Koppelen mislukt"));
@@ -193,6 +199,26 @@ mod tests {
             *workspace.log.lock().unwrap(),
             vec!["decide S1 p1 false", "decide S1 p2 true", "answer S1 q1 SQLite", "send S1 ga door", "stop S1"]
         );
+        // This computer lists no features: the phone offers only the first version, and a request beyond it is
+        // answered with a refusal rather than a closed connection.
+        let s = phone.refresh().await;
+        assert!(s.features.is_empty());
+        assert_eq!(s.scopes, None);
+        let (s, answer) =
+            phone.call(client::ClientCall { op: Some(CompanionOp::Timeline), session: Some("S1".into()), ..Default::default() }).await;
+        assert!(answer.is_none());
+        assert_eq!(s.phase, Phase::Connected);
+        assert_eq!(s.notice.as_deref(), Some("De computer weigerde dit."));
+        phone.clear_notice();
+        // Pairing and push registration are the client's own: the interface cannot send them.
+        let (s, answer) = phone.call(client::ClientCall { op: Some(CompanionOp::Register), ..Default::default() }).await;
+        assert!(answer.is_none());
+        assert_eq!(s.notice.as_deref(), Some("De computer weigerde dit."));
+        phone.clear_notice();
+        // `call` with `list` answers like a refresh.
+        let (_, answer) = phone.call(client::ClientCall { op: Some(CompanionOp::List), ..Default::default() }).await;
+        assert_eq!(answer.and_then(|a| a.sessions).map(|s| s.len()), Some(2));
+
         let actions: Vec<String> = audit.audit_entries(50, "companion").into_iter().map(|e| e.tool).collect();
         for action in ["companion_paired", "companion_deny", "companion_allow", "companion_answer", "companion_send", "companion_stop"] {
             assert!(actions.contains(&action.to_string()), "{action} in {actions:?}");
@@ -272,5 +298,224 @@ mod tests {
         let reply = server.respond(&seal::seal(&request, &key, &device, Direction::Request)).await.unwrap();
         let mut reader = FrameReader::default();
         assert!(server.respond(&reader.feed(&reply).remove(0)).await.is_none());
+    }
+
+    /// A Mac that keeps the connection open: answers `subscribe` like `list`, then sends a change to the open session's
+    /// conversation, and hears the phone's pings.
+    #[tokio::test]
+    async fn keeps_a_live_connection() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let key = vec![7u8; KEY_LENGTH];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mac_key = key.clone();
+        let mac = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut frames = FrameReader::default();
+            let mut buf = vec![0u8; 65536];
+            let mut seen = Vec::new();
+            let device = PairedDevice::identifier(&mac_key);
+            let send = |r: CompanionResponse| {
+                let json = serde_json::to_vec(&r).unwrap();
+                FrameReader::frame(&seal::seal(&json, &mac_key, &device, seal::Direction::Response)).unwrap()
+            };
+            while seen.len() < 2 {
+                let n = socket.read(&mut buf).await.unwrap();
+                for frame in frames.feed(&buf[..n]) {
+                    let plain = seal::open(&frame, &mac_key, seal::Direction::Request).unwrap();
+                    let request: CompanionRequest = serde_json::from_slice(&plain).unwrap();
+                    seen.push((request.op, request.foreground));
+                    if request.op == CompanionOp::Subscribe {
+                        let list = CompanionResponse {
+                            mac_name: Some("Mac".into()),
+                            sessions: Some(vec![]),
+                            features: Some(vec!["stream".into()]),
+                            ..CompanionResponse::success(&request.id)
+                        };
+                        socket.write_all(&send(list)).await.unwrap();
+                        let update = CompanionResponse {
+                            seq: Some(1),
+                            timeline: Some(
+                                serde_json::json!([{"id": "e2", "kind": "assistant", "text": "hi", "date": 1.0, "failed": false}]),
+                            ),
+                            timeline_session: Some("S1".into()),
+                            timeline_after: Some("e1".into()),
+                            ..CompanionResponse::success(&request.id)
+                        };
+                        socket.write_all(&send(update)).await.unwrap();
+                    }
+                }
+            }
+            seen
+        });
+        let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
+        let link = PairingLink { host: "127.0.0.1".into(), port, key, mac_name: "Mac".into(), ..Default::default() };
+        secrets
+            .write(
+                "companion.pairing",
+                &serde_json::json!({"host": "127.0.0.1", "port": port, "key": base64url_encode(&link.key), "macName": "Mac"}).to_string(),
+            )
+            .unwrap();
+        let phone = CompanionClient::new(secrets, Arc::new(DnsResolver));
+        let mut updates = Vec::new();
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(7), phone.stream(|| true, |snapshot, r| updates.push((snapshot, r)))).await;
+        assert_eq!(updates.len(), 2, "the answer to subscribe and one update");
+        assert_eq!(updates[0].0.features, vec!["stream".to_string()]);
+        assert_eq!(updates[0].0.phase, Phase::Connected);
+        assert_eq!(updates[1].1.timeline_after.as_deref(), Some("e1"));
+        assert_eq!(updates[1].1.timeline_session.as_deref(), Some("S1"));
+        let seen = mac.await.unwrap();
+        assert_eq!(seen[0], (CompanionOp::Subscribe, Some(true)));
+        assert_eq!(seen[1], (CompanionOp::Ping, Some(true)));
+    }
+
+    /// Two computers paired with one phone: the second becomes active, the first is asked for its sessions as one of the
+    /// others, switching moves back, and unpairing leaves the other. A code with a dead first address still pairs
+    /// through its alternate.
+    #[tokio::test]
+    async fn pairs_with_several_computers_and_falls_back_to_other_addresses() {
+        let start = |name: &str| {
+            let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+            store.set_enabled(true);
+            Arc::new(CompanionServer::new(store, Arc::new(FakeWorkspace::default()), None, name.into()))
+        };
+        let a = start("Mac A");
+        let b = start("Mac B");
+        let ServerState::Listening { .. } = a.apply().await else { panic!() };
+        let ServerState::Listening { port: port_b } = b.apply().await else { panic!() };
+        let phone = CompanionClient::new(Arc::new(MemorySecrets::default()), Arc::new(DnsResolver));
+        let first = phone.pair(&a.pairing_link("127.0.0.1").unwrap().url(), "Pixel").await;
+        assert_eq!(first.phase, Phase::Connected, "{:?}", first.notice);
+        assert_eq!(first.route, "internet");
+        // B's code names an address nothing listens on first, then the real one as an alternate.
+        let mut link_b = b.pairing_link("127.0.0.1").unwrap();
+        link_b.host = "127.0.0.2".into();
+        link_b.alternates = vec!["127.0.0.1".into()];
+        let _ = port_b;
+        let second = phone.pair(&link_b.url(), "Pixel").await;
+        assert_eq!(second.phase, Phase::Connected, "{:?}", second.notice);
+        assert_eq!(second.mac_name, "Mac B");
+        assert_eq!(second.macs.iter().map(|m| (m.name.as_str(), m.active)).collect::<Vec<_>>(), vec![("Mac A", false), ("Mac B", true)]);
+        let s = phone.refresh_others().await;
+        assert_eq!(s.others.len(), 1);
+        assert_eq!(s.others[0].name, "Mac A");
+        assert!(s.others[0].reachable);
+        assert_eq!(s.others[0].sessions.len(), 2);
+        let a_id = s.macs[0].id.clone();
+        let s = phone.switch_to(&a_id);
+        assert_eq!(s.mac_name, "Mac A");
+        assert!(s.others.is_empty());
+        assert_eq!(phone.refresh().await.phase, Phase::Connected);
+        let s = phone.unpair();
+        assert_eq!(s.macs.len(), 1);
+        assert_eq!(s.mac_name, "Mac B");
+        assert_eq!(phone.refresh().await.mac_name, "Mac B");
+    }
+
+    /// A message for a computer that keeps an outbox waits while it is away, and can be taken out.
+    #[tokio::test]
+    async fn keeps_a_message_while_the_computer_is_away() {
+        let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
+        let key = base64url_encode(&[3u8; KEY_LENGTH]);
+        secrets
+            .write(
+                "companion.pairings",
+                &serde_json::json!([{ "host": "127.0.0.1", "port": 9, "key": key, "macName": "Mac", "features": ["retry"] }]).to_string(),
+            )
+            .unwrap();
+        let phone = CompanionClient::new(secrets.clone(), Arc::new(DnsResolver));
+        let (s, answer) = phone
+            .call(client::ClientCall {
+                op: Some(CompanionOp::Send),
+                session: Some("S1".into()),
+                text: Some("later".into()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(answer.and_then(|a| a.message).as_deref(), Some("outbox"));
+        assert_eq!(s.outbox.len(), 1);
+        assert_eq!(s.outbox[0].text, "later");
+        // Its push key is the one the Mac seals with (`RelayPush.pushKey`).
+        assert_eq!(phone.push_keys()[0].mac, PairedDevice::identifier(&[3u8; KEY_LENGTH]));
+        // It is kept across a restart of the app.
+        let again = CompanionClient::new(secrets, Arc::new(DnsResolver));
+        let id = again.snapshot().outbox[0].id.clone();
+        assert!(again.discard(&id).outbox.is_empty());
+        // Approvals never wait: they go now or not at all.
+        let s = again.decide("S1", "p1", true).await;
+        assert_eq!(s.phase, Phase::Offline);
+        assert!(s.outbox.is_empty());
+    }
+
+    /// Away from home: no address answers, and the phone reaches the computer through the relay's WebSocket, in the room
+    /// only it and the computer know. The relay here passes each frame to the computer's server and back.
+    #[tokio::test]
+    #[allow(clippy::result_large_err)] // tungstenite's handshake callback returns its own large error type
+    async fn reaches_the_computer_through_the_relay() {
+        use futures_util::{SinkExt, StreamExt};
+        let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+        store.set_enabled(true);
+        let mac = Arc::new(CompanionServer::new(store, Arc::new(FakeWorkspace::default()), None, "Mac".into()));
+        let ServerState::Listening { .. } = mac.apply().await else { panic!() };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_port = listener.local_addr().unwrap().port();
+        let rooms = Arc::new(Mutex::new(Vec::<String>::new()));
+        let (server, seen) = (mac.clone(), rooms.clone());
+        tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                let (server, seen) = (server.clone(), seen.clone());
+                tokio::spawn(async move {
+                    let path = Arc::new(Mutex::new(String::new()));
+                    let p = path.clone();
+                    let mut ws = tokio_tungstenite::accept_hdr_async(
+                        socket,
+                        move |req: &tokio_tungstenite::tungstenite::handshake::server::Request, res| {
+                            *p.lock().unwrap() = req.uri().to_string();
+                            Ok(res)
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    seen.lock().unwrap().push(path.lock().unwrap().clone());
+                    let mut frames = FrameReader::default();
+                    while let Some(Ok(message)) = ws.next().await {
+                        for frame in frames.feed(&message.into_data()) {
+                            if let Some(reply) = server.respond(&frame).await {
+                                ws.send(tokio_tungstenite::tungstenite::Message::Binary(reply.into())).await.unwrap();
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        let mut link = mac.pairing_link("127.0.0.1").unwrap();
+        link.host = "127.0.0.2".into();
+        link.port = 9;
+        link.relay = Some(format!("http://127.0.0.1:{relay_port}"));
+        let phone = CompanionClient::new(Arc::new(MemorySecrets::default()), Arc::new(DnsResolver));
+        let s = phone.pair(&link.url(), "Pixel").await;
+        assert_eq!(s.phase, Phase::Connected, "{:?}", s.notice);
+        assert_eq!(s.route, "relay");
+        assert_eq!(s.sessions.len(), 2);
+        let room = super::transport::relay_room(&link.key);
+        assert_eq!(rooms.lock().unwrap()[0], format!("/v1/rooms/{room}?role=phone"));
+        assert_eq!(phone.decide("S1", "p2", true).await.route, "relay");
+    }
+
+    /// The push key and a sealed push as the Mac makes them (the vectors of `RelayPushTests` on the Mac, made outside
+    /// Swift): what the Android app's notification service gets and opens.
+    #[test]
+    fn push_keys_open_what_the_mac_seals() {
+        let pairing: Vec<u8> = (0u8..32).collect();
+        let key = client::push_key(&pairing);
+        let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, "7a429408bc2815112a429079b335fb1a10ddd5ca648231192c2182f7ce957c07");
+        let vector = br#"{"d": "630dcd2966c43366", "s": "AAAAAAAAAAAAAAAABS3kO4MIl6sxb1ccggt5baLczbPE5rpaZZaRXcuXSEkU4GmcxaFGzXF2q8bQTP2LEs8QYTtYj28NxxIl6Jzq5FRLlKT08PCoTrtIfWad9wFhK/oWpdxpklboXglaJ9jrZzvC7W6L/zlNGKz8GyQVJJtQdWS9SyRboYTAbGjAzZDq+8r9QGuqTk4csyaBfiMwc1M="}"#;
+        let plain = seal::open(vector, &key, seal::Direction::Response).expect("the push key opens it");
+        let content: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+        assert!(content.get("title").is_some() && content.get("category").is_some(), "{content}");
+        assert!(seal::open(vector, &pairing, seal::Direction::Response).is_err(), "the pairing key itself does not");
     }
 }
