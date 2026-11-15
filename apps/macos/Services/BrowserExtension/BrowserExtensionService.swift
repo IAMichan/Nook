@@ -24,6 +24,20 @@ final class BrowserExtensionService: ObservableObject {
     weak var app: AppModel?
     private let server = UnixSocketServer(path: NookPaths.browserSocketURL.path)
     private var serving = false
+    /// Side panels that follow a conversation: Nook pushes each change to them (`push` on the hub) instead of the panel
+    /// asking every second, so an answer streams into the browser as fast as in Nook's own window.
+    private var watches: [UUID: Watch] = [:]
+    private var watching: AnyCancellable?
+
+    /// The browsers that follow a conversation, each with the revision it has, so one browser reading the conversation
+    /// never counts as another one having it.
+    private struct Watch {
+        var clients: [String: String]
+        var until: Date
+    }
+
+    /// How long a side panel keeps getting a conversation's changes after it last asked for them.
+    static let watchFor: TimeInterval = 10 * 60
 
     private var applicationSupport: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -168,20 +182,29 @@ final class BrowserExtensionService: ObservableObject {
             } else {
                 id = app.chat.startInBackground()
             }
-            app.ask(text, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser))
+            // The page's text goes with the question but stays on this Mac: only a brain that may see the user's
+            // browser gets it (`answer` checks the privacy level and what the user keeps here). While the browser stays
+            // here, the screen brain on this Mac reads it and hands the chosen brain a filtered note, or does what the
+            // question asks on the page itself (`AppModel.ask`, `pageWorker`).
+            let settings = app.settings
+            let kept = settings.privateSources.contains(BrowserExtensionTools.sourceID)
+            let privacy: BrowserExtensionPanel.Privacy = !kept ? .shared : settings.pageWorker != nil ? .readHere : .keptHere
+            let reading = request.page?.reading.map { ScreenSnapshot(appName: $0.site, windowTitle: $0.title, text: $0.text) }
+            app.ask(text, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser, privacy: privacy),
+                    page: privacy == .keptHere ? nil : reading)
             app.store.audit(tool: "browser_extension_ask", args: client.browser, result: app.chat.conversation(id)?.title ?? "")
-            return ["ok": true, "conversation": id.uuidString, "messages": lines(id)]
+            return conversationReply(id, watchedBy: client.id)
         case "chat":
             guard let id = request.conversation.flatMap(UUID.init(uuidString:)), app.chat.conversation(id) != nil else {
                 return ["ok": false, "error": "unknown"]
             }
-            return ["ok": true, "conversation": id.uuidString, "messages": lines(id)]
+            return conversationReply(id, watchedBy: request.watch ? client.id : nil)
         case "stopChat":
             guard let id = request.conversation.flatMap(UUID.init(uuidString:)), app.chat.conversation(id) != nil else {
                 return ["ok": false, "error": "unknown"]
             }
             app.stop(conversation: id)
-            return ["ok": true, "conversation": id.uuidString, "messages": lines(id)]
+            return conversationReply(id, watchedBy: client.id)
         case "look":
             // The side panel draws Nook's theme, accent and density, so it reads as the same app as the main window.
             let settings = app.settings
@@ -190,6 +213,52 @@ final class BrowserExtensionService: ObservableObject {
                                                 density: settings.density, diffColors: settings.diffColors)
         default:
             return ["ok": false, "error": "Nook does not know \"\(request.kind)\"."]
+        }
+    }
+
+    /// The conversation for the side panel, and from now on its changes pushed to that browser (`live`).
+    private func conversationReply(_ id: UUID, watchedBy client: String?) -> [String: Any] {
+        let messages = lines(id)
+        let revision = BrowserExtensionPanel.revision(messages)
+        if let client { watch(id, client: client, revision: revision) }
+        return ["ok": true, "conversation": id.uuidString, "messages": messages, "revision": revision, "live": client != nil]
+    }
+
+    private func watch(_ id: UUID, client: String, revision: String) {
+        var entry = watches[id] ?? Watch(clients: [:], until: .distantPast)
+        entry.clients[client] = revision
+        entry.until = Date().addingTimeInterval(Self.watchFor)
+        watches[id] = entry
+        guard watching == nil, let chat = app?.chat else { return }
+        // A model streams many small changes a second; the browser gets the newest at most every 100 ms.
+        watching = chat.$conversations
+            .throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in
+                // `@Published` sends before it stores the new value: read it once this change is done.
+                Task { @MainActor in self?.pushChanges() }
+            }
+    }
+
+    /// Sends every followed conversation that changed to the browsers that follow it.
+    private func pushChanges() {
+        let now = Date()
+        for (id, var entry) in watches {
+            guard entry.until > now, app?.chat.conversation(id) != nil else {
+                watches[id] = nil
+                continue
+            }
+            let messages = lines(id)
+            let revision = BrowserExtensionPanel.revision(messages)
+            guard entry.clients.values.contains(where: { $0 != revision }) else { continue }
+            let event: [String: Any] = ["kind": "chat", "conversation": id.uuidString, "messages": messages, "revision": revision]
+            for (client, has) in entry.clients where has != revision {
+                entry.clients[client] = hub.push(event, to: client, key: "chat:" + id.uuidString) ? revision : nil
+            }
+            watches[id] = entry.clients.isEmpty ? nil : entry
+        }
+        if watches.isEmpty {
+            watching?.cancel()
+            watching = nil
         }
     }
 
@@ -204,6 +273,8 @@ final class BrowserExtensionService: ObservableObject {
                 "streaming": message.streaming,
                 "status": CompanionPolicy.clip(message.status, limit: 120),
                 "failed": message.isError,
+                // What Nook says about how it answered ("read on this Mac, only a filtered note went out"), as on the Mac.
+                "notice": CompanionPolicy.clip(message.notices.last ?? "", limit: 240),
                 "onMac": !message.actions.isEmpty || !message.mails.isEmpty || !message.charts.isEmpty
             ]
         }
@@ -216,11 +287,14 @@ struct BrowserExtensionRequest: Sendable {
     let text: String
     let conversation: String?
     let page: BrowserExtensionPanel.Page?
+    /// The side panel wants the conversation's changes pushed to it from now on.
+    let watch: Bool
 
     init(_ message: [String: Any]) {
         kind = (message["kind"] as? String) ?? ""
         text = (message["text"] as? String) ?? ""
         conversation = message["conversation"] as? String
         page = (message["page"] as? [String: Any]).flatMap(BrowserExtensionPanel.Page.init)
+        watch = (message["watch"] as? Bool) ?? false
     }
 }

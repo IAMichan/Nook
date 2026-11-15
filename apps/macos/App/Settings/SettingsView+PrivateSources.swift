@@ -26,13 +26,14 @@ extension SettingsView {
             let text = sourceQuery.trimmingCharacters(in: .whitespaces)
             let shown = SourceCatalog.all.filter { text.isEmpty || Self.sourceName($0).localizedCaseInsensitiveContains(text) }
             ForEach(shown, id: \.id) { source in
-                // The privacy level can keep a source on this Mac by itself (the screen when strict): shown locked.
-                let byLevel = settings.privacyLevel.localOnlySources.contains(source.id)
+                // The privacy level can keep a source on this Mac by itself (the screen when strict), and the browser
+                // page goes with the screen: shown locked.
+                let byLevel = settings.keptByRule(source.id)
                 Toggle(isOn: byLevel ? .constant(true) : localOnlyBinding(source.id)) {
                     Label(Self.sourceName(source), icon: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
                 }
                 .disabled(byLevel)
-                .nookTip(byLevel ? tr("settings.private.byLevel") : "")
+                .nookTip(byLevel ? tr(settings.privacyLevel.localOnlySources.contains(source.id) ? "settings.private.byLevel" : "settings.private.withScreen") : "")
             }
             if shown.isEmpty { SettingNote(tr("settings.search.none")) }
         } header: {

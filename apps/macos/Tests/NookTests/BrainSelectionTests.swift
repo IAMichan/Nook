@@ -128,4 +128,34 @@ final class ScreenBrainTests: XCTestCase {
             XCTAssertEqual(provider.keyAccount, "\(provider.rawValue)-api-key")
         }
     }
+
+    // MARK: - The page in the browser's side panel
+
+    func testTheScreenBrainReadsThePageOnlyForAnExternalBrain() {
+        let claude = BrainSelection(runtime: .external, provider: .claude, model: "claude")
+        let local = BrainSelection(runtime: .ollama, provider: .ollama, model: "qwen")
+        XCTAssertEqual(ScreenBrain.worker(chosen: claude, screenPrivate: true, stored: "ollama:qwen")?.model, "qwen")
+        XCTAssertNil(ScreenBrain.worker(chosen: local, screenPrivate: true, stored: "ollama:qwen"), "a brain on this Mac reads it itself")
+        XCTAssertNil(ScreenBrain.worker(chosen: claude, screenPrivate: false, stored: "ollama:qwen"), "the chosen brain may read it")
+    }
+
+    func testRequestsToActOnThePageAreRecognizedInEveryLanguage() {
+        for text in ["Vul dit formulier in met mijn gegevens", "Klik op verzenden", "Fill in the form", "Click Save",
+                     "Füll das Formular aus", "Remplis le formulaire", "Rellena el formulario", "kies de tweede optie"] {
+            XCTAssertTrue(ScreenBrain.actsOnPage(text), text)
+        }
+        for text in ["Waar gaat dit artikel over?", "Summarize this page", "Wat kost dit?"] {
+            XCTAssertFalse(ScreenBrain.actsOnPage(text), text)
+        }
+    }
+
+    func testAQuestionFromTheSidePanelIsAboutThePageUnlessItNamesAnotherSource() {
+        for text in ["Vat samen", "Wat staat hier over de prijs?", "Fill in my name", "Wat kost dit?",
+                     "Waar gaat dit artikel over?", "Summarize this page", "En de tweede?", "Wie is de schrijver?"] {
+            XCTAssertTrue(ScreenBrain.handlesPage(text), text)
+        }
+        for text in ["Wat staat er morgen in mijn agenda?", "Stuur een mail naar Lisa"] {
+            XCTAssertFalse(ScreenBrain.handlesPage(text), "\(text): another source, the chosen brain answers")
+        }
+    }
 }

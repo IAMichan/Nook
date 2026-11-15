@@ -4,12 +4,15 @@
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
   GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, cleanLook, commandError, consoleText,
-  describeTabs, isRestricted, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf
+  describeTabs, isAnswering, isBlocked, isRestricted, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf
 } from './lib/core.js';
 
 const REQUEST_TIMEOUT = 20_000;
 const LOAD_TIMEOUT = 20_000;
 const ACTIVITY_LIMIT = 40;
+/** As much page text as goes along with a question from the side panel (BrowserExtensionPanel.textLimit in Nook). */
+const PAGE_TEXT_LIMIT = 16_000;
+const PAGE_READ_TIMEOUT = 1_500;
 
 let port = null;
 let attempt = 0;
@@ -21,9 +24,14 @@ const inOrder = serial();
 
 // MARK: - Settings and status (what the side panel shows)
 
+// Read once and kept up to date by storage.onChanged, so a command does not wait for storage each time.
+let cachedSettings = null;
+
 async function settings() {
+  if (cachedSettings) return cachedSettings;
   const stored = await chrome.storage.local.get({ paused: false, blocked: [] });
-  return { paused: !!stored.paused, blocked: Array.isArray(stored.blocked) ? stored.blocked : [] };
+  cachedSettings = { paused: !!stored.paused, blocked: Array.isArray(stored.blocked) ? stored.blocked : [] };
+  return cachedSettings;
 }
 
 /** Never throws: callers fire it and move on, and a failed write must not become an unhandled rejection. */
@@ -164,6 +172,13 @@ function onHostMessage(message) {
     case 'command':
       run(message).catch(() => {});
       break;
+    case 'chat':
+      // A conversation the side panel follows changed: Nook pushes it, so the answer streams in without asking.
+      chrome.runtime.sendMessage({ type: 'chatUpdate', conversation: message.conversation, messages: message.messages, revision: message.revision })
+        .catch(() => {});
+      // Nook finished its answer: the user's hands are free again on the page it worked in, right away.
+      if (Array.isArray(message.messages) && message.messages.length && !isAnswering(message.messages)) releaseCurrent();
+      break;
     default:
       break;
   }
@@ -210,7 +225,7 @@ async function run(command) {
   try {
     if (command.method !== 'tabs' && !opensNew) tab = await targetTab(params);
     const error = commandError(command, { ...(await settings()), url: tab ? tab.url || tab.pendingUrl || '' : undefined });
-    outcome = error ? { ok: false, error } : await perform(command.method, params, tab);
+    outcome = error ? { ok: false, error } : await perform(command.method, params, tab, command);
   } catch (error) {
     outcome = { ok: false, error: String(error?.message || error) };
   }
@@ -225,17 +240,24 @@ async function run(command) {
   }
 }
 
-async function perform(method, params, tab) {
+async function perform(method, params, tab, command) {
   switch (method) {
     case 'tabs': return listTabs();
-    case 'open': return open(params, tab);
+    case 'open': return open(params, tab, command);
     case 'close': return close(tab);
     case 'screenshot': return screenshot(tab);
     case 'wait': return waitFor(tab, params);
     case 'console': return consoleMessages(tab, params);
-    case 'find': case 'read': case 'scroll':
+    case 'find': case 'read':
       await use(tab);
       return agent(tab.id, method, params);
+    case 'scroll': {
+      await use(tab);
+      await presence(tab.id, 'busy');
+      const result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
+      keepCursor(tab.id, result);
+      return result;
+    }
     // Double Tap: read the form in front and fill it, without making it the tab Nook works in.
     case 'form':
       return agent(tab.id, method, params);
@@ -246,10 +268,29 @@ async function perform(method, params, tab) {
     }
     case 'click': case 'type': case 'key': {
       await use(tab);
-      await presence(tab.id);
-      const result = await agent(tab.id, method, params);
-      if (result.ok) await settle(tab.id);
-      return result;
+      await presence(tab.id, 'busy');
+      // Listening for a tab the action opens starts before the action: a link can open one before the page answers.
+      const opened = openedFrom(tab.id);
+      let result;
+      let after;
+      try {
+        result = await agent(tab.id, method, { ...params, _from: cursors.get(tab.id) });
+        keepCursor(tab.id, result);
+        // Typing a password or a sign-in code is the user's: Nook waits for them to sign in, then goes on.
+        if (!result.ok && result.signIn) return waitForSignIn(tab.id, command, '');
+        if (!result.ok) return result;
+        // What the action did, and what can be used now: Nook takes its next step from this without looking again.
+        after = await settle(tab.id, opened);
+      } finally {
+        opened.stop();
+      }
+      let text = result.text;
+      if (after.opened) text += ` It opened a new tab (tab ${after.tabId}); Nook works there now.`;
+      const login = await signInWait(after.tabId, command, text);
+      if (login) return login;
+      const look = await glance(after.tabId);
+      if (look) text += '\n\n' + look;
+      return { ...result, text };
     }
     default:
       return { ok: false, error: `Nook's extension does not know "${method}".` };
@@ -268,7 +309,7 @@ async function listTabs() {
   return { ok: true, text: describeTabs(tabs, { focusedWindow: focused?.id, nookGroup: group, current }) };
 }
 
-async function open(params, tab) {
+async function open(params, tab, command) {
   const where = String(params.url || '').trim().toLowerCase();
   if (tab && where === 'back') await chrome.tabs.goBack(tab.id);
   else if (tab && where === 'forward') await chrome.tabs.goForward(tab.id);
@@ -278,16 +319,22 @@ async function open(params, tab) {
     if (tab) {
       await chrome.tabs.update(tab.id, { url });
     } else {
-      tab = await chrome.tabs.create({ url, active: true });
+      // While the user works in another tab than Nook's, the new page opens beside it without taking their view.
+      tab = await chrome.tabs.create({ url, active: !(await userElsewhere()) });
       await groupWithNook(tab);
     }
   }
   await use(tab);
   const loaded = await waitForLoad(tab.id);
+  await presence(tab.id, 'busy');
+  const login = await signInWait(tab.id, command, `Opened ${loaded.url} in tab ${tab.id}.`);
+  if (login) return login;
+  // What can be used on it goes along, so the next step needs no chrome_find first.
+  const look = await glance(tab.id);
   return {
     ok: true, url: loaded.url,
     text: `Opened ${loaded.title || '(no title)'} | ${loaded.url} in tab ${tab.id}${loaded.status === 'complete' ? '' : ' (still loading)'}. `
-      + 'Use chrome_read for its text or chrome_find for what you can click and type in.'
+      + 'Use chrome_read for its text.' + (look ? '\n\n' + look : ' Use chrome_find for what you can click and type in.')
   };
 }
 
@@ -349,35 +396,230 @@ function waitForLoad(tabId, timeout = LOAD_TIMEOUT) {
     setTimeout(async () => {
       const tab = await chrome.tabs.get(tabId).catch(() => null);
       if (!tab || (tab.status === 'complete' && tab.url && tab.url !== 'about:blank')) finish();
-    }, 300);
+    }, 150);
   });
 }
 
-/** After a click or a key: if the page starts loading, wait for it, so the next look sees the new page. */
-async function settle(tabId) {
-  await new Promise((resolve) => setTimeout(resolve, 350));
+/**
+ * After a click, a key or typing: waits for what it did, so the next look sees it. A new page loading: until it is
+ * there. A link that opened a tab of its own: Nook goes on in that tab. Otherwise until the page stops changing (a
+ * menu opening, results coming in), never a fixed wait.
+ */
+/** Notes a tab opened from `tabId` (a link with target=_blank) from now on, until `stop()`. */
+function openedFrom(tabId) {
+  const watch = { tab: null, stop: () => chrome.tabs.onCreated?.removeListener(onCreated) };
+  function onCreated(created) {
+    if (created.openerTabId === tabId && !watch.tab) watch.tab = created;
+  }
+  chrome.tabs.onCreated?.addListener(onCreated);
+  return watch;
+}
+
+async function settle(tabId, watch = { tab: null }) {
+  for (const pause of [90, 160]) {
+    if (watch.tab) break;
+    await new Promise((resolve) => setTimeout(resolve, pause));
+    if (watch.tab) break;
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.status === 'loading') {
+      await waitForLoad(tabId, 10_000);
+      return { tabId, navigated: true };
+    }
+  }
+  const opened = watch.tab;
+  if (opened) {
+    await waitForLoad(opened.id, 10_000);
+    await use(opened);
+    return { tabId: opened.id, opened: true };
+  }
+  if (await mayRead(tabId)) await withTimeout(agent(tabId, 'quiet', {}), 2_000);
+  return { tabId };
+}
+
+/**
+ * Whether Nook may still look at the page in this tab now: not paused, and its site not switched off or one of the
+ * browser's own pages. Checked again before every look Nook takes by itself, because an action can take the tab to
+ * another site than the one the command was checked for.
+ */
+async function mayRead(tabId) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (tab?.status === 'loading') await waitForLoad(tabId, 10_000);
+  if (!tab) return false;
+  const url = tab.url || tab.pendingUrl || '';
+  const { paused, blocked } = await settings();
+  return !paused && !isRestricted(url) && !isBlocked(url, blocked);
 }
 
-/** Runs one method of the page agent (page/agent.js) in the tab's main frame. */
+/** What the user sees on the page now, in short (page/agent.js `glance`); '' when the page does not answer in time. */
+async function glance(tabId) {
+  if (!(await mayRead(tabId))) {
+    return 'The page is now on a site the user switched Nook off for (or one of the browser\'s own pages); Nook did not look at it.';
+  }
+  const look = await withTimeout(agent(tabId, 'glance', {}), 1_500);
+  return look?.ok ? look.text : '';
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([promise.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+}
+
+// Where Nook's cursor was on each tab, so it glides on from there on the next page instead of starting over.
+const cursors = new Map();
+
+function keepCursor(tabId, result) {
+  if (result?.cursor && Number.isFinite(result.cursor.x)) cursors.set(tabId, result.cursor);
+}
+
+chrome.tabs.onRemoved?.addListener((tabId) => cursors.delete(tabId));
+
+/**
+ * Runs one method of the page agent (page/agent.js) in the tab's main frame. The agent stays in the page until it
+ * reloads, so it is injected only when it is not there yet: one trip to the page instead of two for most commands.
+ */
 async function agent(tabId, method, params) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['page/agent.js'] });
-  const [frame] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (name, input) => globalThis.__nookAgent.run(name, input),
-    args: [method, params]
-  });
-  const result = frame?.result;
-  return result && typeof result === 'object' ? result : { ok: false, error: 'The page did not answer.' };
+  const call = async () => {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (name, input) => (globalThis.__nookAgent ? globalThis.__nookAgent.run(name, input) : { missing: true }),
+      args: [method, params]
+    });
+    return frame?.result;
+  };
+  let result = await call();
+  if (result?.missing) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['page/agent.js'] });
+    result = await call();
+  }
+  return result && typeof result === 'object' && !result.missing ? result : { ok: false, error: 'The page did not answer.' };
 }
 
-/** A strip on the page while Nook acts there, with a Stop button that pauses Nook in this browser. */
-async function presence(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['page/presence.js'] }).catch(() => {});
+/**
+ * The page in front as the side panel's question takes it along: its title and address, and, when Nook may use this
+ * site, its text and the user's selection, so Nook answers about it right away instead of first reading it with a
+ * tool. A page that does not answer quickly goes without its text.
+ */
+async function pageForQuestion(tab) {
+  if (!tab || isRestricted(tab.url)) return null;
+  const page = { title: tab.title || '', url: tab.url || '', tab: tab.id };
+  const { paused, blocked } = await settings();
+  if (paused || isBlocked(tab.url, blocked)) return page;
+  const reading = agent(tab.id, 'read', { limit: PAGE_TEXT_LIMIT, plain: true }).catch(() => null);
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), PAGE_READ_TIMEOUT));
+  const result = await Promise.race([reading, timeout]);
+  if (result?.ok) {
+    page.text = result.text || '';
+    page.selection = result.selection || '';
+  }
+  return page;
+}
+
+/**
+ * The strip on the page (page/presence.js): `busy` while Nook acts there (with a Stop button, and the user's own clicks
+ * and keys on that page held back for a while), `signIn` while the user signs in, `release` when Nook is done.
+ */
+async function presence(tabId, mode = 'busy') {
+  // A page on a site the user switched off (or that the tab was sent on to since) is never touched: no strip there,
+  // and the user's input there is never held.
+  if (mode !== 'release' && !(await mayRead(tabId))) return;
+  try {
+    // Releasing needs nothing new on a page that never had the strip.
+    if (mode !== 'release') await chrome.scripting.executeScript({ target: { tabId }, files: ['page/presence.js'] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (name, hold) => globalThis.__nookPresence?.[name]?.(hold),
+      args: [mode, BUSY_HOLD]
+    });
+  } catch {
+    // A page the browser keeps to itself, or one that is loading: nothing to show there.
+  }
+}
+
+async function releaseCurrent() {
+  const { current } = await chrome.storage.session.get('current');
+  if (Number.isInteger(current)) await presence(current, 'release');
+}
+
+/** How long the user's own clicks wait after Nook's last action on a page (its next step usually comes sooner). */
+const BUSY_HOLD = 12_000;
+/** How long Nook waits for the user to sign in on a page. */
+const SIGN_IN_WAIT = 5 * 60_000;
+
+/** True while the user looks at another tab than the one Nook works in: Nook then works beside them, not in their view. */
+async function userElsewhere() {
+  const { current } = await chrome.storage.session.get('current');
+  if (!Number.isInteger(current)) return false;
+  const front = await activeTab(null).catch(() => null);
+  return !!front && front.id !== current;
+}
+
+/** When the page now asks to sign in, waits for the user to do so (`waitForSignIn`); null when it does not. */
+async function signInWait(tabId, command, before) {
+  if (!(await mayRead(tabId))) return null;
+  const state = await withTimeout(agent(tabId, 'signin', {}), 2_000);
+  if (!state?.needed) return null;
+  return waitForSignIn(tabId, command, before, state.site);
+}
+
+/**
+ * The page asks to sign in: Nook steps aside. The tab comes to the front, the strip asks the user to sign in, their
+ * clicks and keys work as always, and Nook goes on by itself once the sign-in fields are gone and the page settled (or
+ * the user presses Continue). Nook never sees what they type. Nook's own deadline for the command moves on meanwhile.
+ */
+async function waitForSignIn(tabId, command, before = '', site = '') {
+  request({ kind: 'extend', id: command.id, seconds: SIGN_IN_WAIT / 1000 + 30 }).catch(() => {});
+  await presence(tabId, 'signIn');
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab && !tab.active) {
+    await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+    await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  }
+  await remember({ icon: 'key', text: 'Waiting for you to sign in', site: site || siteOf(tab?.url || ''), ok: true });
+  const until = Date.now() + SIGN_IN_WAIT;
+  let clear = 0;
+  while (Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if ((await settings()).paused) {
+      await presence(tabId, 'release');
+      return { ok: false, error: 'The user paused Nook in this browser while signing in. Do not try again; tell the user what you wanted to do.' };
+    }
+    const now = await chrome.tabs.get(tabId).catch(() => null);
+    if (!now) return { ok: false, error: 'The tab was closed while the user signed in.' };
+    // The user pressed Continue on the strip: read in the page's isolated world, so no page can send it as a message.
+    const [pressed] = await chrome.scripting.executeScript({
+      target: { tabId }, func: () => globalThis.__nookPresence?.continued === true
+    }).catch(() => []);
+    if (pressed?.result) break;
+    if (now.status !== 'complete') {
+      clear = 0;
+      continue;
+    }
+    // Signing in took the tab to a site the user switched Nook off for: Nook stops looking there.
+    if (!(await mayRead(tabId))) {
+      await presence(tabId, 'release');
+      return { ok: true, text: `${before ? before + ' ' : ''}The user signed in; the page is now on a site they switched Nook off for, so Nook does not look at it. Tell the user what you wanted to do there.` };
+    }
+    const state = await withTimeout(agent(tabId, 'signin', {}), 2_000);
+    clear = state && !state.needed ? clear + 1 : 0;
+    // Gone twice in a row: not a field that blinks while the page moves on to the next step (a code, a second page).
+    if (clear >= 2) break;
+  }
+  if (clear < 2 && Date.now() >= until) {
+    await presence(tabId, 'release');
+    return { ok: false, error: `The page asked to sign in and the user did not within ${SIGN_IN_WAIT / 60_000} minutes. Ask them to sign in, then try again.` };
+  }
+  await presence(tabId, 'busy');
+  const look = await glance(tabId);
+  return {
+    ok: true,
+    text: `${before ? before + ' ' : ''}The page asked to sign in; the user signed in themselves (Nook did not see what they typed). Go on with the task.`
+      + (look ? '\n\n' + look : '')
+  };
 }
 
 async function screenshot(tab) {
+  // A screenshot needs the tab in view. While the user works in another tab, Nook does not take their view away.
+  if (!tab.active && await userElsewhere()) {
+    return { ok: false, error: `Tab ${tab.id} is in the background while the user works in another tab; a screenshot would take their view away. Use chrome_read or chrome_find instead: they work in the background.` };
+  }
   if (!tab.active) {
     await chrome.tabs.update(tab.id, { active: true });
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -492,13 +734,13 @@ async function handlePanel(message) {
     }
     case 'ask': {
       const tab = await activeTab(message.windowId);
-      const page = tab && !isRestricted(tab.url) ? { title: tab.title || '', url: tab.url || '', tab: tab.id } : null;
+      const page = await pageForQuestion(tab);
       return request({ kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page });
     }
     case 'look':
       return { ok: true, look: await refreshLook() };
     case 'chat':
-      return request({ kind: 'chat', conversation: message.conversation });
+      return request({ kind: 'chat', conversation: message.conversation, watch: !!message.watch });
     case 'stopChat':
       return request({ kind: 'stopChat', conversation: message.conversation });
     default:
@@ -528,6 +770,7 @@ async function updateBadge() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (changes.paused || changes.blocked)) cachedSettings = null;
   if (area === 'local' && changes.paused) updateBadge();
 });
 

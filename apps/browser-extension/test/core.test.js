@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
-  isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError
+  isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError,
+  WATCH_LEASE, WATCH_RENEW, watchRenewalDue
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -207,3 +208,20 @@ test('a look becomes the CSS variables of the appearance that shows', () => {
   assert.equal(lookVariables(look, false)['--canvas'], '#ffffff');
   assert.deepEqual(lookVariables(null, true), {});
 });
+
+test('the panel keeps following an answer that runs longer than Nook\'s lease', () => {
+  assert.ok(WATCH_RENEW < WATCH_LEASE, 'renewed well before the lease ends');
+  // A 25-minute answer: pushes arrive every second, so the panel asks nothing else; it checks every 30 s.
+  let lastAsked = 0;
+  let longestGap = 0;
+  for (let now = 0; now <= 25 * 60_000; now += 30_000) {
+    if (watchRenewalDue(now, lastAsked)) {
+      longestGap = Math.max(longestGap, now - lastAsked);
+      lastAsked = now;
+    }
+  }
+  longestGap = Math.max(longestGap, 25 * 60_000 - lastAsked);
+  assert.ok(longestGap < WATCH_LEASE, `the lease never ran out (longest gap ${longestGap / 60_000} min)`);
+  assert.equal(watchRenewalDue(WATCH_RENEW - 1, 0), false, 'not sooner than needed');
+});
+

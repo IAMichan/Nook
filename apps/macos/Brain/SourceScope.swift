@@ -36,6 +36,8 @@ enum SourceCatalog {
     static let loops = "loops"
     /// What Nook learned about the user (`MemoryBook`).
     static let memory = "memory"
+    /// The user's own browser through Nook's extension (`BrowserExtensionTools.sourceID`).
+    static let browserExtension = "browser_extension"
 
     /// Sources Nook knows out of the box. Connectors added later (MCP servers, new services) register themselves with
     /// `register(_:tools:aliases:intents:)`, so adding one does not mean editing the tables in this file.

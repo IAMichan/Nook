@@ -2,7 +2,9 @@
 // browser, a chat with Nook about the page, and what Nook did here lately. Questions go to Nook on the Mac and are
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
-import { cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf } from './lib/core.js';
+import {
+  cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
+} from './lib/core.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -14,6 +16,18 @@ let conversation = null;
 let messages = [];
 let pollTimer = null;
 let windowId = null;
+// What Nook last sent of the conversation, and whether Nook pushes its changes (Nook 2 and later) or the panel asks.
+let revision = null;
+let live = false;
+let lastUpdate = 0;
+// When the panel last asked Nook to follow its conversation (`watchRenewalDue`).
+let lastAsked = 0;
+
+/** Reads the conversation and asks Nook to keep following it for this panel. */
+function readAndFollow(id) {
+  lastAsked = Date.now();
+  return send({ type: 'chat', conversation: id, watch: true }).catch(() => null);
+}
 // Bumped by "New chat": a reply or poll that started before belongs to the old conversation and is dropped.
 let chatEpoch = 0;
 let look = null;
@@ -150,8 +164,21 @@ async function renderActivity() {
 
 // MARK: - Chat
 
+/** Takes the conversation as Nook sent it; draws it again only when it changed. */
+function applyMessages(next, nextRevision) {
+  lastUpdate = Date.now();
+  if (!Array.isArray(next)) return;
+  const same = nextRevision ? nextRevision === revision : JSON.stringify(next) === JSON.stringify(messages);
+  revision = nextRevision || null;
+  if (same && messages.length) return;
+  messages = next;
+  renderMessages();
+}
+
 function renderMessages() {
   const chat = $('chat');
+  // Follow the answer while the user is at the bottom; leave them where they are when they scrolled up to read.
+  const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 48;
   chat.replaceChildren();
   if (!messages.length) {
     const intro = document.createElement('p');
@@ -177,6 +204,13 @@ function renderMessages() {
       line.textContent = message.status;
       bubble.append(line);
     }
+    if (message.notice && !message.streaming) {
+      // How Nook answered, as Nook says it on the Mac: read there and kept private, for instance.
+      const line = document.createElement('span');
+      line.className = 'notice';
+      line.textContent = message.notice;
+      bubble.append(line);
+    }
     if (message.onMac) {
       const line = document.createElement('span');
       line.className = 'on-mac';
@@ -185,7 +219,7 @@ function renderMessages() {
     }
     chat.append(bubble);
   }
-  chat.scrollTop = chat.scrollHeight;
+  if (atBottom) chat.scrollTop = chat.scrollHeight;
   renderComposer();
 }
 
@@ -255,27 +289,59 @@ async function ask(text) {
     return;
   }
   conversation = reply.conversation || conversation;
+  live = !!reply.live;
+  // Asking starts Nook following this conversation for the panel.
+  lastAsked = Date.now();
   await chrome.storage.session.set({ conversation }).catch(() => {});
-  if (reply.messages) messages = reply.messages;
-  renderMessages();
+  // "New chat" while that was being stored: this answer belongs to the conversation that was left.
+  if (asked !== chatEpoch) return;
+  applyMessages(reply.messages, reply.revision);
   follow();
 }
 
-/** Reads the conversation again every second while Nook answers, for at most five minutes. */
+/**
+ * Nook follows this panel's conversation for ten minutes after it last asked. While the panel is open it asks again
+ * every few minutes, whether Nook is writing or not: an answer that starts later (from Nook's own window, say) still
+ * comes here by itself, and a long answer never outlives the lease.
+ */
+setInterval(async () => {
+  if (!conversation || !live || !watchRenewalDue(Date.now(), lastAsked)) return;
+  const renewing = chatEpoch;
+  const reply = await readAndFollow(conversation);
+  if (renewing === chatEpoch && reply?.ok) applyMessages(reply.messages, reply.revision);
+}, 30_000);
+
+/**
+ * While Nook answers: Nook pushes every change (see the chatUpdate listener), and this only asks now and then in case a
+ * push got lost. An older Nook does not push; then the panel asks every second, as before. At most ten minutes.
+ */
 function follow(started = Date.now()) {
   clearTimeout(pollTimer);
-  if (!conversation || Date.now() - started > 5 * 60_000) return;
+  if (!conversation || Date.now() - started > 10 * 60_000) return;
   const following = chatEpoch;
+  const every = live ? 2_500 : 1_000;
   pollTimer = setTimeout(async () => {
-    const reply = await send({ type: 'chat', conversation }).catch(() => null);
+    pollTimer = null;
+    if (live && Date.now() - lastUpdate < every) {
+      if (isAnswering(messages)) follow(started);
+      return;
+    }
+    const reply = await readAndFollow(conversation);
     if (following !== chatEpoch) return;
-    if (reply?.ok && reply.messages) {
-      messages = reply.messages;
-      renderMessages();
+    if (reply?.ok) {
+      live = !!reply.live;
+      applyMessages(reply.messages, reply.revision);
     }
     if (!reply?.ok || isAnswering(messages)) follow(started);
-  }, 1000);
+  }, every);
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== 'chatUpdate' || !conversation || message.conversation !== conversation) return;
+  live = true;
+  applyMessages(message.messages, message.revision);
+  if (isAnswering(messages) && !pollTimer) follow();
+});
 
 $('composer').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -306,8 +372,10 @@ $('input').addEventListener('keydown', (event) => {
 $('new-chat').addEventListener('click', async () => {
   chatEpoch += 1;
   clearTimeout(pollTimer);
+  pollTimer = null;
   conversation = null;
   messages = [];
+  revision = null;
   renderMessages();
   $('input').focus();
   await chrome.storage.session.remove('conversation').catch(() => {});
@@ -317,10 +385,7 @@ $('stop').addEventListener('click', async () => {
   if (!conversation) return;
   const stopped = chatEpoch;
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
-  if (stopped === chatEpoch && reply?.messages) {
-    messages = reply.messages;
-    renderMessages();
-  }
+  if (stopped === chatEpoch && reply?.messages) applyMessages(reply.messages, reply.revision);
 });
 
 // MARK: - Start
@@ -368,10 +433,10 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   await send({ type: 'connect' }).catch(() => {});
   refreshLook();
   if (conversation) {
-    const reply = await send({ type: 'chat', conversation }).catch(() => null);
+    const reply = await readAndFollow(conversation);
     if (reply?.ok && reply.messages) {
-      messages = reply.messages;
-      renderMessages();
+      live = !!reply.live;
+      applyMessages(reply.messages, reply.revision);
       if (isAnswering(messages)) follow();
     } else {
       conversation = null;

@@ -92,6 +92,48 @@ worker to sleep, switching to the browser window or to another tab wakes it (`wi
 `tabs.onActivated`, `tabs.onUpdated`), and it connects again before you tap; a half-minute alarm (the shortest a browser
 allows) keeps trying in between.
 
+## Watching Nook work
+
+While Nook acts on a page, a cursor in Nook's color glides to what it clicks, types in, chooses or scrolls, and a badge
+under it says what it does, in your language: *Klikt · Verzenden*, *Typt · Lisa de Vries*, *Scrolt ↓*, *Drukt op
+Enter*. A click shows as a short press and a ripple. On the next page the cursor goes on from where it was. It is
+drawn in a closed shadow root, never takes a click itself, and does not glide when you asked for reduced motion.
+
+## Your hands and Nook's
+
+- **Nook is not in your way, and you are not in Nook's.** While Nook acts on a page, your own clicks, keys, typing,
+  pasting and mouse moves on that page wait (`page/presence.js` holds back trusted input in the capture phase; Nook's
+  own events come from a script and pass). Scrolling and looking stay free, and so does the strip's **Stop**. A click
+  you try anyway nudges the strip: *Nook is working here; your clicks wait until it is done.* Your hands are free again
+  12 seconds after Nook's last action, at once when its answer in the side panel is done, or when you press Stop.
+- **Work in another tab meanwhile.** Nook keeps working in its own tab while you use another: a command goes to the tab
+  Nook works in, not the one in front. In a tab in the background the cursor does not glide (nobody sees it, and the
+  browser draws nothing there), so every step is done at once. A page Nook opens while you are elsewhere opens beside
+  yours instead of taking your view, and a screenshot of a background tab is refused rather than switching your tab.
+- **Signing in is yours.** When a page asks to sign in (a password or one-time-code field you can see, after any of
+  Nook's actions, or when Nook would type into such a field), Nook steps aside: the tab comes to the front, the strip
+  says *Sign in on this page; Nook goes on by itself once you are in*, and your clicks and keys work as always. Once the
+  sign-in fields are gone and the page settled (or you press **Continue**), Nook goes on with its task by itself. It
+  waits up to 5 minutes and never sees what you type. Meanwhile the extension gives that command more time in Nook
+  (`{"kind": "extend"}` to `BrowserExtensionHub`, only for the browser that runs it, at most 6 minutes at a time).
+
+## Quick, and sure of where it clicks
+
+- **One step at a time, no extra looks.** After every click, key and typing, the extension waits until the page has
+  done what the action caused (a new page loading, a link that opened a tab, a menu or results appearing, never a
+  fixed wait) and sends what the page shows now and what can be used in view, with refs. `chrome_open` and
+  `chrome_scroll` do the same. Nook takes its next step from that, without a `chrome_find` round in between.
+- **The right element.** By text, what you can see wins: an exact name before one that starts with it before one that
+  contains it, in view before off screen, a button or link before a label. Refs, selectors and text also reach into
+  web components (open shadow roots).
+- **Something in the way.** Before a click the extension checks what is really under the cursor. When a cookie banner,
+  dialog or sticky bar covers the target, Nook hears so, with that layer's buttons and their refs, so it can accept or
+  close it first.
+- **Like a person.** Pointer and mouse events land where the cursor is, short text is typed in a few quick steps so
+  search fields and suggestions react, and a link that opens a new tab moves Nook there.
+
+`test/agent.browser.test.js` runs the page agent in Chromium on a checkout page when Playwright is installed.
+
 ## What keeps it safe
 
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions
@@ -116,8 +158,20 @@ allows) keeps trying in between.
   each connection's user is checked). The extension has no `debugger` permission and no content scripts. It injects its
   page agent into a tab only when Nook sends a command for that tab, into the page's isolated world, where the page's
   own scripts cannot reach it.
-- **Privacy level.** The source counts as personal data on this Mac (`SourceCatalog.personal`). With a privacy level
-  that keeps personal sources local, an external brain or agent does not get these tools.
+- **Your privacy settings, in the browser too.** The extension follows what you set in Nook's main window. A page in
+  your browser is part of your screen: whenever the screen stays on this Mac (the Strict privacy level, or
+  **Settings › Privacy** by hand), the browser extension does too (`PrivacyLevel.keptOnMac`), and you can also keep only
+  the browser here. While it stays here, an external brain never gets the page's text or the `chrome_*` tools, and
+  neither does a coding agent. With a model on this Mac picked under **Settings › Brain › Screen work**:
+  - A question about the page goes to that model (`AppModel.pageWorker`). It reads the page on this Mac and either
+    answers itself, or (with "It gives Claude a short, filtered note") writes the external brain a note with only what
+    the question needs (`PrivateBrief`). The note is filtered at the strictest level before it leaves: secrets, mail
+    addresses and phone numbers go out first. The external brain answers from it, with its own sources.
+  - A request to act on the page (fill in, type, click, choose, send; `ScreenBrain.actsOnPage`) stays with the model on
+    this Mac. It has the page and the `chrome_*` tools, fills in the form itself, and every action still waits for your
+    approval. What you fill in never passes through the cloud.
+  - The side panel shows how Nook answered under the answer, as on the Mac ("read on this Mac…").
+  Without such a model, only the page's title and address go along, and Nook says it cannot read the page.
 
 ## How it fits together
 
@@ -143,15 +197,23 @@ Nook's commands ─────────┘                                  
 - **Tools** (`BrowserExtensionTools`). One definition per tool covers the name, method, schema, timeout, how its
   arguments are checked, and how its approval reads. `BrowserExtensionConnector` turns these definitions into Nook's
   `ToolSpec`s.
-- **Side panel.** A question becomes `app.ask(…, in: conversation, reveal: false, note:)`, the same path the iPhone
-  companion uses. The page in front goes along as a note that is never shown in the chat
-  (`BrowserExtensionPanel.note`). The panel reads the conversation again every second while Nook answers.
+- **Side panel.** A question becomes `app.ask(…, in: conversation, reveal: false, note:, page:)`, the same path the
+  iPhone companion uses. The page in front goes along as a note that is never shown in the chat
+  (`BrowserExtensionPanel.note`). When Nook may use the site (not paused, not switched off), the extension also reads
+  the page's text and the user's selection as the question is asked (at most 16,000 characters, and only when the page
+  answers within 1.5 s). That text goes to the brain like a dropped file (`ReplyContext.page`), so Nook answers about
+  the page without first spending a round on `chrome_read`. It goes only to a brain that may see the browser
+  extension; see "Your privacy settings, in the browser too" for what happens when it stays on this Mac.
+- **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
+  `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
+  and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got
+  lost, and every second with an older Nook that does not push (`live` is false).
 
 ## Developing
 
 ```sh
 cd apps/browser-extension
-npm test                       # lib/core.js, the manifest and id, the five languages (Node's test runner)
+npm test                       # lib/core.js, the manifest and id, the five languages, the page agent in Chromium (Node's test runner)
 ../../scripts/core-tests.sh --filter BrowserExtensionTests   # the Mac side: host, hub, tools
 ```
 
