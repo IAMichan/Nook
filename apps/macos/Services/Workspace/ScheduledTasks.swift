@@ -679,3 +679,72 @@ enum NookSchedule {
         return formatter.string(from: date)
     }
 }
+
+/// The messages one message automation still has to run with (`ScheduledTaskStore`), as a value so it is tested on its
+/// own. It admits a message once (per chat, the newest admitted one is remembered), hands out batches of at most
+/// `NookSchedule.messagesPerRun`, and keeps every admitted message until a batch takes it. Its memory is bounded without
+/// losing anything: past `limit`, a chat's two oldest waiting messages become one that holds both texts, so a busy chat
+/// shrinks to fewer, longer messages while every other chat keeps its own.
+struct ArrivalQueue: Equatable, Sendable {
+    /// The most messages that wait; past it, merging begins.
+    static let limit = 200
+    /// The longest text one merged message holds; beyond it the oldest part goes, marked, never the newest words.
+    static let mergedTextLimit = 4_000
+
+    private(set) var waiting: [ArrivedMessage] = []
+    /// Per chat, the newest message admitted.
+    private var admittedUntil: [String: Date] = [:]
+
+    var isEmpty: Bool { waiting.isEmpty }
+
+    /// The messages of `messages` that match and are new for this task (not admitted before), now remembered as admitted.
+    mutating func admit(_ messages: [ArrivedMessage], matching trigger: MessageTrigger) -> [ArrivedMessage] {
+        var fresh: [ArrivedMessage] = []
+        for message in messages where trigger.matches(message) && message.date > (admittedUntil[message.chatID] ?? .distantPast) {
+            fresh.append(message)
+        }
+        for message in fresh { admittedUntil[message.chatID] = max(admittedUntil[message.chatID] ?? .distantPast, message.date) }
+        return fresh
+    }
+
+    /// Adds messages to wait, after the ones waiting (or before them, `first`, for a batch that could not start).
+    mutating func enqueue(_ messages: [ArrivedMessage], first: Bool = false) {
+        waiting = first ? messages + waiting : waiting + messages
+        compact()
+    }
+
+    /// The next batch for a run, oldest first, of what still matches `trigger` (the user may have changed the filter while
+    /// it waited; what no longer matches goes). The rest keeps waiting.
+    mutating func takeBatch(matching trigger: MessageTrigger) -> [ArrivedMessage] {
+        waiting = waiting.filter(trigger.matches)
+        let batch = Array(waiting.prefix(NookSchedule.messagesPerRun))
+        waiting.removeFirst(batch.count)
+        return batch
+    }
+
+    /// Past the limit, folds the two oldest waiting messages of the chat with the most of them into one, until it fits.
+    /// When every chat has one message left, the two oldest messages overall fold, each text under its chat's name.
+    private mutating func compact() {
+        while waiting.count > Self.limit {
+            var counts: [String: Int] = [:]
+            for message in waiting { counts[message.chatID, default: 0] += 1 }
+            let busiest = counts.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }
+            let indices: [Int]
+            if let busiest, busiest.value > 1 {
+                indices = Array(waiting.indices.filter { waiting[$0].chatID == busiest.key }.prefix(2))
+            } else {
+                indices = [0, 1]
+            }
+            let first = waiting[indices[0]], second = waiting[indices[1]]
+            let sameChat = first.chatID == second.chatID
+            let label: (ArrivedMessage) -> String = { sameChat ? "" : "[\($0.app) · \($0.chat)] " }
+            var text = label(first) + first.text + "\n\n" + label(second) + second.text
+            if text.count > Self.mergedTextLimit { text = "…" + String(text.suffix(Self.mergedTextLimit)) }
+            var merged = second
+            merged.text = text
+            if !sameChat { merged.sender = first.sender + ", " + second.sender }
+            waiting[indices[1]] = merged
+            waiting.remove(at: indices[0])
+        }
+    }
+}

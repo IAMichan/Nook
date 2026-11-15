@@ -285,7 +285,7 @@ final class ScheduledTaskStore: ObservableObject {
         tasks.removeAll { $0.id == id }
         options[id] = nil
         pending[id] = nil
-        waitingMessages[id] = nil
+        messageQueues[id] = nil
         deliveries[id] = nil
         dedupe[id] = nil
         coalescer.forget(id)
@@ -507,7 +507,7 @@ final class ScheduledTaskStore: ObservableObject {
     private func fire(_ id: UUID, scheduledFor: Date, trigger: ScheduleTrigger, prompt: String, now: Date) -> Bool {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return false }
         let key = ScheduledTask.fireKey(taskID: id, scheduledFor: scheduledFor, trigger: trigger)
-        // Message runs are deduplicated per message (`handledUntil`), every other firing by its key.
+        // Message runs are deduplicated per message (`ArrivalQueue.admit`), every other firing by its key.
         guard trigger == .message || ledger.claim(key) else { return false }
         guard gate.begin(id) else {
             // Overlap: a tick that finds the task busy skips this round instead of piling a second run on it.
@@ -663,61 +663,38 @@ final class ScheduledTaskStore: ObservableObject {
 
     // MARK: Messages
 
-    /// Matching messages that came while their task was still running: they start one run together when it is done.
-    private var waitingMessages: [UUID: [ArrivedMessage]] = [:]
-    /// Per task and chat, the newest message that already started (or waits for) a run.
-    private var handledUntil: [String: Date] = [:]
+    /// Per message task, what it admitted and what still waits for a run (`ArrivalQueue`).
+    private var messageQueues: [UUID: ArrivalQueue] = [:]
 
     /// New messages from someone else in the chat inbox (`ChatCaptureService.onArrived`): every task on whose message
-    /// trigger they match runs once with them. Messages that come while the task runs wait and go together in the next run.
+    /// trigger they match runs with them, once per message. What comes while the task runs waits for its next run.
     func messagesArrived(_ messages: [ArrivedMessage], now: Date = Date()) {
         guard !messages.isEmpty else { return }
         for task in tasks where task.enabled && mayRun(task) {
             guard let trigger = task.rule.messageTrigger else { continue }
-            // A message that started a run once never starts another when the chat brings something new later.
-            let matching = messages.filter { message in
-                trigger.matches(message) && message.date > (handledUntil["\(task.id.uuidString)|\(message.chatID)"] ?? .distantPast)
-            }
-            guard !matching.isEmpty else { continue }
-            for message in matching {
-                let key = "\(task.id.uuidString)|\(message.chatID)"
-                handledUntil[key] = max(handledUntil[key] ?? .distantPast, message.date)
-            }
-            if gate.isRunning(task.id) {
-                queueMessages(matching, for: task.id)
-                continue
-            }
-            fireMessages(task, matching, now: now)
+            var queue = messageQueues[task.id] ?? ArrivalQueue()
+            let fresh = queue.admit(messages, matching: trigger)
+            guard !fresh.isEmpty else { continue }
+            queue.enqueue(fresh)
+            messageQueues[task.id] = queue
+            if !gate.isRunning(task.id) { startMessageRun(task, now: now) }
         }
     }
 
-    /// One run takes the first `NookSchedule.messagesPerRun` messages; the rest wait for the next run, so every message
-    /// that matched reaches a run.
-    private func fireMessages(_ task: ScheduledTask, _ messages: [ArrivedMessage], now: Date) {
-        let batch = Array(messages.prefix(NookSchedule.messagesPerRun))
-        let rest = Array(messages.dropFirst(NookSchedule.messagesPerRun))
-        // No firing key for messages: `handledUntil` already keeps a message delivered twice from a second run, and a key by
-        // time could make two batches look like one.
+    /// Starts a run with the next batch, if one waits and the task is free. A batch that could not start goes back first
+    /// in line. No firing key for messages: the queue admits a message once, and a key by time could make two batches one.
+    private func startMessageRun(_ task: ScheduledTask, now: Date) {
+        guard let trigger = task.rule.messageTrigger, var queue = messageQueues[task.id], !queue.isEmpty else { return }
+        let batch = queue.takeBatch(matching: trigger)
+        messageQueues[task.id] = queue
+        guard !batch.isEmpty else { return }
         let started = fire(task.id, scheduledFor: now, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: batch), now: now)
-        // Not started (the task is busy): everything waits for its next run.
-        let waiting = started ? rest : messages
-        if !waiting.isEmpty { queueMessages(waiting, for: task.id, first: true) }
-    }
-
-    /// Every message that matched waits until a run takes it: nothing is dropped. The queue only grows while the task
-    /// runs (at most `nookRunLimit`), and group chats, where most messages come from, count only when the task says so.
-    private func queueMessages(_ messages: [ArrivedMessage], for taskID: UUID, first: Bool = false) {
-        let current = waitingMessages[taskID, default: []]
-        waitingMessages[taskID] = first ? messages + current : current + messages
+        if !started { messageQueues[task.id]?.enqueue(batch, first: true) }
     }
 
     private func drainMessages(_ id: UUID) {
-        guard let waiting = waitingMessages.removeValue(forKey: id), !waiting.isEmpty,
-              let task = task(id), task.enabled, mayRun(task), let trigger = task.rule.messageTrigger else { return }
-        // The filter may have changed while they waited: only what still matches runs.
-        let matching = waiting.filter(trigger.matches)
-        guard !matching.isEmpty else { return }
-        fireMessages(task, matching, now: Date())
+        guard let task = task(id), task.enabled, mayRun(task), task.rule.isMessage else { return }
+        startMessageRun(task, now: Date())
     }
 
     private func recordSkip(_ id: UUID, reason: String, now: Date) {

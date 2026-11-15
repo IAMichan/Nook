@@ -260,6 +260,64 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertFalse(MailActions.replyScript(id: "a@x", body: "b", to: [], cc: [], openWindow: false).contains("set subject"))
     }
 
+    // MARK: Message queue
+
+    private func message(_ chat: String, _ text: String, at offset: TimeInterval = 0, group: Bool = false) -> ArrivedMessage {
+        ArrivedMessage(chatID: chat, app: "whatsapp", chat: chat, sender: chat, text: text, date: now.addingTimeInterval(offset), isGroup: group)
+    }
+
+    func testAMessageIsAdmittedOnce() {
+        var queue = ArrivalQueue()
+        let first = [message("lisa", "a", at: 1), message("lisa", "b", at: 2)]
+        XCTAssertEqual(queue.admit(first, matching: MessageTrigger()).map(\.text), ["a", "b"])
+        XCTAssertEqual(queue.admit(first + [message("lisa", "c", at: 3)], matching: MessageTrigger()).map(\.text), ["c"],
+                       "the chat brought its earlier messages again: only the new one counts")
+        XCTAssertEqual(queue.admit([message("bram", "x", group: true)], matching: MessageTrigger()), [], "groups only when asked")
+    }
+
+    func testBatchesTakeEveryMessageAlsoWithEqualTimes() {
+        var queue = ArrivalQueue()
+        // Nine chats, every message at the same moment.
+        let nine = (1...9).map { message("chat\($0)", "m\($0)") }
+        queue.enqueue(queue.admit(nine, matching: MessageTrigger()))
+        let first = queue.takeBatch(matching: MessageTrigger())
+        let second = queue.takeBatch(matching: MessageTrigger())
+        XCTAssertEqual(first.count, NookSchedule.messagesPerRun)
+        XCTAssertEqual((first + second).map(\.text), nine.map(\.text), "two batches, nothing left out")
+        XCTAssertTrue(queue.isEmpty)
+    }
+
+    func testABatchThatCouldNotStartGoesBackFirst() {
+        var queue = ArrivalQueue()
+        queue.enqueue([message("a", "1"), message("b", "2")])
+        let batch = queue.takeBatch(matching: MessageTrigger())
+        queue.enqueue([message("c", "3")])
+        queue.enqueue(batch, first: true)
+        XCTAssertEqual(queue.waiting.map(\.text), ["1", "2", "3"])
+    }
+
+    func testQueuedMessagesFollowTheCurrentFilter() {
+        var queue = ArrivalQueue()
+        queue.enqueue([message("Lisa", "voor Lisa"), message("Bob", "voor Bob")])
+        XCTAssertEqual(queue.takeBatch(matching: MessageTrigger(from: "Bob")).map(\.text), ["voor Bob"])
+        XCTAssertTrue(queue.isEmpty, "what no longer matches does not wait forever")
+    }
+
+    func testTheQueueStaysBoundedWithoutLosingWords() {
+        var queue = ArrivalQueue()
+        let flood = (0..<(ArrivalQueue.limit + 50)).map { message("busy", "word\($0)", at: TimeInterval($0)) }
+        queue.enqueue(flood + [message("quiet", "alleen ik", at: 1_000)])
+        XCTAssertLessThanOrEqual(queue.waiting.count, ArrivalQueue.limit)
+        let texts = queue.waiting.map(\.text).joined(separator: "\n")
+        for n in [0, 120, ArrivalQueue.limit + 49] { XCTAssertTrue(texts.contains("word\(n)"), "word\(n) is still there") }
+        XCTAssertEqual(queue.waiting.filter { $0.chatID == "quiet" }.map(\.text), ["alleen ik"], "other chats keep their own message")
+        // Many chats with one message each fold too, each text under its chat's name.
+        var wide = ArrivalQueue()
+        wide.enqueue((0..<(ArrivalQueue.limit + 1)).map { message("c\($0)", "t\($0)") })
+        XCTAssertEqual(wide.waiting.count, ArrivalQueue.limit)
+        XCTAssertTrue(wide.waiting[0].text.contains("[whatsapp · c0] t0") && wide.waiting[0].text.contains("t1"))
+    }
+
     // MARK: Intent
 
     func testWaitingForAMessageOffersTheSchedulingTools() {
