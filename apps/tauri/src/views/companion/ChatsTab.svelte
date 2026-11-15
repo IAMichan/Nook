@@ -12,6 +12,7 @@
   import Banner from "./ui/Banner.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import { WA } from "./ui/whatsapp";
+  import { fetchPictures } from "../../lib/avatars.svelte";
 
   let { view, inbox, message, onorb, ongear, onopen, took, onrefresh }: {
     view: ClientView; inbox: InboxChatDigest[]; message?: string; onorb: (r: DOMRect) => void; ongear: () => void;
@@ -22,6 +23,7 @@
   let header = $state<HTMLDivElement | null>(null);
   let menu = $state<{ chat: InboxChatDigest; anchor: DOMRect } | null>(null);
   const chats = $derived(filterInbox(inbox, query, unreadOnly));
+  $effect(() => { void fetchPictures(view, inbox); });
   const unreadCount = $derived(inbox.filter((c) => c.unread > 0).length);
   let press: ReturnType<typeof setTimeout> | undefined;
   let held = false;
@@ -79,7 +81,7 @@
         {@const typing = typingText(c.typing)}
         {#if c.app === "whatsapp"}
           <button class="row wa row-press" onclick={() => !held && onopen(c.id)} onpointerdown={(e) => down(e, c)} onpointerup={up} onpointerleave={up} onpointercancel={up} oncontextmenu={(e) => e.preventDefault()}>
-            <InboxAvatar name={c.name} size={52} badge={false} />
+            <InboxAvatar id={c.id} name={c.name} size={52} badge={false} />
             <span class="text">
               <span class="l1"><strong style:color={WA.text}>{c.name}</strong><span class="when" style:color={c.unread ? WA.green : WA.quiet}>{chatTime(c.last)}</span></span>
               <span class="l2">
@@ -91,7 +93,7 @@
           </button>
         {:else}
           <button class="row row-press" onclick={() => !held && onopen(c.id)} onpointerdown={(e) => down(e, c)} onpointerup={up} onpointerleave={up} onpointercancel={up} oncontextmenu={(e) => e.preventDefault()}>
-            <InboxAvatar name={c.name} app={c.app} size={40} />
+            <InboxAvatar id={c.id} name={c.name} app={c.app} size={40} />
             <span class="text">
               <span class="l1"><strong class:unread={c.unread > 0}>{c.name}</strong><span class="when" class:unread={c.unread > 0}>{chatTime(c.last)}</span></span>
               <span class="l2">

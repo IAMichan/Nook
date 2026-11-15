@@ -6,7 +6,7 @@
   import { onDestroy, untrack } from "svelte";
   import {
     applyTimeline, canStop, companion, followsLive, has, may, Feature,
-    type ClientView, type DigestItem, type TimelineEntry,
+    type ClientView, type DigestItem, type SessionDigest, type TimelineEntry,
   } from "../../lib/companion";
   import { renderMarkdown } from "../../lib/markdown";
   import { tr } from "../../lib/i18n.svelte";
@@ -24,21 +24,26 @@
   import ConversationScroll from "./ConversationScroll.svelte";
   import TranscriptView from "./TranscriptView.svelte";
   import ChangesView from "./ChangesView.svelte";
+  import FilesView from "./FilesView.svelte";
+  import SnoozePicker from "./SnoozePicker.svelte";
+  import TerminalsView from "./TerminalsView.svelte";
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import PullRequests from "./PullRequests.svelte";
   import Sheet from "./ui/Sheet.svelte";
   import { withReviewComment } from "../../lib/patch";
 
-  let { view, id, onback, act, took }: {
+  let { view, id, fallback, onback, act, took }: {
     view: ClientView;
     id: string;
+    /** An older session the live list does not hold (from `history`), shown until a message moves it back. */
+    fallback?: SessionDigest;
     onback: () => void;
     act: (f: () => Promise<ClientView>) => Promise<void>;
     took: (v: ClientView) => void;
   } = $props();
 
-  const session = $derived(view.sessions.find((s) => s.id === id) ?? null);
+  const session = $derived(view.sessions.find((s) => s.id === id) ?? fallback ?? null);
   const hasTimeline = $derived(has(view, Feature.timeline));
   const live = $derived(followsLive(view, Feature.liveTimeline));
   const canOperate = $derived(may(view, "operate"));
@@ -59,13 +64,40 @@
   let dialog = $state<null | { kind: "stop" | "end" | "archive" } | { kind: "rename"; name: string }>(null);
   let now = $state(Date.now() / 1000);
   let titleEl = $state<HTMLButtonElement | null>(null);
-  let sub = $state<null | "changes" | "pulls">(null);
+  let sub = $state<null | "changes" | "pulls" | "files" | "terminals">(null);
   let images = $state<string[]>([]);
+  let picking = $state(false);
+  // Earlier entries asked for page by page, kept beside the live conversation so an update never drops them.
+  let earlier = $state<TimelineEntry[]>([]);
+  let atStart = $state(false);
+  let loadingEarlier = $state(false);
+  const fullTranscript = $derived(has(view, Feature.fullTranscript));
+  const shown = $derived([...earlier.filter((e) => !entries.some((x) => x.id === e.id)), ...entries]);
+  async function loadEarlier() {
+    const oldest = shown[0];
+    if (!oldest || loadingEarlier) return;
+    loadingEarlier = true;
+    const r = await companion.call({ op: "timeline", session: id, item: oldest.id });
+    loadingEarlier = false;
+    const page = r.response?.timeline ?? [];
+    if (!page.length) atStart = true;
+    earlier = [...page, ...earlier];
+  }
+  async function readWhole(entry: TimelineEntry) {
+    const r = await companion.call({ op: "entry", session: id, item: entry.id });
+    const text = r.response?.entryText;
+    if (!text) return took(r.view);
+    const swap = (list: TimelineEntry[]) => list.map((e) => (e.id === entry.id ? { ...e, text, clipped: false } : e));
+    entries = swap(entries);
+    earlier = swap(earlier);
+  }
   const canPicture = $derived(has(view, Feature.images));
   const tooLarge = () => took({ ...view, notice: tr("Die foto kon niet klein genoeg worden gemaakt.", "That picture could not be made small enough.") });
   let moreMenu = $state<DOMRect | null>(null);
   const showChanges = $derived(has(view, Feature.diff) && may(view, "read") && session?.canSend !== false);
   const showPulls = $derived(has(view, Feature.pullRequests) && may(view, "read"));
+  // Files and terminals need the right to operate, and only for sessions Nook runs on this Mac.
+  const showWorkspace = $derived(has(view, Feature.workspace) && may(view, "operate") && session?.canSend !== false);
 
   function readSteer(): boolean {
     try { return localStorage.getItem("companion.steer") === "1"; } catch { return false; }
@@ -165,6 +197,7 @@
           ...(actions.has("snoozeEvening") ? [{ label: tr("Vanavond", "This evening"), icon: "clock", onselect: () => manage("snoozeEvening") }] : []),
           ...(actions.has("snoozeTomorrow") ? [{ label: tr("Morgenochtend", "Tomorrow morning"), icon: "clock", onselect: () => manage("snoozeTomorrow") }] : []),
           ...(actions.has("snoozeLimitReset") && session.limitResetsAt ? [{ label: tr("Tot de limiet reset", "Until the limit resets"), icon: "gauge", onselect: () => manage("snoozeLimitReset") }] : []),
+          ...(actions.has("snoozeUntil") ? [{ label: tr("Kies een moment…", "Pick a time…"), icon: "calendar-clock", onselect: () => (picking = true) }] : []),
         ];
     return [
       [
@@ -184,13 +217,17 @@
 </script>
 
 <div class="session">
-{#if sub === "changes" && session}
+{#if sub === "files" && session}
+  <FilesView {view} session={session.id} onback={() => (sub = null)} {took} />
+{:else if sub === "terminals" && session}
+  <TerminalsView session={session.id} onback={() => (sub = null)} {took} />
+{:else if sub === "changes" && session}
   <ChangesView session={session.id} onback={() => (sub = null)} {took} oncomment={(block) => { message = withReviewComment(message, block); sub = null; }} />
 {:else}
   <NavBar onback={onback}>
     {#snippet trailing()}
       {#if showChanges}<button class="navbtn" aria-label={tr("Wijzigingen", "Changes")} onclick={() => { haptic(); sub = "changes"; }}><Ico name="diff" size={19} /></button>{/if}
-      {#if showPulls}<button class="navbtn" aria-label={tr("Bestanden, terminals en pull requests", "Files, terminals and pull requests")} onclick={(e) => (moreMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="circle-ellipsis" size={19} /></button>{/if}
+      {#if showPulls || showWorkspace}<button class="navbtn" aria-label={tr("Bestanden, terminals en pull requests", "Files, terminals and pull requests")} onclick={(e) => (moreMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="circle-ellipsis" size={19} /></button>{/if}
     {/snippet}
     {#snippet center()}
       <button bind:this={titleEl} class="title" disabled={!hasMenu} onclick={() => titleEl && (menu = titleEl.getBoundingClientRect())}>
@@ -211,7 +248,10 @@
           {#if !loaded}
             <div class="loading breathe"><span style:width="90%"></span><span style:width="70%"></span><span style:width="80%"></span></div>
           {:else}
-            <TranscriptView {entries} {working} onreply={canOperate && session.canSend !== false ? (t) => (message = "> " + t.split("\n").slice(0, 4).join("\n> ") + "\n\n" + message) : undefined} />
+            {#if fullTranscript && shown.length && !atStart}
+              <button class="earlier" onclick={loadEarlier} disabled={loadingEarlier}>{#if loadingEarlier}<span class="mini"></span>{:else}<Ico name="arrow-up" size={13} />{/if}{tr("Eerdere berichten", "Earlier messages")}</button>
+            {/if}
+            <TranscriptView entries={shown} {working} onwhole={fullTranscript ? readWhole : undefined} onreply={canOperate && session.canSend !== false ? (t) => (message = "> " + t.split("\n").slice(0, 4).join("\n> ") + "\n\n" + message) : undefined} />
           {/if}
         {:else if session.excerpt}
           <h3 class="section">{tr("Laatste antwoord", "Latest reply")}</h3>
@@ -290,8 +330,14 @@
 {#if sub === "pulls" && session}
   <Sheet onclose={() => (sub = null)}><PullRequests {view} session={session.id} {took} onclose={() => (sub = null)} onstarted={() => (sub = null)} /></Sheet>
 {/if}
+{#if picking && session}
+  <Sheet onclose={() => (picking = false)}><SnoozePicker title={session.title} onclose={() => (picking = false)} onpick={(at) => manage("snoozeUntil", String(at))} /></Sheet>
+{/if}
 {#if moreMenu}
-  <Menu anchor={moreMenu} onclose={() => (moreMenu = null)} sections={[[{ label: tr("Pull requests", "Pull requests"), icon: "git-pull-request", onselect: () => (sub = "pulls") }]]} />
+  <Menu anchor={moreMenu} onclose={() => (moreMenu = null)} sections={[[
+    ...(showWorkspace ? [{ label: tr("Bestanden", "Files"), icon: "folder", onselect: () => (sub = "files") }, { label: tr("Terminals", "Terminals"), icon: "terminal", onselect: () => (sub = "terminals") }] : []),
+    ...(showPulls ? [{ label: tr("Pull requests", "Pull requests"), icon: "git-pull-request", onselect: () => (sub = "pulls") }] : []),
+  ]]} />
 {/if}
 {#if menu}<Menu sections={menuSections} anchor={menu} onclose={() => (menu = null)} />{/if}
 {#if steerMenu}
@@ -325,6 +371,9 @@
 
 <style>
   .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .earlier { align-self: center; margin: 8px auto 4px; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; background: var(--smoke) !important; color: var(--text2) !important; font: var(--pt-label) !important; }
+  .mini { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .navbtn { width: 36px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper) !important; }
   .title { max-width: 260px; display: flex; flex-direction: column; align-items: center; min-width: 0; opacity: 1 !important; }
   .l1 { display: flex; align-items: center; gap: 4px; max-width: 100%; font: var(--pt-strong); white-space: nowrap; }

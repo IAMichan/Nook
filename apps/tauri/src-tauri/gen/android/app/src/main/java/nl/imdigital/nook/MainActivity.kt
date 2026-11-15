@@ -32,6 +32,7 @@ class MainActivity : TauriActivity() {
   private var webView: WebView? = null
   @Volatile private var insetsJson = "{\"top\":0,\"bottom\":0,\"left\":0,\"right\":0,\"keyboard\":0}"
   @Volatile private var shared: String? = null
+  @Volatile private var link: String? = null
   private var multicast: WifiManager.MulticastLock? = null
   private var recognizer: SpeechRecognizer? = null
   private var pendingLanguage: String? = null
@@ -40,6 +41,7 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     takeShare(intent)
+    takeLink(intent)
   }
 
   override fun onResume() {
@@ -130,6 +132,9 @@ class MainActivity : TauriActivity() {
     if (takeShare(intent)) {
       webView?.post { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('nook-share'))", null) }
     }
+    if (takeLink(intent)) {
+      webView?.post { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('nook-link'))", null) }
+    }
   }
 
   override fun onWebViewCreate(webView: WebView) {
@@ -161,6 +166,16 @@ class MainActivity : TauriActivity() {
     ViewCompat.requestApplyInsets(webView)
   }
 
+  /** Keeps a nook:// link the app was opened with (a pairing code, a prompt link); true when there was one. */
+  private fun takeLink(intent: Intent?): Boolean {
+    if (intent?.action != Intent.ACTION_VIEW) return false
+    val data = intent.dataString ?: return false
+    if (!data.startsWith("nook://", ignoreCase = true) || data.length > 20000) return false
+    link = data
+    intent.action = null
+    return true
+  }
+
   /** Bewaart gedeelde tekst (ACTION_SEND, text/plain); waar als er iets was. */
   private fun takeShare(intent: Intent?): Boolean {
     if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("text/") != true) return false
@@ -186,6 +201,13 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun stopDictating() {
       runOnUiThread { stopDictation() }
+    }
+
+    @JavascriptInterface
+    fun takeLink(): String? {
+      val text = link
+      link = null
+      return text
     }
 
     @JavascriptInterface

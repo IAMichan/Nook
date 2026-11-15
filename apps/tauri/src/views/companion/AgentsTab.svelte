@@ -19,6 +19,7 @@
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import Sheet from "./ui/Sheet.svelte";
   import PullRequests from "./PullRequests.svelte";
+  import SnoozePicker from "./SnoozePicker.svelte";
 
   let { view, act, took, onorb, ongear, onopen, onnew }: {
     view: ClientView;
@@ -26,9 +27,46 @@
     took: (v: ClientView) => void;
     onorb: (r: DOMRect) => void;
     ongear: () => void;
-    onopen: (id: string) => void;
+    onopen: (id: string, digest?: SessionDigest) => void;
     onnew: () => void;
   } = $props();
+
+  // Older sessions than the live list holds, a page at a time, and the Mac's search through all of them (`history`).
+  const canHistory = $derived(has(view, Feature.history) && may(view, "read"));
+  let older = $state<SessionDigest[]>([]);
+  let olderCursor = $state<string | null | undefined>(undefined);
+  let olderLoading = $state(false);
+  let matches = $state<SessionDigest[]>([]);
+  let matchCursor = $state<string | null | undefined>(undefined);
+  let matchLoading = $state(false);
+  const live = $derived(new Set(view.sessions.map((s) => s.id)));
+
+  async function page(text: string, cursor: string | null | undefined) {
+    const r = await companion.call({ op: "history", text: text || undefined, item: cursor ?? undefined });
+    if (!r.response) took(r.view);
+    return { sessions: (r.response?.sessions ?? []).filter((s) => !live.has(s.id)), cursor: r.response?.cursor ?? null };
+  }
+  async function moreOlder() {
+    olderLoading = true;
+    const p = await page("", olderCursor);
+    older = [...older, ...p.sessions.filter((s) => !older.some((o) => o.id === s.id))];
+    olderCursor = p.cursor;
+    olderLoading = false;
+  }
+  async function moreMatches(text: string, fresh: boolean) {
+    matchLoading = true;
+    const p = await page(text, fresh ? undefined : matchCursor);
+    if (text !== query.trim()) return;
+    matches = fresh ? p.sessions : [...matches, ...p.sessions];
+    matchCursor = p.cursor;
+    matchLoading = false;
+  }
+  $effect(() => {
+    const text = query.trim();
+    if (!canHistory || !text) { matches = []; matchCursor = undefined; return; }
+    const timer = setTimeout(() => moreMatches(text, true), 350);
+    return () => clearTimeout(timer);
+  });
 
   const SHOWN = 8;
   let query = $state("");
@@ -37,6 +75,7 @@
   let menu = $state<{ session: SessionDigest; anchor: DOMRect } | null>(null);
   let blocked = $state<string | null>(null);
   let pulls = $state(false);
+  let picking = $state<SessionDigest | null>(null);
   let open = $state<Record<string, boolean>>(readShelves());
 
   function readShelves(): Record<string, boolean> {
@@ -79,6 +118,7 @@
           ...(offered.has("snoozeEvening") ? [{ label: tr("Vanavond", "This evening"), icon: "clock", onselect: () => manage(s, "snoozeEvening") }] : []),
           ...(offered.has("snoozeTomorrow") ? [{ label: tr("Morgenochtend", "Tomorrow morning"), icon: "clock", onselect: () => manage(s, "snoozeTomorrow") }] : []),
           ...(offered.has("snoozeLimitReset") && s.limitResetsAt ? [{ label: tr("Tot de limiet reset", "Until the limit resets"), icon: "gauge", onselect: () => manage(s, "snoozeLimitReset") }] : []),
+          ...(offered.has("snoozeUntil") ? [{ label: tr("Kies een moment…", "Pick a time…"), icon: "calendar-clock", onselect: () => (picking = s) }] : []),
         ];
     const end: MenuItem[] = [
       ...(offered.has("archive") ? [{ label: actionLabel("archive"), icon: "archive", destructive: true, onselect: () => manage(s, "archive") }] : []),
@@ -100,8 +140,8 @@
     </div>
     <div class="top">
       <ConnectionLine {view} />
-      {#if view.sessions.length > SHOWN}<SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} />{/if}
-      {#if query.trim() && !all.length}<p class="none">{tr("Geen sessie gevonden.", "No session matches.")}</p>{/if}
+      {#if view.sessions.length > SHOWN || canHistory}<SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} />{/if}
+      {#if query.trim() && !all.length && !matches.length && !matchLoading}<p class="none">{tr("Geen sessie gevonden.", "No session matches.")}</p>{/if}
       {#each waiting as s (s.id)}
         <SessionNotice {view} session={s} onopen={() => onopen(s.id)} {act} />
       {/each}
@@ -123,12 +163,33 @@
       {/if}
     {/if}
 
+    {#if canHistory && !query.trim() && (open.recent ?? true) && shownRecent.length === recent.length}
+      {#if older.length}
+        <ShelfHeader title={tr("Ouder", "Older")} count={older.length} open={open.older ?? true} ontoggle={() => toggle("older")} />
+        {#if open.older ?? true}{#each older as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id, s)} />{/each}{/if}
+      {/if}
+      {#if olderCursor !== null}
+        <button class="more press" disabled={olderLoading} onclick={moreOlder}>{#if olderLoading}<span class="mini"></span>{:else}{older.length ? tr("Meer oudere sessies tonen", "Show more older sessions") : tr("Oudere sessies tonen", "Show older sessions")}{/if}</button>
+      {/if}
+    {/if}
+    {#if canHistory && query.trim() && (matches.length || matchLoading)}
+      <h3 class="older">{tr("Oudere treffers", "Older matches")}</h3>
+      {#each matches as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id, s)} />{/each}
+      {#if matchCursor || matchLoading}
+        <button class="more press" disabled={matchLoading} onclick={() => moreMatches(query.trim(), false)}>{#if matchLoading}<span class="mini"></span>{:else}{tr("Meer treffers", "More matches")}{/if}</button>
+      {/if}
+    {/if}
+
     {#if !view.sessions.length && view.phase === "connected"}
       <EmptyState icon="layers" title={tr("Geen sessies", "No sessions")} text={tr("Sessies van je coding-agents op je Mac verschijnen hier.", "Sessions of your coding agents on your Mac show up here.")} action={tr("Nieuwe sessie", "New session")} onaction={newSession} />
     {/if}
   </div>
 </div>
 
+{#if picking}
+  {@const target = picking}
+  <Sheet onclose={() => (picking = null)}><SnoozePicker title={target.title} onclose={() => (picking = null)} onpick={async (at) => { const r = await companion.call({ op: "manage", session: target.id, item: "snoozeUntil", text: String(at) }); took(r.view); }} /></Sheet>
+{/if}
 {#if pulls}
   <Sheet onclose={() => (pulls = false)}><PullRequests {view} {took} onclose={() => (pulls = false)} onstarted={(id) => { pulls = false; onopen(id); }} /></Sheet>
 {/if}
@@ -142,6 +203,9 @@
   .scroll { flex: 1; overflow-y: auto; padding-bottom: 24px; }
   .top { display: flex; flex-direction: column; gap: 12px; padding: 0 16px; }
   .none { margin: 0; padding: 24px 0; text-align: center; font: var(--pt-body); color: var(--text2); }
+  .older { margin: 0; padding: 16px 20px 4px; font: var(--pt-label); color: var(--text3); }
+  .mini { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .more { width: calc(100% - 16px); margin: 0 8px; min-height: 40px; font: var(--pt-label) !important; color: var(--text2) !important; }
   .alert-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
   .alert { width: 270px; background: rgba(37, 37, 37, 0.96); border-radius: 14px; overflow: hidden; text-align: center; }

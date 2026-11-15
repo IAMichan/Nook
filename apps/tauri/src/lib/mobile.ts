@@ -9,6 +9,8 @@ declare global {
       insets(): string;
       /** Tekst die een andere app met Nook deelde, één keer. */
       takeShared(): string | null;
+      /** A nook:// link the app was opened with, once. */
+      takeLink?(): string | null;
       /** Starts dictation in a BCP 47 language (empty: the phone's own); words come as event `nook-dictation`. */
       dictate?(language: string): void;
       stopDictating?(): void;
@@ -64,7 +66,7 @@ function applyInsets(insets: Insets) {
 }
 
 /** Start de telefoonlijm. `onShared` krijgt tekst die met Nook gedeeld werd. Kan de terugknop nergens heen, dan sluit de app. */
-export async function setupMobile(onShared: (text: string) => void) {
+export async function setupMobile(onShared: (text: string) => void, onLink?: (url: string) => void) {
   const bridge = window.NookAndroid;
   if (bridge) {
     const initial = parseInsets(bridge.insets());
@@ -72,6 +74,12 @@ export async function setupMobile(onShared: (text: string) => void) {
     window.addEventListener("nook-insets", (e) => {
       const insets = parseInsets((e as CustomEvent<string>).detail);
       if (insets) applyInsets(insets);
+    });
+    const link = bridge.takeLink?.();
+    if (link) onLink?.(link);
+    window.addEventListener("nook-link", () => {
+      const url = window.NookAndroid?.takeLink?.();
+      if (url) onLink?.(url);
     });
     const shared = bridge.takeShared();
     if (shared) onShared(shared);

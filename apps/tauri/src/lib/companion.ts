@@ -78,6 +78,9 @@ export interface ClientView {
   features: string[];
   /** What this phone may do there; null from a computer without scopes (everything). */
   scopes: string[] | null;
+  /** The computer's protocol version and the oldest phone it supports; null from one that predates versions. */
+  macVersion?: number | null;
+  oldestPhone?: number | null;
 }
 
 export const companion = {
@@ -176,6 +179,7 @@ export function looksLikePairingLink(text: string): boolean {
 // phone only offers what the computer lists in `features`, and what its `scopes` allow.
 
 export type Op =
+  | "terminals" | "files" | "fileData" | "history" | "entry" | "requestUpdate" | "avatars"
   | "watch" | "watchChat" | "diff" | "pulls" | "pull" | "pullAct" | "pullWork"
   | "list" | "decide" | "answer" | "send" | "stop" | "options" | "start" | "timeline" | "chats" | "chat" | "ask" | "chatStop"
   | "home" | "usage" | "music" | "inbox" | "inboxChat" | "inboxSend" | "inboxMark" | "manage";
@@ -205,7 +209,14 @@ export interface ClientCall {
   images?: { jpeg: string }[];
   pullAction?: PullAction;
   pullWork?: { url: string; agent: string; task: string; model?: string };
+  items?: string[];
 }
+
+export interface TerminalDigest { id: string; title: string; running: boolean; output: string }
+export interface FolderDigest { path: string; entries?: { name: string; isFolder: boolean; size?: number }[]; text?: string; truncated?: boolean; binary?: boolean }
+export interface FileChunk { path: string; offset: number; total: number; data: string }
+export interface ChatAvatar { chat: string; version: string; jpeg: string }
+export interface InboxReader { name: string; receipt: string; date?: number }
 
 export interface DiffFile { path: string; kind: string; added?: number; removed?: number; patch?: string; truncated: boolean }
 
@@ -265,6 +276,8 @@ export interface InboxChatDigest {
   ticks?: string;
   waitsInApp: boolean;
   typing?: InboxTypist[];
+  /** Which picture the chat has; asked for once with `avatars`. */
+  avatar?: string;
 }
 
 export interface InboxTypist { name: string; kind: string }
@@ -280,6 +293,8 @@ export interface InboxLine {
   quoteSender?: string;
   quoteText?: string;
   reactions: string[];
+  /** Who has your message and who read it. */
+  readers?: InboxReader[];
 }
 
 export interface UsageLimit { label: string; percent: number; resetsAt?: number; note?: string; duration?: number }
@@ -316,13 +331,21 @@ export interface CompanionResponse {
   diff?: DiffFile[];
   pulls?: PullDigest[];
   pull?: PullDetail;
+  terminals?: TerminalDigest[];
+  folder?: FolderDigest;
+  fileChunk?: FileChunk;
+  avatars?: ChatAvatar[];
+  cursor?: string;
+  timelineBefore?: string;
+  entryText?: string;
 }
 
 export interface CallResult { view: ClientView; response: CompanionResponse | null }
 
 /** `CompanionFeature` names this phone reads. */
 export const Feature = {
-  diff: "diff", pullRequests: "pullRequests", images: "images",
+  diff: "diff", pullRequests: "pullRequests", images: "images", workspace: "workspace", filePreview: "filePreview",
+  history: "history", fullTranscript: "fullTranscript", requestUpdate: "requestUpdate", avatars: "avatars", appIcons: "appIcons",
   stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
 } as const;
@@ -462,8 +485,8 @@ export function relative(seconds: number, now = Date.now()): string {
   }
 }
 
-/** The session actions the phone offers, in the order of the Mac's menu; `snoozeUntil` needs a time picker it lacks. */
-export const SESSION_ACTIONS = ["rename", "snoozeHour", "snoozeEvening", "snoozeTomorrow", "snoozeLimitReset", "unsnooze", "mainThreadOn", "mainThreadOff", "end", "archive"] as const;
+/** The session actions the phone offers, in the order of the Mac's menu. */
+export const SESSION_ACTIONS = ["rename", "snoozeHour", "snoozeEvening", "snoozeTomorrow", "snoozeLimitReset", "snoozeUntil", "unsnooze", "mainThreadOn", "mainThreadOff", "end", "archive"] as const;
 
 export function sessionActions(session: SessionDigest): string[] {
   const offered = new Set(session.actions ?? []);
@@ -561,3 +584,80 @@ export function typingText(t: InboxTypist[] | undefined): string | null {
   return who.name ? tr("{name} typt…", "{name} is typing…", { name: who.name }) : tr("typt…", "typing…");
 }
 
+
+/** The protocol this phone speaks (`CompanionProtocol.version`), and the oldest computer it still works with. */
+export const PROTOCOL_VERSION = 3;
+export const OLDEST_MAC = 1;
+
+/** Every feature this phone knows; a computer that lists more is newer than this app. */
+export const KNOWN_FEATURES = [
+  "workspace", "start", "timeline", "chat", "home", "usage", "music", "inbox", "liveActivity", "manage", "stream", "routes", "retry",
+  "relay", "requestUpdate", "steer", "liveTimeline", "diff", "images", "clock", "revoke", "foreground", "resume", "pullRequests",
+  "attachments", "history", "compression", "filePreview", "liveChats", "avatars", "fullTranscript", "appIcons",
+];
+
+export type VersionNotice = "macTooOld" | "phoneTooOld" | "macBehind" | "phoneBehind";
+
+/** Whether this phone and the computer work together, and if one is behind (`CompanionCompatibility`). */
+export function versionNotice(view: Pick<ClientView, "macVersion" | "oldestPhone"> | null | undefined): VersionNotice | null {
+  if (!view) return null;
+  const mac = view.macVersion ?? 1;
+  if (mac < OLDEST_MAC) return "macTooOld";
+  if (PROTOCOL_VERSION < (view.oldestPhone ?? 1)) return "phoneTooOld";
+  if (mac < PROTOCOL_VERSION) return "macBehind";
+  if (mac > PROTOCOL_VERSION) return "phoneBehind";
+  return null;
+}
+
+/** The computer lists features this app does not know: it is newer than the app. */
+export function newerMac(view: Pick<ClientView, "features"> | null | undefined): boolean {
+  return !!view?.features?.some((f) => !KNOWN_FEATURES.includes(f));
+}
+
+/**
+ * A file put together from its pieces, in order (`FileAssembly`): a piece that does not follow, or a file that changed
+ * size underway, is refused.
+ */
+export class FileAssembly {
+  private parts: Uint8Array[] = [];
+  private received = 0;
+  total: number | null = null;
+  static readonly MAX_BYTES = 8 * 1024 * 1024;
+
+  /** Adds a piece; false when it does not fit what came before. */
+  add(chunk: FileChunk): boolean {
+    if (chunk.total > FileAssembly.MAX_BYTES || chunk.offset !== this.received || (this.total !== null && chunk.total !== this.total)) return false;
+    const bytes = Uint8Array.from(atob(chunk.data), (c) => c.charCodeAt(0));
+    this.total = chunk.total;
+    this.parts.push(bytes);
+    this.received += bytes.length;
+    return true;
+  }
+
+  get done(): boolean {
+    return this.total !== null && this.received >= this.total;
+  }
+
+  get next(): number {
+    return this.received;
+  }
+
+  blob(type: string): Blob {
+    return new Blob(this.parts as BlobPart[], { type });
+  }
+}
+
+/** The earliest and latest moment a session can be snoozed to (`CompanionSnooze`): from 90 seconds on, a month at most. */
+export function snoozeRange(now = Date.now()): { min: number; max: number } {
+  return { min: now + 90_000, max: now + 31 * 86_400_000 };
+}
+
+/** What kind of file a name is, for its icon and how it previews. */
+export function fileKind(name: string): "image" | "pdf" | "video" | "audio" | "text" {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "svg"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (["mp4", "mov", "m4v", "webm"].includes(ext)) return "video";
+  if (["mp3", "m4a", "wav", "aac", "ogg", "flac"].includes(ext)) return "audio";
+  return "text";
+}

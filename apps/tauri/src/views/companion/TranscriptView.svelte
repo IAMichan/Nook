@@ -7,7 +7,7 @@
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "./ui/Ico.svelte";
 
-  let { entries, working, onreply }: { entries: TimelineEntry[]; working: boolean; onreply?: (text: string) => void } = $props();
+  let { entries, working, onreply, onwhole }: { entries: TimelineEntry[]; working: boolean; onreply?: (text: string) => void; onwhole?: (entry: TimelineEntry) => void } = $props();
   const rows = $derived(transcriptRows(entries, working));
   let opened = $state<Record<string, boolean>>({});
   let longOpen = $state<Record<string, boolean>>({});
@@ -27,13 +27,14 @@
   {#if r.kind === "user"}
     <div class="user">
       <div class="bubble" class:folded={isLong(r.entry.text) && !longOpen[r.id]}>{r.entry.text}</div>
+      {#if r.entry.clipped && onwhole}<button class="clipped" onclick={() => onwhole?.(r.entry)}><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</button>{/if}
       {#if isLong(r.entry.text)}<button class="toggle" onclick={() => (longOpen[r.id] = !longOpen[r.id])}>{longOpen[r.id] ? tr("Toon minder", "Show less") : tr("Toon alles", "Show all")}</button>{/if}
       <span class="time">{messageTime(r.entry.date)}</span>
     </div>
   {:else if r.kind === "answer"}
     <div class="answer" class:final={r.final} class:failed={r.entry.failed}>
       <div class="markdown">{@html renderMarkdown(r.entry.text)}</div>
-      {#if r.entry.clipped}<span class="clipped"><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</span>{/if}
+      {#if r.entry.clipped}{#if onwhole}<button class="clipped" onclick={() => onwhole?.(r.entry)}><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</button>{:else}<span class="clipped"><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</span>{/if}{/if}
       {#if r.final}
         <span class="foot"><span class="time">{messageTime(r.entry.date)}</span>
           <button class="copy" aria-label={tr("Kopieer", "Copy")} onclick={() => copy(r.entry.text)}><Ico name="copy" size={12} /></button>
@@ -104,7 +105,7 @@
   .answer.failed { color: var(--coral); }
   .answer :global(.markdown a) { color: var(--blue); }
   .answer :global(.markdown pre) { background: var(--well); border: 0.5px solid var(--hairline); border-radius: 10px; }
-  .clipped { display: flex; align-items: center; gap: 6px; font: var(--pt-label); color: var(--blue); }
+  .clipped { font: var(--pt-label) !important; color: var(--blue) !important; display: flex; align-items: center; gap: 6px; font: var(--pt-label); color: var(--blue); }
   .foot { display: flex; align-items: center; gap: 4px; }
   .copy { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--text3) !important; }
   .work { display: flex; align-items: center; gap: 6px; min-height: 26px; width: 100%; text-align: left; font: var(--pt-body) !important; color: var(--text3) !important; }

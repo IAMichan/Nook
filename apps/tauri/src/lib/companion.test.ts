@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTimeline, attentionWord, canStop, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyTimeline, attentionWord, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -68,9 +68,9 @@ describe("companion", () => {
 
   it("offers the session actions the computer lists, in the Mac's order", () => {
     const s = session("s", "limited", 1, { actions: ["archive", "rename", "snoozeLimitReset", "snoozeUntil", "snoozeHour"] });
-    // Until the limit resets needs the moment; snoozing to a picked time needs a picker this app lacks.
-    expect(sessionActions(s)).toEqual(["rename", "snoozeHour", "archive"]);
-    expect(sessionActions({ ...s, limitResetsAt: 100 })).toEqual(["rename", "snoozeHour", "snoozeLimitReset", "archive"]);
+    // Until the limit resets needs the moment.
+    expect(sessionActions(s)).toEqual(["rename", "snoozeHour", "snoozeUntil", "archive"]);
+    expect(sessionActions({ ...s, limitResetsAt: 100 })).toEqual(["rename", "snoozeHour", "snoozeLimitReset", "snoozeUntil", "archive"]);
     expect(sessionActions(session("t", "idle", 1))).toEqual([]);
   });
 
@@ -92,5 +92,25 @@ describe("companion", () => {
     expect(applyTimeline(old, [e("4")], "missing")).toBeNull();
     expect(applyTimeline(null, [e("4")], "2")).toBeNull();
     expect(applyTimeline(old, [e("4")], "3", 2)?.map((x) => x.id)).toEqual(["3", "4"]);
+  });
+
+  it("says which side to update, as CompanionCompatibility", () => {
+    expect(versionNotice({ macVersion: null, oldestPhone: null })).toBe("macBehind");
+    expect(versionNotice({ macVersion: 3, oldestPhone: 1 })).toBeNull();
+    expect(versionNotice({ macVersion: 4, oldestPhone: 4 })).toBe("phoneTooOld");
+    expect(versionNotice({ macVersion: 4, oldestPhone: 2 })).toBe("phoneBehind");
+    expect(newerMac({ features: ["start", "teleport"] })).toBe(true);
+    expect(newerMac({ features: ["start"] })).toBe(false);
+  });
+
+  it("puts a file together from its pieces in order", () => {
+    const a = new FileAssembly();
+    expect(a.add({ path: "x", offset: 0, total: 6, data: btoa("abc") })).toBe(true);
+    expect(a.add({ path: "x", offset: 0, total: 6, data: btoa("abc") })).toBe(false);
+    expect(a.add({ path: "x", offset: 3, total: 7, data: btoa("def") })).toBe(false);
+    expect(a.add({ path: "x", offset: 3, total: 6, data: btoa("def") })).toBe(true);
+    expect(a.done).toBe(true);
+    const r = snoozeRange(0);
+    expect(r.min).toBe(90_000);
   });
 });

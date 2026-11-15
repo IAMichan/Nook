@@ -160,6 +160,10 @@ pub struct ClientSnapshot {
     pub features: Vec<String>,
     /// What this phone may do there (`CompanionScope` names); `None` from a computer without scopes: everything.
     pub scopes: Option<Vec<String>>,
+    /// The computer's protocol version and the oldest phone it still supports (`CompanionCompatibility`); none from a
+    /// computer that predates versions.
+    pub mac_version: Option<i64>,
+    pub oldest_phone: Option<i64>,
 }
 
 /// One request from the interface, as `CompanionRequest` without its id and clock: `CompanionClient::call` adds them.
@@ -179,6 +183,7 @@ pub struct ClientCall {
     pub images: Option<Vec<CompanionImage>>,
     pub pull_action: Option<serde_json::Value>,
     pub pull_work: Option<serde_json::Value>,
+    pub items: Option<Vec<String>>,
 }
 
 struct Inner {
@@ -190,6 +195,8 @@ struct Inner {
     notice: Option<String>,
     features: Vec<String>,
     scopes: Option<Vec<String>>,
+    mac_version: Option<i64>,
+    oldest_phone: Option<i64>,
 }
 
 pub struct CompanionClient {
@@ -215,6 +222,8 @@ impl CompanionClient {
             notice: None,
             features: Vec::new(),
             scopes: None,
+            mac_version: None,
+            oldest_phone: None,
         };
         Self { secrets, resolver, inner: Mutex::new(inner), app_version: env!("CARGO_PKG_VERSION").into() }
     }
@@ -240,6 +249,8 @@ impl CompanionClient {
             notice: i.notice.clone(),
             features: i.features.clone(),
             scopes: i.scopes.clone(),
+            mac_version: i.mac_version,
+            oldest_phone: i.oldest_phone,
         }
     }
 
@@ -282,6 +293,8 @@ impl CompanionClient {
                 i.link = Some(parsed);
                 i.features = response.features.unwrap_or_default();
                 i.scopes = response.scopes;
+                i.mac_version = response.protocol_version;
+                i.oldest_phone = response.oldest_phone;
                 i.sessions = response.sessions.unwrap_or_default();
                 i.phase = Phase::Connected;
                 i.reason.clear();
@@ -363,6 +376,7 @@ impl CompanionClient {
         }
         r.pull_action = call.pull_action;
         r.pull_work = call.pull_work;
+        r.items = call.items;
         self.exchange(r).await
     }
 
@@ -463,6 +477,8 @@ impl CompanionClient {
                             if response.features.is_some() {
                                 i.features = response.features.clone().unwrap_or_default();
                                 i.scopes = response.scopes.clone();
+                                i.mac_version = response.protocol_version;
+                                i.oldest_phone = response.oldest_phone;
                             }
                             i.phase = Phase::Connected;
                             i.reason.clear();
@@ -506,6 +522,8 @@ impl CompanionClient {
                         // A Mac lists its features with every `list`; one that lists none can do only the first version.
                         i.features = response.features.clone().unwrap_or_default();
                         i.scopes = response.scopes.clone();
+                        i.mac_version = response.protocol_version;
+                        i.oldest_phone = response.oldest_phone;
                     }
                     i.phase = Phase::Connected;
                     i.reason.clear();

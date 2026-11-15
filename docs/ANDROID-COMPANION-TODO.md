@@ -64,17 +64,10 @@ What the iPhone app does that the Android companion does not yet. Each follows t
 - **Push notifications through FCM**, once the owner's steps 1 and 2 are done: the phone registers its FCM token
   (`register` with `item` `fcm`), the Mac and Nook on Windows and Linux send through the relay, notifications get Allow,
   Deny and Reply as on the iPhone, and a quiet ongoing notification stands in for Live Activities.
-- **Files and terminals** of a session (`files`, `terminals`, `fileData` previews).
-- **Older sessions** and the Mac's search through all of them (`history`).
 - **Several Macs** on one phone (`CompanionPairings`).
 - **Away from home**: other routes and the relay (`routes`, `relay`).
 - **The outbox**: messages that wait while the Mac is away, sent again with the same id (`retry`).
 - **Compression** of large answers (`compression`).
-- **Snooze to a time you pick** (`snoozeUntil`).
-- **Prompt links** (`nook://prompt?…`) opening New session.
-- **Read the whole message** and **Earlier messages** in a long conversation (`entry`, `timeline` with `item`).
-- **Chat pictures and app icons** (`avatars`, `appIcons`) and **who read your message** (`InboxLine.readers`).
-- **Version notices** and *Show the update on your Mac* (`requestUpdate`).
 - **Widgets** for the home screen (agent activity, plan limits) and **app shortcuts** on the icon.
 - **Mermaid diagrams and math** in answers.
 - **Tablet layout** (the iPad's split view) for Android tablets.

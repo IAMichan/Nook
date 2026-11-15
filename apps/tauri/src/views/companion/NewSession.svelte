@@ -17,10 +17,13 @@
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import { has, Feature } from "../../lib/companion";
+  import { agentFor, projectFor, type PromptLink } from "../../lib/prompt-link";
 
-  let { view, task: initial = "", onback, took, onstarted }: {
+  let { view, task: initial = "", link, onback, took, onstarted }: {
     view: ClientView;
     task?: string;
+    /** A prompt link's folder, agent and model, picked when the computer offers them. */
+    link?: PromptLink;
     onback: () => void;
     took: (v: ClientView) => void;
     onstarted: (id: string | null) => void;
@@ -48,9 +51,14 @@
       options = o;
       agent = o.defaultAgent && o.agents.some((a) => a.id === o.defaultAgent) ? o.defaultAgent : (o.agents[0]?.id ?? "");
       project = o.defaultProject && o.projects.some((p) => p.path === o.defaultProject) ? o.defaultProject : (o.projects[0]?.path ?? "");
+      const named = agentFor(link?.agent, o.agents);
+      if (named) agent = named.id;
+      const folder = projectFor(link?.project, o.projects);
+      if (folder) project = folder.path;
       plan = o.defaultPlan;
       worktree = o.defaultWorktree;
-      model = o.agents.find((a) => a.id === agent)?.defaultModel ?? "";
+      const chosen = o.agents.find((a) => a.id === agent);
+      model = link?.model && chosen?.models?.some((m) => m.id === link.model) ? link.model : (chosen?.defaultModel ?? "");
     });
   });
 

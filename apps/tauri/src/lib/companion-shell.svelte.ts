@@ -18,6 +18,8 @@ export const shell = $state({
   local: readLocal(),
   /** Text another app shared with Nook, waiting for the companion to offer where it goes. */
   shared: null as string | null,
+  /** A nook:// link the app was opened with, waiting for the companion (a pairing code or a prompt link). */
+  link: null as string | null,
 });
 
 export function setLocal(local: boolean) {

@@ -87,7 +87,7 @@
                     </button>
                   {:else}
                     <button class="fy row-press" onclick={() => onchat(row.c.id)}>
-                      <InboxAvatar name={row.c.name} size={32} badge={false} />
+                      <InboxAvatar id={row.c.id} name={row.c.name} size={32} badge={false} />
                       <span class="text"><strong>{row.c.name}</strong><span>{row.c.preview}</span></span>
                       <span class="unread">{row.c.unread}</span>
                     </button>

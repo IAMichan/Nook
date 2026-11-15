@@ -167,6 +167,10 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
 - **Pictures and dictation:** up to two pictures with a message or a new session, made JPEGs under 90 KB on the phone
   (`lib/images.ts`, `images`); the microphone in every composer uses Android's speech recognizer through `MainActivity.kt`
   (`NookAndroid.dictate`), on the device where it can, the words landing in the field (`lib/dictation.svelte.ts`).
+- **Also as on the iPhone:** a session's Files (with previews of pictures, PDFs and films) and Terminals, older sessions
+  and the Mac's search through them (`history`), *Read the whole message* and *Earlier messages*, snoozing to a time you
+  pick, chat pictures and app icons, who read your message, version notices and *Show the update on your Mac*, and
+  `nook://` links (a pairing code from the camera, a prompt link opening New session; `lib/prompt-link.ts`).
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 

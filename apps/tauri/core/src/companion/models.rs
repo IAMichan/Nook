@@ -193,6 +193,19 @@ pub enum CompanionOp {
     Pull,
     PullAct,
     PullWork,
+    /// A session's terminals (`terminals` in the answer) and one folder or file of its folder (`item`; `folder`), with
+    /// `feature::WORKSPACE`; a piece of a file to preview (`item`, `text`: the offset; `fileChunk`, `feature::FILE_PREVIEW`).
+    Terminals,
+    Files,
+    FileData,
+    /// Older sessions a page at a time, and a search through all of them (`text`, `item`: the cursor; `feature::HISTORY`).
+    History,
+    /// One entry of a conversation in full (`session`, `item`; `entryText`, `feature::FULL_TRANSCRIPT`).
+    Entry,
+    /// Opens Nook's update panel on the Mac (`feature::REQUEST_UPDATE`); never installs anything.
+    RequestUpdate,
+    /// The pictures of chats (`items`; `avatars` in the answer, `feature::AVATARS`).
+    Avatars,
 }
 
 impl CompanionOp {
@@ -226,6 +239,13 @@ pub mod feature {
     pub const DIFF: &str = "diff";
     pub const PULL_REQUESTS: &str = "pullRequests";
     pub const IMAGES: &str = "images";
+    pub const WORKSPACE: &str = "workspace";
+    pub const FILE_PREVIEW: &str = "filePreview";
+    pub const HISTORY: &str = "history";
+    pub const FULL_TRANSCRIPT: &str = "fullTranscript";
+    pub const REQUEST_UPDATE: &str = "requestUpdate";
+    pub const AVATARS: &str = "avatars";
+    pub const APP_ICONS: &str = "appIcons";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -290,6 +310,9 @@ pub struct CompanionRequest {
     /// The new session of `pullWork` (`PullWorkRequest`), passed through likewise.
     #[serde(default, rename = "pullWork", skip_serializing_if = "Option::is_none")]
     pub pull_work: Option<serde_json::Value>,
+    /// The chats of `avatars`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<String>>,
 }
 
 /// A picture that goes with a message (`CompanionImage`): a JPEG of at most `MAX_BYTES`, at most `MAX_COUNT` per message.
@@ -332,6 +355,7 @@ impl CompanionRequest {
             images: None,
             pull_action: None,
             pull_work: None,
+            items: None,
         }
     }
 
@@ -425,6 +449,24 @@ pub struct CompanionResponse {
     pub pulls: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull: Option<serde_json::Value>,
+    /// `[TerminalDigest]`, `FolderDigest`, `FileChunk` and `[ChatAvatar]`, passed through to the interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminals: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_chunk: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatars: Option<serde_json::Value>,
+    /// The next page of `history`, while there are more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    /// The page before the oldest entry the phone has (`timeline` with `item`), empty at the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_before: Option<String>,
+    /// One entry in full (`entry`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_text: Option<String>,
 }
 
 impl CompanionResponse {

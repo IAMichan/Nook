@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import {
     companion, has, may, needingYou, tabsFor, unreadChats, Feature,
-    type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest,
+    type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
@@ -26,16 +26,18 @@
   import TabBar from "./ui/TabBar.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import Sheet from "./ui/Sheet.svelte";
+  import { parsePromptLink, type PromptLink } from "../../lib/prompt-link";
+  import { looksLikePairingLink } from "../../lib/companion";
 
   let { standalone = false }: { standalone?: boolean } = $props();
 
-  type Screen = { kind: "session"; id: string } | { kind: "nook"; id: string | null; ask?: string } | { kind: "chat"; id: string };
+  type Screen = { kind: "session"; id: string; digest?: SessionDigest } | { kind: "nook"; id: string | null; ask?: string } | { kind: "chat"; id: string };
 
   let view = $state<ClientView | null>(null);
   let tab = $state<CompanionTab>("home");
   // Each tab keeps where it was.
   let screens = $state<Record<CompanionTab, Screen | null>>({ home: null, agents: null, chats: null });
-  let sheet = $state<null | "settings" | { kind: "new"; task?: string }>(null);
+  let sheet = $state<null | "settings" | { kind: "new"; task?: string; link?: PromptLink }>(null);
   let macMenu = $state<DOMRect | null>(null);
   let inbox = $state<InboxChatDigest[]>([]);
   let inboxMessage = $state<string | undefined>(undefined);
@@ -94,6 +96,22 @@
     return () => clearInterval(timer);
   });
 
+  // A nook:// link: a pairing code pairs (when nothing is paired yet), a prompt link opens New session filled in. It
+  // never starts by itself.
+  $effect(() => {
+    const url = shell.link;
+    if (!url || !view) return;
+    if (looksLikePairingLink(url)) {
+      shell.link = null;
+      if (!paired) untrack(() => companion.pair(url, view?.deviceName ?? "").then(took));
+      return;
+    }
+    const link = parsePromptLink(url);
+    shell.link = null;
+    if (!link) return void took({ ...view, notice: tr("Deze link kan Nook niet openen.", "Nook cannot open this link.") });
+    if (paired) untrack(() => (sheet = { kind: "new", task: link.text, link }));
+  });
+
   // Text another app shared with Nook waits here until you say where it goes.
   const shared = $derived(shell.shared);
 
@@ -117,6 +135,16 @@
     if (view) view.notice = null;
   }
 
+  /** Opens Nook's update panel on the Mac; installing stays a click there. */
+  async function requestUpdate() {
+    const r = await companion.call({ op: "requestUpdate" });
+    if (!r.response) return took(r.view);
+    const said = r.response.message === "available" ? tr("De update staat klaar op je Mac.", "The update is waiting on your Mac.")
+      : r.response.message === "none" ? tr("Nook op je Mac is bijgewerkt.", "Nook on your Mac is up to date.")
+      : tr("Je Mac kan nu niet naar updates kijken.", "Your Mac cannot look for updates right now.");
+    took({ ...r.view, notice: said });
+  }
+
   function open(where: CompanionTab, screen: Screen) {
     tab = where;
     screens[where] = screen;
@@ -134,6 +162,7 @@
     return [
       [{ label: view.macName || tr("Je Mac", "Your Mac"), icon: "check", detail: view.host }, ...route,
         { label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") }],
+      has(view, Feature.requestUpdate) ? [{ label: tr("Toon de update op je Mac", "Show the update on your Mac"), icon: "circle-arrow-down", onselect: requestUpdate }] : [],
       [{ label: tr("Ontkoppel van deze Mac", "Unpair from this Mac"), destructive: true, onselect: () => act(async () => companion.unpair()) }],
     ];
   });
@@ -147,7 +176,7 @@
   {:else}
     <div class="page">
       {#if tab === "agents" && screens.agents?.kind === "session"}
-        <SessionDetail {view} id={screens.agents.id} onback={() => (screens.agents = null)} {act} {took} />
+        <SessionDetail {view} id={screens.agents.id} fallback={screens.agents.digest} onback={() => (screens.agents = null)} {act} {took} />
       {:else if tab === "home" && screens.home?.kind === "nook"}
         <NookChat {view} id={screens.home.id} ask={screens.home.ask} onback={() => { screens.home = null; loadLists(); }} {took} />
       {:else if tab === "chats" && screens.chats?.kind === "chat"}
@@ -163,7 +192,7 @@
         <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
       {:else}
         <AgentsTab {view} {act} {took} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
-          onopen={(id) => open("agents", { kind: "session", id })} onnew={() => (sheet = { kind: "new" })} />
+          onopen={(id, digest) => open("agents", { kind: "session", id, digest })} onnew={() => (sheet = { kind: "new" })} />
       {/if}
     </div>
     {#if tabs.length > 1}
@@ -177,7 +206,7 @@
     </Sheet>
   {:else if sheet && typeof sheet === "object" && view}
     <Sheet onclose={() => (sheet = null)}>
-      <NewSession {view} task={sheet.task} onback={() => (sheet = null)} {took} onstarted={(id) => { sheet = null; if (id) open("agents", { kind: "session", id }); }} />
+      <NewSession {view} task={sheet.task} link={sheet.link} onback={() => (sheet = null)} {took} onstarted={(id) => { sheet = null; if (id) open("agents", { kind: "session", id }); }} />
     </Sheet>
   {/if}
 

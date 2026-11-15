@@ -18,6 +18,8 @@
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
   import { WA } from "./ui/whatsapp";
+  import Sheet from "./ui/Sheet.svelte";
+  import MessageInfo from "./MessageInfo.svelte";
 
   let { view, id, chat, onback, took }: { view: ClientView; id: string; chat: InboxChatDigest | null; onback: () => void; took: (v: ClientView) => void } = $props();
 
@@ -28,6 +30,7 @@
   let replyTo = $state<InboxLine | null>(null);
   let sending = $state(false);
   let menu = $state<{ anchor: DOMRect; sections: MenuItem[][] } | null>(null);
+  let info = $state<InboxLine | null>(null);
   const wa = $derived(chat?.app === "whatsapp");
   const live = $derived(followsLive(view, Feature.liveChats));
   const group = $derived(lines.some((l) => !l.fromMe && l.sender));
@@ -123,7 +126,7 @@
     {#snippet center()}
       {#if chat}
         <span class="who" class:left={wa}>
-          <InboxAvatar name={chat.name} app={chat.app} size={wa ? 36 : 30} badge={!wa} />
+          <InboxAvatar id={chat.id} name={chat.name} app={chat.app} size={wa ? 36 : 30} badge={!wa} />
           <span class="t"><strong style:color={wa ? WA.text : undefined}>{chat.name}</strong>
             {#if wa}{#if typingNow}<small style:color={WA.green}>{typingNow}</small>{/if}{:else}<small>{chat.appName}</small>{/if}</span>
         </span>
@@ -154,7 +157,7 @@
             {#if l.attachment}<span class="file"><Ico name="paperclip" size={13} />{l.attachment}</span>{/if}
             <span class="body">
               {#if l.text}<span class="words">{l.text}</span>{/if}
-              <span class="stamp">{time(l.date)}{#if l.fromMe && l.ticks}<TicksMark ticks={l.ticks} read={wa ? WA.readTick : "var(--blue)"} quiet={wa ? WA.stampOnMine : "var(--chat-stamp)"} />{/if}</span>
+              <span class="stamp">{time(l.date)}{#if l.fromMe && l.ticks}{#if l.readers?.length}<button class="ticks" aria-label={tr("Berichtinfo", "Message info")} onclick={() => (info = l)}><TicksMark ticks={l.ticks} read={wa ? WA.readTick : "var(--blue)"} quiet={wa ? WA.stampOnMine : "var(--chat-stamp)"} /></button>{:else}<TicksMark ticks={l.ticks} read={wa ? WA.readTick : "var(--blue)"} quiet={wa ? WA.stampOnMine : "var(--chat-stamp)"} />{/if}{/if}</span>
             </span>
             {#if l.reactions.length}<span class="reactions">{l.reactions.slice(0, 3).join(" ")}</span>{/if}
           </div>
@@ -191,6 +194,7 @@
     </div>
   {/if}
 </div>
+{#if info}{@const l = info}<Sheet onclose={() => (info = null)}><MessageInfo line={l} onclose={() => (info = null)} /></Sheet>{/if}
 {#if menu}<Menu sections={menu.sections} anchor={menu.anchor} onclose={() => (menu = null)} />{/if}
 
 <style>
@@ -239,6 +243,7 @@
   .stamp { display: inline-flex; align-items: center; gap: 3px; font: var(--pt-caption); color: var(--chat-stamp); font-variant-numeric: tabular-nums; margin-left: auto; }
   .wa .stamp { font: 400 11.5px var(--font); color: #8696a0; }
   .wa .mine .stamp { color: #8db5ac; }
+  .ticks { display: inline-flex; padding: 0 !important; }
   .reactions { position: absolute; bottom: -12px; left: 13px; padding: 1px 6px; border-radius: 999px; background: var(--chat-theirs); box-shadow: 0 0 0 2px var(--canvas); font-size: 14px; }
   .mine .reactions { left: auto; right: 13px; }
   .line:has(.reactions) { margin-bottom: 12px; }

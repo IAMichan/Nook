@@ -3,6 +3,15 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "No terminals": { de: "Keine Terminals", fr: "Aucun terminal", es: "No hay terminales" },
+  "Nook cannot open this link.": { de: "Nook kann diesen Link nicht öffnen.", fr: "Nook ne peut pas ouvrir ce lien.", es: "Nook no puede abrir este enlace." },
+  "Nook on your Mac is up to date.": { de: "Nook auf deinem Mac ist aktuell.", fr: "Nook sur votre Mac est à jour.", es: "Nook en tu Mac está actualizado." },
+  "Not available": { de: "Nicht verfügbar", fr: "Indisponible", es: "No disponible" },
+  "The Mac does not share this.": { de: "Der Mac teilt das nicht.", fr: "Le Mac ne partage pas ceci.", es: "El Mac no comparte esto." },
+  "The update is waiting on your Mac.": { de: "Das Update wartet auf deinem Mac.", fr: "La mise à jour vous attend sur votre Mac.", es: "La actualización te espera en tu Mac." },
+  "This session has no terminal open on the Mac.": { de: "Diese Sitzung hat kein Terminal auf dem Mac geöffnet.", fr: "Cette session n’a aucun terminal ouvert sur le Mac.", es: "Esta sesión no tiene ningún terminal abierto en el Mac." },
+  "Update the app: Nook on your Mac needs a newer version of the app.": { de: "Aktualisiere die App: Nook auf deinem Mac braucht eine neuere Version der App.", fr: "Mettez l’app à jour : Nook sur votre Mac a besoin d’une version plus récente.", es: "Actualiza la app: Nook en tu Mac necesita una versión más reciente de la app." },
+  "Your Mac cannot look for updates right now.": { de: "Dein Mac kann gerade nicht nach Updates suchen.", fr: "Votre Mac ne peut pas chercher de mises à jour pour l’instant.", es: "Tu Mac no puede buscar actualizaciones ahora." },
   "1 comment": { de: "1 Kommentar", fr: "1 commentaire", es: "1 comentario" },
   "1 file": { de: "1 Datei", fr: "1 fichier", es: "1 archivo" },
   "Comment on these lines": { de: "Diese Zeilen kommentieren", fr: "Commenter ces lignes", es: "Comentar estas líneas" },
