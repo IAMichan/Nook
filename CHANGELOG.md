@@ -202,6 +202,18 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   Pull request tab's list no longer waits for git, and a file you come back to in the File tab shows at once. The pull
   request page, its list and the Changes tab are drawn again only when what they show changed, not whenever something
   else in the window does, and a panel that opens on a tab far down a long tab row scrolls that tab into view.
+- Every tab of the side panel on the right was gone over:
+  - **Outputs and Subagents** redraw only when what they show changed (one streaming subagent redraws only its
+    card), read pictures off the main thread, and start with the same bar as every other tab. The subagents' progress
+    stays in view while the list scrolls.
+  - **Changes** says "Reading git…" while it reads, instead of "The agent is working…", and "Nothing changed here." for
+    an empty branch or commit. A commit that cannot be found no longer spins forever.
+  - **File** no longer joins the whole file into one string on every redraw and every key while you edit. A file that
+    is gone offers to open another.
+  - **Browser** checks the folder's servers all at once and only while you can see the window. Its bar of servers is
+    there at once when you come back to the tab, and the empty browser's note sits in the middle of the tab.
+  - **Terminal**: an agent's command does its output work once per update, with the same spacing under its bar as the
+    other tabs.
 
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.

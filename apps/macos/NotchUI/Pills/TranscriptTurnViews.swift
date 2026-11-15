@@ -227,7 +227,13 @@ struct TurnDiffPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar(current, files: files)
             if files.isEmpty {
-                StackedDiffNote(text: source.isGit && (changes == nil || !git.loaded) ? tr("ws.timeline.working") : tr("agents.diff.none"))
+                // Git still being read says so (not "the agent is working", which no agent may be); an empty git choice
+                // or all turns says nothing changed, not "in this turn".
+                let reading = source.isGit && (changes == nil || !git.loaded)
+                let oneTurn: Bool = { if case .turn = source { return true } else { return false } }()
+                WSEmptyState(symbol: "plusminus",
+                             title: tr(reading ? "agents.diff.reading" : oneTurn ? "agents.diff.none" : "agents.diff.noneGit"),
+                             loading: reading)
             } else {
                 let read: (StackedDiffFile, DiffReadOptions) async throws -> String = { file, options in
                     if source.isGit {

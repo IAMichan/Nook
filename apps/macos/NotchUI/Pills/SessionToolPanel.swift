@@ -137,7 +137,9 @@ struct SessionToolPanel: View {
                 case .artifact:
                     SessionArtifactPanel()
                 case .file:
-                    SessionFilePanel(directory: directory)
+                    // It follows the file store and its editor itself; the workbench redrawing around it changes nothing.
+                    SidePanelPane(key: directory) { SessionFilePanel(directory: directory) }
+                        .equatable()
                 case .subThread:
                     if let subThread {
                         // The whole session: its transcript and its own composer, to answer its questions right here.

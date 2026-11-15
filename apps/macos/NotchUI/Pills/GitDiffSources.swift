@@ -83,7 +83,11 @@ final class GitDiffSources: ObservableObject {
         if commit(id) == nil {
             linked = await Task.detached(priority: .userInitiated) { GitService.shared?.commit(root, named: id) }.value
         }
-        guard let commit = commit(id) else { return }
+        // A hash that names no commit has no files: the panel says so instead of waiting for them forever.
+        guard let commit = commit(id) else {
+            commitFiles[id] = []
+            return
+        }
         let files = await Task.detached(priority: .userInitiated) {
             (try? GitService.shared?.changes(root, commit: commit)) ?? []
         }.value

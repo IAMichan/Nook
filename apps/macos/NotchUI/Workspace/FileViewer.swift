@@ -207,10 +207,9 @@ struct FileViewer: View {
                 case .preview:
                     QuickLookView(url: URL(fileURLWithPath: target.path))
                 case .folder, .missing:
-                    Text(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // With a way on: open another file, as the empty File tab offers.
+                    WSEmptyState(symbol: "doc.text", title: tr("ws.file.missing", AgentPathFormat.tilde(target.path)),
+                                 action: (tr("file.viewer.open"), pickFile))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -266,20 +265,21 @@ struct FileViewer: View {
     /// document, the diff against the version before, or code with its line numbers.
     @ViewBuilder
     private func textBody(lines: [String], tokens: [[SyntaxToken]]) -> some View {
-        let source = lines.joined(separator: "\n")
+        // The text as one string only for the previews that take it: joining up to 2 MB on every redraw (and every key
+        // while editing) cost the code view and the editor that never read it.
         if editor.editing && viewing == nil {
             FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
         } else if comparing, let viewing, let version = history.version(viewing) {
             ArtifactVersionDiff(old: history.previous(of: viewing)?.text ?? "", new: version.text, name: name)
         } else if previewing && kind.rendersInSandbox {
-            SandboxedPageView(html: kind.sandboxPage(for: source))
+            SandboxedPageView(html: kind.sandboxPage(for: lines.joined(separator: "\n")))
         } else if previewing && kind == .mermaid {
-            CodeRenderView(language: "mermaid", code: source)
+            CodeRenderView(language: "mermaid", code: lines.joined(separator: "\n"))
         } else if previewing && kind.rendersAsMarkdown {
             ScrollView(.vertical) {
                 // Lazy: only the blocks in view are built, so a long document with big tables opens at once. Equatable:
                 // the session redrawing around the panel leaves an unchanged document alone.
-                MarkdownView(text: MarkdownPreview.document(source, kind: kind), lazy: true)
+                MarkdownView(text: MarkdownPreview.document(lines.joined(separator: "\n"), kind: kind), lazy: true)
                     .equatable()
                     .environment(\.fileLinkBase, folder)
                     .environment(\.pullRequestLinksBeside, beside)
