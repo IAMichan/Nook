@@ -236,6 +236,26 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
 - Your answer style and a space's instructions now reach the brain as your own instructions instead of inside the
   context marked as third-party data, so they are followed; the prompt names the date line correctly ("Now").
+- Nook in your browser is much faster and answers better: a question from the side panel takes the page's text (and
+  what you selected) along, so Nook answers about the page right away instead of first reading it with a tool. Nook
+  pushes its answer to the side panel as it writes it, as live as in Nook's own window, instead of the panel asking
+  every second. Commands on a page take one trip instead of two, clicks no longer wait a fixed time, and finding the
+  buttons and fields on a long page is quicker. The page's text goes only to a brain that may see your browser.
+- Nook in your browser follows your privacy settings: a page in your browser is part of your screen, so it stays on
+  your Mac whenever the screen does (Strict, or by hand). The model you picked for screen work then reads the page,
+  answers itself or gives your external brain a short, filtered note, and fills in forms on the page itself, so what
+  you fill in never goes through the cloud. The side panel says how Nook answered.
+- Watch Nook work in your browser: a cursor glides to what Nook clicks, types in or scrolls, with a badge under it that
+  says what it does ("Klikt · Verzenden", "Typt", "Scrolt"). Nook also clicks more surely and needs fewer steps: every
+  action reports what the page shows now, a cookie banner or dialog in the way is named with its buttons, buttons in
+  web components are found, and a link that opens a new tab takes Nook along.
+- While Nook works on a page, your own clicks and keys there wait, so you never get in each other's way (scrolling and
+  Stop stay free). Nook keeps working in its tab while you use another one, at full speed. When a page asks to sign
+  in, Nook lets you type and click, and goes on by itself once you are in; it never sees your password.
+- Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
+  over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
+  connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a
+  lost update repairs itself.
 - Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
   after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
 - The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of

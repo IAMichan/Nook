@@ -208,6 +208,9 @@ enum CompanionTiming {
     static let silenceLimit: TimeInterval = 15
     /// A quick look whether the connection still works (after a network change, or back from a short break).
     static let probeTimeout: TimeInterval = 3
+    /// Nook writes in the open conversation, but no update came for this long: the phone asks again from where it is
+    /// (`ConversationDelta.resume`), in case one got stuck on a bad connection.
+    static let conversationStall: TimeInterval = 6
     /// How long each route may take to answer a check, and how long the earlier routes get before a later one is used.
     static let routeCheckTimeout: TimeInterval = 2.5
     static let routeHeadStart: TimeInterval = 0.5
@@ -366,7 +369,7 @@ struct CommandReceipts: Sendable {
              .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork:
             return true
         case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
-             .pulls, .pull, .history, .fileData, .watchChat, .avatars, .entry:
+             .pulls, .pull, .history, .fileData, .watchChat, .watchConversation, .avatars, .entry:
             return false
         }
     }

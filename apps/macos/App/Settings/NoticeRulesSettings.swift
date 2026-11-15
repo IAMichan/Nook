@@ -113,7 +113,7 @@ struct NoticeRulesSettings: View {
     /// A source's apps, each with its own switch. Greyed out while the source shows nothing at all.
     private func appSection(_ source: NoticeSource, header: String, info: String, apps: [AppRow]) -> some View {
         // A tab of its own, so the lists are open; how many may notify stands beside each list's name.
-        let on = apps.filter { settings.noticeRules.isOn(source, app: $0.id) }.count
+        let on = apps.count(where: { settings.noticeRules.isOn(source, app: $0.id) })
         let text = query.trimmingCharacters(in: .whitespaces)
         let shown = text.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(text) }
         return Group {

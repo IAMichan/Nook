@@ -58,7 +58,7 @@ enum LocalIntent: Equatable {
     }
 
     private static func number(in text: String, pattern: String) -> Int? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = RegexCache.regex(pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
         for index in stride(from: match.numberOfRanges - 1, through: 1, by: -1) {
             if let range = Range(match.range(at: index), in: text), let value = Int(text[range]) { return value }

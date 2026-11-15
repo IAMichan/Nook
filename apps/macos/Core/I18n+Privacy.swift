@@ -6,7 +6,7 @@ import Foundation
 let privacyTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "settings.screenBrain.title": "Schermwerk",
-        "settings.screenBrain.info": "Meedenken, kijken naar je scherm, Double Tap, een taak overnemen en vragen over wat er op je scherm staat lezen je scherm. Laat dat een model op deze Mac doen, dan blijft je scherm hier en beantwoordt je externe brein al het andere.",
+        "settings.screenBrain.info": "Meedenken, kijken naar je scherm, Double Tap, een taak overnemen en vragen over wat er op je scherm staat lezen je scherm. Laat dat een model op deze Mac doen, dan blijft je scherm hier en beantwoordt je externe brein al het andere. Een pagina waar je naar vraagt in Nooks browserextensie hoort bij je scherm: die leest hetzelfde model.",
         "settings.screenBrain.picker": "Wie leest je scherm",
         "settings.screenBrain.external": "%@ mag het lezen",
         "settings.screenBrain.off": "Niemand: schermwerk staat uit",
@@ -39,10 +39,11 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.remove": "Verwijder",
         "settings.privacy.neverRead.footer": "Nook leest deze apps nooit en doet er geen suggesties, zoals je bank of een privéchat. Wachtwoordmanagers blijven altijd buiten.",
         "settings.private.byLevel": "Het privacyniveau Strikt houdt deze bron op deze Mac.",
+        "settings.private.withScreen": "Je scherm blijft op deze Mac, en een pagina in je browser hoort daarbij: die blijft dus ook hier.",
     ],
     .en: [
         "settings.screenBrain.title": "Screen work",
-        "settings.screenBrain.info": "Thinking along, looking at your screen, Double Tap, taking over a task and questions about what is on your screen all read your screen. Let a model on this Mac do that, and your screen stays here while your external brain answers everything else.",
+        "settings.screenBrain.info": "Thinking along, looking at your screen, Double Tap, taking over a task and questions about what is on your screen all read your screen. Let a model on this Mac do that, and your screen stays here while your external brain answers everything else. A page you ask about in Nook's browser extension is part of your screen: the same model reads it.",
         "settings.screenBrain.picker": "Who reads your screen",
         "settings.screenBrain.external": "%@ may read it",
         "settings.screenBrain.off": "No one: screen work is off",
@@ -75,10 +76,11 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.remove": "Remove",
         "settings.privacy.neverRead.footer": "Nook never reads these apps or suggests text in them, like your bank or a private chat. Password managers are always left out.",
         "settings.private.byLevel": "The Strict privacy level keeps this source on this Mac.",
+        "settings.private.withScreen": "Your screen stays on this Mac, and a page in your browser is part of it, so it stays here too.",
     ],
     .de: [
         "settings.screenBrain.title": "Bildschirmarbeit",
-        "settings.screenBrain.info": "Mitdenken, auf deinen Bildschirm schauen, Double Tap, eine Aufgabe übernehmen und Fragen zu dem, was auf deinem Bildschirm steht, lesen deinen Bildschirm. Lass das ein Modell auf diesem Mac machen, dann bleibt dein Bildschirm hier und dein externes Gehirn beantwortet alles andere.",
+        "settings.screenBrain.info": "Mitdenken, auf deinen Bildschirm schauen, Double Tap, eine Aufgabe übernehmen und Fragen zu dem, was auf deinem Bildschirm steht, lesen deinen Bildschirm. Lass das ein Modell auf diesem Mac machen, dann bleibt dein Bildschirm hier und dein externes Gehirn beantwortet alles andere. Eine Seite, zu der du in Nooks Browsererweiterung fragst, gehört zu deinem Bildschirm: Dasselbe Modell liest sie.",
         "settings.screenBrain.picker": "Wer liest deinen Bildschirm",
         "settings.screenBrain.external": "%@ darf ihn lesen",
         "settings.screenBrain.off": "Niemand: Bildschirmarbeit ist aus",
@@ -111,10 +113,11 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.remove": "Entfernen",
         "settings.privacy.neverRead.footer": "Nook liest diese Apps nie und macht darin keine Vorschläge, etwa deine Bank oder ein privater Chat. Passwortmanager bleiben immer außen vor.",
         "settings.private.byLevel": "Die Datenschutzstufe Streng hält diese Quelle auf diesem Mac.",
+        "settings.private.withScreen": "Dein Bildschirm bleibt auf diesem Mac, und eine Seite in deinem Browser gehört dazu: Sie bleibt also auch hier.",
     ],
     .fr: [
         "settings.screenBrain.title": "Travail sur l’écran",
-        "settings.screenBrain.info": "Réfléchir avec vous, regarder votre écran, Double Tap, prendre une tâche en main et les questions sur ce qui est à l’écran lisent votre écran. Confiez-le à un modèle sur ce Mac : votre écran reste ici et votre cerveau externe répond à tout le reste.",
+        "settings.screenBrain.info": "Réfléchir avec vous, regarder votre écran, Double Tap, prendre une tâche en main et les questions sur ce qui est à l’écran lisent votre écran. Confiez-le à un modèle sur ce Mac : votre écran reste ici et votre cerveau externe répond à tout le reste. Une page sur laquelle vous posez une question dans l’extension de navigateur de Nook fait partie de votre écran : le même modèle la lit.",
         "settings.screenBrain.picker": "Qui lit votre écran",
         "settings.screenBrain.external": "%@ peut le lire",
         "settings.screenBrain.off": "Personne : le travail sur l’écran est désactivé",
@@ -147,10 +150,11 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.remove": "Retirer",
         "settings.privacy.neverRead.footer": "Nook ne lit jamais ces apps et n’y suggère rien, comme votre banque ou une discussion privée. Les gestionnaires de mots de passe sont toujours exclus.",
         "settings.private.byLevel": "Le niveau de confidentialité Strict garde cette source sur ce Mac.",
+        "settings.private.withScreen": "Votre écran reste sur ce Mac, et une page de votre navigateur en fait partie : elle reste donc ici aussi.",
     ],
     .es: [
         "settings.screenBrain.title": "Trabajo con la pantalla",
-        "settings.screenBrain.info": "Pensar contigo, mirar tu pantalla, Double Tap, encargarse de una tarea y las preguntas sobre lo que hay en tu pantalla leen tu pantalla. Deja que lo haga un modelo en este Mac: tu pantalla se queda aquí y tu cerebro externo responde a todo lo demás.",
+        "settings.screenBrain.info": "Pensar contigo, mirar tu pantalla, Double Tap, encargarse de una tarea y las preguntas sobre lo que hay en tu pantalla leen tu pantalla. Deja que lo haga un modelo en este Mac: tu pantalla se queda aquí y tu cerebro externo responde a todo lo demás. Una página sobre la que preguntas en la extensión de navegador de Nook forma parte de tu pantalla: la lee el mismo modelo.",
         "settings.screenBrain.picker": "Quién lee tu pantalla",
         "settings.screenBrain.external": "%@ puede leerla",
         "settings.screenBrain.off": "Nadie: el trabajo con la pantalla está desactivado",
@@ -183,5 +187,6 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.remove": "Quitar",
         "settings.privacy.neverRead.footer": "Nook nunca lee estas apps ni sugiere texto en ellas, como tu banco o un chat privado. Los gestores de contraseñas siempre quedan fuera.",
         "settings.private.byLevel": "El nivel de privacidad Estricto mantiene esta fuente en este Mac.",
+        "settings.private.withScreen": "Tu pantalla se queda en este Mac, y una página de tu navegador forma parte de ella, así que también se queda aquí.",
     ],
 ]

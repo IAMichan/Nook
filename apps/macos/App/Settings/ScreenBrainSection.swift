@@ -68,7 +68,7 @@ struct ScreenBrainSection: View {
     private var choice: Binding<String> {
         Binding(
             get: {
-                let screenPrivate = settings.localOnlySources.union(settings.privacyLevel.localOnlySources).contains(SourceCatalog.screen)
+                let screenPrivate = settings.keptOnMac.contains(SourceCatalog.screen)
                 guard screenPrivate else { return Self.external }
                 return ScreenBrain.parse(settings.screenBrain) == nil ? "" : settings.screenBrain
             },

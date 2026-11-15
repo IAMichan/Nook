@@ -128,7 +128,7 @@ struct ShortcutSet: Equatable, Sendable {
         // Shortcut by shortcut: one that cannot be read, or an action this version does not know, is left out, and the
         // stored set is kept aside first (`SafeStorage`), so the next save never loses it for good.
         let outcome = SafeStorage.decode(LossyDictionary<Shortcut?>.self, defaults: defaults, key: defaultsKey, skipped: { stored in
-            stored.skipped + stored.values.keys.filter { ShortcutAction(rawValue: $0) == nil }.count
+            stored.skipped + stored.values.keys.count(where: { ShortcutAction(rawValue: $0) == nil })
         })
         guard let stored = outcome.value?.values else { return ShortcutSet() }
         var set = ShortcutSet()

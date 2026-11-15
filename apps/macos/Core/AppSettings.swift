@@ -619,12 +619,23 @@ final class AppSettings: ObservableObject {
     /// The model on this Mac that does screen work right now (see `ScreenBrain`): only while the chosen brain is external
     /// and the screen is kept on this Mac, by hand or by the privacy level.
     var screenWorker: BrainSelection? {
-        let screenPrivate = localOnlySources.union(privacyLevel.localOnlySources).contains(SourceCatalog.screen)
+        let screenPrivate = keptOnMac.contains(SourceCatalog.screen)
         return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: screenPrivate, stored: screenBrain)
     }
 
     /// The screen brain, when it hands a note to the chosen brain instead of answering itself.
     var relayWorker: BrainSelection? { screenBrainRelays ? screenWorker : nil }
+
+    /// The model on this Mac that reads the page in the browser's side panel while the browser extension is kept on this
+    /// Mac (by hand or by the privacy level) and an external brain answers: the same screen brain, for the page. Nil when
+    /// the chosen brain may read the browser, no screen brain is picked, or the brain is on this Mac already.
+    var pageWorker: BrainSelection? {
+        let browserPrivate = keptOnMac.contains(SourceCatalog.browserExtension)
+        return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: browserPrivate, stored: screenBrain)
+    }
+
+    /// The page brain, when it hands a note to the chosen brain instead of answering itself.
+    var pageRelayWorker: BrainSelection? { screenBrainRelays ? pageWorker : nil }
 
     /// Whether Nook may do screen work at all: the active brain may read the screen, or a screen brain does it on this Mac.
     var screenWorkAllowed: Bool {
@@ -637,7 +648,17 @@ final class AppSettings: ObservableObject {
     /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
     /// when the brain runs on this Mac.
     /// The privacy level adds its own (the screen and clipboard when strict).
-    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources.union(privacyLevel.localOnlySources) }
+    var privateSources: Set<String> { isLocalBrain ? [] : keptOnMac }
+
+    /// The sources the user keeps on this Mac, whatever brain answers: chosen by hand, by the privacy level, and the
+    /// page in their browser (Nook's extension) whenever the screen is kept here, because that page is part of the
+    /// screen. Nook Chat, the screen brain and coding agents all read this one set.
+    var keptOnMac: Set<String> { privacyLevel.keptOnMac(byHand: localOnlySources) }
+
+    /// Kept on this Mac by a rule (the privacy level, or with the screen) rather than by the user's own switch.
+    func keptByRule(_ source: String) -> Bool {
+        !localOnlySources.contains(source) && keptOnMac.contains(source)
+    }
 
     /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged on this Mac,
     /// filtered by the privacy level when it goes to an external brain.

@@ -137,7 +137,7 @@ struct BuddyLedger: Codable, Equatable {
     }
 
     func count(_ kind: BuddyMomentKind) -> Int {
-        shownToday.filter { $0.hasPrefix(kind.rawValue + "@") }.count
+        shownToday.count(where: { $0.hasPrefix(kind.rawValue + "@") })
     }
 
     mutating func record(_ moment: BuddyMoment, at now: Date) {

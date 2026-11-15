@@ -6,12 +6,15 @@ import PDFKit
 import UniformTypeIdentifiers
 import NaturalLanguage
 
-/// Orchestrates services, brain, and notch UI. The UI interacts solely with this object.
+/// Orchestrates services, brain, and the panel every surface shows. The UI interacts solely with this object.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
-    let notch = NotchController()
+    /// The panel the main window, the notch and sheets all show. Owned here, not by the notch: the notch is optional.
+    let viewModel: PanelViewModel
+    /// The notch's window, showing `viewModel` while the notch is on.
+    let notch: NotchController
     let settings = AppSettings.shared
     let store = NookStore()
     let calendar = CalendarService()
@@ -256,8 +259,6 @@ final class AppModel: ObservableObject {
     @Published var loops: [OpenLoop] = []
     @Published var upcoming: [CalEvent] = []
 
-    var viewModel: NotchViewModel { notch.viewModel }
-
     var bag = Set<AnyCancellable>()
     var hotKeys: [HotKey] = []
     var watchTimer: Timer?
@@ -289,6 +290,9 @@ final class AppModel: ObservableObject {
     @Published var attachmentError: String?
 
     private init() {
+        let viewModel = PanelViewModel()
+        self.viewModel = viewModel
+        notch = NotchController(viewModel: viewModel)
         // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
         // connector, history, usage, the first screen read), and a running agent changes the hub with every step it
         // takes, so they are combined: the first change redraws at once, a burst at most four times a second. At one

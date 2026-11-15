@@ -36,6 +36,9 @@ final class CompanionServer: ObservableObject {
     /// the message that tells them.
     private var revoking: Set<String> = []
     private var watch: AnyCancellable?
+    private var conversationWatch: AnyCancellable?
+    /// A look at the live conversations is planned, after one waited for a slow connection.
+    private var conversationRetry = false
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
     private var timelinePushRunning = false
@@ -53,6 +56,11 @@ final class CompanionServer: ObservableObject {
                                                      app.chat.objectWillChange)
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
+        // The open Nook conversation follows faster: while Nook writes, the phone gets its words as the Mac shows them,
+        // at most every 150 ms (`pushConversations`). Without a phone watching one, nothing is read.
+        conversationWatch = app.chat.objectWillChange
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.pushConversations() } }
         apply()
         KeepAwake.shared.attach(app: app)
     }
@@ -474,7 +482,61 @@ final class CompanionServer: ObservableObject {
             update.seq = peer.seq
             send(update, key: key, deviceID: deviceID, on: peer.transport)
         }
+        pushConversations()
     }
+
+    /// Sends every phone that has one of Nook's conversations open (`watchConversation`) its messages when they changed
+    /// since it last got them, only to a phone that may see Nook's chats.
+    private func pushConversations() {
+        guard let app, streams.contains(where: { $0.watchConversation != nil }) else { return }
+        var read: [String: [ChatLine]] = [:]
+        var heldBack = false
+        for peer in streams {
+            guard let conversation = peer.watchConversation, let key = peer.key, let deviceID = peer.deviceID,
+                  let id = peer.streamID, scopes(of: deviceID).contains(.nookChat) else { continue }
+            if read[conversation] == nil {
+                guard let uuid = UUID(uuidString: conversation), let found = app.chat.conversation(uuid) else {
+                    peer.watchConversation = nil
+                    peer.sentMessages = nil
+                    continue
+                }
+                read[conversation] = lines(found)
+            }
+            guard let messages = read[conversation], messages != peer.sentMessages else { continue }
+            // The network has not taken the last updates yet (a slow or shaky connection): wait, and send everything
+            // that changed meanwhile as one update once it has, so the phone never falls further and further behind.
+            if peer.transport.pending > Self.conversationBacklog {
+                heldBack = true
+                continue
+            }
+            var update = CompanionResponse(id: id, ok: true, seq: peer.seq + 1, messagesConversation: conversation)
+            switch ConversationDelta.change(from: peer.sentMessages, to: messages) {
+            case .same:
+                peer.sentMessages = messages
+                continue
+            case .append(let words):
+                update.messageAppend = words
+            case .tail(let after, let lines):
+                update.messages = lines
+                update.messagesAfter = after
+            }
+            peer.sentMessages = messages
+            peer.seq += 1
+            send(update, key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
+        }
+        // Nothing else may change after the last words (the answer is done): look again shortly.
+        if heldBack, !conversationRetry {
+            conversationRetry = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                self?.conversationRetry = false
+                self?.pushConversations()
+            }
+        }
+    }
+
+    /// More than this waiting on a phone's connection and the live conversation waits for it (`pushConversations`).
+    static let conversationBacklog = 24 * 1024
 
     // MARK: The open session, live
 
@@ -717,6 +779,8 @@ final class CompanionServer: ObservableObject {
             return inboxMark(request, app: app)
         case .watchChat:
             return await watchChat(request, deviceID: deviceID, app: app)
+        case .watchConversation:
+            return watchConversation(request, deviceID: deviceID, app: app)
         case .avatars:
             return await avatars(request)
         case .pulls:
@@ -871,6 +935,9 @@ final class CompanionPeer {
     var watchChat: String?
     var sentChatLines: [InboxLine]?
     var sentChatTyping: [InboxTypist]?
+    /// Nook's conversation the phone has open (`watchConversation`), and its messages as the phone has them.
+    var watchConversation: String?
+    var sentMessages: [ChatLine]?
     /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
     var compression = false
 
@@ -886,15 +953,26 @@ protocol CompanionTransport: AnyObject {
     func send(_ data: Data)
     /// Ends the connection; the server hears of it as for any other close.
     func cancel()
+    /// Bytes sent that the network did not take yet: high on a slow or shaky connection, where the live conversation
+    /// waits a moment and then goes as one update instead of piling up (`pushConversations`).
+    var pending: Int { get }
 }
 
 @MainActor
 final class TCPTransport: CompanionTransport {
     private let connection: NWConnection
+    private(set) var pending = 0
 
     init(_ connection: NWConnection) { self.connection = connection }
 
-    func send(_ data: Data) { connection.send(content: data, completion: .contentProcessed { _ in }) }
+    func send(_ data: Data) {
+        let size = data.count
+        pending += size
+        connection.send(content: data, completion: .contentProcessed { [weak self] _ in
+            Task { @MainActor in self?.pending -= size }
+        })
+    }
+
     func cancel() { connection.cancel() }
 }
 

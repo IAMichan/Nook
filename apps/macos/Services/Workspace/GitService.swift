@@ -271,7 +271,7 @@ struct GitService: Sendable {
             // Ignored files count too (one entry per ignored folder), but not `node_modules`, which a setup makes again.
             guard let text = try? run(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignored=traditional"],
                                       in: directory) else { return nil }
-            return Self.parseStatus(text).files.filter { !$0.path.split(separator: "/").contains("node_modules") }.count
+            return Self.parseStatus(text).files.count(where: { !$0.path.split(separator: "/").contains("node_modules") })
         }
     }
 

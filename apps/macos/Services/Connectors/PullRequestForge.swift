@@ -156,7 +156,7 @@ enum UnifiedDiffFiles {
         var inHunk = false
         func flush() {
             guard let current = header else { return }
-            let additions = body.filter { $0.hasPrefix("+") }.count, deletions = body.filter { $0.hasPrefix("-") }.count
+            let additions = body.count(where: { $0.hasPrefix("+") }), deletions = body.count(where: { $0.hasPrefix("-") })
             files.append(PullRequestFile(path: current.path, status: current.status, additions: additions, deletions: deletions,
                                          patch: body.isEmpty ? nil : body.joined(separator: "\n"), previousPath: current.previous))
         }

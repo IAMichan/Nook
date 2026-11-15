@@ -20,7 +20,7 @@ user's own apps), **Double Tap** (tap right ⌘ twice in a reply box: an unsent 
 
 | Sentient OS | Nook |
 |---|---|
-| Notch overlay with click-through, all Spaces | `NotchUI/Window` (same `ignoresMouseEvents` by cursor approach) |
+| Notch overlay with click-through, all Spaces | `UI/Window` (same `ignoresMouseEvents` by cursor approach) |
 | Sidekick computer use | `UIDriver` / `control_ui` with approval cards |
 | Voice on a modifier key | Flow dictation (`Services/Flow`) |
 | Memory | `MemoryBook` (told / learned / observed, fades unless used) |

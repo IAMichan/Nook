@@ -111,4 +111,11 @@ final class GitHubMarkdownTests: XCTestCase {
         Walkthrough
         """)
     }
+
+    /// A comment that spells out the private-use marks that hold inline code aside, as references or as characters, is
+    /// text: it never names a span that is not there.
+    func testMarksInTheCommentDoNotNameMissingCode() {
+        XCTAssertEqual(GitHubMarkdown.markdown("<b>x</b> &#xE000;9&#xE001; &#57344;3&#57345;"), "**x**")
+        XCTAssertEqual(GitHubMarkdown.markdown("<b>x</b> \u{E000}7\u{E001} <code>a</code>"), "**x**  `a`")
+    }
 }

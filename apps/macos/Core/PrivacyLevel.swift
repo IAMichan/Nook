@@ -21,6 +21,14 @@ enum PrivacyLevel: String, CaseIterable, Identifiable, Codable {
     var localOnlySources: Set<String> {
         self == .strict ? [SourceCatalog.screen, "clipboard"] : []
     }
+
+    /// The sources kept on this Mac: those the user keeps here by hand, those this level keeps, and the page in the
+    /// browser (Nook's extension) whenever the screen stays here, because that page is part of the screen.
+    func keptOnMac(byHand: Set<String>) -> Set<String> {
+        var kept = byHand.union(localOnlySources)
+        if kept.contains(SourceCatalog.screen) { kept.insert(SourceCatalog.browserExtension) }
+        return kept
+    }
 }
 
 /// Takes out what the privacy level keeps on this Mac from text Nook gathered (context, screen text, what tools read)

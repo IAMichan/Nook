@@ -138,10 +138,12 @@ enum SearchAI {
         return lines.joined(separator: "\n")
     }
 
+    private static let citationMark = try? NSRegularExpression(pattern: #"\[(\d+(?:\s*,\s*\d+)*)\]"#)
+
     /// The sources an answer cites, by their number (1 is the first), in the order the answer first names them; numbers
     /// outside the list are left out.
     static func citations(in answer: String, count: Int) -> [Int] {
-        guard count > 0, let regex = try? NSRegularExpression(pattern: #"\[(\d+(?:\s*,\s*\d+)*)\]"#) else { return [] }
+        guard count > 0, let regex = citationMark else { return [] }
         let ns = answer as NSString
         var found: [Int] = []
         for match in regex.matches(in: answer, range: NSRange(location: 0, length: ns.length)) {

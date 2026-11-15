@@ -511,7 +511,7 @@ enum TeamsWebData {
 
     /// An attribute's value with the entities HTML puts in an address ("&amp;") as they are meant.
     private static func unescaped(_ value: String) -> String {
-        value.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+        HTMLEntities.decode(value)
     }
 
     /// The other people who wrote in a chat, by name, in the order they first wrote: what a chat without a topic is
@@ -572,13 +572,13 @@ enum TeamsWebData {
             var written = ""
             var last = line.startIndex
             for tag in ChatTags.found(in: line, people: people) {
-                written += escaped(String(line[last..<tag.range.lowerBound]))
+                written += HTMLEntities.escape(String(line[last..<tag.range.lowerBound]))
                 written += "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"\(mentions.count)\">"
-                    + escaped(tag.person.name) + "</span>"
+                    + HTMLEntities.escape(tag.person.name) + "</span>"
                 mentions.append(tag.person)
                 last = tag.range.upperBound
             }
-            return "<p>" + written + escaped(String(line[last...])) + "</p>"
+            return "<p>" + written + HTMLEntities.escape(String(line[last...])) + "</p>"
         }.joined()
         return (html, mentions)
     }
@@ -606,22 +606,14 @@ enum TeamsWebData {
     /// The quote an answer starts with, as the website writes it (and `reply(_:me:)` reads it): the answered message's
     /// id in Nook ("teams-…"), who wrote it (their id, when known, and name) and the start of its text.
     static func replyHTML(to message: String, author: String?, sender: String, text: String) -> String {
-        let id = escaped(message.hasPrefix("teams-") ? String(message.dropFirst("teams-".count)) : message)
+        let id = HTMLEntities.escape(message.hasPrefix("teams-") ? String(message.dropFirst("teams-".count)) : message)
         let preview = text.count > 200 ? String(text.prefix(200)) + "…" : text
         return #"<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="\#(id)">"#
-            + #"<strong itemprop="mri" itemid="\#(escaped(author ?? ""))">\#(escaped(sender))</strong>"#
+            + #"<strong itemprop="mri" itemid="\#(HTMLEntities.escape(author ?? ""))">\#(HTMLEntities.escape(sender))</strong>"#
             + #"<span itemprop="time" itemid="\#(id)"></span>"#
-            + #"<p itemprop="preview">\#(escaped(preview))</p></blockquote>"#
+            + #"<p itemprop="preview">\#(HTMLEntities.escape(preview))</p></blockquote>"#
     }
 
-    /// Text escaped for HTML.
-    static func escaped(_ text: String) -> String {
-        var escaped = text
-        for (character, entity) in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;")] {
-            escaped = escaped.replacingOccurrences(of: character, with: entity)
-        }
-        return escaped
-    }
 
     /// The messages Teams marked as deleted (`properties.deletetime`), by their id in Nook ("teams-…"): the chat in Nook
     /// shows them as deleted.

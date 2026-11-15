@@ -60,7 +60,7 @@ final class TurnDiffTests: XCTestCase {
         let session = TurnDiff.session(turns)
         XCTAssertEqual(session.files.map(\.path), ["/p/A.swift", "/p/B.swift"])
         XCTAssertEqual(session.files[1].patches.count, 2)
-        XCTAssertEqual(UnifiedDiff.rows(TurnDiff.diff(session.files)).filter { $0.kind == .file }.count, 2)
+        XCTAssertEqual(UnifiedDiff.rows(TurnDiff.diff(session.files)).count(where: { $0.kind == .file }), 2)
     }
 
     func testAMessageSentWhileWorkingIsMarked() {

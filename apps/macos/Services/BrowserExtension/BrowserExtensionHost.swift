@@ -13,7 +13,7 @@ enum BrowserExtensionHost {
     static let extensionID = "dmnnhilmehmfdcllfemoipncfhmapjld"
 
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 1
+    static let version = 2
 
     /// Where each Chromium browser looks for native messaging hosts of this user, under ~/Library/Application Support.
     /// A browser that is not installed has no folder there, and Nook writes nothing for it.
@@ -87,7 +87,7 @@ enum BrowserExtensionHost {
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook browser host (version 1): the native messaging host of Nook's browser extension. Chrome (or Brave, Edge, Arc,
+    # Nook browser host (version 2): the native messaging host of Nook's browser extension. Chrome (or Brave, Edge, Arc,
     # Vivaldi, Chromium) starts it for the extension and talks to it over stdin and stdout; it passes every message on to
     # Nook over a local Unix socket that only your user can open, and Nook's commands back to the extension. It holds no
     # logic of its own and keeps nothing. Without Nook it stays quiet and tells the extension that Nook is not running.
@@ -145,7 +145,8 @@ enum BrowserExtensionHost {
         write_frame({ kind => 'reply', rid => $rid, reply => $reply }) if defined $rid;
     }
 
-    # A line on the waiting poll: a command for the extension, or "idle" when Nook had nothing for half a minute.
+    # A line on the waiting poll: a command for the extension, a change in a conversation its side panel follows, or
+    # "idle" when Nook had nothing for half a minute.
     sub from_poll {
         my $read = sysread($poll, $poll_buffer, 65536, length $poll_buffer);
         if (!$read) {
@@ -157,7 +158,7 @@ enum BrowserExtensionHost {
         close_poll();
         my $message = eval { $json->decode($line) };
         return unless ref($message) eq 'HASH';
-        write_frame($message) if defined $message->{kind} && $message->{kind} eq 'command';
+        write_frame($message) if defined $message->{kind} && ($message->{kind} eq 'command' || $message->{kind} eq 'chat');
     }
 
     sub open_poll {

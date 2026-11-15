@@ -154,6 +154,30 @@ enum ScreenBrain {
         routed == nil && !images && !ChatIntent.detect(text).kinds.contains(.contacts)
     }
 
+    // MARK: The page in the browser's side panel
+
+    /// Words that ask to do something on a page: fill in, type, click, choose, send. In the five languages Nook speaks.
+    private static let pageAction = try? NSRegularExpression(
+        pattern: #"\b(vul\w*|invull\w*|ingevuld|typ\w*|klik\w*|druk (op|af)|selecteer\w*|kies|aanvinken|vink\w*|verstuur|verzend|indienen|fill\w*|type|enter|click|press|tick|check (the|this)|select|choose|submit|send it|ausfüll\w*|füll\w*|ausgefüllt|tipp\w*|klick\w*|wähl\w*|absend\w*|remplis\w*|rempli[rt]?|tape[rz]?|clique[rz]?|appuie\w*|choisi\w*|coche[rz]?|envoie\w*|soumet\w*|rellen\w*|escrib\w*|pulsa\w*|haz clic|selecciona\w*|elig\w*|marca\w*|envía\w*|envia\w*)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// The question asks to act on the page (fill in a form, click, choose): only a brain that has the page and Nook's
+    /// browser tools can do that, so while the page stays on this Mac the model here does it itself instead of handing
+    /// a note on.
+    static func actsOnPage(_ text: String) -> Bool {
+        matches(pageAction, text)
+    }
+
+    /// Whether a question from the browser's side panel is about the page in front. "Hier", "deze pagina" or a request to
+    /// act on it always is. Otherwise one asked there that names no other source (the calendar, mail, a chat…) is: "vat
+    /// samen", "wat kost dit?", "en de tweede?". One that does name another source ("wat staat er morgen in mijn
+    /// agenda?") is not, even when words such as "er" look like they point at the screen.
+    static func handlesPage(_ text: String) -> Bool {
+        if matches(plainCue, withoutPeriods(text)) || actsOnPage(text) { return true }
+        return ChatIntent.detect(text).kinds.allSatisfy { $0 == .screen || $0 == .browser }
+    }
+
     /// Whether this chat question is screen work. The screen brain is usually far smaller than the chosen brain, so a
     /// question goes there only when it needs the screen. Anything else stays with the chosen brain.
     /// `conversation`: earlier turns exist, so "dit" and "ervan" can point at those. `afterScreen`: the last answer read the screen.

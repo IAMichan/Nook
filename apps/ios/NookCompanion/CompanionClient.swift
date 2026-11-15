@@ -59,6 +59,12 @@ final class CompanionClient: ObservableObject {
     private(set) var watchedSession: String?
     /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
     private(set) var watchedChat: String?
+    /// Nook's conversation open on screen, followed live (`watchConversation`); watched again after a reconnect.
+    private(set) var watchedConversation: String?
+    /// The screen that watches it: a screen that went away only stops its own watch, never a newer screen's.
+    private var conversationOwner: UUID?
+    /// When the watched conversation last changed on this phone: an answer that goes quiet for long is asked again.
+    private(set) var conversationHeard = Date.distantPast
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
     /// Messages your Mac refused, per session, to edit and send again or to drop, so a
@@ -671,6 +677,7 @@ final class CompanionClient: ObservableObject {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
         if let chat = watchedChat { await watchChat(chat) }
+        if let conversation = watchedConversation { await watchConversation(conversation) }
         await LiveActivities.shared.reconcile(sessions)
         takeShares()
         await drainOutbox()
@@ -703,6 +710,7 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest.versioned(.list), quiet: true)
         if let session = watchedSession { await watchSession(session) }
         if let chat = watchedChat { await watchChat(chat) }
+        if let conversation = watchedConversation { await watchConversation(conversation) }
         await refreshInbox()
         if can(CompanionFeature.chat), allows(.nookChat) { await loadChats() }
     }
@@ -1192,6 +1200,59 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .watchChat), quiet: true)
     }
 
+    /// Takes a conversation's messages as the Mac sent them: all of them, the ones after a message both have, or Nook's
+    /// new words (`ConversationDelta`). An update that does not build on what this phone has (one got lost on the way)
+    /// asks for the conversation again, once.
+    private func takeMessages(_ response: CompanionResponse, conversation: String) {
+        guard let next = ConversationDelta.apply(lines: response.messages, after: response.messagesAfter,
+                                                 append: response.messageAppend, to: chatLines[conversation]) else {
+            CompanionDiagnosticsLog.phone.record("conversationGap", ["append": response.messageAppend == nil ? "0" : "1"])
+            Task { [weak self] in
+                guard let self else { return }
+                if self.watchedConversation == conversation { await self.watchConversation(conversation, resume: false) }
+                else { await self.loadChat(conversation) }
+            }
+            return
+        }
+        if conversation == watchedConversation { conversationHeard = Date() }
+        if chatLines[conversation] != next { chatLines[conversation] = next }
+        // Kept for when the Mac is out of reach; a streaming answer is saved once per burst (`scheduleCacheSave`).
+        if cache.record(chatLines: next, chat: conversation, at: Date()) { scheduleCacheSave() }
+    }
+
+    /// Opens one of Nook's conversations live (`CompanionOp.watchConversation`): the Mac answers with its messages, then
+    /// sends Nook's new words by itself as it writes them. With `resume`, only what came after the last finished message
+    /// this phone has comes back. False when this Mac cannot, and the screen asks instead.
+    @discardableResult
+    func watchConversation(_ conversationID: String, resume: Bool = true, owner: UUID? = nil) async -> Bool {
+        watchedConversation = conversationID
+        if let owner { conversationOwner = owner }
+        guard await supports(CompanionFeature.liveConversation), phase == .connected else { return false }
+        let from = resume ? ConversationDelta.resumePoint(chatLines[conversationID]) : nil
+        let ok = await perform(CompanionRequest(op: .watchConversation, item: from, conversation: conversationID), quiet: true)?.ok == true
+        if ok { conversationHeard = Date() }
+        return ok
+    }
+
+    /// Nook is writing in the watched conversation, but nothing came for a while: an update may be stuck on a bad
+    /// connection, so the screen asks again (cheap: only what came after the last finished message).
+    func conversationStalled(_ conversationID: String, now: Date = Date()) -> Bool {
+        watchedConversation == conversationID && chatLines[conversationID]?.last?.streaming == true
+            && now.timeIntervalSince(conversationHeard) > CompanionTiming.conversationStall
+    }
+
+    /// The conversation left the screen: the Mac stops sending it (unless another one opened meanwhile).
+    func unwatchConversation(_ conversationID: String, owner: UUID? = nil) async {
+        guard watchedConversation == conversationID, owner == nil || owner == conversationOwner else { return }
+        watchedConversation = nil
+        conversationOwner = nil
+        guard can(CompanionFeature.liveConversation), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watchConversation), quiet: true)
+    }
+
+    /// Whether the open Nook conversation follows live right now, so its screen need not ask.
+    var conversationIsLive: Bool { can(CompanionFeature.liveConversation) && phase == .connected && channel != nil }
+
     /// Whether the Chats tab and Nook's conversations follow live right now, so their screens need not ask.
     var chatsAreLive: Bool { can(CompanionFeature.liveChats) && phase == .connected && channel != nil }
 
@@ -1384,9 +1445,9 @@ final class CompanionClient: ObservableObject {
             if list != conversations { conversations = list }
             if cache.record(conversations: list) { scheduleCacheSave() }
         }
-        if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
-            chatLines[conversation] = lines
-            if cache.record(chatLines: lines, chat: conversation, at: Date()) { scheduleCacheSave() }
+        if response.messages != nil || response.messageAppend != nil,
+           let conversation = response.messagesConversation ?? response.created ?? req.conversation {
+            takeMessages(response, conversation: conversation)
         }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }

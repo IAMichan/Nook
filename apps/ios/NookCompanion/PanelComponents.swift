@@ -2,7 +2,7 @@ import SwiftUI
 
 // The phone's panel: its header, tabs, search field, composer and starters, drawn as the Mac's (docs/UI-COMPONENTS.md)
 // with touch instead of hover (a press lights what the pointer lights on the Mac) and room for a finger. The buttons,
-// badges, list parts and agent logos are not here: both apps compile those from apps/macos/NotchUI/Shared.
+// badges, list parts and agent logos are not here: both apps compile those from apps/macos/UI/Shared.
 
 // MARK: Logos
 
@@ -100,7 +100,7 @@ final class TabRouter: ObservableObject {
         case .nook: return client.conversations.filter(\.waiting).count
         case .agents: return client.sessions.filter(SessionListView.needsYou).count
         // Chats with something unread, not every message: one busy group is one.
-        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        case .chats: return client.inbox.count(where: { $0.unread > 0 })
         case .pulls, .settings: return 0
         }
     }

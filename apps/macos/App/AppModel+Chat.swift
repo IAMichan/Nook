@@ -137,7 +137,8 @@ extension AppModel {
     /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
     /// `ReplyContext.selfContained`.
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
-             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false) {
+             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false,
+             page: ScreenSnapshot? = nil) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         // A follow-up after a scheduled quiet check is the user's own question: it gets its answer and notice as usual.
@@ -146,8 +147,14 @@ extension AppModel {
         // screen brain answers it (`ScreenBrain`), so the screen text never leaves the Mac. Everything else goes to the
         // chosen brain as always.
         // With a relaying screen brain it writes a filtered note instead, and the chosen brain answers from that.
-        let needed = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
-        let relay = needed != nil && ScreenBrain.relays(text, images: !images.isEmpty) ? settings.relayWorker : nil
+        // A page from the browser's side panel while the browser stays on this Mac goes the same way (`pageWorker`). A
+        // request to act on it (fill in, click) stays with the model here: only it has the page and the browser tools.
+        let screenWork = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
+        let pageWork = screenWork == nil && page != nil ? pageWorker(for: text, in: conversation) : nil
+        let needed = screenWork ?? pageWork
+        let acts = page != nil && ScreenBrain.actsOnPage(text)
+        let relay = needed != nil && !acts && ScreenBrain.relays(text, images: !images.isEmpty)
+            ? (pageWork != nil ? settings.pageRelayWorker : settings.relayWorker) : nil
         let screenBrain = relay == nil ? needed : nil
         let runs = screenBrain ?? relay ?? settings.selection
         var question = ChatMessage(role: .user, text: text)
@@ -192,10 +199,12 @@ extension AppModel {
                             await ReplyContext.$messageID.withValue(replyID) {
                                 await ReplyContext.$note.withValue(note) {
                                     await ReplyContext.$selfContained.withValue(selfContained) {
-                                        if let relay {
-                                            await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
-                                        } else {
-                                            await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                        await ReplyContext.$page.withValue(page) {
+                                            if let relay {
+                                                await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
+                                            } else {
+                                                await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                            }
                                         }
                                     }
                                 }
@@ -220,6 +229,14 @@ extension AppModel {
         let afterScreen = last?.used(anyOf: [SourceCatalog.screen]) == true || last?.privateBrief.isEmpty == false
         // The question itself was appended just before this: it is not a conversation of its own.
         return ScreenBrain.handles(text, conversation: messages.count > 1, afterScreen: afterScreen) ? worker : nil
+    }
+
+    /// The model on this Mac for a question from the browser's side panel about its page, while the browser stays on
+    /// this Mac (`AppSettings.pageWorker`). Nil when the chosen brain may read the page, no screen brain was picked, or
+    /// the question is about something else.
+    private func pageWorker(for text: String, in conversation: UUID) -> BrainSelection? {
+        guard let worker = settings.pageWorker else { return nil }
+        return ScreenBrain.handlesPage(text) ? worker : nil
     }
 
     /// The model on this Mac reads what stays here and writes a filtered note; the chosen brain answers from that note,
@@ -260,17 +277,23 @@ extension AppModel {
                     // Never a raw screen to anything but a model on this Mac.
                     guard settings.selection.isLocal else { return nil }
                     let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
-                    let sources = kept.subtracting([SourceCatalog.screen]).filter { wanted.allows($0) }
-                    let readsScreen = kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
+                    // The page from the browser's side panel is read here instead of the screen: it is what the
+                    // question is about, and it never leaves the Mac.
+                    let page = kept.contains(SourceCatalog.browserExtension) && wanted.allows(SourceCatalog.browserExtension) ? ReplyContext.page : nil
+                    let sources = kept.subtracting([SourceCatalog.screen, SourceCatalog.browserExtension]).filter { wanted.allows($0) }
+                    let readsScreen = page == nil && kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
                         && (ScreenBrain.refersToScreen(text) || ScreenBrain.followsUp(text))
-                    let screen = readsScreen ? try? await screenSnapshot() : nil
+                    // Read first: the right side of ?? cannot await.
+                    let captured = readsScreen ? try? await screenSnapshot() : nil
+                    let screen = page ?? captured
                     let prepared = await prepareRun(text: text, scope: SourceScope(mode: .only, included: sources), snapshotText: nil,
                                                     ledger: RetrievalLedger(), prefetch: !sources.isEmpty, history: history)
                     guard screen != nil || !prepared.fetched.isEmpty else { return nil }
                     let profile = settings.brainProfile
                     let prompt = PrivateBrief.prompt(request: text, history: BrainService.historyPrefix(history, limit: 6, length: 300),
                                                      context: prepared.fetched.isEmpty ? "" : prepared.context, screen: screen?.text,
-                                                     budget: profile.promptCharacterBudget)
+                                                     budget: profile.promptCharacterBudget,
+                                                     place: page.map { PrivateBrief.pagePlace($0.windowTitle) } ?? PrivateBrief.screenPlace)
                     let raw = await brain.rewrite(system: PrivateBrief.system, prompt: prompt, timeout: 60)
                     guard let sealed = raw.flatMap(PrivateBrief.sealed) else { return nil }
                     return (sealed, PrivateBrief.addresses(in: [screen?.text ?? "", prepared.context, raw ?? ""].joined(separator: "\n")))
@@ -302,12 +325,14 @@ extension AppModel {
             await ReplyContext.$images.withValue([]) {
                 await ReplyContext.$note.withValue("") {
                     await ReplyContext.$focus.withValue([]) {
-                        let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
-                        let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
-                        let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
-                                                        context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
-                        // Its citations point at lookups the answer on this Mac does not have.
-                        return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        await ReplyContext.$page.withValue(nil) {
+                            let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
+                            let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
+                            let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
+                                                            context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
+                            // Its citations point at lookups the answer on this Mac does not have.
+                            return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        }
                     }
                 }
             }
@@ -328,6 +353,9 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        // The answer read the browser's page: recorded as using the browser extension, so it stays where that source
+        // stays (an agent never reads an answer built from a source kept on this Mac).
+        var readPage = false
         var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
@@ -340,6 +368,12 @@ extension AppModel {
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
             images = attachmentImages
+            shouldCaptureScreen = false
+        } else if let page = ReplyContext.page, scope.allows(BrowserExtensionTools.sourceID) {
+            // Asked from the browser's side panel: the page it read goes along, so no tool round is spent reading it.
+            let limit = settings.brainProfile.isSmall ? 8_000 : BrowserExtensionPanel.textLimit
+            snapshot = ScreenSnapshot(appName: page.appName, windowTitle: page.windowTitle, text: String(page.text.prefix(limit)))
+            readPage = true
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (!selfContained && settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
@@ -382,6 +416,8 @@ extension AppModel {
             self?.chat.update(id) {
                 if !initialSources.isEmpty { $0.sources = initialSources }
                 $0.contextSources = summary.titles
+                let browser = SourceCatalog.title(SourceCatalog.browserExtension)
+                if readPage, !$0.contextSources.contains(browser) { $0.contextSources.append(browser) }
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
                 $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }

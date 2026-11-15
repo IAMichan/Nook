@@ -988,15 +988,12 @@ enum BridgeTokenFiles {
         guard fileManager.createFile(atPath: staging.path, contents: Data(token.utf8), attributes: [.posixPermissions: 0o600]) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        do {
-            if fileManager.fileExists(atPath: url.path) {
-                _ = try fileManager.replaceItemAt(url, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: url)
-            }
-        } catch {
+        // rename(2) puts it in place in one step, over an older token or not. Not `replaceItemAt`: on Linux that
+        // removes the old file and then fails, leaving no token at all.
+        guard rename(staging.path, url.path) == 0 else {
+            let code = errno
             try? fileManager.removeItem(at: staging)
-            throw error
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
         }
         return url
     }

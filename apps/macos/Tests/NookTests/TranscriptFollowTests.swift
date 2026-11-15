@@ -105,7 +105,7 @@ final class TranscriptFollowTests: XCTestCase {
         let step = events.first { $0.callID == "t2" }
         XCTAssertEqual(step?.state, .done)
         XCTAssertEqual(step?.output, "Executed 3 tests, with 0 failures")
-        XCTAssertEqual(events.filter { $0.callID == "t2" }.count, 1)
+        XCTAssertEqual(events.count(where: { $0.callID == "t2" }), 1)
         XCTAssertEqual(events.last?.kind, .result)
         XCTAssertEqual(events.dropLast().last?.text, "All fixed.")
         // Nothing new: nothing changes, and the turn does not end twice.

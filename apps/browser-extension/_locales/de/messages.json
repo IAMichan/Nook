@@ -100,5 +100,29 @@
   },
   "presenceStop": {
     "message": "Stopp"
+  },
+  "cursorClick": {
+    "message": "Klickt"
+  },
+  "cursorType": {
+    "message": "Tippt"
+  },
+  "cursorScroll": {
+    "message": "Scrollt"
+  },
+  "cursorKey": {
+    "message": "Drückt $1"
+  },
+  "cursorChoose": {
+    "message": "Wählt"
+  },
+  "presenceBlocked": {
+    "message": "Nook arbeitet hier; deine Klicks warten, bis es fertig ist. Esc stoppt Nook."
+  },
+  "presenceSignIn": {
+    "message": "Melde dich auf dieser Seite an; Nook macht danach von selbst weiter."
+  },
+  "presenceSignedIn": {
+    "message": "Weiter"
   }
 }

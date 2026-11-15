@@ -336,3 +336,20 @@ export function lookVariables(look, dark) {
   vars['--space-scale'] = String(look.spacingScale);
   return vars;
 }
+
+// MARK: - Following the side panel's conversation
+
+/** How long Nook follows the side panel's conversation after the panel last asked (BrowserExtensionService.watchFor). */
+export const WATCH_LEASE = 10 * 60_000;
+/** How often the open panel asks again, well within the lease. */
+export const WATCH_RENEW = 4 * 60_000;
+
+/**
+ * Whether the open panel should ask Nook again to keep following its conversation: when its last ask is WATCH_RENEW
+ * old, whether or not Nook is writing. During a long answer the pushes keep coming and the panel itself asks nothing
+ * else, so the lease would otherwise run out mid-answer.
+ */
+export function watchRenewalDue(now, lastAsked) {
+  return now - lastAsked >= WATCH_RENEW;
+}
+

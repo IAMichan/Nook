@@ -389,7 +389,7 @@ enum TeamsData {
     /// How many of these messages from others came after you last read the chat.
     static func unread(_ messages: [InboxMessage], readUntil: Date?) -> Int {
         guard let readUntil else { return 0 }
-        return messages.filter { !$0.isMine && $0.date > readUntil }.count
+        return messages.count(where: { !$0.isMine && $0.date > readUntil })
     }
 
     /// Teams' HTML as plain text: line breaks kept, tags dropped, the common entities back.
@@ -399,10 +399,7 @@ enum TeamsData {
             text = text.replacingOccurrences(of: tag, with: "\n", options: .caseInsensitive)
         }
         text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
-            text = text.replacingOccurrences(of: entity, with: character)
-        }
-        return text.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+        return HTMLEntities.decode(text).replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

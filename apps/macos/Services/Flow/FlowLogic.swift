@@ -203,7 +203,7 @@ enum FlowText {
     /// Only words made of letters, digits, spaces, hyphens and apostrophes get their spelling fixed:
     /// "C++" would match every lone "c".
     static func isPlainWord(_ word: String) -> Bool {
-        let letters = word.filter { $0.isLetter || $0.isNumber }.count
+        let letters = word.count(where: { $0.isLetter || $0.isNumber })
         return letters >= 2 && word.allSatisfy { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" || $0 == "'" || $0 == "’" }
     }
 
