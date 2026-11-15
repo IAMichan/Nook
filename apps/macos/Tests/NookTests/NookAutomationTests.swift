@@ -305,17 +305,32 @@ final class NookAutomationTests: XCTestCase {
 
     func testTheQueueStaysBoundedWithoutLosingWords() {
         var queue = ArrivalQueue()
-        let flood = (0..<(ArrivalQueue.limit + 50)).map { message("busy", "word\($0)", at: TimeInterval($0)) }
+        let flood = (0..<(ArrivalQueue.perChat + 30)).map { message("busy", "word\($0)", at: TimeInterval($0)) }
         queue.enqueue(flood + [message("quiet", "alleen ik", at: 1_000)])
-        XCTAssertLessThanOrEqual(queue.waiting.count, ArrivalQueue.limit)
+        XCTAssertEqual(queue.waiting.filter { $0.chatID == "busy" }.count, ArrivalQueue.perChat)
         let texts = queue.waiting.map(\.text).joined(separator: "\n")
-        for n in [0, 120, ArrivalQueue.limit + 49] { XCTAssertTrue(texts.contains("word\(n)"), "word\(n) is still there") }
+        for n in [0, 25, ArrivalQueue.perChat + 29] { XCTAssertTrue(texts.contains("word\(n)"), "word\(n) is still there") }
         XCTAssertEqual(queue.waiting.filter { $0.chatID == "quiet" }.map(\.text), ["alleen ik"], "other chats keep their own message")
-        // Many chats with one message each fold too, each text under its chat's name.
+        // Many chats with one message each never merge: each keeps its own app and chat.
         var wide = ArrivalQueue()
-        wide.enqueue((0..<(ArrivalQueue.limit + 1)).map { message("c\($0)", "t\($0)") })
-        XCTAssertEqual(wide.waiting.count, ArrivalQueue.limit)
-        XCTAssertTrue(wide.waiting[0].text.contains("[whatsapp · c0] t0") && wide.waiting[0].text.contains("t1"))
+        wide.enqueue((0..<300).map { message("c\($0)", "t\($0)") })
+        XCTAssertEqual(wide.waiting.count, 300)
+    }
+
+    func testAMergedMessageReachesThePromptWhole() {
+        var queue = ArrivalQueue()
+        let long = String(repeating: "a", count: 1_900) + " EERSTE"
+        queue.enqueue([message("lisa", long, at: 0)] + (1...ArrivalQueue.perChat).map { message("lisa", "bericht\($0)", at: TimeInterval($0)) })
+        let batch = queue.takeBatch(matching: MessageTrigger())
+        let prompt = NookSchedule.messagePrompt("p", messages: batch)
+        XCTAssertTrue(prompt.contains("EERSTE") && prompt.contains("bericht1"), "both texts of the merged message are in the prompt")
+    }
+
+    func testAChangedFilterAfterAMergeKeepsWhatStillMatches() {
+        var queue = ArrivalQueue()
+        let mail = ArrivedMessage(chatID: "m", app: "mail", chat: "Tom", sender: "Tom", text: "factuur", date: now, isGroup: false)
+        queue.enqueue([mail] + (0...ArrivalQueue.perChat).map { message("lisa", "w\($0)", at: TimeInterval($0)) })
+        XCTAssertEqual(queue.takeBatch(matching: MessageTrigger(apps: ["mail"])).map(\.text), ["factuur"])
     }
 
     // MARK: Intent
