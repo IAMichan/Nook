@@ -51,6 +51,8 @@ struct AgentRunPanel: View {
     @State var lastFrame = Unobserved<ScrollFrame?>(nil)
     /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
     @State var drawnRows = DrawnRows()
+    /// Holds the block you read in place while you read back and what is above it changes height (`TimelineReadingAnchor`).
+    @State var reading = TimelineReadingAnchor()
     /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
     @State var timelineBuild = 0
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
