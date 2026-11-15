@@ -2,7 +2,10 @@
   // A chat with Nook on your computer (`ChatView`): your words and Nook's answers as in a session, "Thinking…" with Nook's
   // face while it writes, and Ask Nook at the bottom, Stop while it writes. A plan, draft or chart waits on the computer.
   import { onMount, untrack } from "svelte";
-  import { companion, messageTime, type ChatLine, type ClientView } from "../../lib/companion";
+  import { companion, messageTime, writingWaits, type ChatLine, type ClientView } from "../../lib/companion";
+  import { activeMac, cacheFor, kept, recordChatLines, saveSoon } from "../../lib/companion-cache";
+  import OfflineStrip from "./ui/OfflineStrip.svelte";
+  import OfflineNote from "./ui/OfflineNote.svelte";
   import { renderMarkdown } from "../../lib/markdown";
   import { richContent } from "../../lib/rich";
   import { tr } from "../../lib/i18n.svelte";
@@ -20,7 +23,14 @@
 
   let id = $state<string | null>(untrack(() => initial));
   let title = $state("");
-  let lines = $state<ChatLine[]>([]);
+  // What the phone kept of this chat (`companion-cache.ts`) until the computer answers.
+  const cache = $derived(cacheFor(activeMac(view)));
+  let lines = $state<ChatLine[]>(untrack(() => (initial && kept(cacheFor(activeMac(view))?.chatLines ?? [], initial)) || []));
+  const offline = $derived(view.phase === "offline");
+  $effect(() => {
+    if (!cache || !id || offline || !lines.length) return;
+    if (recordChatLines(cache, id, lines, Date.now() / 1000)) saveSoon(activeMac(view));
+  });
   let text = $state("");
   let sending = $state(false);
   const busy = $derived(sending || lines.some((l) => l.streaming));
@@ -29,7 +39,7 @@
   const thinking = $derived(sending || (last?.fromNook && last.streaming && !last.text));
 
   async function load() {
-    if (!id || document.visibilityState !== "visible") return;
+    if (!id || document.visibilityState !== "visible" || untrack(() => offline)) return;
     const r = await companion.call({ op: "chat", conversation: id });
     if (r.response?.messages) lines = r.response.messages;
   }
@@ -79,6 +89,9 @@
   </NavBar>
   <ConversationScroll version={[lines.length, last?.text.length, last?.status, sending]}>
     <div class="lines">
+      {#if offline && id && !lines.length && !queued.length}
+        <OfflineNote>{tr("Deze chat staat nog niet op deze telefoon. Hij opent zodra je Mac verbonden is.", "This chat is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
+      {/if}
       {#each lines as l (l.id)}
         {#if !l.fromNook}
           <div class="user"><div class="bubble">{l.text}</div><span class="time">{messageTime(l.date)}</span></div>
@@ -91,7 +104,7 @@
         {/if}
       {/each}
       {#each queued as q (q.id)}
-        <div class="user waiting"><div class="bubble">{q.text}</div><span class="time"><Ico name="clock" size={11} /> {tr("Wacht op je Mac", "Waiting for your Mac")}</span></div>
+        <div class="user waiting"><div class="bubble">{q.text}</div><span class="time"><Ico name="clock" size={11} /> {tr("Nog niet verstuurd · wacht op je Mac", "Not sent yet · waiting for your Mac")}</span></div>
       {/each}
       {#if thinking}
         <div class="thinking"><NookMark size={22} /><span>{last?.status || tr("Aan het denken…", "Thinking…")}</span><PulseDot size={5} color="var(--text2)" /></div>
@@ -99,7 +112,8 @@
     </div>
   </ConversationScroll>
   <div class="dock">
-    <SessionComposer bind:value={text} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={send} onstop={busy ? stop : undefined} />
+    <OfflineStrip {view} />
+    <SessionComposer bind:value={text} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={send} onstop={busy ? stop : undefined} canSend={!offline || writingWaits(view)} />
   </div>
 </div>
 

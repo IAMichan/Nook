@@ -3,7 +3,7 @@
   // unread as tiles, For you (the sessions that need you and the unread chats, a tap away), Nook's recent chats, and a
   // box to ask Nook something. With no chats yet it offers where to start.
   import {
-    has, may, needsYouState, relative, unreadChats, Feature,
+    has, may, needsYouState, relative, unreadChats, writingWaits, Feature,
     type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { locale, tr } from "../../lib/i18n.svelte";
@@ -18,6 +18,7 @@
   import NookMark from "./ui/NookMark.svelte";
   import Banner from "./ui/Banner.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
+  import OfflineStrip from "./ui/OfflineStrip.svelte";
 
   let { view, inbox, conversations, onorb, ongear, onsession, onchat, onnook, ontab }: {
     view: ClientView;
@@ -132,7 +133,8 @@
   </div>
   {#if canChat}
     <div class="dock">
-      <SessionComposer bind:value={question} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={ask} />
+      <OfflineStrip {view} />
+      <SessionComposer bind:value={question} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={ask} canSend={view.phase !== "offline" || writingWaits(view)} />
     </div>
   {/if}
 </div>

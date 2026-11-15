@@ -174,8 +174,16 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
 - **Reaching the Mac:** up to eight paired Macs, one active and the others asked for their sessions every 30 seconds
   ("On <Mac>"); every route the code and the Mac name (`a=`, `endpoints`), the last that worked first, and the relay as
   the last resort (`r=`, `relay`; a WebSocket to `/v1/rooms/<room>?role=phone`); compressed answers (`compression`);
-  and an outbox for messages, new sessions and questions to Nook while the Mac is away (`retry`, sent again with the
-  same id). Code: `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
+  and an outbox for messages to a session or a chat, new sessions and questions to Nook while the Mac is away (`retry`,
+  sent again with the same id, a session message for a day and the rest for an hour, `outbox_max_age`). Code:
+  `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
+- **Without the Mac:** as on the iPhone (*Without the Mac the app stays usable*), the phone keeps what it saw last of
+  each Mac (`lib/companion-cache.ts`, in the app's own storage). It keeps the session list with when the Mac answered it,
+  the last five session conversations, what a new session can start with, Nook's chats and the Chats tab, and the
+  newest messages of the last eight chats of each kind, all settled. Every tab reads from it while the Mac is away, and
+  every conversation shows `OfflineStrip` over its composer. A waiting message says *Not sent yet · waiting for your Mac*,
+  the connection line says *Last updated … · not connected*, and a chat it never kept says it opens once the Mac is
+  connected.
 - **Push notifications:** with a Firebase configuration in the app (`google-services.json`), the phone gives each paired
   Mac its FCM token (`register` with `item` "fcm"; `PairedDevice.pushService`), and the Mac sends that phone's pushes
   sealed through the relay (`RelayPushRequest.service` "fcm", `apps/relay/worker/push.js`) as a data message. The app's

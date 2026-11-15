@@ -5,7 +5,7 @@
   // other says how to answer it.
   import { onDestroy, onMount, untrack } from "svelte";
   import {
-    companion, followsLive, personTint, typingText, Feature,
+    companion, followsLive, personTint, typingText, writingWaits, Feature,
     type ClientView, type InboxChatDigest, type InboxLine, type InboxTypist,
   } from "../../lib/companion";
   import { locale, tr } from "../../lib/i18n.svelte";
@@ -20,10 +20,23 @@
   import { WA } from "./ui/whatsapp";
   import Sheet from "./ui/Sheet.svelte";
   import MessageInfo from "./MessageInfo.svelte";
+  import OfflineStrip from "./ui/OfflineStrip.svelte";
+  import OfflineNote from "./ui/OfflineNote.svelte";
+  import { activeMac, cacheFor, kept, recordInboxLines, saveSoon } from "../../lib/companion-cache";
 
   let { view, id, chat, onback, took }: { view: ClientView; id: string; chat: InboxChatDigest | null; onback: () => void; took: (v: ClientView) => void } = $props();
 
-  let lines = $state<InboxLine[]>([]);
+  // The chat as the phone kept it (`companion-cache.ts`), until the computer answers.
+  let lines = $state<InboxLine[]>(untrack(() => kept(cacheFor(activeMac(view))?.inboxLines ?? [], id) ?? []));
+  const offline = $derived(view.phase === "offline");
+  // Your messages that wait on the phone for the computer, dimmed, until it takes them.
+  const queued = $derived((view.outbox ?? []).filter((q) => q.op === "inboxSend" && q.item === id));
+  $effect(() => {
+    const mac = activeMac(view);
+    const cache = cacheFor(mac);
+    if (!cache || offline || !loaded || !lines.length) return;
+    if (recordInboxLines(cache, id, lines, Date.now() / 1000)) saveSoon(mac);
+  });
   let typing = $state<InboxTypist[]>([]);
   let loaded = $state(false);
   let text = $state("");
@@ -70,6 +83,7 @@
     haptic("success");
     text = "";
     replyTo = null;
+    if (r.response.message === "outbox") return;
     if (r.response.inboxLines) lines = r.response.inboxLines;
   }
 
@@ -142,7 +156,9 @@
   </NavBar>
 
   <ConversationScroll version={[lines.length, lines[lines.length - 1]?.id, typing.length]} background={wa ? WA.wallpaper : undefined}>
-    {#if !loaded}<div class="spinner"></div>{/if}
+    {#if offline && !lines.length && !queued.length}
+      <OfflineNote>{tr("Deze chat staat nog niet op deze telefoon. Hij opent zodra je Mac verbonden is.", "This chat is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
+    {:else if !loaded && !lines.length}<div class="spinner"></div>{/if}
     <div class="lines">
       {#each lines as l, i (l.id)}
         {#if i === 0 || day(lines[i - 1].date) !== day(l.date)}<div class="day"><span>{dayLabel(l.date)}</span></div>{/if}
@@ -163,6 +179,10 @@
           </div>
         </div>
       {/each}
+      {#each queued as q (q.id)}
+        <div class="line mine head tailend waiting"><div class="bubble tail"><span class="body"><span class="words">{q.text}</span></span></div></div>
+        <span class="notsent"><Ico name="clock" size={11} />{tr("Nog niet verstuurd · wacht op je Mac", "Not sent yet · waiting for your Mac")}</span>
+      {/each}
       {#if typing.length && !wa}
         <div class="line head"><div class="bubble tail typingbubble"><span class="dots"><i></i><i></i><i></i></span>{typingNow}</div></div>
       {/if}
@@ -171,6 +191,7 @@
 
   {#if chat?.canSend}
     <div class="dock" style:background={wa ? `linear-gradient(transparent, ${WA.wallpaper} 30%)` : undefined}>
+      <OfflineStrip {view} />
       {#if replyTo}
         <div class="replybar">
           <span class="rbar" style:background={replyTo.fromMe ? "var(--mint)" : "var(--blue)"}></span>
@@ -181,14 +202,15 @@
       {#if wa}
         <div class="wacomposer">
           <div class="pill"><textarea rows="1" bind:value={text} placeholder={tr("Bericht", "Message")}></textarea></div>
-          {#if text.trim()}<button class="wasend" aria-label={tr("Verstuur", "Send")} disabled={sending} onclick={() => send(text.trim())}><Ico name="send" size={18} fill="currentColor" /></button>{/if}
+          {#if text.trim()}<button class="wasend" aria-label={tr("Verstuur", "Send")} disabled={sending || (offline && !writingWaits(view))} onclick={() => send(text.trim())}><Ico name="send" size={18} fill="currentColor" /></button>{/if}
         </div>
       {:else}
-        <SessionComposer bind:value={text} placeholder={tr("Bericht", "Message")} onsend={send} {sending} />
+        <SessionComposer bind:value={text} placeholder={tr("Bericht", "Message")} onsend={send} {sending} canSend={!offline || writingWaits(view)} />
       {/if}
     </div>
-  {:else if loaded && chat}
+  {:else if (loaded || offline) && chat}
     <div class="dock">
+      <OfflineStrip {view} kind="reads" />
       <div class="readonly"><Ico name="info" size={13} /><span><span>{tr("Nook kan deze chat alleen lezen. Beantwoord hem in {app}.", "Nook can only read this chat. Answer it in {app}.", { app: chat.appName })}</span>
         <small>{tr("Koppel {app} in Nook › Instellingen › Chats op je Mac om vanaf je telefoon te antwoorden.", "To answer from your phone, link {app} in Nook › Settings › Chats on your Mac.", { app: chat.appName })}</small></span></div>
     </div>
@@ -253,6 +275,9 @@
   .dots i:nth-child(2) { animation-delay: 0.3s; }
   .dots i:nth-child(3) { animation-delay: 0.6s; }
   @keyframes dot { 0% { opacity: 1; } 33% { opacity: 0.35; } }
+  .waiting { opacity: 0.6; }
+  .notsent { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 2px 4px 6px; font: var(--pt-caption); color: var(--text3); }
+  .wa .notsent { color: #8696a0; }
   .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
   .replybar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 24px; margin: 0 6px -16px; background: var(--field); border: 1px solid var(--field-stroke); border-radius: 16px 16px 0 0; animation: rise 240ms ease-out; }
   .rbar { width: 3px; align-self: stretch; border-radius: 999px; }

@@ -25,6 +25,16 @@ pub const MAX_MACS: usize = 8;
 /// How many requests wait in one computer's outbox, and for how long.
 pub const OUTBOX_LIMIT: usize = 20;
 pub const OUTBOX_MAX_AGE: f64 = 24.0 * 3600.0;
+
+/// How long one request may wait, as the iPhone's `CompanionOutbox.maxAge(for:)`: a message to a session a day; a new
+/// session, a question to Nook or a chat message an hour, since started or sent much later it would surprise more than
+/// help.
+pub fn outbox_max_age(op: CompanionOp) -> f64 {
+    match op {
+        CompanionOp::Send => OUTBOX_MAX_AGE,
+        _ => 3600.0,
+    }
+}
 /// How often the phone says it is still there on a kept connection (`CompanionTiming.pingEvery`).
 pub const PING_EVERY: Duration = Duration::from_secs(5);
 /// A kept connection that brings nothing for this long is gone (the Mac closes one after 45 seconds of silence).
@@ -313,6 +323,8 @@ pub struct QueuedView {
     pub op: CompanionOp,
     pub session: Option<String>,
     pub conversation: Option<String>,
+    /// The chat a message to a chat of the Chats tab goes to (`inboxSend`).
+    pub item: Option<String>,
     pub text: String,
     pub queued_at: f64,
 }
@@ -496,6 +508,7 @@ impl CompanionClient {
                             op: q.request.op,
                             session: q.request.session.clone(),
                             conversation: q.request.conversation.clone(),
+                            item: q.request.item.clone(),
                             text: q.request.text.clone().or_else(|| q.request.launch.as_ref().map(|l| l.task.clone())).unwrap_or_default(),
                             queued_at: q.queued_at,
                         })
@@ -744,7 +757,9 @@ impl CompanionClient {
         r.pull_action = call.pull_action;
         r.pull_work = call.pull_work;
         r.items = call.items;
-        let queueable = matches!(op, CompanionOp::Send | CompanionOp::Start | CompanionOp::Ask);
+        // What you write waits, as on the iPhone (`CompanionOutbox`): a message to a session or to a chat, a new session,
+        // a question to Nook. Approvals, answers and stops mean something only now and never wait.
+        let queueable = matches!(op, CompanionOp::Send | CompanionOp::Start | CompanionOp::Ask | CompanionOp::InboxSend);
         let (snapshot, answer, error) = self.exchange_full(r.clone()).await;
         if queueable && error.as_ref().is_some_and(ClientError::is_unreachable) && self.keeps_outbox() {
             return self.enqueue(r);
@@ -762,7 +777,7 @@ impl CompanionClient {
             let mut i = self.lock();
             let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
             let Some(p) = i.current_mut() else { return (self.snapshot(), None) };
-            p.outbox.retain(|q| now - q.queued_at < OUTBOX_MAX_AGE);
+            p.outbox.retain(|q| now - q.queued_at < outbox_max_age(q.request.op));
             if p.outbox.len() >= OUTBOX_LIMIT {
                 i.notice = Some("Er wachten al te veel berichten op je computer.".into());
                 drop(i);
@@ -779,10 +794,26 @@ impl CompanionClient {
     async fn drain(&self) {
         loop {
             let (link, routes, next) = {
-                let i = self.lock();
-                let Some(p) = i.current() else { return };
-                let Some(q) = p.outbox.first() else { return };
-                (p.link.clone(), p.routes(), q.request.clone())
+                let mut i = self.lock();
+                let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
+                let Some(p) = i.current_mut() else { return };
+                // What waited too long goes unsent, and the phone says so.
+                let before = p.outbox.len();
+                p.outbox.retain(|q| now - q.queued_at < outbox_max_age(q.request.op));
+                let expired = p.outbox.len() < before;
+                let Some(q) = p.outbox.first() else {
+                    if expired {
+                        i.notice = Some("Wat te lang op je computer wachtte, is niet verstuurd.".into());
+                        drop(i);
+                        let _ = self.save();
+                    }
+                    return;
+                };
+                let next = (p.link.clone(), p.routes(), q.request.clone());
+                if expired {
+                    i.notice = Some("Wat te lang op je computer wachtte, is niet verstuurd.".into());
+                }
+                next
             };
             let mut again = next.clone();
             again.sent = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
