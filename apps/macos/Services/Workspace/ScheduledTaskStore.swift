@@ -285,6 +285,7 @@ final class ScheduledTaskStore: ObservableObject {
         tasks.removeAll { $0.id == id }
         options[id] = nil
         pending[id] = nil
+        waitingMessages[id] = nil
         deliveries[id] = nil
         dedupe[id] = nil
         coalescer.forget(id)
@@ -506,7 +507,8 @@ final class ScheduledTaskStore: ObservableObject {
     private func fire(_ id: UUID, scheduledFor: Date, trigger: ScheduleTrigger, prompt: String, now: Date) -> Bool {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return false }
         let key = ScheduledTask.fireKey(taskID: id, scheduledFor: scheduledFor, trigger: trigger)
-        guard ledger.claim(key) else { return false }
+        // Message runs are deduplicated per message (`handledUntil`), every other firing by its key.
+        guard trigger == .message || ledger.claim(key) else { return false }
         guard gate.begin(id) else {
             // Overlap: a tick that finds the task busy skips this round instead of piling a second run on it.
             if trigger == .schedule { recordSkip(id, reason: "sched.skip.overlap", now: now) }
@@ -694,27 +696,19 @@ final class ScheduledTaskStore: ObservableObject {
     private func fireMessages(_ task: ScheduledTask, _ messages: [ArrivedMessage], now: Date) {
         let batch = Array(messages.prefix(NookSchedule.messagesPerRun))
         let rest = Array(messages.dropFirst(NookSchedule.messagesPerRun))
-        // Keyed by when it starts, not by its messages' time: two batches of messages that share a moment are two runs.
-        // A message delivered twice is kept from a second run by `handledUntil`.
+        // No firing key for messages: `handledUntil` already keeps a message delivered twice from a second run, and a key by
+        // time could make two batches look like one.
         let started = fire(task.id, scheduledFor: now, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: batch), now: now)
-        // Busy: everything waits for the run that goes now. A firing seen before (the same messages again) is dropped.
-        let waiting = !started && gate.isRunning(task.id) ? messages : rest
+        // Not started (the task is busy): everything waits for its next run.
+        let waiting = started ? rest : messages
         if !waiting.isEmpty { queueMessages(waiting, for: task.id, first: true) }
     }
 
-    /// The most messages a task keeps waiting. Beyond it the oldest go, and their chats count as not handled again, so
-    /// the chat's next message brings them back into a run instead of losing them without a trace.
-    static let messageQueueLimit = 500
-
+    /// Every message that matched waits until a run takes it: nothing is dropped. The queue only grows while the task
+    /// runs (at most `nookRunLimit`), and group chats, where most messages come from, count only when the task says so.
     private func queueMessages(_ messages: [ArrivedMessage], for taskID: UUID, first: Bool = false) {
         let current = waitingMessages[taskID, default: []]
-        var queue = first ? messages + current : current + messages
-        if queue.count > Self.messageQueueLimit {
-            let dropped = queue.prefix(queue.count - Self.messageQueueLimit)
-            queue = Array(queue.suffix(Self.messageQueueLimit))
-            for chat in Set(dropped.map(\.chatID)) { handledUntil["\(taskID.uuidString)|\(chat)"] = nil }
-        }
-        waitingMessages[taskID] = queue
+        waitingMessages[taskID] = first ? messages + current : current + messages
     }
 
     private func drainMessages(_ id: UUID) {
