@@ -39,3 +39,7 @@
 @media (prefers-reduced-motion: reduce) { .phone .breathe { animation: none; } }
 .phone input:focus, .phone textarea:focus, .phone input:focus-visible, .phone textarea:focus-visible { border-color: transparent; box-shadow: none; outline: none; }
 .phone input:not([class]), .phone textarea:not([class]) { border: none; border-radius: 0; }
+.phone .diagram { overflow-x: auto; padding: 8px 0; }
+.phone .diagram svg { max-width: 100%; height: auto; }
+.phone .math-block { overflow-x: auto; padding: 4px 0; }
+.phone .katex { color: inherit; font-size: 1.05em; }

@@ -4,6 +4,7 @@
   import { onMount, untrack } from "svelte";
   import { companion, messageTime, type ChatLine, type ClientView } from "../../lib/companion";
   import { renderMarkdown } from "../../lib/markdown";
+  import { richContent } from "../../lib/rich";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import NavBar from "./ui/NavBar.svelte";
@@ -83,7 +84,7 @@
           <div class="user"><div class="bubble">{l.text}</div><span class="time">{messageTime(l.date)}</span></div>
         {:else if l.text}
           <div class="answer" class:failed={l.failed}>
-            <div class="markdown">{@html renderMarkdown(l.text)}</div>
+            <div class="markdown" use:richContent={l.text}>{@html renderMarkdown(l.text)}</div>
             {#if !l.streaming}<span class="time">{messageTime(l.date)}</span>{/if}
             {#if l.onMac}<div class="onmac"><span style:color="var(--amber)"><Ico name="laptop" size={13} /></span>{tr("Nook maakte een plan, concept of grafiek: bekijk het op je Mac.", "Nook made a plan, draft or chart: see it on your Mac.")}</div>{/if}
           </div>

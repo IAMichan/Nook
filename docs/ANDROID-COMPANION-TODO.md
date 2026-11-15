@@ -74,4 +74,3 @@ What the iPhone app does that the Android companion does not yet. Each follows t
 - **Check the build** of the Firebase parts once the Android job runs: `com.google.gms:google-services` 4.4.2 and the
   Firebase BoM 33.7.0 were chosen without being able to reach Google's Maven from the session that wrote them.
 - **Widgets** for the home screen (agent activity, plan limits).
-- **Mermaid diagrams and math** in answers.

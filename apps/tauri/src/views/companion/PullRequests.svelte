@@ -7,6 +7,7 @@
   import { companion, has, may, relative, Feature, type ClientView, type LineComment, type PullDetail, type PullDigest, type LaunchOptions } from "../../lib/companion";
   import { lineComment, positions } from "../../lib/patch";
   import { renderMarkdown } from "../../lib/markdown";
+  import { richContent } from "../../lib/rich";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import Ico from "./ui/Ico.svelte";
@@ -186,7 +187,7 @@
           {#if ok.length}<p class="verdict" style:color="var(--mint)"><Ico name="badge-check" size={13} />{tr("{a} keurde goed", "{a} approved", { a: ok.join(", ") })}</p>{/if}
           {#if no.length}<p class="verdict" style:color="var(--amber)"><Ico name="circle-alert" size={13} />{tr("{a} vroeg om wijzigingen", "{a} asked for changes", { a: no.join(", ") })}</p>{/if}
         {/if}
-        {#if detail.body.trim()}<div class="markdown body">{@html renderMarkdown(detail.body)}</div>{:else}<p class="none">{tr("Geen beschrijving.", "No description.")}</p>{/if}
+        {#if detail.body.trim()}<div class="markdown body" use:richContent={detail.body}>{@html renderMarkdown(detail.body)}</div>{:else}<p class="none">{tr("Geen beschrijving.", "No description.")}</p>{/if}
       {:else if segment === "checks"}
         {#each detail.checks as c (c.name + c.detail)}
           <div class="check">

@@ -185,6 +185,8 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
 - **Tablets and the icon:** at 900 points and wider the list and what you opened sit side by side, as the iPad's split
   view. Touch and hold the app's icon for New session, Ask Nook, Answer a chat and the two sessions that need you most
   (`res/xml/shortcuts.xml`, `NookAndroid.setShortcuts`, links `nook://companion/…`).
+- **Diagrams and math:** a Mermaid fence and `$…$`, `$$…$$` or a `math` fence draw as on the Mac (`lib/rich.ts`,
+  the same Mermaid and KaTeX versions, loaded only when needed; nothing goes to a server).
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 
