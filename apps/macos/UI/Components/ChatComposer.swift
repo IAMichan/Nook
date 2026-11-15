@@ -917,7 +917,7 @@ private struct ChatAttachmentThumb: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: bin)
-        .help(bin ? tr("chat.compose.remove") : file.name)
+        .nookTip(bin ? tr("chat.compose.remove") : file.name)
         .contextMenu { Button(tr("chat.compose.remove"), role: .destructive, action: remove) }
         .accessibilityLabel(file.name)
         .accessibilityAddTraits(shown ? .isSelected : [])
@@ -1262,7 +1262,7 @@ private struct ChatPickRow: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("chat.compose.sendThis", title))
+        .nookTip(tr("chat.compose.sendThis", title))
         .accessibilityLabel(tr("chat.compose.sendThis", title))
     }
 }
@@ -1434,7 +1434,7 @@ private struct ChatGIFCell: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .task(id: gif.id) { preview = await ChatComposerModel.preview(gif) }
-        .help(gif.title.isEmpty ? tr("chat.compose.sendSticker") : gif.title)
+        .nookTip(gif.title.isEmpty ? tr("chat.compose.sendSticker") : gif.title)
         .accessibilityLabel(gif.title.isEmpty ? tr("chat.media.gif") : gif.title)
     }
 }
@@ -1464,7 +1464,7 @@ private struct ChatStickerCell: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("chat.compose.sendSticker"))
+        .nookTip(tr("chat.compose.sendSticker"))
         .accessibilityLabel(tr("chat.compose.sendSticker"))
     }
 }

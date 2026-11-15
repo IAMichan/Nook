@@ -95,7 +95,7 @@ struct PullRequestFilterMenu: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .help(tr("agents.pulls.filters"))
+        .nookTip(tr("agents.pulls.filters"))
     }
 
     private func kindRow(_ row: Kind) -> some View {
@@ -366,7 +366,7 @@ struct PullRequestSortMenu: View {
                                 title: tr("agents.pulls.grouping." + option.rawValue), chosen: grouping == option) { grouping = option }
             }
         }
-        .help(tr("agents.pulls.sortHelp"))
+        .nookTip(tr("agents.pulls.sortHelp"))
     }
 
     private static func symbol(_ sort: PullRequestSort) -> String {
@@ -446,7 +446,7 @@ private struct FilterChoiceRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .help(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
+                .nookTip(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
                 .accessibilityLabel(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
             }
         }
@@ -544,7 +544,7 @@ struct PullRequestAttentionBar: View {
                                    selected: on, mark: AnyView(Circle().fill(Self.tint(attention)).frame(width: 6, height: 6))) {
                         withAnimation(NookTheme.hover) { filter.attention = on ? nil : attention }
                     }
-                    .help(tr(on ? "agents.pulls.attention.showAll" : "agents.pulls.attention.showOnly"))
+                    .nookTip(tr(on ? "agents.pulls.attention.showAll" : "agents.pulls.attention.showOnly"))
                 }
                 Spacer(minLength: 0)
             }

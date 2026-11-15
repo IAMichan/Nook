@@ -141,7 +141,7 @@ struct ArtifactVersionMenu: View {
                 }
             }
         }
-        .help(tr("artifact.versions"))
+        .nookTip(tr("artifact.versions"))
         .accessibilityLabel(tr("artifact.versions"))
     }
 }
@@ -249,7 +249,7 @@ struct ArtifactMoreMenu: View {
             DropdownRow(symbol: "folder", title: tr("file.viewer.reveal"), action: reveal)
             DropdownRow(symbol: "arrow.up.forward.app", title: tr("file.viewer.openEditor"), action: openEditor)
         }
-        .help(tr("artifact.more"))
+        .nookTip(tr("artifact.more"))
         .accessibilityLabel(tr("artifact.more"))
     }
 

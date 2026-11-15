@@ -73,7 +73,7 @@ private struct ChatPersonCard: View {
                             SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 15, source: chat.app)
                         }
                         .buttonStyle(.nookPlain)
-                        .help(MessagingApps.app(id: chat.app)?.name ?? chat.app)
+                        .nookTip(MessagingApps.app(id: chat.app)?.name ?? chat.app)
                     }
                 }
                 .contentShape(Rectangle())

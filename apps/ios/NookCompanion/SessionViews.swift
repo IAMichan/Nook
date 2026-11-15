@@ -51,7 +51,13 @@ struct SessionDetailView: View {
                         SectionHeader(title: String(localized: "Latest reply"))
                         TranscriptReply(text: session.excerpt, footer: false)
                     } else if client.can(CompanionFeature.timeline) {
-                        TranscriptLoading()
+                        if client.isOffline {
+                            OfflineNote(text: String(localized: "This conversation is not kept on this iPhone yet. It opens once your Mac is connected."))
+                                .padding(.top, Theme.Spacing.xxl)
+                                .appearsAfterDelay()
+                        } else {
+                            TranscriptLoading()
+                        }
                     }
                     // Messages that wait in the outbox until the Mac takes them.
                     let waiting = client.outbox.waiting(for: session.id)
@@ -193,6 +199,10 @@ struct SessionDetailView: View {
             // What waits on you, docked right above the composer, so it stays in
             // sight however far up you read; while it waits it takes the composer's place.
             if let item = session.items.first {
+                if client.isOffline {
+                    OfflineStrip(kind: .answers).appearsAfterDelay()
+                        .padding(.horizontal, Theme.Spacing.lg)
+                }
                 PendingItemDock(session: session, item: item, more: session.items.count - 1)
             } else {
                 // A message your Mac refused stays here with why, to edit and send again.
@@ -635,7 +645,9 @@ struct NewSessionView: View {
     private var options: LaunchOptions? { client.launchOptions }
     private var chosenAgent: LaunchOptions.Agent? { options?.agents.first { $0.id == agent } }
     private var chosenProject: LaunchOptions.Project? { options?.projects.first { $0.path == project } }
-    private var canStart: Bool { !starting && chosenAgent != nil && chosenProject != nil }
+    private var canStart: Bool {
+        !starting && chosenAgent != nil && chosenProject != nil && !(client.isOffline && !client.writingWaits)
+    }
 
     var body: some View {
         NavigationStack {
@@ -680,6 +692,13 @@ struct NewSessionView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     NookMark(size: 44)
                     heading(options)
+                    if client.isOffline {
+                        Banner(text: client.writingWaits
+                               ? String(localized: "Offline: the session does not start yet. It waits on this iPhone and starts as soon as your Mac is back.")
+                               : String(localized: "Offline: connect to your Mac to start a session."),
+                               symbol: "wifi.slash")
+                            .appearsAfterDelay()
+                    }
                     ImageTray(images: $images)
                     VStack(spacing: 0) {
                         SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,

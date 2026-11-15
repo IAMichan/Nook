@@ -53,7 +53,7 @@ struct LimitPaceIcon: View {
         Image(icon: symbol)
             .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
-            .help(tr("limits.pace.\(pace.rawValue)"))
+            .nookTip(tr("limits.pace.\(pace.rawValue)"))
             .accessibilityLabel(tr("limits.pace.\(pace.rawValue)"))
     }
 }
@@ -158,7 +158,7 @@ private struct UsageLimitRow: View {
             if let limit { LimitLineBar(limit: limit, now: now) }
         }
         .contentShape(Rectangle())
-        .help(help)
+        .nookTip(help)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help.isEmpty ? "\(label): \(tr("limits.unavailable"))" : help)
     }
@@ -265,7 +265,7 @@ struct LimitWindowMeters: View {
         }
         .font(NookTheme.TextStyle.caption)
         .frame(width: Self.meterWidth, alignment: .leading)
-        .help(help(label: label, limit: limit, now: now))
+        .nookTip(help(label: label, limit: limit, now: now))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help(label: label, limit: limit, now: now))
     }
@@ -504,7 +504,7 @@ struct UsageLimitsModal: View {
                 }
             }
         }
-        .help(tr("usage.filter.agents"))
+        .nookTip(tr("usage.filter.agents"))
         .accessibilityLabel(tr("usage.filter.agents"))
     }
 
@@ -600,7 +600,7 @@ struct UsageRefreshButton: View {
             ProgressView()
                 .controlSize(.mini)
                 .frame(width: 24, height: 24)
-                .help(tr("agents.usage.refreshing"))
+                .nookTip(tr("agents.usage.refreshing"))
         } else {
             ToolbarIconButton("arrow.clockwise", tr("agents.usage.refresh")) {
                 refreshing = true
@@ -669,7 +669,7 @@ private struct LimitPoolSectionView: View {
                 // The agent's own usage page, where the plan's usage is managed and more of it bought.
                 if let page = UsageLimitSection.usagePage(section.kind) {
                     SmallGhostButton(title: tr("limits.manage") + " ↗") { NSWorkspace.shared.open(page) }
-                        .help(page.host ?? page.absoluteString)
+                        .nookTip(page.host ?? page.absoluteString)
                 }
             }
             ForEach(section.pool.windows) { window in
@@ -757,7 +757,7 @@ private struct UsageBlockRows: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(block.reported ? tr("limits.block.reported") : tr("limits.block.estimated"))
+            .nookTip(block.reported ? tr("limits.block.reported") : tr("limits.block.estimated"))
             if open {
                 VStack(spacing: 0) {
                     if block.chats.isEmpty {
@@ -1173,7 +1173,7 @@ private struct RedactedText: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(revealed ? tr("limits.hide") : tr("limits.reveal"))
+        .nookTip(revealed ? tr("limits.hide") : tr("limits.reveal"))
         .accessibilityLabel(revealed ? value : tr("limits.reveal"))
     }
 }

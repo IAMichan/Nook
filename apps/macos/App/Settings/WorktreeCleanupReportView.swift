@@ -20,7 +20,7 @@ struct WorktreeCleanupReportView: View {
                 StatusRow(title: entry.title ?? AgentPathFormat.tilde(entry.path), detail: detail(entry), state: state(entry.outcome)) {
                     EmptyView()
                 }
-                .help(AgentPathFormat.tilde(entry.path))
+                .nookTip(AgentPathFormat.tilde(entry.path))
             }
             if !report.orphans.isEmpty {
                 SettingLabel(tr("settings.ws.cleanupReport.orphans"), hint: tr("settings.ws.cleanupReport.orphans.help"))

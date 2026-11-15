@@ -29,7 +29,7 @@ struct TabCloseButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(spoken ?? label)
     }
 

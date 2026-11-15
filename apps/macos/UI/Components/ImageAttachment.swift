@@ -542,7 +542,7 @@ struct ComposerSnippetChip: View {
         .frame(height: Self.height)
         .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
         .onHover { hovering = $0 }
-        .help(tr("compose.chip.element") + "\n" + label)
+        .nookTip(tr("compose.chip.element") + "\n" + label)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("compose.chip.element") + ", " + label)
     }
@@ -593,7 +593,7 @@ struct ComposerFileTile: View {
         .frame(width: 56, height: 56)
         .background(NookTheme.smoke)
         .roundedClip(NookTheme.Radius.card)
-        .help(label)
+        .nookTip(label)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .task(id: url) {

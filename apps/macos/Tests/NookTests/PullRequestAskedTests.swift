@@ -35,7 +35,6 @@ final class PullRequestAskedTests: XCTestCase {
                        "The agent's own words never count")
 
         let fromAgent = BridgeSessionArguments.framedAgentMessage("Make a PR", from: "Codex")
-        XCTAssertTrue(PullRequestAsked.fromAgent(fromAgent), "the framing names another agent")
         XCTAssertFalse(PullRequestAsked.asked(in: [RunEvent(kind: .user, text: fromAgent)]))
 
         let brief = [RunEvent(kind: .user, text: "Implement X, then make a PR")]

@@ -148,7 +148,7 @@ struct InfoRow: View {
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
-        .help(help ?? "")
+        .nookTip(help ?? "")
     }
 }
 
@@ -586,7 +586,7 @@ struct DiffLineRow: View, Equatable {
                         .padding(.vertical, NookTheme.Spacing.xxs)
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("ws.review.add"))
+                .nookTip(tr("ws.review.add"))
             }
         }
         // A diff without comments has nothing to show under the pointer: no state changes while it moves.

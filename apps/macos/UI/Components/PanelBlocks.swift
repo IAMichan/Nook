@@ -163,7 +163,7 @@ struct NookSearchLauncher: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(help ?? prompt)
+        .nookTip(help ?? prompt)
         .accessibilityLabel(help ?? prompt)
     }
 }
@@ -233,7 +233,7 @@ struct PanelNewButton: View {
     var body: some View {
         Button(action: action) { PanelHeaderIcon(symbol: "square.and.pencil", active: active) }
             .buttonStyle(.nookPlain)
-            .help(label)
+            .nookTip(label)
             .accessibilityLabel(label)
     }
 }
@@ -282,7 +282,7 @@ struct PanelNoticeBar<Trailing: View>: View {
         let notice = NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
                                 actions: actions, countdown: countdown, paused: paused, wraps: floating, onOK: onOK,
                                 trailing: trailing)
-            .help(help ?? title)
+            .nookTip(help ?? title)
         if floating {
             notice
                 .toastBubble(tone: tone ?? NookTheme.textSecondary, maxWidth: NookToastView.maxWidth)
@@ -380,7 +380,7 @@ struct PanelRequestNotice: View {
         }
         .padding(.vertical, NookTheme.Spacing.xs)
         .padding(.trailing, NookTheme.Spacing.xs)
-        .help(help ?? title)
+        .nookTip(help ?? title)
         .accessibilityElement(children: .contain)
         .toastBubble(tone: tone, maxWidth: NookToastView.maxWidth)
     }

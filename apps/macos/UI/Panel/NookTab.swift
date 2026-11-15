@@ -344,7 +344,7 @@ struct NookChatView: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                         .onTapGesture(count: 2) { startRenaming(conversation) }
-                        .help(tr("ws.title.renameHelp"))
+                        .nookTip(tr("ws.title.renameHelp"))
                 }
                 if conversation.pinned {
                     Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
@@ -400,7 +400,7 @@ struct NookChatView: View {
                 .contentShape(Rectangle())
         }
         .composerMenu()
-        .help(tr("chat.moreActions"))
+        .nookTip(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
         .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
                        confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }

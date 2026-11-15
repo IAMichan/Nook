@@ -153,7 +153,7 @@ struct TranscriptStepDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, TranscriptStyle.workIndent)
                 .padding(.bottom, NookTheme.Spacing.xxs)
-                .help(error)
+                .nookTip(error)
         }
         if open, let tasks, !tasks.isEmpty {
             TaskListRows(steps: tasks)
@@ -354,7 +354,7 @@ struct TranscriptLiveLine: View {
                     TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
                                        label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
                                        live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
-                        .help(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
+                        .nookTip(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
                     if let progress, activity.isStep { WorkProgressMark(progress: progress) }
                 }
             }
@@ -541,10 +541,10 @@ struct ModelSwitchDivider: View {
                 Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
                 endpoint(change.to, model: true, effort: true)
             }
-            .help(ModelSwitchText.plain(change))
+            .nookTip(ModelSwitchText.plain(change))
         } else {
             TimelineSystemDivider(label: words(change.from) + " → " + words(change.to)) { EmptyView() }
-                .help(ModelSwitchText.plain(change))
+                .nookTip(ModelSwitchText.plain(change))
         }
     }
 
@@ -597,6 +597,6 @@ struct ModelSwitchDivider: View {
                 .fontWeight(.medium)
                 .foregroundStyle(brand?.style ?? AnyShapeStyle(NookTheme.textSecondary))
         }
-        .help([account?.label ?? endpoint.agent, text].joined(separator: " · "))
+        .nookTip([account?.label ?? endpoint.agent, text].joined(separator: " · "))
     }
 }

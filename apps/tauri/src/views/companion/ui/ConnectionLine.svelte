@@ -1,7 +1,7 @@
 <script lang="ts">
   // Under the header of every tab (`ConnectionLine`): why the computer cannot be reached, once it has been away a moment.
   import { tr } from "../../../lib/i18n.svelte";
-  import { newerMac, versionNotice, type ClientView } from "../../../lib/companion";
+  import { messageTime, newerMac, versionNotice, writingWaits, type ClientView } from "../../../lib/companion";
   import Ico from "./Ico.svelte";
   import Banner from "./Banner.svelte";
   let { view }: { view: ClientView } = $props();
@@ -26,7 +26,11 @@
 {#if away}
   <div class="line">
     <Ico name="wifi-off" size={13} stroke={2.2} />
-    <span class="text"><span>{view.reason || tr("Zoeken naar je Mac…", "Looking for your Mac…")}</span></span>
+    <span class="text"><span>{view.reason || tr("Zoeken naar je Mac…", "Looking for your Mac…")}</span>
+      {#if view.updatedAt}<span class="quiet">{tr("Laatst bijgewerkt {time} · niet verbonden", "Last updated {time} · not connected", { time: messageTime(view.updatedAt) })}</span>{/if}
+      <span class="quiet">{writingWaits(view)
+        ? tr("Er komen geen nieuwe berichten of updates binnen, en wat je verstuurt wacht tot je Mac terug is.", "No new messages or updates come in, and what you send waits until your Mac is back.")
+        : tr("Er komen geen nieuwe berichten of updates binnen tot je Mac verbonden is.", "No new messages or updates come in until your Mac is connected.")}</span></span>
   </div>
 {/if}
 
@@ -34,5 +38,6 @@
   .line { display: flex; align-items: baseline; gap: 6px; padding: 0 4px; font: var(--pt-detail); color: var(--text2); animation: in 250ms ease-out; }
   .line :global(svg) { position: relative; top: 2px; }
   .text { display: flex; flex-direction: column; gap: 2px; }
+  .quiet { color: var(--text3); }
   @keyframes in { from { opacity: 0; } }
 </style>

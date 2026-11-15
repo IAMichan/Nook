@@ -11,7 +11,7 @@ struct SourceControlGlobalRows: View {
         Picker(tr("sc.submodules"), selection: $ws.worktreeSubmodules) {
             ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
         }
-        .help(tr("sc.submodules.help"))
+        .nookTip(tr("sc.submodules.help"))
         SettingToggle(tr("sc.autoPull.global"), detail: tr("sc.autoPull.help"), isOn: $ws.autoPullDefaultBranch)
         SettingToggle(tr("sc.cloneLayout"), detail: tr("sc.cloneLayout.detail"), isOn: $ws.cloneHostLayout)
     }
@@ -35,11 +35,11 @@ struct ProjectSourceControlRows: View {
             } label: {
                 SettingText("sc.publish.row")
             }
-            .help(tr("sc.publish.help"))
+            .nookTip(tr("sc.publish.help"))
         }
         Toggle(tr("sc.archive.toggle"), isOn: Binding(get: { ws.isArchivedProject(path) },
                                                       set: { ws.setArchived($0, project: path) }))
-            .help(tr("sc.archive.help"))
+            .nookTip(tr("sc.archive.help"))
         Color.clear.frame(height: 0)
             .task(id: path) { publishPlan = await app.workspace.publishPlan(folder: path) }
             .sheet(item: $publishing) { plan in
@@ -66,7 +66,7 @@ struct ProjectSourceControlRows: View {
         } label: {
             SettingText("sc.agents")
         }
-        .help(tr("sc.agents.help"))
+        .nookTip(tr("sc.agents.help"))
     }
 
     private var icon: some View {
@@ -112,7 +112,7 @@ struct ProjectSourceControlRows: View {
         } label: {
             SettingText("sc.icon")
         }
-        .help(tr("sc.icon.help"))
+        .nookTip(tr("sc.icon.help"))
     }
 
     private func monogramLetters(_ icon: ProjectIcon?) -> String {
@@ -158,7 +158,7 @@ struct ArchivedProjectsSection: View {
                         } icon: {
                             ProjectIconView(icon: ws.projectIcon(path), size: 15, folder: path)
                         }
-                        .help(AgentPathFormat.tilde(path))
+                        .nookTip(AgentPathFormat.tilde(path))
                     }
                 }
             } header: {
@@ -202,7 +202,7 @@ struct ProjectNameRow: View {
         } label: {
             SettingText("settings.projects.name")
         }
-        .help(tr("settings.projects.name.help"))
+        .nookTip(tr("settings.projects.name.help"))
         .task(id: path) { name = ws.projectDisplayName(path) }
     }
 

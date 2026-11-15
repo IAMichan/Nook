@@ -28,6 +28,8 @@
 #  12. A section that folds open turns a DisclosureChevron, a control hidden at rest uses .revealOnHover
 #      (UI/Components/HoverReveal.swift), and a clock time comes from NookDates.clock (Core/RelativeTime.swift).
 #      PanelParts.swift keeps its own chevron: the iPhone app shares it, and there it follows Dynamic Type.
+#  13. A tooltip is a .nookTip (.sharedTip in UI/Shared, .composerTip under a composer), never SwiftUI's .help,
+#      which has the system's look and a one-second wait; only an item inside a menu keeps .help (marked // menu item).
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors, and LABEL_SYSTEM_IMAGE_PENDING to
 # UIConsistencyTests.labelSystemImagePending.
 set -uo pipefail
@@ -122,5 +124,7 @@ report "controls hidden at rest use .revealOnHover (no opacity and allowsHitTest
   | grep -v '^UI/Components/HoverReveal.swift-')
 
 report "clock times come from NookDates.clock / clockOrDay / dayAndClock (no DateFormatter of a view's own for HH:mm)" < <(grep -rnE 'dateFormat\s*=\s*"H{1,2}:mm"' UI App --include='*.swift')
+
+report "tooltips are a .nookTip / .sharedTip / .composerTip (no SwiftUI .help, except on a line marked // menu item)" < <(grep -rnE '(^|[^A-Za-z0-9_])\.help\(' UI App --include='*.swift' | grep -v '// menu item')
 
 exit $status

@@ -222,7 +222,7 @@ struct AccountBadge: View {
         .background(NookTheme.shape(NookTheme.Radius.chip).fill(kind.fill))
         .overlay(NookTheme.shape(NookTheme.Radius.chip).stroke(ring, lineWidth: 1.5))
         .fixedSize()
-        .help(kind.label)
+        .sharedTip(kind.label)
         .accessibilityLabel(kind.label)
     }
 

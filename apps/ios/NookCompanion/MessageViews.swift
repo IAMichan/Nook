@@ -65,7 +65,7 @@ struct TranscriptUserMessage: View {
             .contextMenu { MessageCopyButton(text: text) }
             .opacity(pending ? 0.6 : 1)
             if pending {
-                Label("Waiting for your Mac", systemImage: "clock")
+                Label("Not sent yet · waiting for your Mac", systemImage: "clock")
                     .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textTertiary)
             } else if let date {
@@ -254,6 +254,12 @@ struct ChatBubbleView: View {
                     if !line.reactions.isEmpty {
                         reactions
                     }
+                }
+                // Said in words, not only with a clock: this one has not left the phone.
+                if pending {
+                    Label("Not sent yet · waiting for your Mac", systemImage: "clock")
+                        .font(Theme.TextStyle.caption)
+                        .foregroundStyle(whatsApp ? WhatsAppLook.text.opacity(0.6) : Theme.textTertiary)
                 }
             }
             if !line.fromMe { Spacer(minLength: Self.inset) }

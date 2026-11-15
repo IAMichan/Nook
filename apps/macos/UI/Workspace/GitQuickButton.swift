@@ -28,7 +28,7 @@ struct GitQuickButton: View {
                     }
                     .buttonStyle(.nookProminent)
                     .disabled(progress != nil || active)
-                    .help(active ? tr("ws.error.busy") : tr("ws.quick.help"))
+                    .nookTip(active ? tr("ws.error.busy") : tr("ws.quick.help"))
                     if progress == nil, let state {
                         // The other way to go: a new branch and pull request of their own for these changes.
                         ForEach(GitQuickResolver.alternatives(state), id: \.labelKey) { other in
@@ -39,7 +39,7 @@ struct GitQuickButton: View {
                                 }
                             }
                             .disabled(active)
-                            .help(tr("ws.quick.newBranchHint"))
+                            .nookTip(tr("ws.quick.newBranchHint"))
                         }
                     }
                 case .failure(let reason)?:
@@ -58,7 +58,7 @@ struct GitQuickButton: View {
                         }
                     }
                     .disabled(active)
-                    .help(tr("sc.publish.help"))
+                    .nookTip(tr("sc.publish.help"))
                 }
             }
             // Where the work goes: onto the open pull request, or a new branch once that one is merged.

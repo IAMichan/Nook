@@ -831,7 +831,7 @@ private struct NotchResizeHandles: View {
                     .onEnded { _ in viewModel.endResize(); hovered = nil }
             )
             .onTapGesture(count: 2) { viewModel.resetPanelSize() }
-            .help(tr("notch.resize"))
+            .nookTip(tr("notch.resize"))
             .accessibilityLabel(tr("notch.resize"))
             .animation(NookTheme.hover, value: lit)
     }

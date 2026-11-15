@@ -73,7 +73,7 @@ struct RunInspector: View {
                 Button(tr("ws.action.openEditor")) { workspace.openInEditor(run.workingDirectory) }
                 Button(tr("ws.action.openTerminal")) { workspace.openTerminal(run.workingDirectory) }
                 Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(icon: "folder") }
-                    .help(tr("ws.action.reveal"))
+                    .nookTip(tr("ws.action.reveal"))
             }
             .controlSize(.small)
             .disabled(!FileManager.default.fileExists(atPath: run.workingDirectory))
@@ -129,10 +129,10 @@ struct RunInspector: View {
                     .disabled(files.isEmpty)
                     Button(tr("ws.git.commit")) { if embedded { app.viewModel.open(.commit(runID)) } else { showCommit = true } }
                         .disabled(files.isEmpty || run.status.isActive)
-                        .help(run.status.isActive ? tr("ws.error.busy") : tr("ws.git.commit.help"))
+                        .nookTip(run.status.isActive ? tr("ws.error.busy") : tr("ws.git.commit.help"))
                     Button(tr("ws.git.push")) { push() }
                         .disabled(busy || run.status.isActive || snapshot?.status?.detached == true)
-                        .help(tr("ws.git.push.help"))
+                        .nookTip(tr("ws.git.push.help"))
                     Menu {
                         Button(tr("ws.git.pullRequest")) { if embedded { app.viewModel.open(.pullRequest(runID)) } else { showPullRequest = true } }
                         if run.isolation == .worktree && workspace.worktreeExists(run) {
@@ -144,7 +144,7 @@ struct RunInspector: View {
                         Image(icon: "ellipsis.circle")
                     }
                     .menuStyle(.nookBorderlessButton)
-                    .help(tr("a11y.more"))
+                    .nookTip(tr("a11y.more"))
                     .accessibilityLabel(tr("a11y.more"))
                     .fixedSize()
                 }
@@ -293,6 +293,6 @@ struct FileChangeRow: View {
         .padding(.vertical, 3)
         .padding(.horizontal, NookTheme.Spacing.xs)
         .contentShape(Rectangle())
-        .help(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
+        .nookTip(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
     }
 }

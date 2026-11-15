@@ -170,7 +170,10 @@ final class WorkspaceBridgeSessionsTests: XCTestCase {
         XCTAssertTrue(framed.contains("It does not replace your task"), "a message mid-turn must not take over the receiver's work")
         XCTAssertTrue(framed.contains("do not take it over"), "the sender's task stays the sender's")
         XCTAssertTrue(framed.hasSuffix("\n\nKeep your harness window off screen."))
-        // That PullRequestAsked tells it apart is checked in PullRequestAskedTests: Linux's core tests leave it out.
+        // PullRequestAsked is left out of the Linux core tests (scripts/core-tests.sh): checked on the Mac only.
+        #if os(macOS)
+        XCTAssertTrue(PullRequestAsked.fromAgent(framed))
+        #endif
     }
 
     func testSendModesAndWaitIDs() throws {

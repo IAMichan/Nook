@@ -20,7 +20,7 @@ struct GoalStrip: View {
                     .foregroundStyle(NookTheme.paper.opacity(0.85))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .help(goal.objective)
+                    .nookTip(goal.objective)
                 Spacer(minLength: 6)
                 Text(statusLine).foregroundStyle(NookTheme.textSecondary)
                 if canPause, goal.status == .active {
@@ -61,7 +61,7 @@ struct FreshConversationStrip: View {
             Button(tr("ws.fresh.keep"), action: keep)
                 .buttonStyle(.nookPlain)
                 .foregroundStyle(NookTheme.iris)
-                .help(tr("ws.fresh.keep.help"))
+                .nookTip(tr("ws.fresh.keep.help"))
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textSecondary)
@@ -86,7 +86,7 @@ struct ResourceWaitStrip: View {
                 Button(tr("ws.governor.letGoOn")) { AgentGovernor.shared.letGoOn(runID) }
                     .buttonStyle(.nookPlain)
                     .foregroundStyle(NookTheme.iris)
-                    .help(tr("ws.governor.letGoOn.help"))
+                    .nookTip(tr("ws.governor.letGoOn.help"))
             }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
@@ -134,7 +134,7 @@ struct SubagentStatusMark: View {
         }
         .frame(width: 12)
         // The spinner alone says nothing: its state is spoken and shown under the pointer too.
-        .help(stateLabel)
+        .nookTip(stateLabel)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stateLabel)
     }
@@ -195,7 +195,7 @@ struct WorkProgressMark: View {
                     .monospacedDigit()
                     .fixedSize()
             }
-            .help(tr("ws.progress.reported.help", percent))
+            .nookTip(tr("ws.progress.reported.help", percent))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(tr("ws.progress.reported.help", percent))
         } else if let end = progress.estimatedEnd, let expected = progress.expected, end > progress.started {
@@ -211,7 +211,7 @@ struct WorkProgressMark: View {
                     .labelsHidden()
                     .frame(width: Self.width)
             }
-            .help(tr("ws.progress.estimated.help", Self.duration(expected)))
+            .nookTip(tr("ws.progress.estimated.help", Self.duration(expected)))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(tr("ws.progress.estimated.help", Self.duration(expected)))
         }
@@ -405,7 +405,7 @@ private struct SubagentToolLine: View {
         let tool = AgentToolStep(id: "", name: step.toolName, summary: step.toolDetail, state: .done)
         let text = TranscriptStepText.parts(tool)
         TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tool.name), label: text.verb, detail: text.detail, mono: text.mono)
-            .help(step.text)
+            .nookTip(step.text)
     }
 }
 
@@ -439,7 +439,7 @@ struct PullRequestWatchStrip: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("ws.prwatch.open"))
+            .nookTip(tr("ws.prwatch.open"))
             // In a list of branches the states share one column, so the titles after them line up.
             .frame(minWidth: branch == nil ? nil : Self.stateColumn, alignment: .leading)
             identity
@@ -483,7 +483,7 @@ struct PullRequestWatchStrip: View {
                     .foregroundStyle(isCurrent ? NookTheme.textStrong : NookTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .help(title)
+                    .nookTip(title)
             }
             if let branch {
                 Text(branch)
@@ -492,7 +492,7 @@ struct PullRequestWatchStrip: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(-1)
-                    .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
+                    .nookTip(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
             }
         }
     }
@@ -515,7 +515,7 @@ struct PullRequestWatchStrip: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(ci + " · " + tr("ws.prwatch.ciHelp"))
+            .nookTip(ci + " · " + tr("ws.prwatch.ciHelp"))
             .accessibilityLabel(ci)
             .popover(isPresented: $showsCI, arrowEdge: .top) {
                 CIChecksPopover(pullRequest: url).frame(width: 680, height: 440)
@@ -535,7 +535,7 @@ struct PullRequestWatchStrip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(label + " · " + tr(watching ? "ws.prwatch.stop" : "ws.prwatch.startHelp"))
+        .nookTip(label + " · " + tr(watching ? "ws.prwatch.stop" : "ws.prwatch.startHelp"))
         .accessibilityLabel(label)
     }
 
@@ -614,7 +614,7 @@ struct BranchTrayRow: View {
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
         .opacity(isCurrent ? 1 : 0.72)
-        .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
+        .nookTip(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
     }
 }
 
@@ -658,7 +658,7 @@ struct BackgroundCommandActivityLabel: View {
         }
         .font(NookTheme.TextStyle.caption)
         .foregroundStyle(activity.state == .gone ? NookTheme.coralSoft : NookTheme.textTertiary)
-        .help(tr("ws.background.activity.help"))
+        .nookTip(tr("ws.background.activity.help"))
     }
 
     private var color: Color {
@@ -734,7 +734,7 @@ struct BackgroundCommandLink: View {
         }
         .buttonStyle(.nookPlain)
         .padding(.leading, TranscriptStyle.workIndent)
-        .help(tr("ws.background.showInBar"))
+        .nookTip(tr("ws.background.showInBar"))
         .accessibilityLabel(tr("ws.background.showInBar"))
     }
 }

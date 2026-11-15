@@ -48,7 +48,7 @@ struct BrowserTakeoverOverlay: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             SmallPrimaryButton(title: tr("browser.takeover.stop"), systemName: "stop.fill") { store.stopAgents() }
-                .help(tr("browser.takeover.stopHelp"))
+                .nookTip(tr("browser.takeover.stopHelp"))
         }
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)

@@ -29,6 +29,7 @@
   import NookMark from "./ui/NookMark.svelte";
   import { parsePromptLink, type PromptLink } from "../../lib/prompt-link";
   import { looksLikePairingLink } from "../../lib/companion";
+  import { activeMac, cacheFor, forgetCache, recordConversations, recordInbox, recordSessions, saveSoon } from "../../lib/companion-cache";
 
   let { standalone = false }: { standalone?: boolean } = $props();
 
@@ -50,9 +51,9 @@
   let conversations = $state<ChatDigest[]>([]);
 
   $effect(() => {
-    companion.client().then((v) => (view = v));
-    companion.refresh().then((v) => (view = v));
-    const un = companion.onClient((v) => (view = { ...v, deviceName: view?.deviceName }));
+    companion.client().then(took);
+    companion.refresh().then(took);
+    const un = companion.onClient(took);
     // Live updates of the lists the tabs count: the Chats tab's inbox and Nook's conversations.
     const live = companion.onLive((r) => {
       if (r.inbox) inbox = r.inbox;
@@ -224,8 +225,48 @@
     took(await f());
   }
   function took(v: ClientView) {
-    view = { ...v, deviceName: view?.deviceName };
+    view = withCache({ ...v, deviceName: v.deviceName ?? view?.deviceName });
   }
+
+  // What the phone saw last of the active computer (`companion-cache.ts`): a list it answers is kept, and while it
+  // cannot be reached the kept list shows, with when it was answered ("Last updated"), so nothing looks live.
+  function withCache(v: ClientView): ClientView {
+    const mac = activeMac(v);
+    const cache = cacheFor(mac);
+    if (!cache) return v;
+    if (v.phase === "connected") {
+      if (recordSessions(cache, v.sessions, Date.now() / 1000)) saveSoon(mac);
+      return { ...v, updatedAt: cache.saved };
+    }
+    if (v.phase === "offline") return { ...v, sessions: v.sessions.length ? v.sessions : cache.sessions, updatedAt: cache.saved || undefined };
+    return v;
+  }
+
+  // Nook's chats and the Chats tab as the phone saw them last: shown at once for the active computer, kept while it answers.
+  const macId = $derived(activeMac(view));
+  $effect(() => {
+    const cache = cacheFor(macId);
+    if (!cache) return;
+    untrack(() => {
+      if (!inbox.length) inbox = cache.inbox;
+      if (!conversations.length) conversations = cache.conversations;
+    });
+  });
+  $effect(() => {
+    const cache = cacheFor(macId);
+    if (!cache || !connected) return;
+    const chats = recordInbox(cache, inbox);
+    const nook = recordConversations(cache, conversations);
+    if (chats || nook) saveSoon(macId);
+  });
+  // A computer that is no longer paired takes what was kept of it along.
+  let pairedMacs: string[] | null = null;
+  $effect(() => {
+    const ids = view?.macs?.map((m) => m.id);
+    if (!ids) return;
+    for (const gone of (pairedMacs ?? []).filter((id) => !ids.includes(id))) forgetCache(gone);
+    pairedMacs = ids;
+  });
 
   // A notice the computer sent shows as the iPhone's alert, with OK.
   function clearNotice() {
@@ -289,7 +330,7 @@
   {#if !view}
     <div class="launch"></div>
   {:else if !paired || adding}
-    <Pairing {view} adding={paired} oncancel={() => (adding = false)} onchange={(v) => { view = v; if (adding && v.phase === "connected") { adding = false; screens = { home: null, agents: null, chats: null }; loadLists(); } }} />
+    <Pairing {view} adding={paired} oncancel={() => (adding = false)} onchange={(v) => { took(v); if (adding && v.phase === "connected") { adding = false; screens = { home: null, agents: null, chats: null }; loadLists(); } }} />
   {:else}
     <div class="page" class:split={wide}>
       {#if !wide && screens[tab]}

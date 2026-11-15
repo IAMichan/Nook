@@ -76,11 +76,11 @@ struct KeybindingsSettingsSection: View {
                         Button(tr("button.cancel")) { stopRecording() }
                     } else {
                         Button(tr("keys.record")) { beginRecording(command) }
-                            .help(tr("keys.record.help"))
+                            .nookTip(tr("keys.record.help"))
                     }
                     if customized && recording != command {
                         Button(tr("keys.reset")) { reset(command) }
-                            .help(tr("keys.reset.help"))
+                            .nookTip(tr("keys.reset.help"))
                     }
                 }
                 .controlSize(.small)

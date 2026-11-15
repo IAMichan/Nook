@@ -652,7 +652,7 @@ private struct ChatBubbleView: View, Equatable {
                     Button { showingVersions = true } label: { changeMark }
                         .buttonStyle(.nookPlain)
                         .pointerStyle(.link)
-                        .help(tr("chat.versions.show"))
+                        .nookTip(tr("chat.versions.show"))
                         .accessibilityLabel(tr("chat.versions.show"))
                 } else {
                     changeMark
@@ -670,7 +670,7 @@ private struct ChatBubbleView: View, Equatable {
                     Button { showingInfo = true } label: { MessageTicksMark(ticks: ticks) }
                         .buttonStyle(.nookPlain)
                         .pointerStyle(.link)
-                        .help(tr("chat.info.title"))
+                        .nookTip(tr("chat.info.title"))
                         .accessibilityLabel(tr("chat.info.title"))
                 }
             }
@@ -725,7 +725,7 @@ private struct ChatBubbleView: View, Equatable {
             } else {
                 Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
                     .buttonStyle(.nookPlain)
-                    .help(tr("card.attachment.view"))
+                    .nookTip(tr("card.attachment.view"))
             }
         case .video(let url):
             VideoTile(url: url, poster: bubble.image, name: attachment)
@@ -1129,7 +1129,7 @@ private struct MessageMenuButton: View {
         }
         .composerMenu()
         .onHover { hovering = $0 }
-        .help(tr("chat.moreActions"))
+        .nookTip(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
     }
 }
@@ -1177,7 +1177,7 @@ private struct ChatJumpButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("chat.jumpToNewest"))
+        .nookTip(tr("chat.jumpToNewest"))
         .accessibilityLabel(tr("chat.jumpToNewest"))
     }
 }
@@ -1261,7 +1261,7 @@ private struct ReactionChips: View {
         Button { showingPeople = true } label: { pill }
             .buttonStyle(.nookPlain)
             .pointerStyle(.link)
-            .help(Self.summary(reactions))
+            .nookTip(Self.summary(reactions))
             .accessibilityLabel(Self.summary(reactions))
             .popover(isPresented: $showingPeople, arrowEdge: .bottom) {
                 ReactionPeopleView(reactions: reactions, onReact: onReact.map { react in
@@ -1383,7 +1383,7 @@ private struct ReactionPeopleView: View {
                                 .background(Circle().fill(NookTheme.smoke))
                         }
                         .buttonStyle(.nookPlain)
-                        .help(tr("chat.react"))
+                        .nookTip(tr("chat.react"))
                     }
                 }
                 .padding(NookTheme.Spacing.md)
@@ -1413,7 +1413,7 @@ private struct BubbleActionButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.03)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(label)
     }
 }
@@ -1488,7 +1488,7 @@ private struct MoreEmojiButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.03)
-        .help(tr("chat.react.more"))
+        .nookTip(tr("chat.react.more"))
         .accessibilityLabel(tr("chat.react.more"))
     }
 }
@@ -1510,7 +1510,7 @@ private struct ReactionPickerButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.06)
-        .help(chosen ? tr("chat.react.takeBack") : emoji)
+        .nookTip(chosen ? tr("chat.react.takeBack") : emoji)
         .accessibilityLabel(emoji)
     }
 }
@@ -1602,7 +1602,7 @@ struct VideoTile: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("card.video.play"))
+                .nookTip(tr("card.video.play"))
                 .accessibilityLabel("\(tr("card.video.play")): \(name)")
             }
         }
@@ -1953,7 +1953,7 @@ struct PhotoButton: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .help(tr("card.video.enlarge"))
+        .nookTip(tr("card.video.enlarge"))
         .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
     }
 }
@@ -2015,7 +2015,7 @@ struct AttachmentButton: View {
                 (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
             }.value
         }
-        .help(tr("card.attachment.view"))
+        .nookTip(tr("card.attachment.view"))
         .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
     }
 
@@ -2101,6 +2101,6 @@ private struct DeletedMark: View {
             .labelStyle(.titleAndIcon)
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(color)
-            .help(tr("chat.message.deletedKept"))
+            .nookTip(tr("chat.message.deletedKept"))
     }
 }

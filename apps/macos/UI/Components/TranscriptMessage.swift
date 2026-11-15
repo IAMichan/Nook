@@ -44,7 +44,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
                 }
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
-                .help(steerHelp)
+                .nookTip(steerHelp)
                 .accessibilityElement(children: .combine)
             }
             attachments()
@@ -159,7 +159,7 @@ struct TranscriptQuoteCard: View {
                 .padding(.vertical, NookTheme.Spacing.sm).padding(.leading, NookTheme.Spacing.xs)
         }
         .roundedBackground(NookTheme.wash.opacity(0.05), radius: NookTheme.Radius.control)
-        .help(text)
+        .nookTip(text)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("agents.message.quoteLabel", text))
     }

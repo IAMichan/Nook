@@ -206,7 +206,13 @@ struct ChatView: View {
         ConversationScroll(followKey: followKey) { _ in
             VStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
                 if lines.isEmpty, !sending, waiting.isEmpty {
-                    AskNook { send($0) }
+                    if id != nil, client.isOffline {
+                        // An earlier chat the phone did not keep: it opens once the Mac answers.
+                        OfflineNote(text: String(localized: "This chat is not kept on this iPhone yet. It opens once your Mac is connected."))
+                            .appearsAfterDelay()
+                    } else {
+                        AskNook { send($0) }
+                    }
                 }
                 ForEach(lines) { ChatLineView(line: $0) }
                 if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }

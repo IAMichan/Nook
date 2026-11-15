@@ -136,7 +136,7 @@ struct ChatAppSheet: View {
             // words and points at the way its chats come in anyway. What a developer would do sits behind the hover.
             SetupStep(number: 1, title: tr("chats.link.unavailableTitle", name)) {
                 SettingNote(tr("chats.link.notYet", name, name))
-                    .help(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
+                    .nookTip(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
             }
         }
         // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.

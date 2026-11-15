@@ -69,6 +69,9 @@ export interface CompanionInfo {
 export interface ClientView {
   phase: "unpaired" | "pairing" | "connected" | "offline";
   reason: string;
+  /** When the computer last answered the list (seconds since 1970), from the phone's cache (`companion-cache.ts`); set
+   * by the interface, not by the client. */
+  updatedAt?: number;
   macName: string;
   host: string;
   sessions: SessionDigest[];
@@ -88,7 +91,7 @@ export interface ClientView {
   /** The other paired computers' sessions, as they had them when last asked. */
   others?: { id: string; name: string; reachable: boolean; sessions: SessionDigest[] }[];
   /** What waits to be sent while the computer is away. */
-  outbox?: { id: string; op: string; session?: string | null; conversation?: string | null; text: string; queuedAt: number }[];
+  outbox?: { id: string; op: string; session?: string | null; conversation?: string | null; item?: string | null; text: string; queuedAt: number }[];
 }
 
 export const companion = {
@@ -361,7 +364,21 @@ export const Feature = {
   history: "history", fullTranscript: "fullTranscript", requestUpdate: "requestUpdate", avatars: "avatars", appIcons: "appIcons",
   stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
+  retry: "retry",
 } as const;
+
+/** What you write while the computer cannot be reached waits on the phone (the outbox) and goes once it answers; a
+ * computer that does not answer repeats once (`retry`) gets nothing until it is connected again. */
+export function writingWaits(view: Pick<ClientView, "features"> | null | undefined): boolean {
+  return has(view, Feature.retry);
+}
+
+/** "Offline: no new messages or updates come in", with when the phone heard last (`OfflineStrip` on the iPhone). */
+export function offlineWords(view: Pick<ClientView, "updatedAt">): string {
+  return view.updatedAt
+    ? tr("Offline: er komen geen nieuwe berichten of updates binnen. Laatst bijgewerkt {time}.", "Offline: no new messages or updates come in. Last updated {time}.", { time: messageTime(view.updatedAt) })
+    : tr("Offline: er komen geen nieuwe berichten of updates binnen.", "Offline: no new messages or updates come in.");
+}
 
 /** The computer lists this feature. */
 export function has(view: Pick<ClientView, "features"> | null | undefined, feature: string): boolean {
