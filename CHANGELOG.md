@@ -196,6 +196,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
+  waiting a third of a second first, switching tabs shows the new one at once instead of animating both, the Changes
+  tab lists files as soon as git knows them (before the slower branch comparison) and reads git once when it opens, the
+  Pull request tab's list no longer waits for git, and a file you come back to in the File tab shows at once.
+
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's

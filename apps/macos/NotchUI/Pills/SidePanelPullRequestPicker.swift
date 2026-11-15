@@ -139,8 +139,11 @@ struct SidePanelPullRequestPicker: View {
             footer(all)
         }
         .task {
-            await git.refresh()
-            await store.refresh()
+            // Side by side: the list does not wait for git, whose branch comparison can take seconds in a large
+            // repository. The branch's own group fills in as soon as git knows the branch.
+            async let folder: Void = git.refresh()
+            async let list: Void = store.refresh()
+            _ = await (folder, list)
         }
     }
 

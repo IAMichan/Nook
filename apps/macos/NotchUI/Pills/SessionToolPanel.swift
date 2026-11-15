@@ -62,8 +62,6 @@ struct SessionToolPanel: View {
     /// The browser's tabs with their titles, and the one in view, once the browser was started (it is not started for it).
     @State private var browserTabs: [BrowserStore.Tab] = []
     @State private var browserActive: UUID?
-    /// The panel still slides in: a pull request page it opens on waits with its full page until it is in place.
-    @State private var opening = true
 
     var browserSession: BrowserSession { BrowserSession(run: runID, directory: directory) }
     /// This session's browser, if it was started.
@@ -102,7 +100,8 @@ struct SessionToolPanel: View {
                 case .pullRequest:
                     if let pullRequest {
                         // The page's own top bar starts with the arrow back to the list to pick another, so there is no
-                        // extra row above it.
+                        // extra row above it. The panel opens at once (`sidePanelsOpenAtOnce`), so the page shows what
+                        // it read right away instead of waiting out a slide that no longer happens.
                         let listed = PullRequestStore.shared.accounts.first { $0.id == pullRequest.account }
                             .map { $0.reviews + $0.mine + $0.watched } ?? []
                         PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
@@ -111,7 +110,7 @@ struct SessionToolPanel: View {
                                               onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
                                               onUpdate: { updated in
                             updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        }, onBack: showPullRequestList, waitsForPanel: opening, focus: pullRequest.focus)
+                        }, onBack: showPullRequestList, focus: pullRequest.focus)
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
@@ -138,14 +137,16 @@ struct SessionToolPanel: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The new tab is simply there: in the spring that moves the tab row's fill, the old and the new tab were both
+            // laid out on every frame (a page, a diff, a terminal), which made switching tabs feel slow.
+            .transaction(value: selectedTab) { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // What the agent opened here is in view now, also when it opens more while you look.
         .onAppear { bridge.markSeen(directory, tool.rawValue) }
-        .task {
-            try? await Task.sleep(for: NookTheme.tabSettle)
-            opening = false
-        }
         .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
         // Another session without a browser shows none of the last one's tabs.

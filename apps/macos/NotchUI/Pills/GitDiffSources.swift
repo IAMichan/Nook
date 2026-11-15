@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// The changes in a session's folder that git knows, as choices of the diff panel beside the conversation next to the
@@ -20,31 +21,46 @@ final class GitDiffSources: ObservableObject {
         MainActor.assumeIsolated { GitDiffSources(directory: directory) }
     }
 
+    /// The folder's own changes, passed on as they come: it publishes its root and status first and the slower branch
+    /// comparison after, so the files show as soon as git knows them instead of after the whole read.
+    private var folderChanges: AnyCancellable?
+    /// The read under way: a second call (the panel opening and its choice being read at once) waits for it instead of
+    /// reading git again beside it.
+    private var refreshing: Task<Void, Never>?
+
     init(directory: String) {
         folder = FolderGitModel(directory: directory)
+        folderChanges = folder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     var isRepository: Bool { folder.isRepository }
 
     /// Reads the folder's git state and its newest commits again.
     func refresh() async {
+        if let refreshing { return await refreshing.value }
+        let task = Task { await read() }
+        refreshing = task
+        await task.value
+        refreshing = nil
+    }
+
+    private func read() async {
         guard !folder.directory.isEmpty else {
-            loaded = true
+            if !loaded { loaded = true }
             return
         }
         await folder.refresh()
-        // The folder's own changes are published on it, not here: say once that they may have changed.
-        objectWillChange.send()
         guard let root = folder.root else {
             if !commits.isEmpty { commits = [] }
-            loaded = true
+            if !loaded { loaded = true }
             return
         }
-        let fresh = await Task.detached(priority: .utility) {
+        // The files are known now: the panel shows them (or says there are none) while the commits for its menu are read.
+        if !loaded { loaded = true }
+        let fresh = await Task.detached(priority: .userInitiated) {
             GitService.shared?.commits(root, count: GitDiffSources.commitLimit) ?? []
         }.value
         if fresh != commits { commits = fresh }
-        loaded = true
     }
 
     /// The files of a git choice; nil for a commit not read yet (`loadCommit`) or a choice that is not git's.
