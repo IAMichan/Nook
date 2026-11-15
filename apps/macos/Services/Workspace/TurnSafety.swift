@@ -243,7 +243,7 @@ struct BackgroundRoster: Equatable, Sendable {
 
     var hasPending: Bool { !pending.isEmpty }
     var pendingCount: Int { pending.count }
-    func pendingCount(of kind: Kind) -> Int { pending.filter { $0.kind == kind }.count }
+    func pendingCount(of kind: Kind) -> Int { pending.count(where: { $0.kind == kind }) }
     func contains(_ id: String) -> Bool { pending.contains { $0.id == id } }
 
     /// A command that runs in the foreground blocks its own turn, so it is not background work.

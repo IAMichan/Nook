@@ -142,7 +142,7 @@ final class RetrievalLedger {
         }
         step.references = numbered.map(\.number)
         step.outcome = ReferenceParser.isEmptyResult(parsed.text) ? .empty
-            : .found(max(numbered.count, parsed.text.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count))
+            : .found(max(numbered.count, parsed.text.split(separator: "\n").count(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })))
         steps[index] = step
         onChange?()
 

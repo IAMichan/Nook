@@ -1,0 +1,712 @@
+import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+
+/// The Nook tab: home and chat in one. An empty conversation shows your day and suggestions; a running one the thread.
+struct NookChatTab: View {
+    @ObservedObject var viewModel: PanelViewModel
+    var openOnAgents: ((String) -> Void)?
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        NookChatView(viewModel: viewModel, chat: app.chat, openOnAgents: openOnAgents)
+    }
+}
+
+/// The chat, shared by the notch and the main window. `compact` is the notch version: a narrower list of Nooks.
+struct NookChatView: View {
+    @ObservedObject var viewModel: PanelViewModel
+    @ObservedObject var chat: NookChat
+    var compact = true
+    /// Shows the panel footer under the list of Nooks, where Agents has it under its sessions, so the refresh and update
+    /// button sits in the same place on both tabs. A footer page (pull requests, usage) opens on Agents through it.
+    var openOnAgents: ((String) -> Void)?
+    @EnvironmentObject private var app: AppModel
+    /// What you type, held without being observed: as state of this view every key drew the whole chat again (its list,
+    /// its messages, its split). Only the composer watches it (`Observing`).
+    @State private var composerState = NookComposerState()
+    private var question: String {
+        get { composerState.question }
+        nonmutating set { composerState.question = newValue }
+    }
+    private var images: [ImageAttachment] {
+        get { composerState.images }
+        nonmutating set { composerState.images = newValue }
+    }
+    @State private var dropTargeted = false
+    /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
+    /// list does not redraw this whole panel.
+    @State private var composerModel = ComposerModel()
+    @FocusState private var inputFocused: Bool
+    /// Follows the answer while it streams, until you scroll away; the same rules as an agent session.
+    @State private var scroll = ScrollModel()
+    @State private var atEnd = true
+    /// Read only by the handlers: as state, each start and stop of a scroll drew the whole chat again.
+    @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
+    @State private var viewport = TimelineViewport()
+    @State private var overflows = false
+    @State private var marks = NookChatMarks()
+    @State private var renaming = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
+    /// The conversation whose delete waits for a yes.
+    @State private var deleting: Conversation?
+    @ObservedObject private var embedded = EmbeddedAppStore.shared
+    /// How wide the chat is next to an open app: drag the line between them, double-click it to reset. Remembered.
+    @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
+    @State private var totalWidth: Double = 0
+    @State private var dragStartWidth: Double?
+    /// The chat's width while its line is dragged (`PanelDrag`).
+    @State private var liveChatWidth: Double?
+    /// Too narrow for the list and the chat side by side (`PanelLayout.stacks`): the list shows instead of the chat,
+    /// after the back button in the chat's header, until you pick a Nook.
+    @State private var listOnly = false
+    /// How wide the list of Nooks is, in the notch and in the main window: drag the line beside it. Remembered.
+    @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
+    @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
+
+    /// The terminal side panel's width, shared with a session's side panel in Agents: one panel, one width.
+    @AppStorage("nook.agents.toolWidth") private var terminalWidth = PanelLayout.tool
+
+    /// An app, Nook's browser or a terminal is open next to the chat.
+    private var sideOpen: Bool { terminalFolder != nil || appSideOpen }
+    /// An app or Nook's browser is open next to the chat, in the split the chat shares with it.
+    private var appSideOpen: Bool { terminalFolder == nil && (embedded.current != nil || viewModel.browserBesideChat) }
+    /// The folder of the terminal open next to the chat (a command the chat ran); it covers an open app until it closes.
+    private var terminalFolder: String? { viewModel.terminalBesideChat }
+
+    var body: some View {
+        // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
+        // open ("@open whatsapp") the app takes the list's place on the right, and the chat narrows beside it.
+        let stacked = PanelLayout.stacks(totalWidth)
+        let listShown = (!chat.history.isEmpty || !compact) && !sideOpen && (!stacked || listOnly)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                if listShown {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        // In the main window the list is the sidebar: the tabs and Search on top of it.
+                        PanelSidebarTop()
+                        NookList(chat: chat)
+                        footer
+                    }
+                    .panelSidebarColumn()
+                    .listPanel(stacked: stacked, width: compact ? $listWidth : $windowListWidth,
+                               defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
+                               available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                    .padding(.trailing, stacked ? 0 : compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
+                }
+                if !(stacked && listShown) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if chat.isEmpty {
+                            if stacked && !chat.history.isEmpty { listButton }
+                            emptyState
+                            inputBar
+                                .padding(.top, NookTheme.Spacing.md)
+                        } else {
+                            header
+                                .padding(.bottom, NookTheme.Spacing.xs)
+                                .readableChat(!compact)
+                            thread
+                        }
+                    }
+                    // In the main window the conversation keeps a readable width, centered in the room beside the list.
+                    // A running chat keeps it inside its scroll view instead, so the scroll view (and the ladder of your
+                    // questions on its leading edge) spans the whole room, as an agent's transcript does.
+                    .readableChat(!compact && chat.isEmpty)
+                    .frame(width: appSideOpen ? EmbeddedSplit.chatWidth(liveChatWidth ?? chatWidth, total: totalWidth) : nil)
+                }
+                if let terminalFolder {
+                    // The terminal a command of the chat runs in: the side panel a session's terminal has in Agents.
+                    ChatTerminalPanel(directory: terminalFolder) {
+                        withAnimation(NookTheme.reveal) { viewModel.terminalBesideChat = nil }
+                    }
+                    .sidePanel(.trailing, width: $terminalWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                } else if appSideOpen {
+                    EmbeddedSplitHandle(
+                        onDrag: { offset in
+                            let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
+                            dragStartWidth = start
+                            PanelDrag.step($liveChatWidth, to: EmbeddedSplit.chatWidth(start + offset, total: totalWidth))
+                        },
+                        onEnd: {
+                            dragStartWidth = nil
+                            PanelDrag.commit($liveChatWidth, to: $chatWidth)
+                        },
+                        onReset: { PanelDrag.still { chatWidth = EmbeddedSplit.defaultChatWidth } }
+                    )
+                    if embedded.current != nil {
+                        EmbeddedAppPane()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        BrowserView(store: .shared, onClose: { viewModel.browserBesideChat = false })
+                            .background(NookTheme.field)
+                            .roundedClip(NookTheme.Radius.sheet)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            // A terminal, an app or the browser beside the chat opens and closes at once.
+            .sidePanelsOpenAtOnce([terminalFolder ?? "", appSideOpen ? "app" : ""])
+            // No list beside the chat (a first chat, or an app open): the footer keeps the list's width at the bottom.
+            if !listShown && showsFooter {
+                footer
+                    .frame(width: min(compact ? listWidth : windowListWidth, max(totalWidth, PanelLayout.minimumList)))
+                    .padding(.top, NookTheme.Spacing.md)
+            }
+        }
+        // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
+        // would hand the panels more room than there is and push everything off both sides.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+        .onLayoutWidthChange { totalWidth = $0 }
+        // Picking a Nook (or starting one) in the list shows it in place of the list, and the keyboard goes to the box:
+        // a new conversation, ⌘N and switching all start by typing.
+        .onChange(of: chat.activeID) { _, _ in focusComposer() }
+        .onChange(of: chat.composerFocusRequests) { _, _ in focusComposer() }
+        .overlay {
+            if dropTargeted {
+                NookTheme.shape(NookTheme.Radius.sheet)
+                    .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .overlay(Text(tr("chat.dropFile")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper))
+                    .allowsHitTesting(false)
+            }
+        }
+        // Drop a file anywhere on the chat: Nook reads it and you ask about it (this replaces the old Shelf tab).
+        // A picture is added to the message instead; it goes to the model with your question.
+        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
+            ImageAttachment.receive(Array(providers.prefix(6)), images: { images += $0 }, file: { app.askAbout($0) })
+        }
+        .onAppear {
+            // What you were typing when the notch closed is back, pictures included.
+            if question.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { question = saved }
+            if images.isEmpty { images = NookTabDraft.images }
+        }
+        .composerFocusOnAppear($inputFocused)
+        .onDisappear { NookTabDraft.images = images }
+        // An answer that finished while the chat was out of sight (another app or window in front, a sheet over it) is
+        // read once you are back on it: its row loses "done" without opening the conversation again. Once the chat is
+        // on screen, as Chats reads an open chat.
+        .task(id: activeUnread) {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
+            readOpenConversation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenConversation() }
+        .onChange(of: viewModel.isInSight(.chat)) { _, inSight in
+            if inSight { readOpenConversation() }
+        }
+    }
+
+    /// The open conversation, while Nook marked it as finished without you seeing it.
+    private var activeUnread: UUID? {
+        guard let id = chat.activeID, chat.conversation(id)?.unread == true else { return nil }
+        return id
+    }
+
+    /// Marks the open conversation as read when it is in sight: shown in place of the list, in a tab that is on screen.
+    private func readOpenConversation() {
+        guard let id = activeUnread, !(listOnly && PanelLayout.stacks(totalWidth)), viewModel.isInSight(.chat) else { return }
+        chat.setUnread(false, [id])
+    }
+
+    /// Shows the conversation and gives its box the keyboard, also when the list's search has it. An empty chat and a
+    /// thread each have their own box, so moving between them drops the old one and its focus goes to the search before
+    /// the new one is in the window: the request is made again on the next turn and a moment later.
+    private func focusComposer() {
+        listOnly = false
+        inputFocused = true
+        for delay in [0.0, 0.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { inputFocused = true }
+        }
+    }
+
+    /// The key of the question you were typing in `ComposerDraftStore`.
+    static let draftKey = "nook-chat"
+
+    private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }
+
+    @ViewBuilder
+    private var footer: some View {
+        if let openOnAgents, showsFooter {
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
+        }
+    }
+
+    // MARK: Empty chat: your day and where to start
+
+    /// The date, a greeting that counts what waits, then two quiet sections: "For you" (the Today rows in one card) and
+    /// "Start with" (starters built from your real data, two per row). It scrolls when the notch is short.
+    private var emptyState: some View {
+        let items = Array(app.todayItems.prefix(compact ? 3 : 6))
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(Self.dateLine())
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
+                        .font(NookTheme.TextStyle.display)
+                        .foregroundStyle(NookTheme.paper)
+                }
+                .padding(.horizontal, NookTheme.Spacing.xxs)
+
+                if !items.isEmpty {
+                    homeSection(tr("home.section.forYou"))
+                    VStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            if index > 0 {
+                                NookDivider(inset: 56)
+                            }
+                            TodayRow(item: item) { open(item) }
+                        }
+                    }
+                    .panelCard()
+                }
+
+                homeSection(tr("home.section.glance"))
+                HomeGlance(openAgent: openAgent, openMusic: { viewModel.show(.panel(.music)) })
+
+                homeSection(tr("home.section.start"))
+                suggestions
+            }
+            .padding(.bottom, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func homeSection(_ title: String) -> some View {
+        NookSectionLabel(title, inset: NookTheme.Spacing.xxs)
+            .padding(.top, NookTheme.Spacing.xxl)
+            .padding(.bottom, NookTheme.Spacing.md)
+    }
+
+    /// "Monday 19 October", in the app's language.
+    private static func dateLine() -> String {
+        let line = NookDates.formatter("EEEE d MMMM", locale: I18n.shared.currentLanguage.rawValue).string(from: Date())
+        return line.prefix(1).uppercased() + line.dropFirst()
+    }
+
+    /// Opens Agents on a session, or on its list when there is none.
+    private func openAgent(_ id: String?) {
+        if let id { viewModel.selectedAgentID = id }
+        if compact { viewModel.show(.panel(.agents)) } else { app.openWorkspace() }
+    }
+
+    private func open(_ item: TodayItem) {
+        switch item.target {
+        case .card(let scene):
+            viewModel.show(.card(DemoContent.card(for: scene)))
+        case .agent(let id):
+            openAgent(id)
+        case .action(let run):
+            run()
+        case .none:
+            break
+        }
+    }
+
+    /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
+    private var suggestions: some View {
+        SuggestionGrid(suggestions: app.startSuggestions) { app.handleUserText($0.text) }
+    }
+
+    // MARK: Header
+
+    /// Back from the chat to the list of Nooks, while the tab shows one of them at a time.
+    private var listButton: some View {
+        PanelBackButton { listOnly = true }
+    }
+
+    /// The conversation's title (double-click to rename it), the status while it works, and the conversation's menu on
+    /// the right. The tab and the list already say this is Nook, so the title stands on its own.
+    @ViewBuilder
+    private var header: some View {
+        if let conversation = chat.active {
+            HStack(spacing: NookTheme.Spacing.md) {
+                if PanelLayout.stacks(totalWidth) { listButton }
+                if renaming {
+                    TextField(tr("ws.title.placeholder"), text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.TextStyle.title)
+                        .foregroundStyle(NookTheme.paper)
+                        .focused($titleFocused)
+                        .onAppear { titleFocused = true }
+                        .onSubmit { commitRename(conversation) }
+                        // Clicking away keeps the new name; Escape (which closes first) drops it.
+                        .onChange(of: titleFocused) { _, focused in
+                            if !focused { commitRename(conversation) }
+                        }
+                        .onExitCommand { renaming = false }
+                } else {
+                    Text(conversation.title)
+                        .font(NookTheme.TextStyle.title)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .onTapGesture(count: 2) { startRenaming(conversation) }
+                        .nookTip(tr("ws.title.renameHelp"))
+                }
+                if conversation.pinned {
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: NookTheme.Spacing.md)
+                if conversation.busy, let since = conversation.turnStarted {
+                    TimelineView(.nookTicks(every: 1)) { context in
+                        AgentStatusBadge(state: .working, detail: AgentFormat.short(context.date.timeIntervalSince(since)))
+                    }
+                } else if conversation.status == .waiting {
+                    AgentStatusBadge(state: .approval)
+                }
+                // A new Nook starts from the list's header (⌘N), which is always next to a conversation.
+                conversationMenu(conversation)
+            }
+            .frame(height: 30)
+            .padding(.leading, NookTheme.Spacing.xxs)
+            .conversationHeaderBackground()
+            .onChange(of: chat.activeID) { _, _ in renaming = false }
+        }
+    }
+
+    private func startRenaming(_ conversation: Conversation) {
+        titleDraft = conversation.title
+        renaming = true
+    }
+
+    /// Saves the new name once: Return and the focus that leaves right after both end here.
+    private func commitRename(_ conversation: Conversation) {
+        guard renaming else { return }
+        renaming = false
+        chat.rename(conversation.id, to: titleDraft)
+    }
+
+    /// Everything else you can do with this conversation, as in a session's menu.
+    private func conversationMenu(_ conversation: Conversation) -> some View {
+        Menu {
+            Button(tr("nooks.rename")) { startRenaming(conversation) }
+            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
+            Button(tr("ws.export.copy")) {
+                Pasteboard.copy(ChatExport.markdown(conversation))
+            }
+            Divider()
+            Button(tr("nooks.archive")) { chat.setArchived(true, conversation.id) }
+                .disabled(conversation.busy)
+            Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
+                .disabled(conversation.busy)
+        } label: {
+            Image(icon: "ellipsis")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .composerMenu()
+        .nookTip(tr("chat.moreActions"))
+        .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
+                       confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
+    }
+
+    // MARK: Conversation
+
+    private var thread: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Wide gaps between turns, so each question and its answer read as one block.
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+                    let newest = chat.messages.last?.id
+                    ForEach(chat.messages) { message in
+                        // Equatable on the message's revision: while one answer streams in, the earlier messages
+                        // (and their Markdown) are not laid out again for every few words.
+                        ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
+                            .equatable()
+                            .id(message.id)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, NookTheme.Spacing.xxs)
+                .readableChat(!compact)
+                .padding(.top, NookTheme.Spacing.md)
+                .padding(.bottom, NookTheme.Spacing.xs)
+                .animation(NookTheme.reveal, value: chat.messages.count)
+            }
+            // No system scroll bar, as in an agent's transcript: the rows are laid out only as they come into view, so
+            // its knob jumped while dragged. The rail beside the conversation is the scroll bar instead. `.never`,
+            // because `.hidden` still shows one when the system shows scroll bars always (a mouse connected).
+            .scrollIndicators(.never)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            // Only while following does growth keep the end in place: reading higher up, the answer streaming in below
+            // leaves the text you read where it is instead of pushing it up with every few words.
+            .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+            // Scrolling away from the end stops the following until you come back, or jump back with the pill.
+            // Moving up while the sizes stay the same can only be you (following only ever moves down), and so is
+            // getting further from the end while following with the sizes the same, so this also catches a mouse wheel
+            // while the answer streams, and a scroll that starts at the end before it leaves it. Growth does not count:
+            // a lazy row measured taller as the chat opens left the end too, and stopped the following halfway up.
+            .onScrollGeometryChange(for: ThreadScrollGeometry.self) { geometry in
+                ThreadScrollGeometry(offset: geometry.contentOffset.y,
+                                     container: geometry.containerSize.height,
+                                     content: geometry.contentSize.height,
+                                     insetTop: geometry.contentInsets.top)
+            } action: { old, new in
+                // Called for every frame of a scroll: the state is written only when it changes, so scrolling does not
+                // draw the whole chat again for each frame.
+                if atEnd != new.atEnd { atEnd = new.atEnd }
+                let movedUp = new.offset < old.offset - 0.5 && new.content == old.content
+                let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5 && new.content == old.content
+                if movedUp || leftEnd, new.container == old.container, !new.atEnd {
+                    if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
+                } else if new.atEnd, scroll.mode == .free {
+                    scroll.reachedEnd()
+                }
+            }
+            .onScrollPhaseChange { _, phase in
+                scrollPhase.value = phase
+                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+            }
+            .onChange(of: atEnd) { _, nowAtEnd in
+                if !nowAtEnd, scrollPhase.value == .interacting || scrollPhase.value == .decelerating { scroll.userScrolled() }
+            }
+            // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
+            // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
+            // The composer growing under it (a card, a draft) changes the inset instead, and is caught up with as well.
+            // Only a change in size scrolls, and only when the end is not already in view and no scroll is under way.
+            .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
+                ScrollFrame(geometry)
+            } action: { old, frame in
+                viewport.frame = frame
+                let resized = frame.content != old.content || frame.container != old.container || frame.insetBottom != old.insetBottom
+                if resized { followEnd(proxy) }
+            }
+            .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                overflows = now
+            }
+            // A mark per question of yours on the leading edge, as in an agent's transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
+                let shown = marks.update(chat.messages)
+                if overflows, !shown.isEmpty {
+                    TranscriptPromptRail(marks: shown, column: compact ? PanelLayout.chatColumn : PanelLayout.readableChat) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                inputBar
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd)) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+            }
+            // A soft fade under the header, so text scrolls away instead of being cut off. A strip in the canvas's color
+            // on top, not a mask: a mask renders the whole scrolling conversation offscreen again on every frame.
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [NookTheme.canvas, NookTheme.canvas.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 10)
+                    .allowsHitTesting(false)
+            }
+            // Opening the chat or another conversation: start at its end and follow again.
+            .onAppear { settleAtEnd(proxy) }
+            .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
+            // You asked something: it is the newest thing and the answer is followed again, also when you had scrolled up.
+            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in settleAtEnd(proxy) }
+            .onChange(of: scrollKey) { _, _ in followEnd(proxy) }
+        }
+    }
+
+    /// Keeps the end in view while following, but only when it is not already there and no scroll is under way, so a
+    /// size change that leaves the end in place does not scroll again.
+    private func followEnd(_ proxy: ScrollViewProxy) {
+        guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
+              viewport.frame.maxOffset - viewport.frame.offset > 0.5 else { return }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+    }
+
+    /// Scrolls to the end now and again while the layout settles (rows measured, the notch done opening), unless you
+    /// scroll away in the meantime.
+    private func settleAtEnd(_ proxy: ScrollViewProxy) {
+        scroll.jumpedToEnd()
+        proxy.scrollTo("bottom", anchor: .bottom)
+        for delay in [0.0, 0.1, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    /// Updates as streamed responses arrive, keeping the chat scrolled to bottom without layout thrashing on every token.
+    private var scrollKey: String {
+        guard let last = chat.messages.last else { return "" }
+        let textStep = last.streaming ? (last.text.count / 24) : last.text.count
+        return "\(last.id)-\(last.streaming)-\(textStep)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)-\(last.retrieval.count)-\(last.references.count)"
+    }
+
+    // MARK: Input
+
+    /// The same composer as the agents: the text on top, a plus menu and the quiet choices underneath (model, access,
+    /// sources), a round send button on the right. A file you attach shows above the box, only while there is one.
+    private var inputBar: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if let name = app.attachmentName {
+                AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
+            }
+            // A file that could not be read says so here, where you attached it, not as a card in the notch.
+            if let problem = app.attachmentError {
+                ComposerErrorLine(message: problem) { app.attachmentError = nil }
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+            }
+            // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
+            VStack(spacing: 0) {
+                queuedTray
+                Observing(composerState) { composer }
+                    .zIndex(1)
+            }
+        }
+        // The attachment and the queued questions keep to the composer's column too.
+        .chatColumn()
+    }
+
+    /// The box itself, drawn again for each key you type without the chat around it.
+    private var composer: some View {
+        SessionComposer(
+            text: $composerState.question,
+            prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
+            busy: chat.busy,
+            onStop: { app.stopChat() },
+            focus: $inputFocused,
+            onSend: send
+        ) {
+            // The same row as the agents' choices: a plus menu and the model, then what Nook may do by itself
+            // (an agent's access, ⇧Tab moves on) and the sources, split by a gap.
+            ComposerMoreMenu(chat: chat)
+            BrainChip()
+            ComposerDivider()
+            NookAccessMenu(focused: inputFocused)
+            ComposerDivider()
+            ScopeMenu(chat: chat)
+        }
+        .rich(composerModel, chatComposerConfig)
+        .trailing {
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
+        }
+        // While Nook answers, Return or the queue button puts the question in line instead of stopping the answer.
+        .queueing(chat.busy ? send : nil)
+        .images($composerState.images, asPaths: false, onFile: { app.askAbout($0) })
+    }
+
+    /// The questions waiting for the answer that runs, when there are any.
+    @ViewBuilder
+    private var queuedTray: some View {
+        if let conversation = chat.active, !conversation.queue.isEmpty {
+            let id = conversation.id
+            ComposerTray(edge: .top) {
+                QueuedMessagesStrip(
+                    queue: conversation.queue,
+                    remove: { chat.removeQueued($0, conversation: id) },
+                    move: { chat.moveQueued($0, toIndex: $1, conversation: id) },
+                    sendNow: { app.sendQueued(id, message: $0) })
+            }
+        }
+    }
+
+    /// The chat gets the same box as the agents: commands under `/`, ArrowUp for earlier questions. References stay off:
+    /// a question goes to the brain as plain text.
+    private var chatComposerConfig: ComposerConfig {
+        var config = ComposerConfig()
+        // `@` lists the apps that open next to the chat: the Mac apps on this Mac and the web apps.
+        config.apps = EmbeddedAppCatalog.available().map { (id: $0.id, title: $0.title, symbol: $0.symbol) }
+        // "@chat …" lists the chats of every chat app, so you open the one you mean.
+        config.chats = { [app] in app.chatChoices() }
+        config.openApp = { [viewModel] in viewModel.embeddedAppOpen ? EmbeddedAppStore.shared.current?.title : nil }
+        config.commands = AgentCommands.commands(for: .claude, hasProject: false, surface: .chat).filter { $0.action == .new }
+        config.onCommand = { [app] command in
+            if command.action == .new { app.newChat() }
+        }
+        config.situation = { [chat] in
+            ComposerCompletion.Situation(recipient: "Nook", lastAnswer: chat.active?.messages.last { $0.role == .nook }?.text)
+        }
+        return config
+    }
+
+    private func send() {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !images.isEmpty else { return }
+        composerModel.history.record(text)
+        let attached = images
+        question = ""
+        images = []
+        app.attachmentError = nil
+        app.handleUserText(text, images: attached)
+        inputFocused = true
+    }
+}
+
+/// The marks of your questions on the rail beside the conversation, worked out again only when a message changed: the
+/// chat draws again for every key you type in its box.
+@MainActor
+private final class NookChatMarks {
+    private var key: Int?
+    private var marks: [PromptMark] = []
+
+    func update(_ messages: [ChatMessage]) -> [PromptMark] {
+        var hasher = Hasher()
+        for message in messages {
+            hasher.combine(message.id)
+            hasher.combine(message.revision)
+        }
+        let key = hasher.finalize()
+        guard key != self.key else { return marks }
+        self.key = key
+        marks = TranscriptPresentation.promptMarks(chat: messages.map {
+            (id: $0.id.uuidString, fromYou: $0.role == .user, text: $0.text, cards: $0.charts.count + $0.mails.count)
+        })
+        return marks
+    }
+}
+
+/// Where the chat thread is scrolled, to tell your own scrolling apart from following the end.
+private struct ThreadScrollGeometry: Equatable {
+    var offset: Double
+    var container: Double
+    var content: Double
+    /// The room above the view (a toolbar): the view's end is that much higher (`ScrollFrame.maxOffset`).
+    var insetTop: Double
+
+    /// How far the end lies below what is in view.
+    var fromEnd: Double { content - insetTop - (offset + container) }
+    var atEnd: Bool { fromEnd <= ScrollFrame.endMargin }
+}
+
+/// The pictures waiting in the chat's box when the notch closed; the text itself goes to `ComposerDraftStore`.
+@MainActor
+private enum NookTabDraft {
+    static var images: [ImageAttachment] = []
+}
+
+/// What you are writing to Nook: the question and its pictures. `NookChatView` holds it without observing it; each
+/// change to the text is kept as the chat's draft (`ComposerDraftStore` writes it out a moment later).
+@MainActor
+final class NookComposerState: ObservableObject {
+    @Published var question = "" {
+        didSet {
+            guard question != oldValue else { return }
+            ComposerDraftStore.shared.save(sessionID: NookChatView.draftKey, text: question)
+        }
+    }
+    @Published var images: [ImageAttachment] = []
+}
+
+private extension View {
+    /// In the main window: at most `PanelLayout.readableChat` wide, centered in the room it is given.
+    func readableChat(_ on: Bool) -> some View {
+        frame(maxWidth: on ? PanelLayout.readableChat : nil)
+            .frame(maxWidth: on ? .infinity : nil)
+    }
+}

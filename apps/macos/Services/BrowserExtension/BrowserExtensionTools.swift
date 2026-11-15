@@ -140,7 +140,7 @@ enum BrowserExtensionTools {
             return .failure(BrowserExtensionArgumentError("\(definition.name) needs \(key)."))
         }
         if ["click", "type"].contains(definition.method) {
-            let given = ["ref", "selector", "text"].filter { params[$0] != nil }.count
+            let given = ["ref", "selector", "text"].count(where: { params[$0] != nil })
             if given != 1 {
                 return .failure(BrowserExtensionArgumentError(given == 0 ? "Say which element: ref (from chrome_find), selector or text."
                                                                          : "Give only one of ref, selector and text."))

@@ -9,9 +9,13 @@ enum ChartRescue {
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    // Constant patterns, compiled once.
+    private static let codeBlock = try? NSRegularExpression(pattern: "```([A-Za-z0-9_+-]*)[^\\n]*\\n([\\s\\S]*?)```")
+    private static let bracketList = try? NSRegularExpression(pattern: #"\[([^\[\]]+)\]"#)
+
     /// Extracts charts from code blocks and returns the text without them. Empty code blocks are also removed.
     static func extract(from text: String, title: String) -> (text: String, charts: [ChatChart]) {
-        guard let regex = try? NSRegularExpression(pattern: "```([A-Za-z0-9_+-]*)[^\\n]*\\n([\\s\\S]*?)```", options: []) else {
+        guard let regex = codeBlock else {
             return (text, [])
         }
         var result = text
@@ -187,7 +191,7 @@ enum ChartRescue {
 
     /// Python, JavaScript, or Swift: a list of labels and an equal-length list of numbers.
     private static func chart(fromLists body: String, title: String) -> ChatChart? {
-        guard let regex = try? NSRegularExpression(pattern: #"\[([^\[\]]+)\]"#) else { return nil }
+        guard let regex = bracketList else { return nil }
         let lists = regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap { match -> [String]? in
             guard let range = Range(match.range(at: 1), in: body) else { return nil }
             return body[range].components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// The phone's own views, built on the parts it shares with the Mac (apps/macos/NotchUI/Shared): each one draws as its
+// The phone's own views, built on the parts it shares with the Mac (apps/macos/UI/Shared): each one draws as its
 // counterpart in Nook on the Mac, with touch instead of hover. Change the shared part, not a copy of it here.
 
 // MARK: Surfaces

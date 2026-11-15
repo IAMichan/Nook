@@ -64,7 +64,7 @@ SOFTWARE.
 
 ## Provider & Brand Icons
 
-Vector icon paths in `apps/macos/NotchUI/Components/BrandLogo.swift` and the agent logos in the website's `site/_partials/sprite.html` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
+Vector icon paths in `apps/macos/UI/Components/BrandLogo.swift` and the agent logos in the website's `site/_partials/sprite.html` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
 
 ```text
 MIT License

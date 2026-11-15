@@ -283,8 +283,9 @@ enum ReleaseNotes {
     static func changes(_ releases: [GitHubRelease]) -> [IncomingChange] {
         var seen = Set<Int>()
         var result: [IncomingChange] = []
+        let iso = ISO8601DateFormatter()
         for release in releases {
-            let date = release.publishedAt.flatMap { ISO8601DateFormatter().date(from: $0) } ?? .distantPast
+            let date = release.publishedAt.flatMap(iso.date(from:)) ?? .distantPast
             // GitHub lists them oldest first.
             for change in parse(release.body ?? "", date: date).reversed() where seen.insert(change.pullRequest ?? -1).inserted {
                 result.append(change)

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 // The messages of every conversation on the phone, one place for all of them, built on the parts shared with the Mac
-// (apps/macos/NotchUI/Shared: `ChatListRowContent`, `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`,
+// (apps/macos/UI/Shared: `ChatListRowContent`, `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`,
 // `MessageTicksMark`, `ChatTypingBubble`, `TranscriptStyle`, `TranscriptUserBubble`, `TranscriptTime`):
 //
 // - A conversation with Nook or an agent (the Nook tab, a session's transcript): what you wrote is a soft bubble on

@@ -271,7 +271,7 @@ struct WorktreeCleanupReport: Codable, Equatable, Sendable {
 
     static let defaultsKey = "ws.worktreeCleanupReport"
 
-    func count(_ outcome: Outcome) -> Int { entries.filter { $0.outcome == outcome }.count }
+    func count(_ outcome: Outcome) -> Int { entries.count(where: { $0.outcome == outcome }) }
 
     var bytesFreed: Int64 { entries.filter { $0.outcome == .removed }.compactMap(\.bytes).reduce(0, +) }
 }

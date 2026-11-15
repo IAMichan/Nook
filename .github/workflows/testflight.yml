@@ -26,11 +26,11 @@ on:
       - 'apps/macos/Brain/ChartRescue.swift'
       - 'apps/macos/Brain/ChatChart.swift'
       - 'apps/macos/Brain/MarkdownBlock.swift'
-      - 'apps/macos/NotchUI/Components/BrandLogo.swift'
-      - 'apps/macos/NotchUI/Shared/**'
-      - 'apps/macos/NotchUI/Theme/NookIcon.swift'
-      - 'apps/macos/NotchUI/Theme/NookPalette.swift'
-      - 'apps/macos/NotchUI/Theme/NookTheme.swift'
+      - 'apps/macos/UI/Components/BrandLogo.swift'
+      - 'apps/macos/UI/Shared/**'
+      - 'apps/macos/UI/Theme/NookIcon.swift'
+      - 'apps/macos/UI/Theme/NookPalette.swift'
+      - 'apps/macos/UI/Theme/NookTheme.swift'
       - 'apps/macos/Resources/Lucide.xcassets/**'
       - 'apps/macos/Resources/katex/**'
       - 'apps/macos/Resources/mermaid/**'
@@ -79,7 +79,7 @@ jobs:
         with:
           name: testflight
           paths: >-
-            apps/ios packages/protocol apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/NotchUI/Components/BrandLogo.swift apps/macos/NotchUI/Shared apps/macos/NotchUI/Theme/NookIcon.swift apps/macos/NotchUI/Theme/NookPalette.swift apps/macos/NotchUI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets apps/macos/Resources/katex apps/macos/Resources/mermaid
+            apps/ios packages/protocol apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/UI/Components/BrandLogo.swift apps/macos/UI/Shared apps/macos/UI/Theme/NookIcon.swift apps/macos/UI/Theme/NookPalette.swift apps/macos/UI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets apps/macos/Resources/katex apps/macos/Resources/mermaid
             .github/workflows/testflight.yml .github/actions
 
   upload:

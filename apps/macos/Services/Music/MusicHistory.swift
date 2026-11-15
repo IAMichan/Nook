@@ -291,7 +291,7 @@ struct MusicStats: Equatable {
         uniqueArtists = artists.count
         if let start {
             let known = Set(all.lazy.filter { $0.playedAt < start }.map(\.artist))
-            newArtists = artists.keys.filter { !known.contains($0) }.count
+            newArtists = artists.keys.count(where: { !known.contains($0) })
         }
         topTracks = Array(tracks.values.sorted { ($0.plays, $0.seconds, $1.track.title) > ($1.plays, $1.seconds, $0.track.title) }.prefix(Self.rankLimit))
         topArtists = Array(artists.values.sorted { ($0.seconds, $1.name) > ($1.seconds, $0.name) }.prefix(Self.rankLimit))

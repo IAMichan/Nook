@@ -333,11 +333,10 @@ enum MailIndex {
         }
 
         private static func withoutTags(_ html: String) -> String {
-            html.replacingOccurrences(of: #"(?is)<(style|script)\b.*?</\1>"#, with: " ", options: .regularExpression)
+            let text = html.replacingOccurrences(of: #"(?is)<(style|script)\b.*?</\1>"#, with: " ", options: .regularExpression)
                 .replacingOccurrences(of: #"(?i)<(br|/p|/div|/tr)\b[^>]*>"#, with: "\n", options: .regularExpression)
                 .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-                .replacingOccurrences(of: "&nbsp;", with: " ").replacingOccurrences(of: "&amp;", with: "&")
-                .replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">")
+            return HTMLEntities.decode(text)
                 .replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
                 .replacingOccurrences(of: #"\n\s*\n\s*"#, with: "\n\n", options: .regularExpression)
         }

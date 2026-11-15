@@ -119,9 +119,8 @@ extension WorkspaceBridge {
         app?.viewModel.showWork(line) { [weak self] in self?.releaseScreen() }
     }
 
+    /// "14:30" for the agent, whatever the Mac's clock style.
     private static func clock(_ date: Date) -> String {
-        let format = DateFormatter()
-        format.dateFormat = "HH:mm"
-        return format.string(from: date)
+        NookDates.formatter("HH:mm", locale: "en_US_POSIX").string(from: date)
     }
 }

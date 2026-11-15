@@ -191,7 +191,7 @@ final class LookThemesTests: XCTestCase {
         XCTAssertTrue(html.contains(#"data-tex="x&lt;y""#))
         XCTAssertTrue(html.contains("<strong>bold</strong>"))
         XCTAssertFalse(html.contains("<y"))
-        XCTAssertEqual(MathText.escapeHTML(#"<"&'>"#), "&lt;&quot;&amp;&#39;&gt;")
+        XCTAssertEqual(HTMLEntities.escape(#"<"&'>"#), "&lt;&quot;&amp;&#39;&gt;")
         XCTAssertTrue(MathText.html("\\frac{a}{b}", display: true).hasPrefix(#"<span class="tex display""#))
     }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Regenerates apps/macos/Resources/Lucide.xcassets: one custom SF Symbol per Lucide icon named in NookIcon.table
-# (apps/macos/NotchUI/Theme/NookIcon.swift). Lucide's stroked 24×24 SVGs become symbol templates with SwiftDraw, which also
+# (apps/macos/UI/Theme/NookIcon.swift). Lucide's stroked 24×24 SVGs become symbol templates with SwiftDraw, which also
 # derives the ultralight and black weights, so the icons follow the font weight around them like an SF Symbol.
 #
 #   scripts/lucide-icons.sh            needs npm and swiftdraw (brew install swiftdraw)
@@ -10,7 +10,7 @@ set -euo pipefail
 
 LUCIDE_VERSION="0.564.0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TABLE="$ROOT/apps/macos/NotchUI/Theme/NookIcon.swift"
+TABLE="$ROOT/apps/macos/UI/Theme/NookIcon.swift"
 OUT="$ROOT/apps/macos/Resources/Lucide.xcassets"
 
 command -v swiftdraw >/dev/null || { echo "swiftdraw is missing: brew install swiftdraw" >&2; exit 1; }

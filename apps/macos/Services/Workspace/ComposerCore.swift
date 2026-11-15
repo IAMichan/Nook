@@ -673,7 +673,7 @@ enum FileSearch {
         for relative in paths {
             let name = (relative.split(separator: "/").last.map { String($0) } ?? relative).lowercased()
             let score: Int
-            if q.isEmpty { score = 3 - min(2, relative.filter { $0 == "/" }.count) }
+            if q.isEmpty { score = 3 - min(2, relative.count(where: { $0 == "/" })) }
             else if name.hasPrefix(q) { score = 100 - min(50, relative.count) }
             else if name.contains(q) { score = 60 - min(30, relative.count) }
             else if relative.lowercased().contains(q) { score = 20 - min(15, relative.count) }

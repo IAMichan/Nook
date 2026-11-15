@@ -286,7 +286,7 @@ enum EmbeddedAppCatalog {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
         func groups(_ pattern: String) -> [String]? {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+            guard let regex = RegexCache.regex(pattern, options: .caseInsensitive),
                   let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
             return (1..<match.numberOfRanges).map { index in
                 Range(match.range(at: index), in: text).map { String(text[$0]) } ?? ""
@@ -331,7 +331,7 @@ enum EmbeddedAppCatalog {
     /// ("chat" alone).
     static func chatName(_ raw: String) -> String? {
         let pattern = #"^chat\s+(?:(?:met|with|mit|avec|con)\s+)?(.+)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+        guard let regex = RegexCache.regex(pattern, options: .caseInsensitive),
               let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
               let range = Range(match.range(at: 1), in: raw) else { return nil }
         let name = raw[range].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))

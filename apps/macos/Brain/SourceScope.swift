@@ -224,19 +224,10 @@ enum SourceCatalog {
         return found.sorted { $0.0.lowerBound < $1.0.lowerBound }
     }
 
-    /// Case-insensitive patterns, compiled once: every question runs all aliases (once per clause while parsing its
-    /// scope), and the aliases only change when a connector registers. NSCache is safe to share across threads.
-    private static let regexes: NSCache<NSString, NSRegularExpression> = {
-        let cache = NSCache<NSString, NSRegularExpression>()
-        cache.countLimit = 500
-        return cache
-    }()
-
+    /// A case-insensitive pattern, compiled once: every question runs all aliases (once per clause while parsing its
+    /// scope), and the aliases only change when a connector registers.
     static func compiled(_ pattern: String) -> NSRegularExpression? {
-        if let known = regexes.object(forKey: pattern as NSString) { return known }
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-        regexes.setObject(regex, forKey: pattern as NSString)
-        return regex
+        RegexCache.regex(pattern, options: .caseInsensitive)
     }
 }
 

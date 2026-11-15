@@ -110,7 +110,7 @@ extension SettingsView {
                 let connections = connectionsGlance(broken: problems)
                 glanceRow(.connections, detail: connections.text, state: connections.state)
                 glanceRow(.agents, detail: tr("settings.start.agentsLinked", linkedAgentCount), state: linkedAgentCount > 0 ? .done : .todo)
-                let granted = SystemPermission.allCases.filter { permissions.isGranted($0) }.count
+                let granted = SystemPermission.allCases.count(where: { permissions.isGranted($0) })
                 // Only the recommended permissions make this a to-do; the optional ones (contacts, the microphone…) never do.
                 let recommendedGranted = SystemPermission.allCases.allSatisfy { !$0.isRecommended || permissions.isGranted($0) }
                 glanceRow(.permissions, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),

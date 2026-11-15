@@ -253,7 +253,7 @@ final class TimelinePresentationTests: XCTestCase {
             event(.tool, command, tool: "Bash", state: .failed, at: 140),
             event(.approval, command, tool: "Bash", state: .denied, at: 141)
         ]
-        XCTAssertEqual(TimelinePresentation.visible(Array(denied), active: false).filter { $0.text == command }.count, 2,
+        XCTAssertEqual(TimelinePresentation.visible(Array(denied), active: false).count(where: { $0.text == command }), 2,
                        "a refusal says why the command failed")
     }
 

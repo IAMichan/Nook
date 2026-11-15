@@ -64,7 +64,7 @@ final class CompletionKeyGateTests: XCTestCase {
                 XCTAssertTrue(gate.swallows(key(hot.code, hot.modifiers, characters[hot.code] ?? "")), "\(showing) \(hot)")
             }
         }
-        XCTAssertEqual(makeGate(.alternatives(count: 2)).hotKeys().filter { digits[$0.code] != nil }.count, 4)
+        XCTAssertEqual(makeGate(.alternatives(count: 2)).hotKeys().count(where: { digits[$0.code] != nil }), 4)
     }
 
     func testShortcutsAreHotKeysWhileInactive() {

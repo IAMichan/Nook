@@ -5,7 +5,7 @@ import Foundation
 extension WorkspaceManager {
     /// Sessions working now, apart from `id` and from the turns that wait for a free place themselves.
     private func othersWorking(than id: UUID) -> Int {
-        runs.filter { $0.id != id && $0.status.isActive && !capacity.isWaiting($0.id) }.count
+        runs.count(where: { $0.id != id && $0.status.isActive && !capacity.isWaiting($0.id) })
     }
 
     /// A new turn past the limit waits for a free place: your message shows at once and the session says why it waits.
@@ -26,7 +26,7 @@ extension WorkspaceManager {
     /// one is stopped, and when the limit changes.
     func startWaitingTurns() {
         capacity.prune { run($0) != nil }
-        let working = runs.filter { $0.status.isActive && !capacity.isWaiting($0.id) }.count
+        let working = runs.count(where: { $0.status.isActive && !capacity.isWaiting($0.id) })
         let count = SessionCapacity.startable(limit: settings.maxWorkingSessions, working: working, waiting: capacity.count)
         for id in capacity.first(count) {
             guard let waiting = capacity.remove(id) else { continue }

@@ -120,7 +120,7 @@ The scenario and the harness always come from your checkout; only the app comes 
 `scripts/xcode.sh` and `scripts/scenarios.sh` laid over it and `include: [Scenarios/scenarios.yml]` added to its
 `project.yml`. It is built with its own copy of `./scripts/xcode.sh` and removed afterwards, build and all (several GB:
 check `df -h /` first). So a new scenario can prove a fix against a base that predates it, as long as the fixture's
-calls (`WorkspaceManager.start`, `send`, `NotchViewModel.windowTab`/`selectedAgentID`, `WorkspaceView`) exist there.
+calls (`WorkspaceManager.start`, `send`, `PanelViewModel.windowTab`/`selectedAgentID`, `WorkspaceView`) exist there.
 
 ## How it stays off your Mac
 
