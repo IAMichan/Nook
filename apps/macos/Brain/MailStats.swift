@@ -159,29 +159,38 @@ enum MailStats {
                 try
                     set unread to unread + (unread count of box)
                 end try
-                set total to count of messages of box
-                if total > 0 then
-                    set lo to 1
-                    set hi to total
-                    if total > \(perMailbox) then
-                        set hi to \(perMailbox)
-                        -- Mail usually lists the newest first; if not, take the other end.
-                        if (date received of message 1 of box) < (date received of message total of box) then
-                            set lo to total - \(perMailbox - 1)
-                            set hi to total
+                -- Each property is its own read: a mail that arrives between them shifts the positions, and one row
+                -- would get another mail's id. So the box is read again when its count changed meanwhile; if it keeps
+                -- changing, its rows go without ids rather than with wrong ones.
+                repeat with attempt from 1 to 2
+                    set total to count of messages of box
+                    if total > 0 then
+                        set lo to 1
+                        set hi to total
+                        if total > \(perMailbox) then
+                            set hi to \(perMailbox)
+                            -- Mail usually lists the newest first; if not, take the other end.
+                            if (date received of message 1 of box) < (date received of message total of box) then
+                                set lo to total - \(perMailbox - 1)
+                                set hi to total
+                            end if
                         end if
+                        set subs to subject of messages lo thru hi of box
+                        set snds to sender of messages lo thru hi of box
+                        set dts to date received of messages lo thru hi of box
+                        set rds to read status of messages lo thru hi of box
+                        set rps to was replied to of messages lo thru hi of box
+                        -- The id read_mail, mark_mail and a reply take: one more bulk event, never one per message.
+                        set mids to {}
+                        try
+                            set mids to message id of messages lo thru hi of box
+                        end try
                     end if
+                    if (count of messages of box) = total then exit repeat
+                    if attempt = 2 then set mids to {}
+                end repeat
+                if total > 0 then
                     set boxName to name of box
-                    set subs to subject of messages lo thru hi of box
-                    set snds to sender of messages lo thru hi of box
-                    set dts to date received of messages lo thru hi of box
-                    set rds to read status of messages lo thru hi of box
-                    set rps to was replied to of messages lo thru hi of box
-                    -- The id read_mail, mark_mail and a reply take: one more bulk event, never one per message.
-                    set mids to {}
-                    try
-                        set mids to message id of messages lo thru hi of box
-                    end try
                     repeat with i from 1 to (count of subs)
                         set mid to ""
                         if (count of mids) >= i then set mid to (item i of mids)
@@ -192,6 +201,16 @@ enum MailStats {
             return "TOTAL|||" & unread & linefeed & out
         end tell
         """
+    }
+
+    /// How many unread mails the mailboxes count beyond the ones Nook holds (`loaded`, the newest of each mailbox).
+    static func unreadBeyond(loaded: [InboxRow], unreadTotal: Int) -> Int {
+        max(0, unreadTotal - loaded.filter { !$0.read }.count)
+    }
+
+    /// For the brain: unread mail exists beyond what the list shows, and how to reach it.
+    static func unreadBeyondNote(_ count: Int) -> String {
+        "Note: the mailboxes count \(count) more unread mail\(count == 1 ? "" : "s") older than the newest ones listed here; search_mail finds them (by sender or subject). Do not say there is no other unread mail."
     }
 
     struct InboxRow: Equatable {

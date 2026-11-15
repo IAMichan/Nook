@@ -307,6 +307,8 @@ final class ScheduledTaskStore: ObservableObject {
             if coalescer.windows[id] != nil { webhookQueue.release(id); coalescer.forget(id) }
         }
         save()
+        // Messages that waited while the task was paused start their run now; a message task has no timer to do it.
+        if enabled, !gate.isRunning(id) { drainMessages(id) }
     }
 
     func webhookRules(for id: UUID) -> WebhookRules { options[id]?.webhook ?? WebhookRules() }
@@ -603,11 +605,18 @@ final class ScheduledTaskStore: ObservableObject {
         // later turn of the main actor, so it sees this.
         if quiet { quietRuns.insert(conversation) }
         app.chat.rename(conversation, to: task.title)
+        // The run's own answer: a question the user asks in this conversation meanwhile replaces it, and that answer is
+        // theirs, never stopped by this run's deadline.
+        let replyID = app.replies[conversation]
+        // `replies` forgets an answer once it ends; another id there is a newer answer.
+        func replaced() -> Bool { app.replies[conversation].map { $0 != replyID } ?? false }
+        func ownAnswerRuns() -> Bool { app.chat.isBusy(conversation) && !replaced() }
         let deadline = Date().addingTimeInterval(Self.nookRunLimit)
-        while app.chat.isBusy(conversation), Date() < deadline {
+        while ownAnswerRuns(), Date() < deadline {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
-        if app.chat.isBusy(conversation) {
+        if replaced() { return finish(task.id, status: .succeeded, error: nil) }
+        if ownAnswerRuns() {
             app.stop(conversation: conversation)
             return finish(task.id, status: .failed, error: "sched.error.nookTimeout")
         }
@@ -685,9 +694,12 @@ final class ScheduledTaskStore: ObservableObject {
     /// in line. No firing key for messages: the queue admits a message once, and a key by time could make two batches one.
     private func startMessageRun(_ task: ScheduledTask, now: Date) {
         guard let trigger = task.rule.messageTrigger, var queue = messageQueues[task.id], !queue.isEmpty else { return }
-        let batch = queue.takeBatch(matching: trigger)
+        let taken = queue.takeBatch(matching: trigger)
         messageQueues[task.id] = queue
-        guard !batch.isEmpty else { return }
+        // A source kept on this Mac never reaches an external brain, also not through an automation: its messages go.
+        let batch = app.map { ArrivedMessage.allowed(taken, privateSources: $0.settings.privateSources,
+                                                     localBrain: $0.settings.selection.isLocal) } ?? taken
+        guard !batch.isEmpty else { return drainMessages(task.id) }
         let started = fire(task.id, scheduledFor: now, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: batch), now: now)
         if !started { messageQueues[task.id]?.enqueue(batch, first: true) }
     }

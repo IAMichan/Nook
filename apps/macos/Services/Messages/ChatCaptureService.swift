@@ -847,7 +847,8 @@ final class ChatCaptureService: ObservableObject {
     /// `arrivalsTold`: the caller handed automations their messages already.
     private func announce(_ ids: [String], arrivalsTold: Bool = false) {
         if !arrivalsTold {
-            let arrived = ids.compactMap { inbox.threads[$0] }.filter(isShown).flatMap { ArrivedMessage.newest(in: $0) }
+            let since = Date().addingTimeInterval(-Self.newsWindow)
+            let arrived = ids.compactMap { inbox.threads[$0] }.filter(isShown).flatMap { ArrivedMessage.newest(in: $0, since: since) }
             if !arrived.isEmpty { onArrived(arrived) }
         }
         let rules = ChatNoticeRulesStore.shared.rules

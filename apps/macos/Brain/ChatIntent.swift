@@ -221,7 +221,7 @@ struct ChatIntent: Equatable {
         if correction {
             // The newest request the user made, with its channel when it was a message.
             carried = recent.lazy.filter(\.fromUser).compactMap { turn -> Kind? in
-                if let kind = detect(turn.text).kinds.first(where: { actionByKind[$0] != nil }) { return kind }
+                if let kind = actionKind(of: turn.text) { return kind }
                 return sends(turn.text) ? channel(of: recent) : nil
             }.first ?? (recent.contains { !$0.fromUser && sends($0.text) } ? channel(of: recent) : nil)
         } else if ((sends(raw) || writesMessage(raw)) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
@@ -229,10 +229,10 @@ struct ChatIntent: Equatable {
             carried = channel(of: recent)
         } else if goAhead {
             // "Ja, doe maar" after "maak een herinnering voor morgen": the action the user asked for last.
-            carried = recent.first(where: \.fromUser).flatMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }
+            carried = recent.first(where: \.fromUser).flatMap { turn in actionKind(of: turn.text) }
         } else if retry {
             // A retry follows a complaint ("hij is niet verzonden") as often as the request itself: the newest request.
-            carried = recent.lazy.filter(\.fromUser).compactMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }.first
+            carried = recent.lazy.filter(\.fromUser).compactMap { turn in actionKind(of: turn.text) }.first
         } else if editsIt(raw), recent.contains(where: { $0.fromUser && pointsAtSomething($0.text) }) {
             // "Pas het aan" after "is deze pitch goed?": the document on screen changes, done with mouse and keyboard.
             carried = .takeover
@@ -251,6 +251,14 @@ struct ChatIntent: Equatable {
         intent.wantsAction = true
         intent.isSmallTalk = false
         return intent
+    }
+
+    /// The kind of action an earlier request asked for, as a follow-up carries it: an automation stays an automation
+    /// ("Draft an email to Lisa every morning", then "No, at 9"), instead of becoming the mail it would write.
+    static func actionKind(of text: String) -> Kind? {
+        let earlier = detect(text)
+        if earlier.primaryAction == "schedule_task" { return .schedule }
+        return earlier.kinds.first { actionByKind[$0] != nil }
     }
 
     /// A form to fill in: a form named together with filling it in, in any of Nook's languages. A question about how to

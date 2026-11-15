@@ -256,6 +256,19 @@ enum MailActions {
                     set original to first message of inbox whose message id is \(q)
                 end try
             end if
+            -- A mail search_mail found in a folder of its own ("Projects", a localized archive): every other mailbox,
+            -- only when the usual ones do not hold it, so the reply stays in its thread instead of a new mail.
+            if original is missing value then
+                repeat with acc in accounts
+                    repeat with box in (every mailbox of acc)
+                        try
+                            set original to first message of box whose message id is \(q)
+                        end try
+                        if original is not missing value then exit repeat
+                    end repeat
+                    if original is not missing value then exit repeat
+                end repeat
+            end if
             if original is not missing value then
                 set m to reply original \(openWindow ? "with" : "without") opening window
                 set content of m to \(quote(body))\(subject.isEmpty ? "" : "\n                set subject of m to \(quote(subject))")\(recipients)

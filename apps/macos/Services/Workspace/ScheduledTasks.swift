@@ -151,27 +151,60 @@ struct ArrivedMessage: Equatable, Sendable {
     var text: String
     var date: Date
     var isGroup: Bool
+    /// The inbox message's own id (`InboxMessage.id`), so the same message is admitted once; empty when unknown.
+    var id: String = ""
 
-    /// The messages from someone else in `after` that `before` did not hold yet, received since `since`, oldest first
-    /// (at most `limit`): what a read of the chat brought in, read in its own app or not.
-    static func added(before: InboxThread?, after: InboxThread, since: Date, limit: Int = 8) -> [ArrivedMessage] {
-        let known = Set(before?.messages.map(\.id) ?? [])
-        let fresh = after.messages.filter { !$0.isMine && !known.contains($0.id) && $0.date >= since }
-        return fresh.suffix(limit).map { message in
-            ArrivedMessage(chatID: after.id, app: after.app, chat: after.name,
-                           sender: message.sender.isEmpty ? after.name : message.sender,
-                           text: message.text, date: message.date, isGroup: after.isGroup)
+    /// What tells this message apart from every other one in its chat: its id, or else its moment, sender and text.
+    var identity: String { id.isEmpty ? "\(date.timeIntervalSince1970)\u{1F}\(sender)\u{1F}\(text)" : id }
+
+    init(chatID: String, app: String, chat: String, sender: String, text: String, date: Date, isGroup: Bool, id: String = "") {
+        self.chatID = chatID
+        self.app = app
+        self.chat = chat
+        self.sender = sender
+        self.text = text
+        self.date = date
+        self.isGroup = isGroup
+        self.id = id
+    }
+
+    private init(_ message: InboxMessage, in thread: InboxThread) {
+        self.init(chatID: thread.id, app: thread.app, chat: thread.name,
+                  sender: message.sender.isEmpty ? thread.name : message.sender,
+                  text: message.text, date: message.date, isGroup: thread.isGroup, id: message.id)
+    }
+
+    /// The sources (`SourceCatalog` ids) this message comes from: its own app's, and for a chat app also the chat inbox
+    /// ("chats", `ChatInboxConnector.sourceID`) that reads every chat app.
+    var sourceIDs: Set<String> {
+        switch app {
+        case "mail": return ["mail"]
+        case "whatsapp", "messages": return [app, "chats"]
+        default: return ["chats"]
         }
     }
 
-    /// The messages someone else wrote after your own last one (at most `limit`, oldest first): what is new in the chat.
-    static func newest(in thread: InboxThread, limit: Int = 5) -> [ArrivedMessage] {
-        let others = thread.messages.reversed().prefix { !$0.isMine }
-        return others.prefix(limit).reversed().map { message in
-            ArrivedMessage(chatID: thread.id, app: thread.app, chat: thread.name,
-                           sender: message.sender.isEmpty ? thread.name : message.sender,
-                           text: message.text, date: message.date, isGroup: thread.isGroup)
-        }
+    /// The messages that may go to the brain: all of them for a brain on this Mac; for an external brain only those
+    /// whose sources are not kept on this Mac (Settings › Privacy), the same rule every other source follows.
+    static func allowed(_ messages: [ArrivedMessage], privateSources: Set<String>, localBrain: Bool) -> [ArrivedMessage] {
+        guard !localBrain, !privateSources.isEmpty else { return messages }
+        return messages.filter { $0.sourceIDs.isDisjoint(with: privateSources) }
+    }
+
+    /// Every message from someone else in `after` that `before` did not hold yet, received since `since`, oldest first:
+    /// what a read of the chat brought in, read in its own app or not. None is left out here; a run takes at most
+    /// `NookSchedule.messagesPerRun` of them at a time (`ArrivalQueue.takeBatch`) and the rest wait for the next.
+    static func added(before: InboxThread?, after: InboxThread, since: Date) -> [ArrivedMessage] {
+        let known = Set(before?.messages.map(\.id) ?? [])
+        return after.messages.filter { !$0.isMine && !known.contains($0.id) && $0.date >= since }
+            .map { ArrivedMessage($0, in: after) }
+    }
+
+    /// The messages someone else wrote after your own last one, received since `since` (at most `limit`, oldest first):
+    /// what is new in the chat. An older message never starts an automation, also when the chat has nothing newer.
+    static func newest(in thread: InboxThread, since: Date, limit: Int = 5) -> [ArrivedMessage] {
+        let others = thread.messages.reversed().prefix { !$0.isMine }.filter { $0.date >= since }
+        return others.prefix(limit).reversed().map { ArrivedMessage($0, in: thread) }
     }
 }
 
@@ -703,18 +736,25 @@ struct ArrivalQueue: Equatable, Sendable {
     static let textLimit = 4_000
 
     private(set) var waiting: [ArrivedMessage] = []
-    /// Per chat, the newest message admitted.
-    private var admittedUntil: [String: Date] = [:]
+    /// The most messages remembered as admitted per chat, newest kept: far more than one read of a chat brings in.
+    static let rememberedPerChat = 200
+
+    /// Per chat, the identities (`ArrivedMessage.identity`) of the messages admitted, oldest first. By identity and not
+    /// by time: two messages of the same second, or one found later with an earlier time, each still count once.
+    private var admitted: [String: [String]] = [:]
 
     var isEmpty: Bool { waiting.isEmpty }
 
     /// The messages of `messages` that match and are new for this task (not admitted before), now remembered as admitted.
     mutating func admit(_ messages: [ArrivedMessage], matching trigger: MessageTrigger) -> [ArrivedMessage] {
         var fresh: [ArrivedMessage] = []
-        for message in messages where trigger.matches(message) && message.date > (admittedUntil[message.chatID] ?? .distantPast) {
+        for message in messages where trigger.matches(message) {
+            var known = admitted[message.chatID] ?? []
+            guard !known.contains(message.identity) else { continue }
+            known.append(message.identity)
+            admitted[message.chatID] = Array(known.suffix(Self.rememberedPerChat))
             fresh.append(message)
         }
-        for message in fresh { admittedUntil[message.chatID] = max(admittedUntil[message.chatID] ?? .distantPast, message.date) }
         return fresh
     }
 

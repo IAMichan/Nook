@@ -440,8 +440,12 @@ final class MailConnector: ContextSource {
         // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
         guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
         var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly, unreadOnly: unreadOnly, limit: limit)
+        // Nook holds the newest mails of each mailbox only: unread mail older than those is counted, not listed. Say so,
+        // instead of "no unread mail" while some waits.
+        let older = unreadOnly ? MailStats.unreadBeyond(loaded: recent, unreadTotal: inboxes.values.reduce(0) { $0 + $1.unread }) : 0
+        let beyond = older > 0 ? "\n\n" + MailStats.unreadBeyondNote(older) : ""
         guard !rows.isEmpty else {
-            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : unreadOnly ? " die nog ongelezen is." : ".")
+            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : unreadOnly ? " die nog ongelezen is." : ".") + beyond
         }
         // Each message with its own id, so the brain can open it (read_mail), change it (mark_mail, trash_mail) or answer it
         // (compose_mail with reply_to) without searching for it again. Mail's index gives its row; the id is in its file,
@@ -466,7 +470,7 @@ final class MailConnector: ContextSource {
                 bodies[rows[index].key] = text
             }
         }
-        return MailStats.describe(rows, date: NookDates.iso)
+        return MailStats.describe(rows, date: NookDates.iso) + beyond
     }
 
     /// Inbox mail Nook already holds whose sender or subject has one of `words`, newest first, with the start of each

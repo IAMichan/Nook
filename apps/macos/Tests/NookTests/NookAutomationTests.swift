@@ -203,8 +203,36 @@ final class NookAutomationTests: XCTestCase {
                            InboxMessage(id: "2", text: "mijn antwoord", date: now, fromMe: true),
                            InboxMessage(id: "3", text: "nieuw 1", date: now),
                            InboxMessage(id: "4", text: "nieuw 2", date: now)]
-        XCTAssertEqual(ArrivedMessage.newest(in: thread).map(\.text), ["nieuw 1", "nieuw 2"])
-        XCTAssertEqual(ArrivedMessage.newest(in: thread).first?.sender, "Lisa")
+        XCTAssertEqual(ArrivedMessage.newest(in: thread, since: .distantPast).map(\.text), ["nieuw 1", "nieuw 2"])
+        XCTAssertEqual(ArrivedMessage.newest(in: thread, since: .distantPast).first?.sender, "Lisa")
+        XCTAssertEqual(ArrivedMessage.newest(in: thread, since: .distantPast).map(\.id), ["3", "4"])
+    }
+
+    func testAnOldMessageNeverStartsAnAutomation() {
+        var thread = InboxThread(id: "c1", app: "whatsapp", name: "Lisa")
+        thread.messages = [InboxMessage(id: "1", text: "factuur van gisteren", date: now.addingTimeInterval(-86_400)),
+                           InboxMessage(id: "2", text: "hoi", date: now)]
+        XCTAssertEqual(ArrivedMessage.newest(in: thread, since: now.addingTimeInterval(-600)).map(\.text), ["hoi"])
+    }
+
+    func testEveryNewMessageOfOneReadArrives() {
+        var after = InboxThread(id: "c1", app: "whatsapp", name: "Lisa")
+        after.messages = (1...12).map { InboxMessage(id: "\($0)", text: "m\($0)", date: now) }
+        XCTAssertEqual(ArrivedMessage.added(before: nil, after: after, since: now.addingTimeInterval(-60)).count, 12,
+                       "a read with more than one run holds hands on every message; the queue splits them")
+    }
+
+    func testMessagesCountByIdentityNotByTime() {
+        var queue = ArrivalQueue()
+        func with(_ id: String, _ text: String, at offset: TimeInterval) -> ArrivedMessage {
+            ArrivedMessage(chatID: "lisa", app: "whatsapp", chat: "Lisa", sender: "Lisa", text: text,
+                           date: now.addingTimeInterval(offset), isGroup: false, id: id)
+        }
+        XCTAssertEqual(queue.admit([with("a", "eerste", at: 5)], matching: MessageTrigger()).count, 1)
+        XCTAssertEqual(queue.admit([with("b", "zelfde seconde", at: 5)], matching: MessageTrigger()).map(\.text), ["zelfde seconde"])
+        XCTAssertEqual(queue.admit([with("c", "later gevonden, eerder geschreven", at: 1)], matching: MessageTrigger()).count, 1)
+        XCTAssertEqual(queue.admit([with("a", "eerste", at: 5), with("b", "zelfde seconde", at: 5)], matching: MessageTrigger()), [],
+                       "the same messages again are not admitted twice")
     }
 
     // MARK: Review fixes
@@ -232,6 +260,24 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(intent.primaryAction.map { $0 == "schedule_task" || $0 == "compose_mail" }, intent.wantsAction ? true : nil)
         if intent.wantsAction { XCTAssertEqual(intent.primaryAction, "schedule_task") }
         XCTAssertEqual(ChatIntent.detect("herinner me elke dag om 9 aan water drinken").primaryAction, "create_reminder")
+    }
+
+    func testAMessageKeptOnThisMacNeverReachesAnExternalBrain() {
+        let whatsapp = arrived(app: "whatsapp"), mail = arrived(app: "mail"), telegram = arrived(app: "telegram")
+        let all = [whatsapp, mail, telegram]
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["whatsapp"], localBrain: false).map(\.app), ["mail", "telegram"])
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["chats"], localBrain: false).map(\.app), ["mail"],
+                       "the chat inbox reads every chat app")
+        XCTAssertEqual(ArrivedMessage.allowed(all, privateSources: ["mail", "chats"], localBrain: true).count, 3, "a brain on this Mac reads all")
+    }
+
+    func testACorrectionKeepsTheAutomation() {
+        let asked = "Maak een automatisering: stuur elke ochtend om 8 een mail aan Lisa met de planning"
+        XCTAssertEqual(ChatIntent.detect(asked).primaryAction, "schedule_task")
+        let history = [ChatTurn(fromUser: true, text: asked),
+                       ChatTurn(fromUser: false, text: "Ik stel een automatisering voor die elke ochtend om 8 een mail aan Lisa schrijft.")]
+        XCTAssertEqual(ChatIntent.detect("Nee, om 9 uur", history: history).primaryAction, "schedule_task",
+                       "the corrected detail belongs to the automation, not to a mail now")
     }
 
     func testArrivalsAreTheNewMessagesReadOrNot() {
@@ -412,6 +458,8 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(MailStats.describe([rows[0]], date: { _ in "14 okt" }),
                        "### Vraag | van Lisa <lisa@example.com> | 14 okt | ongelezen | Werk | id: abc@x.nl")
         XCTAssertTrue(MailStats.recentScript(account: "Werk").contains("message id of messages lo thru hi of box"))
+        XCTAssertTrue(MailStats.recentScript(account: "Werk").contains("if (count of messages of box) = total then exit repeat"),
+                      "a mail that arrives during the read never lends its id to another row")
     }
 
     func testUnreadOnly() {
@@ -421,6 +469,15 @@ final class NookAutomationTests: XCTestCase {
         let later = calendar.date(from: DateComponents(year: 2026, month: 10, day: 14, hour: 12))!
         XCTAssertEqual(MailStats.select(rows, now: later, days: 1, unansweredOnly: false, unreadOnly: true).map(\.subject), ["Nieuw"])
         XCTAssertEqual(MailStats.select(rows, now: later, days: 1, unansweredOnly: false).count, 2)
+    }
+
+    func testUnreadMailOlderThanTheListIsCountedNotDenied() {
+        let read = MailStats.InboxRow(account: "W", mailbox: "INBOX", index: 1, subject: "a", sender: "x", date: now, read: true, replied: false)
+        var unread = read
+        unread.read = false
+        XCTAssertEqual(MailStats.unreadBeyond(loaded: [read, read], unreadTotal: 1), 1, "the newest are read, one unread is older")
+        XCTAssertEqual(MailStats.unreadBeyond(loaded: [unread, read], unreadTotal: 1), 0)
+        XCTAssertTrue(MailStats.unreadBeyondNote(1).contains("search_mail"))
     }
 
     func testReplyScriptAnswersTheMessageItself() {
@@ -433,6 +490,7 @@ final class NookAutomationTests: XCTestCase {
         let opened = MailActions.replyScript(id: "abc@x.nl", body: "b", to: [], cc: [], openWindow: true)
         XCTAssertTrue(opened.contains("with opening window"))
         XCTAssertFalse(opened.contains("delete every to recipient"), "no recipients given: Mail's own stay")
+        XCTAssertTrue(script.contains("repeat with box in (every mailbox of acc)"), "a mail in a folder of its own is found too")
     }
 
     // MARK: Planner

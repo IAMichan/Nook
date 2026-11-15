@@ -441,7 +441,9 @@ extension AppModel {
 
         // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
         // answer may still be checked and written again: then it is read once it is final.
-        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil
+        // A scheduled run is never the spoken question, also while one waits for its answer in another conversation.
+        let scheduledRun = ScheduledTaskStore.shared.isScheduledRun(conversation)
+        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil && !scheduledRun
             && !(settings.checkAnswers && settings.brainProfile.isSmall)
         var spokenQueue = SpokenText.Queue()
         if speaksLive { speech.stop() }
@@ -611,7 +613,7 @@ extension AppModel {
                         speech.enqueue(sentence, language: settings.language)
                     }
                     spokenRequest = false
-                } else {
+                } else if !scheduledRun {
                     speakIfAsked(spoken)
                 }
             }
