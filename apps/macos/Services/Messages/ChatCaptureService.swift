@@ -642,23 +642,34 @@ final class ChatCaptureService: ObservableObject {
     /// one more after it (`readNow`).
     func readLive(_ bridge: ChatBridge) {
         guard (enabled && sources.isOn(bridge.app)) || bridge.alwaysOn, bridge.isReady else { return }
-        // A burst (a busy group, a catch-up after sleep) is one read a moment later, not one per change: each read
-        // merges and saves the inbox and redraws what shows it. Further apart as the energy plan slows down, and when
-        // no one can see the screen.
-        guard liveSoon.insert(bridge.bridgeID).inserted else { return }
+        // The first change is read at once; what follows in the next moment (a busy group, a catch-up after sleep) is
+        // one read after it, not one per change: each read merges and saves the inbox and redraws what shows it. A read
+        // going on takes the changes during it along in one more (`readNow`). The moment is longer as the energy plan
+        // slows down, and while no one can see the screen.
+        let id = bridge.bridgeID
+        guard !liveSoon.contains(id) else { return }
         let plan = EnergyMonitor.shared.plan
-        let delay = plan.unseen ? Self.liveGapUnseen : Self.liveGap * plan.slowdown
+        let gap = plan.unseen ? Self.liveGapUnseen : Self.liveGap * plan.slowdown
+        let wait = liveReadAt[id].map { gap - Date().timeIntervalSince($0) } ?? 0
+        guard wait > 0 else {
+            liveReadAt[id] = Date()
+            readNow(bridge)
+            return
+        }
+        liveSoon.insert(id)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            try? await Task.sleep(for: .seconds(wait))
             guard let self else { return }
-            self.liveSoon.remove(bridge.bridgeID)
+            self.liveSoon.remove(id)
+            self.liveReadAt[id] = Date()
             self.readNow(bridge)
         }
     }
 
-    /// Bridges with a live read coming (`readLive`), by `bridgeID`.
+    /// Bridges with a live read coming (`readLive`), and when each last had one, by `bridgeID`.
     private var liveSoon: Set<String> = []
-    /// How long changes are gathered into one live read; while no one can see the screen, longer.
+    private var liveReadAt: [String: Date] = [:]
+    /// The least time between two live reads of one bridge; while no one can see the screen, longer.
     private static let liveGap: TimeInterval = 0.4
     private static let liveGapUnseen: TimeInterval = 5
 

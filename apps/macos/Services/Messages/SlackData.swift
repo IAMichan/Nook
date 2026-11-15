@@ -276,6 +276,9 @@ enum SlackData {
         return latest
     }
 
+    /// A time in whole microseconds, as Slack's `ts` counts: a message's time and a `ts` read back from it compare equal.
+    static func micros(_ seconds: Double) -> Int64 { Int64((seconds * 1_000_000).rounded()) }
+
     /// The `ts` of messages of others read before (`known`: `ts`, whether yours) inside the stretch a page of the newest
     /// messages covers (from its oldest message on) that the page lacks: deleted in Slack, which leaves a deleted message
     /// out. A page that holds the conversation's whole stretch only; your own are never taken for deleted.

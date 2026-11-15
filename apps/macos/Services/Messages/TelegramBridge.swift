@@ -460,9 +460,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 askViewers(in: id)
                 // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says. The
                 // held ones reach the archive the usual way, so only a mark below them is passed on, once per mark.
-                let held = messages[id]?.compactMap { TelegramData.ids($0.id)?.message }.min()
+                let marked = archivedRead[id] ?? 0
+                let held = upTo > marked ? messages[id]?.compactMap { TelegramData.ids($0.id)?.message }.min() : nil
                 let mark = min(upTo, held.map { $0 - 1 } ?? upTo)
-                if mark > (archivedRead[id] ?? 0), let known = chats[id], !known.title.isEmpty {
+                if mark > marked, let known = chats[id], !known.title.isEmpty {
                     archivedRead[id] = mark
                     ChatCaptureService.shared.archiveRead(chat: ChatInbox.key(app: app, chat: shownName(known))) { message in
                         TelegramData.ids(message.id).map { $0.message <= mark } ?? false

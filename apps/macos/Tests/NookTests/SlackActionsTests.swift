@@ -209,4 +209,12 @@ final class SlackActionsTests: XCTestCase {
                        "yours is never taken for deleted, nor what lies outside the page")
         XCTAssertEqual(SlackData.missing(known, listed: []), [])
     }
+
+    func testAMessagesTimeAndItsTsMeetInMicroseconds() {
+        let ts = "1700000010.000100"
+        let date = Date(timeIntervalSince1970: Double(ts)!)
+        XCTAssertEqual(SlackData.micros(date.timeIntervalSince1970), SlackData.micros(Double(ts)!))
+        XCTAssertEqual(SlackData.micros(Double(ts)!), 1_700_000_010_000_100)
+        XCTAssertNotEqual(SlackData.micros(1700000010.0001), SlackData.micros(1700000010.0002))
+    }
 }

@@ -1898,8 +1898,6 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     private var countsAt: Date?
     private var countsDue = false
     private static let countsGap: TimeInterval = 60
-    /// How recently a conversation must have been active to be read again whole when it has no news.
-    private static let rereadWindow: TimeInterval = 2 * 86_400
 
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
@@ -1937,7 +1935,11 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The picture each direct message was last handed with, so a changed photo reaches the list without a new message.
     private var handedAvatars: [String: String] = [:]
     private var usersAt: Date?
-    private var conversations: [SlackData.Conversation] = []
+    private var conversations: [SlackData.Conversation] = [] {
+        didSet { conversationByID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+    /// The same by id, for what the live line says (a word of someone typing comes every few seconds).
+    private var conversationByID: [String: SlackData.Conversation] = [:]
     private var conversationsAt: Date?
     /// The newest message read per conversation (Slack's `ts`), to ask only for what is newer.
     private var newest: [String: String] = [:]
@@ -2064,14 +2066,17 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             // A conversation Slack says has nothing newer is read as its newest messages instead of only what is newer
             // (which would be nothing): as many requests, and an edit, an emoji or a deletion by someone else of a recent
             // message shows, also without the live line.
-            // Only a conversation active in the last two days: older messages are rarely changed, and each such read
-            // brings its 30 messages to compare.
-            let lately = Date().timeIntervalSince1970 - Self.rereadWindow
-            let rereads = Set(picked.filter { conversation in
+            // Not while the live line is open: it tells every edit, emoji and deletion itself.
+            let rereads: Set<String> = live.isLive ? [] : Set(picked.filter { conversation in
                 guard stale[conversation.id] == nil, let read = newest[conversation.id].flatMap(Double.init),
-                      let last = latest[conversation.id], last > lately else { return false }
+                      let last = latest[conversation.id] else { return false }
                 return last <= read + 0.000_000_5
             }.map(\.id))
+            // The messages of those read before (their time in microseconds): their files are not asked for again, since
+            // the inbox keeps the file it has (`ChatInbox.media`).
+            let known: [String: Set<Int64>] = Dictionary(uniqueKeysWithValues: rereads.map { id in
+                (id, Set((recent[id] ?? []).map { SlackData.micros($0.ts) }))
+            })
             let asked = await ChatParallel.ask(picked) { [self] conversation -> ChatParallel.Asked<SlackRead> in
                 await ChatParallel.asking {
                     var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
@@ -2090,8 +2095,11 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                             read.append(message)
                         }
                     }
+                    let seen = known[conversation.id] ?? []
+                    let fresh = read.filter { !seen.contains(SlackData.micros($0.date.timeIntervalSince1970)) }
+                    let again = read.filter { seen.contains(SlackData.micros($0.date.timeIntervalSince1970)) }
                     return SlackRead(listed: jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] },
-                                     messages: await withFiles(read.sorted { $0.date < $1.date }, auth: auth))
+                                     messages: (await withFiles(fresh, auth: auth) + again).sorted { $0.date < $1.date })
                 }
             }
             for (conversation, reply) in zip(picked, asked) {
@@ -2580,14 +2588,14 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         case .hello:
             liveRetry = nil
         case .changed(let id, let ts, let user):
-            guard conversations.contains(where: { $0.id == id }) else {
+            guard conversationByID[id] != nil else {
                 // A conversation Nook does not know yet (a new direct message): the list is read again first.
                 conversationsAt = nil
                 liveTurn = true
                 onChange()
                 return
             }
-            if let user, let conversation = conversations.first(where: { $0.id == id }) {
+            if let user, let conversation = conversationByID[id] {
                 ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: app, chat: shownName(conversation)), person: user)
             }
             stale[id, default: []].formUnion(ts.map { [$0] } ?? [])
@@ -2595,18 +2603,18 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             liveTurn = true
             onChange()
         case .deleted(let id, let ts):
-            guard conversations.contains(where: { $0.id == id }) else { return }
+            guard conversationByID[id] != nil else { return }
             let message = SlackData.messageID(conversation: id, ts: ts)
             if !(gone[id] ?? []).contains(message) { gone[id, default: []].append(message) }
             liveTurn = true
             onChange()
         case .typing(let id, let user):
-            guard user != me, let conversation = conversations.first(where: { $0.id == id }) else { return }
+            guard user != me, let conversation = conversationByID[id] else { return }
             ChatTypingCenter.shared.typing(chat: ChatInbox.key(app: app, chat: shownName(conversation)), person: user,
                                            name: conversation.isGroup ? users[user] ?? "" : "", seconds: SlackData.typingHold)
         case .read(let id, _):
             // Read (or marked unread) elsewhere: the next read asks where you stand, and the count follows at once.
-            guard conversations.contains(where: { $0.id == id }) else { return }
+            guard conversationByID[id] != nil else { return }
             countsDue = true
             liveTurn = true
             onChange()
