@@ -13,7 +13,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 - Nook Companion stays usable without your Mac: Nook's chats and the Chats tab are now kept on the iPhone with their
   last messages, so every tab reads while the Mac is off, asleep or out of reach. What you write still waits on the
-  iPhone and goes as soon as the Mac is back, and every composer and the New session sheet now say so. A chat the
+  iPhone and goes as soon as the Mac is back. While offline, every conversation keeps an amber strip in sight saying
+  that no new messages or updates come in and that what you send is not sent yet, and each waiting message says
+  *Not sent yet · waiting for your Mac*. A chat the
   iPhone never kept says it opens once the Mac is connected, instead of loading forever.
 
 - Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,

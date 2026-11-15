@@ -439,7 +439,7 @@ struct InboxChatView: View {
                 }
             }
         } else if let chat {
-            ComposerDock {
+            ComposerDock(offline: .reads) {
                 Label {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Text("Nook can only read this chat. Answer it in \(chat.appName).")

@@ -199,6 +199,10 @@ struct SessionDetailView: View {
             // What waits on you, docked right above the composer, so it stays in
             // sight however far up you read; while it waits it takes the composer's place.
             if let item = session.items.first {
+                if client.isOffline {
+                    OfflineStrip(kind: .answers).appearsAfterDelay()
+                        .padding(.horizontal, Theme.Spacing.lg)
+                }
                 PendingItemDock(session: session, item: item, more: session.items.count - 1)
             } else {
                 // A message your Mac refused stays here with why, to edit and send again.
@@ -689,9 +693,10 @@ struct NewSessionView: View {
                     NookMark(size: 44)
                     heading(options)
                     if client.isOffline {
-                        OfflineNote(text: client.writingWaits
-                                    ? String(localized: "Not connected. The session waits on this iPhone and starts as soon as your Mac is back.")
-                                    : String(localized: "Connect to your Mac to start a session."))
+                        Banner(text: client.writingWaits
+                               ? String(localized: "Offline: the session does not start yet. It waits on this iPhone and starts as soon as your Mac is back.")
+                               : String(localized: "Offline: connect to your Mac to start a session."),
+                               symbol: "wifi.slash")
                             .appearsAfterDelay()
                     }
                     ImageTray(images: $images)
