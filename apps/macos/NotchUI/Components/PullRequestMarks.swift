@@ -29,7 +29,7 @@ struct LabelChip: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, 1)
         .background(NookTheme.shape(NookTheme.Radius.chip).strokeBorder(NookTheme.line2))
-        .help(detail.map { name + ": " + $0 } ?? name)
+        .nookTip(detail.map { name + ": " + $0 } ?? name)
         .accessibilityElement(children: .combine)
         .accessibilityHint(detail ?? "")
     }
@@ -97,7 +97,7 @@ struct GitHubPerson: View {
             GitHubAvatar(login: login, size: size)
             Text(handle ? "@" + login : login).font(font).foregroundStyle(tint).lineLimit(1)
         }
-        .help("@" + login)
+        .nookTip("@" + login)
     }
 }
 

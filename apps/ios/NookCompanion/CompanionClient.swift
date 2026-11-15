@@ -349,10 +349,11 @@ final class CompanionClient: ObservableObject {
         lastUpdated = cache.savedAt
         clearedPending = nil
         featuresKnown = false
-        conversations = []
-        chatLines = [:]
-        inbox = []
-        inboxLines = [:]
+        // Nook's chats and the Chats tab as the phone saw them last, so they read also while the Mac cannot be reached.
+        conversations = cache.conversations
+        chatLines = cache.allChatLines
+        inbox = cache.inbox
+        inboxLines = cache.allInboxLines
         inboxTyping = [:]
         inboxStatus = nil
         compatibility = .ok
@@ -989,6 +990,16 @@ final class CompanionClient: ObservableObject {
 
     func can(_ feature: String) -> Bool { features.contains(feature) }
 
+    /// The Mac cannot be reached right now: what shows is what the phone kept of it (`CompanionCache`).
+    var isOffline: Bool {
+        if case .offline = phase { return true }
+        return false
+    }
+
+    /// What you write while the Mac cannot be reached waits on the phone and goes once it answers (`deliver`); a Mac
+    /// that does not answer repeats once (`CompanionFeature.retry`) gets nothing until it is connected again.
+    var writingWaits: Bool { can(CompanionFeature.retry) }
+
     /// Whether the Mac lets this phone do what `scope` covers; the screens hide what it may not.
     func allows(_ scope: CompanionScope) -> Bool { scopes?.contains(scope.rawValue) ?? true }
 
@@ -1205,6 +1216,8 @@ final class CompanionClient: ObservableObject {
         }
         if conversation == watchedConversation { conversationHeard = Date() }
         if chatLines[conversation] != next { chatLines[conversation] = next }
+        // Kept for when the Mac is out of reach; a streaming answer is saved once per burst (`scheduleCacheSave`).
+        if cache.record(chatLines: next, chat: conversation, at: Date()) { scheduleCacheSave() }
     }
 
     /// Opens one of Nook's conversations live (`CompanionOp.watchConversation`): the Mac answers with its messages, then
@@ -1428,20 +1441,27 @@ final class CompanionClient: ObservableObject {
             }
         }
         if let files = response.diff, let session = req.session, diffs[session] != files { diffs[session] = files }
-        if let list = response.conversations, list != conversations { conversations = list }
+        if let list = response.conversations {
+            if list != conversations { conversations = list }
+            if cache.record(conversations: list) { scheduleCacheSave() }
+        }
         if response.messages != nil || response.messageAppend != nil,
            let conversation = response.messagesConversation ?? response.created ?? req.conversation {
             takeMessages(response, conversation: conversation)
         }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }
+            if cache.record(inbox: chats) { scheduleCacheSave() }
             // The chats' own pictures: the ones the phone does not have yet, or that changed (`CompanionFeature.avatars`).
             if can(CompanionFeature.avatars) { ChatPictures.shared.update(chats, client: self) }
             // The real logo of each chat app on its chats, as the Mac shows it.
             if can(CompanionFeature.appIcons) { ChatPictures.shared.updateAppIcons(Set(chats.map(\.app)), client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
-        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines {
+            inboxLines[chat] = lines
+            if cache.record(inboxLines: lines, chat: chat, at: Date()) { scheduleCacheSave() }
+        }
         takePulls(response, for: req)
         if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
         if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }

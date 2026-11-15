@@ -22,7 +22,7 @@ struct ConnectorSignInBanner: View {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .help(waiting == nil ? "" : tr("ws.connector.waitingHelp"))
+                            .nookTip(waiting == nil ? "" : tr("ws.connector.waitingHelp"))
                     }
                 }
             } actions: {
@@ -137,7 +137,7 @@ struct ConnectorLogos: View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             ForEach(connectors.prefix(Self.limit)) { connector in
                 SiteIcon(domain: connector.iconDomain, fallback: "powerplug", tint: NookTheme.amber, size: 16)
-                    .help(connector.title)
+                    .nookTip(connector.title)
             }
         }
         .accessibilityHidden(true)

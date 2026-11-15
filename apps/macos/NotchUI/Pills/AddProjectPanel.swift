@@ -9,7 +9,7 @@ struct AddProjectButton: View {
     var body: some View {
         Button { viewModel.requestAddProject() } label: { PanelHeaderIcon(symbol: "folder.badge.plus", active: viewModel.addsProject) }
             .buttonStyle(.nookPlain)
-            .help(tr("inbox.project.add"))
+            .nookTip(tr("inbox.project.add"))
             .accessibilityLabel(tr("inbox.project.add"))
     }
 }

@@ -55,7 +55,7 @@ extension AgentRunPanel {
                         titleDraft = run.title
                         renaming = true
                     }
-                    .help(tr("ws.title.renameHelp"))
+                    .nookTip(tr("ws.title.renameHelp"))
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
                 ComposerDropdown(width: 248, scrolls: true) {
@@ -67,7 +67,7 @@ extension AgentRunPanel {
                 } content: {
                     sessionActions(run)
                 }
-                .help(tr("chat.more"))
+                .nookTip(tr("chat.more"))
                 .accessibilityLabel(tr("chat.more"))
             }
             if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
@@ -84,7 +84,7 @@ extension AgentRunPanel {
                         .foregroundStyle(NookTheme.textSecondary)
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("ws.remote.terminal", remote.host))
+                .nookTip(tr("ws.remote.terminal", remote.host))
                 // On another machine the session panel does not dock, so its usage is the ring here.
                 SessionUsageButton(source: SessionUsageSource(runID: runID)).toolbarGroup()
             } else {

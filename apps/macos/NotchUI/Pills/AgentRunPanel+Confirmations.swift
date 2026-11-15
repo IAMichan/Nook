@@ -119,7 +119,7 @@ extension AgentRunPanel {
                     workspace.deleteWithWorktree(runID)
                     app.viewModel.selectedAgentID = ""
                 }
-                .help(AgentPathFormat.tilde(worktree.path))
+                .nookTip(AgentPathFormat.tilde(worktree.path))
             }
             NookPrimaryButton(title: tr("agents.run.delete")) {
                 confirmDelete = false

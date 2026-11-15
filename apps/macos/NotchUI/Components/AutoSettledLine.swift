@@ -15,7 +15,7 @@ struct AutoSettledLine: View {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Image(icon: "checkmark.circle")
                     Text(tr("agents.autoSettled.line", Self.elapsed(since: at, now: context.date)))
-                        .help(at.formatted(date: .abbreviated, time: .shortened))
+                        .nookTip(at.formatted(date: .abbreviated, time: .shortened))
                     Text(verbatim: "·")
                     Button(tr("agents.autoSettled.unsettle")) {
                         withAnimation(NookTheme.reveal) { InboxStore.shared.unsettle(keys: [finishKey]) }

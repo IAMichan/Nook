@@ -54,7 +54,7 @@ struct EventRow: View {
             } else {
                 // "task-148 has been launched in the background…": a quiet line, as a command is.
                 TranscriptWorkLine(symbol: "clock.arrow.circlepath", label: tr("ws.event.background", background.joined(separator: ", ")))
-                    .help(event.text)
+                    .nookTip(event.text)
             }
 
         case .thinking:
@@ -88,7 +88,7 @@ struct EventRow: View {
                                detail: event.text, mono: true, link: "arrow.up.right.square") {
                 openFile(event.detail ?? event.text)
             }
-            .help(tr("ws.change.openDiff"))
+            .nookTip(tr("ws.change.openDiff"))
 
         case .approval:
             ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
@@ -139,17 +139,17 @@ struct EventRow: View {
         case .system where event.tool == "limit":
             // When the limit that stopped this turn frees up.
             TranscriptWorkLine(symbol: "hourglass", label: event.text)
-                .help(event.text)
+                .nookTip(event.text)
 
         case .system where event.tool == "resume":
             // Nook goes on by itself after a limit: on the same account at reset, or on the one you switched to.
             TranscriptWorkLine(symbol: "play.circle", label: event.text)
-                .help(event.text)
+                .nookTip(event.text)
 
         case .system where event.tool == "origin":
             // Another agent, a script or Nook Chat started this session (`NewRunConfig.startedBy`).
             TranscriptWorkLine(symbol: "arrow.turn.right.down", label: event.text)
-                .help(event.text)
+                .nookTip(event.text)
 
         case .system where CompactionProgress.isCompaction(event):
             // A compaction: live while the agent summarizes, then what it did (`CompactionProgress`).
@@ -160,19 +160,19 @@ struct EventRow: View {
                 TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.event.compactionStopped"), failed: true)
             default:
                 TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: event.text)
-                    .help(event.text)
+                    .nookTip(event.text)
             }
 
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)
                 .padding(.top, NookTheme.Spacing.sm)
-                .help(event.text)
+                .nookTip(event.text)
 
         case .system:
             TranscriptWorkLine(symbol: event.tool == "launch" ? "terminal" : "info.circle", label: event.text,
                                mono: event.tool == "launch")
-                .help(event.text)
+                .nookTip(event.text)
 
         case .result:
             // The end of a turn says nothing of its own: the fold above already says how long it worked, as in an agent's
@@ -228,7 +228,7 @@ struct SharedFilesRow: View {
         let others = paths.filter { !videos.contains($0) }
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
-                .help(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
+                .nookTip(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
             ForEach(videos, id: \.self) { path in
                 VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: (path as NSString).lastPathComponent,
                           maxHeight: 420)
@@ -336,7 +336,7 @@ struct SharedFileTile: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .help(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
+        .nookTip(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
         .accessibilityLabel(name)
         .task(id: path) {
             guard SessionOutputs.kind(path: path) == .image else { return }
@@ -429,7 +429,7 @@ struct ViewedImagesRow: View {
                     Text(tr("ws.viewed.more", found.count - shown.count))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
-                        .help(found.dropFirst(shown.count).map(AgentPathFormat.tilde).joined(separator: "\n"))
+                        .nookTip(found.dropFirst(shown.count).map(AgentPathFormat.tilde).joined(separator: "\n"))
                 }
             }
             .padding(.leading, TranscriptStyle.workIndent)
@@ -552,7 +552,7 @@ struct ToolRow: View {
                                failed: failed, checks: Verification.check(event).map { [$0] } ?? [], lines: step.lines,
                                open: opens ? expanded : nil, reveals: file == nil ? nil : reveals, quietChevron: true,
                                action: toggle)
-                .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? event.text)
+                .nookTip(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? event.text)
                 .accessibilityLabel(event.text)
             // An MCP app is there to be used: shown whether or not the call is open.
             if let app = McpUI.resource(in: event.output) {

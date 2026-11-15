@@ -29,7 +29,7 @@ struct McpAppBlock: View {
             if let link = resource.link {
                 Button(tr("ws.mcpApp.open")) { NSWorkspace.shared.open(link) }
                     .controlSize(.small)
-                    .help(link.absoluteString)
+                    .nookTip(link.absoluteString)
             } else if session.closed || session.left {
                 HStack(spacing: 8) {
                     Text(session.left ? tr("ws.mcpApp.left") : tr("ws.mcpApp.closed", session.reference.tool))
@@ -499,7 +499,7 @@ private struct McpAppFullscreenView: View {
                 Spacer()
                 Button { session.exitFullscreen() } label: { Image(icon: "arrow.down.right.and.arrow.up.left") }
                     .buttonStyle(.nookBorderless)
-                    .help(tr("ws.mcpApp.exitFullscreen"))
+                    .nookTip(tr("ws.mcpApp.exitFullscreen"))
                     .keyboardShortcut(.cancelAction)
             }
             .foregroundStyle(NookTheme.textSecondary)

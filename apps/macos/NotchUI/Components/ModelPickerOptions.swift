@@ -141,7 +141,7 @@ private struct ModelPickerPermissions: View {
                     }
                     .buttonStyle(.nookPlain)
                     .onHover { hovered = $0 ? policy : nil }
-                    .help(policy.label)
+                    .nookTip(policy.label)
                     .accessibilityLabel(policy.label)
                 }
             }

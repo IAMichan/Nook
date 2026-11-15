@@ -235,7 +235,7 @@ struct SidePanelTitle: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .help(help ?? title)
+        .nookTip(help ?? title)
     }
 }
 
@@ -289,7 +289,7 @@ struct SidePanelToggle: View {
         }
         .buttonStyle(.nookPlain)
         .animation(NookTheme.reveal, value: fresh)
-        .help(help)
+        .nookTip(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(open ? .isSelected : [])
     }

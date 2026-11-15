@@ -103,7 +103,7 @@ extension PullRequestDetailView {
             .font(NookTheme.font(11))
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
-            .help(date.formatted(date: .abbreviated, time: .shortened))
+            .nookTip(date.formatted(date: .abbreviated, time: .shortened))
     }
 
     func activityLook(_ type: String) -> (symbol: String, color: Color) {

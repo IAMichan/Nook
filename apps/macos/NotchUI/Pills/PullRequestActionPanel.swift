@@ -242,7 +242,7 @@ struct PullRequestMoreMenu: View {
                 }
             }
         }
-        .help(fetchedAt.map { tr("agents.pr.action.more") + " · " + tr("agents.pulls.updatedAgo", AgentFormat.short(Date().timeIntervalSince($0))) }
+        .nookTip(fetchedAt.map { tr("agents.pr.action.more") + " · " + tr("agents.pulls.updatedAgo", AgentFormat.short(Date().timeIntervalSince($0))) }
               ?? tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .disabled(state.sending)
@@ -396,7 +396,7 @@ struct PullRequestActionPanel: View {
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.nookPlain)
-        .help(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
+        .nookTip(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
@@ -433,7 +433,7 @@ struct PullRequestActionPanel: View {
                         }
                         .buttonStyle(.nookPlain)
                         // The button's own tip covers the chip's, so it carries the description too.
-                        .help(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name)
+                        .nookTip(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name)
                               + (label.description.isEmpty ? "" : "\n" + label.description))
                     }
                 }

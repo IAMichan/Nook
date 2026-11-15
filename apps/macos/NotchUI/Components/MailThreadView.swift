@@ -216,7 +216,7 @@ struct MailMessageCard: View {
                             .labelStyle(.titleAndIcon)
                             .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textTertiary)
-                            .help(tr("chats.mail.deletedKept"))
+                            .nookTip(tr("chats.mail.deletedKept"))
                     }
                     if isOpen && hovering { actions } else { date }
                 }
@@ -249,7 +249,7 @@ struct MailMessageCard: View {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
-            .help(MailDates.full(message.date))
+            .nookTip(MailDates.full(message.date))
     }
 
     /// "to Lisa, Bram · cc Anna": the names, the addresses in the tooltip.
@@ -264,7 +264,7 @@ struct MailMessageCard: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(2)
-                .help((to + cc).joined(separator: "\n"))
+                .nookTip((to + cc).joined(separator: "\n"))
         } else {
             Text(MailDates.full(message.date))
                 .font(NookTheme.TextStyle.detail)
@@ -366,7 +366,7 @@ struct MailMessageCard: View {
                             .padding(.horizontal, NookTheme.Spacing.sm)
                             .padding(.vertical, NookTheme.Spacing.xs)
                             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
-                            .help(tr("chats.mail.attachmentInMail"))
+                            .nookTip(tr("chats.mail.attachmentInMail"))
                     }
                 }
             }

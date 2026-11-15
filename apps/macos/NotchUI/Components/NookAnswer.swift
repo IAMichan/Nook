@@ -146,7 +146,7 @@ struct AnswerSourceChip: View {
         .disabled(!openable)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(AnswerCitation.help(reference.number, in: [reference]) ?? reference.title)
+        .nookTip(AnswerCitation.help(reference.number, in: [reference]) ?? reference.title)
         .accessibilityLabel(reference.title)
     }
 }

@@ -48,7 +48,7 @@ private struct ChatLinkCard: View {
             .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .animation(NookTheme.hover, value: hovering)
-            .help(url.absoluteString)
+            .nookTip(url.absoluteString)
             .accessibilityLabel((preview?.title).map { "\($0), \(host)" } ?? host)
             // Fetched once its message comes near view, not for every link in the history at once.
             .task(id: live ? url : nil) {
@@ -190,7 +190,7 @@ private struct ChatRemotePicture: View {
                         Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
                     }
                 }
-                .help(label)
+                .nookTip(label)
                 .accessibilityLabel("\(label): \(url.lastPathComponent)")
             } else if failed {
                 ChatLinkCard(url: url)

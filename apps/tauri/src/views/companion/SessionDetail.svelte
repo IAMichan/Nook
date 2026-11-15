@@ -5,7 +5,7 @@
   // composer, which offers Steer now or After this turn while the agent works.
   import { onDestroy, untrack } from "svelte";
   import {
-    applyTimeline, canStop, companion, followsLive, has, may, Feature,
+    applyTimeline, canStop, companion, followsLive, has, may, writingWaits, Feature,
     type ClientView, type DigestItem, type SessionDigest, type TimelineEntry,
   } from "../../lib/companion";
   import { renderMarkdown } from "../../lib/markdown";
@@ -32,6 +32,9 @@
   import PullRequests from "./PullRequests.svelte";
   import Sheet from "./ui/Sheet.svelte";
   import { withReviewComment } from "../../lib/patch";
+  import { activeMac, cacheFor, kept, recordTimeline, saveSoon } from "../../lib/companion-cache";
+  import OfflineStrip from "./ui/OfflineStrip.svelte";
+  import OfflineNote from "./ui/OfflineNote.svelte";
 
   let { view, id, fallback, onback, act, took }: {
     view: ClientView;
@@ -52,7 +55,15 @@
   const steerable = $derived(has(view, Feature.steer) && session?.canSteer === true);
   const item = $derived(session?.items[0] ?? null);
 
-  let entries = $state<TimelineEntry[]>([]);
+  // The conversation as the phone kept it (`companion-cache.ts`), until the computer answers.
+  let entries = $state<TimelineEntry[]>(untrack(() => kept(cacheFor(activeMac(view))?.timelines ?? [], id) ?? []));
+  const offline = $derived(view.phase === "offline");
+  $effect(() => {
+    const mac = activeMac(view);
+    const cache = cacheFor(mac);
+    if (!cache || offline || !loaded || !entries.length) return;
+    if (recordTimeline(cache, id, entries, Date.now() / 1000)) saveSoon(mac);
+  });
   let loaded = $state(false);
   let message = $state("");
   let reason = $state("");
@@ -246,7 +257,9 @@
     <div class="body">
       <ConversationScroll version={[entries.length, entries[entries.length - 1]?.text.length, session.attention, session.excerpt]} reserve={working ? 56 : 0}>
         {#if hasTimeline}
-          {#if !loaded}
+          {#if offline && !entries.length && !queued.length}
+            <OfflineNote>{tr("Dit gesprek staat nog niet op deze telefoon. Het opent zodra je Mac verbonden is.", "This conversation is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
+          {:else if !loaded && !entries.length}
             <div class="loading breathe"><span style:width="90%"></span><span style:width="70%"></span><span style:width="80%"></span></div>
           {:else}
             {#if fullTranscript && shown.length && !atStart}
@@ -259,7 +272,7 @@
           <div class="markdown reply">{@html renderMarkdown(session.excerpt)}</div>
         {/if}
         {#each queued as q (q.id)}
-          <div class="queued"><div class="qbubble">{q.text}</div><span class="qnote"><Ico name="clock" size={11} />{tr("Wacht op je Mac", "Waiting for your Mac")}<button onclick={async () => took(await companion.discard(q.id))}>{tr("Niet versturen", "Don’t send")}</button></span></div>
+          <div class="queued"><div class="qbubble">{q.text}</div><span class="qnote"><Ico name="clock" size={11} />{tr("Nog niet verstuurd · wacht op je Mac", "Not sent yet · waiting for your Mac")}<button onclick={async () => took(await companion.discard(q.id))}>{tr("Niet versturen", "Don’t send")}</button></span></div>
         {/each}
         {#snippet floating()}
           {#if working}
@@ -271,6 +284,7 @@
 
     {#if item}
       <div class="pending">
+        <OfflineStrip {view} kind="answers" />
         <div class="card">
           <span class="kind"><Ico name={item.kind === "approval" ? "hand" : "message-circle-question"} size={12} stroke={2.4} />{item.kind === "approval" ? tr("Goedkeuring nodig", "Approval needed") : tr("Wacht op je antwoord", "Waiting for your answer")}</span>
           <p class="ask">{item.title}</p>
@@ -302,6 +316,7 @@
       </div>
     {:else}
       <div class="dock">
+        {#if canOperate && session.canSend !== false}<OfflineStrip {view} />{/if}
         {#if !canOperate}
           <div class="fieldcard"><Ico name="lock" size={12} />{tr("Berichten sturen staat uit voor deze iPhone in Nook op je Mac.", "Sending messages is turned off for this phone in Nook on your Mac.")}</div>
         {:else if session.canSend === false}
@@ -312,14 +327,14 @@
           {#if canPicture}<PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={tooLarge} />{/if}
           <div class="grow">
         {#if steerable}
-          <SessionComposer bind:value={message} placeholder={steer ? tr("Stuur de agent bij", "Steer the agent") : tr("Bericht voor na deze beurt", "Message for after this turn")} onsend={send} {sending}
+          <SessionComposer bind:value={message} placeholder={steer ? tr("Stuur de agent bij", "Steer the agent") : tr("Bericht voor na deze beurt", "Message for after this turn")} onsend={send} {sending} canSend={!offline || writingWaits(view)}
             onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
             {#snippet controls()}
               <ComposerPill label={steer ? tr("Nu bijsturen", "Steer now") : tr("Na deze beurt", "After this turn")} icon={steer ? "corner-down-right" : "list"} onclick={(e) => (steerMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />
             {/snippet}
           </SessionComposer>
         {:else}
-          <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending}
+          <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending} canSend={!offline || writingWaits(view)}
             onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined} />
         {/if}
           </div>

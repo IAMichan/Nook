@@ -299,7 +299,7 @@ struct MusicPageView: View {
                     SmallGhostButton(title: "+ " + tr("music.playlists.new")) {
                         service.playlistPrompt = .create(adding: nil)
                     }
-                    .help(tr("music.playlists.new"))
+                    .nookTip(tr("music.playlists.new"))
                 } else if section == .stats {
                     NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: MusicStatsView.title(of: $0)) },
                                selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)

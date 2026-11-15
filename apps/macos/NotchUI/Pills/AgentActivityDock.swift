@@ -614,7 +614,7 @@ struct BackgroundCommandRows: View {
                         Image(icon: "text.alignleft")
                             .font(NookTheme.font(9, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)
-                            .help(tr("ws.background.hasOutput"))
+                            .nookTip(tr("ws.background.hasOutput"))
                     }
                     SubagentElapsed(command: command.reading(activity[command.id]))
                     DisclosureChevron(open: expanded, size: 8)
@@ -623,7 +623,7 @@ struct BackgroundCommandRows: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(command.command)
+            .nookTip(command.command)
             if expanded { detail(command) }
         }
         .background(NookTheme.shape(NookTheme.Radius.control)

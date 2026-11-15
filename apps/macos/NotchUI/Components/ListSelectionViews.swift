@@ -250,7 +250,7 @@ struct SelectionBar: View {
         .fixedSize()
         .opacity(usable ? 1 : 0.4)
         .disabled(!usable)
-        .help(tr("select.moreOptions", action.label))
+        .nookTip(tr("select.moreOptions", action.label))
         .accessibilityLabel(tr("select.moreOptions", action.label))
     }
 
@@ -282,7 +282,7 @@ struct SelectionBar: View {
             }
         }
         .disabled(!usable)
-        .help(tooltip(action, usable: usable))
+        .nookTip(tooltip(action, usable: usable))
         .accessibilityLabel(action.label)
     }
 

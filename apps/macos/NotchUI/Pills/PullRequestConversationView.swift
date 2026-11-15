@@ -82,7 +82,7 @@ struct PullRequestConversationFilter: View {
             DropdownRow(symbol: showFinished ? "checkmark.square.fill" : "square", title: tr("agents.pr.comments.finished"),
                         chosen: showFinished, staysOpen: true) { showFinished.toggle() }
         }
-        .help(tr("agents.pr.comments.filter"))
+        .nookTip(tr("agents.pr.comments.filter"))
         .accessibilityLabel(tr("agents.pr.comments.filter"))
     }
 }
@@ -316,7 +316,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .monospacedDigit()
-                    .help(date.formatted(date: .abbreviated, time: .shortened))
+                    .nookTip(date.formatted(date: .abbreviated, time: .shortened))
             }
             if let url = event.url {
                 // Under the pointer only: ten comments should not mean ten buttons at rest. It keeps its room, so the
@@ -381,7 +381,7 @@ private struct PullRequestCommentLocation: View {
             let label = path + (line.map { ":\($0)" } ?? "")
             HStack(spacing: NookTheme.Spacing.sm) {
                 Image(icon: "doc.text").font(NookTheme.font(10))
-                Text(label).font(NookTheme.mono(11)).lineLimit(1).truncationMode(.head).help(label)
+                Text(label).font(NookTheme.mono(11)).lineLimit(1).truncationMode(.head).nookTip(label)
                 if event.outdated {
                     NookTag(tr("agents.pr.thread.outdated"), tint: NookTheme.amber)
                 }
@@ -511,7 +511,7 @@ struct PullRequestReactionPicker: View {
                 }
             }
         }
-        .help(tr("agents.pr.comment.react"))
+        .nookTip(tr("agents.pr.comment.react"))
         .accessibilityLabel(tr("agents.pr.comment.react"))
     }
 }

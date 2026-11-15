@@ -237,7 +237,7 @@ private struct GlanceAgentsCard: View {
                             Circle()
                                 .fill(agent.state == .needsYou ? NookTheme.amber : NookTheme.iris)
                                 .frame(width: 6, height: 6)
-                                .help(agent.state == .needsYou ? tr("agents.status.waiting") : tr("agents.status.running"))
+                                .nookTip(agent.state == .needsYou ? tr("agents.status.waiting") : tr("agents.status.running"))
                         }
                     }
                     if agents.count > 3 {
@@ -294,7 +294,7 @@ private struct GlanceAgendaCard: View {
                 }
             }
         }
-        .help(events.first.map { tr("app.today.preparePrompt", $0.title) } ?? "")
+        .nookTip(events.first.map { tr("app.today.preparePrompt", $0.title) } ?? "")
     }
 }
 

@@ -2240,7 +2240,7 @@ private struct ChatsDetail: View, Equatable {
             }
             .buttonStyle(.nookPlain)
             .pointerStyle(.link)
-            .help(tr("chats.info.open"))
+            .nookTip(tr("chats.info.open"))
             .accessibilityLabel(tr("chats.info.open"))
             .popover(isPresented: $infoOpen, arrowEdge: .bottom) { infoSheet }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -2254,7 +2254,7 @@ private struct ChatsDetail: View, Equatable {
                 .buttonStyle(.nookPlain)
                 .onHover { nameHovering = $0 }
                 .pointerStyle(.link)
-                .help(tr("chats.info.open"))
+                .nookTip(tr("chats.info.open"))
                 HStack(spacing: NookTheme.Spacing.xs) {
                     if let typingLine = typing.line(entry.id) {
                         // Someone typing says so where the chat's details are, as a chat app's header does.
@@ -2350,7 +2350,7 @@ private struct ChatsDetail: View, Equatable {
                 .contentShape(Rectangle())
         }
         .composerMenu()
-        .help(tr("chat.moreActions"))
+        .nookTip(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
         .confirmDelete($removing, question: { _ in tr("confirm.deleteChat", entry.name) },
                        detail: removingInApp ? tr("chats.deleteInApp.detail", appName) : tr("confirm.deleteChat.detail"),

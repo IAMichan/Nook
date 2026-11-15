@@ -121,7 +121,7 @@ struct PullRequestCommitEntry: View {
                 }
                 .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
-                .help(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
+                .nookTip(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
                 if !details.isEmpty {
                     Button {
                         withAnimation(NookTheme.reveal) { expanded.toggle() }
@@ -134,7 +134,7 @@ struct PullRequestCommitEntry: View {
                             .contentShape(NookTheme.shape(NookTheme.Radius.control))
                     }
                     .buttonStyle(.nookPlain)
-                    .help(tr("agents.pr.timeline.commitDetails"))
+                    .nookTip(tr("agents.pr.timeline.commitDetails"))
                     .accessibilityLabel(tr("agents.pr.timeline.commitDetails"))
                     .accessibilityValue(expanded ? tr("compose.queue.expanded") : "")
                 }

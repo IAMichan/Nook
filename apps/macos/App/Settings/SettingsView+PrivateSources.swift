@@ -33,7 +33,7 @@ extension SettingsView {
                     Label(Self.sourceName(source), icon: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
                 }
                 .disabled(byLevel)
-                .help(byLevel ? tr(settings.privacyLevel.localOnlySources.contains(source.id) ? "settings.private.byLevel" : "settings.private.withScreen") : "")
+                .nookTip(byLevel ? tr(settings.privacyLevel.localOnlySources.contains(source.id) ? "settings.private.byLevel" : "settings.private.withScreen") : "")
             }
             if shown.isEmpty { SettingNote(tr("settings.search.none")) }
         } header: {

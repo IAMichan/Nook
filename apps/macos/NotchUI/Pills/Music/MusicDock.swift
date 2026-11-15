@@ -67,7 +67,7 @@ private struct MusicBar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("music.openNowPlaying"))
+            .nookTip(tr("music.openNowPlaying"))
             .accessibilityLabel("\(info.title), \(subtitle)")
             .accessibilityHint(tr("music.openNowPlaying"))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -137,7 +137,7 @@ private struct MusicQueueButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("music.section.upNext"))
+        .nookTip(tr("music.section.upNext"))
         .accessibilityLabel(count > 0 ? tr("music.queue.count", count) : tr("music.section.upNext"))
         .accessibilityAddTraits(shown ? [.isSelected] : [])
     }
