@@ -475,27 +475,40 @@ private struct EmbeddedArtifactPanel: View {
     }
 }
 
-/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the page fills it, with no bar
-/// or frame of its own, so it reads as part of Nook and takes all the room. One small button floats in the corner to
-/// open it in the user's own browser. A sign-in window the page opens covers the whole panel the same way. It shares the
-/// sign-in of the app that made it.
+/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the bar every tab starts with
+/// (`SidePanelToolbar`) says which artifact it is, shows while it loads, and opens it in the user's own browser; under it
+/// the page fills the tab with no frame of its own, so it reads as part of Nook. A sign-in window the page opens covers
+/// the page the same way. It shares the sign-in of the app that made it.
 struct SessionArtifactPanel: View {
     @ObservedObject private var store = EmbeddedAppStore.shared
 
     var body: some View {
         if let webView = store.artifactView {
-            ZStack(alignment: .topTrailing) {
-                WebViewHost(webView: webView)
-                if let popup = store.artifactPopup {
-                    WebViewHost(webView: popup)
-                    cornerButton("xmark", help: tr("embedded.artifact.close")) { store.closeArtifactPopup() }
-                } else if store.artifactLoading {
-                    ProgressView().controlSize(.small).padding(NookTheme.Spacing.sm)
-                } else {
-                    cornerButton("arrow.up.forward.app", help: tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }
+            VStack(spacing: 0) {
+                SidePanelToolbar {
+                    Image(icon: SessionTool.artifact.symbol)
+                        .font(NookTheme.font(10, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    let title = store.artifactTitle.isEmpty ? tr("embedded.artifact") : store.artifactTitle
+                    Text(title)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(title)
+                    if store.artifactLoading { ProgressView().controlSize(.small) }
+                    Spacer(minLength: NookTheme.Spacing.md)
+                    ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }
                 }
+                ZStack(alignment: .topTrailing) {
+                    WebViewHost(webView: webView)
+                    if let popup = store.artifactPopup {
+                        WebViewHost(webView: popup)
+                        cornerButton("xmark", help: tr("embedded.artifact.close")) { store.closeArtifactPopup() }
+                    }
+                }
+                .background(NookTheme.field)
             }
-            .background(NookTheme.field)
         } else {
             WSEmptyState(symbol: "square.on.square", title: tr("agents.tool.artifact.emptyTitle"),
                          message: tr("agents.tool.artifact.emptyMessage"))

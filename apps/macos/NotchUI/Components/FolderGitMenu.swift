@@ -103,9 +103,12 @@ final class FolderGitModel: ObservableObject {
     var added: Int { changes.compactMap(\.added).reduce(0, +) }
     var removed: Int { changes.compactMap(\.removed).reduce(0, +) }
 
-    func refresh() async {
+    /// Reads the folder's git state again. `urgent`: someone is looking at the result (a panel that just opened), so the
+    /// slower second half (branches, the base comparison) runs at user-initiated priority instead of in the background,
+    /// where the polling in `follow` keeps it.
+    func refresh(urgent: Bool = false) async {
         if let refreshing { return await refreshing.value }
-        let task = Task { await read() }
+        let task = Task { await read(priority: urgent ? .userInitiated : .utility) }
         refreshing = task
         await task.value
         refreshing = nil
@@ -123,8 +126,8 @@ final class FolderGitModel: ObservableObject {
         }
     }
 
-    private func read() async {
-        if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
+    private func read(priority: TaskPriority) async {
+        if git == nil { git = await Task.detached(priority: priority) { GitService.shared }.value }
         guard let git, !directory.isEmpty, FileManager.default.fileExists(atPath: directory) else {
             root = nil
             status = nil
@@ -157,7 +160,7 @@ final class FolderGitModel: ObservableObject {
         }
         if root != first.root { root = first.root }
         if status != first.status { status = first.status }
-        let result = await Task.detached(priority: .utility) { () -> (branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
+        let result = await Task.detached(priority: priority) { () -> (branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
             let root = first.root, status = first.status, key = first.key
             let refs: Refs
             if let cached, cached.root == root, cached.key == key, status != nil {
@@ -418,7 +421,7 @@ struct FolderChangesSheet: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: NookTheme.Spacing.sm)
-                ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) { Task { await model.refresh() } }
+                ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) { Task { await model.refresh(urgent: true) } }
                 StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
             }
             if files.isEmpty {
