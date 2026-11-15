@@ -37,12 +37,16 @@ struct CardView: View {
             if card.compact {
                 // Only the field, level with Nook: the card asks one thing and waits for the answer. What Nook could do
                 // with what is in front of you follows under it, one click each.
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                // The line above it says where Nook will work and what it sees there, so what it can do is clear before
+                // you type. Its spacing follows the density you chose (Settings › Appearance).
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.scaled(NookTheme.Spacing.md)) {
+                    if let hint = card.hint { hintRow(hint) }
                     inputField
                     if !card.suggestions.isEmpty { suggestionChips }
                 }
-                .padding(.top, NookTheme.Spacing.xs)
+                .padding(.top, NookTheme.Spacing.scaled(NookTheme.Spacing.xs))
                 .animation(NookTheme.reveal, value: card.suggestions)
+                .animation(NookTheme.reveal, value: card.hint)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
             } else {
                 fullCard
@@ -194,6 +198,35 @@ struct CardView: View {
 
     private static func rich(_ text: String) -> AttributedString {
         MarkdownBlock.inline(MarkdownBlock.clean(text))
+    }
+
+    /// The compact card's line above its field: where Nook will work, what it sees there, and how it reaches it.
+    private func hintRow(_ hint: CardHint) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(icon: hint.symbol)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 14)
+            Text(hint.text)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .contentTransition(.opacity)
+            if let badge = hint.badge {
+                Text(badge)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.iris)
+                    .lineLimit(1)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.vertical, NookTheme.Spacing.xxs)
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.iris.opacity(0.12)))
+                    .fixedSize()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, NookTheme.Spacing.xs)
+        .accessibilityElement(children: .combine)
     }
 
     /// A compact card's suggestions, wrapping onto a second row when they do not fit: a click sends one as typed.

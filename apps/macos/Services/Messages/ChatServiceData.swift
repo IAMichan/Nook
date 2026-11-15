@@ -166,6 +166,21 @@ enum ChatServiceData {
         return newest < last.addingTimeInterval(-1)
     }
 
+    /// The helper's ids of the messages in a `/messages` answer.
+    static func itemIDs(_ json: [String: Any]) -> [String] {
+        (json["items"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+    }
+
+    /// A `/messages` answer with the items of `more` (messages asked by their id) that it lacks.
+    static func adding(_ more: [String: Any], to json: [String: Any]) -> [String: Any] {
+        let have = Set(itemIDs(json))
+        var items = json["items"] as? [[String: Any]] ?? []
+        items += (more["items"] as? [[String: Any]] ?? []).filter { ($0["id"] as? String).map { !have.contains($0) } ?? false }
+        var merged = json
+        merged["items"] = items
+        return merged
+    }
+
     /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook: the chat shows them as deleted.
     static func deleted(_ json: [String: Any], chat: Chat) -> [String] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { message in
@@ -245,6 +260,9 @@ enum ChatServiceData {
         case ready
         case subscribed
         case changed(chat: String)
+        /// One message of a chat changed (an edit, a deletion, an emoji, a vote): it is read again by its id, also when
+        /// it is older than the newest messages a read brings.
+        case changedMessage(chat: String, message: String)
         /// Someone in a chat is typing (or recording, or sending a file) for `seconds`; 0 says they stopped.
         case typing(chat: String, person: String, name: String, kind: ChatTypist.Kind, seconds: TimeInterval)
         case other
@@ -256,6 +274,7 @@ enum ChatServiceData {
         case "subscriptions.updated": return .subscribed
         case "chat.upserted", "chat.deleted", "message.upserted", "message.deleted":
             guard let chat = json["chatID"] as? String, !chat.isEmpty else { return .other }
+            if let message = json["messageID"] as? String, !message.isEmpty { return .changedMessage(chat: chat, message: message) }
             return .changed(chat: chat)
         case "typing":
             guard let chat = json["chatID"] as? String, !chat.isEmpty,

@@ -141,6 +141,58 @@ layout does not change.
   message as from the share sheet (`CompanionFile`, needs `attachments`), and Nook's chat takes words only. What does
   not fit is named in a notice.
 
+## Android
+
+Nook for Android (`apps/tauri`, see [`TAURI.md`](TAURI.md)) is the same companion as the iPhone app, laid out and
+worded the same. Once a phone is paired, the companion is the whole Android app (`companion-shell.svelte.ts`); Nook on
+the phone itself (its own brain) is in Settings › *Nook on this phone*, and is the app again while nothing is paired.
+
+- **Look:** the iPhone's screens rebuilt in `apps/tauri/src/views/companion` from its SwiftUI views: the tabs Nook,
+  Agents and Chats along the bottom with their counts, `PanelHeader` with Nook's face (`NookMark`) for the Mac menu and
+  the gear for Settings, the cards of what waits on you, the shelves, the transcript in turns ("Worked for 1m 3s", "Ran 3
+  commands and read 2 files", `lib/transcript.ts`), the docked approval or question, the composer, New session, Nook's
+  chat, the Chats tab with its WhatsApp skin, and Settings as a sheet. Colors are `NookPalette.nookDark` and the type is
+  the phone's scale (`views/companion/ui/phone.css`), the icons are the same Lucide set (`lib/lucide.ts`) and agents carry
+  the Mac's brand marks (`lib/brand-logos.ts`, generated from `BrandLogo.swift`). The words come from the iPhone's own
+  catalog (`lib/i18n/companion-ios.ts`, from `Localizable.xcstrings`). Fonts differ: Android has no SF Pro.
+- **Live:** while the app is in front and the computer lists `stream`, the phone keeps one connection (`subscribe`,
+  `ping` every 5 seconds with `foreground`), the open session follows with `watch` (`TimelineDelta` as
+  `applyTimeline`) and the open chat with `watchChat`. In the background, or with a computer without `stream`, it asks
+  instead (`CompanionClient::stream`, `src-tauri/src/companion/poll.rs`).
+- **Requests:** `ClientCall` in `core/src/companion/client.rs` sends every op the phone uses; the phone offers only what
+  the computer lists in `features` and allows in `scopes`, and sends `protocolVersion` and `appVersion`.
+- **Review and pull requests:** *Changes* in a session's bar (`diff`, line comments into the message as
+  `<review_comment>`, `lib/patch.ts`), and Pull requests from the Agents header and a session's menu (`pulls`, `pull`,
+  `pullAct` with line comments at the head the phone saw, `pullWork`).
+- **Pictures and dictation:** up to two pictures with a message or a new session, made JPEGs under 90 KB on the phone
+  (`lib/images.ts`, `images`); the microphone in every composer uses Android's speech recognizer through `MainActivity.kt`
+  (`NookAndroid.dictate`), on the device where it can, the words landing in the field (`lib/dictation.svelte.ts`).
+- **Also as on the iPhone:** a session's Files (with previews of pictures, PDFs and films) and Terminals, older sessions
+  and the Mac's search through them (`history`), *Read the whole message* and *Earlier messages*, snoozing to a time you
+  pick, chat pictures and app icons, who read your message, version notices and *Show the update on your Mac*, and
+  `nook://` links (a pairing code from the camera, a prompt link opening New session; `lib/prompt-link.ts`).
+- **Reaching the Mac:** up to eight paired Macs, one active and the others asked for their sessions every 30 seconds
+  ("On <Mac>"); every route the code and the Mac name (`a=`, `endpoints`), the last that worked first, and the relay as
+  the last resort (`r=`, `relay`; a WebSocket to `/v1/rooms/<room>?role=phone`); compressed answers (`compression`);
+  and an outbox for messages, new sessions and questions to Nook while the Mac is away (`retry`, sent again with the
+  same id). Code: `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
+- **Push notifications:** with a Firebase configuration in the app (`google-services.json`), the phone gives each paired
+  Mac its FCM token (`register` with `item` "fcm"; `PairedDevice.pushService`), and the Mac sends that phone's pushes
+  sealed through the relay (`RelayPushRequest.service` "fcm", `apps/relay/worker/push.js`) as a data message. The app's
+  `NookMessagingService` opens it with the push key the app gave it (`RelayPush.pushKey`, never the pairing key) and shows
+  it with Allow / Deny (category `NOOK_APPROVAL_ALLOW`, `NOOK_APPROVAL_DENY`) or Reply (`NOOK_INFO`); a button opens the
+  app, which acts on that Mac and shows the session. While pushes come, the app shows no notifications of its own.
+- **Tablets and the icon:** at 900 points and wider the list and what you opened sit side by side, as the iPad's split
+  view. Touch and hold the app's icon for New session, Ask Nook, Answer a chat and the two sessions that need you most
+  (`res/xml/shortcuts.xml`, `NookAndroid.setShortcuts`, links `nook://companion/…`).
+- **Diagrams and math:** a Mermaid fence and `$…$`, `$$…$$` or a `math` fence draw as on the Mac (`lib/rich.ts`,
+  the same Mermaid and KaTeX versions, loaded only when needed; nothing goes to a server).
+- **Widgets:** *Agents* (what works or waits on you, waiting first, at most five, "Out of date" ten minutes after the app
+  last heard from the Mac) and *Limits* (each account's plan limits and when they reset), written by the app with every
+  list it takes in (`NookAndroid.setWidgetData`, `NookWidgets.kt`); a row opens its session.
+- **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
+  owner has to set up (Firebase for push, the relay key, testing on a real phone).
+
 ## Compression
 
 Large messages are compressed before they are sealed (`CompanionWire`, `packages/protocol/Sources/CompanionWire.swift`,
@@ -158,8 +210,8 @@ the relay and on mobile data. Sealed bytes look random and do not compress, so i
   compressed requests; the phone's requests are small, so it does not compress them yet.
 - The limits of one answer (`linesBudget`, `DiffFileDigest.maxTotal`, `CompanionWorkspace.maxEncodedBytes`) stay as they
   are, so an answer fits one frame for a phone without compression too.
-- Not in the Tauri app (`apps/tauri`) yet: it lists none of `history`, `compression` and `filePreview`, so a phone talks to
-  it as before, and its Android client sends no `compression`, so a Mac answers it in plain JSON.
+- Nook on Windows and Linux (`apps/tauri`) lists none of `history`, `compression` and `filePreview` as a computer, so a
+  phone talks to it as before. Its Android companion sets `compression` and opens compressed answers.
 
 ## Versions
 

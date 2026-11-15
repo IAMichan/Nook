@@ -152,4 +152,69 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertNil(SlackData.readMark(info: ["ok": true, "channel": ["id": "D1"]]))
         XCTAssertNil(SlackData.readMark(info: ["ok": false, "error": "missing_scope"]))
     }
+
+    // MARK: The live line
+
+    func testTheLiveLineSaysWhichConversationAndMessageChanged() {
+        XCTAssertEqual(SlackData.liveEvent(["type": "hello"]), .hello)
+        XCTAssertEqual(SlackData.liveEvent(["type": "goodbye"]), .goodbye)
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "channel": "D1", "user": "U1", "ts": "1.000100", "text": "hi"]),
+                       .changed(conversation: "D1", ts: nil, user: "U1"), "a new message: the newer ones are read")
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "subtype": "message_changed", "channel": "D1",
+                                            "message": ["ts": "1.000100", "text": "hi!", "edited": ["user": "U1"]]]),
+                       .changed(conversation: "D1", ts: "1.000100", user: nil), "an edit reads that message again")
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "subtype": "message_deleted", "channel": "D1",
+                                            "deleted_ts": "1.000100"]),
+                       .deleted(conversation: "D1", ts: "1.000100"), "deleted by whoever wrote it")
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "subtype": "message_changed", "channel": "D1",
+                                            "message": ["ts": "1.000100", "subtype": "tombstone"]]),
+                       .deleted(conversation: "D1", ts: "1.000100"), "a deleted message with answers stays as a tombstone")
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "subtype": "message_replied", "channel": "D1",
+                                            "message": ["ts": "1.000100", "thread_ts": "1.000100", "reply_count": 2]]),
+                       .changed(conversation: "D1", ts: "1.000100", user: nil))
+        XCTAssertEqual(SlackData.liveEvent(["type": "reaction_added", "user": "U1", "reaction": "joy",
+                                            "item": ["type": "message", "channel": "D1", "ts": "1.000100"]]),
+                       .changed(conversation: "D1", ts: "1.000100", user: nil), "an emoji reads its message again")
+        XCTAssertEqual(SlackData.liveEvent(["type": "reaction_removed", "item": ["type": "file", "file": "F1"]]), .other)
+        XCTAssertEqual(SlackData.liveEvent(["type": "user_typing", "channel": "D1", "user": "U1"]),
+                       .typing(conversation: "D1", user: "U1"))
+        XCTAssertEqual(SlackData.liveEvent(["type": "im_marked", "channel": "D1", "ts": "1.000100"]),
+                       .read(conversation: "D1", ts: "1.000100"), "read on the phone or in Slack")
+        XCTAssertEqual(SlackData.liveEvent(["type": "im_created", "channel": ["id": "D2"]]), .listChanged)
+        XCTAssertEqual(SlackData.liveEvent(["type": "presence_change", "user": "U1"]), .other)
+        XCTAssertEqual(SlackData.liveEvent(["type": "message", "text": "no channel"]), .other)
+    }
+
+    func testTheLiveLineAddressComesFromRtmConnect() {
+        XCTAssertEqual(SlackData.liveURL(["ok": true, "url": "wss://wss-primary.slack.com/websocket/abc"])?.host,
+                       "wss-primary.slack.com")
+        XCTAssertNil(SlackData.liveURL(["ok": false, "error": "not_allowed_token_type"]), "a newer app's token gets no line")
+        XCTAssertNil(SlackData.liveURL(["ok": true, "url": "https://slack.com"]), "only a socket address")
+    }
+
+    func testCountsSayEachConversationsNewestMessage() {
+        let counts: [String: Any] = ["ok": true,
+                                     "ims": [["id": "D1", "last_read": "1.000100", "latest": "2.000200"],
+                                             ["id": "D2", "last_read": "1.000100"]],
+                                     "mpims": [["id": "G1", "latest": "3.5"]]]
+        XCTAssertEqual(SlackData.latest(counts), ["D1": 2.0002, "G1": 3.5], "one without a newest message is left out")
+        XCTAssertEqual(SlackData.latest(["ok": false]), [:])
+    }
+
+    func testAMessageOfSomeoneElseThePageLacksWasDeleted() {
+        let known: [(ts: Double, mine: Bool)] = [(1700000010.0001, false), (1700000020.0002, false), (1700000030.0003, true),
+                                                (1700000040.0004, false), (1700000050.0005, false)]
+        let page: [[String: Any]] = [["ts": "1700000010.000100"], ["ts": "1700000040.000400"], ["ts": "1700000050.000500"]]
+        XCTAssertEqual(SlackData.missing(known, listed: page), ["1700000020.000200"],
+                       "yours is never taken for deleted, nor what lies outside the page")
+        XCTAssertEqual(SlackData.missing(known, listed: []), [])
+    }
+
+    func testAMessagesTimeAndItsTsMeetInMicroseconds() {
+        let ts = "1700000010.000100"
+        let date = Date(timeIntervalSince1970: Double(ts)!)
+        XCTAssertEqual(SlackData.micros(date.timeIntervalSince1970), SlackData.micros(Double(ts)!))
+        XCTAssertEqual(SlackData.micros(Double(ts)!), 1_700_000_010_000_100)
+        XCTAssertNotEqual(SlackData.micros(1700000010.0001), SlackData.micros(1700000010.0002))
+    }
 }
