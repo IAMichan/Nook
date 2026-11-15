@@ -203,8 +203,11 @@ enum ScheduledTaskText {
         (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }
     }
 
+    /// In the app's language, not the Mac's: the list and the approval line read in the language Nook speaks.
     static func weekdayName(_ day: Int, _ calendar: Calendar = .current) -> String {
-        calendar.shortWeekdaySymbols[(day - 1) % 7]
+        var named = calendar
+        named.locale = Locale(identifier: I18n.shared.currentLanguage.rawValue)
+        return named.shortWeekdaySymbols[(day - 1) % 7]
     }
 
     static func summary(_ rule: ScheduleRule) -> String {
