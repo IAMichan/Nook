@@ -114,6 +114,22 @@ pub fn client() -> reqwest::Client {
         .unwrap_or_default()
 }
 
+/// The body of a response, or `None` once it grows past `max` bytes. Reading stops there, so a server that sends
+/// gigabytes (or never stops) costs at most `max` bytes of memory; checking the size after `bytes()` is too late.
+pub async fn body_within(mut response: reqwest::Response, max: usize) -> std::result::Result<Option<Vec<u8>>, reqwest::Error> {
+    if response.content_length().is_some_and(|n| n > max as u64) {
+        return Ok(None);
+    }
+    let mut data = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if data.len() + chunk.len() > max {
+            return Ok(None);
+        }
+        data.extend_from_slice(&chunk);
+    }
+    Ok(Some(data))
+}
+
 /// Haalt een openbaar adres op en volgt hoogstens vijf omleidingen, elk opnieuw gecontroleerd.
 pub async fn fetch(start: &str) -> Result<reqwest::Response> {
     let mut url = url::Url::parse(start).map_err(|_| NookError::new("Ongeldig webadres."))?;
@@ -139,6 +155,54 @@ pub async fn fetch(start: &str) -> Result<reqwest::Response> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A server on loopback that answers with a body that never ends (no Content-Length), or a fixed one.
+    async fn serve(body: Option<&'static [u8]>) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut request = [0u8; 4096];
+                    let _ = socket.read(&mut request).await;
+                    match body {
+                        Some(body) => {
+                            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                            let _ = socket.write_all(head.as_bytes()).await;
+                            let _ = socket.write_all(body).await;
+                        }
+                        None => {
+                            let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n").await;
+                            let chunk = vec![b'a'; 65_536];
+                            while socket.write_all(&chunk).await.is_ok() {}
+                        }
+                    }
+                });
+            }
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn a_body_that_never_ends_is_cut_off_at_the_limit() {
+        let address = serve(None).await;
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client.get(&address).send().await.unwrap();
+        // Reading everything first (`bytes()`) would never finish here and grow without bound.
+        let read = tokio::time::timeout(Duration::from_secs(10), body_within(response, 1_000_000)).await;
+        assert_eq!(read.expect("stops at the limit instead of reading on").unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_body_within_the_limit_is_read_whole_and_a_larger_one_is_refused() {
+        let address = serve(Some(b"hello world")).await;
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client.get(&address).send().await.unwrap();
+        assert_eq!(body_within(response, 11).await.unwrap().as_deref(), Some(&b"hello world"[..]));
+        let response = client.get(&address).send().await.unwrap();
+        assert_eq!(body_within(response, 10).await.unwrap(), None);
+    }
 
     fn v4(a: u32, b: u32, c: u32, d: u32) -> u32 {
         (a << 24) | (b << 16) | (c << 8) | d

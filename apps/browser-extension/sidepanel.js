@@ -1,7 +1,8 @@
 // The side panel: whether Nook is connected, whether Nook may work on the site in front, a pause for this whole
 // browser, a chat with Nook about the page, and what Nook did here lately. Questions go to Nook on the Mac and are
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
-import { inlineTokens, isAnswering, isBlocked, isRestricted, siteOf } from './lib/core.js';
+// It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
+import { cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf } from './lib/core.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -13,15 +14,59 @@ let conversation = null;
 let messages = [];
 let pollTimer = null;
 let windowId = null;
+// Bumped by "New chat": a reply or poll that started before belongs to the old conversation and is dropped.
+let chatEpoch = 0;
+let look = null;
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
 
 function send(message) {
   return chrome.runtime.sendMessage(message);
+}
+
+/** Like send, but never throws: a worker that is gone answers like a refusal. */
+async function trySend(message) {
+  try {
+    return await send(message);
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
 }
 
 // MARK: - Texts
 
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 for (const element of document.querySelectorAll('[data-i18n-placeholder]')) element.placeholder = t(element.dataset.i18nPlaceholder);
+for (const [id, key] of [['send', 'send'], ['stop', 'stopAnswer']]) {
+  $(id).setAttribute('aria-label', t(key));
+  $(id).title = t(key);
+}
+
+// MARK: - Nook's look
+
+/** Draws the panel in the theme Nook shows (or Nook's own until it said which), in dark or light as Nook is set. */
+function applyLook() {
+  const root = document.documentElement;
+  const dark = lookIsDark(look, systemDark.matches);
+  for (const property of [...root.style]) {
+    if (property.startsWith('--')) root.style.removeProperty(property);
+  }
+  if (!look) {
+    delete root.dataset.theme;
+    return;
+  }
+  root.dataset.theme = dark ? 'dark' : 'light';
+  for (const [name, value] of Object.entries(lookVariables(look, dark))) root.style.setProperty(name, value);
+}
+
+/** Asks Nook for its look again: when the panel opens or comes back into view, and now and then while it shows. */
+function refreshLook() {
+  if (document.visibilityState === 'visible') send({ type: 'look' }).catch(() => {});
+}
+
+systemDark.addEventListener('change', applyLook);
+document.addEventListener('visibilitychange', refreshLook);
+addEventListener('focus', refreshLook);
+setInterval(refreshLook, 15_000);
 
 // MARK: - Status, site and pause
 
@@ -67,12 +112,16 @@ async function loadPage() {
   renderSite();
 }
 
+// The switch and the button only show the new state once it is stored (storage.onChanged renders it); when the change
+// did not go through, they show the real state again, so the panel never says a site is off while Nook may still use it.
 $('site-switch').addEventListener('change', async (event) => {
-  await send({ type: 'site', url: page?.url, allowed: event.target.checked });
+  const reply = await trySend({ type: 'site', url: page?.url, allowed: event.target.checked });
+  if (!reply?.ok) renderSite();
 });
 
 $('pause').addEventListener('click', async () => {
-  await send({ type: 'pause', paused: !options.paused });
+  const reply = await trySend({ type: 'pause', paused: !options.paused });
+  if (!reply?.ok) renderSite();
 });
 
 // MARK: - Activity
@@ -181,9 +230,11 @@ function webHref(text) {
 function renderComposer() {
   const busy = isAnswering(messages);
   const connected = status.nook === 'connected';
+  const stoppable = busy && !!conversation;
   $('send').disabled = !connected || busy;
+  $('send').hidden = stoppable;
   $('input').disabled = !connected;
-  $('stop').hidden = !busy || !conversation;
+  $('stop').hidden = !stoppable;
   $('new-chat').hidden = !messages.length;
 }
 
@@ -193,21 +244,18 @@ function failure(reply) {
 }
 
 async function ask(text) {
+  const asked = chatEpoch;
   messages = [...messages, { fromNook: false, text }, { fromNook: true, text: '', streaming: true }];
   renderMessages();
-  let reply;
-  try {
-    reply = await send({ type: 'ask', text, conversation, windowId });
-  } catch (error) {
-    reply = { ok: false, error: String(error?.message || error) };
-  }
+  const reply = await trySend({ type: 'ask', text, conversation, windowId });
+  if (asked !== chatEpoch) return;
   if (!reply?.ok) {
     messages = [...messages.slice(0, -1), { fromNook: true, text: failure(reply), failed: true }];
     renderMessages();
     return;
   }
   conversation = reply.conversation || conversation;
-  await chrome.storage.session.set({ conversation });
+  await chrome.storage.session.set({ conversation }).catch(() => {});
   if (reply.messages) messages = reply.messages;
   renderMessages();
   follow();
@@ -217,8 +265,10 @@ async function ask(text) {
 function follow(started = Date.now()) {
   clearTimeout(pollTimer);
   if (!conversation || Date.now() - started > 5 * 60_000) return;
+  const following = chatEpoch;
   pollTimer = setTimeout(async () => {
     const reply = await send({ type: 'chat', conversation }).catch(() => null);
+    if (following !== chatEpoch) return;
     if (reply?.ok && reply.messages) {
       messages = reply.messages;
       renderMessages();
@@ -233,8 +283,18 @@ $('composer').addEventListener('submit', (event) => {
   const text = input.value.trim();
   if (!text || $('send').disabled) return;
   input.value = '';
+  fitInput();
   ask(text);
 });
+
+/** The field grows with what you type, up to its maximum height, as Nook's composer does. */
+function fitInput() {
+  const input = $('input');
+  input.style.height = 'auto';
+  input.style.height = input.scrollHeight + 'px';
+}
+
+$('input').addEventListener('input', fitInput);
 
 $('input').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -244,18 +304,20 @@ $('input').addEventListener('keydown', (event) => {
 });
 
 $('new-chat').addEventListener('click', async () => {
+  chatEpoch += 1;
   clearTimeout(pollTimer);
   conversation = null;
   messages = [];
-  await chrome.storage.session.remove('conversation');
   renderMessages();
   $('input').focus();
+  await chrome.storage.session.remove('conversation').catch(() => {});
 });
 
 $('stop').addEventListener('click', async () => {
   if (!conversation) return;
+  const stopped = chatEpoch;
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
-  if (reply?.messages) {
+  if (stopped === chatEpoch && reply?.messages) {
     messages = reply.messages;
     renderMessages();
   }
@@ -269,10 +331,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
     renderStatus();
   }
   if (area === 'session' && changes.activity) renderActivity();
+  if (area === 'local' && changes.look) {
+    look = cleanLook(changes.look.newValue);
+    applyLook();
+  }
   if (area === 'local' && (changes.paused || changes.blocked)) {
     options = {
       paused: changes.paused ? !!changes.paused.newValue : options.paused,
-      blocked: changes.blocked ? changes.blocked.newValue || [] : options.blocked
+      blocked: changes.blocked ? (Array.isArray(changes.blocked.newValue) ? changes.blocked.newValue : []) : options.blocked
     };
     renderSite();
   }
@@ -286,16 +352,21 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
 });
 
 (async () => {
+  // The look Nook had last, at once, so the panel never flashes in other colors; then Nook's look of now.
+  look = cleanLook((await chrome.storage.local.get('look')).look);
+  applyLook();
   windowId = (await chrome.windows.getCurrent().catch(() => null))?.id ?? null;
   const stored = await chrome.storage.session.get(['status', 'conversation']);
   status = stored.status || status;
   conversation = stored.conversation || null;
-  options = await chrome.storage.local.get({ paused: false, blocked: [] });
+  const local = await chrome.storage.local.get({ paused: false, blocked: [] });
+  options = { paused: !!local.paused, blocked: Array.isArray(local.blocked) ? local.blocked : [] };
   renderStatus();
   await loadPage();
   await renderActivity();
   renderMessages();
   await send({ type: 'connect' }).catch(() => {});
+  refreshLook();
   if (conversation) {
     const reply = await send({ type: 'chat', conversation }).catch(() => null);
     if (reply?.ok && reply.messages) {

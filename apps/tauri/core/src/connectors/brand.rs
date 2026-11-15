@@ -258,9 +258,9 @@ pub async fn icon(domain: &str) -> Option<String> {
         if !response.status().is_success() {
             continue;
         }
-        let Ok(bytes) = response.bytes().await else { continue };
+        let Ok(Some(bytes)) = crate::brain::network_guard::body_within(response, 500_000).await else { continue };
         // Alleen een echt plaatje van redelijke grootte, geen HTML-pagina.
-        if bytes.len() < 64 || bytes.len() > 500_000 || bytes.starts_with(b"<!") || bytes.starts_with(b"<html") {
+        if bytes.len() < 64 || bytes.starts_with(b"<!") || bytes.starts_with(b"<html") {
             continue;
         }
         let _ = std::fs::create_dir_all(&dir);

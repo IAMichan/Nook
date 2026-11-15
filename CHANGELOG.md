@@ -31,6 +31,18 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
   mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.
 
+- Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
+  type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
+  density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows
+  the theme too.
+
+- Nook Companion's Agents list reads like the Mac's: the search and a view menu on one row, and sessions grouped by
+  project (on by default), each folder folding away and its **+** starting a new session right in that project. A long
+  press on a session offers Send a message, Stop and New session here, so you steer and start agents from the phone in
+  a tap or two; the New session sheet opens on what your Mac offers at once, and a session you just started opens
+  without a "This session is gone." in between. Approving or answering clears the card at the tap, an agent's
+  words reach the phone twice as often, and the Agents list redraws only the rows that changed.
+
 - Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
   theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
   it gets the same look and feel; nothing else of theirs changes.
