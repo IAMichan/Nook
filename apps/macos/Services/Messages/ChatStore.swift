@@ -467,6 +467,29 @@ final class ChatStore {
         return saveMerged(incoming, chat: chat)
     }
 
+    /// Your stored messages of a chat that its app now says were read (Telegram's "read up to here", which also covers
+    /// messages older than the ones the chat shows): two blue ticks from now on. Only your newest `limit` are looked at;
+    /// one still going out, one that failed and a deleted one stay as they are.
+    @discardableResult
+    func markRead(_ key: String, limit: Int = 500, where read: (InboxMessage) -> Bool) -> Bool {
+        guard let chat = chatID(key) else { return true }
+        let sql = "SELECT \(Self.messageColumns) FROM message m WHERE m.chat = ? AND m.mine = 1 ORDER BY m.at DESC LIMIT ?"
+        guard let stmt = prepared(sql) else { return false }
+        var mine: [InboxMessage] = []
+        sqlite3_bind_int64(stmt, 1, chat)
+        sqlite3_bind_int64(stmt, 2, Int64(limit))
+        while sqlite3_step(stmt) == SQLITE_ROW { if let message = message(stmt) { mine.append(message) } }
+        sqlite3_reset(stmt)
+        return mine.filter { message in
+            let receipt = message.receipt ?? .sent
+            return !message.isDeleted && receipt >= .sent && receipt < .read && read(message)
+        }.allSatisfy { message in
+            var read = message
+            read.receipt = .read
+            return saveMerged(read, chat: chat)
+        }
+    }
+
     /// Messages its app says were deleted for everyone, by their id, as far as the archive holds them.
     @discardableResult
     func withdraw(_ ids: [String], chat: Int64) -> Bool {

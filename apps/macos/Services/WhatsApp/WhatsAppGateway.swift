@@ -1907,7 +1907,8 @@ enum WAWebhook {
     private static func parseOpenWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
         guard let d = json["data"] as? [String: Any],
               let id = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"]),
-              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:)) else { return .ignored }
+              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:))
+                ?? ChatJSON.number(d["ack"]).flatMap({ WAReceipt(ack: Int($0)) }) else { return .ignored }
         let chat = (d["chatId"] as? String) ?? ""
         // In a group OpenWA's ack is the whole group's, as WhatsApp's own ticks; one naming a member is that member's.
         if WAJID.isGroup(chat), let member = nonEmpty(d["participant"]), status >= .delivered {

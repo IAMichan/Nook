@@ -200,4 +200,13 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertEqual(SlackData.latest(counts), ["D1": 2.0002, "G1": 3.5], "one without a newest message is left out")
         XCTAssertEqual(SlackData.latest(["ok": false]), [:])
     }
+
+    func testAMessageOfSomeoneElseThePageLacksWasDeleted() {
+        let known: [(ts: Double, mine: Bool)] = [(1700000010.0001, false), (1700000020.0002, false), (1700000030.0003, true),
+                                                (1700000040.0004, false), (1700000050.0005, false)]
+        let page: [[String: Any]] = [["ts": "1700000010.000100"], ["ts": "1700000040.000400"], ["ts": "1700000050.000500"]]
+        XCTAssertEqual(SlackData.missing(known, listed: page), ["1700000020.000200"],
+                       "yours is never taken for deleted, nor what lies outside the page")
+        XCTAssertEqual(SlackData.missing(known, listed: []), [])
+    }
 }

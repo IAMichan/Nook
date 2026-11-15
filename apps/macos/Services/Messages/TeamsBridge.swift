@@ -88,6 +88,9 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         /// Chats (by their id) whose newest messages of yours not everyone read yet: how far the others read is asked
         /// again at each read, also while the chat does not move, so the ticks turn the moment they read it.
         var unseen: [String: Unseen] = [:]
+        /// Each chat's version in the list when its history was last read (`TeamsData.Chat.version`): a chat whose
+        /// version moved while its newest message stayed (an edit, a deletion) is read again.
+        var versions: [String: Double] = [:]
     }
 
     /// Your messages of a chat not everyone read yet, with what their ticks need: whether it is a group, and the names
@@ -452,7 +455,10 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         let moved = chats.filter { chat in
             (chat.last.map { state.seen[chat.id] != $0 } ?? false) || (chat.name.isEmpty && state.seen[chat.id] == nil)
                 || changedHere.contains(chat.id)
+                || (chat.version.map { version in state.versions[chat.id].map { $0 != version } ?? false } ?? false)
         }.prefix(Self.perRead)
+        // A chat seen for the first time counts from its version now: only a later change reads it again.
+        for chat in chats where state.versions[chat.id] == nil { if let version = chat.version { state.versions[chat.id] = version } }
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
         // Every moved chat is asked side by side (`ChatParallel`): its history, its pictures, and how far the others read
@@ -498,6 +504,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             }
             changedHere.remove(chat.id)
             fetched.insert(chat.id)
+            if let version = chat.version { state.versions[chat.id] = version }
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let messages = read.messages

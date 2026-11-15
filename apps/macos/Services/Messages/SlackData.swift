@@ -276,6 +276,18 @@ enum SlackData {
         return latest
     }
 
+    /// The `ts` of messages of others read before (`known`: `ts`, whether yours) inside the stretch a page of the newest
+    /// messages covers (from its oldest message on) that the page lacks: deleted in Slack, which leaves a deleted message
+    /// out. A page that holds the conversation's whole stretch only; your own are never taken for deleted.
+    static func missing(_ known: [(ts: Double, mine: Bool)], listed: [[String: Any]]) -> [String] {
+        let page = listed.compactMap { ($0["ts"] as? String).flatMap(Double.init) }
+        guard let low = page.min(), let high = page.max() else { return [] }
+        return known.filter { message in
+            !message.mine && message.ts > low + 0.000_000_5 && message.ts < high - 0.000_000_5
+                && !page.contains { abs($0 - message.ts) < 0.000_000_5 }
+        }.map { String(format: "%.6f", $0.ts) }
+    }
+
     /// The newest message you read in one conversation (`last_read`), from `conversations.info`; nil without it.
     static func readMark(info json: [String: Any]) -> String? {
         guard let read = (json["channel"] as? [String: Any])?["last_read"] as? String, Double(read) != nil else { return nil }

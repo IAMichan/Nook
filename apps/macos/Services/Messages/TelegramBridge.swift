@@ -454,6 +454,12 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 chats[id]?.readOutbox = upTo
                 markRead(upTo: upTo, in: id)
                 askViewers(in: id)
+                // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says.
+                if let known = chats[id], !known.title.isEmpty {
+                    ChatCaptureService.shared.archiveRead(chat: ChatInbox.key(app: app, chat: shownName(known))) { message in
+                        TelegramData.ids(message.id).map { $0.message <= upTo } ?? false
+                    }
+                }
             }
         case "basicGroupFullInfo", "chatMembers":
             if let extra = object["@extra"] as? String, extra.hasPrefix("members:"), let id = Int64(extra.dropFirst("members:".count)) {

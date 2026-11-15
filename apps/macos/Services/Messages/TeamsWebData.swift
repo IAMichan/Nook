@@ -185,6 +185,7 @@ enum TeamsWebData {
                 chat.profile = profile.isEmpty ? nil : profile
             }
             chat.preview = messages(["messages": [last]], chat: chat, me: me).first
+            chat.version = ChatJSON.number(conversation["lastUpdatedMessageVersion"]) ?? ChatJSON.number(conversation["version"])
             return chat
         }
     }

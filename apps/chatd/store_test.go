@@ -231,3 +231,41 @@ func TestReadIsKeptBeforeNookHearsOfIt(t *testing.T) {
 		t.Fatalf("told %v, reads then %+v", told, readsWhenTold)
 	}
 }
+
+// An edit, an emoji and taking an emoji back each name the message they changed on the live line, and that message can
+// be read by its id however far back it is.
+func TestAChangeNamesItsMessage(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := id.RoomID("!r:" + serverName)
+	friend := id.UserID("@signal_friend:" + serverName)
+	start := time.UnixMilli(1_000_000)
+	if err = store.CreateRoom(room, "local-signal", "Friend", "", true, start); err != nil {
+		t.Fatal(err)
+	}
+	text := func(body string) *event.Content {
+		return &event.Content{Parsed: &event.MessageEventContent{MsgType: event.MsgText, Body: body}}
+	}
+	old, _ := store.Add("", room, friend, event.EventMessage, text("old"), start.Add(time.Second), "")
+	for i := 0; i < 40; i++ {
+		_, _ = store.Add("", room, friend, event.EventMessage, text("later"), start.Add(time.Duration(2+i)*time.Second), "")
+	}
+	var named []id.EventID
+	store.changedMessage = func(kind string, changed id.RoomID, message id.EventID) { named = append(named, message) }
+
+	edit := &event.MessageEventContent{MsgType: event.MsgText, Body: "* old!", NewContent: &event.MessageEventContent{MsgType: event.MsgText, Body: "old!"}}
+	edit.RelatesTo = (&event.RelatesTo{}).SetReplace(old)
+	_, _ = store.Add("", room, friend, event.EventMessage, &event.Content{Parsed: edit}, start.Add(time.Minute), "")
+	reaction := &event.ReactionEventContent{RelatesTo: event.RelatesTo{Type: event.RelAnnotation, EventID: old, Key: "👍"}}
+	emoji, _ := store.Add("", room, friend, event.EventReaction, &event.Content{Parsed: reaction}, start.Add(2*time.Minute), "")
+	_, _ = store.Add("", room, friend, event.EventRedaction, &event.Content{Parsed: &event.RedactionEventContent{Redacts: emoji}}, start.Add(3*time.Minute), "")
+	if len(named) != 3 || named[0] != old || named[1] != old || named[2] != old {
+		t.Fatalf("named %v, want the old message three times", named)
+	}
+	list, err := store.MessagesByID(room, []id.EventID{old, "$unknown"})
+	if err != nil || len(list) != 1 || list[0].ID != old || list[0].Edited == nil || list[0].Edited.Body != "old!" {
+		t.Fatalf("by id: %v %+v", err, list)
+	}
+}

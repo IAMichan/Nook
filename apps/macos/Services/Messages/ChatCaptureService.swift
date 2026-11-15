@@ -1035,6 +1035,15 @@ final class ChatCaptureService: ObservableObject {
         }
     }
 
+    /// Your messages of a chat its app says were read (`read` picks them, as "read up to here" does): the archive gives
+    /// them their blue ticks too, also those older than what the chat shows, so scrolling back shows them read.
+    func archiveRead(chat key: String, where read: @escaping @Sendable (InboxMessage) -> Bool) {
+        guard let archive = ChatArchive.shared else { return }
+        archive.write { store in
+            store.transaction { store.markRead(key, where: read) }
+        }
+    }
+
     /// The texts a message had before it was edited or deleted, oldest first, as the archive kept them.
     func versions(chat key: String, message id: String) async -> [ChatVersion] {
         guard let archive = ChatArchive.shared else { return [] }
