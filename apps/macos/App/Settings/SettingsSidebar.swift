@@ -326,7 +326,7 @@ struct SettingsPartTab: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(part.subtitle)
+        .nookTip(part.subtitle)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

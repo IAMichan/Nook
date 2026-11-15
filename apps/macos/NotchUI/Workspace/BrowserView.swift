@@ -1322,10 +1322,10 @@ private struct BrowserPopupView: View {
                 Spacer(minLength: 0)
                 if store.loading { ProgressView().controlSize(.small) }
                 Button { store.openInDefaultBrowser() } label: { Image(icon: "arrow.up.forward.app") }
-                    .help(DefaultBrowser.openOutsideTitle)
+                    .nookTip(DefaultBrowser.openOutsideTitle)
                     .disabled(store.webView.url == nil)
                 Button(action: expand) { Image(icon: "arrow.up.left.and.arrow.down.right") }
-                    .help(tr("browser.popup.expand"))
+                    .nookTip(tr("browser.popup.expand"))
             }
             .buttonStyle(.nookBorderless)
             // Room for the window's own buttons on the left.

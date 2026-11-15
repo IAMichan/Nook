@@ -87,7 +87,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     Toggle("", isOn: isOn)
                         .labelsHidden()
                         .compactSwitch()
-                        .help(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
+                        .nookTip(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
                         .accessibilityLabel(tr("connection.use", title))
                 }
                 moreMenu
@@ -153,7 +153,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .contentShape(Rectangle())
             }
             .nookMenuButton()
-            .help(tr("connection.more"))
+            .nookTip(tr("connection.more"))
             .accessibilityLabel(tr("connection.more"))
         } else {
             // The menu's place kept empty, so every row's switch lines up with the rows above and below it.

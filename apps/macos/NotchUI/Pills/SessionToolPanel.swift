@@ -287,7 +287,7 @@ struct SessionToolPanel: View {
                 }
             }
         }
-        .help(tr("agents.tool.add"))
+        .nookTip(tr("agents.tool.add"))
         .accessibilityLabel(tr("agents.tool.add"))
     }
 

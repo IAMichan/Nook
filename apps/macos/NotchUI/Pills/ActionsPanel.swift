@@ -176,7 +176,7 @@ struct ActionsPanel: View {
                                                mark: latest[workflow.id].map { (outcome: $0.outcome, running: $0.running) }) {
                                     store.select(workflow: workflow.id)
                                 }
-                                .help(workflow.path)
+                                .nookTip(workflow.path)
                                 .contextMenu {
                                     if store.dispatchInfo?.inputs[workflow.id] != nil {
                                         Button(tr("actions.dispatch.open")) { dispatching = workflow.id }
@@ -337,7 +337,7 @@ struct WorkflowRunRow: View {
         }
         .buttonStyle(.nookPlain)
         .hoverRowFill(selected: selected)
-        .help(run.title)
+        .nookTip(run.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {
             GitHubLinkMenuItems(url: run.url, branch: run.branch, openTitle: tr("actions.openOnGitHub"))

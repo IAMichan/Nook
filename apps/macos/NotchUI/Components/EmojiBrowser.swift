@@ -138,7 +138,7 @@ private struct EmojiGroupTab: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -161,7 +161,7 @@ private struct EmojiCell: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .help(emoji.name)
+        .nookTip(emoji.name)
         .accessibilityLabel(emoji.name)
     }
 }

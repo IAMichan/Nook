@@ -57,7 +57,7 @@ extension SettingsView {
                 Text(tr("settings.privacy.level"))
             }
             .pickerStyle(.segmented)
-            .help(tr("settings.privacy.levelDetail"))
+            .nookTip(tr("settings.privacy.levelDetail"))
             SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
@@ -125,7 +125,7 @@ extension SettingsView {
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
-        .help(detail)
+        .nookTip(detail)
         .accessibilityElement(children: .combine)
         .accessibilityHint(detail)
     }

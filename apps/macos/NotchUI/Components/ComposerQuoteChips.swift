@@ -50,7 +50,7 @@ private struct QuoteChip: View {
             .buttonStyle(.nookPlain)
             .disabled(jump == nil)
             .onHover { hovering = $0 }
-            .help(quote.note.isEmpty ? quote.text : "\(quote.text)\n\n\(quote.note)")
+            .nookTip(quote.note.isEmpty ? quote.text : "\(quote.text)\n\n\(quote.note)")
             .accessibilityLabel(quote.title)
             .accessibilityHint(jump == nil ? "" : tr("compose.quote.jump"))
             if setNote != nil {

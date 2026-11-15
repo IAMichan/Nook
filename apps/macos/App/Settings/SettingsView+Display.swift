@@ -89,7 +89,7 @@ extension SettingsView {
                 SettingText("settings.energy.mode")
             }
             .pickerStyle(.segmented)
-            .help(tr("settings.energy.modeDetail"))
+            .nookTip(tr("settings.energy.modeDetail"))
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: NookTheme.Spacing.sm) {

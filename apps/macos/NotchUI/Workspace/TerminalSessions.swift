@@ -544,7 +544,7 @@ private struct TerminalRow: View {
                 if let owner = session.owner {
                     // Started by an agent: its mark, so you can tell its processes from your own shells.
                     AgentMark(agent: owner.agent, account: nil, size: 11, dimmed: !session.running, ring: .clear)
-                        .help(tr("bridge.terminalBy", owner.agent))
+                        .nookTip(tr("bridge.terminalBy", owner.agent))
                         .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
                 }
                 Text(session.title)
@@ -557,7 +557,7 @@ private struct TerminalRow: View {
                     Circle()
                         .fill(session.exitCode == 0 ? NookTheme.textTertiary : NookTheme.coral)
                         .frame(width: 5, height: 5)
-                        .help(session.exitCode.map { tr("workbench.terminal.exit", $0) } ?? "")
+                        .nookTip(session.exitCode.map { tr("workbench.terminal.exit", $0) } ?? "")
                 }
                 // Always takes its room, so the name does not move when the cross appears.
                 Color.clear.frame(width: 14, height: 14)
@@ -583,7 +583,7 @@ private struct TerminalRow: View {
             Divider()
             Button(tr("workbench.terminal.close"), role: .destructive, action: close)
         }
-        .help(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
+        .nookTip(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
     }
 }
 
@@ -645,7 +645,7 @@ private struct TerminalActionButton: View {
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(label)
     }
 }
@@ -741,7 +741,7 @@ struct SessionTerminalBar: View {
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .help(directory)
+                .nookTip(directory)
             Spacer(minLength: NookTheme.Spacing.md)
             SessionTerminalActions(directory: directory).id(directory)
         }
@@ -780,7 +780,7 @@ struct SessionTerminalActions: View {
                 Menu {
                     ForEach(scripts) { script in
                         Button(script.name) { run(script) }
-                            .help(script.command)
+                            .help(script.command)  // menu item: AppKit draws its tooltip
                     }
                 } label: {
                     Image(icon: "play")
@@ -790,7 +790,7 @@ struct SessionTerminalActions: View {
                         .contentShape(Rectangle())
                 }
                 .nookMenuButton()
-                .help(tr("workbench.scripts"))
+                .nookTip(tr("workbench.scripts"))
                 .accessibilityLabel(tr("workbench.scripts"))
             }
             TerminalActionBar(terminals: store.sessions(in: directory)) { store.open(in: directory) }

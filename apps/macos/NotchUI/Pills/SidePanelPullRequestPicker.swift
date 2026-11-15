@@ -239,7 +239,7 @@ struct SidePanelPullRequestPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("agents.pr.linked.add"))
+                .nookTip(tr("agents.pr.linked.add"))
             }
         }
         .padding(.horizontal, NookTheme.Spacing.md)

@@ -121,7 +121,7 @@ struct DoubleTapRunDetail: View {
                         .lineLimit(allChecks ? 12 : 5)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                        .help(check.value)
+                        .nookTip(check.value)
                 }
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)

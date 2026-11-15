@@ -568,7 +568,7 @@ struct NotchSheetView: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .help(subtitle)
+                        .nookTip(subtitle)
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: dismiss)

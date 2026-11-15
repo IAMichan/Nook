@@ -73,7 +73,7 @@ extension SettingsView {
                     Text(tr("settings.brain.externalChoice")).tag(BrainKind.external)
                 }
                 .pickerStyle(.segmented)
-                .help(tr("settings.brain.localDefault"))
+                .nookTip(tr("settings.brain.localDefault"))
             } header: {
                 SettingsSectionTitle(tr("brain.step.where"))
             } footer: {
@@ -128,7 +128,7 @@ extension SettingsView {
                     } label: {
                         SettingText("settings.brain.provider")
                     }
-                    .help(brainExplanation)
+                    .nookTip(brainExplanation)
                 } header: {
                     SettingsSectionTitle(tr("brain.step.service"))
                 }
@@ -645,7 +645,7 @@ struct NoImagesBadge: View {
         Image(icon: "eye.slash")
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
-            .help(tr("brain.noImages.help"))
+            .nookTip(tr("brain.noImages.help"))
             .accessibilityLabel(tr("brain.noImages.help"))
     }
 }

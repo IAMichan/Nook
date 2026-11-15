@@ -321,7 +321,7 @@ struct FileViewer: View {
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.head)
-                .help(target.path)
+                .nookTip(target.path)
             Spacer(minLength: NookTheme.Spacing.sm)
             if updating { ArtifactUpdatingMark() }
             if editor.editing {
@@ -577,7 +577,7 @@ private struct FileLineNumber: View {
                     Image(icon: "plus.bubble").font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.paper)
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr("file.viewer.comment"))
+                .nookTip(tr("file.viewer.comment"))
                 .accessibilityLabel(tr("file.viewer.comment"))
             } else {
                 Text(verbatim: String(number))

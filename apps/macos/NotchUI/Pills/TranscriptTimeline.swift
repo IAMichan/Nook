@@ -613,7 +613,7 @@ private struct TranscriptRowView: View, Equatable {
                                open: opens ? open.contains(key) : nil, reveals: file.map { $0 == side.shownFile }, quietChevron: true) {
                 if let file { side.showFile(file) } else { toggle(key) }
             }
-            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
+            .nookTip(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
             // Why it failed, right under it, then what it opens to.
             TranscriptStepDetail(error: step.state == .failed ? step.error : nil, open: open.contains(key), command: command,
                                  output: output, failed: step.state == .failed, tasks: tasks,

@@ -376,7 +376,7 @@ struct EmbeddedAppPane: View {
                                 .contentShape(Rectangle())
                         }
                         .composerMenu()
-                        .help(tr("a11y.more"))
+                        .nookTip(tr("a11y.more"))
                         .accessibilityLabel(tr("a11y.more"))
                         .confirmDelete($forgetting, question: { tr("confirm.logout", $0.title) }, detail: tr("confirm.forgetSite.detail"),
                                        confirmTitle: tr("accounts.logout")) { confirmed in
@@ -433,7 +433,7 @@ struct EmbeddedAppPane: View {
                 ComposerPill(text: tr("embedded.mode.short." + now.rawValue))
             }
             .composerMenu()
-            .help(tr("embedded.mode.help"))
+            .nookTip(tr("embedded.mode.help"))
         }
     }
 
@@ -550,7 +550,7 @@ struct EmbeddedSplitHandle: View {
                 }
         )
         .onTapGesture(count: 2) { onReset() }
-        .help(tr(help))
+        .nookTip(tr(help))
         .accessibilityLabel(tr(help))
     }
 }

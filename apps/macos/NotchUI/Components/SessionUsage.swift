@@ -172,7 +172,7 @@ struct SessionUsageSection: View {
                         .labelsHidden()
                         .compactSwitch(.mini)
                 }
-                .help(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
+                .nookTip(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
                          ContextMeter.tokensText(usage.usedTokens)))
             }
             if let onCompact = compact(snapshot) {
@@ -293,7 +293,7 @@ private struct CompactNowButton: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .help(tr("compose.context.compact"))
+        .nookTip(tr("compose.context.compact"))
     }
 }
 
@@ -356,7 +356,7 @@ struct SessionUsageCard: View {
                     .onHover { hovering = $0 }
                 }
                 .buttonStyle(.nookPlain)
-                .help(tr(folded ? "usage.session.unfold" : "usage.session.fold"))
+                .nookTip(tr(folded ? "usage.session.unfold" : "usage.session.fold"))
                 if !folded { SessionUsageSection(source: source) }
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
@@ -561,7 +561,7 @@ private struct SessionUsageButtonLabel: View, Equatable {
         }
         .buttonStyle(.nookPlain)
         .fixedSize()
-        .help(help)
+        .nookTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             SessionUsagePopover(source: source, legend: true) { open = false }

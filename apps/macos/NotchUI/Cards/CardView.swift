@@ -143,7 +143,7 @@ struct CardView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(-1)
-                    .help(card.sources.joined(separator: ", "))
+                    .nookTip(card.sources.joined(separator: ", "))
             }
             Spacer(minLength: NookTheme.Spacing.md)
             if let changes = card.changes { CardLineChanges(changes: changes) }
@@ -702,7 +702,7 @@ private struct SummaryDetail: View {
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(text)
+            .nookTip(text)
     }
 }
 

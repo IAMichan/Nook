@@ -114,7 +114,7 @@ struct PullRequestQuickActionButtons: View {
         .onHover { inside in
             if inside { hovered = action } else if hovered == action { hovered = nil }
         }
-        .help(tr(phase == .waiting ? "agents.pulls.quick.unqueueHelp"
+        .nookTip(tr(phase == .waiting ? "agents.pulls.quick.unqueueHelp"
                  : action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
@@ -632,7 +632,7 @@ struct PullRequestMergeMenu: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .onHover { hovering = $0 }
-            .help(tr("agents.pulls.quick.more"))
+            .nookTip(tr("agents.pulls.quick.more"))
             .accessibilityLabel(tr("agents.pulls.quick.more"))
         }
     }

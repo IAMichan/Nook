@@ -79,7 +79,7 @@ struct MediaOverlayButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.nookPlain)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(detail.map { "\(label): \($0)" } ?? label)
     }
 }

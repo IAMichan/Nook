@@ -212,7 +212,7 @@ struct RunQuestionPanel: View {
                 .onChange(of: own) { old, new in attachPastedPaths(old: old, new: new) }
 
             ToolbarIconButton("paperclip", tr("ws.question.attach")) { attachFile() }
-                .help(tr("ws.question.attachHelp"))
+                .nookTip(tr("ws.question.attachHelp"))
 
             if canSendOwn {
                 Button {

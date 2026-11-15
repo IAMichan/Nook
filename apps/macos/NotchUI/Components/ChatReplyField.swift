@@ -788,7 +788,7 @@ private struct DraftPanel: View {
             }
         }
         .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet)
-        .help(writing ? "" : readyNotice)
+        .nookTip(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
         .animation(NookTheme.reveal, value: steering)
@@ -1200,7 +1200,7 @@ private struct DraftChip: View {
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(title)
+        .nookTip(title)
     }
 }
 

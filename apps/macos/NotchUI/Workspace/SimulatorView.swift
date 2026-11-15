@@ -31,9 +31,9 @@ struct SimulatorSnapshotView: View {
                 if png != nil {
                     // Only their marks, so the device keeps its name in a narrow tab.
                     Button { copy() } label: { Image(icon: "doc.on.doc") }
-                        .controlSize(.small).help(tr("sim.copy")).accessibilityLabel(tr("sim.copy"))
+                        .controlSize(.small).nookTip(tr("sim.copy")).accessibilityLabel(tr("sim.copy"))
                     Button { save() } label: { Image(icon: "square.and.arrow.down") }
-                        .controlSize(.small).help(tr("sim.save")).accessibilityLabel(tr("sim.save"))
+                        .controlSize(.small).nookTip(tr("sim.save")).accessibilityLabel(tr("sim.save"))
                 }
                 if let simulatorApp {
                     Button(tr("sim.openApp")) {

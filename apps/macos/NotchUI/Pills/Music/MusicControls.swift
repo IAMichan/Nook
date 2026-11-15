@@ -355,7 +355,7 @@ struct MusicToggleButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.reveal, value: isOn)
-        .help(label)
+        .nookTip(label)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? tr("music.on") : tr("music.off"))
     }
@@ -398,7 +398,7 @@ struct MusicVolumeControl: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(shown > 0 ? tr("music.mute") : tr("music.unmute"))
+            .nookTip(shown > 0 ? tr("music.mute") : tr("music.unmute"))
             .accessibilityLabel(shown > 0 ? tr("music.mute") : tr("music.unmute"))
 
             GeometryReader { geo in

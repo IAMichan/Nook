@@ -131,7 +131,7 @@ private struct ArchiveRow: View {
             ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.deleteChat", title),
                             action: delete)
                 .buttonStyle(.nookBorderless)
-                .help(tr("button.delete"))
+                .nookTip(tr("button.delete"))
                 .accessibilityLabel(tr("button.delete"))
                 .disabled(busy)
         }

@@ -27,7 +27,7 @@ struct KeptSessionsSettingsRows: View {
                         }
                     }
                     .controlSize(.small)
-                    .help(tr("keep.stopOrphans.help"))
+                    .nookTip(tr("keep.stopOrphans.help"))
                 }
             } label: {
                 SettingLabel(tr("keep.status"), detail: statusText)

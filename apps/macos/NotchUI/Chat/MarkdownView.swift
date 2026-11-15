@@ -519,7 +519,7 @@ private struct MarkdownCodeBlock: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.head)
-                        .help(language.isEmpty ? title : "\(title) · \(language)")
+                        .nookTip(language.isEmpty ? title : "\(title) · \(language)")
                         .padding(.leading, NookTheme.Spacing.xxs)
                 } else {
                     Text(language.isEmpty ? "code" : language)

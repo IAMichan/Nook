@@ -80,7 +80,7 @@ private struct CLIProxyHubBlock: View {
                 if editable {
                     ConfirmedButton(symbol: "trash", title: tr("cliproxy.remove"), question: tr("cliproxy.removeQuestion", hub.name),
                                     detail: tr("cliproxy.removeDetail"), action: remove)
-                        .help(tr("cliproxy.remove"))
+                        .nookTip(tr("cliproxy.remove"))
                 }
             }
             if let problem = snapshot?.problem {

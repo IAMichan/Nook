@@ -95,7 +95,7 @@ private struct OutputTab: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(OutputText.kind(output.kind) + " · " + (output.path ?? OutputText.title(output)))
+        .nookTip(OutputText.kind(output.kind) + " · " + (output.path ?? OutputText.title(output)))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }

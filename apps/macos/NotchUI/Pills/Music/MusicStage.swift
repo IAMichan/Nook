@@ -142,7 +142,7 @@ private struct LyricRow: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.open, value: state)
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("music.lyrics.seekHint"))
+        .nookTip(tr("music.lyrics.seekHint"))
     }
 
     /// The current line bright, what comes still readable, what passed further back.
@@ -484,7 +484,7 @@ private struct MusicArtistChip: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("music.home.searchArtist", name))
+        .nookTip(tr("music.home.searchArtist", name))
         .accessibilityLabel(tr("music.home.searchArtist", name))
     }
 }
@@ -510,7 +510,7 @@ struct MusicGroupTitle: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
-                        .help(detail)
+                        .nookTip(detail)
                 }
             }
             Spacer(minLength: NookTheme.Spacing.md)
@@ -598,7 +598,7 @@ private struct MusicBestMatch: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("music.play"))
+            .nookTip(tr("music.play"))
             .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
             .accessibilityHint(tr("music.play"))
             ToolbarIconButton("text.line.last.and.arrowtriangle.forward", tr("music.queue.add"), height: 32, width: 32, symbolSize: 13) {
@@ -613,7 +613,7 @@ private struct MusicBestMatch: View {
                     .background(Circle().fill(NookTheme.paper))
             }
             .buttonStyle(.nookPlain)
-            .help(tr("music.play"))
+            .nookTip(tr("music.play"))
             .accessibilityLabel(tr("music.play"))
             .padding(.trailing, NookTheme.Spacing.md)
         }
@@ -763,7 +763,7 @@ struct MusicCoverCard: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(item.help)
+        .nookTip(item.help)
         .contextMenu {
             Button(item.help, action: item.action)
             if let secondary = item.secondary, !item.menu.contains(where: { $0.label == secondary.label }) {

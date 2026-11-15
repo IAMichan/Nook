@@ -23,7 +23,7 @@ struct DevServerStrip: View {
                             Image(icon: "dot.radiowaves.left.and.right")
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(NookTheme.textTertiary)
-                                .help(tr("agents.servers.help"))
+                                .nookTip(tr("agents.servers.help"))
                             ForEach(servers) { server in
                                 // `address` is published, unlike the web view's own URL.
                                 let open = URL(string: browser.address)?.port == server.port
@@ -38,7 +38,7 @@ struct DevServerStrip: View {
                                         .background(NookTheme.shape(NookTheme.Radius.control).fill(open ? NookTheme.smoke : NookTheme.field))
                                 }
                                 .buttonStyle(.nookPlain)
-                                .help(server.url.absoluteString)
+                                .nookTip(server.url.absoluteString)
                                 if server.pid > 0 { stopButton(server) }
                             }
                         }
@@ -119,7 +119,7 @@ struct DevServerStrip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(server.startedByNook ? tr("automation.server.stop", String(server.port)) : tr("automation.server.stopUnavailable"))
+        .nookTip(server.startedByNook ? tr("automation.server.stop", String(server.port)) : tr("automation.server.stopUnavailable"))
         .accessibilityLabel(tr("automation.server.stop", String(server.port)))
     }
 }

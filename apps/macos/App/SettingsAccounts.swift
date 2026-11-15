@@ -384,7 +384,7 @@ private struct AccountColorPicker: View {
                 set: { accent = NSColor($0).nookHex }
             ), supportsOpacity: false)
             .labelsHidden()
-            .help(tr("accounts.color.custom"))
+            .nookTip(tr("accounts.color.custom"))
         }
     }
 
@@ -406,7 +406,7 @@ private struct AccountColorPicker: View {
             .contentShape(Circle())
         }
         .buttonStyle(.nookPlain)
-        .help(tr(name))
+        .nookTip(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.color"))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -449,7 +449,7 @@ private struct AccountIconPicker: View {
             .contentShape(Circle())
         }
         .buttonStyle(.nookPlain)
-        .help(tr(name))
+        .nookTip(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.icon"))
         .accessibilityAddTraits(selected ? .isSelected : [])

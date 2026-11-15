@@ -70,7 +70,7 @@ struct ActionsRepoTab: View {
             // Calm by default: a mark only when something runs or a workflow is broken.
             if let status, status.active > 0 || status.failing > 0 {
                 CheckOutcomeGlyph(outcome: status.outcome, size: 10, running: status.running)
-                    .help(statusHelp(status))
+                    .nookTip(statusHelp(status))
             }
             if closable {
                 ToolbarIconButton("xmark", tr("actions.repo.close"), height: 16, width: 16, onClose)
@@ -85,7 +85,7 @@ struct ActionsRepoTab: View {
         .nookClickable()
         .onTapGesture(perform: onSelect)
         .animation(NookTheme.hover, value: hovering)
-        .help(repo)
+        .nookTip(repo)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(repo)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -130,7 +130,7 @@ struct ActionsRepoPicker: View {
             .padding(.horizontal, store.recent.isEmpty ? NookTheme.Spacing.md : 0)
             .frame(minWidth: 30, minHeight: 30)
             .contentShape(Rectangle())
-            .help(tr("actions.repo.help"))
+            .nookTip(tr("actions.repo.help"))
             .accessibilityLabel(tr("actions.repo.help"))
         } content: {
             ActionsRepoPickerList(store: store, candidates: candidates)

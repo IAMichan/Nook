@@ -164,7 +164,7 @@ struct UsageOverviewBlocks: View {
                     Text(metric == .cost ? tr("usage.sessionsEstimate", insights.sessions) : tr("usage.sessions", insights.sessions))
                     if metric == .cost, insights.unpricedTokens > 0 {
                         Image(icon: "info.circle")
-                            .help(tr("usage.unpricedNote", UsageFormat.percent(insights.unpricedShare)))
+                            .nookTip(tr("usage.unpricedNote", UsageFormat.percent(insights.unpricedShare)))
                     }
                 }
                 .font(NookTheme.TextStyle.detail)
@@ -360,7 +360,7 @@ struct UsageShareBar: View {
                             Capsule()
                                 .fill(segment.color)
                                 .frame(width: max(3, (proxy.size.width - CGFloat(visible.count - 1) * 2) * segment.value / total))
-                                .help("\(segment.label) · \(format(segment.value)) · \(UsageFormat.percent(segment.value / total))")
+                                .nookTip("\(segment.label) · \(format(segment.value)) · \(UsageFormat.percent(segment.value / total))")
                         }
                     }
                 }
@@ -484,9 +484,9 @@ struct UsageChatRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .help(tr("usage.chat.open", target.title))
+            .nookTip(tr("usage.chat.open", target.title))
         } else {
-            row(title: chat.chat.displayTitle).help(chat.chat.displayTitle)
+            row(title: chat.chat.displayTitle).nookTip(chat.chat.displayTitle)
         }
     }
 

@@ -77,10 +77,10 @@ struct MarkdownImageBlock: View {
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
-                .help(source)
+                .nookTip(source)
             } else {
                 ChatMessagePicture(image: image, missing: false, name: name) { file }
-                    .help(alt.isEmpty ? source : alt)
+                    .nookTip(alt.isEmpty ? source : alt)
             }
         }
         .task(id: source + (fileLinkBase ?? "")) {
@@ -182,7 +182,7 @@ struct TableCopyMenu: View {
                 .contentShape(Rectangle())
         }
         .nookMenuButton()
-        .help(moment.copied ? tr("button.copied") : tr("table.copy"))
+        .nookTip(moment.copied ? tr("button.copied") : tr("table.copy"))
         .accessibilityLabel(tr("table.copy"))
     }
 }
