@@ -118,15 +118,23 @@ struct MessageTrigger: Codable, Equatable, Sendable {
     }
 
     func matches(_ message: ArrivedMessage) -> Bool {
+        guard matchesSource(message) else { return false }
+        if !keywords.isEmpty {
+            let text = Self.folded(message.text)
+            guard keywords.contains(where: { text.contains(Self.folded($0)) }) else { return false }
+        }
+        return true
+    }
+
+    /// Where the message came from (app, person or chat, group or not), without its words: what a waiting message is
+    /// checked against again when the filter changes. Its words were checked when it arrived, on its whole text; a merged
+    /// or shortened text could no longer hold them.
+    func matchesSource(_ message: ArrivedMessage) -> Bool {
         if message.isGroup, !groups { return false }
         if !apps.isEmpty, !apps.contains(message.app.lowercased()) { return false }
         if !from.isEmpty {
             let wanted = Self.folded(from)
             guard Self.folded(message.chat).contains(wanted) || Self.folded(message.sender).contains(wanted) else { return false }
-        }
-        if !keywords.isEmpty {
-            let text = Self.folded(message.text)
-            guard keywords.contains(where: { text.contains(Self.folded($0)) }) else { return false }
         }
         return true
     }
@@ -716,10 +724,11 @@ struct ArrivalQueue: Equatable, Sendable {
         compact()
     }
 
-    /// The next batch for a run, oldest first, of what still matches `trigger` (the user may have changed the filter while
-    /// it waited; what no longer matches goes). The rest keeps waiting.
+    /// The next batch for a run, oldest first, of what still comes from where `trigger` listens (the user may have changed
+    /// the filter while it waited; what no longer does goes). Its words were checked on arrival (`admit`), on the whole
+    /// text, so a merge that shortened it never loses a message. The rest keeps waiting.
     mutating func takeBatch(matching trigger: MessageTrigger) -> [ArrivedMessage] {
-        waiting = waiting.filter(trigger.matches)
+        waiting = waiting.filter(trigger.matchesSource)
         let batch = Array(waiting.prefix(NookSchedule.messagesPerRun))
         waiting.removeFirst(batch.count)
         return batch

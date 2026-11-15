@@ -345,6 +345,18 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(ArrivalQueue.fitted("kort"), "kort")
     }
 
+    func testAKeywordAtTheStartSurvivesAMerge() {
+        var queue = ArrivalQueue()
+        let trigger = MessageTrigger(keywords: ["factuur"])
+        let long = (0...ArrivalQueue.perChat).map { message("lisa", "factuur " + String(repeating: "x", count: 3_000), at: TimeInterval($0)) }
+        queue.enqueue(queue.admit(long, matching: trigger))
+        XCTAssertEqual(queue.waiting.count, ArrivalQueue.perChat)
+        var taken: [ArrivedMessage] = []
+        while !queue.isEmpty { taken += queue.takeBatch(matching: trigger) }
+        XCTAssertEqual(taken.count, ArrivalQueue.perChat, "the merged message, whose start was shortened away, still runs")
+        XCTAssertTrue(taken.contains { $0.text.hasPrefix(ArrivalQueue.shortened) })
+    }
+
     func testAChangedFilterAfterAMergeKeepsWhatStillMatches() {
         var queue = ArrivalQueue()
         let mail = ArrivedMessage(chatID: "m", app: "mail", chat: "Tom", sender: "Tom", text: "factuur", date: now, isGroup: false)
