@@ -176,6 +176,12 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
   the last resort (`r=`, `relay`; a WebSocket to `/v1/rooms/<room>?role=phone`); compressed answers (`compression`);
   and an outbox for messages, new sessions and questions to Nook while the Mac is away (`retry`, sent again with the
   same id). Code: `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
+- **Push notifications:** with a Firebase configuration in the app (`google-services.json`), the phone gives each paired
+  Mac its FCM token (`register` with `item` "fcm"; `PairedDevice.pushService`), and the Mac sends that phone's pushes
+  sealed through the relay (`RelayPushRequest.service` "fcm", `apps/relay/worker/push.js`) as a data message. The app's
+  `NookMessagingService` opens it with the push key the app gave it (`RelayPush.pushKey`, never the pairing key) and shows
+  it with Allow / Deny (category `NOOK_APPROVAL_ALLOW`, `NOOK_APPROVAL_DENY`) or Reply (`NOOK_INFO`); a button opens the
+  app, which acts on that Mac and shows the session. While pushes come, the app shows no notifications of its own.
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 

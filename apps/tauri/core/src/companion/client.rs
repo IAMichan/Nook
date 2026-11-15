@@ -170,6 +170,27 @@ struct StoredPairing {
     outbox: Vec<Queued>,
     #[serde(default)]
     features: Vec<String>,
+    #[serde(default)]
+    push_token: Option<String>,
+}
+
+/// A push key for the phone's notification service (`RelayPush.pushKey`): derived from a pairing key, so the service
+/// that opens notifications never holds the pairing key itself, and a push can never pass as a reply.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushKey {
+    /// The pairing's device id: what a sealed push names as `d`.
+    pub mac: String,
+    pub name: String,
+    /// Base64.
+    pub key: String,
+}
+
+pub fn push_key(pairing_key: &[u8]) -> Vec<u8> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(pairing_key).expect("any key length");
+    mac.update(b"nook-companion-push-v1");
+    mac.finalize().into_bytes().to_vec()
 }
 
 /// One computer this phone is paired with.
@@ -181,6 +202,8 @@ struct Pairing {
     outbox: Vec<Queued>,
     /// What it listed last, so a computer away still says whether it keeps an outbox.
     features: Vec<String>,
+    /// The push token this computer has from the phone (FCM), so it is registered again only when it changes.
+    push_token: Option<String>,
 }
 
 impl Pairing {
@@ -224,6 +247,7 @@ impl Pairing {
             last_route: self.last_route.clone(),
             outbox: self.outbox.clone(),
             features: self.features.clone(),
+            push_token: self.push_token.clone(),
         }
     }
 
@@ -235,6 +259,7 @@ impl Pairing {
             last_route: s.last_route,
             outbox: s.outbox,
             features: s.features,
+            push_token: s.push_token,
         })
     }
 
@@ -516,7 +541,8 @@ impl CompanionClient {
         if full {
             return self.snapshot();
         }
-        let candidate = Pairing { link: parsed.clone(), endpoints: vec![], last_route: None, outbox: vec![], features: vec![] };
+        let candidate =
+            Pairing { link: parsed.clone(), endpoints: vec![], last_route: None, outbox: vec![], features: vec![], push_token: None };
         let mut hello = CompanionRequest::versioned(CompanionOp::Hello, &self.app_version);
         hello.text = Some(device_name.into());
         hello.compression = Some(true);
@@ -596,6 +622,50 @@ impl CompanionClient {
         }
         let _ = self.save();
         self.snapshot()
+    }
+
+    /// The push keys of every paired computer, for the phone's notification service.
+    pub fn push_keys(&self) -> Vec<PushKey> {
+        use base64::Engine;
+        self.lock()
+            .pairings
+            .iter()
+            .map(|p| PushKey {
+                mac: p.id(),
+                name: p.link.mac_name.clone(),
+                key: base64::engine::general_purpose::STANDARD.encode(push_key(&p.link.key)),
+            })
+            .collect()
+    }
+
+    /// Gives every paired computer this phone's FCM token (`register` with `item` "fcm"), each once per token; a
+    /// computer away gets it the next time. Returns how many have it now.
+    pub async fn register_push(&self, token: &str) -> usize {
+        let token = token.trim();
+        if token.len() < 100 || token.len() > 4096 || !token.chars().all(|c| c.is_ascii_alphanumeric() || ":_-".contains(c)) {
+            return 0;
+        }
+        let pairings: Vec<Pairing> = self.lock().pairings.clone();
+        let mut done = 0;
+        for p in pairings {
+            if p.push_token.as_deref() == Some(token) {
+                done += 1;
+                continue;
+            }
+            let mut r = CompanionRequest::new(CompanionOp::Register);
+            r.item = Some("fcm".into());
+            r.text = Some(token.into());
+            if let Ok((response, _)) = request(&p.link, &p.routes(), &r, &*self.resolver).await {
+                if response.ok {
+                    done += 1;
+                    if let Some(stored) = self.lock().pairings.iter_mut().find(|x| x.id() == p.id()) {
+                        stored.push_token = Some(token.into());
+                    }
+                }
+            }
+        }
+        let _ = self.save();
+        done
     }
 
     pub async fn refresh(&self) -> ClientSnapshot {

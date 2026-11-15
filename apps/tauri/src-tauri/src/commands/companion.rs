@@ -360,6 +360,20 @@ pub async fn companion_client_others(app: AppHandle, companion: State<'_, Compan
     Ok(view(&app, companion.client.refresh_others().await))
 }
 
+/// The push keys of every paired computer, for the notification service (`NookPush.kt`).
+#[tauri::command]
+pub fn companion_client_push_keys(companion: State<'_, Companion>) -> Vec<nook_core::companion::client::PushKey> {
+    companion.client.push_keys()
+}
+
+/// Gives every paired computer this phone's push token (Firebase Cloud Messaging).
+#[tauri::command]
+pub async fn companion_client_register_push(companion: State<'_, Companion>, token: String) -> Result<usize, String> {
+    let count = companion.client.register_push(&token).await;
+    companion.poll.pushing.store(count > 0, std::sync::atomic::Ordering::SeqCst);
+    Ok(count)
+}
+
 /// Denies a request and tells the agent why (`decide` with `text`).
 #[tauri::command]
 pub async fn companion_client_deny(

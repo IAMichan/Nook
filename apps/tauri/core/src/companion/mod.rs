@@ -436,6 +436,8 @@ mod tests {
         assert_eq!(answer.and_then(|a| a.message).as_deref(), Some("outbox"));
         assert_eq!(s.outbox.len(), 1);
         assert_eq!(s.outbox[0].text, "later");
+        // Its push key is the one the Mac seals with (`RelayPush.pushKey`).
+        assert_eq!(phone.push_keys()[0].mac, PairedDevice::identifier(&[3u8; KEY_LENGTH]));
         // It is kept across a restart of the app.
         let again = CompanionClient::new(secrets, Arc::new(DnsResolver));
         let id = again.snapshot().outbox[0].id.clone();
@@ -500,5 +502,20 @@ mod tests {
         let room = super::transport::relay_room(&link.key);
         assert_eq!(rooms.lock().unwrap()[0], format!("/v1/rooms/{room}?role=phone"));
         assert_eq!(phone.decide("S1", "p2", true).await.route, "relay");
+    }
+
+    /// The push key and a sealed push as the Mac makes them (the vectors of `RelayPushTests` on the Mac, made outside
+    /// Swift): what the Android app's notification service gets and opens.
+    #[test]
+    fn push_keys_open_what_the_mac_seals() {
+        let pairing: Vec<u8> = (0u8..32).collect();
+        let key = client::push_key(&pairing);
+        let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, "7a429408bc2815112a429079b335fb1a10ddd5ca648231192c2182f7ce957c07");
+        let vector = br#"{"d": "630dcd2966c43366", "s": "AAAAAAAAAAAAAAAABS3kO4MIl6sxb1ccggt5baLczbPE5rpaZZaRXcuXSEkU4GmcxaFGzXF2q8bQTP2LEs8QYTtYj28NxxIl6Jzq5FRLlKT08PCoTrtIfWad9wFhK/oWpdxpklboXglaJ9jrZzvC7W6L/zlNGKz8GyQVJJtQdWS9SyRboYTAbGjAzZDq+8r9QGuqTk4csyaBfiMwc1M="}"#;
+        let plain = seal::open(vector, &key, seal::Direction::Response).expect("the push key opens it");
+        let content: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+        assert!(content.get("title").is_some() && content.get("category").is_some(), "{content}");
+        assert!(seal::open(vector, &pairing, seal::Direction::Response).is_err(), "the pairing key itself does not");
     }
 }

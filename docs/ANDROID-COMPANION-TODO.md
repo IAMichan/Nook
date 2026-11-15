@@ -29,7 +29,12 @@ relay*), which holds the APNs key. Android pushes will go the same way.
    `npx wrangler secret put FCM_SERVICE_ACCOUNT` in `apps/relay`, and paste the file's contents when asked.
 2. Deploy the worker as you do now.
 
-Until this is done the Android app keeps its current behaviour: notifications only while the app runs.
+Until this is done the Android app keeps its current behaviour: notifications only while the app runs. The code for
+the rest is in place: the app asks Firebase for its token once `google-services.json` is there (`NookPush.kt`), gives
+it to every paired Mac, and the Mac sends that phone's pushes through the relay (see `apps/relay/README.md`, *Android*).
+
+Your Mac must use a relay for this (Settings › iPhone › *Away from home*): an Android phone's notifications always go
+through it, since only the relay holds the Firebase key.
 
 ### 3. Try it on a real Android phone
 
@@ -61,9 +66,13 @@ and add it to the repository's GitHub secrets; then the Android job can sign the
 
 What the iPhone app does that the Android companion does not yet. Each follows the iPhone's code and copy.
 
-- **Push notifications through FCM**, once the owner's steps 1 and 2 are done: the phone registers its FCM token
-  (`register` with `item` `fcm`), the Mac and Nook on Windows and Linux send through the relay, notifications get Allow,
-  Deny and Reply as on the iPhone, and a quiet ongoing notification stands in for Live Activities.
+- **Push from Nook on Windows and Linux** to an Android phone: the Mac sends through the relay, the Tauri app's server
+  does not push through a relay yet (and accepts only Apple tokens).
+- **Allow, Deny and Reply without opening the app**: a notification's buttons now open the app, which acts and shows the
+  session; the iPhone acts in the background.
+- **Live Activities on Android**: an ongoing notification for the agents that work, updated by the Mac's pushes.
+- **Check the build** of the Firebase parts once the Android job runs: `com.google.gms:google-services` 4.4.2 and the
+  Firebase BoM 33.7.0 were chosen without being able to reach Google's Maven from the session that wrote them.
 - **Widgets** for the home screen (agent activity, plan limits) and **app shortcuts** on the icon.
 - **Mermaid diagrams and math** in answers.
 - **Tablet layout** (the iPad's split view) for Android tablets.

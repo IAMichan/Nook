@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTimeline, attentionWord, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyTimeline, attentionWord, parseNotificationAction, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -112,5 +112,12 @@ describe("companion", () => {
     expect(a.done).toBe(true);
     const r = snoozeRange(0);
     expect(r.min).toBe(90_000);
+  });
+
+  it("reads what a notification asks the app to do", () => {
+    expect(parseNotificationAction('{"action":"allow","mac":"m","session":"S1","item":"p1","text":null}')).toEqual({ action: "allow", mac: "m", session: "S1", item: "p1", text: null });
+    expect(parseNotificationAction('{"action":"reply","mac":"m","session":"S1","item":null,"text":"go on"}')?.text).toBe("go on");
+    expect(parseNotificationAction('{"action":"format","session":"S1"}')).toBeNull();
+    expect(parseNotificationAction("nonsense")).toBeNull();
   });
 });

@@ -18,6 +18,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 
 /**
  * Nook op Android. Bovenop Tauri twee dingen voor de interface (src/lib/mobile.ts):
@@ -33,6 +35,7 @@ class MainActivity : TauriActivity() {
   @Volatile private var insetsJson = "{\"top\":0,\"bottom\":0,\"left\":0,\"right\":0,\"keyboard\":0}"
   @Volatile private var shared: String? = null
   @Volatile private var link: String? = null
+  @Volatile private var notification: String? = null
   private var multicast: WifiManager.MulticastLock? = null
   private var recognizer: SpeechRecognizer? = null
   private var pendingLanguage: String? = null
@@ -40,8 +43,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    current = this
     takeShare(intent)
     takeLink(intent)
+    notification = NookPush.actionJson(intent)
+    NookPush.ensureChannel(this)
+    fetchPushToken()
   }
 
   override fun onResume() {
@@ -135,6 +142,10 @@ class MainActivity : TauriActivity() {
     if (takeLink(intent)) {
       webView?.post { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('nook-link'))", null) }
     }
+    NookPush.actionJson(intent)?.let { json ->
+      notification = json
+      webView?.post { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('nook-notification'))", null) }
+    }
   }
 
   override fun onWebViewCreate(webView: WebView) {
@@ -164,6 +175,31 @@ class MainActivity : TauriActivity() {
       insets
     }
     ViewCompat.requestApplyInsets(webView)
+  }
+
+  override fun onDestroy() {
+    if (current === this) current = null
+    super.onDestroy()
+  }
+
+  /** Asks Firebase for this phone's token, when the app carries a Firebase configuration (google-services.json). */
+  private fun fetchPushToken() {
+    if (FirebaseApp.getApps(this).isEmpty()) return
+    try {
+      FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        if (token != null && token != NookPush.token(this)) {
+          NookPush.setToken(this, token)
+          pushTokenChanged()
+        }
+      }
+    } catch (e: Exception) {
+      // Without Google Play services there is no token: notifications only while the app runs.
+    }
+  }
+
+  /** Tells the interface there is a (new) token to give the paired computers. */
+  fun pushTokenChanged() {
+    webView?.post { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('nook-push-token'))", null) }
   }
 
   /** Keeps a nook:// link the app was opened with (a pairing code, a prompt link); true when there was one. */
@@ -204,6 +240,21 @@ class MainActivity : TauriActivity() {
     }
 
     @JavascriptInterface
+    fun pushToken(): String? = NookPush.token(this@MainActivity)
+
+    @JavascriptInterface
+    fun setPushKeys(json: String) {
+      NookPush.setKeys(this@MainActivity, json)
+    }
+
+    @JavascriptInterface
+    fun takeNotification(): String? {
+      val text = notification
+      notification = null
+      return text
+    }
+
+    @JavascriptInterface
     fun takeLink(): String? {
       val text = link
       link = null
@@ -220,5 +271,7 @@ class MainActivity : TauriActivity() {
 
   companion object {
     private const val DICTATION_PERMISSION = 4711
+    /** The activity that runs now, for the messaging service to reach the interface. */
+    @Volatile var current: MainActivity? = null
   }
 }

@@ -112,6 +112,8 @@ export const companion = {
   stop: (session: string) => invoke<ClientView>("companion_client_stop", { session }),
   switchTo: (id: string) => invoke<ClientView>("companion_client_switch", { id }),
   discard: (id: string) => invoke<ClientView>("companion_client_discard", { id }),
+  pushKeys: () => invoke<{ mac: string; name: string; key: string }[]>("companion_client_push_keys"),
+  registerPush: (token: string) => invoke<number>("companion_client_register_push", { token }),
   others: () => invoke<ClientView>("companion_client_others"),
   deny: (session: string, item: string, reason: string) => invoke<ClientView>("companion_client_deny", { session, item, reason }),
   call: (call: ClientCall) => invoke<CallResult>("companion_client_call", { call }),
@@ -681,5 +683,19 @@ export function routeWords(route: string | undefined): { text: string; icon: str
     case "internet": return { text: tr("Verbonden via internet", "Connected over the internet"), icon: "globe" };
     case "lan": return { text: tr("Verbonden via je lokale netwerk", "Connected over your local network"), icon: "wifi" };
     default: return null;
+  }
+}
+
+/** What a tap on a notification, or one of its buttons, asks the app to do. */
+export interface NotificationAction { action: "open" | "allow" | "deny" | "reply"; mac: string; session: string; item: string | null; text: string | null }
+
+export function parseNotificationAction(json: string | null | undefined): NotificationAction | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json);
+    if (!["open", "allow", "deny", "reply"].includes(v.action) || typeof v.session !== "string") return null;
+    return { action: v.action, mac: String(v.mac ?? ""), session: v.session, item: typeof v.item === "string" ? v.item : null, text: typeof v.text === "string" ? v.text : null };
+  } catch {
+    return null;
   }
 }

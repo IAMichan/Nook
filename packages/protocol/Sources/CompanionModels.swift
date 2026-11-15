@@ -877,6 +877,9 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     /// Where pushes go; nil until the phone allowed notifications. Environment matters: a development build has sandbox tokens.
     var pushToken: String?
     var pushProduction: Bool?
+    /// Which service the token belongs to: nil for Apple's (an iPhone), "fcm" for Firebase Cloud Messaging (Nook on
+    /// Android), whose pushes always go through the relay (`RelayPushRequest.service`).
+    var pushService: String?
     /// Live Activities (`LiveActivityRegistration`): false once the phone turned them off; nil until it said anything.
     var liveActivities: Bool?
     /// The push-to-start token, and the update token of each activity on the phone by session id.

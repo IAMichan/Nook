@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import {
     companion, has, may, needingYou, tabsFor, unreadChats, Feature,
-    routeWords, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
+    parseNotificationAction, routeWords, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
@@ -112,6 +112,49 @@
     shell.link = null;
     if (!link) return void took({ ...view, notice: tr("Deze link kan Nook niet openen.", "Nook cannot open this link.") });
     if (paired) untrack(() => (sheet = { kind: "new", task: link.text, link }));
+  });
+
+  // Push notifications (Android, `NookPush.kt`): the notification service gets each paired computer's push key, and
+  // every computer gets this phone's token. Both again when the pairings or the token change.
+  const macKey = $derived((view?.macs ?? []).map((m) => m.id).join(","));
+  $effect(() => {
+    void macKey;
+    const bridge = window.NookAndroid;
+    if (!bridge?.setPushKeys || !paired) return;
+    untrack(async () => {
+      bridge.setPushKeys?.(JSON.stringify(await companion.pushKeys()));
+      const token = bridge.pushToken?.();
+      if (token) await companion.registerPush(token);
+    });
+  });
+  $effect(() => {
+    const changed = async () => {
+      const token = window.NookAndroid?.pushToken?.();
+      if (token) await companion.registerPush(token);
+    };
+    window.addEventListener("nook-push-token", changed);
+    return () => window.removeEventListener("nook-push-token", changed);
+  });
+
+  // A tap on a notification, or one of its buttons: that computer becomes active, then the action runs and its session opens.
+  async function onNotification(a: NotificationAction) {
+    if (view?.macs?.some((m) => m.id === a.mac && !m.active)) await switchTo(a.mac);
+    if (a.action === "allow" || a.action === "deny") {
+      if (a.item) took(await companion.decide(a.session, a.item, a.action === "allow"));
+    } else if (a.action === "reply" && a.text?.trim()) {
+      const r = await companion.call({ op: "send", session: a.session, text: a.text.trim() });
+      took(r.view);
+    }
+    open("agents", { kind: "session", id: a.session });
+  }
+  $effect(() => {
+    const take = () => {
+      const a = parseNotificationAction(window.NookAndroid?.takeNotification?.());
+      if (a && view && paired) untrack(() => onNotification(a));
+    };
+    if (view && paired) take();
+    window.addEventListener("nook-notification", take);
+    return () => window.removeEventListener("nook-notification", take);
   });
 
   // Text another app shared with Nook waits here until you say where it goes.

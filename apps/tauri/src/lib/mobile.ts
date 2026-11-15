@@ -11,6 +11,12 @@ declare global {
       takeShared(): string | null;
       /** A nook:// link the app was opened with, once. */
       takeLink?(): string | null;
+      /** This phone's push token (Firebase), when the app carries a Firebase configuration. */
+      pushToken?(): string | null;
+      /** The push keys of the paired computers, for the notification service. */
+      setPushKeys?(json: string): void;
+      /** What a notification asked the app to do, once (`NookPush.actionJson`). */
+      takeNotification?(): string | null;
       /** Starts dictation in a BCP 47 language (empty: the phone's own); words come as event `nook-dictation`. */
       dictate?(language: string): void;
       stopDictating?(): void;

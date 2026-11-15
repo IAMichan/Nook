@@ -1,0 +1,7 @@
+<resources>
+    <string name="push_allow">"Erlauben"</string>
+    <string name="push_deny">"Ablehnen"</string>
+    <string name="push_reply">"Antworten"</string>
+    <string name="push_reply_hint">"Nachricht an den Agenten"</string>
+    <string name="push_channel">"Agenten und Freigaben"</string>
+</resources>

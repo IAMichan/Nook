@@ -20,6 +20,8 @@ pub struct Poller {
     hidden: tokio::sync::Notify,
     /// Another computer became active: the kept connection moves to it.
     restart: tokio::sync::Notify,
+    /// The paired computers push to this phone (Firebase): the app shows no notifications of its own.
+    pub pushing: AtomicBool,
     seen: Mutex<Option<DeliveryLog>>,
 }
 
@@ -30,6 +32,7 @@ impl Default for Poller {
             wake: tokio::sync::Notify::new(),
             hidden: tokio::sync::Notify::new(),
             restart: tokio::sync::Notify::new(),
+            pushing: AtomicBool::new(false),
             seen: Mutex::new(None),
         }
     }
@@ -123,7 +126,7 @@ pub fn start(app: &AppHandle) {
                 let _ = app.emit("companion-client", &snapshot);
                 if snapshot.phase == Phase::Connected {
                     let fresh = companion.poll.fresh(&snapshot);
-                    if !visible {
+                    if !visible && !companion.poll.pushing.load(Ordering::SeqCst) {
                         for (agent, what) in fresh {
                             notify(&app, &agent, &what);
                         }

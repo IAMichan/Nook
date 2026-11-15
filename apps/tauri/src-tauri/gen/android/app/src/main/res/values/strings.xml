@@ -2,4 +2,9 @@
     <string name="app_name">"Nook"</string>
     <string name="main_activity_title">"Nook"</string>
     <string name="share_label">"Vraag Nook"</string>
+    <string name="push_allow">"Allow"</string>
+    <string name="push_deny">"Deny"</string>
+    <string name="push_reply">"Reply"</string>
+    <string name="push_reply_hint">"Message to the agent"</string>
+    <string name="push_channel">"Agents and approvals"</string>
 </resources>

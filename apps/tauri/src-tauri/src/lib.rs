@@ -143,6 +143,8 @@ pub fn run() {
             commands::companion::companion_client_stop,
             commands::companion::companion_client_deny,
             commands::companion::companion_client_switch,
+            commands::companion::companion_client_push_keys,
+            commands::companion::companion_client_register_push,
             commands::companion::companion_client_discard,
             commands::companion::companion_client_others,
             commands::companion::companion_client_call,

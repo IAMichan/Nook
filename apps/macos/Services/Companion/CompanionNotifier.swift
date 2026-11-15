@@ -206,7 +206,13 @@ final class CompanionNotifier: ObservableObject {
                 guard let token = device.pushToken else { continue }
                 // Each phone is told which of its pairings this is (`mac`), so its buttons reach this Mac from anywhere.
                 let result: APNsClient.Result
-                if let relay {
+                // An Android phone (Firebase) is reached only through the relay, whatever the route for iPhones is.
+                let android = device.pushService == FCMToken.service
+                if android, !RelayPushClient.shared.reachable {
+                    summary.append("\(device.name): \(tr("push.androidNeedsRelay"))")
+                    continue
+                }
+                if let relay = android ? RelayPushClient.shared : relay {
                     let sealed = RelayPushContent(title: words.title, body: words.body, category: PushPolicy.category(event),
                                                   thread: event.session, session: event.session, item: event.item, badge: count,
                                                   mac: device.id)
