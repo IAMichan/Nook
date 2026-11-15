@@ -94,15 +94,22 @@ extension AppModel {
     /// The merged list and what follows from it, worked out again only when a list it comes from changes. The Agents
     /// tab asks on every redraw, and merging every session list costs more than the rest of the tab.
     private func sessionLists() -> SessionListsCache {
-        let key = SessionListsCache.Key(sessions: (hub.sessions + hub.detected).map(SessionListsCache.Key.live),
-                                        runs: workspace.runs.map(SessionListsCache.Key.run),
-                                        past: history.sessions, profiles: profiles.all)
-        if let cache = sessionListsCache, cache.key == key { return cache }
+        // The same lists as last time (most redraws: a streamed token, the pointer, a chat): comparing arrays whose
+        // storage was not replaced is a pointer check, so this skips making a key line per session.
+        let sources = SessionListsCache.Sources(sessions: hub.sessions, detected: hub.detected, runs: workspace.runs,
+                                                past: history.sessions, profiles: profiles.all)
+        if let cache = sessionListsCache, cache.sources == sources { return cache }
+        let key = SessionListsCache.Key(sources)
+        if var cache = sessionListsCache, cache.key == key {
+            cache.sources = sources
+            sessionListsCache = cache
+            return cache
+        }
         let merged = AgentSessionRegistry.merge(sessionRecords())
         let free = pastNotCovered(merged: merged)
         let transcripts = detectedTranscripts(free: free)
         let linked = Set(transcripts.values.map(\.id))
-        let cache = SessionListsCache(key: key, merged: merged, transcripts: transcripts,
+        let cache = SessionListsCache(sources: sources, key: key, merged: merged, transcripts: transcripts,
                                       past: free.filter { !linked.contains($0.id) })
         sessionListsCache = cache
         return cache
@@ -292,6 +299,15 @@ extension AppModel {
 
 /// The merged session lists and the inputs they were worked out from (see `AppModel.sessionLists()`).
 struct SessionListsCache {
+    /// The lists themselves, as last read. While none of them was replaced the key cannot have changed either.
+    struct Sources: Equatable {
+        let sessions: [AgentSession]
+        let detected: [AgentSession]
+        let runs: [WorkspaceRun]
+        let past: [PastSession]
+        let profiles: [AgentProfile]
+    }
+
     /// Only what `sessionRecords()` reads of a running session or a session Nook runs: their steps, replies and streamed
     /// text change many times a second while agents work, and none of it changes the lists.
     struct Key: Equatable {
@@ -299,6 +315,13 @@ struct SessionListsCache {
         let runs: [String]
         let past: [PastSession]
         let profiles: [AgentProfile]
+
+        init(_ sources: Sources) {
+            sessions = (sources.sessions + sources.detected).map(Self.live)
+            runs = sources.runs.map(Self.run)
+            past = sources.past
+            profiles = sources.profiles
+        }
 
         static func live(_ s: AgentSession) -> String {
             "\(s.id)|\(s.status)|\(s.approvalID != nil)|\(s.name)|\(s.home)|\(s.cwd)|\(s.project)|\(s.sessionID)"
@@ -313,6 +336,7 @@ struct SessionListsCache {
         }
     }
 
+    var sources: Sources
     let key: Key
     let merged: [AgentSessionRecord]
     /// The transcript behind each process Nook only sees, by session id.

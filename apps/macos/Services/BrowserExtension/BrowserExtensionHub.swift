@@ -39,6 +39,17 @@ struct BrowserExtensionClient: Equatable, Sendable {
     var lastActive: Date
 }
 
+extension BrowserExtensionClient {
+    /// The pid of the host script, which the browser started: the host names itself "pid-time-random"
+    /// (`BrowserExtensionHost.script`). With it Nook tells which running browser a client is, whatever name it says
+    /// hello with (Arc and Vivaldi often say they are Chrome).
+    var hostPID: Int32? {
+        let parts = id.split(separator: "-")
+        guard parts.count == 3, let pid = Int32(parts[0]), pid > 1 else { return nil }
+        return pid
+    }
+}
+
 final class BrowserExtensionHub: @unchecked Sendable {
     /// Sends one line back on the connection a request came in on; false when that connection is already gone.
     typealias Reply = (Data?) -> Bool

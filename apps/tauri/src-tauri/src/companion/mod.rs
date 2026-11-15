@@ -75,7 +75,8 @@ pub fn client_enabled() -> bool {
 pub fn setup(app: &AppHandle) {
     let state = app.state::<AppState>();
     let resolver: Arc<dyn HostResolver> = Arc::new(mdns::LocalResolver);
-    let client = Arc::new(CompanionClient::new(state.secrets.clone(), resolver));
+    let version = app.package_info().version.to_string();
+    let client = Arc::new(CompanionClient::new(state.secrets.clone(), resolver).with_app_version(&version));
     #[cfg(desktop)]
     let server = {
         let store = Arc::new(CompanionStore::load_default(state.secrets.clone()));

@@ -1604,6 +1604,19 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatServiceData.subscribeAll["chatIDs"] as? [String], ["*"])
     }
 
+    /// A change to one message names it, so it is read again by its id when it is older than the newest messages a read
+    /// brings, and laid beside them.
+    func testALinkedChatsChangedMessageIsReadByItsID() {
+        XCTAssertEqual(ChatServiceData.event(["type": "message.upserted", "chatID": "!a", "messageID": "$old"]),
+                       .changedMessage(chat: "!a", message: "$old"))
+        XCTAssertEqual(ChatServiceData.event(["type": "message.deleted", "chatID": "!a", "messageID": ""]), .changed(chat: "!a"))
+        let newest: [String: Any] = ["items": [["id": "$new", "text": "new"]]]
+        let asked: [String: Any] = ["items": [["id": "$old", "text": "old!"], ["id": "$new", "text": "dup"]]]
+        let merged = ChatServiceData.adding(asked, to: newest)
+        XCTAssertEqual(ChatServiceData.itemIDs(merged), ["$new", "$old"], "each message once, the newest answer's own kept")
+        XCTAssertEqual((merged["items"] as? [[String: Any]])?.first?["text"] as? String, "new")
+    }
+
     // MARK: Slack
 
     func testSlackMarkup() {
@@ -2073,6 +2086,10 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatReceipt.read.advanced(to: .failed), .failed, "a failure always shows")
         XCTAssertEqual(ChatReceipt(status: "played"), .read)
         XCTAssertNil(ChatReceipt(status: "typing"))
+        XCTAssertEqual(ChatReceipt(ack: 3), .read, "OpenWA's numeric ack, without a status word")
+        XCTAssertEqual(ChatReceipt(ack: 2), .delivered)
+        XCTAssertEqual(ChatReceipt(ack: -1), .failed)
+        XCTAssertNil(ChatReceipt(ack: 9))
         let reader = ChatReader(name: "Anna", receipt: .delivered, date: now)
         XCTAssertEqual(reader.advanced(to: .read, at: now.addingTimeInterval(60)).date, now.addingTimeInterval(60))
         XCTAssertEqual(reader.advanced(to: .delivered, at: now.addingTimeInterval(60)), reader, "nothing new keeps the time")

@@ -79,7 +79,13 @@ fn info(c: &Companion) -> CompanionInfo {
     let pairing = match (store.active_pending(now), store.pending_until(now), &c.server.state()) {
         (Some(key), Some(until), nook_core::companion::server::ServerState::Listening { port }) => {
             let host = chosen.unwrap_or_else(|| hosts[0].clone());
-            let link = nook_core::companion::PairingLink { host: host.clone(), port: *port, key, mac_name: c.server.name().into() };
+            let link = nook_core::companion::PairingLink {
+                host: host.clone(),
+                port: *port,
+                key,
+                mac_name: c.server.name().into(),
+                ..Default::default()
+            };
             let url = link.url();
             Some(PairingView { qr_svg: qr_svg(&url), url, host, until })
         }
@@ -332,6 +338,72 @@ pub async fn companion_client_send(
 #[tauri::command]
 pub async fn companion_client_stop(app: AppHandle, companion: State<'_, Companion>, session: String) -> Result<ClientView, String> {
     Ok(view(&app, companion.client.stop(&session).await))
+}
+
+/// Makes another paired computer the active one; the kept connection moves to it.
+#[tauri::command]
+pub fn companion_client_switch(app: AppHandle, companion: State<'_, Companion>, id: String) -> ClientView {
+    let snapshot = companion.client.switch_to(&id);
+    companion.poll.restart();
+    view(&app, snapshot)
+}
+
+/// Takes a waiting request out of the outbox ("Don't send").
+#[tauri::command]
+pub fn companion_client_discard(app: AppHandle, companion: State<'_, Companion>, id: String) -> ClientView {
+    view(&app, companion.client.discard(&id))
+}
+
+/// Asks the other paired computers for their sessions now.
+#[tauri::command]
+pub async fn companion_client_others(app: AppHandle, companion: State<'_, Companion>) -> Result<ClientView, String> {
+    Ok(view(&app, companion.client.refresh_others().await))
+}
+
+/// The push keys of every paired computer, for the notification service (`NookPush.kt`).
+#[tauri::command]
+pub fn companion_client_push_keys(companion: State<'_, Companion>) -> Vec<nook_core::companion::client::PushKey> {
+    companion.client.push_keys()
+}
+
+/// Gives every paired computer this phone's push token (Firebase Cloud Messaging).
+#[tauri::command]
+pub async fn companion_client_register_push(companion: State<'_, Companion>, token: String) -> Result<usize, String> {
+    let count = companion.client.register_push(&token).await;
+    companion.poll.pushing.store(count > 0, std::sync::atomic::Ordering::SeqCst);
+    Ok(count)
+}
+
+/// Denies a request and tells the agent why (`decide` with `text`).
+#[tauri::command]
+pub async fn companion_client_deny(
+    app: AppHandle,
+    companion: State<'_, Companion>,
+    session: String,
+    item: String,
+    reason: String,
+) -> Result<ClientView, String> {
+    Ok(view(&app, companion.client.decide_with_reason(&session, &item, false, Some(&reason)).await))
+}
+
+/// The answer of `companion_client_call`: the new state, and what the computer sent back (`None` when it was refused or
+/// out of reach; the state says why).
+#[derive(Serialize)]
+pub struct CallResult {
+    view: ClientView,
+    response: Option<nook_core::companion::CompanionResponse>,
+}
+
+/// Every other request of the phone side (the whole conversation, a new session, Nook's chats, home, limits, the Chats
+/// tab, managing a session), as the iPhone app makes them. The computer decides what this phone may do.
+#[tauri::command]
+pub async fn companion_client_call(
+    app: AppHandle,
+    companion: State<'_, Companion>,
+    call: nook_core::companion::client::ClientCall,
+) -> Result<CallResult, String> {
+    let (snapshot, response) = companion.client.call(call).await;
+    Ok(CallResult { view: view(&app, snapshot), response })
 }
 
 #[tauri::command]

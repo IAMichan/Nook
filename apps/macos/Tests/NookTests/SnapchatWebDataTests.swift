@@ -167,4 +167,22 @@ final class SnapchatWebDataTests: XCTestCase {
         XCTAssertTrue(aligned[1].edited)
         XCTAssertEqual(aligned.last?.line.text, "nieuw")
     }
+
+    func testTheListLineGivesYourNewestMessagesTheirTicks() {
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Opened · 2m", bold: false).receipt, .read)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Delivered · 5m", bold: false).receipt, .delivered)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Sent", bold: false).receipt, .sent)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Geopend · 1u", bold: false).receipt, .read)
+        XCTAssertNil(SnapchatWebData.Row(id: "a", name: "A", status: "Received · 1h", bold: false).receipt)
+        XCTAssertNil(SnapchatWebData.Row(id: "a", name: "A", status: "New Chat", bold: false).receipt)
+
+        let kept = SnapchatWebData.align([], with: [line("ME", "early"), line("ANNA", "hi"), line("ME", "one"), line("ME", "two")],
+                                         chat: "c", now: now)
+        let opened = SnapchatWebData.chat(SnapchatWebData.Row(id: "c", name: "Anna", status: "Opened · 1m", bold: false),
+                                          kept: kept, snapLabel: "Snap")
+        XCTAssertEqual(opened.messages.map(\.receipt), [.sent, nil, .read, .read], "the line speaks of those after theirs")
+        let received = SnapchatWebData.chat(SnapchatWebData.Row(id: "c", name: "Anna", status: "Received", bold: false),
+                                            kept: kept, snapLabel: "Snap")
+        XCTAssertEqual(received.messages.map(\.receipt), [.sent, nil, .sent, .sent], "on Snapchat at least")
+    }
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Touch and hold the app's icon (the iPhone's quick actions): start a session, ask Nook, answer a chat. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="new-session" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_new_session">
+        <intent android:action="android.intent.action.VIEW" android:data="nook://companion/new"
+            android:targetPackage="nl.imdigital.nook" android:targetClass="nl.imdigital.nook.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="ask-nook" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_ask_nook">
+        <intent android:action="android.intent.action.VIEW" android:data="nook://companion/ask"
+            android:targetPackage="nl.imdigital.nook" android:targetClass="nl.imdigital.nook.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="answer-chat" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_answer_chat">
+        <intent android:action="android.intent.action.VIEW" android:data="nook://companion/chats"
+            android:targetPackage="nl.imdigital.nook" android:targetClass="nl.imdigital.nook.MainActivity" />
+    </shortcut>
+</shortcuts>

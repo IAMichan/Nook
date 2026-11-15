@@ -138,7 +138,7 @@ game. Events can also be logged by hand.
 | Companion protocol (`CompanionModels`, `CompanionSeal`, `CompanionPush`) | ✓ (test vectors) | `core/src/companion/` |
 | Companion server on Windows and Linux (pairing the iPhone app): all workspace and hook sessions; approve, answer, steer, stop | ✓ (sessions from a terminal: approve and answer only) | `core/src/companion/`, `src-tauri/src/companion/backend.rs` |
 | Push notifications via APNs | ◐ (not tested against Apple) | `core/src/companion/apns.rs` |
-| Android as a companion (like the iPhone app) | ✓ (notifications only while the app runs; no FCM) | `src/views/companion/` |
+| Android as a companion, laid out and worded as the iPhone app (see COMPANION.md, *Android*): the companion is the whole app once paired; tabs, headers, cards, shelves, transcript in turns, docked approvals, composer with Steer now, New session, Nook chat, Chats with the WhatsApp skin, Settings; a kept live connection (`subscribe`, `watch`, `watchChat`) while in front | ◐ (browser tests against a fake computer with Android phone emulation, unit tests, `cargo check` for aarch64-linux-android; not run on a real phone; pull requests, review, pictures and dictation added; still missing: see ANDROID-COMPANION-TODO.md) | `src/views/companion/`, `core/src/companion/client.rs` |
 | Android project, phone layout, Share with Nook, back button | ◐ (APK only via CI) | `src-tauri/gen/android` |
 | Secrets in the Android Keystore | ○ (private app folder without backup) | `platform/secrets.rs` |
 

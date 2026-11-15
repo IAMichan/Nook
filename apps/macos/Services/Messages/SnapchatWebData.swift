@@ -37,6 +37,17 @@ enum SnapchatWebData {
             let line = status.lowercased()
             return bold || ["new ", "nieuw", "neu", "nouveau", "nouvelle", "nuevo", "nueva"].contains { line.hasPrefix($0) }
         }
+
+        /// How far your newest message got, as the line says while it is yours ("Opened · 2m", "Delivered · 5m",
+        /// "Sent"), in the languages Nook speaks; nil for a line about theirs ("Received", "New Chat").
+        var receipt: ChatReceipt? {
+            let line = status.lowercased()
+            func starts(_ words: [String]) -> Bool { words.contains { line.hasPrefix($0) } }
+            if starts(["opened", "geopend", "geöffnet", "ouvert", "abierto", "visto"]) { return .read }
+            if starts(["delivered", "bezorgd", "afgeleverd", "zugestellt", "distribué", "remis", "entregado"]) { return .delivered }
+            if starts(["sent", "verzonden", "verstuurd", "gesendet", "envoyé", "enviado"]) { return .sent }
+            return nil
+        }
     }
 
     /// How a read of the list ended.
@@ -486,14 +497,22 @@ enum SnapchatWebData {
     static func chat(_ row: Row, kept: [Kept], snapLabel: String, pictures: [String: String] = [:]) -> BridgedChat {
         let others = Set(kept.map(\.line).filter { !$0.isMine && !$0.sender.isEmpty }.map(\.sender))
         let group = others.count > 1
-        let messages = kept.map { item in
+        var messages = kept.map { item in
             let picture = item.line.media ? pictures[item.id] : nil
             var message = InboxMessage(id: item.id, sender: group && !item.line.isMine ? item.line.sender : "",
                                        text: item.line.media && item.line.text.isEmpty && picture == nil ? snapLabel : item.line.text,
                                        date: item.date, fromMe: item.line.isMine)
             if let picture { message.media = ChatMedia(kind: .photo, name: "photo.jpg", path: picture) }
             if item.edited { message.edited = true }
+            if item.line.isMine { message.receipt = .sent }
             return item.deleted ? message.withdrawn() : message
+        }
+        // The list's line says how far your newest messages got (those after their last one): their ticks follow it.
+        if let receipt = row.receipt, let newest = messages.last, newest.isMine {
+            let theirs = messages.lastIndex { !$0.isMine } ?? -1
+            for index in messages.indices where index > theirs && messages[index].isMine && !messages[index].isDeleted {
+                messages[index].receipt = receipt
+            }
         }
         return BridgedChat(app: app, name: row.name, messages: messages, unread: row.isUnread ? 1 : 0,
                            members: group ? others.sorted() : nil, listed: true)

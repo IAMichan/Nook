@@ -7,11 +7,22 @@ import SwiftUI
 struct DevServerStrip: View {
     let directory: String
     @ObservedObject var browser: BrowserStore
-    @State private var servers: [DevServer] = []
+    @State private var servers: [DevServer]
+    /// The servers found last per folder: back on the Browser tab the bar is there at once, instead of the address bar
+    /// moving down when the first scan answers.
+    private static var lastFound: [String: [DevServer]] = [:]
+    /// Scans only while somebody can see the window: idle Nook runs no `lsof` behind a covered or minimized window.
+    @State private var gate = AttentionGate()
     /// Why a server has no Stop: shown under the bar after a tap on its stop button.
     @State private var note: String?
     /// Bumped after a stop, so the scan looks again at once.
     @State private var rescan = 0
+
+    init(directory: String, browser: BrowserStore) {
+        self.directory = directory
+        _browser = ObservedObject(wrappedValue: browser)
+        _servers = State(initialValue: Self.lastFound[WorkspacePathPolicy.normalize(directory)] ?? [])
+    }
 
     var body: some View {
         // A VStack, not a Group: it exists while still empty, so the scan below starts.
@@ -60,9 +71,13 @@ struct DevServerStrip: View {
             // Each scan starts `lsof` twice (100–500 ms of work). Every 3 seconds right after something changed, so a
             // server that just started shows up at once; up to every 15 seconds while the list stays the same.
             var wait: UInt64 = 3
+            var first = true
             while !Task.isCancelled {
+                await gate.waitUntilSeen()
+                if Task.isCancelled { return }
                 let shells = TerminalStore.shared.sessions.map(\.shellPID)
-                let found = await Task.detached(priority: .utility) { () async -> [DevServer] in
+                // The first scan is the one you wait for, as the tab opens; the ones after it run in the background.
+                let found = await Task.detached(priority: first ? .userInitiated : .utility) { () async -> [DevServer] in
                     // Only listeners that serve a page: not the folder's database or debugger.
                     var servers = await DevServerProbe.pages(DevServerScanner.scan(folder: folder))
                     servers = DevServerOwnership.mark(servers, roots: .current(shells: shells))
@@ -74,6 +89,8 @@ struct DevServerStrip: View {
                     }
                     return servers.sorted { $0.port < $1.port }
                 }.value
+                first = false
+                Self.lastFound[folder] = found
                 if found != servers {
                     withAnimation(NookTheme.reveal) { servers = found }
                     wait = 3
@@ -83,6 +100,7 @@ struct DevServerStrip: View {
                 try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
             }
         }
+        .attentionGate(gate)
     }
 
     private struct ScanKey: Equatable {

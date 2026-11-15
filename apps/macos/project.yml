@@ -483,6 +483,7 @@ targets:
       - path: Services/Workspace/ChangedFilesTree.swift
       - path: Services/Workspace/TimelineSearch.swift
       - path: Services/Workspace/ScrollModel.swift
+      - path: Services/Workspace/TimelineReadingAnchor.swift
       - path: Services/Workspace/TimelineVisits.swift
       - path: Services/Workspace/HistoryWindow.swift
       - path: Services/Workspace/CompactionProgress.swift
@@ -728,6 +729,7 @@ targets:
       - path: Services/Flow/FlowLogic.swift
       - path: Services/Flow/VoiceModelCopies.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
+      - path: Services/DoubleTap/DoubleTapBrowserLogic.swift
       - path: Services/DoubleTap/DoubleTapSuggest.swift
       - path: Services/DoubleTap/DoubleTapEditLogic.swift
       - path: Services/DoubleTap/DoubleTapRun.swift

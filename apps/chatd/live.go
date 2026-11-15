@@ -31,6 +31,13 @@ func (h *Hub) Changed(kind string, room id.RoomID) {
 	h.send(message)
 }
 
+// ChangedMessage is Changed for a change to one message of the chat: its id goes along (`messageID`), so Nook reads
+// that message again also when it is older than the newest ones it reads.
+func (h *Hub) ChangedMessage(kind string, room id.RoomID, message id.EventID) {
+	out, _ := json.Marshal(map[string]any{"type": kind, "chatID": string(room), "messageID": string(message)})
+	h.send(out)
+}
+
 // Typing tells Nook that someone in a chat is typing ("text"), recording ("recording") or sending a file ("uploading"),
 // for as long as `timeout` says; a timeout of 0 says they stopped. Nothing is stored: it is only for the moment.
 func (h *Hub) Typing(room id.RoomID, user id.UserID, name, kind string, timeout time.Duration) {

@@ -61,6 +61,17 @@ struct RelayPushRequest: Codable, Equatable, Sendable {
     /// Opaque (`RelayPush.collapseID`), so neither the relay nor Apple learns session ids.
     var collapse: String?
     var urgent: Bool
+    /// "fcm" for an Android phone (Firebase Cloud Messaging); nil for Apple's push, as before.
+    var service: String? = nil
+}
+
+/// A Firebase Cloud Messaging registration token, as Nook on Android registers it (`register` with `item` "fcm").
+enum FCMToken {
+    static let service = "fcm"
+
+    static func valid(_ text: String) -> Bool {
+        (100...4096).contains(text.count) && text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || ":_-".contains($0)) }
+    }
 }
 
 enum RelayPush {
@@ -83,11 +94,13 @@ enum RelayPush {
     }
 
     /// The request for one phone, around an envelope `CompanionSeal` made. Nil when something does not fit.
-    static func request(envelope: Data, room: String, token: String, production: Bool, collapse: String?, urgent: Bool) -> RelayPushRequest? {
-        guard CompanionRelay.isRoom(room), APNsJWT.validToken(token),
+    static func request(envelope: Data, room: String, token: String, production: Bool, collapse: String?, urgent: Bool,
+                        service: String? = nil) -> RelayPushRequest? {
+        let fcm = service == FCMToken.service
+        guard CompanionRelay.isRoom(room), fcm ? FCMToken.valid(token) : APNsJWT.validToken(token),
               let sealed = try? JSONDecoder().decode(RelayPushRequest.Sealed.self, from: envelope) else { return nil }
-        return RelayPushRequest(room: room, token: token.lowercased(), production: production, sealed: sealed,
-                                collapse: collapse, urgent: urgent)
+        return RelayPushRequest(room: room, token: fcm ? token : token.lowercased(), production: production, sealed: sealed,
+                                collapse: collapse, urgent: urgent, service: fcm ? FCMToken.service : nil)
     }
 
     /// What the relay's answer means for the token, as for a direct push. `reason` is Apple's, or the relay's own.

@@ -62,6 +62,8 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
                 .onChange(of: selected) { _, value in
                     withAnimation(NookTheme.scroll) { proxy.scrollTo(value) }
                 }
+                // A panel that opens on a tab far down a long row shows that tab, not the first few.
+                .onAppear { proxy.scrollTo(selected) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             trailing()

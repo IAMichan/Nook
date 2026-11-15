@@ -329,10 +329,28 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         if !edited.isEmpty {
             let changedFiles = try await attachments(edited)
             let changedExtras = try await extras(edited, contacts: contacts)
+            let editedNames = try await groupNames(edited, contacts: contacts)
             for row in edited {
                 guard let id = NotificationRecord.integer(row["id"]) else { continue }
                 let chat = AppData.string(row["chat"])
-                guard names[chat] != nil else { continue }
+                if names[chat] == nil {
+                    // A chat no read since launch brought (it was quiet since): the chat as the inbox keeps it from before
+                    // takes the change now, and one the inbox no longer holds the message of keeps it in the archive, so
+                    // scrolling back shows it edited or deleted.
+                    let built = build(row, media: changedFiles[id], extras: changedExtras, contacts: contacts)
+                    guard let name = editedNames[chat] ?? built?.message.chatName, !name.isEmpty else { continue }
+                    let key = ChatInbox.key(app: app, chat: name)
+                    let message = "imessage-\(id)"
+                    guard ChatCaptureService.shared.loadedInbox.threads[key]?.messages.contains(where: { $0.id == message }) == true else {
+                        if unsent.contains(id) {
+                            ChatCaptureService.shared.archiveChange(chat: key, message: message, deleted: true)
+                        } else if let text = built?.inbox.text, !text.isEmpty {
+                            ChatCaptureService.shared.archiveChange(chat: key, message: message, edited: text)
+                        }
+                        continue
+                    }
+                    names[chat] = name
+                }
                 if unsent.contains(id) {
                     dropped[chat, default: []].append("imessage-\(id)")
                     mine[id] = nil
@@ -1368,6 +1386,12 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     private var downloaded: [String: String] = [:]
     /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
     private var chatIDs: [String: String] = [:]
+    /// Messages (by their id at the helper) the live line said changed, per chat: read again by their ids when the
+    /// newest messages of the chat do not hold them (an edit of an old message).
+    private var staleMessages: [String: Set<String>] = [:]
+    /// Every chat the helper listed since it started, by its id, as it last listed it: a chat that dropped out of the
+    /// newest the list brings can still be read when the live line says it changed.
+    private var earlier: [String: ChatServiceData.Chat] = [:]
     /// Every chat at the last read by its id, for what can be done in it (pinned, muted, editing…).
     @Published private(set) var chats: [String: ChatServiceData.Chat] = [:]
     /// The live line is open: changes come in the moment they happen (Settings › Connections shows it).
@@ -1378,9 +1402,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : nil }
 
     init() {
-        live.onChange = { [weak self] chat in
+        live.onChange = { [weak self] chat, message in
             guard let self else { return }
             self.stale.insert(chat)
+            if let message { self.staleMessages[chat, default: []].insert(message) }
             self.onChange()
         }
         live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
@@ -1415,6 +1440,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     func reset() {
         seen = [:]
         stale = []
+        staleMessages = [:]
+        earlier = [:]
         behind = [:]
         reportedUnread = [:]
         reportedPicture = [:]
@@ -1473,14 +1500,33 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let moved = listed.filter { chat in
                 stale.contains(chat.id) || (chat.last.map { seen[chat.id] != $0 } ?? (seen[chat.id] == nil))
             }
-            let due = moved.filter { stale.contains($0.id) } + moved.filter { !stale.contains($0.id) }
+            // A chat past the newest the list brings that the live line told changed (an edit, a deletion, an emoji, a
+            // read in an older chat): read by what the helper last said of it, so the change is not dropped.
+            for chat in listed { earlier[chat.id] = chat }
+            let listedIDs = Set(listed.map(\.id))
+            let older = stale.filter { !listedIDs.contains($0) }.compactMap { earlier[$0] }
+                .filter { !skips($0.app) }
+            let due = moved.filter { stale.contains($0.id) } + older + moved.filter { !stale.contains($0.id) }
             // Before the read: a change told while it runs marks the chat again, for the next turn.
-            for chat in due { stale.remove(chat.id) }
+            var taken: [String: Set<String>] = [:]
+            for chat in due {
+                stale.remove(chat.id)
+                taken[chat.id] = staleMessages.removeValue(forKey: chat.id)
+            }
+            let changedMessages = taken
             // Every chat's messages, files and picture are asked side by side (`ChatParallel`); what Nook remembers of
             // them is written below, one chat after another, as the answers come in their order.
             let answers = await ChatParallel.map(due) { [self] chat -> Result<ServiceRead, Error> in
                 do {
-                    let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                    var answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                    // A message the live line said changed that is older than the newest ones: asked by its id, and laid
+                    // beside them, so its edit, deletion or emoji shows.
+                    let have = Set(ChatServiceData.itemIDs(answer))
+                    let missing = (changedMessages[chat.id] ?? []).subtracting(have)
+                    if !missing.isEmpty, let again = try? await get(Self.path(chat.id) + "/messages",
+                                                                    ["ids": missing.sorted().joined(separator: ",")], token: token) {
+                        answer = ChatServiceData.adding(again, to: answer)
+                    }
                     let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                     let deleted = ChatServiceData.deleted(answer, chat: chat)
                     let shows = !messages.isEmpty || !deleted.isEmpty
@@ -1517,8 +1563,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     behind[chat.id] = nil
                 }
                 seen[chat.id] = chat.last ?? .distantPast
-                reportedUnread[chat.id] = chat.unread
-                reportedMuted[chat.id] = chat.isMuted
+                if listedIDs.contains(chat.id) {
+                    reportedUnread[chat.id] = chat.unread
+                    reportedMuted[chat.id] = chat.isMuted
+                }
                 covered.insert(chat.app)
                 // Two chats of one name in one row (Instagram keeps two threads with some people): answers go to the
                 // one that moved last, whichever was read last.
@@ -1528,10 +1576,13 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 let picture = read.picture
                 if picture != nil { reportedPicture[chat.id] = chat.picture }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
-                var bridged = BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
-                                          members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account)
+                // A chat read by what the helper said of it earlier: its count and mute from then may be old.
+                let current = listedIDs.contains(chat.id)
+                var bridged = BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: current ? chat.unread : nil,
+                                          avatar: picture, members: chat.members.isEmpty ? nil : chat.members, deleted: deleted,
+                                          account: account)
                 bridged.profile = chat.profile
-                bridged.mutedInApp = chat.isMuted
+                if current { bridged.mutedInApp = chat.isMuted }
                 if !read.faces.isEmpty { bridged.faces = read.faces }
                 result.append(bridged)
             }
@@ -1827,8 +1878,26 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     let app = "slack"
     /// `conversations.history` leaves a deleted message out (one with answers stays as a tombstone, read as deleted).
     var historyOmitsDeleted: Bool { true }
-    let interval: TimeInterval = 60
+    /// While Slack's real-time line is open a read only catches what it may have missed; without it, once a minute.
+    var interval: TimeInterval { live.isLive ? 120 : 60 }
     private(set) var isWorking = false
+    /// Slack's real-time line said a conversation changed: its turn comes at once.
+    var onChange: () -> Void = {}
+    /// The real-time line is open: messages, edits, deletions, emoji, typing and reads come in the moment they happen.
+    var isLive: Bool { live.isLive }
+    private let live = SlackLiveStream()
+    /// When to ask `rtm.connect` again after Slack handed out no line (a pasted token of a newer Slack app), or the
+    /// line could not be opened: not at every read.
+    private var liveRetry: Date?
+    private static let liveRetryGap: TimeInterval = 600
+    /// The next read comes because the line said something changed: it asks only the conversations that did, not the
+    /// dozen of a usual turn, so a busy workspace stays well within Slack's rate limits.
+    private var liveTurn = false
+    /// When `client.counts` was last asked, and whether the line said a conversation was read since: a live read asks it
+    /// only then (or once a minute), not for every message.
+    private var countsAt: Date?
+    private var countsDue = false
+    private static let countsGap: TimeInterval = 60
 
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
@@ -1866,7 +1935,11 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The picture each direct message was last handed with, so a changed photo reaches the list without a new message.
     private var handedAvatars: [String: String] = [:]
     private var usersAt: Date?
-    private var conversations: [SlackData.Conversation] = []
+    private var conversations: [SlackData.Conversation] = [] {
+        didSet { conversationByID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+    /// The same by id, for what the live line says (a word of someone typing comes every few seconds).
+    private var conversationByID: [String: SlackData.Conversation] = [:]
     private var conversationsAt: Date?
     /// The newest message read per conversation (Slack's `ts`), to ask only for what is newer.
     private var newest: [String: String] = [:]
@@ -1880,7 +1953,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// Conversations changed from Nook, to read at once, with the messages (their `ts`) to read again: one you edited or
     /// put an emoji on, which a read of only the newer messages would not bring back.
     private var stale: [String: Set<String>] = [:]
-    /// Your messages deleted from Nook, per conversation (their id in Nook), for the next read to drop from the chat.
+    /// Messages deleted for everyone, per conversation (their id in Nook): yours deleted from Nook, and anyone's the
+    /// real-time line said was deleted. The next read passes them on, so the chat keeps them as deleted.
     private var gone: [String: [String]] = [:]
     /// Where you stand in each conversation as Slack says (`client.counts`), and the newest messages read of each (their
     /// `ts`, whether yours), to count what is unread in Slack itself.
@@ -1890,8 +1964,27 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
 
     var isReady: Bool { Self.auth != nil }
 
+    init() {
+        live.onEvent = { [weak self] event in self?.heard(event) }
+        // What changed while the line was down is not told: every conversation is read again, the busiest first.
+        live.onDrop = { [weak self] in
+            guard let self else { return }
+            for conversation in self.conversations where self.newest[conversation.id] != nil {
+                self.stale[conversation.id, default: []].formUnion([])
+            }
+            self.onChange()
+        }
+    }
+
+    /// Closes the real-time line (Nook stops reading chats, or Slack was signed out).
+    func stop() {
+        live.disconnect()
+        liveRetry = nil
+    }
+
     /// Forgets what was read (a new token may be another workspace).
     func reset() {
+        stop()
         me = nil
         users = [:]
         avatars = [:]
@@ -1907,14 +2000,21 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         stale = [:]
         gone = [:]
         lastRead = [:]
+        countsAt = nil
+        countsDue = false
         recent = [:]
         isWorking = false
     }
 
     func read() async throws -> [BridgedChat] {
-        guard let auth = Self.auth else { isWorking = false; return [] }
+        guard let auth = Self.auth else {
+            isWorking = false
+            stop()
+            return []
+        }
         do {
             if me == nil { me = SlackData.me(try await call("auth.test", [:], auth: auth)) }
+            await openLive(auth: auth)
             if usersAt.map({ Date().timeIntervalSince($0) > 3600 }) ?? true {
                 let members = try await pages("users.list", ["limit": "200"], auth: auth, maxPages: 5)
                 users = members.reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
@@ -1934,8 +2034,25 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
             // reading a chat in Slack reads it in Nook too. A pasted token gets no answer to that: it asks each
             // conversation that may still be unread instead. Without either Nook counts new messages itself.
-            var marks = (try? await call("client.counts", [:], auth: auth)).map(SlackData.readMarks) ?? [:]
+            // A live read of a new message keeps where you stood: only a read elsewhere (or a minute) asks again.
+            let quick = liveTurn && live.isLive && !countsDue && !lastRead.isEmpty
+                && countsAt.map { Date().timeIntervalSince($0) < Self.countsGap } ?? false
+            let counts = quick ? nil : try? await call("client.counts", [:], auth: auth)
+            if !quick {
+                countsAt = Date()
+                countsDue = false
+            }
+            var marks = quick ? lastRead : counts.map(SlackData.readMarks) ?? [:]
             if marks.isEmpty { marks = await infoMarks(auth: auth) }
+            // The same answer says each conversation's newest message: one newer than Nook read is read now, before the
+            // busiest, so a message in a quiet conversation never waits for its turn in the rotation.
+            let latest = counts.map(SlackData.latest) ?? [:]
+            for (id, last) in latest {
+                active[id] = max(active[id] ?? 0, last)
+                if let read = newest[id].flatMap(Double.init), last > read + 0.000_000_5 {
+                    stale[id, default: []].formUnion([])
+                }
+            }
             var handed = Set<String>()
             var chats: [BridgedChat] = []
             // The conversations read before one that fails already moved `newest` on: their messages must still go to the
@@ -1944,11 +2061,26 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             var failure: Error?
             // Every picked conversation is asked side by side (`ChatParallel`): as many requests as before, in a fraction
             // of the time. What Nook remembers of each is written below, one after another, in their order.
-            let picked = pick()
+            let picked = pick(onlyChanged: liveTurn && live.isLive)
+            liveTurn = false
+            // A conversation Slack says has nothing newer is read as its newest messages instead of only what is newer
+            // (which would be nothing): as many requests, and an edit, an emoji or a deletion by someone else of a recent
+            // message shows, also without the live line.
+            // Not while the live line is open: it tells every edit, emoji and deletion itself.
+            let rereads: Set<String> = live.isLive ? [] : Set(picked.filter { conversation in
+                guard stale[conversation.id] == nil, let read = newest[conversation.id].flatMap(Double.init),
+                      let last = latest[conversation.id] else { return false }
+                return last <= read + 0.000_000_5
+            }.map(\.id))
+            // The messages of those read before (their time in microseconds): their files are not asked for again, since
+            // the inbox keeps the file it has (`ChatInbox.media`).
+            let known: [String: Set<Int64>] = Dictionary(uniqueKeysWithValues: rereads.map { id in
+                (id, Set((recent[id] ?? []).map { SlackData.micros($0.ts) }))
+            })
             let asked = await ChatParallel.ask(picked) { [self] conversation -> ChatParallel.Asked<SlackRead> in
                 await ChatParallel.asking {
                     var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
-                    if let ts = newest[conversation.id] { parameters["oldest"] = ts }
+                    if let ts = newest[conversation.id], !rereads.contains(conversation.id) { parameters["oldest"] = ts }
                     // After the first read every page newer than the last one read comes in, not only the newest 30: a
                     // busy conversation would otherwise skip what came between two reads for good.
                     let jsons = try await pages("conversations.history", parameters, auth: auth,
@@ -1963,8 +2095,11 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                             read.append(message)
                         }
                     }
+                    let seen = known[conversation.id] ?? []
+                    let fresh = read.filter { !seen.contains(SlackData.micros($0.date.timeIntervalSince1970)) }
+                    let again = read.filter { seen.contains(SlackData.micros($0.date.timeIntervalSince1970)) }
                     return SlackRead(listed: jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] },
-                                     messages: await withFiles(read.sorted { $0.date < $1.date }, auth: auth))
+                                     messages: (await withFiles(fresh, auth: auth) + again).sorted { $0.date < $1.date })
                 }
             }
             for (conversation, reply) in zip(picked, asked) {
@@ -1988,7 +2123,14 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 } else if newest[conversation.id] == nil {
                     newest[conversation.id] = "0"
                 }
-                let deleted = gone.removeValue(forKey: conversation.id) ?? []
+                var deleted = gone.removeValue(forKey: conversation.id) ?? []
+                // Read again whole: a message of someone else read before that the page should hold but lacks was
+                // deleted (Slack leaves a deleted message out of its history).
+                if rereads.contains(conversation.id) {
+                    let missing = SlackData.missing(recent[conversation.id] ?? [], listed: listed)
+                        .map { SlackData.messageID(conversation: conversation.id, ts: $0) }
+                    deleted += missing.filter { !deleted.contains($0) }
+                }
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = await avatar(of: conversation.user)
                 if conversation.isGroup, people[conversation.id] == nil {
@@ -2217,13 +2359,15 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
 
     /// The conversations to read now: the ones changed from Nook, never read ones and the busiest, then a few others
     /// in turn.
-    private func pick() -> [SlackData.Conversation] {
+    /// With `onlyChanged` (a read the real-time line asked for) only the changed and never read ones.
+    private func pick(onlyChanged: Bool = false) -> [SlackData.Conversation] {
         let ordered = conversations.sorted { (active[$0.id] ?? 0) > (active[$1.id] ?? 0) }
         let changed = ordered.filter { stale[$0.id] != nil || gone[$0.id] != nil }
         let others = ordered.filter { stale[$0.id] == nil && gone[$0.id] == nil }
         let unread = others.filter { newest[$0.id] == nil }
         let busy = others.filter { newest[$0.id] != nil }
         var picked = Array((changed + unread).prefix(Self.perRead))
+        guard !onlyChanged else { return picked }
         let room = Self.perRead - picked.count
         guard room > 0 else { return picked }
         picked += busy.prefix(max(0, room - Self.rotating))
@@ -2424,6 +2568,63 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         guard let ts = SlackData.ts(of: id, conversation: conversation.id) else { return nil }
         let answered = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
         return answered?.quote?.id.flatMap { SlackData.ts(of: $0, conversation: conversation.id) } ?? ts
+    }
+
+    // MARK: The live line
+
+    /// Opens Slack's real-time line once Slack hands one out (`rtm.connect`), with the same sign-in as every call. A
+    /// refusal or a line that cannot be opened is asked again after `liveRetryGap`, and reading goes on meanwhile.
+    private func openLive(auth: SlackData.Auth) async {
+        guard !live.isConnecting, liveRetry.map({ $0 <= Date() }) ?? true else { return }
+        liveRetry = Date().addingTimeInterval(Self.liveRetryGap)
+        guard let json = try? await call("rtm.connect", [:], auth: auth), let url = SlackData.liveURL(json),
+              Self.auth == auth else { return }
+        live.connect(url, headers: auth.headers.filter { $0.key == "Cookie" })
+    }
+
+    /// What the real-time line said: the conversation is read at its next turn, which comes at once.
+    private func heard(_ event: SlackData.LiveEvent) {
+        switch event {
+        case .hello:
+            liveRetry = nil
+        case .changed(let id, let ts, let user):
+            guard conversationByID[id] != nil else {
+                // A conversation Nook does not know yet (a new direct message): the list is read again first.
+                conversationsAt = nil
+                liveTurn = true
+                onChange()
+                return
+            }
+            if let user, let conversation = conversationByID[id] {
+                ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: app, chat: shownName(conversation)), person: user)
+            }
+            stale[id, default: []].formUnion(ts.map { [$0] } ?? [])
+            active[id] = max(active[id] ?? 0, Date().timeIntervalSince1970)
+            liveTurn = true
+            onChange()
+        case .deleted(let id, let ts):
+            guard conversationByID[id] != nil else { return }
+            let message = SlackData.messageID(conversation: id, ts: ts)
+            if !(gone[id] ?? []).contains(message) { gone[id, default: []].append(message) }
+            liveTurn = true
+            onChange()
+        case .typing(let id, let user):
+            guard user != me, let conversation = conversationByID[id] else { return }
+            ChatTypingCenter.shared.typing(chat: ChatInbox.key(app: app, chat: shownName(conversation)), person: user,
+                                           name: conversation.isGroup ? users[user] ?? "" : "", seconds: SlackData.typingHold)
+        case .read(let id, _):
+            // Read (or marked unread) elsewhere: the next read asks where you stand, and the count follows at once.
+            guard conversationByID[id] != nil else { return }
+            countsDue = true
+            liveTurn = true
+            onChange()
+        case .listChanged:
+            conversationsAt = nil
+            liveTurn = true
+            onChange()
+        case .goodbye, .other:
+            break
+        }
     }
 
     /// After a change from Nook: the conversation is read at once, with the message `ts` (one you changed) read again.

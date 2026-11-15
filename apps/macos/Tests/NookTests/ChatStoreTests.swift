@@ -184,6 +184,23 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertTrue(all.last?.isDeleted == true)
     }
 
+    /// "Read up to here" (Telegram) gives your stored messages their blue ticks, also those older than what the chat
+    /// shows; theirs, yours still going out, a failed one and those after the mark stay as they are.
+    func testReadUpToHereReachesYourStoredMessages() {
+        func mine(_ index: Int, _ receipt: ChatReceipt) -> InboxMessage {
+            var message = InboxMessage(id: "telegram-7-\(index)", text: "van mij \(index)",
+                                       date: start.addingTimeInterval(Double(index) * 60), fromMe: true)
+            message.receipt = receipt
+            return message
+        }
+        let theirs = InboxMessage(id: "telegram-7-2", sender: "Anna", text: "hoi", date: start.addingTimeInterval(120))
+        let chat = thread(messages: [mine(1, .sent), theirs, mine(3, .delivered), mine(4, .pending), mine(5, .failed), mine(9, .sent)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        XCTAssertTrue(store.markRead(chat.id) { (TelegramData.ids($0.id)?.message ?? .max) <= 5 })
+        let all = store.between(chat.id, after: .distantPast, before: .distantFuture)
+        XCTAssertEqual(all.map(\.receipt), [.read, nil, .read, .pending, .failed, .sent])
+    }
+
     func testAnAppThatOnlyChangesWordsByEditingKeepsTheOldWordsToo() {
         let chat = thread(messages: [message(1, "eerst"), message(2)])
         XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
