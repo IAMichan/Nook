@@ -4,4 +4,7 @@
     <string name="push_reply">"Antwoord"</string>
     <string name="push_reply_hint">"Bericht aan de agent"</string>
     <string name="push_channel">"Agents en goedkeuringen"</string>
+    <string name="shortcut_new_session">"Nieuwe sessie"</string>
+    <string name="shortcut_ask_nook">"Vraag Nook"</string>
+    <string name="shortcut_answer_chat">"Beantwoord een chat"</string>
 </resources>

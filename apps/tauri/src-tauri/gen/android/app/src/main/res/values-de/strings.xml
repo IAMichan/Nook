@@ -4,4 +4,7 @@
     <string name="push_reply">"Antworten"</string>
     <string name="push_reply_hint">"Nachricht an den Agenten"</string>
     <string name="push_channel">"Agenten und Freigaben"</string>
+    <string name="shortcut_new_session">"Neue Sitzung"</string>
+    <string name="shortcut_ask_nook">"Nook fragen"</string>
+    <string name="shortcut_answer_chat">"Chat beantworten"</string>
 </resources>

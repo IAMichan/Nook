@@ -699,3 +699,24 @@ export function parseNotificationAction(json: string | null | undefined): Notifi
     return null;
   }
 }
+
+/** A link from the app icon's shortcuts or a widget (`nook://companion/…`). */
+export type CompanionLink = { kind: "new" } | { kind: "ask" } | { kind: "chats" } | { kind: "session"; id: string; mac: string | null };
+
+export function parseCompanionLink(url: string): CompanionLink | null {
+  const m = /^nook:\/\/companion\/(new|ask|chats|session)\/?(?:\?(.*))?$/i.exec(url.trim());
+  if (!m) return null;
+  const what = m[1].toLowerCase();
+  if (what !== "session") return { kind: what as "new" | "ask" | "chats" };
+  const q = new URLSearchParams(m[2] ?? "");
+  const id = q.get("id");
+  return id && id.length <= 200 ? { kind: "session", id, mac: q.get("mac") } : null;
+}
+
+/** The two sessions that need you most, as icon shortcuts. */
+export function shortcutSessions(sessions: SessionDigest[], mac: string | undefined): { id: string; title: string; url: string }[] {
+  return sortSessions(sessions)
+    .filter((s) => s.items.length > 0 || needsYouState(s.attention))
+    .slice(0, 2)
+    .map((s) => ({ id: s.id, title: s.title, url: `nook://companion/session?id=${encodeURIComponent(s.id)}${mac ? `&mac=${encodeURIComponent(mac)}` : ""}` }));
+}

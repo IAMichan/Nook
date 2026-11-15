@@ -182,6 +182,9 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
   `NookMessagingService` opens it with the push key the app gave it (`RelayPush.pushKey`, never the pairing key) and shows
   it with Allow / Deny (category `NOOK_APPROVAL_ALLOW`, `NOOK_APPROVAL_DENY`) or Reply (`NOOK_INFO`); a button opens the
   app, which acts on that Mac and shows the session. While pushes come, the app shows no notifications of its own.
+- **Tablets and the icon:** at 900 points and wider the list and what you opened sit side by side, as the iPad's split
+  view. Touch and hold the app's icon for New session, Ask Nook, Answer a chat and the two sessions that need you most
+  (`res/xml/shortcuts.xml`, `NookAndroid.setShortcuts`, links `nook://companion/…`).
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 

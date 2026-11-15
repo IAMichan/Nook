@@ -3,6 +3,8 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "Ask Nook something, or choose a chat": { de: "Frag Nook etwas oder wähle einen Chat", fr: "Demandez quelque chose à Nook ou choisissez une discussion", es: "Pregúntale algo a Nook o elige un chat" },
+  "Choose a chat": { de: "Wähle einen Chat", fr: "Choisissez une discussion", es: "Elige un chat" },
   "not reachable": { de: "nicht erreichbar", fr: "injoignable", es: "no disponible" },
   "No terminals": { de: "Keine Terminals", fr: "Aucun terminal", es: "No hay terminales" },
   "Nook cannot open this link.": { de: "Nook kann diesen Link nicht öffnen.", fr: "Nook ne peut pas ouvrir ce lien.", es: "Nook no puede abrir este enlace." },

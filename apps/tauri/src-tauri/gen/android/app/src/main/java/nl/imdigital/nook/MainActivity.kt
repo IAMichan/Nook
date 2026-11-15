@@ -15,6 +15,11 @@ import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import android.net.Uri
+import org.json.JSONArray
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
@@ -252,6 +257,28 @@ class MainActivity : TauriActivity() {
       val text = notification
       notification = null
       return text
+    }
+
+    /** The sessions that need you most, as shortcuts on the app's icon: `[{"id", "title", "url"}]`, at most two. */
+    @JavascriptInterface
+    fun setShortcuts(json: String) {
+      runOnUiThread {
+        try {
+          val list = JSONArray(json)
+          val shortcuts = (0 until minOf(list.length(), 2)).map { i ->
+            val entry = list.getJSONObject(i)
+            ShortcutInfoCompat.Builder(this@MainActivity, "session-" + entry.getString("id"))
+              .setShortLabel(entry.getString("title").take(25).ifEmpty { "Nook" })
+              .setLongLabel(entry.getString("title").take(60).ifEmpty { "Nook" })
+              .setIcon(IconCompat.createWithResource(this@MainActivity, R.mipmap.ic_launcher))
+              .setIntent(Intent(Intent.ACTION_VIEW, Uri.parse(entry.getString("url")), this@MainActivity, MainActivity::class.java))
+              .build()
+          }
+          ShortcutManagerCompat.setDynamicShortcuts(this@MainActivity, shortcuts)
+        } catch (e: Exception) {
+          // Shortcuts are a convenience: without them the app works as before.
+        }
+      }
     }
 
     @JavascriptInterface

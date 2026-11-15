@@ -17,6 +17,8 @@ declare global {
       setPushKeys?(json: string): void;
       /** What a notification asked the app to do, once (`NookPush.actionJson`). */
       takeNotification?(): string | null;
+      /** The sessions that need you most, as shortcuts on the app's icon. */
+      setShortcuts?(json: string): void;
       /** Starts dictation in a BCP 47 language (empty: the phone's own); words come as event `nook-dictation`. */
       dictate?(language: string): void;
       stopDictating?(): void;

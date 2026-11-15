@@ -73,6 +73,5 @@ What the iPhone app does that the Android companion does not yet. Each follows t
 - **Live Activities on Android**: an ongoing notification for the agents that work, updated by the Mac's pushes.
 - **Check the build** of the Firebase parts once the Android job runs: `com.google.gms:google-services` 4.4.2 and the
   Firebase BoM 33.7.0 were chosen without being able to reach Google's Maven from the session that wrote them.
-- **Widgets** for the home screen (agent activity, plan limits) and **app shortcuts** on the icon.
+- **Widgets** for the home screen (agent activity, plan limits).
 - **Mermaid diagrams and math** in answers.
-- **Tablet layout** (the iPad's split view) for Android tablets.

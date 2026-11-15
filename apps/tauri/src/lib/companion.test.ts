@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTimeline, attentionWord, parseNotificationAction, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyTimeline, attentionWord, parseCompanionLink, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -119,5 +119,14 @@ describe("companion", () => {
     expect(parseNotificationAction('{"action":"reply","mac":"m","session":"S1","item":null,"text":"go on"}')?.text).toBe("go on");
     expect(parseNotificationAction('{"action":"format","session":"S1"}')).toBeNull();
     expect(parseNotificationAction("nonsense")).toBeNull();
+  });
+
+  it("reads the icon's shortcuts and offers the sessions that need you", () => {
+    expect(parseCompanionLink("nook://companion/new")).toEqual({ kind: "new" });
+    expect(parseCompanionLink("nook://companion/session?id=S1&mac=m")).toEqual({ kind: "session", id: "S1", mac: "m" });
+    expect(parseCompanionLink("nook://companion/format")).toBeNull();
+    const list = shortcutSessions([session("a", "working", 3), session("b", "approval", 1), session("c", "failed", 2), session("d", "input", 4)], "m");
+    expect(list.map((s) => s.id)).toEqual(["b", "d"]);
+    expect(list[0].url).toBe("nook://companion/session?id=b&mac=m");
   });
 });

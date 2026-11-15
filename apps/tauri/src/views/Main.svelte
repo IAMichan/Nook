@@ -107,7 +107,7 @@
     }, (url) => {
       // A pairing code or a prompt link: the companion handles both, also to pair while Nook on the phone is open.
       shell.link = url;
-      if (/^nook:\/\/pair/i.test(url)) { setLocal(false); route = "companion"; }
+      if (/^nook:\/\/(pair|companion)/i.test(url)) { setLocal(false); route = "companion"; }
     });
   });
 

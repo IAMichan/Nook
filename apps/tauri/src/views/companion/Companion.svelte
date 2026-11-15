@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import {
     companion, has, may, needingYou, tabsFor, unreadChats, Feature,
-    parseNotificationAction, routeWords, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
+    parseCompanionLink, parseNotificationAction, routeWords, shortcutSessions, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
@@ -26,6 +26,7 @@
   import TabBar from "./ui/TabBar.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
   import Sheet from "./ui/Sheet.svelte";
+  import NookMark from "./ui/NookMark.svelte";
   import { parsePromptLink, type PromptLink } from "../../lib/prompt-link";
   import { looksLikePairingLink } from "../../lib/companion";
 
@@ -41,6 +42,9 @@
   let macMenu = $state<DOMRect | null>(null);
   // Pairing another computer shows the pairing screen; the paired ones stay.
   let adding = $state(false);
+  // A tablet, or a phone on its side with room (the iPad's split view): the list beside what you opened.
+  let width = $state(typeof window !== "undefined" ? window.innerWidth : 400);
+  const wide = $derived(width >= 900);
   let inbox = $state<InboxChatDigest[]>([]);
   let inboxMessage = $state<string | undefined>(undefined);
   let conversations = $state<ChatDigest[]>([]);
@@ -108,10 +112,31 @@
       if (!paired) untrack(() => companion.pair(url, view?.deviceName ?? "").then(took));
       return;
     }
+    const shortcut = parseCompanionLink(url);
+    if (shortcut) {
+      shell.link = null;
+      if (!paired) return;
+      untrack(async () => {
+        if (shortcut.kind === "new") sheet = { kind: "new" };
+        else if (shortcut.kind === "ask") open("home", { kind: "nook", id: null });
+        else if (shortcut.kind === "chats") { tab = "chats"; screens.chats = null; }
+        else {
+          if (shortcut.mac && view?.macs?.some((m) => m.id === shortcut.mac && !m.active)) await switchTo(shortcut.mac);
+          open("agents", { kind: "session", id: shortcut.id });
+        }
+      });
+      return;
+    }
     const link = parsePromptLink(url);
     shell.link = null;
     if (!link) return void took({ ...view, notice: tr("Deze link kan Nook niet openen.", "Nook cannot open this link.") });
     if (paired) untrack(() => (sheet = { kind: "new", task: link.text, link }));
+  });
+
+  // The sessions that need you most, as shortcuts on the app's icon (as the iPhone's quick actions).
+  const shortcutJson = $derived(view && paired ? JSON.stringify(shortcutSessions(view.sessions, view.macs?.find((m) => m.active)?.id)) : "[]");
+  $effect(() => {
+    window.NookAndroid?.setShortcuts?.(shortcutJson);
   });
 
   // Push notifications (Android, `NookPush.kt`): the notification service gets each paired computer's push key, and
@@ -238,25 +263,18 @@
   {:else if !paired || adding}
     <Pairing {view} adding={paired} oncancel={() => (adding = false)} onchange={(v) => { view = v; if (adding && v.phase === "connected") { adding = false; screens = { home: null, agents: null, chats: null }; loadLists(); } }} />
   {:else}
-    <div class="page">
-      {#if tab === "agents" && screens.agents?.kind === "session"}
-        <SessionDetail {view} id={screens.agents.id} fallback={screens.agents.digest} onback={() => (screens.agents = null)} {act} {took} />
-      {:else if tab === "home" && screens.home?.kind === "nook"}
-        <NookChat {view} id={screens.home.id} ask={screens.home.ask} onback={() => { screens.home = null; loadLists(); }} {took} />
-      {:else if tab === "chats" && screens.chats?.kind === "chat"}
-        {@const id = screens.chats.id}
-        <InboxChat {view} {id} chat={inbox.find((c) => c.id === id) ?? null} onback={() => { screens.chats = null; loadLists(); }} {took} />
-      {:else if tab === "home"}
-        <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
-          onsession={(id) => open("agents", { kind: "session", id })}
-          onchat={(id) => open("chats", { kind: "chat", id })}
-          onnook={(id, ask) => open("home", { kind: "nook", id, ask })}
-          ontab={(t) => (tab = t)} />
-      {:else if tab === "chats"}
-        <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
+    <div class="page" class:split={wide}>
+      {#if !wide && screens[tab]}
+        {@render detail()}
       {:else}
-        <AgentsTab {view} {act} {took} onelsewhere={async (mac, id, digest) => { await switchTo(mac); open("agents", { kind: "session", id, digest }); }} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
-          onopen={(id, digest) => open("agents", { kind: "session", id, digest })} onnew={() => (sheet = { kind: "new" })} />
+        <div class="list">{@render list()}</div>
+        {#if wide}
+          <div class="detail">
+            {#if screens[tab]}{@render detail()}{:else}
+              <div class="placeholder"><NookMark size={44} /><p>{tab === "chats" ? tr("Kies een chat", "Choose a chat") : tab === "home" ? tr("Vraag Nook iets, of kies een gesprek", "Ask Nook something, or choose a chat") : tr("Kies een sessie", "Choose a session")}</p></div>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </div>
     {#if tabs.length > 1}
@@ -295,7 +313,43 @@
   {/if}
 </div>
 
+{#snippet detail()}
+  {#if !view}{""}
+  {:else if tab === "agents" && screens.agents?.kind === "session"}
+    {#key screens.agents.id}<SessionDetail {view} id={screens.agents.id} fallback={screens.agents.digest} onback={() => (screens.agents = null)} {act} {took} />{/key}
+  {:else if tab === "home" && screens.home?.kind === "nook"}
+    {#key screens.home.id + (screens.home.ask ?? "")}<NookChat {view} id={screens.home.id} ask={screens.home.ask} onback={() => { screens.home = null; loadLists(); }} {took} />{/key}
+  {:else if tab === "chats" && screens.chats?.kind === "chat"}
+    {@const id = screens.chats.id}
+    {#key id}<InboxChat {view} {id} chat={inbox.find((c) => c.id === id) ?? null} onback={() => { screens.chats = null; loadLists(); }} {took} />{/key}
+  {/if}
+{/snippet}
+
+{#snippet list()}
+  {#if !view}{""}
+  {:else if tab === "home"}
+    <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+      onsession={(id) => open("agents", { kind: "session", id })}
+      onchat={(id) => open("chats", { kind: "chat", id })}
+      onnook={(id, ask) => open("home", { kind: "nook", id, ask })}
+      ontab={(t) => (tab = t)} />
+  {:else if tab === "chats"}
+    <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
+  {:else}
+    <AgentsTab {view} {act} {took} onelsewhere={async (mac, id, digest) => { await switchTo(mac); open("agents", { kind: "session", id, digest }); }} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+      onopen={(id, digest) => open("agents", { kind: "session", id, digest })} onnew={() => (sheet = { kind: "new" })} />
+  {/if}
+{/snippet}
+
+<svelte:window bind:innerWidth={width} />
+
 <style>
+  .page.split { flex-direction: row; }
+  .list { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+  .split .list { flex: none; width: min(400px, 42%); border-right: 0.5px solid var(--hairline); }
+  .detail { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text3); font: var(--pt-body); }
+  .placeholder p { margin: 0; }
   .companion { height: 100%; display: flex; flex-direction: column; min-height: 0; position: relative; }
   .launch { flex: 1; background: var(--canvas); }
   .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
