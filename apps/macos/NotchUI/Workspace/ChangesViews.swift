@@ -511,10 +511,10 @@ struct PullRequestSheet: View {
 }
 
 /// The diffs last shown, by session or folder and file, so going back to a file shows its diff at once while git reads
-/// it again behind it. Small: diffs can be long, and only the ones you flip between matter.
-@MainActor
+/// it again behind it. Small: diffs can be long, and only the ones you flip between matter. Not tied to the main actor:
+/// ⌘F in a stacked diff reads several files at once from a task group, and NSCache is safe to use from any thread.
 enum DiffCache {
-    private static let cache: NSCache<NSString, NSString> = {
+    nonisolated(unsafe) private static let cache: NSCache<NSString, NSString> = {
         let cache = NSCache<NSString, NSString>()
         cache.countLimit = 40
         cache.totalCostLimit = 8_000_000
