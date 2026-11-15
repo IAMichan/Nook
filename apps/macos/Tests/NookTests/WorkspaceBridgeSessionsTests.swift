@@ -170,7 +170,10 @@ final class WorkspaceBridgeSessionsTests: XCTestCase {
         XCTAssertTrue(framed.contains("It does not replace your task"), "a message mid-turn must not take over the receiver's work")
         XCTAssertTrue(framed.contains("do not take it over"), "the sender's task stays the sender's")
         XCTAssertTrue(framed.hasSuffix("\n\nKeep your harness window off screen."))
+        // PullRequestAsked is left out of the core tests on Linux (it reads links through RunPullRequestLinks).
+        #if canImport(Darwin)
         XCTAssertTrue(PullRequestAsked.fromAgent(framed))
+        #endif
     }
 
     func testSendModesAndWaitIDs() throws {
