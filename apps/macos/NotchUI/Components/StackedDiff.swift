@@ -237,6 +237,9 @@ struct StackedDiffList<Content: View>: View {
         found.step(forward: forward)
     }
 
+    /// How many diffs ⌘F reads at the same time.
+    private static var findReads: Int { 6 }
+
     /// Reads every shown file's diff (the ones read before come from the cache) and finds the words in them.
     private func search(in files: [StackedDiffFile]) async {
         let words = DiffFindState.trimmed(query)
@@ -245,22 +248,37 @@ struct StackedDiffList<Content: View>: View {
             return
         }
         if found.state != .results { found.state = .searching }
-        var read: [(path: String, rows: [UnifiedDiff.Row])] = []
-        for file in files {
-            guard !Task.isCancelled else { return }
-            let key = options.cacheKey(scope: scope, path: file.path)
-            let text: String
-            if let cached = DiffCache.diff(key) {
-                text = cached
-            } else {
-                guard let fresh = try? await diff(file, options) else { continue }
-                DiffCache.store(fresh, key)
-                text = fresh
+        // Several files at a time instead of one after another: a branch of 60 files started 60 git reads in a row before
+        // the first match showed. At most `Self.findReads` at once, so a huge branch does not start them all together.
+        let diff = diff, options = options, scope = scope
+        let texts = await withTaskGroup(of: (Int, String?).self) { group -> [String?] in
+            var texts = [String?](repeating: nil, count: files.count)
+            var next = 0
+            func start() {
+                guard next < files.count else { return }
+                let index = next, file = files[index]
+                next += 1
+                group.addTask {
+                    let key = options.cacheKey(scope: scope, path: file.path)
+                    if let cached = DiffCache.diff(key) { return (index, cached) }
+                    guard !Task.isCancelled, let fresh = try? await diff(file, options) else { return (index, nil) }
+                    DiffCache.store(fresh, key)
+                    return (index, fresh)
+                }
             }
-            read.append((file.path, UnifiedDiff.rows(text)))
+            for _ in 0..<Self.findReads { start() }
+            for await (index, text) in group {
+                texts[index] = text
+                if !Task.isCancelled { start() }
+            }
+            return texts
         }
         guard !Task.isCancelled else { return }
-        let matches = await Task.detached(priority: .userInitiated) { DiffFind.matches(words, in: read) }.value
+        let read = zip(files, texts).compactMap { file, text in text.map { (path: file.path, text: $0) } }
+        // The rows are made off the main thread too, with the matches.
+        let matches = await Task.detached(priority: .userInitiated) {
+            DiffFind.matches(words, in: read.map { (path: $0.path, rows: UnifiedDiff.rows($0.text)) })
+        }.value
         guard !Task.isCancelled else { return }
         found.update(matches)
     }

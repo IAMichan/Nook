@@ -49,7 +49,8 @@ final class GitDiffSources: ObservableObject {
             if !loaded { loaded = true }
             return
         }
-        await folder.refresh()
+        // The Changes tab is in view and waits for it.
+        await folder.refresh(urgent: true)
         guard let root = folder.root else {
             if !commits.isEmpty { commits = [] }
             if !loaded { loaded = true }
@@ -78,7 +79,7 @@ final class GitDiffSources: ObservableObject {
     /// Reads which files a commit changed, once. A commit beyond the newest ones (opened from a link) is read first.
     func loadCommit(_ id: String) async {
         guard commitFiles[id] == nil else { return }
-        if folder.root == nil { await folder.refresh() }
+        if folder.root == nil { await folder.refresh(urgent: true) }
         guard let root = folder.root else { return }
         if commit(id) == nil {
             linked = await Task.detached(priority: .userInitiated) { GitService.shared?.commit(root, named: id) }.value

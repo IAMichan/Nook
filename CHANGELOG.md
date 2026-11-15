@@ -213,7 +213,14 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   - **Browser** checks the folder's servers all at once and only while you can see the window. Its bar of servers is
     there at once when you come back to the tab, and the empty browser's note sits in the middle of the tab.
   - **Terminal**: an agent's command does its output work once per update, with the same spacing under its bar as the
-    other tabs.
+    other tabs. A project script with a preview opens its page as soon as the server answers, instead of after a fixed
+    four seconds (often too early, or needlessly late).
+  - **Artifact** starts with the same bar as every tab: the artifact's title, a spinner while it loads, and the
+    button that opens it in your browser.
+  - **⌘F in a diff** reads several files at once instead of one after another, so the first match shows sooner on a
+    large branch.
+  - Git's slower half (branches, the comparison with the base) runs at full priority while a panel waits for it or you
+    press refresh; the polling in the background stays at low priority.
 
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.

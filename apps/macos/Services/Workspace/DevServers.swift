@@ -197,6 +197,27 @@ enum DevServerProbe {
         return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }()
 
+    /// Waits until a server answers at `url` with any HTTP response (a page, a redirect, an error page: it is up), every
+    /// half second for at most `timeout` seconds. True when it answered, false when the time ran out or the task ended.
+    static func waitUntilUp(_ url: URL, timeout: TimeInterval = 30) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !Task.isCancelled, Date() < deadline {
+            if await responds(url) { return true }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        return false
+    }
+
+    private static func responds(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        return await withCheckedContinuation { continuation in
+            session.dataTask(with: request) { _, response, _ in
+                continuation.resume(returning: response is HTTPURLResponse)
+            }.resume()
+        }
+    }
+
     fileprivate static func ask(_ url: URL) async -> Bool {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
