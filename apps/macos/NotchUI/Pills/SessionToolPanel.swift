@@ -93,9 +93,13 @@ struct SessionToolPanel: View {
                     if let runID, workspace.run(runID)?.isRemote == true, diffSelection.source.isGit {
                         ChangesSheet(runID: runID, initialFile: nil, onClose: close).id(runID)
                     } else {
-                        TurnDiffPanel(turns: turns, selection: $diffSelection, directory: directory.isEmpty ? nil : directory,
-                                      runID: runID, load: loadDiff)
-                            .id(directory)
+                        SidePanelPane(key: ChangesPaneKey(turns: turns, selection: diffSelection, directory: directory,
+                                                          runID: runID, readsGit: loadDiff != nil)) {
+                            TurnDiffPanel(turns: turns, selection: $diffSelection, directory: directory.isEmpty ? nil : directory,
+                                          runID: runID, load: loadDiff)
+                        }
+                        .equatable()
+                        .id(directory)
                     }
                 case .pullRequest:
                     if let pullRequest {
@@ -104,16 +108,23 @@ struct SessionToolPanel: View {
                         // it read right away instead of waiting out a slide that no longer happens.
                         let listed = PullRequestStore.shared.accounts.first { $0.id == pullRequest.account }
                             .map { $0.reviews + $0.mine + $0.watched } ?? []
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
-                                              stack: PullRequestStack.stack(of: pullRequest.item, in: listed) ?? [],
-                                              stackHistory: PullRequestStack.history(of: pullRequest.item, in: listed) ?? [],
-                                              onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
-                                              onUpdate: { updated in
-                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        }, onBack: showPullRequestList, focus: pullRequest.focus)
-                            .id(pullRequest.account + " " + pullRequest.item.id)
+                        let stack = PullRequestStack.stack(of: pullRequest.item, in: listed) ?? []
+                        let stackHistory = PullRequestStack.history(of: pullRequest.item, in: listed) ?? []
+                        SidePanelPane(key: PullRequestPaneKey(request: pullRequest, stack: stack, stackHistory: stackHistory)) {
+                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
+                                                  stack: stack, stackHistory: stackHistory,
+                                                  onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
+                                                  onUpdate: { updated in
+                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            }, onBack: showPullRequestList, focus: pullRequest.focus)
+                        }
+                        .equatable()
+                        .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
-                        SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
+                        SidePanelPane(key: [directory, runID?.uuidString ?? ""]) {
+                            SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
+                        }
+                        .equatable()
                     }
                 case .artifact:
                     SessionArtifactPanel()
@@ -296,6 +307,37 @@ struct SessionToolPanel: View {
     private func launch(_ item: SessionTool) {
         if item == .pullRequest { openPullRequest(nil) } else { show(item) }
     }
+}
+
+/// A tab's pane that is drawn again only when what it shows changed (`key`), not on every redraw of the workbench around
+/// it: another session's approval, a usage badge or a git button redrew the pull request page, its list with every
+/// filter and stack worked out again, and the Changes tab. The workbench makes new closures on each redraw, and they
+/// reach the same state, so they are left out of the comparison (as `SessionSideLink` does). What a pane observes itself
+/// (its store, its git) still redraws it as before.
+private struct SidePanelPane<Key: Equatable, Content: View>: View, Equatable {
+    let key: Key
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
+}
+
+/// What the Changes tab shows: the agent's turns, the choice in view, and where git is read.
+private struct ChangesPaneKey: Equatable {
+    let turns: [TurnDiff]
+    let selection: TurnDiffSelection
+    let directory: String
+    let runID: UUID?
+    /// Whether the turns' real diffs are read from the session's git snapshots (`loadDiff`).
+    let readsGit: Bool
+}
+
+/// What a pull request page shows: the pull request (and where a link pointed in it), and the stack it stands in.
+private struct PullRequestPaneKey: Equatable {
+    let request: PullRequestOpenRequest
+    let stack: [PullRequestItem]
+    let stackHistory: [PullRequestItem]
 }
 
 /// An open panel before any tab: the tools, one row each with the key that opens it.
