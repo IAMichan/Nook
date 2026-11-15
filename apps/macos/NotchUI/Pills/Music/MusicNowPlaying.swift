@@ -113,13 +113,14 @@ struct MusicNowPlayingView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.sm)
-            // Where it plays on the left, how loud and the player itself on the right, on the column's edges.
+            // How loud over the column's width, with where it plays before it and the player itself after it.
             HStack(spacing: NookTheme.Spacing.sm) {
-                MusicOutputButton(info: info, outputs: outputs)
+                MusicOutputButton(info: info, outputs: outputs, namesOnlyAway: true)
                     .padding(.leading, -NookTheme.Spacing.md)
-                Spacer(minLength: NookTheme.Spacing.md)
                 if let volume = info.volume {
-                    MusicVolumeControl(volume: volume, width: 88) { service.setVolume($0) }
+                    MusicVolumeControl(volume: volume, width: nil) { service.setVolume($0) }
+                } else {
+                    Spacer(minLength: NookTheme.Spacing.md)
                 }
                 NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 28) {
                     openMusicPlayer(info)
