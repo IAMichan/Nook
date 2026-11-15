@@ -6,8 +6,9 @@ import Foundation
 /// again once.
 @MainActor
 final class ChatLiveStream {
-    /// A chat (by its id there) has something new: a message, an edit, an emoji, a deletion, a read.
-    var onChange: (String) -> Void = { _ in }
+    /// A chat (by its id there) has something new: a message, an edit, an emoji, a deletion, a read; with the message
+    /// (its id there) when the change is to one message.
+    var onChange: (_ chat: String, _ message: String?) -> Void = { _, _ in }
     /// Someone is typing in a chat (by its id there), or stopped (`seconds` 0).
     var onTyping: (_ chat: String, _ person: String, _ name: String, _ kind: ChatTypist.Kind, _ seconds: TimeInterval) -> Void
         = { _, _, _, _, _ in }
@@ -110,7 +111,9 @@ final class ChatLiveStream {
         case .subscribed:
             isLive = true
         case .changed(let chat):
-            onChange(chat)
+            onChange(chat, nil)
+        case .changedMessage(let chat, let message):
+            onChange(chat, message)
         case .typing(let chat, let person, let name, let kind, let seconds):
             onTyping(chat, person, name, kind, seconds)
         case .other:
