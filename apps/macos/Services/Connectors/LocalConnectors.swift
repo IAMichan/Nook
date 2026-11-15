@@ -450,7 +450,7 @@ final class MailConnector: ContextSource {
             guard let found = await MailLibrary.message(of: rows[index]) else { continue }
             let row = rows[index]
             rows[index].messageID = found.message.id
-            MailConnector.messageCache[found.message.id] = CachedMail(subject: row.subject, sender: row.sender, recipients: "",
+            MailConnector.messageCache[found.message.id] = CachedMail(subject: row.subject, sender: row.sender, recipients: row.recipient,
                                                                       date: NookDates.iso(row.date), body: found.message.text,
                                                                       cachedAt: Date())
             MailConnector.indexedFiles[found.message.id] = found.file

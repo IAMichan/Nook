@@ -212,6 +212,7 @@ enum MailLibrary {
                                                  body: await text(of: message, length: bodyLength))
                     row.indexID = message.id
                     row.indexMailbox = message.mailbox
+                    row.recipient = message.recipient
                     rows.append(row)
                 }
             }

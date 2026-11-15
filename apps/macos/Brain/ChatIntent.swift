@@ -35,6 +35,9 @@ struct ChatIntent: Equatable {
     /// The one action this request is about, when it clearly asks for one.
     var primaryAction: String? {
         guard wantsAction else { return nil }
+        // "Draft an email to Lisa every morning" asks for an automation, not for that mail now. A recurring meeting or
+        // reminder stays one ("plan elke maandag een overleg", "herinner me elke dag"), and so does a fact to remember.
+        if kinds.contains(.schedule), let first = kinds.first, ![.event, .reminder, .memory].contains(first) { return "schedule_task" }
         for kind in kinds {
             // "Vat mijn notitie over X samen" reads a note; it only makes one when asked to ("zet het in een notitie").
             if kind == .note, readsNotes { continue }

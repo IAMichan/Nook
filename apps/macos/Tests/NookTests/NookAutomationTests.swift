@@ -207,6 +207,49 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertEqual(ArrivedMessage.newest(in: thread).first?.sender, "Lisa")
     }
 
+    // MARK: Review fixes
+
+    func testHugeOrBrokenIntervalsAreProblemsNotCrashes() {
+        for value: Any in [200_000_000_000_000_000 as Int, 1e100 as Double, Double.nan] {
+            let parsed = NookSchedule.parse(["prompt": "p", "schedule": "interval", "every_minutes": value], now: now)
+            XCTAssertNil(parsed.draft)
+            XCTAssertFalse(parsed.problems.isEmpty)
+        }
+    }
+
+    func testAnUnknownWeekdayIsNamedInsteadOfDropped() {
+        let parsed = NookSchedule.parse(["prompt": "p", "schedule": "weekly", "time": "08:00", "days": ["monday", "fridays"]], now: now)
+        XCTAssertNil(parsed.draft)
+        XCTAssertTrue(parsed.problems.joined().contains("fridays"))
+    }
+
+    func testTheSecretaryHasStableIDs() {
+        XCTAssertEqual(NookSchedule.secretary().compactMap(\.preset), ["secretary.morning", "secretary.midday", "secretary.evening"])
+    }
+
+    func testAnAutomationRequestProposesTheAutomationNotTheMail() {
+        let intent = ChatIntent.detect("Schrijf elke ochtend een mail aan Lisa met de planning")
+        XCTAssertEqual(intent.primaryAction.map { $0 == "schedule_task" || $0 == "compose_mail" }, intent.wantsAction ? true : nil)
+        if intent.wantsAction { XCTAssertEqual(intent.primaryAction, "schedule_task") }
+        XCTAssertEqual(ChatIntent.detect("herinner me elke dag om 9 aan water drinken").primaryAction, "create_reminder")
+    }
+
+    func testArrivalsAreTheNewMessagesReadOrNot() {
+        var before = InboxThread(id: "c1", app: "whatsapp", name: "Lisa")
+        before.messages = [InboxMessage(id: "1", text: "oud", date: now)]
+        var after = before
+        after.messages += [InboxMessage(id: "2", text: "nieuw", date: now), InboxMessage(id: "3", text: "van mij", date: now, fromMe: true)]
+        after.unread = 0
+        XCTAssertEqual(ArrivedMessage.added(before: before, after: after, since: now.addingTimeInterval(-60)).map(\.text), ["nieuw"])
+        XCTAssertEqual(ArrivedMessage.added(before: nil, after: after, since: now.addingTimeInterval(60)).count, 0, "old messages on a first read do not count")
+    }
+
+    func testAReplyKeepsTheReviewedSubject() {
+        let script = MailActions.replyScript(id: "a@x", body: "b", subject: "Re: Offerte (aangepast)", to: [], cc: [], openWindow: false)
+        XCTAssertTrue(script.contains("set subject of m to \"Re: Offerte (aangepast)\""))
+        XCTAssertFalse(MailActions.replyScript(id: "a@x", body: "b", to: [], cc: [], openWindow: false).contains("set subject"))
+    }
+
     // MARK: Intent
 
     func testWaitingForAMessageOffersTheSchedulingTools() {

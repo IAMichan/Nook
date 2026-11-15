@@ -16,7 +16,7 @@ struct ScheduledTasksView: View {
 
     /// Every task of the secretary is there already.
     private var hasSecretary: Bool {
-        NookSchedule.secretary().allSatisfy { draft in store.tasks.contains { $0.target.isNook && $0.title == draft.title } }
+        NookSchedule.secretary().allSatisfy { draft in draft.preset.map(store.hasPreset) ?? false }
     }
 
     private struct EditorTarget: Identifiable {
@@ -227,11 +227,11 @@ enum ScheduledTaskText {
     }
 
     /// The apps a message trigger can listen to, as the chat inbox names them, with their names.
-    static let messageApps: [(id: String, name: String)] = [
-        ("whatsapp", "WhatsApp"), ("messages", "Messages"), ("mail", "Mail"), ("telegram", "Telegram"), ("slack", "Slack"),
+    static var messageApps: [(id: String, name: String)] { [
+        ("whatsapp", "WhatsApp"), ("messages", tr("automation.app.messages")), ("mail", tr("automation.app.mail")), ("telegram", "Telegram"), ("slack", "Slack"),
         ("teams", "Teams"), ("signal", "Signal"), ("instagram", "Instagram"), ("messenger", "Messenger"), ("linkedin", "LinkedIn"),
         ("discord", "Discord"), ("snapchat", "Snapchat")
-    ]
+    ] }
 
     /// "On a new message · WhatsApp, Mail · from Lisa · about invoice" for the list and the approval card.
     static func messageSummary(_ trigger: MessageTrigger) -> String {

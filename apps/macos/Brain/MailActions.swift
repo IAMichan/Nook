@@ -226,7 +226,8 @@ enum MailActions {
     /// `missing value` when Mail cannot find the message, and the caller then makes a new mail. `body` replaces Mail's
     /// quoted text with the answer; `to` and `cc`, when given, replace the recipients Mail filled in (the user may have
     /// changed them in the draft).
-    static func replyScript(id: String, body: String, to: [String], cc: [String], openWindow: Bool) -> String {
+    /// `subject`, when given, replaces Mail's own "Re:" subject (the user may have changed it in the draft).
+    static func replyScript(id: String, body: String, subject: String = "", to: [String], cc: [String], openWindow: Bool) -> String {
         let q = quote(id)
         var recipients = ""
         if !to.isEmpty {
@@ -257,7 +258,7 @@ enum MailActions {
             end if
             if original is not missing value then
                 set m to reply original \(openWindow ? "with" : "without") opening window
-                set content of m to \(quote(body))\(recipients)
+                set content of m to \(quote(body))\(subject.isEmpty ? "" : "\n                set subject of m to \(quote(subject))")\(recipients)
             end if
         """
     }

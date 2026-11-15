@@ -787,13 +787,23 @@ final class ChatCaptureService: ObservableObject {
 
     /// Tells about the chats someone wrote in since `before`, in the apps that are on.
     private func announce(since before: ChatInbox) {
-        announce(ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow)))
+        let since = Date().addingTimeInterval(-Self.newsWindow)
+        // Automations see every message that is new since the last read, also one already read in its own app (then the
+        // chat counts no unread and gives no notice); the notice below stays with what is unread.
+        let arrived = inbox.threads.values.filter(isShown).flatMap { thread in
+            ArrivedMessage.added(before: before.threads[thread.id], after: thread, since: since)
+        }
+        if !arrived.isEmpty { onArrived(arrived) }
+        announce(ChatInbox.fresh(before: before, after: inbox, since: since), arrivalsTold: true)
     }
 
     /// Tells about these chats, oldest news first: the ones that show and that the notice rules let reach you.
-    private func announce(_ ids: [String]) {
-        let arrived = ids.compactMap { inbox.threads[$0] }.filter(isShown).flatMap { ArrivedMessage.newest(in: $0) }
-        if !arrived.isEmpty { onArrived(arrived) }
+    /// `arrivalsTold`: the caller handed automations their messages already.
+    private func announce(_ ids: [String], arrivalsTold: Bool = false) {
+        if !arrivalsTold {
+            let arrived = ids.compactMap { inbox.threads[$0] }.filter(isShown).flatMap { ArrivedMessage.newest(in: $0) }
+            if !arrived.isEmpty { onArrived(arrived) }
+        }
         let rules = ChatNoticeRulesStore.shared.rules
         let fresh = ids
             .filter { id in

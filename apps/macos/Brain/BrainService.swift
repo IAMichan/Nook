@@ -163,7 +163,8 @@ final class BrainService {
         let claimsReady = ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) || ChatIntent.announces(plan.text)
         if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
-            if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
+            // The second chance follows the same instructions of the conversation (a signature, a tone) as the first.
+            if let focused = try await fillIn(spec, request: chosen + userText, history: history, context: fitted[1],
                                                screen: untrusted.map { _ in fitted[2] }, profile: profile, onText: onText) {
                 return BrainPlan(text: focused.text, actions: plan.actions + focused.actions)
             }
@@ -173,7 +174,7 @@ final class BrainService {
         // message holds no text, so write the text once more, without tools, and say plainly nothing was sent.
         if plan.actions.isEmpty, intent.wantsDraft {
             guard ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) else { return plan }
-            let draft = try? await writeDraft(request: userText, history: history, context: fitted[1], profile: profile)
+            let draft = try? await writeDraft(request: chosen + userText, history: history, context: fitted[1], profile: profile)
             guard let draft, !draft.isEmpty else { return BrainPlan(text: tr("brain.notDone"), actions: []) }
             return BrainPlan(text: tr("brain.draftOnly") + "\n\n" + draft, actions: [])
         }

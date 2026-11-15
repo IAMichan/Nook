@@ -185,7 +185,8 @@ extension WorkspaceBridge {
         }
         let store = ScheduledTaskStore.shared
         guard let task = store.task(id) else { return .error("No such scheduled task. Use an id from list_scheduled_tasks.") }
-        guard store.isEnabled else { return .error("not available: scheduled tasks are switched off in Nook's settings.") }
+        // Nook's own tasks run without the switch for agent tasks, as in the list in Settings.
+        guard store.mayRun(task) else { return .error("not available: scheduled tasks are switched off in Nook's settings.") }
         return try await once(.runScheduledTaskNow, arguments, caller) {
             if store.isRunning(id) { return BridgeRPC.ToolResult(text: "busy: the task is running already.") }
             let allowed = await ask(caller, tool: .runScheduledTaskNow, title: tr("bridge.approval.scheduleRun", caller.agent),

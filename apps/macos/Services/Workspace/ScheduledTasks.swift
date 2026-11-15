@@ -144,6 +144,18 @@ struct ArrivedMessage: Equatable, Sendable {
     var date: Date
     var isGroup: Bool
 
+    /// The messages from someone else in `after` that `before` did not hold yet, received since `since`, oldest first
+    /// (at most `limit`): what a read of the chat brought in, read in its own app or not.
+    static func added(before: InboxThread?, after: InboxThread, since: Date, limit: Int = 8) -> [ArrivedMessage] {
+        let known = Set(before?.messages.map(\.id) ?? [])
+        let fresh = after.messages.filter { !$0.isMine && !known.contains($0.id) && $0.date >= since }
+        return fresh.suffix(limit).map { message in
+            ArrivedMessage(chatID: after.id, app: after.app, chat: after.name,
+                           sender: message.sender.isEmpty ? after.name : message.sender,
+                           text: message.text, date: message.date, isGroup: after.isGroup)
+        }
+    }
+
     /// The messages someone else wrote after your own last one (at most `limit`, oldest first): what is new in the chat.
     static func newest(in thread: InboxThread, limit: Int = 5) -> [ArrivedMessage] {
         let others = thread.messages.reversed().prefix { !$0.isMine }
@@ -426,6 +438,8 @@ enum NookSchedule {
         var rule: ScheduleRule
         /// Only speak up when something new needs the user: a run that finds nothing leaves no conversation and no notice.
         var quiet = false
+        /// The ready-made task this is (`secretary`), by an id that does not change with the app's language.
+        var preset: String? = nil
     }
 
     /// What a quiet run answers when nothing new needs the user (`runNote`); Nook then drops that run without a notice.
@@ -440,6 +454,8 @@ enum NookSchedule {
     /// Nook Chat runs on the user's brain, and each run reads sources and writes an answer: more often than every quarter
     /// of an hour costs a lot and helps nobody.
     static let minimumMinutes = 15
+    /// A year: longer apart is no schedule anyone means, and it keeps the seconds of an interval in range.
+    static let maximumMinutes = 366 * 24 * 60
 
     /// The task the input asks for, or what is wrong with it in plain language (for the brain, which fixes and asks again).
     static func parse(_ input: [String: Any], now: Date, calendar: Calendar = .current) -> (draft: Draft?, problems: [String]) {
@@ -448,7 +464,11 @@ enum NookSchedule {
         }
         func number(_ key: String) -> Int? {
             if let value = input[key] as? Int { return value }
-            if let value = input[key] as? Double { return Int(value) }
+            // A Double outside Int's range would trap on conversion: it is simply no usable number.
+            if let value = input[key] as? Double {
+                guard value.isFinite, value > Double(Int.min), value < Double(Int.max) else { return nil }
+                return Int(value)
+            }
             return Int(text(key))
         }
         var problems: [String] = []
@@ -471,13 +491,24 @@ enum NookSchedule {
                 var names: [String] = []
                 if let list = input["days"] as? [Any] { names = list.compactMap { $0 as? String } }
                 else { names = text("days").components(separatedBy: CharacterSet(charactersIn: ", ")).filter { !$0.isEmpty } }
+                // Every day named must be one: "fridays" is not silently left out of the schedule.
+                let unknown = names.filter { weekday($0) == nil }
                 days = Set(names.compactMap(weekday))
-                if days.isEmpty { problems.append("give days for a weekly schedule, for example [\"monday\", \"thursday\"]") }
+                if !unknown.isEmpty {
+                    problems.append("unknown days: " + unknown.joined(separator: ", ") + "; use weekday names such as monday or friday")
+                } else if days.isEmpty {
+                    problems.append("give days for a weekly schedule, for example [\"monday\", \"thursday\"]")
+                }
             }
             rule = .fixedTime(hour: time.hour, minute: time.minute, weekdays: days)
         case .interval:
             guard let minutes = number("every_minutes"), minutes >= minimumMinutes else {
                 problems.append("give every_minutes, at least \(minimumMinutes)")
+                break
+            }
+            // At most a year between runs, which also keeps minutes * 60 far from overflowing.
+            guard minutes <= maximumMinutes else {
+                problems.append("every_minutes is too large; use at most \(maximumMinutes) (a year)")
                 break
             }
             rule = .interval(seconds: minutes * 60)
@@ -579,6 +610,9 @@ enum NookSchedule {
         }
     }
 
+    /// The most messages one run reads; more wait for the next run (`ScheduledTaskStore.fireMessages`).
+    static let messagesPerRun = 8
+
     /// The request of a run a message started: the task's own prompt, then the message(s) as data from outside, which the
     /// brain reads but never follows.
     static func messagePrompt(_ prompt: String, messages: [ArrivedMessage]) -> String {
@@ -587,7 +621,7 @@ enum NookSchedule {
         func clean(_ text: String) -> String {
             text.replacingOccurrences(of: "<", with: "‹").replacingOccurrences(of: ">", with: "›")
         }
-        let blocks = messages.suffix(8).map { message in
+        let blocks = messages.prefix(messagesPerRun).map { message in
             "<message app=\"\(clean(message.app))\" chat=\"\(clean(message.chat))\" from=\"\(clean(message.sender))\" at=\"\(formatter.string(from: message.date))\"\(message.isGroup ? " group=\"yes\"" : "")>\n"
                 + clean(String(message.text.prefix(2_000))) + "\n</message>"
         }
@@ -631,11 +665,11 @@ enum NookSchedule {
     static func secretary() -> [Draft] {
         [
             Draft(title: tr("automation.secretary.morning.title"), prompt: tr("automation.secretary.morning.prompt"),
-                  rule: .fixedTime(hour: 8, minute: 0, weekdays: [])),
+                  rule: .fixedTime(hour: 8, minute: 0, weekdays: []), preset: "secretary.morning"),
             Draft(title: tr("automation.secretary.midday.title"), prompt: tr("automation.secretary.midday.prompt"),
-                  rule: .fixedTime(hour: 13, minute: 0, weekdays: [2, 3, 4, 5, 6]), quiet: true),
+                  rule: .fixedTime(hour: 13, minute: 0, weekdays: [2, 3, 4, 5, 6]), quiet: true, preset: "secretary.midday"),
             Draft(title: tr("automation.secretary.evening.title"), prompt: tr("automation.secretary.evening.prompt"),
-                  rule: .fixedTime(hour: 17, minute: 30, weekdays: [2, 3, 4, 5, 6]))
+                  rule: .fixedTime(hour: 17, minute: 30, weekdays: [2, 3, 4, 5, 6]), preset: "secretary.evening")
         ]
     }
 

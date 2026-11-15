@@ -77,7 +77,8 @@ enum MailSender {
         """
         // An answer to a received mail goes out as Mail's own reply to it (same thread, same account); a message Mail no
         // longer finds gets a new mail, as before.
-        let reply = draft.replyTo.isEmpty ? "" : MailActions.replyScript(id: draft.replyTo, body: draft.body, to: to, cc: cc, openWindow: !send) + "\n"
+        let reply = draft.replyTo.isEmpty ? "" : MailActions.replyScript(id: draft.replyTo, body: draft.body, subject: draft.subject.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                                                    to: to, cc: cc, openWindow: !send) + "\n"
         let make = draft.replyTo.isEmpty ? fresh : reply + "    if m is missing value then\n    \(fresh)\n    end if"
         return """
         tell application "Mail"\(guardAccount)

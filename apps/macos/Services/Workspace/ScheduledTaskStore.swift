@@ -10,20 +10,24 @@ struct ScheduledTaskOptions: Codable, Equatable, Sendable {
     var webhook = WebhookRules()
     /// A task for Nook itself: only speak up when something new needs the user (`NookSchedule.runNote`).
     var quiet = false
+    /// The ready-made task it was made from (`NookSchedule.Draft.preset`), whatever the app's language.
+    var preset: String?
 
-    init(permission: PermissionPolicy = .ask, webhook: WebhookRules = WebhookRules(), quiet: Bool = false) {
+    init(permission: PermissionPolicy = .ask, webhook: WebhookRules = WebhookRules(), quiet: Bool = false, preset: String? = nil) {
         self.permission = permission
         self.webhook = webhook
         self.quiet = quiet
+        self.preset = preset
     }
 
-    private enum CodingKeys: String, CodingKey { case permission, webhook, quiet }
+    private enum CodingKeys: String, CodingKey { case permission, webhook, quiet, preset }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         permission = (try? c.decode(PermissionPolicy.self, forKey: .permission)) ?? .ask
         webhook = (try? c.decode(WebhookRules.self, forKey: .webhook)) ?? WebhookRules()
         quiet = (try? c.decode(Bool.self, forKey: .quiet)) ?? false
+        preset = try? c.decode(String.self, forKey: .preset)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -31,6 +35,7 @@ struct ScheduledTaskOptions: Codable, Equatable, Sendable {
         try c.encode(permission, forKey: .permission)
         if !webhook.isEmpty { try c.encode(webhook, forKey: .webhook) }
         if quiet { try c.encode(true, forKey: .quiet) }
+        try c.encodeIfPresent(preset, forKey: .preset)
     }
 }
 
@@ -254,7 +259,8 @@ final class ScheduledTaskStore: ObservableObject {
     /// Adds a task, or replaces the one with the same id. A changed schedule counts from now, so editing never fires a
     /// task at once because its old schedule was overdue; a once-task that ran stays done until its moment changes.
     /// `webhook` nil keeps the task's webhook rules as they are, `quiet` nil whether it only speaks up for something new.
-    func save(_ task: ScheduledTask, permission: PermissionPolicy, webhook: WebhookRules? = nil, quiet: Bool? = nil, now: Date = Date()) {
+    func save(_ task: ScheduledTask, permission: PermissionPolicy, webhook: WebhookRules? = nil, quiet: Bool? = nil,
+              preset: String? = nil, now: Date = Date()) {
         var row = task
         let old = self.task(task.id)
         if let old {
@@ -269,7 +275,8 @@ final class ScheduledTaskStore: ObservableObject {
         if gate.isRunning(row.id) { row.lastStatus = .running; row.nextRun = nil }
         if let index = tasks.firstIndex(where: { $0.id == row.id }) { tasks[index] = row } else { tasks.append(row) }
         options[row.id] = ScheduledTaskOptions(permission: permission, webhook: webhook ?? options[row.id]?.webhook ?? WebhookRules(),
-                                               quiet: quiet ?? options[row.id]?.quiet ?? false)
+                                               quiet: quiet ?? options[row.id]?.quiet ?? false,
+                                               preset: preset ?? options[row.id]?.preset)
         if row.rule.isWebhook { _ = webhookSecret(for: row.id, create: true) }
         save()
     }
@@ -308,12 +315,21 @@ final class ScheduledTaskStore: ObservableObject {
     /// Whether a task for Nook only speaks up when something new needs the user.
     func isQuiet(_ id: UUID) -> Bool { options[id]?.quiet ?? false }
 
+    /// Whether a task made from this ready-made one exists (`NookSchedule.Draft.preset`).
+    func hasPreset(_ preset: String) -> Bool {
+        tasks.contains { options[$0.id]?.preset == preset }
+    }
+
     // MARK: Quiet runs
 
     /// Conversations of quiet runs that are going now, and those whose answer was "nothing new": the chat drops that
     /// answer's notice (`nookFinished`) and the run removes the conversation, so a check that finds nothing says nothing.
     private var quietRuns: Set<UUID> = []
     private var foundNothing: Set<UUID> = []
+    /// Conversations a scheduled run of Nook's is answering: their plans always wait for the user's click.
+    private var scheduledRuns: Set<UUID> = []
+
+    func isScheduledRun(_ conversation: UUID) -> Bool { scheduledRuns.contains(conversation) }
 
     func isQuietRun(_ conversation: UUID) -> Bool { quietRuns.contains(conversation) }
     func noteNothingNew(_ conversation: UUID) { if quietRuns.contains(conversation) { foundNothing.insert(conversation) } }
@@ -568,7 +584,8 @@ final class ScheduledTaskStore: ObservableObject {
         // "Run now" by hand always answers; a quiet check on its schedule only speaks up for something new.
         let quiet = isQuiet(task.id) && trigger != .manual
         if quiet { quietRuns.insert(conversation) }
-        defer { quietRuns.remove(conversation); foundNothing.remove(conversation) }
+        scheduledRuns.insert(conversation)
+        defer { quietRuns.remove(conversation); foundNothing.remove(conversation); scheduledRuns.remove(conversation) }
         // What came from a webhook is data from outside; the prompt the user wrote stays theirs.
         let note = NookSchedule.runNote(title: task.title, since: trigger == .message ? nil : previous, quiet: quiet,
                                         message: trigger == .message)
@@ -584,8 +601,10 @@ final class ScheduledTaskStore: ObservableObject {
             return finish(task.id, status: .failed, error: "sched.error.nookTimeout")
         }
         // Nothing new: no conversation stays behind, and the list says the check found nothing.
+        // Only the run's own question and its "nothing new" answer go: a conversation the user went on with stays.
         if foundNothing.contains(conversation) {
-            app.chat.delete(conversation)
+            let asked = app.chat.conversation(conversation)?.messages.filter { $0.role == .user }.count ?? 0
+            if asked <= 1 { app.chat.delete(conversation) }
             return finish(task.id, status: .succeeded, error: "sched.nook.nothingNew")
         }
         // An answer that ended in an error says so in the list too.
@@ -654,22 +673,32 @@ final class ScheduledTaskStore: ObservableObject {
                 handledUntil[key] = max(handledUntil[key] ?? .distantPast, message.date)
             }
             if gate.isRunning(task.id) {
-                waitingMessages[task.id, default: []] = Array((waitingMessages[task.id, default: []] + matching).suffix(20))
+                waitingMessages[task.id, default: []] = Array((waitingMessages[task.id, default: []] + matching).suffix(40))
                 continue
             }
             fireMessages(task, matching, now: now)
         }
     }
 
+    /// One run takes the first `NookSchedule.messagesPerRun` messages; the rest wait for the next run, so every message
+    /// that matched reaches a run.
     private func fireMessages(_ task: ScheduledTask, _ messages: [ArrivedMessage], now: Date) {
-        let newest = messages.map(\.date).max() ?? now
-        fire(task.id, scheduledFor: newest, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: messages), now: now)
+        let batch = Array(messages.prefix(NookSchedule.messagesPerRun))
+        let rest = Array(messages.dropFirst(NookSchedule.messagesPerRun))
+        let newest = batch.map(\.date).max() ?? now
+        let started = fire(task.id, scheduledFor: newest, trigger: .message, prompt: NookSchedule.messagePrompt(task.prompt, messages: batch), now: now)
+        // Busy: everything waits for the run that goes now. A firing seen before (the same messages again) is dropped.
+        let waiting = !started && gate.isRunning(task.id) ? messages : rest
+        if !waiting.isEmpty { waitingMessages[task.id, default: []].insert(contentsOf: waiting, at: 0) }
     }
 
     private func drainMessages(_ id: UUID) {
         guard let waiting = waitingMessages.removeValue(forKey: id), !waiting.isEmpty,
-              let task = task(id), task.enabled, mayRun(task), task.rule.isMessage else { return }
-        fireMessages(task, waiting, now: Date())
+              let task = task(id), task.enabled, mayRun(task), let trigger = task.rule.messageTrigger else { return }
+        // The filter may have changed while they waited: only what still matches runs.
+        let matching = waiting.filter(trigger.matches)
+        guard !matching.isEmpty else { return }
+        fireMessages(task, matching, now: Date())
     }
 
     private func recordSkip(_ id: UUID, reason: String, now: Date) {

@@ -32,7 +32,9 @@ extension AppModel {
                 ],
                 kind: .action,
                 summarize: { input in
-                    NookSchedule.parse(input, now: Date()).draft.map(NookSchedule.summary) ?? tr("automation.nook.planIncomplete")
+                    // The plan shows it in the user's language; the brain and the audit log read NookSchedule.summary.
+                    NookSchedule.parse(input, now: Date()).draft.map { tr("automation.nook.planLine", $0.title, ScheduledTaskText.summary($0.rule)) }
+                        ?? tr("automation.nook.planIncomplete")
                 },
                 tag: { _ in (tr("automation.nook.tag"), .caution) },
                 run: { input in
@@ -52,7 +54,8 @@ extension AppModel {
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
                 kind: .action,
                 summarize: { _ in
-                    tr("automation.secretary.plan", NookSchedule.secretary().map { NookSchedule.describe($0.rule) }.joined(separator: "; "))
+                    tr("automation.secretary.plan", NookSchedule.secretary().map { "\($0.title) (\(ScheduledTaskText.summary($0.rule)))" }
+                        .joined(separator: "; "))
                 },
                 tag: { _ in (tr("automation.nook.tag"), .caution) },
                 run: { [weak self] _ in
@@ -89,9 +92,9 @@ extension AppModel {
     static func addSecretary() -> String {
         let store = ScheduledTaskStore.shared
         var added: [String] = []
-        for draft in NookSchedule.secretary() where !store.tasks.contains(where: { $0.target.isNook && $0.title == draft.title }) {
+        for draft in NookSchedule.secretary() where !(draft.preset.map(store.hasPreset) ?? false) {
             let task = ScheduledTask(title: draft.title, prompt: draft.prompt, rule: draft.rule, target: .nook, createdAt: Date())
-            store.save(task, permission: .ask, quiet: draft.quiet)
+            store.save(task, permission: .ask, quiet: draft.quiet, preset: draft.preset)
             added.append("\(draft.title) (\(NookSchedule.describe(draft.rule))\(draft.quiet ? ", only when something new needs the user" : ""))")
         }
         guard !added.isEmpty else { return "The secretary's automations exist already; nothing was added." }

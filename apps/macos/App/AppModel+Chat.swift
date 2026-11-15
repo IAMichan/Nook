@@ -490,17 +490,19 @@ extension AppModel {
             let split = FollowUps.split(plan.text)
             var rawBody = split.body
 
-            // A quiet scheduled check that found nothing new: no retry and no notice; the run removes the conversation.
+            // A quiet scheduled check that found nothing new: this is its final answer, so no retry of any kind follows;
+            // no notice, and the run removes the conversation.
             let schedules = ScheduledTaskStore.shared
-            if schedules.isQuietRun(conversation), NookSchedule.isNothingNew(rawBody), plan.actions.isEmpty,
-               chat.message(id)?.mails.isEmpty ?? true {
+            let quietNothing = schedules.isQuietRun(conversation) && NookSchedule.isNothingNew(rawBody) && plan.actions.isEmpty
+                && (chat.message(id)?.mails.isEmpty ?? true) && (chat.message(id)?.charts.isEmpty ?? true)
+            if quietNothing {
                 schedules.noteNothingNew(conversation)
                 rawBody = tr("sched.nook.nothingNew")
             }
 
             // A small brain sometimes invents a number, time or address. Nook compares those with everything it was given
             // and tool results, and has the answer written again when one is found nowhere.
-            if settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
+            if !quietNothing, settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
                !Grounding.mayCompute(text) {
                 let given = [brainContext, text, snapshot?.text ?? "", ledger.retrievedText, history.map(\.text).joined(separator: "\n")]
                 let loose = Grounding.ungrounded(answer: rawBody, sources: given.joined(separator: "\n"))
@@ -516,7 +518,7 @@ extension AppModel {
             // Did the model write chart code, JSON, or a table? Parse and rescue into native chart.
             var rescued: [ChatChart] = []
             let alreadyDrawn = !(chat.message(id)?.charts.isEmpty ?? true)
-            if !alreadyDrawn {
+            if !alreadyDrawn, !quietNothing {
                 let extracted = ChartRescue.extract(from: rawBody, title: Conversation.title(from: text))
                 if !extracted.charts.isEmpty || wantsChart {
                     rawBody = extracted.text
@@ -539,7 +541,7 @@ extension AppModel {
                 && (chat.message(id)?.charts.isEmpty ?? true) && (chat.message(id)?.mails.isEmpty ?? true) && plan.actions.isEmpty
             // Code or JSON for a question that is not about code, or an answer in another language: also try once more.
             let broken = !nothing && rescued.isEmpty && plan.actions.isEmpty && Self.looksBroken(rawBody, question: text, expected: settings.answerLanguage(for: text))
-            if nothing || broken, !retry {
+            if nothing || broken, !retry, !quietNothing {
                 chat.update(id) { $0.text = ""; $0.status = tr("app.status.searching") }
                 await answer(text, history: history, replyID: id, conversation: conversation, retry: true, reusing: prepared)
                 return
@@ -617,7 +619,9 @@ extension AppModel {
             NookPresence.shared.nod()
             // Actions the chosen access lets Nook do by itself start before the notice, so a notice only asks for a
             // click on what still waits for one.
-            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            // A scheduled run's plan always waits for the user's own click, whatever the access level: nobody asked just now.
+            if !ScheduledTaskStore.shared.isScheduledRun(conversation),
+               canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
             nookFinished(conversation)
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
