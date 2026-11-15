@@ -44,7 +44,15 @@ Sentient's Double Tap drafts one reply. Nook's version goes further and **fills 
   itself: a card in the notch lists what was filled, with **Undo** and, when the form has a send button (the window's
   default button, or one labelled send/submit/sign up/…), that button. Buttons that pay, order or delete are never offered.
 
-Logic and tests: `Services/DoubleTap/DoubleTapLogic.swift`, `Tests/NookTests/DoubleTapTests.swift`.
+- In a Chromium browser with Nook's extension connected (its side panel need not be open), the page agent reads the
+  form in one call and fills every field in one more, instead of walking the accessibility tree; see "Double Tap in the
+  browser" in [`BROWSER-EXTENSION.md`](BROWSER-EXTENSION.md).
+- The field says what it is for before you type: a line above it names the app and what Nook sees there (a selection,
+  a form with empty fields, a reply box, the cursor in a text), and its size follows the density and panel size you
+  chose in Settings › Appearance.
+
+Logic and tests: `Services/DoubleTap/DoubleTapLogic.swift`, `DoubleTapBrowserLogic.swift`, `Tests/NookTests/DoubleTapTests.swift`,
+`DoubleTapBrowserTests.swift`.
 
 ## Mouse and keyboard control, improved
 

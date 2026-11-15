@@ -377,8 +377,10 @@ func (in *intent) MarkRead(ctx context.Context, roomID id.RoomID, eventID id.Eve
 	if in.double {
 		in.m.store.MarkRead(roomID, at)
 	} else {
-		in.m.store.MarkOthersRead(roomID, at)
+		// Who read it is kept first: MarkOthersRead tells Nook the chat changed, and Nook reads it at once, so the
+		// person's read (and when) must already be there or their ticks wait for the chat's next change.
 		in.m.store.MarkUserRead(roomID, in.user, at, ts.UnixMilli())
+		in.m.store.MarkOthersRead(roomID, at)
 	}
 	return nil
 }

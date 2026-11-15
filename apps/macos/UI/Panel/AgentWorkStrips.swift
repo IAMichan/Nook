@@ -104,6 +104,8 @@ struct SubagentStatusMark: View {
     let running: Bool
     let failed: Bool
     var size: CGFloat = 10
+    /// The start of the keys that say its state ("ws.subagent" or "ws.background", then ".running", ".done", ".failed").
+    private var labels = "ws.subagent"
 
     init(agent: SubagentInfo, size: CGFloat = 10) {
         running = agent.isRunning
@@ -115,7 +117,10 @@ struct SubagentStatusMark: View {
         running = command.isRunning
         failed = command.failed
         self.size = size
+        labels = "ws.background"
     }
+
+    private var stateLabel: String { tr(labels + (running ? ".running" : failed ? ".failed" : ".done")) }
 
     var body: some View {
         Group {
@@ -128,6 +133,10 @@ struct SubagentStatusMark: View {
             }
         }
         .frame(width: 12)
+        // The spinner alone says nothing: its state is spoken and shown under the pointer too.
+        .help(stateLabel)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(stateLabel)
     }
 }
 
@@ -223,11 +232,27 @@ struct SessionSubagentsPanel: View {
     var commands: [BackgroundCommandInfo] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+        VStack(alignment: .leading, spacing: 0) {
             if agents.isEmpty && commands.isEmpty {
                 WSEmptyState(symbol: SessionTool.subagents.symbol, title: tr("ws.subagents.empty.title"),
                              message: tr("ws.subagents.empty.body"))
             } else {
+                // How far they are, in the tab's bar like every tab's: it stays in view while the list scrolls.
+                if !agents.isEmpty {
+                    SidePanelToolbar {
+                        let running = agents.filter(\.isRunning).count
+                        Text(tr("ws.subagents.progress", agents.count - running, agents.count))
+                            .font(NookTheme.TextStyle.label)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                        if running > 0 {
+                            Text(tr("ws.subagents.running", running))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.iris)
+                                .lineLimit(1)
+                        }
+                    }
+                }
                 // Flat on the panel, like a pull request's page: no card around the list or around each entry.
                 ScrollView {
                     // Commands still at work come first: they are what keeps the session going.
@@ -253,23 +278,13 @@ struct SubagentList: View {
     let agents: [SubagentInfo]
 
     var body: some View {
-        let running = agents.filter(\.isRunning).count
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text(tr("ws.subagents.progress", agents.count - running, agents.count))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
-                if running > 0 {
-                    Text(tr("ws.subagents.running", running))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.iris)
-                }
-            }
             // Those still at work first, then the rest, newest first.
             let ordered = agents.filter(\.isRunning) + agents.filter { !$0.isRunning }.reversed()
             ForEach(Array(ordered.enumerated()), id: \.element.id) { index, agent in
                 if index > 0 { NookDivider() }
-                SubagentCard(agent: agent)
+                // Only the card whose subagent changed is drawn again, not every card when one of them streams.
+                SubagentCard(agent: agent).equatable()
             }
         }
     }
@@ -277,7 +292,7 @@ struct SubagentList: View {
 
 /// One subagent in `SubagentList`: its state, title, kind and time over what it went through, drawn as an agent's own
 /// conversation (`SubagentTranscript`).
-private struct SubagentCard: View {
+private struct SubagentCard: View, Equatable {
     let agent: SubagentInfo
 
     var body: some View {

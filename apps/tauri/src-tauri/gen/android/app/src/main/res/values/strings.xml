@@ -2,4 +2,20 @@
     <string name="app_name">"Nook"</string>
     <string name="main_activity_title">"Nook"</string>
     <string name="share_label">"Vraag Nook"</string>
+    <string name="push_allow">"Allow"</string>
+    <string name="push_deny">"Deny"</string>
+    <string name="push_reply">"Reply"</string>
+    <string name="push_reply_hint">"Message to the agent"</string>
+    <string name="push_channel">"Agents and approvals"</string>
+    <string name="shortcut_new_session">"New session"</string>
+    <string name="shortcut_ask_nook">"Ask Nook"</string>
+    <string name="shortcut_answer_chat">"Answer a chat"</string>
+    <string name="widget_agents_description">"Agents that work or wait on you"</string>
+    <string name="widget_limits_description">"Your plan limits and when they reset"</string>
+    <string name="widget_agents_title">"Agents"</string>
+    <string name="widget_limits_title">"Limits"</string>
+    <string name="widget_agents_empty">"Nothing works or waits on you."</string>
+    <string name="widget_limits_empty">"No limits reported yet."</string>
+    <string name="widget_stale">"Out of date"</string>
+    <string name="widget_updated">"Updated %s"</string>
 </resources>

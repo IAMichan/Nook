@@ -44,6 +44,8 @@ struct TranscriptConversation: View {
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
     @State private var drawnRows = DrawnRows()
+    /// Holds the row you read in place while you read back and what is above it changes height (`TimelineReadingAnchor`).
+    @State private var reading = TimelineReadingAnchor()
     /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
     @State private var timelineBuild = 0
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
@@ -150,12 +152,12 @@ struct TranscriptConversation: View {
                                     TimelineNewDivider()
                                     self.row(row)
                                 }
-                                .countsAsDrawnRow(drawnRows, id: row.id)
+                                .countsAsDrawnRow(drawnRows, id: row.id, reading: reading)
                                 .id(row.id)
                             } else {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
                                 self.row(row, ruled: row.id != beforeNew)
-                                    .countsAsDrawnRow(drawnRows, id: row.id).id(row.id)
+                                    .countsAsDrawnRow(drawnRows, id: row.id, reading: reading).id(row.id)
                             }
                         }
                         // A compaction between turns (your /compact while the agent waits): the line under the last turn.
@@ -173,12 +175,15 @@ struct TranscriptConversation: View {
                     .scrollTargetLayout()
                     // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                     .coordinateSpace(name: TimelineSpace.name)
+                    .readingStackTop(reading)
+                    .readingScroller(reading)
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
+                    .coordinateSpace(name: TimelineSpace.content)
                 }
                 // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
                 .id(timelineBuild)
-                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(.bottom, for: .alignment)
@@ -189,6 +194,9 @@ struct TranscriptConversation: View {
                 .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                     ScrollFrame(geometry)
                 } action: { old, frame in
+                    // Reading back: what you read stays put while the rows above it change height.
+                    reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop,
+                                  holding: !scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating)
                     keepEnd(old, frame, proxy)
                 }
                 .onScrollGeometryChange(for: Bool.self) { geometry in

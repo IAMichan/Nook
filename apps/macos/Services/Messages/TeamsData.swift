@@ -19,6 +19,10 @@ enum TeamsData {
         var preview: InboxMessage? = nil
         /// What Teams says of the chat: when it was made, its owners, the other person's address, its link.
         var profile: ChatProfile? = nil
+        /// How far the chat changed, as the Teams website's list counts it (`lastUpdatedMessageVersion`, else `version`):
+        /// it moves on an edit or a deletion too, which leave the newest message as it was. Nil where the list does not
+        /// say it (Graph).
+        var version: Double? = nil
     }
 
     /// A Teams account you signed in with. Its refresh token is in the Keychain under `refreshAccount`; the rest is not

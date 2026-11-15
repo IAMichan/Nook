@@ -11,8 +11,8 @@ export const PROTOCOL_VERSION = 1;
 export const GROUP_TITLE = 'Nook';
 
 /** Methods that only look; everything else changes the page and is refused while Nook is paused. */
-export const READ_METHODS = new Set(['tabs', 'read', 'find', 'screenshot', 'wait', 'console']);
-export const ACT_METHODS = new Set(['open', 'click', 'type', 'scroll', 'key', 'close']);
+export const READ_METHODS = new Set(['tabs', 'read', 'find', 'screenshot', 'wait', 'console', 'form']);
+export const ACT_METHODS = new Set(['open', 'click', 'type', 'scroll', 'key', 'close', 'fill']);
 export const METHODS = new Set([...READ_METHODS, ...ACT_METHODS]);
 
 /** Pages no extension may script (the browser's own pages and its web store), by URL prefix or host. */
@@ -114,6 +114,13 @@ export function commandError(command, state) {
     if (error) return error;
   }
   if (command.method === 'type' && typeof params.value !== 'string') return 'type needs value: the text to enter.';
+  if (command.method === 'fill') {
+    const values = params.values;
+    if (!Array.isArray(values) || !values.length) return 'fill needs values: [{ ref, value }] from form.';
+    if (values.some((item) => !item || typeof item.ref !== 'string' || typeof item.value !== 'string')) {
+      return 'Each of fill\'s values needs ref (from form) and value (text).';
+    }
+  }
   if (command.method === 'key' && (typeof params.key !== 'string' || !params.key.trim())) return 'key needs key, such as "Enter", "Escape" or "Tab".';
   if (command.method === 'open') {
     const where = String(params.url || '').trim().toLowerCase();
@@ -171,6 +178,8 @@ export function activityLine(command, outcome) {
     case 'open': return { icon: 'open', text: `Opened ${siteOf(normalizeURL(params.url) || '') || params.url}`, ...outcome };
     case 'click': return { icon: 'click', text: `Clicked ${outcome.element || element}`.trim(), ...outcome };
     case 'type': return { icon: 'type', text: `Typed into ${outcome.element || element}`.trim(), ...outcome };
+    case 'fill': return { icon: 'type', text: `Double Tap filled in ${outcome.element || 'a form'}`, ...outcome };
+    case 'form': return { icon: 'read', text: 'Double Tap looked at the form', ...outcome };
     case 'key': return { icon: 'key', text: `Pressed ${params.key}`, ...outcome };
     case 'scroll': return { icon: 'scroll', text: 'Scrolled', ...outcome };
     case 'close': return { icon: 'close', text: 'Closed a tab', ...outcome };

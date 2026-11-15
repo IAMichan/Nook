@@ -122,6 +122,27 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         return url
     }
 
+    /// How far each chat's archived messages of yours were marked read (`ChatStore.markRead`), by Telegram's message id.
+    private var archivedRead: [Int64: Int64] = [:]
+
+    /// A read is asked for this turn of the main thread already (`tellIfChanged`).
+    private var told = false
+
+    /// TDLib sends what changed the moment it does: a chat Nook shows that changed is read now, not at the next turn of
+    /// `interval`, so a message, an edit, a deletion, an emoji or a tick shows at once. Every update of one turn of the
+    /// main thread makes one read.
+    private func tellIfChanged() {
+        guard !told, !changed.isDisjoint(with: shown) || !leftChats.isEmpty || !deleted.isEmpty else { return }
+        told = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.told = false
+                ChatCaptureService.shared.readLive(self)
+            }
+        }
+    }
+
     /// Whether a session was kept from an earlier login: then starting needs no login again.
     var hasSession: Bool {
         FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent("td.binlog").path)
@@ -137,7 +158,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             loginError = nil
             // Only what `handle` reads crosses to the main thread, in the order TDLib sent it (`TDLibClient`).
             client = try TDLibClient(library: library, types: Self.handledTypes) { [weak self] object in
-                MainActor.assumeIsolated { self?.handle(object) }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.handle(object)
+                    self.tellIfChanged()
+                }
             }
             // The first request wakes TDLib up; it answers with where the login stands.
             send(["@type": "getOption", "name": "version"])
@@ -198,6 +223,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         members = [:]
         membersAsked = []
         viewersAsked = [:]
+        archivedRead = [:]
     }
 
     /// An edit of a message older than what this bridge holds: Nook's archive takes it, under the chat's key in the
@@ -432,6 +458,17 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 chats[id]?.readOutbox = upTo
                 markRead(upTo: upTo, in: id)
                 askViewers(in: id)
+                // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says. The
+                // held ones reach the archive the usual way, so only a mark below them is passed on, once per mark.
+                let marked = archivedRead[id] ?? 0
+                let held = upTo > marked ? messages[id]?.compactMap { TelegramData.ids($0.id)?.message }.min() : nil
+                let mark = min(upTo, held.map { $0 - 1 } ?? upTo)
+                if mark > marked, let known = chats[id], !known.title.isEmpty {
+                    archivedRead[id] = mark
+                    ChatCaptureService.shared.archiveRead(chat: ChatInbox.key(app: app, chat: shownName(known))) { message in
+                        TelegramData.ids(message.id).map { $0.message <= mark } ?? false
+                    }
+                }
             }
         case "basicGroupFullInfo", "chatMembers":
             if let extra = object["@extra"] as? String, extra.hasPrefix("members:"), let id = Int64(extra.dropFirst("members:".count)) {
@@ -516,17 +553,20 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             // A poll's votes moved (or a message was edited): the chat shows the new content.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
                let content = object["new_content"] as? [String: Any] {
+                // A file's text in Nook is its caption (`TelegramData.message`): an edited caption is its new text,
+                // also when it was taken away.
+                let isFile = TelegramData.file(content) != nil
+                let text: String? = isFile ? TelegramData.caption(content) : TelegramData.text(content)
                 guard let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) else {
                     // Older than what this bridge holds: Nook's archive takes the new text.
-                    if TelegramData.poll(content) == nil, let text = TelegramData.text(content), !text.isEmpty,
-                       TelegramData.file(content) == nil {
+                    if TelegramData.poll(content) == nil, let text, !text.isEmpty || isFile {
                         archiveChange(chat, message: "telegram-\(chat)-\(id)", edited: text)
                     }
                     break
                 }
                 if let poll = TelegramData.poll(content) {
                     messages[chat]?[index].poll = poll
-                } else if let text = TelegramData.text(content), !text.isEmpty, TelegramData.file(content) == nil {
+                } else if let text, !text.isEmpty || isFile {
                     messages[chat]?[index].text = text
                 }
                 changed.insert(chat)

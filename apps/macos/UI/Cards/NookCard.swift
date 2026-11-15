@@ -251,6 +251,13 @@ struct CardSuggestion: Equatable, Hashable {
     var symbol: String
 }
 
+/// The line above a compact card's field: a symbol, what Nook sees, and a quiet badge for how it reaches it.
+struct CardHint: Equatable {
+    var text: String
+    var symbol: String
+    var badge: String? = nil
+}
+
 struct NookCard: Equatable, Identifiable {
     var id: String
     var mood: NookMood
@@ -290,6 +297,9 @@ struct NookCard: Equatable, Identifiable {
     /// One-click requests under a compact card's field (what Nook could do with what is in front of you, and what you
     /// asked lately): a click sends the request as if it was typed.
     var suggestions: [CardSuggestion] = []
+    /// A compact card's line above its field: where Nook will work and what it sees there, so you know what it can do
+    /// before you type ("Google Chrome · form with 4 empty fields · via your browser extension").
+    var hint: CardHint? = nil
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.

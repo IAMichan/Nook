@@ -801,13 +801,15 @@ struct SessionTerminalActions: View {
         }
     }
 
-    /// Runs a script in its own terminal; a script that serves a page opens it in Nook's browser once it had a moment.
+    /// Runs a script in its own terminal; a script that serves a page opens it in Nook's browser as soon as it answers.
     private func run(_ script: ProjectScript) {
         store.open(in: directory, command: script.command, title: script.name)
         guard script.autoOpenPreview, let url = script.previewURL else { return }
         let browser = SessionBrowsers.shared.inView
         Task {
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            // As soon as the server answers, not after a fixed four seconds: a fast one opens at once, a slow one still
+            // opens once it is up instead of on an error page. After half a minute it opens anyway, to show why not.
+            _ = await DevServerProbe.waitUntilUp(url)
             browser.go(url.absoluteString)
         }
     }

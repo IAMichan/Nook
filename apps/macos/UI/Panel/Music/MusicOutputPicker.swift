@@ -10,6 +10,8 @@ struct MusicOutputButton: View {
     @ObservedObject var outputs: MusicOutputService
     /// Only the icon, where the bar is narrow.
     var compact = false
+    /// Only the icon while it plays on this Mac: the name shows once it plays somewhere else, which is worth knowing.
+    var namesOnlyAway = false
     @EnvironmentObject private var app: AppModel
     @State private var open = false
     @State private var hovering = false
@@ -22,7 +24,7 @@ struct MusicOutputButton: View {
                 Image(icon: current?.symbol ?? "speaker.wave.2")
                     .font(NookTheme.font(12, .medium))
                     .frame(width: 16)
-                if !compact, let current {
+                if !compact, let current, !namesOnlyAway || away {
                     Text(current.name)
                         .font(NookTheme.TextStyle.label)
                         .lineLimit(1)

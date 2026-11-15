@@ -157,7 +157,7 @@ extension AgentRunPanel {
                             // While the agent writes, only the block it writes into is drawn again.
                             .equatable()
                         }
-                        .countsAsDrawnRow(drawnRows, id: block.id)
+                        .countsAsDrawnRow(drawnRows, id: block.id, reading: reading)
                         .id(block.id)
                     }
                     if let setup {
@@ -187,7 +187,10 @@ extension AgentRunPanel {
                 .scrollTargetLayout()
                 // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                 .coordinateSpace(name: TimelineSpace.name)
+                .readingStackTop(reading)
+                .readingScroller(reading)
                 .chatColumn()
+                .coordinateSpace(name: TimelineSpace.content)
             }
             // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
             .id(timelineBuild)
@@ -221,6 +224,8 @@ extension AgentRunPanel {
                 ScrollFrame(geometry)
             } action: { old, frame in
                 lastFrame.value = frame
+                // Reading back: what you read stays put while the rows above it change height.
+                reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop, holding: holdsReading)
                 // You scrolling (the wheel too, which reports no phase): following stops at once, not only once a drag
                 // that began at the end lets go, so the agent's output no longer pulls the view down under your fingers.
                 if scrollPhase.value != .animating, let reaction = scroll.reaction(movedFrom: old, to: frame) { scroll.apply(reaction) }
@@ -357,6 +362,12 @@ extension AgentRunPanel {
         }
         let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(events)) : nil
         return AgentAnnouncements.snapshot(events, status: status, step: step)
+    }
+
+    /// Whether the block you read is held in place (`TimelineReadingAnchor`): you read back, so not while the view
+    /// follows the end, finds, or runs an animated scroll of its own (to a mark on the rail, a find, the end).
+    var holdsReading: Bool {
+        !scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating
     }
 
     /// Scrolls to the end now and again while the layout settles: the lazy rows only learn their real height once

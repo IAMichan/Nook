@@ -93,6 +93,9 @@ final class DoubleTap: ObservableObject {
 
     /// A local model may take a while on a long form; past this the double tap gives up.
     static let deadline: Double = 60
+    /// How long what Nook is about to type or change stays in the notch before it does, so Stop can still keep it out:
+    /// long enough to read the line, short enough not to feel slow.
+    static let previewPause: UInt64 = 500_000_000
 
     private let defaults = UserDefaults.standard
     private var gesture = DoubleTapGesture()
@@ -199,17 +202,44 @@ final class DoubleTap: ObservableObject {
         readScene(of: app)
     }
 
+    /// The app the field was just opened over, for the line above the field; nil when it was opened from Nook itself.
+    var askedInName: String? {
+        guard let askedIn, Date().timeIntervalSince(askedIn.date) < 2 else { return nil }
+        return askedIn.app.localizedName
+    }
+
     /// Reads what is in front of the user in `app` (its focused text, its selection, the empty fields of its window, the
-    /// text Nook may see there) for the field's suggestions. Apps Nook never types in (password managers, terminals)
-    /// are not read: they get no suggestions of their own.
+    /// text Nook may see there) for the field's suggestions and the line above it. In a browser with Nook's extension
+    /// the page agent reads the tab in one call. Apps Nook never types in (password managers, terminals) are not read:
+    /// the line says so.
     private func readScene(of app: NSRunningApplication) {
         sceneTask?.cancel()
         let appName = app.localizedName ?? ""
-        guard suggests, onScene != nil, AXIsProcessTrusted(), !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else { return }
+        // Read also with the suggestions off: the line above the field says what Nook sees there.
+        guard onScene != nil else { return }
         let pid = app.processIdentifier
         let bundle = app.bundleIdentifier ?? ""
+        guard !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else {
+            // After the field is shown, which follows this call.
+            sceneTask = Task { @MainActor [weak self] in self?.onScene?(DoubleTapScene(app: appName, bundleID: bundle, blocked: true)) }
+            return
+        }
         let windowText = screenText(bundle) ?? ""
+        let browser = Self.extensionClient(for: app)
         sceneTask = Task { @MainActor [weak self] in
+            // In a browser with Nook's extension, the page agent tells in one call what the tab in front holds.
+            if let browser, let page = await Self.readPage(in: browser) {
+                guard let self, !Task.isCancelled else { return }
+                var scene = DoubleTapLogic.scene(of: page, app: appName, bundleID: bundle)
+                scene.windowText = windowText
+                self.onScene?(scene)
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard AXIsProcessTrusted() else {
+                self?.onScene?(DoubleTapScene(app: appName, bundleID: bundle, windowText: windowText))
+                return
+            }
             var scene = await Task.detached(priority: .userInitiated) { () -> DoubleTapScene in
                 AutocompleteField.wake(pid: pid, bundleID: bundle)
                 var scene = DoubleTapScene.readFocus(pid: pid)
@@ -335,11 +365,6 @@ final class DoubleTap: ObservableObject {
     }
 
     private func runFill(request: String) async {
-        guard AXIsProcessTrusted() else {
-            return report(.warning, tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
-                SystemPermission.accessibility.openSettings()
-            })
-        }
         guard let ask else { return report(.warning, tr("doubletap.noBrain")) }
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         let appName = app.localizedName ?? ""
@@ -348,6 +373,17 @@ final class DoubleTap: ObservableObject {
         }
         run?.app = appName
         step(tr("doubletap.step.reading", appName))
+        // A browser with Nook's extension: the page agent reads and fills the form in the tab in front, also without
+        // access to the accessibility layer.
+        if let browser = Self.extensionClient(for: app), await fillInBrowser(request: request, app: app, browser: browser, ask: ask) {
+            return
+        }
+        guard !Task.isCancelled else { return }
+        guard AXIsProcessTrusted() else {
+            return report(.warning, tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
+                SystemPermission.accessibility.openSettings()
+            })
+        }
         DoubleTapForm.wake(app)
         // A document or a text that is not a form (Word, Pages, a note): "fill this in" writes at the cursor there.
         let pid = app.processIdentifier
@@ -412,7 +448,16 @@ final class DoubleTap: ObservableObject {
                 return AXUIElementPerformAction(button.element, kAXPressAction as CFString) == .success
             }
         }
-        let outcome = DoubleTapOutcome(app: appName, count: count, filled: filled, undo: undo, submit: submit)
+        presentFilled(DoubleTapOutcome(app: appName, count: count, filled: filled, undo: undo, submit: submit))
+    }
+
+    /// The fields are filled: the card that shows what, with Undo and the form's own Send, or a toast without it.
+    private func presentFilled(_ outcome: DoubleTapOutcome) {
+        let appName = outcome.app
+        let count = outcome.count
+        let filled = outcome.filled
+        let undo = outcome.undo
+        let submit = outcome.submit
         let title = count == 1 ? tr("doubletap.filledOne", appName) : tr("doubletap.filled", count, appName)
         for item in filled { run?.check(item.label.isEmpty ? tr("doubletap.card.field") : item.label, item.value) }
         if let present {
@@ -424,6 +469,102 @@ final class DoubleTap: ObservableObject {
                 NookToastAction(title: tr("doubletap.undo"), perform: undo)
             })
         }
+    }
+
+    // MARK: In a browser, through Nook's extension
+
+    /// The browser in front, when Nook's extension runs there and is connected: the side panel need not be open.
+    private static func extensionClient(for app: NSRunningApplication) -> BrowserExtensionClient? {
+        let service = BrowserExtensionService.shared
+        guard service.enabled else { return nil }
+        return DoubleTapLogic.browserClient(appName: app.localizedName ?? "", bundleID: app.bundleIdentifier,
+                                            appPID: app.processIdentifier, clients: service.connected)
+    }
+
+    /// The form in the browser's tab in front, or nil when the extension could not read it (asleep, paused, a page the
+    /// browser keeps to itself), so the accessibility layer reads it instead.
+    private static func readPage(in browser: BrowserExtensionClient) async -> DoubleTapPage? {
+        let read = await BrowserExtensionService.shared.hub.call("form", params: ["front": true], browser: browser.id,
+                                                                 timeout: DoubleTapLogic.browserReadTimeout)
+        return read.ok ? DoubleTapLogic.page(fromJSON: read.text) : nil
+    }
+
+    /// Fills the form in the browser's tab in front through the extension: one call reads it, one more fills every field.
+    /// False when the extension could not read the page, so the accessibility layer takes over; true when this ran to a
+    /// result of its own. A site you switched Nook off for in the extension, or Nook paused there, stays untouched.
+    private func fillInBrowser(request: String, app: NSRunningApplication, browser: BrowserExtensionClient,
+                               ask: (String, String, Double) async -> String?) async -> Bool {
+        let appName = app.localizedName ?? ""
+        let hub = BrowserExtensionService.shared.hub
+        let read = await hub.call("form", params: ["front": true], browser: browser.id, timeout: DoubleTapLogic.browserReadTimeout)
+        guard !Task.isCancelled else { return true }
+        guard read.ok, let page = DoubleTapLogic.page(fromJSON: read.text) else {
+            if DoubleTapLogic.extensionRefused(read.error) {
+                report(.info, tr("doubletap.browser.off", appName))
+                return true
+            }
+            return false
+        }
+        if page.focusIsSecure {
+            report(.info, tr("doubletap.secure"))
+            return true
+        }
+        let fields = DoubleTapLogic.candidates(page.fields)
+        // No empty field on the page: a text box or a document is where the cursor writes, through the general path.
+        guard DoubleTapLogic.hasRoom(fields) else { return false }
+
+        step(tr("doubletap.step.fields", fields.count))
+        let screen = screenText(app.bundleIdentifier ?? "") ?? ""
+        let reads = formText(DoubleTapLogic.formText(page.pieces, fields: fields)) ?? ""
+        let prompt = DoubleTapLogic.prompt(app: appName, window: page.title, fields: fields, facts: facts(), screen: screen,
+                                           request: request, form: reads)
+        let reply = await ask(DoubleTapLogic.system, prompt, Self.deadline)
+        guard !Task.isCancelled else { return true }
+        guard let reply else {
+            report(.warning, tr("doubletap.failed"))
+            return true
+        }
+        let values = DoubleTapLogic.values(from: reply, fields: fields)
+        guard !values.isEmpty else {
+            let missing = DoubleTapLogic.missing(from: reply)
+            report(.info, tr("doubletap.nothing"),
+                   detail: missing.isEmpty ? tr("doubletap.nothing.hint") : tr("doubletap.nothing.missing", missing))
+            return true
+        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+            report(.info, tr("doubletap.moved"))
+            return true
+        }
+        step(tr("doubletap.working"))
+        let payload = DoubleTapLogic.fillValues(values, fields: fields, page: page)
+        let result = await hub.call("fill", params: ["front": true, "values": payload], browser: browser.id,
+                                    timeout: DoubleTapLogic.browserFillTimeout)
+        let written = Set(result.ok ? DoubleTapLogic.written(fromFill: result.text) : [])
+        guard !written.isEmpty else {
+            report(.warning, tr("doubletap.writeFailed", appName))
+            return true
+        }
+        record?(request, "\(written.count) fields filled in \(appName) via the browser extension")
+        let filledFields = fields.filter { values[$0.id] != nil && page.refs.indices.contains($0.source) && written.contains(page.refs[$0.source]) }
+        let filled = filledFields.compactMap { field in
+            values[field.id].map { (label: DoubleTapLogic.shownLabel(field.label), value: $0) }
+        }
+        // Undo puts back what each field held, in the same tab.
+        let before = filledFields.map { ["ref": page.refs[$0.source], "value": $0.value] }
+        let undo: () -> Void = {
+            Task { _ = await hub.call("fill", params: ["front": true, "values": before], browser: browser.id,
+                                      timeout: DoubleTapLogic.browserFillTimeout) }
+        }
+        var submit: DoubleTapOutcome.Submit?
+        if let button = page.submit {
+            submit = DoubleTapOutcome.Submit(label: button.label) {
+                // Pressed from the card: the page agent clicks the form's own button in the same tab.
+                Task { _ = await hub.call("click", params: ["front": true, "ref": button.ref], browser: browser.id, timeout: 10) }
+                return true
+            }
+        }
+        presentFilled(DoubleTapOutcome(app: appName, count: written.count, filled: filled, undo: undo, submit: submit))
+        return true
     }
 
     // MARK: Writing at the cursor
@@ -497,7 +638,7 @@ final class DoubleTap: ObservableObject {
 
         // What Nook is about to change stays in the notch for a moment, so Stop can still keep it out.
         step(tr("doubletap.step.editing", appName, DoubleTapLogic.editPreview(edits[edits.count - 1])))
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        try? await Task.sleep(nanoseconds: Self.previewPause)
         guard !Task.isCancelled else { return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
             return report(.info, tr("doubletap.moved"))
@@ -579,7 +720,7 @@ final class DoubleTap: ObservableObject {
 
         // What Nook is about to type stays in the notch for a moment, so Stop can still keep it out.
         step(tr("doubletap.step.typing", appName, DoubleTapLogic.preview(text)))
-        try? await Task.sleep(nanoseconds: 800_000_000)
+        try? await Task.sleep(nanoseconds: Self.previewPause)
         guard !Task.isCancelled else { return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
             return report(.info, tr("doubletap.moved"))

@@ -954,7 +954,8 @@ final class WorkspaceManager: ObservableObject {
     enum Delivery: String, Sendable { case sent, queued, steered, restarted }
 
     /// A message another agent sends (`session_send`), the way it asks for it: `auto` steers a
-    /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
+    /// running turn the agent takes messages into natively and otherwise goes as `submit` (it never interrupts a turn:
+    /// only `restart` may); `steer` only into the running turn (nil when it
     /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
     /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
     /// `origin`: who sends it when that is not you (`DelegatedTask.origin`).
@@ -965,7 +966,7 @@ final class WorkspaceManager: ObservableObject {
         case .queue:
             return submit(id, text: text, origin: origin) ? .sent : .queued
         case .auto:
-            if active, canSteer(id), steer(id, text: text) { return .steered }
+            if active, steerRoute(id) == .native, steer(id, text: text) { return .steered }
             return submit(id, text: text, origin: origin) ? .sent : .queued
         case .steer:
             guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
