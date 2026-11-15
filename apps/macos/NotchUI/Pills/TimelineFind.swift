@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Which closed block (group, fold) hides which event, so a match inside one can open it.
 /// An event maps to the keys of every block around it, outermost first.
@@ -131,6 +132,8 @@ struct TimelineToEndPill: View {
 /// (`countsAsDrawnRow`).
 enum TimelineSpace {
     static let name = "timeline"
+    /// The whole content of the conversation's scroll view, where the stack of rows stands (`readingStackTop`).
+    static let content = "timeline.content"
 }
 
 /// A conversation's rows in its scroll view, inside a plain stack: the older ones lazily, the last `eager` drawn in full
@@ -199,14 +202,32 @@ final class DrawnRows {
 extension View {
     /// Keeps this row of a lazy conversation in `drawn` while the lazy stack draws it, with where it stands. Its place in
     /// the conversation's own space only changes when the rows do, not on every frame of a scroll.
-    func countsAsDrawnRow<ID: Hashable>(_ drawn: DrawnRows, id: ID) -> some View {
+    /// `reading`, when given, learns where the row starts too, to hold what you read in place (`TimelineReadingAnchor`).
+    func countsAsDrawnRow<ID: Hashable>(_ drawn: DrawnRows, id: ID, reading: TimelineReadingAnchor? = nil) -> some View {
         let key = AnyHashable(id)
         return onGeometryChange(for: RowsInView.Span.self) { proxy in
             let frame = proxy.frame(in: .named(TimelineSpace.name))
             return RowsInView.Span(top: frame.minY, bottom: frame.maxY)
-        } action: { drawn.placed(key, $0) }
+        } action: {
+            drawn.placed(key, $0)
+            reading?.place(key, top: $0.top)
+        }
         .onAppear { drawn.appeared(key) }
-        .onDisappear { drawn.disappeared(key) }
+        .onDisappear {
+            drawn.disappeared(key)
+            reading?.place(key, top: nil)
+        }
+    }
+
+    /// Tells `reading` where this stack of rows (the view in `TimelineSpace.name`) starts within the scroll view's
+    /// content (the view in `TimelineSpace.content`).
+    func readingStackTop(_ reading: TimelineReadingAnchor) -> some View {
+        onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.content)).minY } action: { reading.stack(at: $0) }
+    }
+
+    /// Lets `reading` scroll the conversation's scroll view; on a view inside its content.
+    func readingScroller(_ reading: TimelineReadingAnchor) -> some View {
+        background(ReadingAnchorScroller(reading: reading).frame(width: 0, height: 0))
     }
 
     /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
@@ -370,5 +391,44 @@ extension ScrollFrame {
     init(_ geometry: ScrollGeometry) {
         self.init(offset: geometry.contentOffset.y, content: geometry.contentSize.height, container: geometry.containerSize.height,
                   insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+    }
+}
+
+/// Hands `TimelineReadingAnchor`'s scrolls to the AppKit scroll view under the conversation. Not through a
+/// `ScrollPosition` binding: the binding put the view back at the offset last asked for after a step of the scroll
+/// wheel (measured offscreen: every step of yours after a keep was taken back), and writing it drew the conversation
+/// again. Scrolling the clip view moves the view as a wheel step does, and the scroll view reports it as usual.
+private struct ReadingAnchorScroller: NSViewRepresentable {
+    let reading: TimelineReadingAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ScrollerProbe()
+        view.reading = reading
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? ScrollerProbe)?.reading = reading
+    }
+
+    private final class ScrollerProbe: NSView {
+        weak var reading: TimelineReadingAnchor? { didSet { connect() } }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            connect()
+        }
+
+        private func connect() {
+            guard let reading, let scrollView = enclosingScrollView else { return }
+            reading.scroll = { [weak scrollView] y in
+                guard let scrollView else { return }
+                let clip = scrollView.contentView
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+                scrollView.reflectScrolledClipView(clip)
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
