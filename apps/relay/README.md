@@ -81,6 +81,22 @@ the companion app the phones run (pushes for another bundle id are refused by Ap
 "collapse": "<hex>", "urgent": false}` and answers `{"apns": <Apple's status>, "reason": "…"}`, or 400 (bad request),
 413 (too large), 429 (over the limit), 501 (not set up), 502 (Apple unreachable).
 
+### Android (Firebase Cloud Messaging)
+
+Nook on Android registers a Firebase token with the Mac (`register` with `item` "fcm"); the Mac then sends that phone's
+pushes through the relay with `"service": "fcm"`, whatever its route for iPhones. The relay sends them on as an FCM
+**data message** carrying only the sealed blob (`"nook-sealed-d"`, `"nook-sealed-s"`), which the Android app opens and
+shows itself; Google sees no text. It needs the JSON key of a service account of the Firebase project the Android app
+is built with:
+
+```sh
+npx wrangler@4 secret put FCM_SERVICE_ACCOUNT   # paste the whole JSON file from Firebase › Project settings › Service accounts
+```
+
+Without it an Android push answers 501. The relay signs in to Google with the key (an RS256 JWT for an OAuth access
+token, kept for its hour) and maps Google's answers to Apple's words, so the Mac drops a token that is gone (`410
+Unregistered`) as it does for an iPhone. The FCM token goes in `token` as it is (not hex).
+
 ## Develop
 
 ```sh

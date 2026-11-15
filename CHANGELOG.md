@@ -11,6 +11,13 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- The Android app is now the same companion as the iPhone app, with the same layout, look and words: once paired it
+  opens on your Mac's tabs Nook, Agents and Chats, with what waits on you as cards, a session as its whole conversation
+  in turns, approvals and questions above the composer (deny with a reason, Steer now or After this turn), New session,
+  Nook's chat, the Chats tab (WhatsApp chats look like WhatsApp) and Settings. While it is open it follows your Mac live.
+  Nook on the phone itself is in Settings. Review a session's changes and comment on lines, work through pull requests
+  (review, merge, work on this), send pictures and dictate, as on the iPhone (see docs/COMPANION.md, *Android*).
+
 - Nook in your browser wears your look: the extension's side panel now draws Nook's own design (the same colors, radii,
   type scale and composer as the main window) and follows the theme, accent, custom colors, System / Light / Dark and
   density you chose in Settings › Appearance, within seconds of a change. The strip on a page while Nook acts follows

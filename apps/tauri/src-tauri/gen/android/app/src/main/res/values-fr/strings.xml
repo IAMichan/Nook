@@ -1,0 +1,18 @@
+<resources>
+    <string name="push_allow">"Autoriser"</string>
+    <string name="push_deny">"Refuser"</string>
+    <string name="push_reply">"Répondre"</string>
+    <string name="push_reply_hint">"Message à l\'agent"</string>
+    <string name="push_channel">"Agents et approbations"</string>
+    <string name="shortcut_new_session">"Nouvelle session"</string>
+    <string name="shortcut_ask_nook">"Demander à Nook"</string>
+    <string name="shortcut_answer_chat">"Répondre à une discussion"</string>
+    <string name="widget_agents_description">"Les agents qui travaillent ou vous attendent"</string>
+    <string name="widget_limits_description">"Vos limites de forfait et leur remise à zéro"</string>
+    <string name="widget_agents_title">"Agents"</string>
+    <string name="widget_limits_title">"Limites"</string>
+    <string name="widget_agents_empty">"Rien ne travaille ni ne vous attend."</string>
+    <string name="widget_limits_empty">"Aucune limite signalée."</string>
+    <string name="widget_stale">"Obsolète"</string>
+    <string name="widget_updated">"Mis à jour %s"</string>
+</resources>

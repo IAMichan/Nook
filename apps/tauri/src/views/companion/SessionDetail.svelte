@@ -1,123 +1,417 @@
 <script lang="ts">
-  // Eén sessie: wat er op je wacht (goedkeuren of antwoorden), het laatste antwoord, een bericht sturen en stoppen.
-  import { attentionColor, attentionWord, canStop, companion, type ClientView, type SessionDigest } from "../../lib/companion";
+  // One session as the iPhone app opens it (`SessionDetailView`): "folder / title ⌄" opening what you can do with it, the
+  // conversation (live with a computer that keeps a connection, else asked every few seconds), "Working for 12s"
+  // floating over its end, what waits on you in the composer's place (deny with a reason in its own field), and the
+  // composer, which offers Steer now or After this turn while the agent works.
+  import { onDestroy, untrack } from "svelte";
+  import {
+    applyTimeline, canStop, companion, followsLive, has, may, Feature,
+    type ClientView, type DigestItem, type SessionDigest, type TimelineEntry,
+  } from "../../lib/companion";
+  import { renderMarkdown } from "../../lib/markdown";
   import { tr } from "../../lib/i18n.svelte";
+  import { haptic } from "../../lib/haptics";
+  import { duration } from "../../lib/transcript";
+  import NavBar from "./ui/NavBar.svelte";
+  import Ico from "./ui/Ico.svelte";
+  import PulseDot from "./ui/PulseDot.svelte";
+  import DecisionButton from "./ui/DecisionButton.svelte";
+  import SessionComposer from "./ui/SessionComposer.svelte";
+  import ComposerPill from "./ui/ComposerPill.svelte";
+  import EmptyState from "./ui/EmptyState.svelte";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import Dialog from "./ui/Dialog.svelte";
+  import ConversationScroll from "./ConversationScroll.svelte";
+  import TranscriptView from "./TranscriptView.svelte";
+  import ChangesView from "./ChangesView.svelte";
+  import FilesView from "./FilesView.svelte";
+  import SnoozePicker from "./SnoozePicker.svelte";
+  import TerminalsView from "./TerminalsView.svelte";
+  import PhotoButton from "./ui/PhotoButton.svelte";
+  import ImageTray from "./ui/ImageTray.svelte";
+  import PullRequests from "./PullRequests.svelte";
+  import Sheet from "./ui/Sheet.svelte";
+  import { withReviewComment } from "../../lib/patch";
 
-  let { session, onback, act }: { session: SessionDigest | null; onback: () => void; act: (f: () => Promise<ClientView>) => Promise<void> } = $props();
+  let { view, id, fallback, onback, act, took }: {
+    view: ClientView;
+    id: string;
+    /** An older session the live list does not hold (from `history`), shown until a message moves it back. */
+    fallback?: SessionDigest;
+    onback: () => void;
+    act: (f: () => Promise<ClientView>) => Promise<void>;
+    took: (v: ClientView) => void;
+  } = $props();
+
+  const session = $derived(view.sessions.find((s) => s.id === id) ?? fallback ?? null);
+  const hasTimeline = $derived(has(view, Feature.timeline));
+  const live = $derived(followsLive(view, Feature.liveTimeline));
+  const canOperate = $derived(may(view, "operate"));
+  const canApprove = $derived(may(view, "approve"));
+  const working = $derived(session?.attention === "working");
+  const steerable = $derived(has(view, Feature.steer) && session?.canSteer === true);
+  const item = $derived(session?.items[0] ?? null);
+
+  let entries = $state<TimelineEntry[]>([]);
+  let loaded = $state(false);
   let message = $state("");
-  let answers = $state<Record<string, string>>({});
-  let confirmStop = $state(false);
+  let reason = $state("");
+  let answer = $state("");
+  let sending = $state(false);
+  let steer = $state(readSteer());
+  let menu = $state<DOMRect | null>(null);
+  let steerMenu = $state<DOMRect | null>(null);
+  let dialog = $state<null | { kind: "stop" | "end" | "archive" } | { kind: "rename"; name: string }>(null);
+  let now = $state(Date.now() / 1000);
+  let titleEl = $state<HTMLButtonElement | null>(null);
+  let sub = $state<null | "changes" | "pulls" | "files" | "terminals">(null);
+  let images = $state<string[]>([]);
+  let picking = $state(false);
+  // Earlier entries asked for page by page, kept beside the live conversation so an update never drops them.
+  let earlier = $state<TimelineEntry[]>([]);
+  let atStart = $state(false);
+  let loadingEarlier = $state(false);
+  const fullTranscript = $derived(has(view, Feature.fullTranscript));
+  const shown = $derived([...earlier.filter((e) => !entries.some((x) => x.id === e.id)), ...entries]);
+  async function loadEarlier() {
+    const oldest = shown[0];
+    if (!oldest || loadingEarlier) return;
+    loadingEarlier = true;
+    const r = await companion.call({ op: "timeline", session: id, item: oldest.id });
+    loadingEarlier = false;
+    const page = r.response?.timeline ?? [];
+    if (!page.length) atStart = true;
+    earlier = [...page, ...earlier];
+  }
+  async function readWhole(entry: TimelineEntry) {
+    const r = await companion.call({ op: "entry", session: id, item: entry.id });
+    const text = r.response?.entryText;
+    if (!text) return took(r.view);
+    const swap = (list: TimelineEntry[]) => list.map((e) => (e.id === entry.id ? { ...e, text, clipped: false } : e));
+    entries = swap(entries);
+    earlier = swap(earlier);
+  }
+  const canPicture = $derived(has(view, Feature.images));
+  const tooLarge = () => took({ ...view, notice: tr("Die foto kon niet klein genoeg worden gemaakt.", "That picture could not be made small enough.") });
+  let moreMenu = $state<DOMRect | null>(null);
+  const showChanges = $derived(has(view, Feature.diff) && may(view, "read") && session?.canSend !== false);
+  const showPulls = $derived(has(view, Feature.pullRequests) && may(view, "read"));
+  // Files and terminals need the right to operate, and only for sessions Nook runs on this Mac.
+  const showWorkspace = $derived(has(view, Feature.workspace) && may(view, "operate") && session?.canSend !== false);
 
-  function send() {
+  function readSteer(): boolean {
+    try { return localStorage.getItem("companion.steer") === "1"; } catch { return false; }
+  }
+  function setSteer(on: boolean) {
+    steer = on;
+    try { localStorage.setItem("companion.steer", on ? "1" : "0"); } catch { /* remembered for this visit */ }
+  }
+
+  // The conversation: watched live (the computer sends what changes), or asked every three seconds.
+  async function watch() {
+    const r = await companion.call(live ? { op: "watch", session: id } : { op: "timeline", session: id });
+    if (r.response?.timeline) entries = applyTimeline(entries, r.response.timeline, r.response.timelineAfter) ?? r.response.timeline;
+    loaded = true;
+  }
+  $effect(() => {
+    if (!hasTimeline) return;
+    void id;
+    untrack(watch);
+    if (live) {
+      const un = companion.onLive((r) => {
+        if (!r.timeline || r.timelineSession !== id) return;
+        const next = applyTimeline(entries, r.timeline, r.timelineAfter);
+        if (next) entries = next;
+        else untrack(watch);
+      });
+      return () => un.then((f) => f());
+    }
+    const timer = setInterval(() => document.visibilityState === "visible" && watch(), 3000);
+    return () => clearInterval(timer);
+  });
+  onDestroy(() => {
+    if (untrack(() => live)) companion.call({ op: "watch" });
+  });
+  $effect(() => {
+    if (!working) return;
+    const timer = setInterval(() => (now = Date.now() / 1000), 1000);
+    return () => clearInterval(timer);
+  });
+  const queued = $derived((view.outbox ?? []).filter((q) => q.op === "send" && q.session === id));
+  const turnStart = $derived([...entries].reverse().find((e) => e.kind === "user")?.date ?? null);
+
+  async function send(text: string) {
+    if (!session || sending) return;
+    sending = true;
+    haptic();
+    const steering = steerable && steer;
+    const r = await companion.call({ op: "send", session: session.id, text, steer: steering || undefined, turn: steering ? session.turn : undefined, images: images.length ? images.map((jpeg) => ({ jpeg })) : undefined });
+    sending = false;
+    took(r.view);
+    if (r.response) {
+      message = "";
+      images = [];
+      haptic("success");
+      if (!live) watch();
+    }
+  }
+
+  function decide(target: DigestItem, allow: boolean) {
     if (!session) return;
-    const text = message.trim();
-    if (!text) return;
-    message = "";
-    act(() => companion.send(session.id, text));
+    haptic(allow ? "success" : "warning");
+    act(() => companion.decide(session.id, target.id, allow));
+  }
+  function denyWithReason(text: string) {
+    if (!session || !item) return;
+    reason = "";
+    haptic("warning");
+    act(() => companion.deny(session.id, item.id, text));
+  }
+  function answerWith(text: string) {
+    if (!session || !item) return;
+    answer = "";
+    haptic("success");
+    act(() => companion.answer(session.id, item.id, text));
   }
 
-  function answer(item: string, text: string) {
-    if (!session || !text.trim()) return;
-    answers[item] = "";
-    act(() => companion.answer(session.id, item, text.trim()));
+  async function stop() {
+    if (!session) return;
+    const r = await companion.call({ op: "stop", session: session.id, turn: session.turn });
+    took(r.view);
   }
+  async function manage(action: string, text?: string) {
+    if (!session) return;
+    haptic();
+    const r = await companion.call({ op: "manage", session: session.id, item: action, text });
+    took(r.view);
+    if (r.response && (action === "archive" || action === "end")) onback();
+  }
+
+  const actions = $derived(new Set(session && has(view, Feature.manage) && canOperate ? (session.actions ?? []) : []));
+  const canStopIt = $derived(!!session && canOperate && session.canSend !== false && canStop(session.attention));
+  const menuSections = $derived.by<MenuItem[][]>(() => {
+    if (!session) return [];
+    const snooze: MenuItem[] = actions.has("unsnooze")
+      ? [{ label: tr("Snooze opheffen", "Cancel snooze"), icon: "alarm-clock", onselect: () => manage("unsnooze") }]
+      : [
+          ...(actions.has("snoozeHour") ? [{ label: tr("Een uur", "One hour"), icon: "clock", onselect: () => manage("snoozeHour") }] : []),
+          ...(actions.has("snoozeEvening") ? [{ label: tr("Vanavond", "This evening"), icon: "clock", onselect: () => manage("snoozeEvening") }] : []),
+          ...(actions.has("snoozeTomorrow") ? [{ label: tr("Morgenochtend", "Tomorrow morning"), icon: "clock", onselect: () => manage("snoozeTomorrow") }] : []),
+          ...(actions.has("snoozeLimitReset") && session.limitResetsAt ? [{ label: tr("Tot de limiet reset", "Until the limit resets"), icon: "gauge", onselect: () => manage("snoozeLimitReset") }] : []),
+          ...(actions.has("snoozeUntil") ? [{ label: tr("Kies een moment…", "Pick a time…"), icon: "calendar-clock", onselect: () => (picking = true) }] : []),
+        ];
+    return [
+      [
+        ...(canStopIt ? [{ label: tr("Stop", "Stop"), icon: "circle-stop", destructive: true, onselect: () => (dialog = { kind: "stop" }) }] : []),
+        ...(actions.has("end") ? [{ label: tr("Beëindig sessie", "End session"), icon: "circle-x", destructive: true, onselect: () => (dialog = { kind: "end" }) }] : []),
+      ],
+      snooze,
+      [
+        ...(actions.has("mainThreadOn") ? [{ label: tr("Hoofdthread maken", "Make main thread"), icon: "git-branch", onselect: () => manage("mainThreadOn") }] : []),
+        ...(actions.has("mainThreadOff") ? [{ label: tr("Hoofdthread uitzetten", "Stop main thread"), icon: "git-branch", onselect: () => manage("mainThreadOff") }] : []),
+        ...(actions.has("rename") ? [{ label: tr("Hernoem", "Rename"), icon: "pencil", onselect: () => (dialog = { kind: "rename", name: session.title }) }] : []),
+      ],
+      actions.has("archive") ? [{ label: tr("Archiveer", "Archive"), icon: "archive", destructive: true, onselect: () => (dialog = { kind: "archive" }) }] : [],
+    ];
+  });
+  const hasMenu = $derived(menuSections.some((s) => s.length));
 </script>
 
-<div class="detail">
-  <header>
-    <button class="ghost back" onclick={onback} aria-label={tr("Terug", "Back")}>‹</button>
-    <h2>{session?.title ?? tr("Sessie", "Session")}</h2>
-  </header>
+<div class="session">
+{#if sub === "files" && session}
+  <FilesView {view} session={session.id} onback={() => (sub = null)} {took} />
+{:else if sub === "terminals" && session}
+  <TerminalsView session={session.id} onback={() => (sub = null)} {took} />
+{:else if sub === "changes" && session}
+  <ChangesView session={session.id} onback={() => (sub = null)} {took} oncomment={(block) => { message = withReviewComment(message, block); sub = null; }} />
+{:else}
+  <NavBar onback={onback}>
+    {#snippet trailing()}
+      {#if showChanges}<button class="navbtn" aria-label={tr("Wijzigingen", "Changes")} onclick={() => { haptic(); sub = "changes"; }}><Ico name="diff" size={19} /></button>{/if}
+      {#if showPulls || showWorkspace}<button class="navbtn" aria-label={tr("Bestanden, terminals en pull requests", "Files, terminals and pull requests")} onclick={(e) => (moreMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="circle-ellipsis" size={19} /></button>{/if}
+    {/snippet}
+    {#snippet center()}
+      <button bind:this={titleEl} class="title" disabled={!hasMenu} onclick={() => titleEl && (menu = titleEl.getBoundingClientRect())}>
+        {#if session}
+          <span class="l1"><span class="folder">{session.folder} /</span> <span class="name">{session.title}</span>{#if hasMenu}<span class="chev"><Ico name="chevron-down" size={10} stroke={3} /></span>{/if}</span>
+          <span class="l2">{session.agent}{session.branch ? ` · ${session.branch}` : ""}</span>
+        {/if}
+      </button>
+    {/snippet}
+  </NavBar>
+
   {#if !session}
-    <p class="faint pad">{tr("Deze sessie is er niet meer.", "This session no longer exists.")}</p>
+    <EmptyState icon="inbox" title={tr("Deze sessie is er niet meer.", "This session is gone.")} text={tr("Hij is op je Mac gesloten of gearchiveerd.", "It was closed or archived on your Mac.")} />
   {:else}
     <div class="body">
-      <section>
-        <div class="state" style="color:{attentionColor(session.attention)}">● {attentionWord(session.attention)}</div>
-        <div class="faint small">{session.agent} · {session.folder}{session.branch ? ` · ${session.branch}` : ""}</div>
-      </section>
+      <ConversationScroll version={[entries.length, entries[entries.length - 1]?.text.length, session.attention, session.excerpt]} reserve={working ? 56 : 0}>
+        {#if hasTimeline}
+          {#if !loaded}
+            <div class="loading breathe"><span style:width="90%"></span><span style:width="70%"></span><span style:width="80%"></span></div>
+          {:else}
+            {#if fullTranscript && shown.length && !atStart}
+              <button class="earlier" onclick={loadEarlier} disabled={loadingEarlier}>{#if loadingEarlier}<span class="mini"></span>{:else}<Ico name="arrow-up" size={13} />{/if}{tr("Eerdere berichten", "Earlier messages")}</button>
+            {/if}
+            <TranscriptView entries={shown} {working} onwhole={fullTranscript ? readWhole : undefined} onreply={canOperate && session.canSend !== false ? (t) => (message = "> " + t.split("\n").slice(0, 4).join("\n> ") + "\n\n" + message) : undefined} />
+          {/if}
+        {:else if session.excerpt}
+          <h3 class="section">{tr("Laatste antwoord", "Latest reply")}</h3>
+          <div class="markdown reply">{@html renderMarkdown(session.excerpt)}</div>
+        {/if}
+        {#each queued as q (q.id)}
+          <div class="queued"><div class="qbubble">{q.text}</div><span class="qnote"><Ico name="clock" size={11} />{tr("Wacht op je Mac", "Waiting for your Mac")}<button onclick={async () => took(await companion.discard(q.id))}>{tr("Niet versturen", "Don’t send")}</button></span></div>
+        {/each}
+        {#snippet floating()}
+          {#if working}
+            <div class="floating"><PulseDot size={7} />{turnStart ? tr("Werkt al {d}", "Working for {d}", { d: duration(Math.max(0, now - turnStart)) }) : tr("Aan het werk", "Working")}</div>
+          {/if}
+        {/snippet}
+      </ConversationScroll>
+    </div>
 
-      {#each session.items as item (item.id)}
-        <section class="item">
-          <h3>{item.kind === "approval" ? tr("Toestemming", "Permission") : tr("Vraag", "Question")}</h3>
-          <p>{item.title}</p>
-          {#if item.detail}<p class="faint small">{item.detail}</p>{/if}
-          {#if item.kind === "approval"}
-            <div class="buttons">
-              <button class="danger" onclick={() => act(() => companion.decide(session.id, item.id, false))}>{tr("Weiger", "Deny")}</button>
-              {#if item.canAllow}
-                <button class="primary" onclick={() => act(() => companion.decide(session.id, item.id, true))}>{tr("Sta toe", "Allow")}</button>
-              {/if}
+    {#if item}
+      <div class="pending">
+        <div class="card">
+          <span class="kind"><Ico name={item.kind === "approval" ? "hand" : "message-circle-question"} size={12} stroke={2.4} />{item.kind === "approval" ? tr("Goedkeuring nodig", "Approval needed") : tr("Wacht op je antwoord", "Waiting for your answer")}</span>
+          <p class="ask">{item.title}</p>
+          {#if item.detail}<code class="detail">{item.detail}</code>{/if}
+          {#if !canApprove}
+            <span class="note muted"><Ico name="lock" size={12} />{tr("Goedkeuren staat uit voor deze iPhone in Nook op je Mac.", "Approving is turned off for this phone in Nook on your Mac.")}</span>
+          {:else if item.kind === "approval"}
+            <div class="decide">
+              <DecisionButton kind="deny" label={tr("Weiger", "Deny")} onclick={() => decide(item, false)} />
+              {#if item.canAllow}<DecisionButton kind="allow" label={tr("Sta toe", "Allow")} onclick={() => decide(item, true)} />{/if}
             </div>
-            {#if !item.canAllow}<p class="warn small">{tr("Dit is riskant of onbekend: toestaan kan alleen op je computer.", "This is risky or unknown: you can only allow it on your computer.")}</p>{/if}
+            {#if !item.canAllow}<span class="note"><Ico name="lock" size={12} />{tr("Dit is riskant of onbekend: toestaan kan alleen op je Mac.", "This is risky or unknown: it can only be allowed on your Mac.")}</span>{/if}
+            <SessionComposer bind:value={reason} placeholder={tr("Of weiger met een reden", "Or deny with a reason")} onsend={denyWithReason} />
           {:else if item.canAllow}
             <div class="options">
-              {#each item.options as option (option)}
-                <button onclick={() => answer(item.id, option)}>{option}</button>
+              {#each item.options as option, i (option)}
+                <button class="option press" onclick={() => answerWith(option)}>
+                  <span class="key">{i < 9 ? i + 1 : "·"}</span>
+                  <span class="otext"><span>{option}</span>{#if item.optionPreviews?.[i]}<pre>{item.optionPreviews[i]}</pre>{/if}</span>
+                </button>
               {/each}
             </div>
-            <div class="own">
-              <input placeholder={tr("Eigen antwoord", "Your own answer")} bind:value={answers[item.id]} onkeydown={(e) => e.key === "Enter" && answer(item.id, answers[item.id] ?? "")} />
-              <button disabled={!answers[item.id]?.trim()} onclick={() => answer(item.id, answers[item.id] ?? "")}>{tr("Stuur", "Send")}</button>
-            </div>
+            <SessionComposer bind:value={answer} placeholder={tr("Je eigen antwoord", "Your own answer")} onsend={answerWith} />
           {:else}
-            <p class="warn small">{tr("Meerdere vragen tegelijk: beantwoord ze op je computer.", "Several questions at once: answer them on your computer.")}</p>
+            <span class="note"><Ico name="laptop" size={12} />{tr("Meerdere vragen tegelijk: beantwoord ze op je Mac.", "Several questions at once: answer them on your Mac.")}</span>
           {/if}
-        </section>
-      {/each}
-
-      {#if session.excerpt}
-        <section>
-          <h3>{tr("Laatste antwoord", "Latest reply")}</h3>
-          <p class="excerpt">{session.excerpt}</p>
-        </section>
-      {/if}
-
-      <section>
-        <h3>{tr("Stuur een bericht", "Send a message")}</h3>
-        <textarea rows="3" placeholder={tr("Bericht aan de agent", "Message to the agent")} bind:value={message}></textarea>
-        <button class="primary send" disabled={!message.trim()} onclick={send}>{tr("Verstuur", "Send")}</button>
-      </section>
-
-      {#if canStop(session.attention)}
-        <section>
-          {#if confirmStop}
-            <p>{tr("De sessie stoppen?", "Stop the session?")}</p>
-            <div class="buttons">
-              <button onclick={() => (confirmStop = false)}>{tr("Annuleer", "Cancel")}</button>
-              <button class="danger" onclick={() => { confirmStop = false; act(() => companion.stop(session.id)); }}>{tr("Stop de sessie", "Stop the session")}</button>
-            </div>
-          {:else}
-            <button class="danger wide" onclick={() => (confirmStop = true)}>{tr("Stop", "Stop")}</button>
-          {/if}
-        </section>
-      {/if}
-    </div>
+        </div>
+        {#if session.items.length > 1}<span class="morewait">{tr("Hierna wachten er nog {n}", "{n} more wait after this one", { n: session.items.length - 1 })}</span>{/if}
+      </div>
+    {:else}
+      <div class="dock">
+        {#if !canOperate}
+          <div class="fieldcard"><Ico name="lock" size={12} />{tr("Berichten sturen staat uit voor deze iPhone in Nook op je Mac.", "Sending messages is turned off for this phone in Nook on your Mac.")}</div>
+        {:else if session.canSend === false}
+          <div class="fieldcard"><Ico name="terminal" size={12} />{tr("Deze agent draait in een terminal op je Mac; beantwoord hem daar.", "This agent runs in a terminal on your Mac; answer it there.")}</div>
+        {:else}
+          <ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />
+          <div class="withphoto">
+          {#if canPicture}<PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={tooLarge} />{/if}
+          <div class="grow">
+        {#if steerable}
+          <SessionComposer bind:value={message} placeholder={steer ? tr("Stuur de agent bij", "Steer the agent") : tr("Bericht voor na deze beurt", "Message for after this turn")} onsend={send} {sending}
+            onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
+            {#snippet controls()}
+              <ComposerPill label={steer ? tr("Nu bijsturen", "Steer now") : tr("Na deze beurt", "After this turn")} icon={steer ? "corner-down-right" : "list"} onclick={(e) => (steerMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />
+            {/snippet}
+          </SessionComposer>
+        {:else}
+          <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending}
+            onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined} />
+        {/if}
+          </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
   {/if}
+{/if}
 </div>
 
+{#if sub === "pulls" && session}
+  <Sheet onclose={() => (sub = null)}><PullRequests {view} session={session.id} {took} onclose={() => (sub = null)} onstarted={() => (sub = null)} /></Sheet>
+{/if}
+{#if picking && session}
+  <Sheet onclose={() => (picking = false)}><SnoozePicker title={session.title} onclose={() => (picking = false)} onpick={(at) => manage("snoozeUntil", String(at))} /></Sheet>
+{/if}
+{#if moreMenu}
+  <Menu anchor={moreMenu} onclose={() => (moreMenu = null)} sections={[[
+    ...(showWorkspace ? [{ label: tr("Bestanden", "Files"), icon: "folder", onselect: () => (sub = "files") }, { label: tr("Terminals", "Terminals"), icon: "terminal", onselect: () => (sub = "terminals") }] : []),
+    ...(showPulls ? [{ label: tr("Pull requests", "Pull requests"), icon: "git-pull-request", onselect: () => (sub = "pulls") }] : []),
+  ]]} />
+{/if}
+{#if menu}<Menu sections={menuSections} anchor={menu} onclose={() => (menu = null)} />{/if}
+{#if steerMenu}
+  <Menu title={tr("Terwijl de agent werkt", "While the agent works")} anchor={steerMenu} onclose={() => (steerMenu = null)} sections={[[
+    { label: tr("Nu bijsturen", "Steer now"), icon: "corner-down-right", checked: steer, onselect: () => setSteer(true) },
+    { label: tr("Na deze beurt", "After this turn"), icon: "list", checked: !steer, onselect: () => setSteer(false) },
+  ]]} />
+{/if}
+{#if dialog?.kind === "stop"}
+  <Dialog title={tr("Deze sessie stoppen?", "Stop this session?")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Stop de sessie", "Stop the session"), destructive: true, onselect: stop },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "end"}
+  <Dialog title={tr("Deze sessie beëindigen?", "End this session?")} message={tr("De agent bewaart het gesprek, dus je kunt het in Nook voortzetten.", "The agent saves its conversation, so you can continue it in Nook.")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Beëindig sessie", "End session"), destructive: true, onselect: () => manage("end") },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "archive"}
+  <Dialog title={tr("Deze sessie archiveren?", "Archive this session?")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Archiveer", "Archive"), destructive: true, onselect: () => manage("archive") },
+    { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
+  ]} />
+{:else if dialog?.kind === "rename"}
+  {@const d = dialog}
+  <Dialog title={tr("Hernoem", "Rename")} bind:field={d.name} placeholder={tr("Naam", "Name")} onclose={() => (dialog = null)} buttons={[
+    { label: tr("Bewaar", "Save"), bold: true, onselect: () => d.name.trim() && manage("rename", d.name.trim()) },
+    { label: tr("Annuleer", "Cancel"), onselect: () => {} },
+  ]} />
+{/if}
+
 <style>
-  .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  header { display: flex; align-items: center; gap: 4px; padding: 8px 12px 8px 4px; border-bottom: 1px solid var(--line); }
-  header h2 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .back { min-width: 44px; min-height: 44px; font-size: 26px; line-height: 1; }
-  .body { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
-  section { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
-  section:last-child { border-bottom: none; }
-  h3 { margin: 0; font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
-  p { margin: 0; line-height: 1.45; user-select: text; }
-  .small { font-size: 12px; }
-  .state { font-weight: 600; }
-  .warn { color: var(--amber); }
-  .buttons { display: flex; gap: 8px; }
-  .buttons button { flex: 1; min-height: 46px; }
-  .options { display: flex; flex-direction: column; gap: 6px; }
-  .options button { min-height: 44px; text-align: left; }
-  .own { display: flex; gap: 8px; }
-  .own input { flex: 1; min-width: 0; min-height: 44px; }
-  .own button { min-height: 44px; }
-  textarea { resize: none; min-height: 72px; }
-  .send, .wide { min-height: 46px; }
-  .excerpt { white-space: pre-wrap; font-size: 13px; color: var(--text2); }
-  .pad { padding: 16px; }
+  .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .earlier { align-self: center; margin: 8px auto 4px; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; background: var(--smoke) !important; color: var(--text2) !important; font: var(--pt-label) !important; }
+  .mini { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .navbtn { width: 36px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper) !important; }
+  .title { max-width: 260px; display: flex; flex-direction: column; align-items: center; min-width: 0; opacity: 1 !important; }
+  .l1 { display: flex; align-items: center; gap: 4px; max-width: 100%; font: var(--pt-strong); white-space: nowrap; }
+  .folder { color: var(--text3); flex: none; }
+  .name { color: var(--paper); overflow: hidden; text-overflow: ellipsis; }
+  .chev { color: var(--text3); display: inline-flex; }
+  .l2 { font: var(--pt-caption); color: var(--text3); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .loading { display: flex; flex-direction: column; gap: 8px; padding-top: 24px; }
+  .loading span { height: 12px; border-radius: 999px; background: var(--smoke); }
+  .section { margin: 16px 0 4px; font: var(--pt-label); color: var(--text3); }
+  .reply { font: var(--pt-body); color: var(--text-strong); }
+  .floating { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border-radius: 999px; background: rgba(30, 30, 30, 0.72); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.08); font: var(--pt-label); color: var(--text-strong); }
+  .pending { padding: 0 16px 8px; display: flex; flex-direction: column; gap: 6px; animation: rise var(--reveal); }
+  .card { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid rgba(240, 182, 90, 0.35); border-radius: 12px; max-height: 360px; overflow-y: auto; }
+  .kind { text-transform: uppercase; display: flex; align-items: center; gap: 6px; font: var(--pt-caption); letter-spacing: 1.1px; color: var(--amber); }
+  .ask { margin: 0; font: var(--pt-title); color: var(--paper); user-select: text; overflow-wrap: anywhere; }
+  .detail { font: var(--pt-code); color: var(--text2); padding: 8px; background: var(--well); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .decide { display: flex; gap: 8px; }
+  .note { display: flex; align-items: baseline; gap: 6px; font: var(--pt-detail); color: var(--amber); }
+  .note.muted { color: var(--text2); }
+  .options { display: flex; flex-direction: column; gap: 8px; }
+  .option { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; background: var(--field) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 10px; text-align: left; }
+  .key { min-width: 22px; height: 22px; border-radius: 6px; background: var(--well); font: 600 12.57px var(--mono); color: var(--text2); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .otext { display: flex; flex-direction: column; gap: 6px; font: 600 14.86px var(--font); color: var(--paper); min-width: 0; }
+  .otext pre { margin: 0 0 0 12px; font: var(--pt-code); font-size: 12px; color: var(--text2); white-space: pre; overflow-x: auto; max-height: 10lh; }
+  .morewait { font: var(--pt-caption); color: var(--text3); text-align: center; }
+  .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
+  .queued { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding: 18px 0 2px 56px; opacity: 0.6; }
+  .qbubble { background: var(--bubble); border-radius: 16px; padding: 12px; font: var(--pt-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .qnote { display: flex; align-items: center; gap: 4px; font: var(--pt-caption); color: var(--text3); }
+  .qnote button { margin-left: 8px; color: var(--coral) !important; font: var(--pt-caption) !important; }
+  .withphoto { display: flex; align-items: flex-end; gap: 6px; }
+  .grow { flex: 1; min-width: 0; }
+  .fieldcard { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }
+  @keyframes rise { from { transform: translateY(16px); opacity: 0; } }
 </style>
