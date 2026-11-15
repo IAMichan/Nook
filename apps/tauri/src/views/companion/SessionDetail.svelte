@@ -137,6 +137,7 @@
     const timer = setInterval(() => (now = Date.now() / 1000), 1000);
     return () => clearInterval(timer);
   });
+  const queued = $derived((view.outbox ?? []).filter((q) => q.op === "send" && q.session === id));
   const turnStart = $derived([...entries].reverse().find((e) => e.kind === "user")?.date ?? null);
 
   async function send(text: string) {
@@ -257,6 +258,9 @@
           <h3 class="section">{tr("Laatste antwoord", "Latest reply")}</h3>
           <div class="markdown reply">{@html renderMarkdown(session.excerpt)}</div>
         {/if}
+        {#each queued as q (q.id)}
+          <div class="queued"><div class="qbubble">{q.text}</div><span class="qnote"><Ico name="clock" size={11} />{tr("Wacht op je Mac", "Waiting for your Mac")}<button onclick={async () => took(await companion.discard(q.id))}>{tr("Niet versturen", "Don’t send")}</button></span></div>
+        {/each}
         {#snippet floating()}
           {#if working}
             <div class="floating"><PulseDot size={7} />{turnStart ? tr("Werkt al {d}", "Working for {d}", { d: duration(Math.max(0, now - turnStart)) }) : tr("Aan het werk", "Working")}</div>
@@ -402,6 +406,10 @@
   .otext pre { margin: 0 0 0 12px; font: var(--pt-code); font-size: 12px; color: var(--text2); white-space: pre; overflow-x: auto; max-height: 10lh; }
   .morewait { font: var(--pt-caption); color: var(--text3); text-align: center; }
   .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
+  .queued { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding: 18px 0 2px 56px; opacity: 0.6; }
+  .qbubble { background: var(--bubble); border-radius: 16px; padding: 12px; font: var(--pt-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .qnote { display: flex; align-items: center; gap: 4px; font: var(--pt-caption); color: var(--text3); }
+  .qnote button { margin-left: 8px; color: var(--coral) !important; font: var(--pt-caption) !important; }
   .withphoto { display: flex; align-items: flex-end; gap: 6px; }
   .grow { flex: 1; min-width: 0; }
   .fieldcard { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }

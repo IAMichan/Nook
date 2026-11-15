@@ -171,6 +171,11 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
   and the Mac's search through them (`history`), *Read the whole message* and *Earlier messages*, snoozing to a time you
   pick, chat pictures and app icons, who read your message, version notices and *Show the update on your Mac*, and
   `nook://` links (a pairing code from the camera, a prompt link opening New session; `lib/prompt-link.ts`).
+- **Reaching the Mac:** up to eight paired Macs, one active and the others asked for their sessions every 30 seconds
+  ("On <Mac>"); every route the code and the Mac name (`a=`, `endpoints`), the last that worked first, and the relay as
+  the last resort (`r=`, `relay`; a WebSocket to `/v1/rooms/<room>?role=phone`); compressed answers (`compression`);
+  and an outbox for messages, new sessions and questions to Nook while the Mac is away (`retry`, sent again with the
+  same id). Code: `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
 - **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
   owner has to set up (Firebase for push, the relay key, testing on a real phone).
 
@@ -191,8 +196,8 @@ the relay and on mobile data. Sealed bytes look random and do not compress, so i
   compressed requests; the phone's requests are small, so it does not compress them yet.
 - The limits of one answer (`linesBudget`, `DiffFileDigest.maxTotal`, `CompanionWorkspace.maxEncodedBytes`) stay as they
   are, so an answer fits one frame for a phone without compression too.
-- Not in the Tauri app (`apps/tauri`) yet: it lists none of `history`, `compression` and `filePreview`, so a phone talks to
-  it as before, and its Android client sends no `compression`, so a Mac answers it in plain JSON.
+- Nook on Windows and Linux (`apps/tauri`) lists none of `history`, `compression` and `filePreview` as a computer, so a
+  phone talks to it as before. Its Android companion sets `compression` and opens compressed answers.
 
 ## Versions
 

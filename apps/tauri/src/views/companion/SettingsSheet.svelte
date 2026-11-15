@@ -2,7 +2,7 @@
   // Settings, as the iPhone's sheet (`SettingsView`): your Mac and how the phone reaches it, what this phone does, the
   // plan limits, pairing, and the versions. On Android it also offers Nook on this phone itself.
   import { onMount } from "svelte";
-  import { companion, has, may, resetsIn, Feature, type ClientView, type UsageAccount } from "../../lib/companion";
+  import { companion, has, may, resetsIn, routeWords, Feature, type ClientView, type UsageAccount } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import PanelHeader from "./ui/PanelHeader.svelte";
@@ -12,7 +12,10 @@
   import AgentMark from "./ui/AgentMark.svelte";
   import Dialog from "./ui/Dialog.svelte";
 
-  let { view, took, onclose, onlocal }: { view: ClientView; took: (v: ClientView) => void; onclose: () => void; onlocal?: () => void } = $props();
+  let { view, took, onclose, onlocal, onswitch, onadd }: {
+    view: ClientView; took: (v: ClientView) => void; onclose: () => void; onlocal?: () => void; onswitch?: (id: string) => void; onadd?: () => void;
+  } = $props();
+  const routeLine = $derived(view.phase === "connected" ? (routeWords(view.route)?.text ?? tr("Verbonden", "Connected")) : tr("Niet verbonden", "Not connected"));
   let steer = $state(readSteer());
   let usage = $state<{ accounts: UsageAccount[]; sessions: number; completed: number; running: number; failed: number } | null>(null);
   let usageLoading = $state(false);
@@ -55,9 +58,12 @@
       <section>
         <h3>{tr("Je Mac", "Your Mac")}</h3>
         <div class="card">
-          <SettingsRow icon="laptop" title={view.macName || tr("Je Mac", "Your Mac")} detail={view.phase === "connected" ? tr("Verbonden via je lokale netwerk", "Connected over your local network") : tr("Niet verbonden", "Not connected")}>
+          <SettingsRow icon="laptop" title={view.macName || tr("Je Mac", "Your Mac")} detail={routeLine}>
             {#snippet trailing()}<span class="dot" style:background={view.phase === "connected" ? "var(--mint)" : "var(--amber)"}></span>{/snippet}
           </SettingsRow>
+          {#each (view.macs ?? []).filter((m) => !m.active) as m (m.id)}
+            <SettingsRow icon="arrow-left-right" title={tr("Overschakelen naar {name}", "Switch to {name}", { name: m.name })} onclick={() => onswitch?.(m.id)} />
+          {/each}
           <SettingsRow icon="stethoscope" title={checking ? tr("Controleren…", "Checking…") : tr("Controleer de verbinding", "Check the connection")} detail={view.phase === "offline" ? view.reason : undefined} onclick={check} />
         </div>
       </section>
@@ -106,6 +112,7 @@
       <section>
         <h3>{tr("Koppelen", "Pairing")}</h3>
         <div class="card">
+          {#if onadd}<SettingsRow icon="plus" title={tr("Koppel nog een Mac", "Pair another Mac")} onclick={onadd} />{/if}
           <SettingsRow icon="circle-x" title={tr("Ontkoppel van deze Mac", "Unpair from this Mac")} destructive onclick={() => (confirmUnpair = true)} />
         </div>
       </section>

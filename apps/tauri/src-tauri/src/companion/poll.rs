@@ -18,6 +18,8 @@ pub struct Poller {
     wake: tokio::sync::Notify,
     /// The app went to the background: the kept connection closes, and the phone asks now and then instead.
     hidden: tokio::sync::Notify,
+    /// Another computer became active: the kept connection moves to it.
+    restart: tokio::sync::Notify,
     seen: Mutex<Option<DeliveryLog>>,
 }
 
@@ -27,6 +29,7 @@ impl Default for Poller {
             visible: AtomicBool::new(true),
             wake: tokio::sync::Notify::new(),
             hidden: tokio::sync::Notify::new(),
+            restart: tokio::sync::Notify::new(),
             seen: Mutex::new(None),
         }
     }
@@ -40,6 +43,11 @@ impl Poller {
         } else {
             self.hidden.notify_waiters();
         }
+    }
+
+    pub fn restart(&self) {
+        self.restart.notify_waiters();
+        self.wake.notify_one();
     }
 
     pub fn wake(&self) {
@@ -69,6 +77,18 @@ impl Poller {
 
 pub fn start(app: &AppHandle) {
     let app = app.clone();
+    // The other paired computers are asked for their sessions every 30 seconds while the app is in front.
+    let others = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let companion = others.state::<Companion>();
+            if companion.poll.visible.load(Ordering::SeqCst) && companion.client.snapshot().macs.len() > 1 {
+                let snapshot = companion.client.refresh_others().await;
+                let _ = others.emit("companion-client", &snapshot);
+            }
+        }
+    });
     tauri::async_runtime::spawn(async move {
         loop {
             let companion = app.state::<Companion>();
@@ -85,6 +105,7 @@ pub fn start(app: &AppHandle) {
                         },
                     ) => r,
                     _ = poll.hidden.notified() => Ok(()),
+                    _ = poll.restart.notified() => Ok(()),
                 };
                 if let Err(e) = result {
                     log::info!("Companion: live connection ended ({e}); asking instead");

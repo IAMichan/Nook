@@ -3,6 +3,7 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "not reachable": { de: "nicht erreichbar", fr: "injoignable", es: "no disponible" },
   "No terminals": { de: "Keine Terminals", fr: "Aucun terminal", es: "No hay terminales" },
   "Nook cannot open this link.": { de: "Nook kann diesen Link nicht öffnen.", fr: "Nook ne peut pas ouvrir ce lien.", es: "Nook no puede abrir este enlace." },
   "Nook on your Mac is up to date.": { de: "Nook auf deinem Mac ist aktuell.", fr: "Nook sur votre Mac est à jour.", es: "Nook en tu Mac está actualizado." },

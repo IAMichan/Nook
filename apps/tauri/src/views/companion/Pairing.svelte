@@ -7,7 +7,7 @@
   import NookMark from "./ui/NookMark.svelte";
   import Ico from "./ui/Ico.svelte";
 
-  let { view, onchange }: { view: ClientView; onchange: (v: ClientView) => void } = $props();
+  let { view, onchange, adding = false, oncancel }: { view: ClientView; onchange: (v: ClientView) => void; adding?: boolean; oncancel?: () => void } = $props();
   let text = $state("");
   let pasting = $state(false);
   let scanError = $state<string | null>(null);
@@ -68,6 +68,7 @@
       <button class="ghost press" onclick={() => (pasting = true)}>{tr("Plak liever de link", "Paste the link instead")}</button>
     {/if}
   </div>
+  {#if adding}<button class="ghost press" onclick={oncancel}>{tr("Annuleer", "Cancel")}</button>{/if}
   <p class="foot"><Ico name="shield" size={13} />{tr("Alles tussen je iPhone en je Mac is end-to-end versleuteld.", "Everything between your phone and your Mac is encrypted end to end.")}</p>
 </div>
 

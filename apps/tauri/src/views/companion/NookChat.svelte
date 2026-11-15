@@ -24,6 +24,7 @@
   let sending = $state(false);
   const busy = $derived(sending || lines.some((l) => l.streaming));
   const last = $derived(lines[lines.length - 1]);
+  const queued = $derived((view.outbox ?? []).filter((q) => q.op === "ask" && (q.conversation ?? null) === id));
   const thinking = $derived(sending || (last?.fromNook && last.streaming && !last.text));
 
   async function load() {
@@ -88,6 +89,9 @@
           </div>
         {/if}
       {/each}
+      {#each queued as q (q.id)}
+        <div class="user waiting"><div class="bubble">{q.text}</div><span class="time"><Ico name="clock" size={11} /> {tr("Wacht op je Mac", "Waiting for your Mac")}</span></div>
+      {/each}
       {#if thinking}
         <div class="thinking"><NookMark size={22} /><span>{last?.status || tr("Aan het denken…", "Thinking…")}</span><PulseDot size={5} color="var(--text2)" /></div>
       {/if}
@@ -106,6 +110,7 @@
   .lines { display: flex; flex-direction: column; gap: 24px; }
   .user { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-left: 56px; }
   .bubble { background: var(--bubble); border-radius: 16px; padding: 12px; font: var(--pt-body); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+  .waiting { opacity: 0.6; }
   .time { font: var(--pt-caption); color: var(--text3); }
   .answer { display: flex; flex-direction: column; gap: 4px; font: var(--pt-body); color: var(--text-strong); overflow-wrap: anywhere; }
   .answer.failed { color: var(--coral); }

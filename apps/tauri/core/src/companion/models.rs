@@ -20,23 +20,37 @@ pub const EXCERPT_LIMIT: usize = 600;
 pub const KEY_LENGTH: usize = 32;
 
 /// Wat de computer toont om te koppelen: `nook://pair?h=<host>&p=<poort>&k=<base64url-sleutel>&n=<naam>`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PairingLink {
     pub host: String,
     pub port: u16,
     pub key: Vec<u8>,
     pub mac_name: String,
+    /// Other addresses to try (`&a=`, at most `MAX_ALTERNATES`).
+    pub alternates: Vec<String>,
+    /// The relay the computer keeps a connection to (`&r=`), to reach it from anywhere.
+    pub relay: Option<String>,
 }
+
+/// Most alternate addresses a code carries, so the QR code stays easy to scan.
+pub const MAX_ALTERNATES: usize = 6;
 
 impl PairingLink {
     pub fn url(&self) -> String {
-        format!(
+        let mut url = format!(
             "{LINK_SCHEME}://{LINK_HOST}?h={}&p={}&k={}&n={}",
             percent_encode(&self.host),
             self.port,
             base64url_encode(&self.key),
             percent_encode(&self.mac_name)
-        )
+        );
+        for a in self.alternates.iter().take(MAX_ALTERNATES) {
+            url.push_str(&format!("&a={}", percent_encode(a)));
+        }
+        if let Some(r) = &self.relay {
+            url.push_str(&format!("&r={}", percent_encode(r)));
+        }
+        url
     }
 
     pub fn parse(text: &str) -> Option<PairingLink> {
@@ -74,7 +88,18 @@ impl PairingLink {
             return None;
         }
         let name: String = get("n").unwrap_or_else(|| "Mac".into()).chars().filter(|c| !is_control(*c)).take(60).collect();
-        Some(PairingLink { host, port, key, mac_name: if name.is_empty() { "Mac".into() } else { name } })
+        // Every `a`, not only the first: the other addresses, each once and never the main one again.
+        let mut seen = vec![host.to_lowercase()];
+        let mut alternates = Vec::new();
+        for part in query.split('&').filter(|p| p.starts_with("a=")) {
+            let Some(a) = percent_decode(&part[2..]) else { continue };
+            if valid_host(&a) && !seen.contains(&a.to_lowercase()) && alternates.len() < MAX_ALTERNATES {
+                seen.push(a.to_lowercase());
+                alternates.push(a);
+            }
+        }
+        let relay = get("r").and_then(|r| super::transport::normalize_relay(&r));
+        Some(PairingLink { host, port, key, mac_name: if name.is_empty() { "Mac".into() } else { name }, alternates, relay })
     }
 }
 
@@ -246,6 +271,10 @@ pub mod feature {
     pub const REQUEST_UPDATE: &str = "requestUpdate";
     pub const AVATARS: &str = "avatars";
     pub const APP_ICONS: &str = "appIcons";
+    pub const RETRY: &str = "retry";
+    pub const ROUTES: &str = "routes";
+    pub const RELAY: &str = "relay";
+    pub const COMPRESSION: &str = "compression";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -313,6 +342,18 @@ pub struct CompanionRequest {
     /// The chats of `avatars`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<String>>,
+    /// This phone opens compressed answers (`CompanionWire`); a Mac without `compression` ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression: Option<bool>,
+}
+
+/// Where the computer can be reached (`CompanionEndpoint`), as it says with `hello`, `list` and `subscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompanionEndpoint {
+    pub host: String,
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailnet: Option<bool>,
 }
 
 /// A picture that goes with a message (`CompanionImage`): a JPEG of at most `MAX_BYTES`, at most `MAX_COUNT` per message.
@@ -356,6 +397,7 @@ impl CompanionRequest {
             pull_action: None,
             pull_work: None,
             items: None,
+            compression: None,
         }
     }
 
@@ -467,6 +509,11 @@ pub struct CompanionResponse {
     /// One entry in full (`entry`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_text: Option<String>,
+    /// Where the computer can be reached, and the relay it uses (`feature::ROUTES`, `feature::RELAY`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<Vec<CompanionEndpoint>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay: Option<String>,
 }
 
 impl CompanionResponse {
@@ -733,7 +780,8 @@ mod tests {
 
     #[test]
     fn pairing_link_round_trip() {
-        let link = PairingLink { host: "192.168.1.20".into(), port: 49321, key: key(), mac_name: "Michael’s Mac".into() };
+        let link =
+            PairingLink { host: "192.168.1.20".into(), port: 49321, key: key(), mac_name: "Michael’s Mac".into(), ..Default::default() };
         assert_eq!(PairingLink::parse(&link.url()), Some(link));
     }
 

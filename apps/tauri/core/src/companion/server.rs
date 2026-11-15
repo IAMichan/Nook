@@ -169,7 +169,7 @@ impl CompanionServer {
         let ServerState::Listening { port } = self.state() else { return None };
         let now = Utc::now();
         let key = self.store.active_pending(now).unwrap_or_else(|| self.store.begin_pairing(now));
-        Some(PairingLink { host: host.into(), port, key, mac_name: self.name.clone() })
+        Some(PairingLink { host: host.into(), port, key, mac_name: self.name.clone(), ..Default::default() })
     }
 
     async fn serve(&self, mut stream: TcpStream) {

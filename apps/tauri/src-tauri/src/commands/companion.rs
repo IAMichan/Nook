@@ -79,7 +79,13 @@ fn info(c: &Companion) -> CompanionInfo {
     let pairing = match (store.active_pending(now), store.pending_until(now), &c.server.state()) {
         (Some(key), Some(until), nook_core::companion::server::ServerState::Listening { port }) => {
             let host = chosen.unwrap_or_else(|| hosts[0].clone());
-            let link = nook_core::companion::PairingLink { host: host.clone(), port: *port, key, mac_name: c.server.name().into() };
+            let link = nook_core::companion::PairingLink {
+                host: host.clone(),
+                port: *port,
+                key,
+                mac_name: c.server.name().into(),
+                ..Default::default()
+            };
             let url = link.url();
             Some(PairingView { qr_svg: qr_svg(&url), url, host, until })
         }
@@ -332,6 +338,26 @@ pub async fn companion_client_send(
 #[tauri::command]
 pub async fn companion_client_stop(app: AppHandle, companion: State<'_, Companion>, session: String) -> Result<ClientView, String> {
     Ok(view(&app, companion.client.stop(&session).await))
+}
+
+/// Makes another paired computer the active one; the kept connection moves to it.
+#[tauri::command]
+pub fn companion_client_switch(app: AppHandle, companion: State<'_, Companion>, id: String) -> ClientView {
+    let snapshot = companion.client.switch_to(&id);
+    companion.poll.restart();
+    view(&app, snapshot)
+}
+
+/// Takes a waiting request out of the outbox ("Don't send").
+#[tauri::command]
+pub fn companion_client_discard(app: AppHandle, companion: State<'_, Companion>, id: String) -> ClientView {
+    view(&app, companion.client.discard(&id))
+}
+
+/// Asks the other paired computers for their sessions now.
+#[tauri::command]
+pub async fn companion_client_others(app: AppHandle, companion: State<'_, Companion>) -> Result<ClientView, String> {
+    Ok(view(&app, companion.client.refresh_others().await))
 }
 
 /// Denies a request and tells the agent why (`decide` with `text`).

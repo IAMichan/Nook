@@ -1,6 +1,8 @@
-//! De telefoonkant (`CompanionClient.swift` van de iPhone-app), voor Android: één korte verbinding per aanvraag
-//! (verbinden, verzegelde aanvraag sturen, verzegeld antwoord lezen, sluiten). De koppeling (adres en sleutel) staat in
-//! de kluis van de app.
+//! The phone side (`CompanionClient.swift` of the iPhone app), for Android. One short connection per request, and one
+//! kept connection while the app is in front (`stream`). A phone can be paired with up to eight computers
+//! (`CompanionPairings`): one is active, the others are asked for their sessions now and then. Each pairing knows every
+//! way to its computer (`transport::Route`) and keeps what waits to be sent while the computer is away (its outbox,
+//! with a computer that lists `retry`). Pairings live in the app's secret store.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -8,15 +10,25 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 use super::models::*;
 use super::seal::{self, Direction};
+use super::transport::{self, Conn, Route};
 use crate::secrets::SecretStore;
 
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(8);
+/// Where pairings were kept before a phone could pair with several computers; read once and moved.
 const PAIRING_ACCOUNT: &str = "companion.pairing";
+const PAIRINGS_ACCOUNT: &str = "companion.pairings";
+/// How many computers one phone pairs with.
+pub const MAX_MACS: usize = 8;
+/// How many requests wait in one computer's outbox, and for how long.
+pub const OUTBOX_LIMIT: usize = 20;
+pub const OUTBOX_MAX_AGE: f64 = 24.0 * 3600.0;
+/// How often the phone says it is still there on a kept connection (`CompanionTiming.pingEvery`).
+pub const PING_EVERY: Duration = Duration::from_secs(5);
+/// A kept connection that brings nothing for this long is gone (the Mac closes one after 45 seconds of silence).
+pub const STREAM_IDLE: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
@@ -26,6 +38,13 @@ pub enum ClientError {
     Timeout,
     Closed,
     Unreachable(String),
+}
+
+impl ClientError {
+    /// The computer could not be reached at all (as opposed to an answer that said no).
+    pub fn is_unreachable(&self) -> bool {
+        matches!(self, ClientError::Timeout | ClientError::Closed | ClientError::Unreachable(_))
+    }
 }
 
 impl std::fmt::Display for ClientError {
@@ -42,7 +61,7 @@ impl std::fmt::Display for ClientError {
     }
 }
 
-/// Zoekt de adressen bij een hostnaam. Standaard via DNS; de app kan `….local` via mDNS opzoeken.
+/// Finds the addresses of a host name. DNS by default; the app looks up `….local` over mDNS.
 #[async_trait]
 pub trait HostResolver: Send + Sync {
     async fn resolve(&self, host: &str, port: u16) -> Vec<SocketAddr>;
@@ -57,31 +76,30 @@ impl HostResolver for DnsResolver {
     }
 }
 
-/// Eén verbinding: het frame sturen, lezen tot er één heel frame terug is, met een tijdslimiet.
-pub async fn exchange(addresses: &[SocketAddr], payload: &[u8]) -> Result<Vec<u8>, ClientError> {
+fn sealed_frame(link: &PairingLink, req: &CompanionRequest) -> Result<Vec<u8>, ClientError> {
+    let device_id = PairedDevice::identifier(&link.key);
+    let plain = serde_json::to_vec(req).map_err(|_| ClientError::BadResponse)?;
+    FrameReader::frame(&seal::seal(&plain, &link.key, &device_id, Direction::Request)).ok_or(ClientError::BadResponse)
+}
+
+fn open_frame(link: &PairingLink, frame: &[u8]) -> Result<CompanionResponse, ClientError> {
+    let opened = seal::open(frame, &link.key, Direction::Response).map_err(|_| ClientError::BadResponse)?;
+    let json = transport::unpack(&opened)?;
+    serde_json::from_slice(&json).map_err(|_| ClientError::BadResponse)
+}
+
+/// One request over one open connection: the frame out, the first whole frame back.
+async fn exchange_on(conn: &mut Conn, link: &PairingLink, req: &CompanionRequest) -> Result<CompanionResponse, ClientError> {
     let attempt = async {
-        let mut last = ClientError::Unreachable("geen adres".into());
-        let mut stream = None;
-        for addr in addresses {
-            match TcpStream::connect(addr).await {
-                Ok(s) => {
-                    stream = Some(s);
-                    break;
-                }
-                Err(e) => last = ClientError::Unreachable(e.to_string()),
-            }
-        }
-        let mut stream = stream.ok_or(last)?;
-        stream.write_all(payload).await.map_err(|_| ClientError::Closed)?;
+        conn.send(&sealed_frame(link, req)?).await?;
         let mut reader = FrameReader::default();
-        let mut buf = vec![0u8; 64 * 1024];
         loop {
-            let n = stream.read(&mut buf).await.map_err(|_| ClientError::Closed)?;
-            if n == 0 {
-                return Err(ClientError::Closed);
-            }
-            if let Some(first) = reader.feed(&buf[..n]).into_iter().next() {
-                return Ok(first);
+            let bytes = conn.recv().await?;
+            for frame in reader.feed(&bytes) {
+                let response = open_frame(link, &frame)?;
+                if response.id == req.id {
+                    return Ok(response);
+                }
             }
             if reader.overflowed() {
                 return Err(ClientError::BadResponse);
@@ -91,48 +109,147 @@ pub async fn exchange(addresses: &[SocketAddr], payload: &[u8]) -> Result<Vec<u8
     tokio::time::timeout(EXCHANGE_TIMEOUT, attempt).await.map_err(|_| ClientError::Timeout)?
 }
 
-/// Een aanvraag versturen met deze koppeling en het geopende antwoord teruggeven.
-pub async fn request(link: &PairingLink, req: &CompanionRequest, resolver: &dyn HostResolver) -> Result<CompanionResponse, ClientError> {
-    let device_id = PairedDevice::identifier(&link.key);
-    let plain = serde_json::to_vec(req).map_err(|_| ClientError::BadResponse)?;
-    let sealed = seal::seal(&plain, &link.key, &device_id, Direction::Request);
-    let framed = FrameReader::frame(&sealed).ok_or(ClientError::BadResponse)?;
-    let addresses = resolver.resolve(&link.host, link.port).await;
-    if addresses.is_empty() {
-        let hint = if link.host.to_ascii_lowercase().ends_with(".local") {
-            "; lukt het niet, vervang dan in de link h=… door het IP-adres van je computer"
-        } else {
-            ""
+/// Sends a request with this pairing over the first route that answers; the route that did comes back with the answer.
+pub async fn request(
+    link: &PairingLink,
+    routes: &[Route],
+    req: &CompanionRequest,
+    resolver: &dyn HostResolver,
+) -> Result<(CompanionResponse, Route), ClientError> {
+    let mut last = ClientError::Unreachable(format!("{} niet gevonden", link.host));
+    for route in routes {
+        let mut conn = match transport::connect(route, resolver).await {
+            Ok(c) => c,
+            Err(e) => {
+                last = e;
+                continue;
+            }
         };
-        return Err(ClientError::Unreachable(format!("{} niet gevonden{hint}", link.host)));
+        match exchange_on(&mut conn, link, req).await {
+            Ok(r) => return Ok((r, route.clone())),
+            Err(e) if e.is_unreachable() => last = e,
+            Err(e) => return Err(e),
+        }
     }
-    let reply = exchange(&addresses, &framed).await?;
-    let opened = seal::open(&reply, &link.key, Direction::Response).map_err(|_| ClientError::BadResponse)?;
-    let response: CompanionResponse = serde_json::from_slice(&opened).map_err(|_| ClientError::BadResponse)?;
-    if response.id != req.id {
-        return Err(ClientError::BadResponse);
+    if let ClientError::Unreachable(_) = last {
+        if link.host.to_ascii_lowercase().ends_with(".local") {
+            last = ClientError::Unreachable(format!(
+                "{} niet gevonden; lukt het niet, vervang dan in de link h=… door het IP-adres van je computer",
+                link.host
+            ));
+        }
     }
-    Ok(response)
+    Err(last)
 }
 
-/// How often the phone says it is still there on a kept connection (`CompanionTiming.pingEvery`).
-pub const PING_EVERY: Duration = Duration::from_secs(5);
-/// A kept connection that brings nothing for this long is gone (the Mac closes one after 45 seconds of silence).
-pub const STREAM_IDLE: Duration = Duration::from_secs(45);
-
-fn sealed_frame(link: &PairingLink, req: &CompanionRequest) -> Result<Vec<u8>, ClientError> {
-    let device_id = PairedDevice::identifier(&link.key);
-    let plain = serde_json::to_vec(req).map_err(|_| ClientError::BadResponse)?;
-    FrameReader::frame(&seal::seal(&plain, &link.key, &device_id, Direction::Request)).ok_or(ClientError::BadResponse)
+/// A request that waits for the computer (`CompanionOutbox`): sent again with the same id once it is back, so the
+/// computer answers a repeat with its first answer and nothing goes twice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Queued {
+    pub request: CompanionRequest,
+    pub queued_at: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredPairing {
     host: String,
     port: u16,
     key: String,
     mac_name: String,
+    #[serde(default)]
+    alternates: Vec<String>,
+    #[serde(default)]
+    relay: Option<String>,
+    #[serde(default)]
+    endpoints: Vec<CompanionEndpoint>,
+    #[serde(default)]
+    last_route: Option<Route>,
+    #[serde(default)]
+    outbox: Vec<Queued>,
+    #[serde(default)]
+    features: Vec<String>,
+}
+
+/// One computer this phone is paired with.
+#[derive(Debug, Clone)]
+struct Pairing {
+    link: PairingLink,
+    endpoints: Vec<CompanionEndpoint>,
+    last_route: Option<Route>,
+    outbox: Vec<Queued>,
+    /// What it listed last, so a computer away still says whether it keeps an outbox.
+    features: Vec<String>,
+}
+
+impl Pairing {
+    fn id(&self) -> String {
+        PairedDevice::identifier(&self.link.key)
+    }
+
+    /// Every way to the computer, the last one that worked first and the relay last (`CompanionRoutes.rank`).
+    fn routes(&self) -> Vec<Route> {
+        let mut out: Vec<Route> = Vec::new();
+        let mut push = |r: Route| {
+            if !out.contains(&r) {
+                out.push(r);
+            }
+        };
+        if let Some(r) = &self.last_route {
+            push(r.clone());
+        }
+        push(Route::Direct { host: self.link.host.clone(), port: self.link.port });
+        for a in &self.link.alternates {
+            push(Route::Direct { host: a.clone(), port: self.link.port });
+        }
+        for e in &self.endpoints {
+            push(Route::Direct { host: e.host.clone(), port: e.port });
+        }
+        if let Some(relay) = &self.link.relay {
+            push(Route::Relay { relay: relay.clone(), room: transport::relay_room(&self.link.key) });
+        }
+        out
+    }
+
+    fn stored(&self) -> StoredPairing {
+        StoredPairing {
+            host: self.link.host.clone(),
+            port: self.link.port,
+            key: base64url_encode(&self.link.key),
+            mac_name: self.link.mac_name.clone(),
+            alternates: self.link.alternates.clone(),
+            relay: self.link.relay.clone(),
+            endpoints: self.endpoints.clone(),
+            last_route: self.last_route.clone(),
+            outbox: self.outbox.clone(),
+            features: self.features.clone(),
+        }
+    }
+
+    fn from_stored(s: StoredPairing) -> Option<Pairing> {
+        let key = base64url_decode(&s.key).filter(|k| k.len() == KEY_LENGTH)?;
+        Some(Pairing {
+            link: PairingLink { host: s.host, port: s.port, key, mac_name: s.mac_name, alternates: s.alternates, relay: s.relay },
+            endpoints: s.endpoints,
+            last_route: s.last_route,
+            outbox: s.outbox,
+            features: s.features,
+        })
+    }
+
+    /// Takes in where the computer says it can be reached.
+    fn learn(&mut self, response: &CompanionResponse) {
+        if let Some(endpoints) = &response.endpoints {
+            self.endpoints = endpoints.iter().filter(|e| valid_host(&e.host) && e.port > 0).take(8).cloned().collect();
+        }
+        if let Some(relay) = response.relay.as_deref().and_then(transport::normalize_relay) {
+            self.link.relay = Some(relay);
+        }
+        if let Some(features) = &response.features {
+            self.features = features.clone();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -144,12 +261,43 @@ pub enum Phase {
     Offline,
 }
 
-/// Wat de interface laat zien.
+/// A paired computer in the menu.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacSummary {
+    pub id: String,
+    pub name: String,
+    pub active: bool,
+}
+
+/// What another paired computer had when it was last asked (its sessions, under "On <Mac>" in the Agents list).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OtherMac {
+    pub id: String,
+    pub name: String,
+    pub reachable: bool,
+    pub sessions: Vec<SessionDigest>,
+}
+
+/// A request in the outbox, as the interface shows it ("Waiting for your Mac").
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedView {
+    pub id: String,
+    pub op: CompanionOp,
+    pub session: Option<String>,
+    pub conversation: Option<String>,
+    pub text: String,
+    pub queued_at: f64,
+}
+
+/// What the interface shows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientSnapshot {
     pub phase: Phase,
-    /// Waarom de computer niet bereikbaar is (bij `offline`); leeg = nog aan het zoeken.
+    /// Why the computer cannot be reached (with `offline`); empty while it is still looked for.
     pub reason: String,
     pub mac_name: String,
     pub host: String,
@@ -164,6 +312,11 @@ pub struct ClientSnapshot {
     /// computer that predates versions.
     pub mac_version: Option<i64>,
     pub oldest_phone: Option<i64>,
+    /// How the phone reached the active computer last: "lan", "tailnet", "internet" or "relay"; empty before it did.
+    pub route: String,
+    pub macs: Vec<MacSummary>,
+    pub others: Vec<OtherMac>,
+    pub outbox: Vec<QueuedView>,
 }
 
 /// One request from the interface, as `CompanionRequest` without its id and clock: `CompanionClient::call` adds them.
@@ -187,7 +340,8 @@ pub struct ClientCall {
 }
 
 struct Inner {
-    link: Option<PairingLink>,
+    pairings: Vec<Pairing>,
+    active: usize,
     phase: Phase,
     reason: String,
     mac_name: String,
@@ -197,6 +351,31 @@ struct Inner {
     scopes: Option<Vec<String>>,
     mac_version: Option<i64>,
     oldest_phone: Option<i64>,
+    route: String,
+    others: Vec<OtherMac>,
+}
+
+impl Inner {
+    fn current(&self) -> Option<&Pairing> {
+        self.pairings.get(self.active)
+    }
+
+    fn current_mut(&mut self) -> Option<&mut Pairing> {
+        self.pairings.get_mut(self.active)
+    }
+
+    /// Forgets what came from the computer that was active, before another becomes active.
+    fn clear_computer(&mut self) {
+        self.sessions.clear();
+        self.features.clear();
+        self.scopes = None;
+        self.mac_version = None;
+        self.oldest_phone = None;
+        self.route.clear();
+        self.reason.clear();
+        self.mac_name = self.current().map(|p| p.link.mac_name.clone()).unwrap_or_default();
+        self.phase = if self.pairings.is_empty() { Phase::Unpaired } else { Phase::Offline };
+    }
 }
 
 pub struct CompanionClient {
@@ -208,24 +387,41 @@ pub struct CompanionClient {
 
 impl CompanionClient {
     pub fn new(secrets: Arc<dyn SecretStore>, resolver: Arc<dyn HostResolver>) -> Self {
-        let link = secrets.read(PAIRING_ACCOUNT).and_then(|text| {
-            let stored: StoredPairing = serde_json::from_str(&text).ok()?;
-            let key = base64url_decode(&stored.key).filter(|k| k.len() == KEY_LENGTH)?;
-            Some(PairingLink { host: stored.host, port: stored.port, key, mac_name: stored.mac_name })
-        });
-        let inner = Inner {
-            phase: if link.is_some() { Phase::Offline } else { Phase::Unpaired },
-            mac_name: link.as_ref().map(|l| l.mac_name.clone()).unwrap_or_default(),
-            link,
+        let mut pairings: Vec<Pairing> = secrets
+            .read(PAIRINGS_ACCOUNT)
+            .and_then(|text| serde_json::from_str::<Vec<StoredPairing>>(&text).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(Pairing::from_stored)
+            .collect();
+        // A phone paired before it could pair with several computers: its one pairing becomes the list.
+        if pairings.is_empty() {
+            if let Some(p) =
+                secrets.read(PAIRING_ACCOUNT).and_then(|t| serde_json::from_str::<StoredPairing>(&t).ok()).and_then(Pairing::from_stored)
+            {
+                pairings.push(p);
+            }
+        }
+        let mut inner = Inner {
+            pairings,
+            active: 0,
+            phase: Phase::Unpaired,
             reason: String::new(),
+            mac_name: String::new(),
             sessions: Vec::new(),
             notice: None,
             features: Vec::new(),
             scopes: None,
             mac_version: None,
             oldest_phone: None,
+            route: String::new(),
+            others: Vec::new(),
         };
-        Self { secrets, resolver, inner: Mutex::new(inner), app_version: env!("CARGO_PKG_VERSION").into() }
+        inner.clear_computer();
+        let client = Self { secrets, resolver, inner: Mutex::new(inner), app_version: env!("CARGO_PKG_VERSION").into() };
+        let _ = client.save();
+        let _ = client.secrets.remove(PAIRING_ACCOUNT);
+        client
     }
 
     /// The app version this phone says it runs (`appVersion` on `hello` and `list`).
@@ -238,100 +434,201 @@ impl CompanionClient {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    fn save(&self) -> Result<(), ClientError> {
+        let stored: Vec<StoredPairing> = self.lock().pairings.iter().map(Pairing::stored).collect();
+        let json = serde_json::to_string(&stored).map_err(|_| ClientError::Storage)?;
+        self.secrets.write(PAIRINGS_ACCOUNT, &json).map_err(|_| ClientError::Storage)
+    }
+
     pub fn snapshot(&self) -> ClientSnapshot {
         let i = self.lock();
+        let current = i.current();
         ClientSnapshot {
             phase: i.phase,
             reason: i.reason.clone(),
             mac_name: i.mac_name.clone(),
-            host: i.link.as_ref().map(|l| l.host.clone()).unwrap_or_default(),
+            host: current.map(|p| p.link.host.clone()).unwrap_or_default(),
             sessions: i.sessions.clone(),
             notice: i.notice.clone(),
             features: i.features.clone(),
             scopes: i.scopes.clone(),
             mac_version: i.mac_version,
             oldest_phone: i.oldest_phone,
+            route: i.route.clone(),
+            macs: i
+                .pairings
+                .iter()
+                .enumerate()
+                .map(|(n, p)| MacSummary { id: p.id(), name: p.link.mac_name.clone(), active: n == i.active })
+                .collect(),
+            others: i.others.clone(),
+            outbox: current
+                .map(|p| {
+                    p.outbox
+                        .iter()
+                        .map(|q| QueuedView {
+                            id: q.request.id.clone(),
+                            op: q.request.op,
+                            session: q.request.session.clone(),
+                            conversation: q.request.conversation.clone(),
+                            text: q.request.text.clone().or_else(|| q.request.launch.as_ref().map(|l| l.task.clone())).unwrap_or_default(),
+                            queued_at: q.queued_at,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
-    /// Whether the paired computer lists this feature.
+    /// Whether the active computer lists this feature.
     pub fn has(&self, feature: &str) -> bool {
         self.lock().features.iter().any(|f| f == feature)
     }
 
     pub fn is_paired(&self) -> bool {
-        self.lock().link.is_some()
+        !self.lock().pairings.is_empty()
     }
 
     pub fn clear_notice(&self) {
         self.lock().notice = None;
     }
 
-    /// Koppelt met de code die de computer toont. De eerste aanvraag, `hello`, bewijst dat de telefoon de sleutel
-    /// heeft; de computer bewaart het toestel dan.
+    /// Pairs with the code a computer shows; the first request, `hello`, proves the phone has the key and the computer
+    /// keeps the device. A code of a computer this phone already knows replaces that pairing; another becomes the
+    /// active one, beside the others (at most `MAX_MACS`).
     pub async fn pair(&self, text: &str, device_name: &str) -> ClientSnapshot {
         let Some(parsed) = PairingLink::parse(text) else {
             self.lock().notice = Some("Dat is geen geldige koppelcode.".into());
             return self.snapshot();
         };
-        {
+        let id = PairedDevice::identifier(&parsed.key);
+        let full = {
             let mut i = self.lock();
-            i.phase = Phase::Pairing;
-            i.notice = None;
+            let full = i.pairings.len() >= MAX_MACS && !i.pairings.iter().any(|p| p.id() == id);
+            if full {
+                i.notice = Some("Deze telefoon is al met acht computers gekoppeld. Ontkoppel er eerst een.".into());
+            } else {
+                i.phase = Phase::Pairing;
+                i.notice = None;
+            }
+            full
+        };
+        if full {
+            return self.snapshot();
         }
+        let candidate = Pairing { link: parsed.clone(), endpoints: vec![], last_route: None, outbox: vec![], features: vec![] };
         let mut hello = CompanionRequest::versioned(CompanionOp::Hello, &self.app_version);
         hello.text = Some(device_name.into());
-        let result = match request(&parsed, &hello, &*self.resolver).await {
-            Ok(r) if r.ok => self.save(&parsed).map(|_| r),
-            Ok(_) => Err(ClientError::Refused),
-            Err(e) => Err(e),
-        };
-        let mut i = self.lock();
-        match result {
-            Ok(response) => {
-                i.mac_name = response.mac_name.unwrap_or_else(|| parsed.mac_name.clone());
-                i.link = Some(parsed);
-                i.features = response.features.unwrap_or_default();
-                i.scopes = response.scopes;
-                i.mac_version = response.protocol_version;
-                i.oldest_phone = response.oldest_phone;
-                i.sessions = response.sessions.unwrap_or_default();
-                i.phase = Phase::Connected;
-                i.reason.clear();
-            }
-            Err(e) => {
-                i.phase = if i.link.is_some() { Phase::Offline } else { Phase::Unpaired };
-                i.notice = Some(format!("Koppelen mislukt: {e} De code werkt vijf minuten en één keer; maak op je computer een nieuwe."));
+        hello.compression = Some(true);
+        let result = request(&parsed, &candidate.routes(), &hello, &*self.resolver).await;
+        {
+            let mut i = self.lock();
+            match result {
+                Ok((response, route)) if response.ok => {
+                    let mut pairing = candidate;
+                    pairing.learn(&response);
+                    pairing.last_route = Some(route.clone());
+                    if let Some(n) = i.pairings.iter().position(|p| p.id() == id) {
+                        i.pairings[n] = pairing;
+                        i.active = n;
+                    } else {
+                        i.pairings.push(pairing);
+                        i.active = i.pairings.len() - 1;
+                    }
+                    i.clear_computer();
+                    i.mac_name = response.mac_name.clone().unwrap_or_else(|| parsed.mac_name.clone());
+                    i.route = route.kind().into();
+                    take_list(&mut i, &response);
+                    i.phase = Phase::Connected;
+                }
+                Ok(_) | Err(_) => {
+                    let e = match result {
+                        Err(e) => e,
+                        _ => ClientError::Refused,
+                    };
+                    i.phase = if i.pairings.is_empty() { Phase::Unpaired } else { Phase::Offline };
+                    i.notice =
+                        Some(format!("Koppelen mislukt: {e} De code werkt vijf minuten en één keer; maak op je computer een nieuwe."));
+                }
             }
         }
-        drop(i);
+        let _ = self.save();
         self.snapshot()
     }
 
-    fn save(&self, link: &PairingLink) -> Result<(), ClientError> {
-        let stored =
-            StoredPairing { host: link.host.clone(), port: link.port, key: base64url_encode(&link.key), mac_name: link.mac_name.clone() };
-        let json = serde_json::to_string(&stored).map_err(|_| ClientError::Storage)?;
-        self.secrets.write(PAIRING_ACCOUNT, &json).map_err(|_| ClientError::Storage)
-    }
-
+    /// Unpairs from the active computer; another paired one becomes active.
     pub fn unpair(&self) -> ClientSnapshot {
-        let _ = self.secrets.remove(PAIRING_ACCOUNT);
         {
             let mut i = self.lock();
-            i.link = None;
-            i.sessions.clear();
-            i.phase = Phase::Unpaired;
-            i.mac_name.clear();
-            i.reason.clear();
-            i.features.clear();
-            i.scopes = None;
+            if !i.pairings.is_empty() {
+                let n = i.active;
+                i.pairings.remove(n);
+            }
+            i.active = 0;
+            // The computer that becomes active is no longer one of the others.
+            let next = i.current().map(Pairing::id);
+            i.others.retain(|o| Some(&o.id) != next.as_ref());
+            i.clear_computer();
         }
+        let _ = self.save();
+        self.snapshot()
+    }
+
+    /// Makes another paired computer the active one.
+    pub fn switch_to(&self, id: &str) -> ClientSnapshot {
+        {
+            let mut i = self.lock();
+            if let Some(n) = i.pairings.iter().position(|p| p.id() == id) {
+                if n != i.active {
+                    i.active = n;
+                    i.others.retain(|o| o.id != id);
+                    i.clear_computer();
+                }
+            }
+        }
+        self.snapshot()
+    }
+
+    /// Takes a request out of the outbox ("Don't send").
+    pub fn discard(&self, id: &str) -> ClientSnapshot {
+        if let Some(p) = self.lock().current_mut() {
+            p.outbox.retain(|q| q.request.id != id);
+        }
+        let _ = self.save();
         self.snapshot()
     }
 
     pub async fn refresh(&self) -> ClientSnapshot {
         self.perform(CompanionRequest::versioned(CompanionOp::List, &self.app_version)).await
+    }
+
+    /// Asks every other paired computer for its sessions (one short `list` each), for "On <Mac>" in the Agents list.
+    pub async fn refresh_others(&self) -> ClientSnapshot {
+        let others: Vec<Pairing> = {
+            let i = self.lock();
+            i.pairings.iter().enumerate().filter(|(n, _)| *n != i.active).map(|(_, p)| p.clone()).collect()
+        };
+        let mut found = Vec::new();
+        for p in others {
+            let mut list = CompanionRequest::versioned(CompanionOp::List, &self.app_version);
+            list.compression = Some(true);
+            let result = request(&p.link, &p.routes(), &list, &*self.resolver).await;
+            let (reachable, sessions) = match &result {
+                Ok((r, _)) if r.ok => (true, r.sessions.clone().unwrap_or_default()),
+                _ => (false, Vec::new()),
+            };
+            if let Ok((r, route)) = &result {
+                let mut i = self.lock();
+                if let Some(stored) = i.pairings.iter_mut().find(|x| x.id() == p.id()) {
+                    stored.learn(r);
+                    stored.last_route = Some(route.clone());
+                }
+            }
+            found.push(OtherMac { id: p.id(), name: p.link.mac_name.clone(), reachable, sessions });
+        }
+        self.lock().others = found;
+        let _ = self.save();
+        self.snapshot()
     }
 
     /// Allows or denies a request. `reason` goes with a denial: the computer tells the agent why (an older one ignores it).
@@ -348,9 +645,9 @@ impl CompanionClient {
         self.perform(r).await
     }
 
-    /// Any other request the interface makes (the whole conversation, a new session, Nook's chats, home, limits, the
-    /// Chats tab, managing a session). The answer comes back as it came, beside the new state; `None` when the computer
-    /// could not be reached or refused it (the state's notice or reason says why).
+    /// Any other request the interface makes. The answer comes back as it came, beside the new state; `None` when the
+    /// computer refused it or could not be reached (the state's notice or reason says why). A message, a new session or
+    /// a question to Nook for a computer that keeps an outbox waits for it instead (the answer then says `outbox`).
     pub async fn call(&self, call: ClientCall) -> (ClientSnapshot, Option<CompanionResponse>) {
         let Some(op) = call.op.filter(|op| op.callable()) else {
             self.lock().notice = Some("De computer weigerde dit.".into());
@@ -377,7 +674,66 @@ impl CompanionClient {
         r.pull_action = call.pull_action;
         r.pull_work = call.pull_work;
         r.items = call.items;
-        self.exchange(r).await
+        let queueable = matches!(op, CompanionOp::Send | CompanionOp::Start | CompanionOp::Ask);
+        let (snapshot, answer, error) = self.exchange_full(r.clone()).await;
+        if queueable && error.as_ref().is_some_and(ClientError::is_unreachable) && self.keeps_outbox() {
+            return self.enqueue(r);
+        }
+        (snapshot, answer)
+    }
+
+    fn keeps_outbox(&self) -> bool {
+        self.lock().current().is_some_and(|p| p.features.iter().any(|f| f == feature::RETRY))
+    }
+
+    fn enqueue(&self, request: CompanionRequest) -> (ClientSnapshot, Option<CompanionResponse>) {
+        let id = request.id.clone();
+        {
+            let mut i = self.lock();
+            let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
+            let Some(p) = i.current_mut() else { return (self.snapshot(), None) };
+            p.outbox.retain(|q| now - q.queued_at < OUTBOX_MAX_AGE);
+            if p.outbox.len() >= OUTBOX_LIMIT {
+                i.notice = Some("Er wachten al te veel berichten op je computer.".into());
+                drop(i);
+                return (self.snapshot(), None);
+            }
+            p.outbox.push(Queued { request, queued_at: now });
+        }
+        let _ = self.save();
+        (self.snapshot(), Some(CompanionResponse { message: Some("outbox".into()), ..CompanionResponse::success(&id) }))
+    }
+
+    /// Sends what waits in the active computer's outbox, oldest first, each with its own id again (the computer answers
+    /// a repeat with its first answer). Stops at the first that cannot get through; a refusal is taken out and said.
+    async fn drain(&self) {
+        loop {
+            let (link, routes, next) = {
+                let i = self.lock();
+                let Some(p) = i.current() else { return };
+                let Some(q) = p.outbox.first() else { return };
+                (p.link.clone(), p.routes(), q.request.clone())
+            };
+            let mut again = next.clone();
+            again.sent = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
+            again.compression = Some(true);
+            match request(&link, &routes, &again, &*self.resolver).await {
+                Ok((response, _)) => {
+                    let mut i = self.lock();
+                    if let Some(p) = i.current_mut() {
+                        p.outbox.retain(|q| q.request.id != next.id);
+                    }
+                    if let Some(list) = &response.sessions {
+                        i.sessions = list.clone();
+                    }
+                    if !response.ok {
+                        i.notice = Some("Niet verstuurd: je computer weigerde een bericht dat wachtte.".into());
+                    }
+                }
+                Err(_) => return,
+            }
+            let _ = self.save();
+        }
     }
 
     pub async fn answer(&self, session: &str, item: &str, text: &str) -> ClientSnapshot {
@@ -401,7 +757,7 @@ impl CompanionClient {
         self.perform(r).await
     }
 
-    /// Keeps one connection open to the computer, as the iPhone app does while it is in front (`subscribe`): the
+    /// Keeps one connection open to the active computer, as the iPhone app does while it is in front (`subscribe`): the
     /// computer sends the sessions, the open session's conversation, the chats and Nook's conversations as they change,
     /// and the phone pings every few seconds with `foreground()`. `on_update` gets every update with the new state.
     /// Returns when the connection ends; the caller decides when to connect again. Only for a computer that lists
@@ -411,151 +767,177 @@ impl CompanionClient {
         foreground: impl Fn() -> bool,
         mut on_update: impl FnMut(ClientSnapshot, CompanionResponse),
     ) -> Result<(), ClientError> {
-        let Some(link) = self.lock().link.clone() else { return Err(ClientError::Closed) };
-        let addresses = self.resolver.resolve(&link.host, link.port).await;
-        let mut stream = None;
+        let (link, routes, id_of) = {
+            let i = self.lock();
+            let Some(p) = i.current() else { return Err(ClientError::Closed) };
+            (p.link.clone(), p.routes(), p.id())
+        };
+        let mut conn = None;
         let mut last = ClientError::Unreachable(format!("{} niet gevonden", link.host));
-        for addr in &addresses {
-            match tokio::time::timeout(EXCHANGE_TIMEOUT, TcpStream::connect(addr)).await {
-                Ok(Ok(s)) => {
-                    stream = Some(s);
+        for route in &routes {
+            match transport::connect(route, &*self.resolver).await {
+                Ok(c) => {
+                    conn = Some((c, route.clone()));
                     break;
                 }
-                Ok(Err(e)) => last = ClientError::Unreachable(e.to_string()),
-                Err(_) => last = ClientError::Timeout,
+                Err(e) => last = e,
             }
         }
-        let (mut reader, mut writer) = stream.ok_or(last)?.into_split();
+        let (mut conn, route) = conn.ok_or(last)?;
         let mut subscribe = CompanionRequest::versioned(CompanionOp::Subscribe, &self.app_version);
         subscribe.foreground = Some(foreground());
+        subscribe.compression = Some(true);
         let id = subscribe.id.clone();
-        writer.write_all(&sealed_frame(&link, &subscribe)?).await.map_err(|_| ClientError::Closed)?;
+        conn.send(&sealed_frame(&link, &subscribe)?).await?;
 
         let mut frames = FrameReader::default();
-        let mut buf = vec![0u8; 64 * 1024];
         let mut ping = tokio::time::interval(PING_EVERY);
         ping.tick().await;
         let mut last_seq = -1i64;
+        let mut first = true;
         loop {
-            tokio::select! {
-                read = tokio::time::timeout(STREAM_IDLE, reader.read(&mut buf)) => {
-                    let n = match read {
-                        Err(_) => return Err(ClientError::Timeout),
-                        Ok(Err(_)) | Ok(Ok(0)) => return Err(ClientError::Closed),
-                        Ok(Ok(n)) => n,
-                    };
-                    for frame in frames.feed(&buf[..n]) {
-                        let opened = seal::open(&frame, &link.key, Direction::Response).map_err(|_| ClientError::BadResponse)?;
-                        let Ok(response) = serde_json::from_slice::<CompanionResponse>(&opened) else { continue };
-                        // Answers to pings say nothing new; updates come with the subscription's id, in order.
-                        if response.id != id {
-                            continue;
-                        }
-                        if let Some(seq) = response.seq {
-                            if seq <= last_seq {
-                                continue;
-                            }
-                            last_seq = seq;
-                        }
-                        if response.revoked == Some(true) {
-                            self.unpair();
-                            self.lock().notice = Some("Je computer heeft deze telefoon ontkoppeld. Koppel opnieuw.".into());
-                            on_update(self.snapshot(), response);
-                            return Err(ClientError::Refused);
-                        }
-                        if !response.ok {
-                            return Err(ClientError::Refused);
-                        }
-                        {
-                            let mut i = self.lock();
-                            if let Some(list) = &response.sessions {
-                                i.sessions = list.clone();
-                            }
-                            if let Some(name) = &response.mac_name {
-                                i.mac_name = name.clone();
-                            }
-                            if response.features.is_some() {
-                                i.features = response.features.clone().unwrap_or_default();
-                                i.scopes = response.scopes.clone();
-                                i.mac_version = response.protocol_version;
-                                i.oldest_phone = response.oldest_phone;
-                            }
-                            i.phase = Phase::Connected;
-                            i.reason.clear();
-                        }
-                        on_update(self.snapshot(), response);
-                    }
-                    if frames.overflowed() {
-                        return Err(ClientError::BadResponse);
-                    }
+            let bytes = tokio::select! {
+                read = tokio::time::timeout(STREAM_IDLE, conn.recv()) => Some(read.map_err(|_| ClientError::Timeout)??),
+                _ = ping.tick() => None,
+            };
+            let Some(bytes) = bytes else {
+                let mut p = CompanionRequest::new(CompanionOp::Ping);
+                p.foreground = Some(foreground());
+                conn.send(&sealed_frame(&link, &p)?).await?;
+                continue;
+            };
+            for frame in frames.feed(&bytes) {
+                let Ok(response) = open_frame(&link, &frame) else { return Err(ClientError::BadResponse) };
+                // Answers to pings say nothing new; updates come with the subscription's id, in order.
+                if response.id != id {
+                    continue;
                 }
-                _ = ping.tick() => {
-                    let mut p = CompanionRequest::new(CompanionOp::Ping);
-                    p.foreground = Some(foreground());
-                    writer.write_all(&sealed_frame(&link, &p)?).await.map_err(|_| ClientError::Closed)?;
+                if let Some(seq) = response.seq {
+                    if seq <= last_seq {
+                        continue;
+                    }
+                    last_seq = seq;
                 }
-            }
-        }
-    }
-
-    async fn perform(&self, req: CompanionRequest) -> ClientSnapshot {
-        self.exchange(req).await.0
-    }
-
-    async fn exchange(&self, req: CompanionRequest) -> (ClientSnapshot, Option<CompanionResponse>) {
-        let Some(link) = self.lock().link.clone() else { return (self.snapshot(), None) };
-        let op = req.op;
-        let result = request(&link, &req, &*self.resolver).await;
-        let mut refresh = false;
-        let mut answer = None;
-        {
-            let mut i = self.lock();
-            match result {
-                Ok(response) if response.ok => {
+                if response.revoked == Some(true) {
+                    // The computer removed this phone: forget that pairing, say so, and pair again from its code.
+                    self.unpair();
+                    self.lock().notice = Some("Je computer heeft deze telefoon ontkoppeld. Koppel opnieuw.".into());
+                    on_update(self.snapshot(), response);
+                    return Err(ClientError::Refused);
+                }
+                if !response.ok {
+                    return Err(ClientError::Refused);
+                }
+                {
+                    let mut i = self.lock();
+                    if i.current().map(Pairing::id).as_deref() != Some(id_of.as_str()) {
+                        // Another computer became active meanwhile: this connection ends.
+                        return Ok(());
+                    }
+                    if let Some(p) = i.current_mut() {
+                        p.learn(&response);
+                        p.last_route = Some(route.clone());
+                    }
                     if let Some(list) = &response.sessions {
                         i.sessions = list.clone();
                     }
                     if let Some(name) = &response.mac_name {
                         i.mac_name = name.clone();
                     }
-                    if matches!(op, CompanionOp::Hello | CompanionOp::List) {
-                        // A Mac lists its features with every `list`; one that lists none can do only the first version.
-                        i.features = response.features.clone().unwrap_or_default();
-                        i.scopes = response.scopes.clone();
-                        i.mac_version = response.protocol_version;
-                        i.oldest_phone = response.oldest_phone;
+                    if response.features.is_some() {
+                        take_list(&mut i, &response);
                     }
                     i.phase = Phase::Connected;
                     i.reason.clear();
-                    if op == CompanionOp::Send {
-                        if let Some(message) = &response.message {
-                            i.notice = (message == "queued").then(|| "In de wachtrij: de sessie is nog bezig.".into());
-                        }
-                    }
-                    answer = Some(response);
+                    i.route = route.kind().into();
                 }
-                Ok(response) => {
+                on_update(self.snapshot(), response);
+                if first {
+                    first = false;
+                    let _ = self.save();
+                    self.drain().await;
+                }
+            }
+            if frames.overflowed() {
+                return Err(ClientError::BadResponse);
+            }
+        }
+    }
+
+    async fn perform(&self, req: CompanionRequest) -> ClientSnapshot {
+        self.exchange_full(req).await.0
+    }
+
+    async fn exchange_full(&self, mut req: CompanionRequest) -> (ClientSnapshot, Option<CompanionResponse>, Option<ClientError>) {
+        let Some((link, routes)) = self.lock().current().map(|p| (p.link.clone(), p.routes())) else {
+            return (self.snapshot(), None, None);
+        };
+        req.compression = Some(true);
+        let op = req.op;
+        let result = request(&link, &routes, &req, &*self.resolver).await;
+        let mut refresh = false;
+        let mut answer = None;
+        let mut error = None;
+        let mut reached = false;
+        {
+            let mut i = self.lock();
+            match result {
+                Ok((response, route)) => {
+                    reached = true;
+                    if let Some(p) = i.current_mut() {
+                        p.learn(&response);
+                        p.last_route = Some(route.clone());
+                    }
+                    i.route = route.kind().into();
                     i.phase = Phase::Connected;
-                    // A refusal that says why in words (a chat app that could not send) shows those words.
-                    let said = response.message.clone().filter(|m| response.error == Some(CompanionError::Failed) && !m.trim().is_empty());
-                    i.notice = Some(said.unwrap_or_else(|| {
-                        match response.error {
-                            Some(CompanionError::NotAllowedFromPhone) => "Dat kan niet vanaf de telefoon: open het op je computer.",
-                            Some(CompanionError::UnknownItem | CompanionError::UnknownSession) => {
-                                refresh = true;
-                                "Dat is al afgehandeld."
-                            }
-                            Some(CompanionError::Stale) => "De klok van je telefoon en je computer loopt te ver uit elkaar.",
-                            Some(CompanionError::RateLimited) => "Even rustig aan.",
-                            _ => "De computer weigerde dit.",
+                    i.reason.clear();
+                    if response.ok {
+                        if let Some(list) = &response.sessions {
+                            i.sessions = list.clone();
                         }
-                        .into()
-                    }));
+                        if let Some(name) = &response.mac_name {
+                            i.mac_name = name.clone();
+                        }
+                        if matches!(op, CompanionOp::Hello | CompanionOp::List) {
+                            // A Mac lists its features with every `list`; one that lists none can do only the first version.
+                            take_list(&mut i, &response);
+                        }
+                        if op == CompanionOp::Send {
+                            if let Some(message) = &response.message {
+                                i.notice = (message == "queued").then(|| "In de wachtrij: de sessie is nog bezig.".into());
+                            }
+                        }
+                        answer = Some(response);
+                    } else {
+                        // A refusal that says why in words (a chat app that could not send) shows those words.
+                        let said =
+                            response.message.clone().filter(|m| response.error == Some(CompanionError::Failed) && !m.trim().is_empty());
+                        i.notice = Some(said.unwrap_or_else(|| {
+                            match response.error {
+                                Some(CompanionError::NotAllowedFromPhone) => "Dat kan niet vanaf de telefoon: open het op je computer.",
+                                Some(CompanionError::UnknownItem | CompanionError::UnknownSession) => {
+                                    refresh = true;
+                                    "Dat is al afgehandeld."
+                                }
+                                Some(CompanionError::Stale) => "De klok van je telefoon en je computer loopt te ver uit elkaar.",
+                                Some(CompanionError::RateLimited) => "Even rustig aan.",
+                                _ => "De computer weigerde dit.",
+                            }
+                            .into()
+                        }));
+                    }
                 }
                 Err(e) => {
                     i.phase = Phase::Offline;
                     i.reason = e.to_string();
+                    error = Some(e);
                 }
+            }
+        }
+        if reached {
+            let _ = self.save();
+            if !matches!(op, CompanionOp::Send | CompanionOp::Start | CompanionOp::Ask) {
+                self.drain().await;
             }
         }
         if refresh {
@@ -563,6 +945,17 @@ impl CompanionClient {
             Box::pin(self.refresh()).await;
             self.lock().notice = notice;
         }
-        (self.snapshot(), answer)
+        (self.snapshot(), answer, error)
+    }
+}
+
+/// What a `hello`, `list` or `subscribe` answer says about the computer.
+fn take_list(i: &mut Inner, response: &CompanionResponse) {
+    i.features = response.features.clone().unwrap_or_default();
+    i.scopes = response.scopes.clone();
+    i.mac_version = response.protocol_version;
+    i.oldest_phone = response.oldest_phone;
+    if let Some(list) = &response.sessions {
+        i.sessions = list.clone();
     }
 }

@@ -60,6 +60,9 @@ fn pairing_links_match() {
         assert_eq!(parsed.port as u64, link["port"].as_u64().unwrap());
         assert_eq!(parsed.key, base64url_decode(str_of(link, "key")).unwrap());
         assert_eq!(parsed.mac_name, str_of(link, "macName"));
+        let alternates: Vec<String> = link["alternates"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+        assert_eq!(parsed.alternates, alternates);
+        assert_eq!(parsed.relay.as_deref(), link["relay"].as_str());
     }
     for text in f["invalid"].as_array().unwrap() {
         assert_eq!(PairingLink::parse(text.as_str().unwrap()), None, "{text}");

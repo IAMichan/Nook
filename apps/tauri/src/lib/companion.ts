@@ -81,6 +81,14 @@ export interface ClientView {
   /** The computer's protocol version and the oldest phone it supports; null from one that predates versions. */
   macVersion?: number | null;
   oldestPhone?: number | null;
+  /** How the phone reached the computer last: "lan", "tailnet", "internet" or "relay". */
+  route?: string;
+  /** Every paired computer; one is active. */
+  macs?: { id: string; name: string; active: boolean }[];
+  /** The other paired computers' sessions, as they had them when last asked. */
+  others?: { id: string; name: string; reachable: boolean; sessions: SessionDigest[] }[];
+  /** What waits to be sent while the computer is away. */
+  outbox?: { id: string; op: string; session?: string | null; conversation?: string | null; text: string; queuedAt: number }[];
 }
 
 export const companion = {
@@ -102,6 +110,9 @@ export const companion = {
   answer: (session: string, item: string, text: string) => invoke<ClientView>("companion_client_answer", { session, item, text }),
   send: (session: string, text: string) => invoke<ClientView>("companion_client_send", { session, text }),
   stop: (session: string) => invoke<ClientView>("companion_client_stop", { session }),
+  switchTo: (id: string) => invoke<ClientView>("companion_client_switch", { id }),
+  discard: (id: string) => invoke<ClientView>("companion_client_discard", { id }),
+  others: () => invoke<ClientView>("companion_client_others"),
   deny: (session: string, item: string, reason: string) => invoke<ClientView>("companion_client_deny", { session, item, reason }),
   call: (call: ClientCall) => invoke<CallResult>("companion_client_call", { call }),
   clearNotice: () => invoke<void>("companion_client_clear_notice"),
@@ -660,4 +671,15 @@ export function fileKind(name: string): "image" | "pdf" | "video" | "audio" | "t
   if (["mp4", "mov", "m4v", "webm"].includes(ext)) return "video";
   if (["mp3", "m4a", "wav", "aac", "ogg", "flac"].includes(ext)) return "audio";
   return "text";
+}
+
+/** The route line in the computer's menu and Settings. */
+export function routeWords(route: string | undefined): { text: string; icon: string } | null {
+  switch (route) {
+    case "relay": return { text: tr("Verbonden via je relay", "Connected through your relay"), icon: "globe" };
+    case "tailnet": return { text: tr("Verbonden via Tailscale", "Connected over Tailscale"), icon: "shield" };
+    case "internet": return { text: tr("Verbonden via internet", "Connected over the internet"), icon: "globe" };
+    case "lan": return { text: tr("Verbonden via je lokale netwerk", "Connected over your local network"), icon: "wifi" };
+    default: return null;
+  }
 }

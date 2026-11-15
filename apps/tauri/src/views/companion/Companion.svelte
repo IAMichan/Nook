@@ -7,7 +7,7 @@
   import { untrack } from "svelte";
   import {
     companion, has, may, needingYou, tabsFor, unreadChats, Feature,
-    type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
+    routeWords, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
   import { tr } from "../../lib/i18n.svelte";
@@ -39,6 +39,8 @@
   let screens = $state<Record<CompanionTab, Screen | null>>({ home: null, agents: null, chats: null });
   let sheet = $state<null | "settings" | { kind: "new"; task?: string; link?: PromptLink }>(null);
   let macMenu = $state<DOMRect | null>(null);
+  // Pairing another computer shows the pairing screen; the paired ones stay.
+  let adding = $state(false);
   let inbox = $state<InboxChatDigest[]>([]);
   let inboxMessage = $state<string | undefined>(undefined);
   let conversations = $state<ChatDigest[]>([]);
@@ -158,21 +160,40 @@
 
   const macSections = $derived.by<MenuItem[][]>(() => {
     if (!view) return [];
-    const route = view.phase === "connected" ? [{ label: tr("Verbonden via je lokale netwerk", "Connected over your local network"), icon: "wifi" }] : [];
+    const route = view.phase === "connected" ? routeWords(view.route) : null;
+    const macs = view.macs ?? [];
     return [
-      [{ label: view.macName || tr("Je Mac", "Your Mac"), icon: "check", detail: view.host }, ...route,
-        { label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") }],
+      [
+        ...(macs.length > 1
+          ? macs.map((m) => ({ label: m.name, icon: m.active ? "check" : "laptop", onselect: m.active ? undefined : () => switchTo(m.id) }))
+          : [{ label: view.macName || tr("Je Mac", "Your Mac"), icon: "laptop" }]),
+        ...(route ? [{ label: route.text, icon: route.icon }] : []),
+        { label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") },
+      ],
       has(view, Feature.requestUpdate) ? [{ label: tr("Toon de update op je Mac", "Show the update on your Mac"), icon: "circle-arrow-down", onselect: requestUpdate }] : [],
-      [{ label: tr("Ontkoppel van deze Mac", "Unpair from this Mac"), destructive: true, onselect: () => act(async () => companion.unpair()) }],
+      [
+        { label: tr("Koppel nog een Mac", "Pair another Mac"), icon: "plus", onselect: () => (adding = true) },
+        { label: tr("Ontkoppel van deze Mac", "Unpair from this Mac"), destructive: true, onselect: () => act(async () => companion.unpair()) },
+      ],
     ];
   });
+
+  /** Makes another paired computer active; its tabs start where they were. */
+  async function switchTo(id: string) {
+    screens = { home: null, agents: null, chats: null };
+    inbox = [];
+    conversations = [];
+    took(await companion.switchTo(id));
+    took(await companion.refresh());
+    loadLists();
+  }
 </script>
 
 <div class="companion phone" class:standalone>
   {#if !view}
     <div class="launch"></div>
-  {:else if !paired}
-    <Pairing {view} onchange={(v) => (view = v)} />
+  {:else if !paired || adding}
+    <Pairing {view} adding={paired} oncancel={() => (adding = false)} onchange={(v) => { view = v; if (adding && v.phase === "connected") { adding = false; screens = { home: null, agents: null, chats: null }; loadLists(); } }} />
   {:else}
     <div class="page">
       {#if tab === "agents" && screens.agents?.kind === "session"}
@@ -191,7 +212,7 @@
       {:else if tab === "chats"}
         <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
       {:else}
-        <AgentsTab {view} {act} {took} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+        <AgentsTab {view} {act} {took} onelsewhere={async (mac, id, digest) => { await switchTo(mac); open("agents", { kind: "session", id, digest }); }} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
           onopen={(id, digest) => open("agents", { kind: "session", id, digest })} onnew={() => (sheet = { kind: "new" })} />
       {/if}
     </div>
@@ -202,7 +223,7 @@
 
   {#if sheet === "settings" && view}
     <Sheet onclose={() => (sheet = null)}>
-      <SettingsSheet {view} {took} onclose={() => (sheet = null)} onlocal={standalone ? () => { sheet = null; setLocal(true); } : undefined} />
+      <SettingsSheet {view} {took} onswitch={(id) => { sheet = null; switchTo(id); }} onadd={() => { sheet = null; adding = true; }} onclose={() => (sheet = null)} onlocal={standalone ? () => { sheet = null; setLocal(true); } : undefined} />
     </Sheet>
   {:else if sheet && typeof sheet === "object" && view}
     <Sheet onclose={() => (sheet = null)}>

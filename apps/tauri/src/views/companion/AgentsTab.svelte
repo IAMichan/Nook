@@ -20,8 +20,9 @@
   import Sheet from "./ui/Sheet.svelte";
   import PullRequests from "./PullRequests.svelte";
   import SnoozePicker from "./SnoozePicker.svelte";
+  import WaitingRow from "./ui/WaitingRow.svelte";
 
-  let { view, act, took, onorb, ongear, onopen, onnew }: {
+  let { view, act, took, onorb, ongear, onopen, onnew, onelsewhere }: {
     view: ClientView;
     act: (f: () => Promise<ClientView>) => Promise<void>;
     took: (v: ClientView) => void;
@@ -29,7 +30,10 @@
     ongear: () => void;
     onopen: (id: string, digest?: SessionDigest) => void;
     onnew: () => void;
+    /** A session on another paired computer: that computer becomes active and the session opens. */
+    onelsewhere?: (mac: string, id: string, digest: SessionDigest) => void;
   } = $props();
+  const queuedStarts = $derived((view.outbox ?? []).filter((q) => q.op === "start"));
 
   // Older sessions than the live list holds, a page at a time, and the Mac's search through all of them (`history`).
   const canHistory = $derived(has(view, Feature.history) && may(view, "read"));
@@ -142,6 +146,9 @@
       <ConnectionLine {view} />
       {#if view.sessions.length > SHOWN || canHistory}<SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} />{/if}
       {#if query.trim() && !all.length && !matches.length && !matchLoading}<p class="none">{tr("Geen sessie gevonden.", "No session matches.")}</p>{/if}
+      {#each queuedStarts as q (q.id)}
+        <WaitingRow icon="square-pen" title={q.text} detail={tr("Nieuwe sessie · wacht op je Mac", "New session · waiting for your Mac")} ondiscard={async () => took(await companion.discard(q.id))} />
+      {/each}
       {#each waiting as s (s.id)}
         <SessionNotice {view} session={s} onopen={() => onopen(s.id)} {act} />
       {/each}
@@ -180,6 +187,12 @@
       {/if}
     {/if}
 
+    {#each view.others ?? [] as other (other.id)}
+      {@const needy = other.sessions.filter((x) => x.items.length > 0 || needsYouState(x.attention)).length}
+      <h3 class="older on">{tr("Op {mac}", "On {mac}", { mac: other.name })}{#if needy}<span class="badge">{needy}</span>{/if}{#if !other.reachable}<span class="away">· {tr("niet bereikbaar", "not reachable")}</span>{/if}</h3>
+      {#each sortSessions(other.sessions).slice(0, 10) as s (s.id)}<AgentRow session={s} onopen={() => onelsewhere?.(other.id, s.id, s)} />{/each}
+    {/each}
+
     {#if !view.sessions.length && view.phase === "connected"}
       <EmptyState icon="layers" title={tr("Geen sessies", "No sessions")} text={tr("Sessies van je coding-agents op je Mac verschijnen hier.", "Sessions of your coding agents on your Mac show up here.")} action={tr("Nieuwe sessie", "New session")} onaction={newSession} />
     {/if}
@@ -203,6 +216,9 @@
   .scroll { flex: 1; overflow-y: auto; padding-bottom: 24px; }
   .top { display: flex; flex-direction: column; gap: 12px; padding: 0 16px; }
   .none { margin: 0; padding: 24px 0; text-align: center; font: var(--pt-body); color: var(--text2); }
+  .on { display: flex; align-items: center; gap: 6px; }
+  .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 6px; background: rgba(240, 182, 90, 0.14); color: var(--amber); font: 600 11.4px ui-rounded, var(--font); display: inline-flex; align-items: center; justify-content: center; }
+  .away { font: var(--pt-caption); color: var(--text3); }
   .older { margin: 0; padding: 16px 20px 4px; font: var(--pt-label); color: var(--text3); }
   .mini { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: transparent; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
