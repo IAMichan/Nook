@@ -11,6 +11,13 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Nook Companion stays usable without your Mac: Nook's chats and the Chats tab are now kept on the iPhone with their
+  last messages, so every tab reads while the Mac is off, asleep or out of reach. What you write still waits on the
+  iPhone and goes as soon as the Mac is back. While offline, every conversation keeps an amber strip in sight saying
+  that no new messages or updates come in and that what you send is not sent yet, and each waiting message says
+  *Not sent yet · waiting for your Mac*. A chat the iPhone never kept says it opens once the Mac is connected, instead
+  of loading forever. The Android companion does the same, and its chat messages now wait in the outbox too.
+
 - The Android app is now the same companion as the iPhone app, with the same layout, look and words: once paired it
   opens on your Mac's tabs Nook, Agents and Chats, with what waits on you as cards, a session as its whole conversation
   in turns, approvals and questions above the composer (deny with a reason, Steer now or After this turn), New session,
