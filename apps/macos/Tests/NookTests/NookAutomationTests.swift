@@ -326,6 +326,25 @@ final class NookAutomationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("EERSTE") && prompt.contains("bericht1"), "both texts of the merged message are in the prompt")
     }
 
+    func testInAGroupEachPersonKeepsTheirOwnMessages() {
+        var queue = ArrivalQueue()
+        func said(_ who: String, _ text: String, _ at: TimeInterval) -> ArrivedMessage {
+            ArrivedMessage(chatID: "team", app: "whatsapp", chat: "Team", sender: who, text: text, date: now.addingTimeInterval(at), isGroup: true)
+        }
+        queue.enqueue([said("Alice", "van Alice", 0)] + (1...(ArrivalQueue.perChat + 5)).map { said("Bob", "bob\($0)", TimeInterval($0)) })
+        XCTAssertEqual(queue.waiting.filter { $0.sender == "Alice" }.map(\.text), ["van Alice"], "Alice's message never merges into Bob's")
+        XCTAssertEqual(queue.waiting.filter { $0.sender == "Bob" }.count, ArrivalQueue.perChat)
+        XCTAssertEqual(queue.takeBatch(matching: MessageTrigger(from: "Alice", groups: true)).map(\.text), ["van Alice"])
+    }
+
+    func testALongMessageSaysWhereItWasShortened() {
+        let long = "BEGIN " + String(repeating: "x", count: ArrivalQueue.textLimit) + " EINDE"
+        let prompt = NookSchedule.messagePrompt("p", messages: [message("lisa", long)])
+        XCTAssertTrue(prompt.contains(ArrivalQueue.shortened), "a cut is never silent")
+        XCTAssertTrue(prompt.contains("EINDE"), "the newest words stay")
+        XCTAssertEqual(ArrivalQueue.fitted("kort"), "kort")
+    }
+
     func testAChangedFilterAfterAMergeKeepsWhatStillMatches() {
         var queue = ArrivalQueue()
         let mail = ArrivedMessage(chatID: "m", app: "mail", chat: "Tom", sender: "Tom", text: "factuur", date: now, isGroup: false)

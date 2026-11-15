@@ -683,11 +683,12 @@ enum NookSchedule {
 /// The messages one message automation still has to run with (`ScheduledTaskStore`), as a value so it is tested on its
 /// own. It admits a message once (per chat, the newest admitted one is remembered), hands out batches of at most
 /// `NookSchedule.messagesPerRun`, and keeps every admitted message until a batch takes it. Its memory is bounded per chat:
-/// past `perChat` waiting messages, that chat's two oldest become one that holds both texts. Only messages of the same
-/// chat merge, so each keeps its own app, chat and sender, and a filter changed later still sees where it came from. The
-/// whole queue is then at most `perChat` messages for each of the user's chats.
+/// past `perChat` waiting messages from one person in one chat, their two oldest become one that holds both texts. Only
+/// messages of the same person in the same chat merge, so each entry keeps its own app, chat and sender, and a filter
+/// changed later still sees where it came from and who wrote it. The whole queue is then at most `perChat` messages for
+/// each person in each of the user's chats.
 struct ArrivalQueue: Equatable, Sendable {
-    /// The most messages one chat keeps waiting; past it, its oldest merge.
+    /// The most messages one person keeps waiting in one chat; past it, their oldest merge.
     static let perChat = 20
     /// The longest text one message holds, merged or not (also what the prompt shows of it, `NookSchedule.messagePrompt`).
     /// Only a chat that floods past `perChat` long messages reaches it; its oldest text then goes, marked, never the newest.
@@ -724,13 +725,14 @@ struct ArrivalQueue: Equatable, Sendable {
         return batch
     }
 
-    /// Folds the two oldest waiting messages of a chat into one, until no chat has more than `perChat` waiting.
+    /// Folds the two oldest waiting messages of one person in one chat into one, until nobody has more than `perChat`.
     private mutating func compact() {
+        func key(_ message: ArrivedMessage) -> String { message.chatID + "\u{1F}" + message.sender }
         var counts: [String: Int] = [:]
-        for message in waiting { counts[message.chatID, default: 0] += 1 }
-        for (chat, count) in counts where count > Self.perChat {
+        for message in waiting { counts[key(message), default: 0] += 1 }
+        for (person, count) in counts where count > Self.perChat {
             for _ in 0..<(count - Self.perChat) {
-                let indices = Array(waiting.indices.filter { waiting[$0].chatID == chat }.prefix(2))
+                let indices = Array(waiting.indices.filter { key(waiting[$0]) == person }.prefix(2))
                 guard indices.count == 2 else { break }
                 let first = waiting[indices[0]], second = waiting[indices[1]]
                 var merged = second
@@ -741,9 +743,12 @@ struct ArrivalQueue: Equatable, Sendable {
         }
     }
 
-    /// At most `textLimit` characters, the newest kept, with a mark where older text went.
+    /// The mark where text was left out, for the brain: it can read the whole chat itself.
+    static let shortened = "[… shortened here; read the chat for the full text] "
+
+    /// At most `textLimit` characters, the newest kept, with a mark where older text went (never silently).
     static func fitted(_ text: String) -> String {
         guard text.count > textLimit else { return text }
-        return "… " + String(text.suffix(textLimit - 2))
+        return shortened + String(text.suffix(textLimit - shortened.count))
     }
 }
