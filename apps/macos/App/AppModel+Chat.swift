@@ -91,6 +91,8 @@ extension AppModel {
     func stop(conversation: UUID) {
         chatTasks[conversation]?.cancel()
         chatTasks[conversation] = nil
+        // Stopping a scheduled run's answer (its deadline) leaves a spoken question elsewhere waiting for its answer.
+        let scheduled = replies[conversation].map(ScheduledTaskStore.shared.isScheduledReply) ?? false
         if let id = replies[conversation] {
             chat.update(id) { message in
                 message.streaming = false
@@ -106,7 +108,7 @@ extension AppModel {
         replies[conversation] = nil
         chat.setBusy(false, conversation: conversation)
         chat.holdQueue(conversation: conversation)
-        spokenRequest = false
+        if !scheduled { spokenRequest = false }
     }
 
     /// Tools that count as reading but put something in the answer itself: not for a brain that only looks things up.
@@ -687,7 +689,8 @@ extension AppModel {
         }
         replies[conversation] = nil
         chatTasks[conversation] = nil
-        spokenRequest = false
+        // A scheduled run's answer was never the spoken question: its error leaves a spoken answer elsewhere alone.
+        if !ScheduledTaskStore.shared.isScheduledReply(id) { spokenRequest = false }
         chat.setBusy(false, conversation: conversation)
         chat.holdQueue(conversation: conversation)
     }
