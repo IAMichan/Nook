@@ -119,3 +119,57 @@ test("a body that is too large is refused", async () => {
   const response = await tunnel.deliver(post("x".repeat(1024 * 1024 + 10)), "/");
   assert.equal(response.status, 413);
 });
+
+const named = () =>
+  Object.assign(socket(), { attachment: null, serializeAttachment(v) { this.attachment = v; }, deserializeAttachment() { return this.attachment; } });
+
+test("an answer that cannot be a response is a 502, not a hang", async () => {
+  assert.equal(unpackAnswer({ status: 200, body: "not base64!" }).status, 502);
+  assert.equal(unpackAnswer({ status: 205, body: b64("x") }).status, 205);
+  const split = unpackAnswer({ status: 200, headers: { location: "a\r\nset-cookie: x=1", "content-type": "text/plain" }, body: "" });
+  assert.equal(split.status, 200);
+  assert.equal(split.headers.get("location"), null);
+  assert.equal(split.headers.get("set-cookie"), null);
+
+  const sockets = new Sockets();
+  sockets.open.push(socket());
+  const tunnel = new TunnelLogic(sockets, { timeoutMs: 60_000, newID: () => "r1" });
+  const pending = tunnel.deliver(post(), "/");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.doesNotThrow(() => tunnel.message(JSON.stringify({ id: "r1", status: 200, body: "%%%" })));
+  assert.equal((await pending).status, 502);
+  assert.equal(tunnel.waiting.size, 0);
+});
+
+test("requests whose bodies arrive together still hold to the limit", async () => {
+  const sockets = new Sockets();
+  const mac = socket();
+  sockets.open.push(mac);
+  let id = 0;
+  const tunnel = new TunnelLogic(sockets, { timeoutMs: 60_000, newID: () => "c" + id++ });
+  const all = Array.from({ length: MAX_WAITING + 4 }, () => tunnel.deliver(post("{}"), "/"));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(mac.sent.length, MAX_WAITING);
+  assert.equal(tunnel.waiting.size, MAX_WAITING);
+  for (const sent of mac.sent) tunnel.message(JSON.stringify({ id: JSON.parse(sent).id, status: 200, body: "" }));
+  const statuses = (await Promise.all(all)).map((r) => r.status);
+  assert.equal(statuses.filter((s) => s === 429).length, 4);
+});
+
+test("when the Mac's socket goes, what waits on it is answered at once", async () => {
+  const sockets = new Sockets();
+  const tunnel = new TunnelLogic(sockets, { timeoutMs: 60_000 });
+  const mac = named();
+  tunnel.listen(mac);
+  const pending = tunnel.deliver(post(), "/");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  tunnel.closed(mac);
+  assert.equal((await pending).status, 503);
+  assert.equal(tunnel.waiting.size, 0);
+
+  const kept = tunnel.deliver(post(), "/");
+  const newer = named();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  tunnel.listen(newer);
+  assert.equal((await kept).status, 503, "a replaced socket's requests fail too");
+});

@@ -147,7 +147,7 @@ pub fn classify(e: &FailureEvidence) -> FailureClass {
     // Gewone tekst van de agent kan "network" noemen; alleen een mislukt resultaat wordt gelezen.
     let Some(text) = e.message_text.as_deref().filter(|t| is_failing(e) && !t.is_empty()) else { return FailureClass::Generic };
     if let Some(s) = gateway_reset_seconds(text) {
-        return FailureClass::UsageLimit((s > 0.0).then(|| e.now + Duration::milliseconds((s * 1000.0) as i64)));
+        return FailureClass::UsageLimit((s > 0.0).then(|| seconds_after(e.now, s)).flatten());
     }
     let lower = text.to_lowercase();
     if lower.contains("[429]") || lower.contains("rate_limit_error") {
@@ -195,9 +195,17 @@ fn is_failing(e: &FailureEvidence) -> bool {
 
 fn reset(e: &FailureEvidence) -> Option<DateTime<Utc>> {
     if let Some(s) = e.message_text.as_deref().and_then(gateway_reset_seconds).filter(|s| *s > 0.0) {
-        return Some(e.now + Duration::milliseconds((s * 1000.0) as i64));
+        if let Some(at) = seconds_after(e.now, s) {
+            return Some(at);
+        }
     }
     latest_reset(&e.rate_limit_resets)
+}
+
+/// `now` plus `seconds` that came from a gateway's text, or `None` when that lies past any date Nook can hold (a
+/// "(reset after 99999999999h)" must not overflow).
+fn seconds_after(now: DateTime<Utc>, seconds: f64) -> Option<DateTime<Utc>> {
+    Duration::try_milliseconds((seconds * 1000.0) as i64).and_then(|d| now.checked_add_signed(d))
 }
 
 /// "(reset after 1h2m3s)" in de 429-tekst van een gateway.
@@ -351,6 +359,14 @@ mod tests {
         assert_eq!(gateway_reset_seconds("no hint"), None);
         let zero = FailureEvidence { is_error: true, message_text: Some("[429] rate_limit_error (reset after )".into()), ..ev() };
         assert_eq!(classify(&zero), FailureClass::UsageLimit(None));
+        // A reset that lies past any representable date is unknown, not a crash.
+        let huge = FailureEvidence {
+            is_error: true,
+            message_text: Some("[429] rate_limit_error (reset after 99999999999999999h)".into()),
+            ..ev()
+        };
+        assert_eq!(classify(&huge), FailureClass::UsageLimit(None));
+        assert_eq!(reset(&huge), None);
     }
 
     #[test]
