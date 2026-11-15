@@ -1038,6 +1038,21 @@ struct WAInbox: Equatable, Sendable {
                 }
                 receiptLedger.record(conversation.messages[index])
             }
+            // In a private chat, reading a message reads everything you sent before it, as WhatsApp itself shows: a
+            // receipt often names only the newest of them, and the earlier ones would wait at two grey ticks.
+            if WAJID.kind(chatKey) == .person, status >= .read,
+               let newest = conversation.messages.filter({ $0.fromMe && ids.contains($0.id) }).map(\.date).max() {
+                for index in conversation.messages.indices where conversation.messages[index].fromMe
+                    && conversation.messages[index].date < newest && !ids.contains(conversation.messages[index].id) {
+                    let old = conversation.messages[index].receipt ?? .sent
+                    guard old >= .sent, old < status else { continue }
+                    conversation.messages[index].receipt = old.advanced(to: status)
+                    let reader = conversation.messages[index].readers[chatKey] ?? ChatReader(name: chatKey, receipt: .sent)
+                    conversation.messages[index].readers[chatKey] = reader.advanced(to: status, at: date)
+                    receiptLedger.record(conversation.messages[index])
+                    touched = true
+                }
+            }
             if touched { conversations[chatKey] = conversation; changed = chatKey }
             if pending.isEmpty { break }
         }

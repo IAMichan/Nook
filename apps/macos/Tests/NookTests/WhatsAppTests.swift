@@ -760,6 +760,27 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(message?.readers[chat]?.date, read)
     }
 
+    /// A read receipt that names only your newest message reads the ones you sent before it too, in a private chat,
+    /// as WhatsApp shows it; a group's receipt is per message, and a message still going out stays as it is.
+    func testReadingYourNewestMessageReadsTheEarlierOnes() {
+        var inbox = WAInbox()
+        let chat = "31611111111@s.whatsapp.net"
+        let read = Date(timeIntervalSince1970: 1_000)
+        for (id, second) in [("M1", 900.0), ("M2", 910.0), ("M3", 920.0)] {
+            inbox.add(WAMessage(id: id, chat: chat, sender: "me", senderName: "", text: id, date: Date(timeIntervalSince1970: second),
+                                fromMe: true), filters: WAFilters())
+        }
+        inbox.add(WAMessage(id: "T1", chat: chat, sender: chat, senderName: "Anna", text: "hi", date: Date(timeIntervalSince1970: 905)),
+                  filters: WAFilters())
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["M2"], chat: chat, at: read), chat)
+        let messages = inbox.conversations[chat]?.messages ?? []
+        XCTAssertEqual(messages.first { $0.id == "M1" }?.receipt, .read, "sent before the one they read")
+        XCTAssertEqual(messages.first { $0.id == "M1" }?.readers[chat]?.date, read)
+        XCTAssertEqual(messages.first { $0.id == "M2" }?.receipt, .read)
+        XCTAssertNotEqual(messages.first { $0.id == "M3" }?.receipt, .read, "sent after it: not read yet")
+        XCTAssertNil(messages.first { $0.id == "T1" }?.receipt, "theirs gets no ticks")
+    }
+
     func testAnEditedPollIsNoNewPoll() {
         let body = Data(#"{"event":"message","payload":{"id":"E1","chat_id":"120363000000000001@g.us","body":"Poll edited: Lunch?","poll":{"type":"edit","poll_id":"P1","question":"Lunch?","options":[{"name":"Pizza"}]}}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: body), .ignored)

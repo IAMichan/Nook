@@ -11,7 +11,17 @@ import ImageIO
 @MainActor
 final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     let app = "teams"
-    let interval: TimeInterval = 60
+    /// Once a minute; every 15 s while a message you sent in the last hour waits to be read, so its ticks turn as soon
+    /// as Teams says they read it (Teams has no live line Nook holds).
+    var interval: TimeInterval {
+        let recent = Date().addingTimeInterval(-Self.tickWatch)
+        let waiting = web.values.contains { state in
+            state.unseen.values.contains { chat in (chat.messages.last?.date ?? .distantPast) > recent }
+        }
+        return waiting ? 15 : 60
+    }
+    /// How long after you sent a message its ticks are watched closely.
+    private static let tickWatch: TimeInterval = 3600
 
     enum State: Equatable {
         /// This build of Nook has no app id to sign in as.

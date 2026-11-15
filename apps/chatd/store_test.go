@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -196,5 +197,37 @@ func TestMediaExtensionKeepsOnlyPlainExtensions(t *testing.T) {
 		if got := mediaExtension("image/png", name); got != want {
 			t.Errorf("mediaExtension(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// When someone reads your message, Nook hears that the chat changed and reads it at once: who read it (and when) must
+// be kept by then, or their ticks wait for the chat's next change.
+func TestReadIsKeptBeforeNookHearsOfIt(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := id.RoomID("!r:" + serverName)
+	friend := id.UserID("@signal_friend:" + serverName)
+	start := time.UnixMilli(1_000_000)
+	if err = store.CreateRoom(room, "local-signal", "Friend", "", true, start); err != nil {
+		t.Fatal(err)
+	}
+	mine, _ := store.Add("", room, me, event.EventMessage,
+		&event.Content{Parsed: &event.MessageEventContent{MsgType: event.MsgText, Body: "hi"}}, start.Add(time.Second), "")
+	var readsWhenTold []Read
+	told := false
+	store.changed = func(kind string, changed id.RoomID) {
+		if changed == room && !told {
+			told = true
+			readsWhenTold = store.Reads(room)
+		}
+	}
+	in := &intent{m: &LocalMatrix{store: store}, user: friend}
+	if err = in.MarkRead(context.Background(), room, mine, start.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if !told || len(readsWhenTold) != 1 || readsWhenTold[0].User != friend {
+		t.Fatalf("told %v, reads then %+v", told, readsWhenTold)
 	}
 }

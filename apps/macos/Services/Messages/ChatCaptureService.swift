@@ -752,6 +752,10 @@ final class ChatCaptureService: ObservableObject {
             if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
             if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
             bridgeFailures[bridge.bridgeID] = nil
+            // The read made the bridge want to be read sooner (a message of yours now waits to be read, Teams and
+            // Snapchat): the next read comes at its new interval, not at the one set before this read began.
+            let sooner = Date().addingTimeInterval(Self.paced(bridge.interval, plan: EnergyMonitor.shared.plan, local: bridge.readsLocally))
+            if let due = bridgeDue[bridge.bridgeID], due > sooner { bridgeDue[bridge.bridgeID] = sooner }
             // The chat helper reads several apps: each one it brought in is bridged.
             let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
             if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
