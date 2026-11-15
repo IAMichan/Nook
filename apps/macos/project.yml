@@ -729,6 +729,7 @@ targets:
       - path: Services/Flow/FlowLogic.swift
       - path: Services/Flow/VoiceModelCopies.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
+      - path: Services/DoubleTap/DoubleTapBrowserLogic.swift
       - path: Services/DoubleTap/DoubleTapSuggest.swift
       - path: Services/DoubleTap/DoubleTapEditLogic.swift
       - path: Services/DoubleTap/DoubleTapRun.swift

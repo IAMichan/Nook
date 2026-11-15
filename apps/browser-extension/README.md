@@ -13,7 +13,7 @@ approve each action.
 | `manifest.json` | Manifest V3. The `key` fixes the extension's id, which Nook's host allows. |
 | `background.js` | Service worker: the port to Nook, the commands, and the side panel's messages |
 | `lib/core.js` | Pure logic (checks, texts for Nook), tested in `test/` |
-| `page/agent.js` | Nook's hands on a page (find, read, click, type, scroll, key), injected only when asked |
+| `page/agent.js` | Nook's hands on a page (find, read, click, type, scroll, key, and form and fill for Double Tap), injected only when asked |
 | `page/presence.js` | The glow and the "Nook is working · Stop" strip while Nook acts |
 | `sidepanel.*` | The side panel: status, the switch per site, pause, chat, and activity, in Nook's own theme (`look`) |
 | `_locales/` | Texts in English, Dutch, German, French and Spanish |

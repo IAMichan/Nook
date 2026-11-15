@@ -180,6 +180,8 @@ extension AppModel {
         if !run.request.isEmpty { context.append("“" + DoubleTapLogic.preview(run.request, limit: 40) + "”") }
         if let seconds = run.seconds { context.append(tr("doubletap.run.seconds", seconds)) }
         let title = run.result.isEmpty ? tr("doubletap.run.ended") : run.result
+        // The card's room follows the density you chose (Settings › Appearance), as its text does.
+        let scale = CGFloat(NookTheme.density.textScale)
         let titleLines = max(1, min(3, Int(ceil(Double(title.count) / 48.0))))
         let noticeHeight: CGFloat = run.resultDetail.isEmpty ? 0 : 40
         let status: CardStatus?
@@ -197,7 +199,7 @@ extension AppModel {
             detail: .doubleTapRun(run),
             primary: primary,
             secondary: secondary,
-            contentHeight: min(460, 104 + CGFloat(titleLines) * 24 + DoubleTapRunDetail.height(of: run) + noticeHeight),
+            contentHeight: min(460, ((104 + CGFloat(titleLines) * 24 + noticeHeight) * scale).rounded() + DoubleTapRunDetail.height(of: run)),
             escape: close,
             notice: run.resultDetail.isEmpty ? nil : run.resultDetail,
             status: status
@@ -240,7 +242,7 @@ extension AppModel {
             detail: .facts(facts),
             primary: primary,
             secondary: secondary,
-            contentHeight: 116 + CGFloat(facts.count) * 26,
+            contentHeight: ((116 + CGFloat(facts.count) * 26) * CGFloat(NookTheme.density.textScale)).rounded(),
             escape: close,
             notice: tr(outcome.submit == nil ? "doubletap.notSent" : "doubletap.card.check"),
             status: outcome.submit == nil ? nil : CardStatus(text: tr("card.status.approval"), tone: .waiting)
