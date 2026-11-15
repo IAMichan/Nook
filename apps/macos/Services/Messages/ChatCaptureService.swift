@@ -642,8 +642,25 @@ final class ChatCaptureService: ObservableObject {
     /// one more after it (`readNow`).
     func readLive(_ bridge: ChatBridge) {
         guard (enabled && sources.isOn(bridge.app)) || bridge.alwaysOn, bridge.isReady else { return }
-        readNow(bridge)
+        // A burst (a busy group, a catch-up after sleep) is one read a moment later, not one per change: each read
+        // merges and saves the inbox and redraws what shows it. Further apart as the energy plan slows down, and when
+        // no one can see the screen.
+        guard liveSoon.insert(bridge.bridgeID).inserted else { return }
+        let plan = EnergyMonitor.shared.plan
+        let delay = plan.unseen ? Self.liveGapUnseen : Self.liveGap * plan.slowdown
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self else { return }
+            self.liveSoon.remove(bridge.bridgeID)
+            self.readNow(bridge)
+        }
     }
+
+    /// Bridges with a live read coming (`readLive`), by `bridgeID`.
+    private var liveSoon: Set<String> = []
+    /// How long changes are gathered into one live read; while no one can see the screen, longer.
+    private static let liveGap: TimeInterval = 0.4
+    private static let liveGapUnseen: TimeInterval = 5
 
     /// Bridges told to read again while they were reading.
     private var readAgain: Set<String> = []

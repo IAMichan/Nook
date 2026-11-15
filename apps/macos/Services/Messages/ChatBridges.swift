@@ -1893,6 +1893,13 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The next read comes because the line said something changed: it asks only the conversations that did, not the
     /// dozen of a usual turn, so a busy workspace stays well within Slack's rate limits.
     private var liveTurn = false
+    /// When `client.counts` was last asked, and whether the line said a conversation was read since: a live read asks it
+    /// only then (or once a minute), not for every message.
+    private var countsAt: Date?
+    private var countsDue = false
+    private static let countsGap: TimeInterval = 60
+    /// How recently a conversation must have been active to be read again whole when it has no news.
+    private static let rereadWindow: TimeInterval = 2 * 86_400
 
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
@@ -1991,6 +1998,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         stale = [:]
         gone = [:]
         lastRead = [:]
+        countsAt = nil
+        countsDue = false
         recent = [:]
         isWorking = false
     }
@@ -2023,8 +2032,15 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
             // reading a chat in Slack reads it in Nook too. A pasted token gets no answer to that: it asks each
             // conversation that may still be unread instead. Without either Nook counts new messages itself.
-            let counts = try? await call("client.counts", [:], auth: auth)
-            var marks = counts.map(SlackData.readMarks) ?? [:]
+            // A live read of a new message keeps where you stood: only a read elsewhere (or a minute) asks again.
+            let quick = liveTurn && live.isLive && !countsDue && !lastRead.isEmpty
+                && countsAt.map { Date().timeIntervalSince($0) < Self.countsGap } ?? false
+            let counts = quick ? nil : try? await call("client.counts", [:], auth: auth)
+            if !quick {
+                countsAt = Date()
+                countsDue = false
+            }
+            var marks = quick ? lastRead : counts.map(SlackData.readMarks) ?? [:]
             if marks.isEmpty { marks = await infoMarks(auth: auth) }
             // The same answer says each conversation's newest message: one newer than Nook read is read now, before the
             // busiest, so a message in a quiet conversation never waits for its turn in the rotation.
@@ -2048,9 +2064,12 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             // A conversation Slack says has nothing newer is read as its newest messages instead of only what is newer
             // (which would be nothing): as many requests, and an edit, an emoji or a deletion by someone else of a recent
             // message shows, also without the live line.
+            // Only a conversation active in the last two days: older messages are rarely changed, and each such read
+            // brings its 30 messages to compare.
+            let lately = Date().timeIntervalSince1970 - Self.rereadWindow
             let rereads = Set(picked.filter { conversation in
                 guard stale[conversation.id] == nil, let read = newest[conversation.id].flatMap(Double.init),
-                      let last = latest[conversation.id] else { return false }
+                      let last = latest[conversation.id], last > lately else { return false }
                 return last <= read + 0.000_000_5
             }.map(\.id))
             let asked = await ChatParallel.ask(picked) { [self] conversation -> ChatParallel.Asked<SlackRead> in
@@ -2588,6 +2607,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         case .read(let id, _):
             // Read (or marked unread) elsewhere: the next read asks where you stand, and the count follows at once.
             guard conversations.contains(where: { $0.id == id }) else { return }
+            countsDue = true
             liveTurn = true
             onChange()
         case .listChanged:

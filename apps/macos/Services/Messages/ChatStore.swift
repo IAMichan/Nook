@@ -471,7 +471,7 @@ final class ChatStore {
     /// messages older than the ones the chat shows): two blue ticks from now on. Only your newest `limit` are looked at;
     /// one still going out, one that failed and a deleted one stay as they are.
     @discardableResult
-    func markRead(_ key: String, limit: Int = 500, where read: (InboxMessage) -> Bool) -> Bool {
+    func markRead(_ key: String, limit: Int = 200, where read: (InboxMessage) -> Bool) -> Bool {
         guard let chat = chatID(key) else { return true }
         let sql = "SELECT \(Self.messageColumns) FROM message m WHERE m.chat = ? AND m.mine = 1 ORDER BY m.at DESC LIMIT ?"
         guard let stmt = prepared(sql) else { return false }

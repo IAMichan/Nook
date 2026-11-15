@@ -11,8 +11,9 @@ import ImageIO
 @MainActor
 final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     let app = "teams"
-    /// Once a minute; every 15 s while a message you sent in the last hour waits to be read, so its ticks turn as soon
-    /// as Teams says they read it (Teams has no live line Nook holds).
+    /// Once a minute; every 15 s while a message you sent in the last 15 minutes waits to be read, so its ticks turn as
+    /// soon as Teams says they read it (Teams has no live line Nook holds). Most messages are read within minutes, if at
+    /// all soon; later the usual minute is enough.
     var interval: TimeInterval {
         let recent = Date().addingTimeInterval(-Self.tickWatch)
         let waiting = web.values.contains { state in
@@ -21,7 +22,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         return waiting ? 15 : 60
     }
     /// How long after you sent a message its ticks are watched closely.
-    private static let tickWatch: TimeInterval = 3600
+    private static let tickWatch: TimeInterval = 900
 
     enum State: Equatable {
         /// This build of Nook has no app id to sign in as.
@@ -526,8 +527,13 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             guard let waiting = state.unseen[chat.id], let horizons = try? await webGet(
                 session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token,
                 account: account.id) else { continue }
-            let now = TeamsWebData.read(waiting.messages, horizons: TeamsWebData.horizons(horizons, me: session.me),
-                                        group: waiting.group, names: waiting.names)
+            let marks = TeamsWebData.horizons(horizons, me: session.me)
+            // No one's horizon: read receipts are off in this chat (or it is too big for them). Nothing to wait for.
+            guard !marks.isEmpty else {
+                state.unseen[chat.id] = nil
+                continue
+            }
+            let now = TeamsWebData.read(waiting.messages, horizons: marks, group: waiting.group, names: waiting.names)
             let moved = zip(waiting.messages, now).filter { $0.0.receipt != $0.1.receipt || $0.0.readers != $0.1.readers }.map(\.1)
             let still = TeamsWebData.unseen(now)
             state.unseen[chat.id] = still.isEmpty ? nil : Unseen(messages: still, group: waiting.group, names: waiting.names)

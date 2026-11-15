@@ -13,11 +13,11 @@ final class SnapchatBridge: ChatHistoryBridge {
     /// The website keeps no history beyond what it shows, so walking back finds nothing older; edits and deletions are
     /// found by laying each read beside what Nook keeps (`SnapchatWebData.changes`).
     var historyChanges: Bool { false }
-    /// Every 30 s; every 10 s while a message you sent in the last hour is not opened yet, so the list's "Opened" turns
-    /// its ticks blue as soon as the website says it (the website has no live line Nook holds).
-    var interval: TimeInterval { waitsToBeOpened ? 10 : 30 }
+    /// Every 30 s; every 15 s while a message you sent in the last 15 minutes is not opened yet, so the list's "Opened"
+    /// turns its ticks blue soon after the website says it (the website has no live line Nook holds).
+    var interval: TimeInterval { waitsToBeOpened ? 15 : 30 }
     private(set) var isWorking = false
-    /// At the last read, a chat's newest message was yours, sent in the last hour and not opened yet.
+    /// At the last read, a chat's newest message was yours, sent in the last 15 minutes and not opened yet.
     private var waitsToBeOpened = false
 
     /// Chats whose messages are read again per round when their line in the list changed.
@@ -58,7 +58,7 @@ final class SnapchatBridge: ChatHistoryBridge {
                 chats.append(SnapchatWebData.chat(row, kept: kept[row.id] ?? [], snapLabel: tr("chats.snapchat.snap"), pictures: pictures))
             }
             rows = named
-            let recent = Date().addingTimeInterval(-3600)
+            let recent = Date().addingTimeInterval(-900)
             waitsToBeOpened = list.contains { row in
                 guard let newest = kept[row.id]?.last, newest.line.isMine, newest.date > recent else { return false }
                 return row.receipt != .read

@@ -649,9 +649,11 @@ final class WhatsAppLink: ObservableObject {
                     // plan slows down.
                     if Date().timeIntervalSince(lastChatList) > 300 * EnergyMonitor.shared.plan.slowdown {
                         await loadChats(provider, gen: gen)
-                    } else if gatewayCountsUnread, inbox.conversations.values.contains(where: { $0.unread > 0 }),
-                              Date().timeIntervalSince(lastReadCheck) > Self.readCheckGap * EnergyMonitor.shared.plan.slowdown {
-                        // A chat waits in Nook: whether it was read on the phone is asked often, not every five minutes.
+                    } else if gatewayCountsUnread, !EnergyMonitor.shared.plan.unseen,
+                              Date().timeIntervalSince(lastReadCheck) > Self.readCheckGap * EnergyMonitor.shared.plan.slowdown,
+                              waitsFreshly() {
+                        // A chat that just came in waits in Nook (its card or notification may be up): whether it was
+                        // read on the phone is asked often, not every five minutes.
                         await checkReadOnPhone(provider, gen: gen)
                     }
                 case .needsQR:
@@ -838,8 +840,18 @@ final class WhatsAppLink: ObservableObject {
 
     /// When the phone's chat list was last asked only for what was read there (`checkReadOnPhone`).
     private var lastReadCheck = Date.distantPast
-    /// How often that is asked while a chat waits in Nook.
-    private static let readCheckGap: TimeInterval = 20
+    /// How often that is asked while a chat waits in Nook, and how new its message must be: the phone's whole list is
+    /// read for it, so only while something just came in.
+    private static let readCheckGap: TimeInterval = 30
+    private static let readCheckFresh: TimeInterval = 900
+
+    /// A chat counts something new in Nook from a message of the last `readCheckFresh`.
+    private func waitsFreshly() -> Bool {
+        let fresh = Date().addingTimeInterval(-Self.readCheckFresh)
+        return inbox.conversations.values.contains { conversation in
+            conversation.unread > 0 && (conversation.messages.last { !$0.fromMe }?.date ?? .distantPast) > fresh
+        }
+    }
 
     /// The chats the phone's list counts as read while Nook still counts something new in them: read there, so read in
     /// Nook too (a gateway that counts unread messages itself, OpenWA, says it only that way).

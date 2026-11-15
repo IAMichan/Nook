@@ -122,6 +122,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         return url
     }
 
+    /// How far each chat's archived messages of yours were marked read (`ChatStore.markRead`), by Telegram's message id.
+    private var archivedRead: [Int64: Int64] = [:]
+
     /// A read is asked for this turn of the main thread already (`tellIfChanged`).
     private var told = false
 
@@ -220,6 +223,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         members = [:]
         membersAsked = []
         viewersAsked = [:]
+        archivedRead = [:]
     }
 
     /// An edit of a message older than what this bridge holds: Nook's archive takes it, under the chat's key in the
@@ -454,10 +458,14 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 chats[id]?.readOutbox = upTo
                 markRead(upTo: upTo, in: id)
                 askViewers(in: id)
-                // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says.
-                if let known = chats[id], !known.title.isEmpty {
+                // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says. The
+                // held ones reach the archive the usual way, so only a mark below them is passed on, once per mark.
+                let held = messages[id]?.compactMap { TelegramData.ids($0.id)?.message }.min()
+                let mark = min(upTo, held.map { $0 - 1 } ?? upTo)
+                if mark > (archivedRead[id] ?? 0), let known = chats[id], !known.title.isEmpty {
+                    archivedRead[id] = mark
                     ChatCaptureService.shared.archiveRead(chat: ChatInbox.key(app: app, chat: shownName(known))) { message in
-                        TelegramData.ids(message.id).map { $0.message <= upTo } ?? false
+                        TelegramData.ids(message.id).map { $0.message <= mark } ?? false
                     }
                 }
             }
