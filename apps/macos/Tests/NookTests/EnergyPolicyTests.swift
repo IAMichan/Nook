@@ -105,6 +105,28 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(busy: true), mode: .saver).pace, .paused)
     }
 
+    /// A Mac that keeps reading memory back from swap freezes everything: Nook steps back, even when macOS's own pressure
+    /// level still says "normal".
+    func testShortOnMemoryPausesOptionalWork() {
+        let tight = EnergyPolicy.plan(for: EnergySignals(memoryTight: true), mode: .automatic)
+        XCTAssertEqual(tight.pace, .paused)
+        XCTAssertEqual(tight.reasons, [.memory])
+        XCTAssertFalse(tight.runsLocalModels)
+        XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(memoryTight: true), mode: .saver).pace, .paused)
+        // Full power keeps going, lighter: the swap is still there.
+        let full = EnergyPolicy.plan(for: EnergySignals(memoryTight: true), mode: .full)
+        XCTAssertEqual(full.pace, .light)
+        XCTAssertEqual(full.reasons, [.memory])
+    }
+
+    func testMemoryCountsAsTightFromThePressureLevelOrSustainedSwapping() {
+        XCTAssertFalse(EnergySignals.isMemoryTight(pressureLevel: 1, swapinsPerSecond: nil))
+        XCTAssertFalse(EnergySignals.isMemoryTight(pressureLevel: 1, swapinsPerSecond: 2), "a little swapping in is normal")
+        XCTAssertTrue(EnergySignals.isMemoryTight(pressureLevel: 1, swapinsPerSecond: EnergySignals.swapinsPerSecondTight))
+        XCTAssertTrue(EnergySignals.isMemoryTight(pressureLevel: 2, swapinsPerSecond: nil))
+        XCTAssertTrue(EnergySignals.isMemoryTight(pressureLevel: 4, swapinsPerSecond: 0))
+    }
+
     func testFullPowerIgnoresTheBatteryAndABusyMacButNotHeat() {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .full), .fullSpeed)
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(busy: true), mode: .full), .fullSpeed)

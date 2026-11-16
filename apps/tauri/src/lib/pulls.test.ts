@@ -89,13 +89,13 @@ describe("pull request filter", () => {
 
 describe("pull request detail", () => {
   it("words notes, events and activities", () => {
-    expect(noteText(null)).toBe("Klaar om te mergen.");
-    expect(noteText("conflict")).toBe("Er is een merge-conflict met de basisbranch.");
-    expect(activitySentence("labeled", "bug")).toBe("voegde het label bug toe");
-    expect(activitySentence("closed", "")).toBe("sloot deze pull request");
+    expect(noteText(null)).toBe("Ready to merge.");
+    expect(noteText("conflict")).toBe("There is a merge conflict with the base branch.");
+    expect(activitySentence("labeled", "bug")).toBe("added the label bug");
+    expect(activitySentence("closed", "")).toBe("closed this pull request");
     const base = { id: "x", author: "ada", body: "", date: null, url: null };
-    expect(eventLabel({ ...base, kind: "review", state: "CHANGES_REQUESTED" })).toEqual({ text: "vroeg om wijzigingen", tone: "bad" });
-    expect(eventLabel({ ...base, kind: "lineComment", path: "a.rs", line: 3 }).text).toBe("reageerde op a.rs:3");
+    expect(eventLabel({ ...base, kind: "review", state: "CHANGES_REQUESTED" })).toEqual({ text: "requested changes", tone: "bad" });
+    expect(eventLabel({ ...base, kind: "lineComment", path: "a.rs", line: 3 }).text).toBe("commented on a.rs:3");
   });
 
   it("keeps the chosen merge method only when the repository allows it", () => {

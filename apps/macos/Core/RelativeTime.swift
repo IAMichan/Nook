@@ -14,4 +14,22 @@ extension NookDates {
         if calendar.isDateInYesterday(date) { return tr("agents.yesterdayAt", time.string(from: date)) }
         return formatter("EEE d MMM", locale: language).string(from: date)
     }
+
+    /// "14:05" in the app's language: the time of a message, a wake-up or a reset. One cached formatter for the whole
+    /// app; never a `DateFormatter` with `dateFormat = "HH:mm"` of a view's own.
+    static func clock(_ date: Date) -> String {
+        formatter("HH:mm", locale: appLocale).string(from: date)
+    }
+
+    /// A list's time: "14:05" today, else the day ("Yesterday", "Monday", "12 Oct"), as a chat list shows it.
+    static func clockOrDay(_ date: Date, now: Date = Date()) -> String {
+        if Calendar.current.isDate(date, inSameDayAs: now) { return clock(date) }
+        return ChatTimeline.dayLabel(date, now: now, locale: Locale(identifier: appLocale))
+    }
+
+    /// A message's time with its day: "14:05" today, else "Yesterday 14:05", "Monday 14:05", "12 Oct 14:05".
+    static func dayAndClock(_ date: Date, now: Date = Date()) -> String {
+        if Calendar.current.isDate(date, inSameDayAs: now) { return clock(date) }
+        return ChatTimeline.dayLabel(date, now: now, locale: Locale(identifier: appLocale)) + " " + clock(date)
+    }
 }

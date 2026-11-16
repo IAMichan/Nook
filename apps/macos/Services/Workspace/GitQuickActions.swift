@@ -211,4 +211,55 @@ extension GitService {
         }
         return nil
     }
+
+    /// What the repository's instructions for people and agents (AGENTS.md, CLAUDE.md, CONTRIBUTING.md) ask of a pull
+    /// request: every section whose heading names one, and every other line that does. Nil when they ask nothing.
+    static func pullRequestGuidelines(_ root: String) -> String? {
+        let candidates = ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"]
+        var seen = Set<String>()
+        var parts: [String] = []
+        for name in candidates {
+            guard let text = try? String(contentsOfFile: (root as NSString).appendingPathComponent(name), encoding: .utf8) else { continue }
+            let lines = pullRequestLines(text).filter { seen.insert($0.trimmingCharacters(in: .whitespaces)).inserted }
+            if !lines.isEmpty { parts.append("From \(name):\n" + lines.joined(separator: "\n")) }
+        }
+        let joined = parts.joined(separator: "\n\n")
+        return joined.isEmpty ? nil : String(joined.prefix(6_000))
+    }
+
+    /// The lines of a markdown text about pull requests: whole sections under a heading that names them, and single lines
+    /// (a bullet, a paragraph) elsewhere that do.
+    static func pullRequestLines(_ text: String) -> [String] {
+        var result: [String] = []
+        var sectionLevel: Int?
+        var inFence = false
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inFence.toggle() }
+            let level = inFence ? 0 : line.prefix { $0 == "#" }.count
+            if level > 0, line.dropFirst(level).first == " " {
+                if let open = sectionLevel, level > open {
+                    result.append(raw)
+                    continue
+                }
+                sectionLevel = mentionsPullRequest(line) ? level : nil
+                if sectionLevel != nil { result.append(raw) }
+                continue
+            }
+            if sectionLevel != nil {
+                if !line.isEmpty { result.append(raw) }
+            } else if mentionsPullRequest(line) {
+                result.append(raw)
+            }
+        }
+        return result
+    }
+
+    private static func mentionsPullRequest(_ line: String) -> Bool {
+        let lower = line.lowercased()
+        if ["pull request", "pull-request", "merge request", "change request", "pr description", "pr title", "pr template", "pr body"]
+            .contains(where: lower.contains) { return true }
+        // "PR" as a word of its own, in capitals: not "prefer" or "pr" inside a path.
+        return line.range(of: #"\bPRs?\b"#, options: .regularExpression) != nil
+    }
 }

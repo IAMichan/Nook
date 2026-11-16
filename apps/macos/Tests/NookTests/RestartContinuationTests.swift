@@ -23,6 +23,25 @@ final class RestartContinuationTests: XCTestCase {
         XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "it waited for an approval the restart cut off")
     }
 
+    func testASessionYourQuitStoppedGoesOnHoweverLongNookWasClosed() {
+        var run = interrupted()
+        run.updatedAt = now.addingTimeInterval(-2 * 24 * 3600)
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "a crash two days ago is yours to pick up")
+        run.stoppedByQuit = true
+        XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now), "you quit Nook and opened it again")
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: false, now: now), "only with the setting on")
+        run.interruptedWhileWaiting = true
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "it still waits on you")
+    }
+
+    func testAWaitCutByAQuitLongAgoContinues() {
+        var run = TestData.run(status: .completed)
+        run.cutBackgroundWork = CutBackgroundWork(labels: ["Audit chats"], at: now.addingTimeInterval(-24 * 3600))
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now))
+        run.stoppedByQuit = true
+        XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now))
+    }
+
     func testChainCountsOnlyWithinTheLoopWindow() {
         var run = interrupted()
         run.continuations = RestartContinuation.limit
@@ -42,7 +61,9 @@ final class RestartContinuationTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         object["lastContinuedAt"] = nil
         object["interruptedWhileWaiting"] = nil
+        object["stoppedByQuit"] = nil
         let decoded = try JSONDecoder().decode(WorkspaceRun.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(decoded.stoppedByQuit)
         XCTAssertNil(decoded.lastContinuedAt)
         XCTAssertNil(decoded.interruptedWhileWaiting)
     }
@@ -105,5 +126,25 @@ final class RestartBackgroundWaitTests: XCTestCase {
         var server = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash", state: .running)
         server.background = true
         XCTAssertEqual(RestartContinuation.waitedOn([running, done, server]), ["Audit chats"])
+    }
+    /// A crash after the turn's result was saved but before its status was: the turn had finished, so it is not sent
+    /// back to work. A message after the result (a new turn that was cut off) still counts as interrupted.
+    func testATurnWhoseResultWasSavedHadEnded() {
+        let ask = RunEvent(kind: .user, text: "Fix the build")
+        let reply = RunEvent(kind: .assistant, text: "Done")
+        let result = RunEvent(kind: .result, text: "", state: .done)
+        XCTAssertTrue(RestartContinuation.turnEnded([ask, reply, result]))
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, reply]), "cut off before its result")
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, reply, result, RunEvent(kind: .user, text: "Now the tests")]),
+                       "the next turn was cut off")
+        var undone = result
+        undone.rolledBack = true
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, undone, RunEvent(kind: .user, text: "Again")]))
+        XCTAssertFalse(RestartContinuation.turnEnded([]))
+    }
+
+    func testTheContinueMessageWarnsAgainstRepeatingSideEffects() {
+        XCTAssertTrue(RestartContinuation.message.hasPrefix("Continue where you left off."))
+        XCTAssertTrue(RestartContinuation.message.contains("do not repeat"))
     }
 }

@@ -235,7 +235,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 16px 8px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--smoke); color: var(--text2); border: 1px solid var(--line); }
   .chip.on { color: var(--paper); border-color: color-mix(in srgb, var(--iris) 55%, var(--line)); }
-  .count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--iris); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+  .count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--iris); color: var(--on-iris); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   .list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
   h4 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); }
   .fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; cursor: pointer; }

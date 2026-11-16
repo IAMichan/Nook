@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HookLogic, MAX_BODY, MAX_WAITING, isHook, mayListen, readLimited, roomOf } from "../worker/hooks.js";
+import { HookLogic, MAX_BODY, MAX_WAITING, answerResponse, isHook, mayListen, readLimited, roomOf } from "../worker/hooks.js";
 
 class Sockets {
   constructor() {
@@ -105,4 +105,45 @@ test("a body is read only up to the limit", async () => {
   const endless = new ReadableStream({ pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(1024)); } });
   assert.equal(await readLimited(post(endless), 4096), null);
   assert.ok(pulled < 10, "stopped reading");
+});
+
+const named = () =>
+  Object.assign(socket(), { attachment: null, serializeAttachment(v) { this.attachment = v; }, deserializeAttachment() { return this.attachment; } });
+
+test("when the Mac's socket goes, what waits on it is answered at once", async () => {
+  const sockets = new Sockets();
+  let id = 0;
+  const logic = new HookLogic(sockets, { timeoutMs: 60_000, newID: () => String(id++) });
+  const mac = named();
+  logic.listen(mac);
+  const answer = logic.deliver(request());
+  logic.closed(mac);
+  assert.equal((await answer).status, 503);
+  assert.equal(logic.waiting.size, 0);
+});
+
+test("a replaced socket's requests fail, the new socket's stay", async () => {
+  const sockets = new Sockets();
+  let id = 0;
+  const logic = new HookLogic(sockets, { timeoutMs: 60_000, newID: () => String(id++) });
+  const old = named();
+  logic.listen(old);
+  const lost = logic.deliver(request());
+  const mac = named();
+  logic.listen(mac);
+  assert.equal((await lost).status, 503);
+  old.readyState = 2;
+  const kept = logic.deliver(request());
+  logic.closed(old);
+  assert.equal(logic.waiting.size, 1);
+  logic.message(JSON.stringify({ id: JSON.parse(mac.sent[0]).id, status: 202, message: "ok" }));
+  assert.equal((await kept).status, 202);
+});
+
+test("an answer without a body is passed on without one", async () => {
+  const response = answerResponse({ status: 204, message: "" });
+  assert.equal(response.status, 204);
+  assert.equal(response.body, null);
+  assert.equal(answerResponse({ status: 205, message: "x" }).status, 205);
+  assert.equal(await answerResponse({ status: 202, message: "accepted" }).text(), "accepted\n");
 });

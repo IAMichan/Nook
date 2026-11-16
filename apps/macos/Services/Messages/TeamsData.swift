@@ -19,6 +19,10 @@ enum TeamsData {
         var preview: InboxMessage? = nil
         /// What Teams says of the chat: when it was made, its owners, the other person's address, its link.
         var profile: ChatProfile? = nil
+        /// How far the chat changed, as the Teams website's list counts it (`lastUpdatedMessageVersion`, else `version`):
+        /// it moves on an edit or a deletion too, which leave the newest message as it was. Nil where the list does not
+        /// say it (Graph).
+        var version: Double? = nil
     }
 
     /// A Teams account you signed in with. Its refresh token is in the Keychain under `refreshAccount`; the rest is not
@@ -81,8 +85,7 @@ enum TeamsData {
     static func token(_ json: [String: Any], now: Date = Date()) -> TokenResult {
         if let access = json["access_token"] as? String {
             // A number, whole or not (Microsoft sends a whole one), or a numeral; an hour when it says nothing.
-            let value = json["expires_in"]
-            let expires = (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? String).flatMap(Double.init) ?? 3600
+            let expires = ChatJSON.number(json["expires_in"]) ?? 3600
             return .token(access: access, refresh: json["refresh_token"] as? String, expires: now.addingTimeInterval(expires))
         }
         switch json["error"] as? String {
@@ -151,6 +154,8 @@ enum TeamsData {
                 }
             }
             profile.link = ChatProfile.text(chat["webUrl"] as? String)
+            // Graph says neither whether the chat is with a bot nor whether you muted it: `bot` and `mutedInApp` stay
+            // unknown for Teams (docs/INTEGRATIONS.md).
             result.profile = profile.isEmpty ? nil : profile
             return result
         }
@@ -159,7 +164,7 @@ enum TeamsData {
     /// The chats of several accounts, with a name that turns up in more than one account followed by the account
     /// ("Anna (contoso.com)"), so two chats of different accounts never become one in the Chats tab.
     static func distinguish(_ lists: [[Chat]], labels: [String]) -> [[Chat]] {
-        let fold = { (name: String) in name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let fold = ChatText.fold
         var accounts: [String: Set<Int>] = [:]
         for (index, list) in lists.enumerated() {
             for chat in list { accounts[fold(chat.name), default: []].insert(index) }
@@ -211,14 +216,10 @@ enum TeamsData {
                let sent = ChatJSON.date(message["createdDateTime"]) {
                 let detail = message["eventDetail"] as? [String: Any] ?? [:]
                 if let change = membership(detail, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.membership = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, membership: change)
                 }
                 if let change = groupChange(detail, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.groupChange = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, groupChange: change)
                 }
             }
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
@@ -246,6 +247,10 @@ enum TeamsData {
             // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
             if mine { inbox.receipt = .sent }
             if message["lastEditedDateTime"] as? String != nil { inbox.edited = true }
+            // Someone tagged you (Graph's `mentions`, each with the user it names): a quiet group still tells you.
+            if !mine, chat.isGroup { inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs(message), me: me) }
+            // Marked important or urgent by who wrote it (Graph's `importance`), for the notice path to weigh later.
+            inbox.importance = ChatImportance(graph: message["importance"])
             inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
             inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool, name: String?) in
                 let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]
@@ -255,6 +260,13 @@ enum TeamsData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// The user ids a Graph message tags (`mentions[].mentioned.user.id`).
+    static func mentionedIDs(_ message: [String: Any]) -> [String] {
+        (message["mentions"] as? [[String: Any]] ?? []).compactMap { mention in
+            ((mention["mentioned"] as? [String: Any])?["user"] as? [String: Any])?["id"] as? String
+        }
     }
 
     /// Who came into the chat or went, from a system notice's `eventDetail`: members added or removed by its `initiator`
@@ -363,16 +375,21 @@ enum TeamsData {
     /// announce a message in the list a few seconds before the chat's own messages show it; a chat read too early must
     /// be read again. System notices count too, since the list announces those as well.
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
+        caughtUp(newest: (json["value"] as? [[String: Any]] ?? []).compactMap { ChatJSON.date($0["createdDateTime"]) }.max(), last: last)
+    }
+
+    /// Whether the newest message read is the one the chat list announced (`last`), for Graph and for the website
+    /// (`TeamsWebData.caughtUp`) alike. The list and the messages round the same moment differently (milliseconds or
+    /// not), so a second's difference is the same message.
+    static func caughtUp(newest: Date?, last: Date?) -> Bool {
         guard let last else { return true }
-        let newest = (json["value"] as? [[String: Any]] ?? []).compactMap { ChatJSON.date($0["createdDateTime"]) }.max()
-        // The list and the messages round the same moment differently (milliseconds or not).
         return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
     }
 
     /// How many of these messages from others came after you last read the chat.
     static func unread(_ messages: [InboxMessage], readUntil: Date?) -> Int {
         guard let readUntil else { return 0 }
-        return messages.filter { !$0.isMine && $0.date > readUntil }.count
+        return messages.count(where: { !$0.isMine && $0.date > readUntil })
     }
 
     /// Teams' HTML as plain text: line breaks kept, tags dropped, the common entities back.
@@ -382,10 +399,7 @@ enum TeamsData {
             text = text.replacingOccurrences(of: tag, with: "\n", options: .caseInsensitive)
         }
         text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
-            text = text.replacingOccurrences(of: entity, with: character)
-        }
-        return text.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+        return HTMLEntities.decode(text).replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

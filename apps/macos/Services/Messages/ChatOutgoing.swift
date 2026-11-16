@@ -265,7 +265,7 @@ struct ChatPlace: Equatable, Sendable {
             #"@"# + number + #","# + number,
         ]
         for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern),
+            guard let regex = RegexCache.regex(pattern),
                   let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
                   let latRange = Range(match.range(at: 1), in: trimmed), let lonRange = Range(match.range(at: 2), in: trimmed),
                   let latitude = Double(trimmed[latRange]), let longitude = Double(trimmed[lonRange]) else { continue }
@@ -289,7 +289,7 @@ struct ChatContactCard: Equatable, Sendable {
     }
 
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (6...20).contains(cleanPhone.filter(\.isNumber).count)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ChatHandle.digitCount.contains(ChatHandle.digits(cleanPhone).count)
     }
 
     /// The card as a vCard, for an app that takes one.

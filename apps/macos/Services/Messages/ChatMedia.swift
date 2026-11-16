@@ -58,14 +58,36 @@ struct ChatMedia: Codable, Equatable, Sendable {
         if gif || type == "image/gif" || ext == "gif" { return .gif }
         if voice { return .voice }
         if type.hasPrefix("image/") || Self.pictureExtensions.contains(ext) { return .photo }
-        if type.hasPrefix("video/") || ["mp4", "mov", "m4v"].contains(ext) { return .video }
-        if type.hasPrefix("audio/") || ["m4a", "mp3", "aac", "caf", "wav", "ogg", "opus", "amr"].contains(ext) { return .audio }
+        if type.hasPrefix("video/") || Self.videoExtensions.contains(ext) { return .video }
+        if type.hasPrefix("audio/") || Self.audioExtensions.contains(ext) { return .audio }
         return .file
     }
 
-    /// The names a photo ends in, also when its app sends it as a document.
-    private static let pictureExtensions: Set<String> = ["jpg", "jpeg", "jfif", "png", "heic", "heif", "webp", "tif", "tiff",
-                                                         "bmp", "avif"]
+    /// The kind of a file by its name alone (a link, a document's name): what `kind(mimeType:name:)` says of it.
+    static func kind(name: String) -> Kind { kind(mimeType: nil, name: name) }
+
+    /// The names a photo ends in, also when its app sends it as a document, and a link to one. One list for every app
+    /// and every link (`ChatFormat.linkKind`).
+    static let pictureExtensions: Set<String> = ["jpg", "jpeg", "jfif", "png", "heic", "heif", "webp", "tif", "tiff",
+                                                 "bmp", "avif"]
+    /// The names a video ends in that this Mac plays.
+    static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
+    /// The names a sound ends in.
+    static let audioExtensions: Set<String> = ["m4a", "mp3", "aac", "caf", "wav", "ogg", "opus", "amr", "flac"]
+
+    /// What stands for the file in a text Nook reads (a chat's lines for its answers), in English like the rest of that
+    /// text: "[photo]", "[voice message]", "[document: plan.pdf]". The same for every app.
+    var placeholder: String {
+        switch kind {
+        case .photo: return "[photo]"
+        case .video: return "[video]"
+        case .gif: return "[GIF]"
+        case .sticker: return "[sticker]"
+        case .audio: return "[audio]"
+        case .voice: return "[voice message]"
+        case .file: return "[document\(name.flatMap { $0.isEmpty ? nil : ": " + $0 } ?? "")]"
+        }
+    }
 
     /// How the chat shows the file: as its kind, except a document that is a photo, a GIF, a video or a sound by its
     /// name (a photo sent "as a document" in WhatsApp, a picture attached to a Slack or Teams message), which shows as
@@ -175,7 +197,25 @@ struct ChatMedia: Codable, Equatable, Sendable {
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         guard let file = files.first(where: { !$0.lastPathComponent.hasPrefix(".") }) else { return nil }
         markWhole(file.path)
+        touch(dir)
         return file
+    }
+
+    /// Marks a kept file's folder as used now (at most once a day), so the limits let go of the files nobody opened for
+    /// the longest first, not of the ones fetched longest ago.
+    static func touch(_ dir: URL, now: Date = Date()) {
+        let modified = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now
+        guard now.timeIntervalSince(modified) > 86_400 else { return }
+        try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: dir.path)
+    }
+
+    /// All files every bridge fetched together stay under this; the ones unused longest go first. Each bridge may keep
+    /// a lower limit of its own (`trimKept`).
+    static let totalLimit = 2 * 1024 * 1024 * 1024
+
+    /// Keeps the whole folder within `limit` bytes, the folders used longest ago going first (`touch`).
+    static func trimAll(limit: Int = totalLimit, in folder: URL = folder) {
+        trimKept(prefix: "", limit: limit, in: folder)
     }
 
     /// The folders of the keys that start with `prefix`.
@@ -231,6 +271,8 @@ extension ChatMedia {
     static func fetchingFiles(_ messages: [InboxMessage], limit: Int = parallelFetches,
                               fetch: @escaping @MainActor (InboxMessage) async -> String?) async -> [InboxMessage] {
         var result = messages
+        // A page for the background backfill: old messages go to the archive without their files (`ChatBackfill.filling`).
+        guard !ChatBackfill.filling else { return result }
         let wanted = messages.indices.filter { messages[$0].media != nil && messages[$0].media?.path == nil }.reversed()
         guard !wanted.isEmpty else { return result }
         await withTaskGroup(of: (Int, String?).self) { group in

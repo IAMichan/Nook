@@ -41,7 +41,7 @@ enum CodexRPCMessage: Equatable {
 }
 
 /// A question an agent asks you (Codex `item/tool/requestUserInput`, Claude Code's AskUserQuestion), one or more at a time.
-struct RunQuestion: Equatable, Sendable {
+struct RunQuestion: Codable, Equatable, Sendable {
     var id: String
     var header: String
     var question: String
@@ -49,11 +49,87 @@ struct RunQuestion: Equatable, Sendable {
     var multiSelect: Bool
     /// The agent accepts an answer of your own besides the options.
     var allowsOther: Bool
+
+    init(id: String, header: String, question: String, options: [RunQuestionOption], multiSelect: Bool, allowsOther: Bool) {
+        self.id = id
+        self.header = header
+        self.question = question
+        self.options = options
+        self.multiSelect = multiSelect
+        self.allowsOther = allowsOther
+    }
+
+    /// Saved with its session (`SavedQuestion`): what a later Nook leaves out reads as empty, so the session still loads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        header = try c.decodeIfPresent(String.self, forKey: .header) ?? ""
+        question = try c.decodeIfPresent(String.self, forKey: .question) ?? ""
+        options = try c.decodeIfPresent([RunQuestionOption].self, forKey: .options) ?? []
+        multiSelect = try c.decodeIfPresent(Bool.self, forKey: .multiSelect) ?? false
+        allowsOther = try c.decodeIfPresent(Bool.self, forKey: .allowsOther) ?? true
+    }
 }
 
-struct RunQuestionOption: Equatable, Sendable {
+struct RunQuestionOption: Codable, Equatable, Sendable {
     var label: String
     var description: String
+    /// A mock-up or code snippet shown under the option in the code font (`QuestionPreview`); only Claude Code sends
+    /// one, empty otherwise.
+    var preview: String = ""
+
+    init(label: String, description: String, preview: String = "") {
+        self.label = label
+        self.description = description
+        self.preview = preview
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        preview = try c.decodeIfPresent(String.self, forKey: .preview) ?? ""
+    }
+}
+
+/// The preview an option of Claude Code's AskUserQuestion can carry (`options[].preview`, Markdown: a mock-up, a code
+/// snippet, an ASCII layout). Every question view shows it under its option in the code font (`QuestionOptionPreview`);
+/// the agents that send no previews (Codex, Pi, the ACP agents) simply leave it empty.
+enum QuestionPreview {
+    /// The most of a preview that is kept: enough for a screen-sized mock-up, not a whole file.
+    static let characterLimit = 4_000
+
+    /// An option's preview as it came, trimmed and cut at `characterLimit`; empty when there is none.
+    static func read(_ option: [String: Any]) -> String {
+        guard let raw = option["preview"] as? String else { return "" }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > characterLimit ? String(trimmed.prefix(characterLimit)) + "…" : trimmed
+    }
+
+    /// The preview as it shows in the code font: a code fence around the whole of it is taken off (the box already
+    /// reads as code), trailing spaces of each line too; the layout of the lines stays as it is.
+    static func display(_ preview: String) -> String {
+        var lines = preview.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        if lines.count >= 2, lines[0].hasPrefix("```"), lines[lines.count - 1].trimmingCharacters(in: .whitespaces) == "```" {
+            lines = Array(lines.dropFirst().dropLast())
+        }
+        return lines.map { line in
+            var line = line
+            while line.last == " " || line.last == "\t" { line.removeLast() }
+            return line
+        }.joined(separator: "\n")
+    }
+
+    /// Claude Code's `annotations` (keyed by question text): the preview of the option chosen on each question, for
+    /// a single choice only (several chosen options have no one preview). Empty when none of them had one.
+    static func annotations(_ questions: [(question: String, options: [(label: String, preview: String)], chosen: [String])]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        for entry in questions where entry.chosen.count == 1 {
+            guard let option = entry.options.first(where: { $0.label == entry.chosen[0] }), !option.preview.isEmpty else { continue }
+            result[entry.question] = ["preview": option.preview]
+        }
+        return result
+    }
 }
 
 /// Codex asks permission for a command or a file change.
@@ -192,6 +268,12 @@ enum CodexRPC {
 
     static func interruptParams(threadID: String, turnID: String) -> [String: Any] {
         ["threadId": threadID, "turnId": turnID]
+    }
+
+    /// `thread/sample`: a one-off answer from the thread's context after `turnID`, without changing the thread (the
+    /// suggested next prompt). Low effort: it is a line, not work.
+    static func sampleParams(threadID: String, turnID: String, prompt: String) -> [String: Any] {
+        ["threadId": threadID, "expectedTurnId": turnID, "prompt": prompt, "effort": "low"]
     }
 
     /// `thread/rollback`: drops the thread's last `numTurns` turns from its history (not the files; Nook restores those).
@@ -453,6 +535,7 @@ enum CodexAppServerMapper {
         case "item/tool/requestUserInput":
             let questions = ((params["questions"] as? [[String: Any]]) ?? []).compactMap { raw -> RunQuestion? in
                 guard let qid = raw["id"] as? String, let text = raw["question"] as? String else { return nil }
+                // No `preview`: Codex's options carry only a label and a description (docs/INTEGRATIONS.md).
                 let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
                     guard let label = option["label"] as? String else { return nil }
                     return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")
@@ -512,11 +595,7 @@ enum CodexAppServerMapper {
 
     /// Codex counts cached input inside `inputTokens`; keep them apart like the other agents.
     static func counts(_ raw: Any?) -> TokenCounts {
-        let object = (raw as? [String: Any]) ?? [:]
-        let cached = Int(ClaudeStreamParser.number(object["cachedInputTokens"]) ?? 0)
-        let input = Int(ClaudeStreamParser.number(object["inputTokens"]) ?? 0)
-        return TokenCounts(input: max(0, input - cached), output: Int(ClaudeStreamParser.number(object["outputTokens"]) ?? 0),
-                           cacheRead: cached, cacheWrite: Int(ClaudeStreamParser.number(object["cacheWriteInputTokens"]) ?? 0))
+        TokenUsageSplit.codex((raw as? [String: Any]) ?? [:])
     }
 }
 
@@ -542,14 +621,24 @@ final class CodexAppServerClient: @unchecked Sendable {
         get { lock.withLock { _turnID } }
         set { lock.withLock { _turnID = newValue } }
     }
+    /// The last turn that started on the thread, kept after it ends (`thread/sample` names it).
+    var lastTurnID: String? {
+        get { lock.withLock { _lastTurnID } }
+        set { lock.withLock { _lastTurnID = newValue } }
+    }
     private var _threadID: String?
     private var _turnID: String?
+    private var _lastTurnID: String?
 
-    init(spec: LaunchSpec) {
-        process = AgentProcess(spec: spec)
+    /// `transport` and `scheduler` replace the process and the clock in tests (a recorded agent, `ReplayTransport`).
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+        process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
         // A keeper's agent has seen ids from an earlier Nook: answers to those must not match new requests.
-        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
+        if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
+
+    /// Held while a line is written, with the id it takes: everything reaches Codex in the order Nook sent it.
+    private let writeLock = NSLock()
 
     var isRunning: Bool { process.isRunning }
 
@@ -571,25 +660,27 @@ final class CodexAppServerClient: @unchecked Sendable {
     }
 
     func request(_ method: String, _ params: [String: Any]? = nil, completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        let id = lock.withLock { () -> Int in
-            let id = nextID
-            nextID += 1
-            pending[id] = completion
-            return id
+        writeLock.withLock {
+            let id = lock.withLock { () -> Int in
+                let id = nextID
+                nextID = AcpRPC.nextRequestID(after: id)
+                pending[id] = completion
+                return id
+            }
+            process.send(CodexRPC.request(id: id, method: method, params: params))
         }
-        process.send(CodexRPC.request(id: id, method: method, params: params))
     }
 
     func notify(_ method: String, _ params: [String: Any]? = nil) {
-        process.send(CodexRPC.notification(method: method, params: params))
+        writeLock.withLock { process.send(CodexRPC.notification(method: method, params: params)) }
     }
 
     func respond(_ id: RPCID, _ result: [String: Any]) {
-        process.send(CodexRPC.response(id: id, result: result))
+        writeLock.withLock { process.send(CodexRPC.response(id: id, result: result)) }
     }
 
     func respondError(_ id: RPCID, code: Int = -32601, message: String) {
-        process.send(CodexRPC.errorResponse(id: id, code: code, message: message))
+        writeLock.withLock { process.send(CodexRPC.errorResponse(id: id, code: code, message: message)) }
     }
 
     func stop() {

@@ -97,8 +97,14 @@ enum DiskSpace {
 
     /// Free space on the volume of `url` as macOS counts it for things you need (purgeable space included).
     static func available(at url: URL = FileManager.default.homeDirectoryForCurrentUser) -> Int64? {
+        #if os(macOS)
         let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
         return values?.volumeAvailableCapacityForImportantUsage ?? values?.volumeAvailableCapacity.map(Int64.init)
+        #else
+        // swift-corelibs-foundation (the core tests on Linux) has no "important usage" capacity.
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityKey])
+        return values?.volumeAvailableCapacity.map(Int64.init)
+        #endif
     }
 
     /// Whether the disk counts as low now, given whether it did before (`recoveredBytes` gives the margin).

@@ -28,6 +28,12 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     var unread = true
     /// The session this one was started from (a delegated or forked session, a task another session spawned).
     var parentID: String? = nil
+    /// When you last brought it back from Settled (Reopen, or undoing a settle): until it has new activity after that, it
+    /// does not settle by itself again (`AutoSettlePolicy`).
+    var unsettledAt: Date? = nil
+    /// The SSH machine it runs on (`RemoteMachine.id`), nil on this Mac: which auto-settle rules apply
+    /// (`AutoSettlePolicy.Rules`).
+    var machine: String? = nil
 
     /// Needs you, from either source: the derived attention or a raw request flag.
     var needsYou: Bool { hasOpenRequest || attention.needsYou }
@@ -42,12 +48,18 @@ struct InboxState: Codable, Equatable, Sendable {
     var pinned: [String] = []
     /// Manual order of the Active section (ids that are gone are harmless).
     var order: [String] = []
+    /// When you gave each row of `order` its place. A place holds only until the session comes back with
+    /// something new (`InboxRow.lastActivity` after it): then it is unordered again and comes up on top of the list.
+    /// A row in `order` without a time keeps its place.
+    var orderedAt: [String: Date] = [:]
     var settled: Set<String> = []
     var dismissedWoke: Set<String> = []
 
-    init(pinned: [String] = [], order: [String] = [], settled: Set<String> = [], dismissedWoke: Set<String> = []) {
+    init(pinned: [String] = [], order: [String] = [], orderedAt: [String: Date] = [:], settled: Set<String> = [],
+         dismissedWoke: Set<String> = []) {
         self.pinned = pinned
         self.order = order
+        self.orderedAt = orderedAt
         self.settled = settled
         self.dismissedWoke = dismissedWoke
     }
@@ -55,9 +67,20 @@ struct InboxState: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pinned = (try? c.decode([String].self, forKey: .pinned)) ?? []
-        order = (try? c.decode([String].self, forKey: .order)) ?? []
+        // An order saved before the places had times was the old fixed order: it is let go, so sessions that come back
+        // rise to the top as they do now.
+        let times = try? c.decode([String: Date].self, forKey: .orderedAt)
+        order = times == nil ? [] : (try? c.decode([String].self, forKey: .order)) ?? []
+        orderedAt = times ?? [:]
         settled = (try? c.decode(Set<String>.self, forKey: .settled)) ?? []
         dismissedWoke = (try? c.decode(Set<String>.self, forKey: .dismissedWoke)) ?? []
+    }
+
+    /// The manual place of a row in Active, or nil when it has none: never placed, or back with something new since.
+    func activeRank(_ row: InboxRow, ranks: [String: Int]) -> Int? {
+        guard let rank = ranks[row.id] else { return nil }
+        if let placed = orderedAt[row.id], row.lastActivity > placed { return nil }
+        return rank
     }
 
     /// Pins `id` at `index` (default: on top). Pinning removes nothing else; the layout lets a pin win over settled.
@@ -67,11 +90,12 @@ struct InboxState: Codable, Equatable, Sendable {
     }
 
     /// Unpins; `index` places it in the manual Active order where it was dropped.
-    mutating func unpin(_ id: String, at index: Int? = nil) {
+    mutating func unpin(_ id: String, at index: Int? = nil, now: Date = Date()) {
         pinned.removeAll { $0 == id }
         guard let index else { return }
         order.removeAll { $0 == id }
         order.insert(id, at: min(max(index, 0), order.count))
+        orderedAt[id] = now
     }
 
     /// Settling a pinned thread unpins it.
@@ -86,7 +110,7 @@ struct InboxState: Codable, Equatable, Sendable {
 
     /// Moves `id` to `toIndex` (a final index) inside the section as it is shown.
     /// Only Pinned and Active have a manual order. Ids hidden from the section keep their relative place after it.
-    mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection) {
+    mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection, now: Date = Date()) {
         guard section.kind == .pinned || section.kind == .active else { return }
         var ids = section.rows.map(\.row.id)
         guard let from = ids.firstIndex(of: id) else { return }
@@ -100,6 +124,9 @@ struct InboxState: Codable, Equatable, Sendable {
         default:
             rest = order.filter { !ids.contains($0) }
             order = ids + rest
+            // Every row shown now has the place you see it in.
+            for id in ids { orderedAt[id] = now }
+            orderedAt = orderedAt.filter { order.contains($0.key) }
         }
     }
 }
@@ -112,22 +139,71 @@ struct InboxEntry: Identifiable, Equatable, Sendable {
     var woke: Bool
     /// How far the row sits in under the session that started it: 0 for a session of its own.
     var depth = 0
+    /// The sessions it sits under in the list, nearest first: folding any of them hides this row.
+    var ancestors: [String] = []
+    /// How many sessions sit under it in the list, at every level (its sub-threads).
+    var subThreads = 0
+    /// One of those waits for you, or works: a folded row still says so.
+    var subThreadNeedsYou = false
+    var subThreadActive = false
     var id: String { row.id }
 }
 
 /// The sessions of one project (a repository: an agent's worktree counts as the repository it was made from), drawn as a
-/// dropdown when the list is grouped by project.
+/// dropdown when the list is grouped by project. The project "" holds the sessions without one (`InboxProject`).
 struct InboxProjectGroup: Identifiable, Equatable, Sendable {
+    /// What a folded project's dot says about the sessions in it, the most urgent first.
+    enum Dot: Equatable, Sendable { case needsYou, failed, done, working }
+
     var project: String
     /// Each row with the section it comes from, so a drag and the row's actions keep working as in that section.
     var rows: [(kind: InboxSection.Kind, entry: InboxEntry)]
+    /// Pinned by you: on top of the projects, and kept as a folder also when nothing in it is active.
+    var pinned = false
+    /// Archived (Settings › Projects): listed after the others, and only while something in it is active.
+    var archived = false
     var id: String { project }
-    /// Something in it waits for you: the group sorts first and its folded header says so.
+    /// Something in it waits for you: its folded header says so.
     var needsYou: Bool { rows.contains { $0.entry.row.needsYou } }
 
-    static func == (a: Self, b: Self) -> Bool {
-        a.project == b.project && a.rows.map(\.kind) == b.rows.map(\.kind) && a.rows.map(\.entry) == b.rows.map(\.entry)
+    /// Waits for you, else failed or stopped by a limit, else finished since you looked, else works; nil when all is quiet.
+    var dot: Dot? {
+        let rows = rows.map(\.entry.row)
+        if rows.contains(where: \.needsYou) { return .needsYou }
+        if rows.contains(where: { $0.attention == .failed || $0.attention == .limited }) { return .failed }
+        if rows.contains(where: { $0.attention == .ready }) { return .done }
+        if rows.contains(where: { $0.attention == .working || $0.isActive }) { return .working }
+        return nil
     }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.project == b.project && a.pinned == b.pinned && a.archived == b.archived && a.rows.map(\.kind) == b.rows.map(\.kind)
+            && a.rows.map(\.entry) == b.rows.map(\.entry)
+    }
+}
+
+/// The project a session is listed under when the list is grouped by project. A session without a real project, one in
+/// a folder Nook made for "No project" (`ScratchProjects`), in your home folder or without a folder, goes under "", one
+/// group for all of them, instead of a folder of its own per session. Text only: it runs for every row on every redraw.
+enum InboxProject {
+    static let none = ""
+
+    /// `folder` is the row's folder name (a worktree already named after its repository), `path` the folder it works in.
+    static func key(folder: String, path: String, scratchRoot: String = scratchRootPath,
+                    home: String = homePath) -> String {
+        if folder.isEmpty || folder == "no folder" { return none }
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        guard !trimmed.isEmpty, trimmed != "/" else { return folder }
+        let root = scratchRoot.hasSuffix("/") ? String(scratchRoot.dropLast()) : scratchRoot
+        if trimmed == home || trimmed == root || trimmed.hasPrefix(root + "/") { return none }
+        return folder
+    }
+}
+
+/// The folders `InboxProject.key` compares every row's path with, looked up once instead of for every row.
+extension InboxProject {
+    static let scratchRootPath = NookPaths.scratchDirectory.path
+    static let homePath = NSHomeDirectory()
 }
 
 struct InboxSection: Equatable, Sendable {
@@ -159,17 +235,46 @@ enum InboxLayout {
         guard !children.isEmpty else { return entries }
         var result: [InboxEntry] = []
         var placed: Set<String> = []
-        func place(_ entry: InboxEntry, depth: Int) {
+        func place(_ entry: InboxEntry, depth: Int, ancestors: [String]) {
             guard placed.insert(entry.id).inserted else { return }
             var entry = entry
+            // Deeper threads stay at the second step, so a long chain keeps the name readable; `ancestors` keeps the real tree.
             entry.depth = min(depth, 2)
+            entry.ancestors = ancestors
             result.append(entry)
-            for child in children[entry.id] ?? [] { place(child, depth: depth + 1) }
+            for child in children[entry.id] ?? [] { place(child, depth: depth + 1, ancestors: [entry.id] + ancestors) }
         }
-        for root in roots { place(root, depth: 0) }
+        for root in roots { place(root, depth: 0, ancestors: []) }
         // A loop of parents has no root: its rows keep their place.
-        for entry in entries where !placed.contains(entry.id) { place(entry, depth: 0) }
+        for entry in entries where !placed.contains(entry.id) { place(entry, depth: 0, ancestors: []) }
+        // What each session holds under it: the count on its fold, and whether something in there works or waits for you.
+        let index = Dictionary(result.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for entry in result {
+            let active = entry.row.isActive || entry.row.attention == .working
+            for ancestor in entry.ancestors {
+                guard let at = index[ancestor] else { continue }
+                result[at].subThreads += 1
+                result[at].subThreadNeedsYou = result[at].subThreadNeedsYou || entry.row.needsYou
+                result[at].subThreadActive = result[at].subThreadActive || active
+            }
+        }
         return result
+    }
+
+    /// Whether a session's sub-threads show under it. What you chose wins; otherwise they show while one of them works or
+    /// waits for you, and fold away once they are all quiet.
+    static func threadOpen(_ entry: InboxEntry, opened: Set<String>, folded: Set<String>) -> Bool {
+        if folded.contains(entry.id) { return false }
+        if opened.contains(entry.id) { return true }
+        return entry.subThreadActive || entry.subThreadNeedsYou
+    }
+
+    /// The rows left once folded threads are put away: a row under a folded session is hidden, except the one that is
+    /// open on the right, so the session you look at never vanishes from the list.
+    static func foldThreads(_ entries: [InboxEntry], isOpen: (InboxEntry) -> Bool, selectedID: String?) -> [InboxEntry] {
+        let folded = Set(entries.filter { $0.subThreads > 0 && !isOpen($0) }.map(\.id))
+        guard !folded.isEmpty else { return entries }
+        return entries.filter { entry in entry.id == selectedID || !entry.ancestors.contains(where: folded.contains) }
     }
 
     /// Sections in display order; empty ones are left out. Every row lands in exactly one section.
@@ -207,11 +312,37 @@ enum InboxLayout {
             }
         }
 
+        // A thread that waits for you sits in Active as a whole: a session at work on the Working shelf comes up with the
+        // sub-thread that asks, so that one can sit under it instead of on its own.
+        let parentOf = Dictionary(rows.compactMap { row in row.parentID.map { (row.id, $0) } }, uniquingKeysWith: { first, _ in first })
+        let workingIDs = Set(working.map(\.id))
+        var lifted: Set<String> = []
+        for entry in active where entry.row.needsYou {
+            var seen: Set<String> = [entry.id]
+            var parent = entry.row.parentID
+            while let id = parent, workingIDs.contains(id), seen.insert(id).inserted {
+                lifted.insert(id)
+                parent = parentOf[id]
+            }
+        }
+        if !lifted.isEmpty {
+            active += working.filter { lifted.contains($0.id) }
+            working.removeAll { lifted.contains($0.id) }
+        }
+
         pinned.sort { (pinRank[$0.id] ?? Int.max, $1.row.lastActivity, $0.id) < (pinRank[$1.id] ?? Int.max, $0.row.lastActivity, $1.id) }
+        // What needs you first, then the sessions that came back (finished, failed, a new message) with
+        // the newest on top, then the ones you gave a place, in that order. A placed session that comes back with something
+        // new loses its place and rises to the top again.
         active.sort {
-            if $0.row.effectiveAttention != $1.row.effectiveAttention { return $0.row.effectiveAttention < $1.row.effectiveAttention }
-            let (a, b) = (orderRank[$0.id] ?? Int.max, orderRank[$1.id] ?? Int.max)
-            if a != b { return a < b }
+            let (needsA, needsB) = ($0.row.needsYou, $1.row.needsYou)
+            if needsA != needsB { return needsA }
+            switch (state.activeRank($0.row, ranks: orderRank), state.activeRank($1.row, ranks: orderRank)) {
+            case (nil, _?): return true
+            case (_?, nil): return false
+            case let (a?, b?) where a != b: return a < b
+            default: break
+            }
             if $0.row.lastActivity != $1.row.lastActivity { return $0.row.lastActivity > $1.row.lastActivity }
             return $0.id < $1.id
         }
@@ -222,25 +353,36 @@ enum InboxLayout {
         }
         settled.sort(by: newestFirst)
 
-        // A session started from another one that is running or open follows it into its section, so it can sit under it;
-        // one that needs you, is pinned, snoozed or settled stays where it is.
+        // A session started from another one that is running or open follows it into its section, so it sits under it and
+        // never also as a session of its own; one that is pinned, snoozed or settled stays where it is. One that needs you
+        // never goes onto the Working shelf (its parent came up to Active above), and a pinned parent is always in view.
         var home: [String: Kind] = [:]
         for entry in active { home[entry.id] = .active }
         for entry in working { home[entry.id] = .working }
         for entry in pinned { home[entry.id] = .pinned }
-        let follows = (working + active).filter { entry in
-            guard let parent = entry.row.parentID, let target = home[parent], target != home[entry.id] else { return false }
-            return !entry.row.needsYou
+        // Settled a step at a time, so a sub-thread of a sub-thread follows too, wherever the chain ends up.
+        let candidates = working + active
+        var moved: [String: Kind] = [:]
+        for _ in 0..<candidates.count {
+            var changed = false
+            for entry in candidates {
+                guard let parent = entry.row.parentID, parent != entry.id, let target = home[parent], target != home[entry.id],
+                      !(entry.row.needsYou && target == .working) else { continue }
+                home[entry.id] = target
+                moved[entry.id] = target
+                changed = true
+            }
+            if !changed { break }
         }
-        if !follows.isEmpty {
-            let moved = Set(follows.map(\.id))
-            working.removeAll { moved.contains($0.id) }
-            active.removeAll { moved.contains($0.id) }
-            for entry in follows {
-                switch home[entry.row.parentID ?? ""] {
+        if !moved.isEmpty {
+            working.removeAll { moved[$0.id] != nil }
+            active.removeAll { moved[$0.id] != nil }
+            for entry in candidates {
+                switch moved[entry.id] {
                 case .pinned?: pinned.append(entry)
                 case .working?: working.append(entry)
-                default: active.append(entry)
+                case .active?: active.append(entry)
+                default: break
                 }
             }
         }
@@ -255,10 +397,11 @@ enum InboxLayout {
         var settledPage = Array(settled.prefix(limit))
         if let open = settled.dropFirst(limit).first(where: { $0.id == selectedID }) { settledPage.append(open) }
         var result: [InboxSection] = [
-            // Running agents come first: they are the ones you usually want to open.
-            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .pinned, rows: pinned),
             InboxSection(kind: .active, rows: active),
+            // What works and needs nothing from you sits at the foot of the list, above Snoozed and Settled.
+            // A session that finishes leaves it and comes up on top of Active.
+            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .snoozed, rows: snoozed),
             InboxSection(kind: .settled, rows: settledPage, hiddenCount: settled.count - settledPage.count),
         ]
@@ -268,8 +411,8 @@ enum InboxLayout {
 
     /// Where "Move Up" or "Move Down" puts a row of Pinned or Active: the final index (for `InboxState.reorder`) of the
     /// nearest row in that direction it can trade places with, or nil when there is none. Only top-level rows move,
-    /// since a nested one follows its parent; in Active the rows are sorted by attention first, so a row only moves among
-    /// those with the same attention.
+    /// since a nested one follows its parent; in Active what needs you sorts first, so a row only moves among rows that
+    /// need you, or among rows that do not.
     static func moveTarget(_ id: String, up: Bool, in section: InboxSection) -> Int? {
         guard section.kind == .pinned || section.kind == .active,
               let from = section.rows.firstIndex(where: { $0.id == id }), section.rows[from].depth == 0 else { return nil }
@@ -277,17 +420,24 @@ enum InboxLayout {
         let candidates = up ? Array((0..<from).reversed()) : Array((from + 1)..<section.rows.count)
         return candidates.first { index in
             let other = section.rows[index]
-            return other.depth == 0 && (section.kind == .pinned || other.row.effectiveAttention == row.effectiveAttention)
+            return other.depth == 0 && (section.kind == .pinned || other.row.needsYou == row.needsYou)
         }
     }
 
-    /// The Working and Active rows per project. The projects keep a fixed place (by name), so activity in one never
-    /// moves the whole folder; inside a project the session with the newest activity comes first, with the sessions it
-    /// started still right under it. Pinned, snoozed and settled sessions keep their own sections.
-    static func projectGroups(_ sections: [InboxSection]) -> [InboxProjectGroup] {
+    /// The Active rows per project. Pinned projects come first, in the order you pinned them, and keep their folder also
+    /// when nothing in them is active; the rest keep a fixed place (by name), so activity in one never moves the whole
+    /// folder, with the sessions without a project and then the archived projects last. Inside a project the session with the newest activity comes first, with the sessions it started still
+    /// right under it. Pinned sessions, the Working shelf (when it is on) and snoozed and settled sessions keep their own
+    /// sections; with the Working shelf off, working sessions are Active and sit in their project.
+    static func projectGroups(_ sections: [InboxSection], pinned: [String] = [],
+                              archived: Set<String> = []) -> [InboxProjectGroup] {
         var groups: [String: InboxProjectGroup] = [:]
         var order: [String] = []
-        for section in sections where section.kind == .working || section.kind == .active {
+        for project in pinned where groups[project] == nil && !archived.contains(project) {
+            groups[project] = InboxProjectGroup(project: project, rows: [], pinned: true)
+            order.append(project)
+        }
+        for section in sections where section.kind == .active {
             for entry in section.rows {
                 let project = entry.row.project
                 if groups[project] == nil {
@@ -301,9 +451,15 @@ enum InboxLayout {
             .map { group in
                 var group = group
                 group.rows = newestOnTop(group.rows)
+                group.archived = !group.pinned && archived.contains(group.project)
                 return group
             }
             .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                if a.archived != b.archived { return b.archived }
+                if a.pinned { return pinned.firstIndex(of: a.project) ?? 0 < pinned.firstIndex(of: b.project) ?? 0 }
+                // Sessions without a project come after the named projects.
+                if (a.project == InboxProject.none) != (b.project == InboxProject.none) { return b.project == InboxProject.none }
                 let compared = a.project.localizedStandardCompare(b.project)
                 return compared != .orderedSame ? compared == .orderedAscending : a.project < b.project
             }
@@ -328,11 +484,10 @@ enum InboxLayout {
     }
 
     /// The rows a shelf draws: all of them while it is open. Folded, a shelf shows only the session that is open on the
-    /// right, so the session you look at never vanishes from the list; the settled shelf shows none, since a settled
-    /// row would otherwise float above its closed header.
+    /// right, under its header, so the session you look at never vanishes from the list and you see which shelf it sits
+    /// on (a chat you settled while it is still open shows under Settled).
     static func shownRows(_ section: InboxSection, folded: Bool, selectedID: String?) -> [InboxEntry] {
-        guard folded else { return section.rows }
-        return section.kind == .settled ? [] : section.rows.filter { $0.id == selectedID }
+        folded ? section.rows.filter { $0.id == selectedID } : section.rows
     }
 
     /// A row on the Working shelf: busy, or waiting on background work, without needing a person.
@@ -376,7 +531,5 @@ enum InboxSearch {
         }
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    private static func fold(_ text: String) -> String { TextKit.fold(text) }
 }

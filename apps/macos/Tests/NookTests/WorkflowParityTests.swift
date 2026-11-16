@@ -1,6 +1,6 @@
 import XCTest
 
-/// The workflow features that follow: the message limit, snooze options, auto-settle rules for pull requests,
+/// The workflow features: the message limit, snooze options, auto-settle rules for pull requests,
 /// the sweep's range, pull request prompt links, the model picker's keys and the dictation context.
 final class WorkflowParityTests: XCTestCase {
     // MARK: Message limit and paste as text
@@ -111,6 +111,22 @@ final class WorkflowParityTests: XCTestCase {
                        .none, "landed before you wrote again")
         XCTAssertEqual(PullRequestSettlement.autoSettleState(links: [link(1, .closed, updated: now.addingTimeInterval(-60)),
                                                                      link(2, .merged, updated: now)], since: nil), .merged, "the newest decides")
+    }
+
+    /// A watch saw the merge before the branch sync did: the rules follow the badge, not the stale open link, also when
+    /// that link's last update lies before your latest message.
+    func testNewestReadSettlesBeforeTheBranchSync() {
+        let since = now.addingTimeInterval(-120)
+        let kept = [PullRequestLink(host: .github, repository: "o/r", number: 1, state: .open, updatedAt: since.addingTimeInterval(-60))]
+        var read = kept
+        read[0].state = .merged
+        let fresh = PullRequestSettlement.freshest(kept: kept, fresh: read)
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: kept, since: since), .open)
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: fresh, since: since), .merged)
+        // Unchanged: the kept update time still decides.
+        let landedEarlier = [PullRequestLink(host: .github, repository: "o/r", number: 1, state: .merged, updatedAt: since.addingTimeInterval(-60))]
+        XCTAssertEqual(PullRequestSettlement.autoSettleState(links: PullRequestSettlement.freshest(kept: landedEarlier, fresh: landedEarlier),
+                                                             since: since), .none)
     }
 
     // MARK: Sweep

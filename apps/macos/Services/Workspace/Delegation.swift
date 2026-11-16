@@ -149,8 +149,8 @@ enum DelegationPolicy {
         }
     }
 
-    /// What every child is told after its brief: do the work itself (: "If you are a subagent or child, do the work
-    /// yourself"), so a chain of sessions does not grow by itself, and end with the report its parent reads.
+    /// What every child is told after its brief: do the work itself, so a chain of sessions does not grow by itself, and
+    /// end with the report its parent reads.
     static let childNote = "You are a task delegated from another session in Nook. Do the work yourself; start no subtasks unless this brief asks for them. End with a short report of what you did and found: it is all the other session sees."
 
     /// What the child is told: the task and its role, nothing from the parent's conversation.
@@ -184,7 +184,7 @@ enum DelegatedTask {
     static let summaryLimit = 4_000
 
     /// `hasQueuedWork`: a message still waits to go out to the task (not held after a failure or a stop). The task is not
-    /// done until it went (: a follow-up waits for a run its child queued on its own thread).
+    /// done until it went (a follow-up waits for a run its child queued on its own thread).
     static func state(_ status: RunStatus, hasPendingQuestion: Bool = false, hasQueuedWork: Bool = false) -> State {
         if hasQueuedWork, !status.isActive { return .running }
         switch status {
@@ -204,8 +204,8 @@ enum DelegatedTask {
     }
 
     /// Where a message to a session comes from, by the session that sent it (`session_send`); nil for you, Nook, or a
-    /// client without a session of its own (the command line, an MCP client). A task's own parent counts as you. As
-    /// does, only a message from an unrelated session leaves the parent out of the turn it starts, and a message
+    /// client without a session of its own (the command line, an MCP client). A task's own parent counts as you. Only
+    /// a message from an unrelated session leaves the parent out of the turn it starts, and a message
     /// from a task this session delegated carries on the session's own work.
     static func origin(sender: UUID?, senderParent: UUID?, target: UUID, targetParent: UUID?) -> QueuedMessage.Origin? {
         guard let sender, sender != targetParent else { return nil }
@@ -295,6 +295,64 @@ enum DelegatedTask {
     }
 
     /// The message that wakes the parent when a child it did not wait for has finished.
+    /// How many sub-threads still work for a session, at every level (a sub-thread's own sub-threads count too): while
+    /// any does, the session reads as busy everywhere, also after its own turn ended (`AgentAttention.Input`).
+    /// `parents` maps a session to the one that delegated it; `active` holds the sessions whose turn runs.
+    static func workingSubThreads(of parent: UUID, parents: [UUID: UUID], active: Set<UUID>) -> Int {
+        var children: [UUID: [UUID]] = [:]
+        for (child, of) in parents where child != of { children[of, default: []].append(child) }
+        var seen: Set<UUID> = [parent]
+        var queue = children[parent] ?? []
+        var working = 0
+        while let next = queue.popLast() {
+            guard seen.insert(next).inserted else { continue }
+            if active.contains(next) { working += 1 }
+            queue += children[next] ?? []
+        }
+        return working
+    }
+
+    /// `workingSubThreads(of:parents:active:)` for every session at once: each working one counts once for every
+    /// ancestor above it. One pass over the links instead of one per session that asks (the Agents list and the notch
+    /// ask for every row on every redraw, which made that quadratic in the number of sessions).
+    static func workingSubThreadCounts(parents: [UUID: UUID], active: Set<UUID>) -> [UUID: Int] {
+        var counts: [UUID: Int] = [:]
+        for child in active where parents[child] != nil {
+            var seen: Set<UUID> = [child]
+            var current = child
+            while let parent = parents[current], parent != current, seen.insert(parent).inserted {
+                counts[parent, default: 0] += 1
+                current = parent
+            }
+        }
+        return counts
+    }
+
+    /// The same for every session, read from the sessions themselves.
+    static func workingSubThreadCounts(in runs: [WorkspaceRun]) -> [UUID: Int] {
+        var parents: [UUID: UUID] = [:]
+        var active: Set<UUID> = []
+        for run in runs where !run.archived {
+            guard let link = run.delegation else { continue }
+            parents[run.id] = link.parentID
+            if run.status.isActive { active.insert(run.id) }
+        }
+        return active.isEmpty ? [:] : workingSubThreadCounts(parents: parents, active: active)
+    }
+
+    /// The same, read from the sessions themselves: the delegation link of each and whether its turn runs.
+    static func workingSubThreads(of parent: UUID, in runs: [WorkspaceRun]) -> Int {
+        var parents: [UUID: UUID] = [:]
+        var active: Set<UUID> = []
+        for run in runs where !run.archived {
+            guard let link = run.delegation else { continue }
+            parents[run.id] = link.parentID
+            if run.status.isActive { active.insert(run.id) }
+        }
+        guard parents.values.contains(parent) else { return 0 }
+        return workingSubThreads(of: parent, parents: parents, active: active)
+    }
+
     /// Which of a session's tasks its sub-thread strip shows (`SubThreadStrip`): every one at work or asking, and the ones
     /// that ended after `since` (your last message there). Oldest first, the order you started them in.
     static func shown(_ children: [WorkspaceRun], asking: (UUID) -> Bool, since: Date) -> [WorkspaceRun] {
@@ -312,8 +370,8 @@ enum DelegatedTask {
         return text
     }
 
-    /// The message that tells a parent that did not wait that its task asks something (routes a child's question to
-    /// its parent, because nobody watches a child): the parent answers it or asks the user.
+    /// The message that tells a parent that did not wait that its task asks something (a child's question goes to its
+    /// parent, because nobody watches a child): the parent answers it or asks the user.
     static func questionMessage(_ snapshot: Snapshot, questionID: String, question: String) -> String {
         var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) asks a question and waits for the answer."
         let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -323,8 +381,8 @@ enum DelegatedTask {
     }
 }
 
-/// "Main thread": a session that hands its work to delegated tasks (sub-threads) and keeps its own context small, the
-/// way orchestrator thread works with `delegate_task`. You switch it on in the composer; the agent learns of it
+/// "Main thread": a session that hands its work to delegated tasks (sub-threads) and keeps its own context small, as an
+/// orchestrator thread working with `delegate_task`. You switch it on in the composer; the agent learns of it
 /// with your next message, in the hidden part (`<nook_context>`) so your bubble stays yours. Its system prompt does not
 /// change, so the prompt cache stays warm.
 enum MainThread {

@@ -1,0 +1,46 @@
+# Advisories that osv-scanner (and OpenSSF Scorecard, which runs it) reports for Cargo.lock and package-lock.json but
+# that have no fixed release to move to. Each one says why it does not reach Nook and expires, so it is looked at again;
+# drop an entry as soon as an update removes the crate. Anything with a fix is updated instead of listed here.
+
+# glib 0.18: unsound VariantStrIter. Linux only, pulled in by gtk 0.18 through tauri, wry, tray-icon and muda; Nook never
+# iterates a GVariant string array. The fix is glib 0.20, which needs gtk-rs 0.20 in Tauri.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Linux-only via gtk 0.18 (Tauri); VariantStrIter is not used; needs Tauri on gtk-rs 0.20"
+
+# proc-macro-error: unmaintained, no vulnerability. A build-time macro of glib-macros 0.18 (same chain as above).
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Unmaintained notice only; build-time proc macro of glib-macros 0.18 (Tauri on Linux)"
+
+# ttf-parser: unmaintained, no vulnerability. Used by lopdf through pdf-extract, which has no release without it.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Unmaintained notice only; via pdf-extract/lopdf, no release without it yet"
+
+# zbus_names, zvariant, zvariant_derive: unmaintained because they merged into zbus 6. Linux only (D-Bus), pulled in
+# by notify-rust (tauri-plugin-notification) and secret-service (keyring); neither has moved to zbus 6 yet.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Unmaintained notice only (merged into zbus 6); Linux-only via notify-rust and secret-service"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Unmaintained notice only (merged into zbus 6); Linux-only via notify-rust and secret-service"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Unmaintained notice only (merged into zbus 6); Linux-only via notify-rust and secret-service"
+
+# deepmerge: prototype poisoning in mergeObject(). A dev dependency of @sveltejs/vite-plugin-svelte that merges the
+# build's own Vite config; it never sees user data and is not in the app. No fixed release exists.
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-05-13T00:00:00Z
+reason = "Build-time only (vite-plugin-svelte merges the repo's own config); not shipped; no fixed release"

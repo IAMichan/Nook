@@ -11,7 +11,7 @@ struct SourceControlGlobalRows: View {
         Picker(tr("sc.submodules"), selection: $ws.worktreeSubmodules) {
             ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
         }
-        .help(tr("sc.submodules.help"))
+        .nookTip(tr("sc.submodules.help"))
         SettingToggle(tr("sc.autoPull.global"), detail: tr("sc.autoPull.help"), isOn: $ws.autoPullDefaultBranch)
         SettingToggle(tr("sc.cloneLayout"), detail: tr("sc.cloneLayout.detail"), isOn: $ws.cloneHostLayout)
     }
@@ -35,11 +35,11 @@ struct ProjectSourceControlRows: View {
             } label: {
                 SettingText("sc.publish.row")
             }
-            .help(tr("sc.publish.help"))
+            .nookTip(tr("sc.publish.help"))
         }
         Toggle(tr("sc.archive.toggle"), isOn: Binding(get: { ws.isArchivedProject(path) },
                                                       set: { ws.setArchived($0, project: path) }))
-            .help(tr("sc.archive.help"))
+            .nookTip(tr("sc.archive.help"))
         Color.clear.frame(height: 0)
             .task(id: path) { publishPlan = await app.workspace.publishPlan(folder: path) }
             .sheet(item: $publishing) { plan in
@@ -66,14 +66,14 @@ struct ProjectSourceControlRows: View {
         } label: {
             SettingText("sc.agents")
         }
-        .help(tr("sc.agents.help"))
+        .nookTip(tr("sc.agents.help"))
     }
 
     private var icon: some View {
         let current = ws.projectIcon(path)
         return LabeledContent {
             HStack(spacing: NookTheme.Spacing.md) {
-                ProjectIconView(icon: current, size: 22)
+                ProjectIconView(icon: current, size: 22, folder: path)
                     .foregroundStyle(NookTheme.textSecondary)
                 Menu(tr("sc.icon.change")) {
                     Button(tr("sc.icon.monogram")) {
@@ -95,8 +95,8 @@ struct ProjectSourceControlRows: View {
                     }
                 }
                 .fixedSize()
-                TextField("", text: $emoji, prompt: Text(tr("sc.icon.emojiPrompt")))
-                    .textFieldStyle(.roundedBorder)
+                TextField("", text: $emoji, prompt: Text(tr("sc.icon.emojiPrompt")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .labelsHidden()
                     .accessibilityLabel(tr("sc.icon.emoji"))
                     .frame(width: 70)
@@ -112,7 +112,7 @@ struct ProjectSourceControlRows: View {
         } label: {
             SettingText("sc.icon")
         }
-        .help(tr("sc.icon.help"))
+        .nookTip(tr("sc.icon.help"))
     }
 
     private func monogramLetters(_ icon: ProjectIcon?) -> String {
@@ -156,9 +156,9 @@ struct ArchivedProjectsSection: View {
                         Label {
                             Text((path as NSString).lastPathComponent)
                         } icon: {
-                            ProjectIconView(icon: ws.projectIcon(path), size: 15)
+                            ProjectIconView(icon: ws.projectIcon(path), size: 15, folder: path)
                         }
-                        .help(AgentPathFormat.tilde(path))
+                        .nookTip(AgentPathFormat.tilde(path))
                     }
                 }
             } header: {
@@ -179,5 +179,49 @@ enum ProjectIconStore {
         let target = directory.appendingPathComponent(UUID().uuidString + "." + (source.pathExtension.isEmpty ? "png" : source.pathExtension))
         guard (try? data.write(to: target, options: .atomic)) != nil else { return nil }
         return target.path
+    }
+}
+
+/// Settings › Projects: the name a project shows in Nook's lists, saved when you press Return or leave the field.
+struct ProjectNameRow: View {
+    let path: String
+    @ObservedObject private var ws = WorkspaceSettings.shared
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        LabeledContent {
+            TextField("", text: $name, prompt: Text((path as NSString).lastPathComponent).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
+                .labelsHidden()
+                .accessibilityLabel(tr("settings.projects.name"))
+                .frame(width: SettingsControl.fieldWidth)
+                .focused($focused)
+                .onSubmit(save)
+                .onChange(of: focused) { _, now in if !now { save() } }
+        } label: {
+            SettingText("settings.projects.name")
+        }
+        .nookTip(tr("settings.projects.name.help"))
+        .task(id: path) { name = ws.projectDisplayName(path) }
+    }
+
+    private func save() { ws.setProjectName(name, project: path) }
+}
+
+/// Picks (or makes) the folder of a new project.
+@MainActor
+enum ProjectFolderPanel {
+    static func choose() -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = tr("inbox.project.addPrompt")
+        panel.message = tr("inbox.project.addMessage")
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url.path
     }
 }

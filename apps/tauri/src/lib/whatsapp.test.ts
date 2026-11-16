@@ -14,27 +14,27 @@ describe("WhatsApp-kaart", () => {
   it("noemt bestanden zoals de Mac", () => {
     expect(fileLabel({ kind: "document", name: "offerte.pdf" })).toBe("offerte.pdf");
     expect(fileLabel({ kind: "document", name: null })).toBe("Document");
-    expect(fileLabel({ kind: "image" })).toBe("Foto");
-    expect(fileLabel({ kind: "voice" })).toBe("Spraakbericht");
+    expect(fileLabel({ kind: "image" })).toBe("Photo");
+    expect(fileLabel({ kind: "voice" })).toBe("Voice message");
     expect(fileLabel({ kind: "location" })).toBeNull();
   });
 
   it("zegt wat een sticker of locatie is, naast de tekst", () => {
     expect(bubbleText(message({ text: "hoi" }))).toBe("hoi");
-    expect(bubbleText(message({ media: { kind: "location" } }))).toBe("Locatie");
+    expect(bubbleText(message({ media: { kind: "location" } }))).toBe("Location");
     expect(bubbleText(message({ media: { kind: "image" }, text: "kijk" }))).toBe("kijk");
   });
 
   it("toont de vinkjes van WhatsApp", () => {
     expect(ticks("sent")?.symbol).toBe("✓");
-    expect(ticks("read")).toEqual({ symbol: "✓✓", title: "Gelezen", tone: "read" });
-    expect(ticks("failed")?.title).toBe("Niet verzonden");
+    expect(ticks("read")).toEqual({ symbol: "✓✓", title: "Read", tone: "read" });
+    expect(ticks("failed")?.title).toBe("Not sent");
     expect(ticks(null)).toBeNull();
   });
 
   it("telt nieuwe berichten pas vanaf twee", () => {
     expect(context(1)).toBe("WhatsApp");
-    expect(context(3)).toBe("WhatsApp · 3 nieuw");
+    expect(context(3)).toBe("WhatsApp · 3 new");
   });
 
   it("zoekt chats per naam en houdt verborgen chats apart", () => {

@@ -14,6 +14,9 @@ struct ConnectorSignIn: Equatable, Identifiable, Sendable {
 
     /// The name as you know it: without the `claude.ai ` prefix or a plugin's path.
     var title: String { ConnectorSignIns.title(name) }
+
+    /// The website whose icon is the connector's logo, wherever it is listed; nil shows the connector symbol.
+    var iconDomain: String? { ConnectorDomains.connectorDomain(name: title) }
 }
 
 /// Which connectors need you, read from what each agent reports.
@@ -41,6 +44,16 @@ enum ConnectorSignIns {
         return names.filter { seen.insert($0).inserted }
             .map { ConnectorSignIn(name: $0, waiting: waiting.contains($0)) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Where an agent keeps its connector sign-ins: per agent, account (profile) and machine. Sessions with the same one
+    /// share them.
+    static func account(provider: RunProvider, profileID: String, machine: String?) -> String {
+        [provider.rawValue, profileID, machine ?? ""].joined(separator: "|")
+    }
+
+    static func account(_ run: WorkspaceRun) -> String {
+        account(provider: run.provider, profileID: run.profileID, machine: run.remote?.machineID)
     }
 
     static func title(_ name: String) -> String {

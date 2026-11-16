@@ -271,15 +271,19 @@ extension PullRequestFileAnchor {
 /// `glab mr view` and the like, or a tool named for pull or merge requests. A command that merely touches a file such as
 /// `PullRequestActions.swift` does not count: its output can hold any link (a test's sample `.../pull/3`).
 enum PullRequestToolCall {
+    /// Where a command can start: the start of the text, a space or line break, a shell separator, or a line break
+    /// written as `\n` (a tool call's `detail` holds its input as JSON, so a script's later lines read "\ngh pr create").
+    private static let start = #"(?:^|[\s;&|(`"']|\\[nrt])"#
+
     private static let command = try? NSRegularExpression(
-        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
+        pattern: start + #"(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
         options: [.caseInsensitive])
 
     /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
     /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
-    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI. The same list.
+    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI.
     private static let closing = try? NSRegularExpression(
-        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
+        pattern: start + #"(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
             + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#
             + #"az\s+repos\s+pr\s+update\b[^;&|\n]*--status[\s=]+["']?(?:completed|abandoned))\b"#,
         options: [.caseInsensitive])
@@ -370,6 +374,16 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
     var hasConflict: Bool { state.isOpen && conflicted }
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
+
+    /// Is this the request `number` in `repository`? `repository` comes from the folder's remote, which keeps the old name
+    /// after a rename on the forge (which redirects it), while an action from Nook names the request by where it lives
+    /// now. The link's URL says that too, so either name matches.
+    func isRequest(repository other: String, number: Int) -> Bool {
+        guard self.number == number else { return false }
+        let wanted = other.lowercased()
+        if repository.lowercased() == wanted { return true }
+        return PullRequestRef.parse(url)?.repository.map { $0.lowercased() == wanted } ?? false
+    }
 
     /// The pull request the tray above a session's composer shows from a branch's list: an open one first, else the
     /// newest one that merged or closed, so its state stays in view after it lands. GitHub and GitLab only.
@@ -464,7 +478,7 @@ struct PullRequestBadge: Equatable, Sendable {
         guard !links.isEmpty else { return nil }
         if links.count > 1, PullRequestStack.isStack(links: links) {
             // A stack wears its own mark while work is left in it, then the state it ended in.
-            let merged = links.filter { $0.state == .merged }.count
+            let merged = links.count(where: { $0.state == .merged })
             let glyph: Glyph = links.contains { $0.state.isOpen } ? .stack : merged > 0 ? .merged : .closed
             return PullRequestBadge(glyph: glyph, label: .stack(links.count, merged: merged))
         }
@@ -473,14 +487,11 @@ struct PullRequestBadge: Equatable, Sendable {
         return PullRequestBadge(glyph: glyph, label: links.count == 1 ? .number(primary.number) : .numberPlus(primary.number, extra: links.count - 1))
     }
 
-    /// Unresolved work first, then merged before closed; newest and highest number win ties.
+    /// The newest one the chat opened: its state is where the chat's work stands now, also when an older request is
+    /// still open (or in conflict) next to it. A forge numbers a repository's requests as they are opened, so the
+    /// highest number is the newest; the last updated one breaks a tie between repositories.
     private static func primaryLink(_ links: [PullRequestLink]) -> PullRequestLink {
-        func rank(_ l: PullRequestLink) -> Int {
-            switch l.state { case .open: return 3; case .draft: return 2; case .merged: return 1; case .closed: return 0 }
-        }
-        return links.max {
-            (rank($0), $0.updatedAt ?? .distantPast, $0.number) < (rank($1), $1.updatedAt ?? .distantPast, $1.number)
-        }!
+        links.max { ($0.number, $0.updatedAt ?? .distantPast) < ($1.number, $1.updatedAt ?? .distantPast) }!
     }
 }
 
@@ -544,6 +555,18 @@ enum PullRequestSettlement {
         case .merged: return .merged
         case .closed: return .closed
         default: return .none
+        }
+    }
+
+    /// The kept links with the state of the newest read (`fresh`, the same links through `PullRequestStatusStore`): a
+    /// watch or the pull request page can see a merge minutes before the branch sync does, and the badge already shows
+    /// it. A request that landed since it was kept has no known landing moment, so its update time goes (it counts).
+    static func freshest(kept: [PullRequestLink], fresh: [PullRequestLink]) -> [PullRequestLink] {
+        zip(kept, fresh).map { kept, fresh in
+            guard fresh.state != kept.state, !fresh.state.isOpen else { return fresh }
+            var landed = fresh
+            landed.updatedAt = nil
+            return landed
         }
     }
 
@@ -805,7 +828,7 @@ enum SessionBranches {
     static func folded(_ rows: [Row], open: Bool) -> (shown: [Row], hidden: Int, hiddenPullRequests: Int) {
         guard !open, rows.count > shownWhenFolded + 1 else { return (rows, 0, 0) }
         let hidden = rows.dropLast(shownWhenFolded)
-        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.filter { $0.pullRequest != nil }.count)
+        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.count(where: { $0.pullRequest != nil }))
     }
 }
 

@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Typing › Autocomplete and its pages: suggestions as you type in any app, with a GGUF model on this Mac or
+/// Settings › Intelligence › Autocomplete and its detail pages: suggestions as you type in any app, with a GGUF model on this Mac or
 /// the brain's own model. One page per part (general, apps, style, playground, statistics), never tabs.
 struct AutocompleteSettingsSection: View {
     /// The page this shows.
@@ -14,16 +14,11 @@ struct AutocompleteSettingsSection: View {
     @ObservedObject private var energy = EnergyMonitor.shared
     @State private var instructions = AutocompleteStore.shared.prefs.instructions
     @State private var editingApp: String?
-    @State private var confirmForget = false
-    @State private var confirmReset = false
     @State private var installed: [InstalledApp] = []
     @State private var search = ""
     @State private var filter: AppFilter = .all
     @State private var newSite = ""
     @State private var customLink = ""
-    @State private var pendingDelete: CompletionCatalogModel?
-    /// A model file of another app, about to go to the Trash.
-    @State private var pendingTrash: CompletionModelFile?
 
     enum AppFilter: String, CaseIterable, Identifiable {
         case all, on, off
@@ -42,6 +37,8 @@ struct AutocompleteSettingsSection: View {
         Group {
             if page == .general {
                 enableSection
+                // On its own switch, whether or not autocomplete runs in other apps.
+                ComposerAutocompleteSection()
             }
             if store.prefs.enabled {
                 switch page {
@@ -57,6 +54,7 @@ struct AutocompleteSettingsSection: View {
                 case .style:
                     contextSection
                     personalSection
+                    AutocompleteAdapterSection()
                     extrasSection
                 case .playground:
                     AutocompletePlaygroundSection()
@@ -64,11 +62,11 @@ struct AutocompleteSettingsSection: View {
                     statsSection
                 }
             } else if page != .general {
-                // The other pages only matter while completing is on: one line that says so and the way to turn it on.
+                // The other parts only matter while completing is on: one line that says so and the way to turn it on.
                 Section {
                     StatusRow(title: tr("autocomplete.offTitle"), detail: tr("autocomplete.offDetail"), state: .todo) {
                         Button(tr("autocomplete.turnOn")) { store.prefs.enabled = true; autocomplete.refresh() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.nookProminent)
                     }
                 }
             }
@@ -87,6 +85,7 @@ struct AutocompleteSettingsSection: View {
             if store.prefs.enabled {
                 status
                 obstacles
+                personalHints
                 SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
             }
         } header: {
@@ -108,10 +107,10 @@ struct AutocompleteSettingsSection: View {
         case .noModel:
             StatusRow(title: tr("autocomplete.noModel"), detail: tr("autocomplete.noModelDetail"), state: .warning) {
                 if let model = downloads.downloading {
-                    ProgressView(value: downloads.progress).frame(width: 80).help(model.name)
+                    ProgressView(value: downloads.progress).frame(width: 80).nookTip(model.name)
                 } else {
                     Button(tr("autocomplete.download.named", recommended.name)) { start(recommended) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                 }
             }
         case .failed(let message):
@@ -147,6 +146,38 @@ struct AutocompleteSettingsSection: View {
                         Button(tr("autocomplete.inlinePrediction.turnOff")) { CompletionSystemChecks.turnOffInlinePredictions() }
                         Button(tr("autocomplete.inlinePrediction.open")) {
                             if let url = CompletionSystemChecks.keyboardSettings { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What makes suggestions sound like the user, when it is missing: learning from their writing (off in settings stored
+    /// before it became the default, which updates do not change) and a few words about them. Cotypist asks for both when it
+    /// is set up; without them a suggestion only knows the text in the field. "Not now" puts both away.
+    @ViewBuilder private var personalHints: some View {
+        if !store.prefs.personalHintsDismissed {
+            if !store.prefs.learn {
+                StatusRow(title: tr("autocomplete.hint.learn"), detail: tr("autocomplete.hint.learnDetail"), state: .todo) {
+                    HStack {
+                        Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        Button(tr("autocomplete.hint.learnOn")) {
+                            store.prefs.learn = true
+                            autocomplete.applyPersonalization()
+                        }
+                        .buttonStyle(.nookProminent)
+                    }
+                }
+            }
+            if store.prefs.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                StatusRow(title: tr("autocomplete.hint.instructions"), detail: tr("autocomplete.hint.instructionsDetail"), state: .todo) {
+                    HStack {
+                        if store.prefs.learn {
+                            Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        }
+                        Button(tr("autocomplete.hint.instructionsAdd")) {
+                            app.openSettings(section: .autocompleteStyle, highlight: "autocomplete.instructions")
                         }
                     }
                 }
@@ -213,7 +244,7 @@ struct AutocompleteSettingsSection: View {
                         }
                     }
                 }
-                .help(tr("autocomplete.lora.detail"))
+                .nookTip(tr("autocomplete.lora.detail"))
                 .onChange(of: store.prefs.loraAdapterPath) { _, _ in autocomplete.refresh() }
             }
         } header: {
@@ -235,9 +266,9 @@ struct AutocompleteSettingsSection: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("autocomplete.download.linkPlaceholder"))
                 HStack {
-                    TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf"))
+                    TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf").foregroundStyle(NookTheme.textTertiary))
                         .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .frame(maxWidth: .infinity)
                         .onSubmit(downloadLink)
                     Button(tr("autocomplete.download"), action: downloadLink)
@@ -264,16 +295,16 @@ struct AutocompleteSettingsSection: View {
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
-                Button { pendingTrash = file } label: { Image(icon: "trash") }
-                    .buttonStyle(.borderless)
-                    .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
+                ConfirmedButton(question: trashQuestion(file), confirmTitle: tr("autocomplete.download.trash")) {
+                    trash(file)
+                } label: {
+                    Image(icon: "trash")
+                }
+                .buttonStyle(.nookBorderless)
+                .nookTip(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
-        .help(file.url.path)
-        .confirmationDialog(trashQuestion(file), isPresented: Binding(
-            get: { pendingTrash == file }, set: { if !$0 { pendingTrash = nil } })) {
-            Button(tr("autocomplete.download.trash"), role: .destructive) { trash(file) }
-        }
+        .nookTip(file.url.path)
     }
 
     private func trashQuestion(_ file: CompletionModelFile) -> String {
@@ -282,7 +313,6 @@ struct AutocompleteSettingsSection: View {
     }
 
     private func trash(_ file: CompletionModelFile) {
-        pendingTrash = nil
         guard autocomplete.activeModel?.identity != file.url.path else { return }
         try? FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
         if store.prefs.modelPath == file.url.path { store.prefs.modelPath = "" }
@@ -310,11 +340,7 @@ struct AutocompleteSettingsSection: View {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(model.name)
                     if model == recommended {
-                        Text(tr("autocomplete.recommended"))
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(NookTheme.textStrong)
-                            .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, 1)
-                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+                        NookTag(tr("autocomplete.recommended"), size: .regular)
                     }
                 }
                 if downloads.downloading == model {
@@ -336,20 +362,21 @@ struct AutocompleteSettingsSection: View {
                 }
                 // Only Nook's own copies can be deleted here, and never the model in use.
                 if ownCopy, !inUse {
-                    Button { pendingDelete = model } label: { Image(icon: "trash") }
-                        .buttonStyle(.borderless)
-                        .help(tr("autocomplete.download.delete"))
+                    ConfirmedButton(question: tr("autocomplete.download.deleteConfirm", model.name),
+                                    confirmTitle: tr("autocomplete.download.delete")) {
+                        delete(model)
+                    } label: {
+                        Image(icon: "trash")
+                    }
+                    .buttonStyle(.nookBorderless)
+                    .nookTip(tr("autocomplete.download.delete"))
                 }
             } else {
                 Button(tr("autocomplete.download")) { start(model) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
                     .disabled(downloads.downloading != nil)
             }
-        }
-        .confirmationDialog(tr("autocomplete.download.deleteConfirm", model.name), isPresented: Binding(
-            get: { pendingDelete == model }, set: { if !$0 { pendingDelete = nil } })) {
-            Button(tr("autocomplete.download.delete"), role: .destructive) { delete(model) }
         }
     }
 
@@ -367,7 +394,6 @@ struct AutocompleteSettingsSection: View {
     private func delete(_ model: CompletionCatalogModel) {
         let file = downloads.file(for: model)
         downloads.delete(model)
-        pendingDelete = nil
         if store.prefs.modelPath == file.path { store.prefs.modelPath = "" }
         autocomplete.forget(file)
     }
@@ -433,7 +459,7 @@ struct AutocompleteSettingsSection: View {
     private var personalSection: some View {
         Section {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Text(tr("autocomplete.instructions"))
+                SettingText("autocomplete.instructions")
                 TextEditor(text: $instructions)
                     .font(NookTheme.TextStyle.body)
                     .frame(minHeight: 70)
@@ -443,6 +469,7 @@ struct AutocompleteSettingsSection: View {
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }
             if store.prefs.learn {
+                SettingToggle(tr("autocomplete.learnUntaken"), detail: tr("autocomplete.learnUntakenDetail"), isOn: $store.prefs.learnWithoutSuggestion)
                 LabeledContent(tr("autocomplete.strength")) {
                     Slider(value: $store.prefs.personalStrength, in: 0...1, onEditingChanged: { editing in
                         if !editing { autocomplete.applyPersonalization() }
@@ -451,10 +478,11 @@ struct AutocompleteSettingsSection: View {
                 }
             }
             LabeledContent(tr("autocomplete.samples", store.samples.count)) {
-                Button(tr("autocomplete.forget")) { confirmForget = true }.disabled(store.samples.count == 0)
-            }
-            .confirmationDialog(tr("autocomplete.forgetConfirm"), isPresented: $confirmForget) {
-                Button(tr("autocomplete.forget"), role: .destructive) { store.forgetSamples(); autocomplete.applyPersonalization() }
+                ConfirmedButton(tr("autocomplete.forget"), question: tr("autocomplete.forgetConfirm")) {
+                    store.forgetSamples()
+                    autocomplete.applyPersonalization()
+                }
+                .disabled(store.samples.count == 0)
             }
             if store.samples.count > 0 {
                 DisclosureGroup(tr("autocomplete.samples.show")) {
@@ -488,7 +516,7 @@ struct AutocompleteSettingsSection: View {
                 autocomplete.applyPersonalization()
             }
             .labelled(tr("autocomplete.samples.delete"))
-            .buttonStyle(.borderless)
+            .buttonStyle(.nookBorderless)
         }
     }
 
@@ -590,8 +618,8 @@ struct AutocompleteSettingsSection: View {
             }
             Button(tr("settings2.manage")) { editingApp = app.bundleID }
                 .controlSize(.small)
-            Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                .help(tr("autocomplete.enable"))
+            Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().compactSwitch()
+                .nookTip(tr("autocomplete.enable"))
         }
     }
 
@@ -652,7 +680,7 @@ struct AutocompleteSettingsSection: View {
                         SiteIcon(domain: site, fallback: "globe", tint: NookTheme.textSecondary, size: 18)
                         Text(site)
                         Spacer()
-                        Toggle("", isOn: siteEnabled(site)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                        Toggle("", isOn: siteEnabled(site)).labelsHidden().compactSwitch()
                     }
                 }
             }
@@ -660,7 +688,7 @@ struct AutocompleteSettingsSection: View {
                 TextField(tr("autocomplete.apps.siteAdd"), text: $newSite).onSubmit(addSite)
                 Button(tr("autocomplete.apps.add"), action: addSite).disabled(cleanedSite(newSite) == nil)
                 if let last = autocomplete.lastSite, store.prefs.sites[last] == nil {
-                    Button(last) { store.prefs.sites[last] = CompletionSiteRule() }.help(tr("autocomplete.apps.addLast"))
+                    Button(last) { store.prefs.sites[last] = CompletionSiteRule() }.nookTip(tr("autocomplete.apps.addLast"))
                 }
             }
         } header: {
@@ -772,8 +800,7 @@ struct AutocompleteSettingsSection: View {
                              detail: tr("autocomplete.stats.words", stats.totalWords), symbol: "sum")
                 }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-            .listRowBackground(Color.clear)
+            .settingsBareSection()
 
             Section(tr("autocomplete.stats.chart")) {
                 if stats.totalTakes == 0 {
@@ -820,10 +847,8 @@ struct AutocompleteSettingsSection: View {
             }
 
             Section {
-                Button(tr("autocomplete.stats.reset"), role: .destructive) { confirmReset = true }.disabled(stats.totalShown == 0 && stats.totalTakes == 0)
-                    .confirmationDialog(tr("autocomplete.stats.resetConfirm"), isPresented: $confirmReset) {
-                        Button(tr("autocomplete.stats.reset"), role: .destructive) { store.resetStats() }
-                    }
+                ConfirmedButton(tr("autocomplete.stats.reset"), question: tr("autocomplete.stats.resetConfirm")) { store.resetStats() }
+                    .disabled(stats.totalShown == 0 && stats.totalTakes == 0)
             }
         }
     }
@@ -918,11 +943,11 @@ struct CompletionKeyRecorder: View {
                     else if let shortcut { Keycap(label: shortcut.label) }
                     else { Text(tr("shortcut.off")).foregroundStyle(NookTheme.textSecondary) }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.nookBorderless)
                 if shortcut != fallback, !recording {
                     Button { shortcut = fallback } label: { Image(icon: "arrow.uturn.backward") }
-                        .buttonStyle(.borderless)
-                        .help(tr("shortcut.reset"))
+                        .buttonStyle(.nookBorderless)
+                        .nookTip(tr("shortcut.reset"))
                 }
             }
         }

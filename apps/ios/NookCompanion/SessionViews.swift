@@ -13,131 +13,92 @@ struct SessionDetailView: View {
     @State private var confirmEnd = false
     @State private var renaming = false
     @State private var newName = ""
-    /// Whether the newest message is in sight; scrolled up, an arrow brings you back.
-    @State private var atEnd = true
     /// While the agent works, what a message does: steer the running turn now, or wait in line for after it. Remembered,
     /// as the Mac's "While the agent works" setting.
     @AppStorage("nook.companion.steerByDefault") private var steerByDefault = false
     /// Pictures that go with the next message.
     @State private var images: [CompanionImage] = []
+    /// A file dropped on the session that goes with the next message (`CompanionFeature.attachments`).
+    @State private var files: [CompanionFile] = []
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
+    /// The keyboard is in the composer (after "Reply" on an answer).
+    @FocusState private var composerFocused: Bool
 
     /// From the live list, or an older session opened from the settled ones or a search.
     private var session: SessionDigest? { client.session(sessionID) }
     private var entries: [TimelineEntry] { client.conversation(sessionID) }
     /// An older page is on its way (`CompanionClient.loadEarlier`).
     @State private var loadingEarlier = false
+    /// The Mac was asked for a session the list does not hold yet (one just started, a link from a notification).
+    @State private var lookedUp = false
 
     var body: some View {
         if let session {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        if client.can(CompanionFeature.timeline), !entries.isEmpty {
-                            if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
-                                EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
-                            }
-                            TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
-                        } else if !session.excerpt.isEmpty {
-                            SectionHeader(title: String(localized: "Latest reply"))
-                            TranscriptReply(text: session.excerpt, footer: false)
+            ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    if client.can(CompanionFeature.timeline), !entries.isEmpty {
+                        if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
+                            EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(scroll) }
                         }
-                        // Messages that wait in the outbox until the Mac takes them.
-                        let waiting = client.outbox.waiting(for: session.id)
-                        ForEach(waiting) { entry in
-                            TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
+                        TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
+                            // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+                            .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
+                                message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+                                composerFocused = true
+                            } : nil)
+                    } else if !session.excerpt.isEmpty {
+                        SectionHeader(title: String(localized: "Latest reply"))
+                        TranscriptReply(text: session.excerpt, footer: false)
+                    } else if client.can(CompanionFeature.timeline) {
+                        if client.isOffline {
+                            OfflineNote(text: String(localized: "This conversation is not kept on this iPhone yet. It opens once your Mac is connected."))
+                                .padding(.top, Theme.Spacing.xxl)
+                                .appearsAfterDelay()
+                        } else {
+                            TranscriptLoading()
                         }
-                        Color.clear.frame(height: 1).id(Self.bottom)
                     }
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.bottom, Theme.Spacing.lg)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-                // A light texture while the agent's answer comes in, at most every 320 ms (streaming haptics).
-                .modifier(StreamTicks(last: entries.last, working: session.attention == "working"))
-                .onChange(of: session.items.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-                .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                .defaultScrollAnchor(.bottom)
-                .modifier(ScrollEndTracker(atEnd: $atEnd))
-                .safeAreaInset(edge: .bottom) {
-                VStack(spacing: Theme.Spacing.md) {
-                    FloatingWorkingControl(
-                        workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
-                        working: session.attention == "working",
-                        waiting: !session.items.isEmpty,
-                        snoozed: actions(session).contains(.unsnooze),
-                        onWake: { manage(session, .unsnooze) },
-                        showScrollToEnd: !atEnd) {
-                        withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                    }
-                // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
-                // What waits on you, docked right above the composer, so it stays in
-                // sight however far up you read; while it waits it takes the composer's place.
-                if let item = session.items.first {
-                    PendingItemDock(session: session, item: item, more: session.items.count - 1)
-                } else {
-                // A message your Mac refused stays here with why, to edit and send again.
-                ForEach(client.rejected.filter { $0.session == sessionID }) { refused in
-                    RejectedMessageCard(message: refused) {
-                        let back = client.takeRejected(refused)
-                        message = back.text
-                        images = back.images
-                    } discard: {
-                        _ = client.takeRejected(refused)
+                    // Messages that wait in the outbox until the Mac takes them.
+                    let waiting = client.outbox.waiting(for: session.id)
+                    ForEach(waiting) { entry in
+                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
                     }
                 }
-                ComposerDock {
-                    if !client.allows(.operate) {
-                        Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
-                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
-                            .card(padding: Theme.Spacing.lg)
-                    } else if session.canSend != false {
-                        // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
-                        // the turn can take a message, a choice under the text says whether it steers now or waits.
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            ImageTray(images: $images)
-                            HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
-                                // Pictures for the agent, as from the Mac's composer (a Mac that takes them).
-                                if client.can(CompanionFeature.images) {
-                                    AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
-                                }
-                                if steerable(session) {
-                                    SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
-                                                    canSend: true, busy: stoppable(session),
-                                                    onStop: canStop(session) ? { confirmStop = true } : nil,
-                                                    onSend: { send(session) }) {
-                                        steerMenu
-                                    }
-                                } else {
-                                    SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
-                                                    onStop: canStop(session) ? { confirmStop = true } : nil) { send(session) }
-                                }
-                            }
-                        }
-                    } else {
-                        Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
-                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
-                            .card(padding: Theme.Spacing.lg)
-                    }
-                }
-                }
-                }
-                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.lg)
+                .readingColumn()
+            } floating: {
+                FloatingWorkingControl(
+                    workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
+                    working: session.attention == "working",
+                    waiting: !session.items.isEmpty,
+                    snoozed: actions(session).contains(.unsnooze),
+                    onWake: { manage(session, .unsnooze) })
+            } dock: { scroll in
+                dock(session, scroll)
             }
+            // A light texture while the agent's answer comes in, at most every 320 ms (streaming haptics).
+            .modifier(StreamTicks(last: entries.last, working: session.attention == "working"))
+            // Pictures, a file, links and text dragged onto the session wait in its composer (`composerDrop`).
+            .composerDrop(text: $message, images: dropImages, files: dropFiles,
+                          enabled: client.allows(.operate) && session.canSend != false && session.items.isEmpty)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Who works where, in the bar, so the conversation starts at the top.
-                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: Self.subtitle(session)) }
+                // The Mac's session header: "folder / title ⌄", the title opening what you can do with the session, and
+                // the agent and branch under it.
+                ToolbarItem(placement: .principal) {
+                    if hasActions(session) {
+                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true) }
+                    } else {
+                        SessionHeaderTitle(session: session, opens: false)
+                    }
+                }
                 if client.can(CompanionFeature.diff) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { reviewing = true } label: { Image(icon: "plusminus").foregroundStyle(Theme.paper) }
                             .accessibilityLabel("Changes")
                     }
-                }
-                if !actions(session).isEmpty || (canStop(session) && stoppable(session)) {
-                    ToolbarItem(placement: .topBarTrailing) { manageMenu(session) }
                 }
             }
             .confirmationDialog("Archive this session?", isPresented: $confirmArchive, titleVisibility: .visible) {
@@ -167,7 +128,19 @@ struct SessionDetailView: View {
                 }
             }
             // A push about this session arrives without a banner while it is on screen.
-            .onAppear { client.visibleSession = sessionID }
+            .onAppear {
+                client.visibleSession = sessionID
+                // Opened to write to it: the keyboard comes up once the screen has slid in. Taken whichever session
+                // opens, so a request whose screen never came up does not surface later.
+                let wanted = client.focusComposer == sessionID
+                client.focusComposer = nil
+                if wanted, client.allows(.operate), session.canSend != false {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        composerFocused = true
+                    }
+                }
+            }
             .onDisappear {
                 if client.visibleSession == sessionID { client.visibleSession = nil }
                 Task { await client.unwatchSession(sessionID) }
@@ -186,13 +159,110 @@ struct SessionDetailView: View {
                     try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
                 }
             }
+        } else if !lookedUp {
+            // A session that was just started (or opened from a notification) can be on the Mac before it is in the
+            // phone's list: ask for the list straight away, and once more after a moment, before calling it gone.
+            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .screen()
+                .task {
+                    await client.refresh()
+                    if client.session(sessionID) == nil {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        if !Task.isCancelled { await client.refresh() }
+                    }
+                    lookedUp = true
+                }
         } else {
             WSEmptyState(symbol: "tray", title: String(localized: "This session is gone."), message: String(localized: "It was closed or archived on your Mac."))
                 .screen()
         }
     }
 
-    private static let bottom = "bottom"
+    /// Changes when something new comes in at the end: an entry, text streaming into the last one, what waits on you,
+    /// a message waiting in the outbox.
+    private func followKey(_ session: SessionDigest) -> [String] {
+        let last = entries.last
+        return [last?.id ?? "", String(last.map { client.fullTexts[$0.id] ?? $0.text }?.count ?? 0), String(entries.count),
+                String(session.items.count), String(client.outbox.waiting(for: session.id).count), session.attention]
+    }
+
+    /// Room under the last message for the floating "Working for 12s" or "Snoozed", so it never covers the end.
+    private func floatingRoom(_ session: SessionDigest) -> CGFloat {
+        session.attention == "working" || actions(session).contains(.unsnooze) ? 56 : Theme.Spacing.lg
+    }
+
+    /// What a drop may add: pictures and a file where this Mac takes them.
+    private var dropImages: Binding<[CompanionImage]>? { client.can(CompanionFeature.images) ? $images : nil }
+    private var dropFiles: Binding<[CompanionFile]>? { client.can(CompanionFeature.attachments) ? $files : nil }
+
+    /// Under the conversation, at the reading width: the working control, then what waits on you or the composer.
+    private func dock(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
+            // What waits on you, docked right above the composer, so it stays in
+            // sight however far up you read; while it waits it takes the composer's place.
+            if let item = session.items.first {
+                if client.isOffline {
+                    OfflineStrip(kind: .answers).appearsAfterDelay()
+                        .padding(.horizontal, Theme.Spacing.lg)
+                }
+                PendingItemDock(session: session, item: item, more: session.items.count - 1)
+            } else {
+                // A message your Mac refused stays here with why, to edit and send again.
+                ForEach(client.rejected.filter { $0.session == sessionID }) { refused in
+                    RejectedMessageCard(message: refused) {
+                        let back = client.takeRejected(refused)
+                        message = back.text
+                        images = back.images
+                    } discard: {
+                        _ = client.takeRejected(refused)
+                    }
+                }
+                ComposerDock { composer(session, scroll) }
+            }
+        }
+        .readingColumn()
+    }
+
+    /// The composer under the conversation, or why there is none.
+    @ViewBuilder
+    private func composer(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {
+        if !client.allows(.operate) {
+            Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                .card(padding: Theme.Spacing.lg)
+        } else if session.canSend != false {
+            // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
+            // the turn can take a message, a choice under the text says whether it steers now or waits.
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                ImageTray(images: $images)
+                FileTray(files: $files)
+                HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+                    // Pictures for the agent, as from the Mac's composer (a Mac that takes them).
+                    if client.can(CompanionFeature.images) {
+                        AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
+                    }
+                    if steerable(session) {
+                        SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
+                                        canSend: true, busy: stoppable(session),
+                                        onStop: canStop(session) ? { confirmStop = true } : nil,
+                                        focus: $composerFocused,
+                                        onSend: { send(session, scroll) }) {
+                            steerMenu
+                        }
+                    } else {
+                        SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
+                                        onStop: canStop(session) ? { confirmStop = true } : nil,
+                                        focus: $composerFocused) { send(session, scroll) }
+                    }
+                }
+            }
+        } else {
+            Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                .card(padding: Theme.Spacing.lg)
+        }
+    }
 
     /// "Claude Code · nook · main": the agent, its folder and its branch.
     static func subtitle(_ session: SessionDigest) -> String {
@@ -200,7 +270,7 @@ struct SessionDetailView: View {
     }
 
     /// The page before the oldest message, keeping in sight what you were reading.
-    private func loadEarlier(_ proxy: ScrollViewProxy) {
+    private func loadEarlier(_ scroll: ConversationScrollControl) {
         guard !loadingEarlier, let first = entries.first?.id else { return }
         loadingEarlier = true
         Task {
@@ -208,21 +278,25 @@ struct SessionDetailView: View {
             loadingEarlier = false
             guard more, let session else { return }
             let rows = TranscriptRow.rows(entries, working: session.attention == "working")
-            if let row = rows.first(where: { $0.holds(first) }) { proxy.scrollTo(row.id, anchor: .top) }
+            if let row = rows.first(where: { $0.holds(first) }) { scroll.scrollTo(row.id, anchor: .top) }
         }
     }
 
     /// Sends the message: into the running turn when steering is chosen and possible, else as the Mac decides (now when
     /// the agent rests, after the turn while it works).
-    private func send(_ session: SessionDigest) {
+    private func send(_ session: SessionDigest, _ scroll: ConversationScrollControl) {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         let pictures = images
+        let attached = files
         message = ""
         images = []
+        files = []
         Haptics.tap()
+        // What you sent is at the end: that is where you want to be.
+        scroll.scrollToEnd()
         let steer = steerable(session) && steerByDefault
-        Task { await client.send(session, text: text, steer: steer, images: pictures) }
+        Task { await client.send(session, text: text, steer: steer, images: pictures, files: attached) }
     }
 
     /// The agent works and its turn can take a message now (a Mac that says so, `CompanionFeature.steer`).
@@ -266,7 +340,11 @@ struct SessionDetailView: View {
     }
 
     /// What you can do with the session from afar, as the Mac's row actions: stop or end it, snooze it, rename it, archive it.
-    private func manageMenu(_ session: SessionDigest) -> some View {
+    private func hasActions(_ session: SessionDigest) -> Bool {
+        !actions(session).isEmpty || (canStop(session) && stoppable(session))
+    }
+
+    private func manageMenu<MenuLabel: View>(_ session: SessionDigest, @ViewBuilder label: () -> MenuLabel) -> some View {
         let actions = actions(session)
         return Menu {
             if canStop(session), stoppable(session) {
@@ -297,9 +375,41 @@ struct SessionDetailView: View {
                 Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
             }
         } label: {
-            Image(icon: "ellipsis").foregroundStyle(Theme.paper)
+            label()
         }
-        .accessibilityLabel("More")
+        .accessibilityHint("Shows what you can do with this session")
+    }
+}
+
+/// The Mac's session header for the phone's bar: the folder as a quiet crumb, then the title, with a chevron when it
+/// opens the session's actions; the agent and branch under it.
+private struct SessionHeaderTitle: View {
+    let session: SessionDigest
+    let opens: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.xs) {
+                if !session.folder.isEmpty {
+                    // The folder stays whole (it is short); the title gives way.
+                    Text(verbatim: session.folder + " /").foregroundStyle(Theme.textTertiary).fixedSize()
+                }
+                Text(verbatim: session.title).foregroundStyle(Theme.paper)
+                if opens {
+                    Image(icon: "chevron.down").font(Theme.font(10, .bold)).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .font(Theme.TextStyle.strong)
+            .lineLimit(1)
+            let detail = [session.agent, session.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            if !detail.isEmpty {
+                Text(verbatim: detail).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: 260)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -332,36 +442,6 @@ private struct EarlierMessagesButton: View {
     }
 }
 
-/// Plays `Haptics.stream` as the conversation grows while the agent works, as often as `StreamCadence` allows.
-private struct StreamTicks: ViewModifier {
-    let last: TimelineEntry?
-    let working: Bool
-    @State private var cadence = StreamCadence(openedAt: Date())
-
-    func body(content: Content) -> some View {
-        content.onChange(of: last) { _, _ in
-            if cadence.tick(working: working, now: Date()) { Haptics.stream() }
-        }
-    }
-}
-
-/// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
-private struct ScrollEndTracker: ViewModifier {
-    @Binding var atEnd: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 18, *) {
-            content.onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height <= geometry.containerSize.height || geometry.visibleRect.maxY >= geometry.contentSize.height - 64
-            } action: { _, now in
-                atEnd = now
-            }
-        } else {
-            content
-        }
-    }
-}
-
 /// A message your Mac refused: why, what you wrote, and Edit to put it back in the composer (with its pictures) or
 /// Discard.
 private struct RejectedMessageCard: View {
@@ -388,6 +468,19 @@ private struct RejectedMessageCard: View {
         }
         .card(tint: Theme.coral)
         .padding(.horizontal, Theme.Spacing.xl)
+    }
+}
+
+/// Plays `Haptics.stream` as the conversation grows while the agent works, as often as `StreamCadence` allows.
+private struct StreamTicks: ViewModifier {
+    let last: TimelineEntry?
+    let working: Bool
+    @State private var cadence = StreamCadence(openedAt: Date())
+
+    func body(content: Content) -> some View {
+        content.onChange(of: last) { _, _ in
+            if cadence.tick(working: working, now: Date()) { Haptics.stream() }
+        }
     }
 }
 
@@ -428,7 +521,7 @@ struct ItemView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            //: a small capitalized heading in the waiting color, then what is asked, large.
+            // An approval card: a small capitalized heading in the waiting color, then what is asked, large.
             Label {
                 Text(heading).textCase(.uppercase).tracking(1.1)
             } icon: {
@@ -481,6 +574,10 @@ struct ItemView: View {
                         ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                             QuestionOptionRow(title: option, number: number) {
                                 Haptics.success(); Task { await client.answer(session, item: item, text: option) }
+                            }
+                            // What the option would look like, under it (an agent question's preview), as on the Mac.
+                            if let previews = item.optionPreviews, previews.indices.contains(number) {
+                                QuestionOptionPreview(text: previews[number], indent: Theme.Spacing.lg, lineLimit: 10)
                             }
                         }
                     }
@@ -550,6 +647,8 @@ struct NewSessionView: View {
     @Environment(\.dismiss) private var dismiss
     /// A `nook://prompt` link this sheet was opened for: its text, and the project and agent it names.
     var link: PromptLink? = nil
+    /// The project folder to start in (a project's "+" in the Agents list); nil for the link's or your defaults.
+    var startIn: String? = nil
     let started: (String) -> Void
 
     @State private var task = ""
@@ -572,13 +671,17 @@ struct NewSessionView: View {
     private var options: LaunchOptions? { client.launchOptions }
     private var chosenAgent: LaunchOptions.Agent? { options?.agents.first { $0.id == agent } }
     private var chosenProject: LaunchOptions.Project? { options?.projects.first { $0.path == project } }
-    private var canStart: Bool { !starting && chosenAgent != nil && chosenProject != nil }
+    private var canStart: Bool {
+        !starting && chosenAgent != nil && chosenProject != nil && !(client.isOffline && !client.writingWaits)
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if let options {
                     content(options)
+                        // A picture, a link or text dragged onto the sheet goes into the task.
+                        .composerDrop(text: $task, images: client.can(CompanionFeature.images) ? $images : nil)
                 } else if loaded {
                     WSEmptyState(symbol: "wifi.slash", title: String(localized: "Your Mac does not answer."),
                                message: String(localized: "Is the companion on, and are you on the same Wi‑Fi?"))
@@ -618,6 +721,14 @@ struct NewSessionView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if client.isOffline {
+                        Banner(text: client.writingWaits
+                               ? String(localized: "Offline: the session does not start yet. It waits on this iPhone and starts as soon as your Mac is back.")
+                               : String(localized: "Offline: connect to your Mac to start a session."),
+                               symbol: "wifi.slash")
+                            .padding(.bottom, Theme.Spacing.md)
+                            .appearsAfterDelay()
+                    }
                     ImageTray(images: $images)
                     SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,
                                     canSend: canStart, sending: starting, focus: $focused, onSend: start) {
@@ -720,7 +831,8 @@ struct NewSessionView: View {
         guard !prepared, let options else { return }
         prepared = true
         agent = link?.agent(in: options.agents)?.id ?? options.defaultAgent ?? options.agents.first?.id ?? ""
-        project = link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
+        project = startIn.flatMap { folder in options.projects.first { $0.path == folder }?.path }
+            ?? link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
         plan = options.defaultPlan
         worktree = options.defaultWorktree
         model = options.agents.first { $0.id == agent }?.defaultModel ?? ""

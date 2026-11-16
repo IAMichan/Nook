@@ -2,6 +2,7 @@
   // Terwijl de Notetaker opneemt: een kleine pil rechtsonder met de tijd en Stop, zodat je altijd ziet dat een gesprek
   // genoteerd wordt (RecordingBadge op de Mac). Neemt nooit de focus.
   import { services, serviceEvents, clock, type NoteLive } from "../../lib/services";
+  import { tr } from "../../lib/i18n.svelte";
 
   let live = $state<NoteLive | null>(null);
   let started = $state(Date.now());
@@ -28,9 +29,9 @@
 <div class="badge">
   <span class="dot" style="opacity:{0.55 + 0.45 * Math.min(1, (live?.level ?? 0) * 12)}"></span>
   <strong>{clock((now - started) / 1000)}</strong>
-  <span class="faint">Opname{live && !live.systemAudio ? " · alleen microfoon" : ""}</span>
+  <span class="faint">{live && !live.systemAudio ? tr("Opname · alleen microfoon", "Recording · microphone only") : tr("Opname", "Recording")}</span>
   <span class="spacer"></span>
-  <button onclick={() => services.toggleNote()}>Stop</button>
+  <button onclick={() => services.toggleNote()}>{tr("Stop", "Stop")}</button>
 </div>
 
 <style>

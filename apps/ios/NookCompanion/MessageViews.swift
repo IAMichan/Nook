@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 // The messages of every conversation on the phone, one place for all of them, built on the parts shared with the Mac
-// (apps/macos/NotchUI/Shared: `ChatListRowContent`, `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`,
+// (apps/macos/UI/Shared: `ChatListRowContent`, `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`,
 // `MessageTicksMark`, `ChatTypingBubble`, `TranscriptStyle`, `TranscriptUserBubble`, `TranscriptTime`):
 //
 // - A conversation with Nook or an agent (the Nook tab, a session's transcript): what you wrote is a soft bubble on
@@ -38,12 +38,20 @@ struct TranscriptUserMessage: View {
             }
             TranscriptUserBubble {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text(verbatim: text)
-                        .font(Theme.TextStyle.body)
-                        .foregroundStyle(Theme.paper)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transcriptFolded(long && !expanded)
+                    // A message that starts with a quote (a reply to an answer) shows it as a card above your words.
+                    let lead = AnswerReply.leadingQuote(text)
+                    let words = lead?.rest ?? text
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        if let lead { TranscriptQuoteCard(text: lead.quote) }
+                        if !words.isEmpty {
+                            Text(verbatim: words)
+                                .font(Theme.TextStyle.body)
+                                .foregroundStyle(Theme.paper)
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .transcriptFolded(long && !expanded)
                     if long {
                         Button(expanded ? String(localized: "Show less") : String(localized: "Show all")) {
                             withAnimation(Theme.reveal) { expanded.toggle() }
@@ -57,7 +65,7 @@ struct TranscriptUserMessage: View {
             .contextMenu { MessageCopyButton(text: text) }
             .opacity(pending ? 0.6 : 1)
             if pending {
-                Label("Waiting for your Mac", systemImage: "clock")
+                Label("Not sent yet · waiting for your Mac", systemImage: "clock")
                     .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textTertiary)
             } else if let date {
@@ -77,14 +85,20 @@ struct TranscriptReply<Extras: View>: View {
     /// The time under the answer; only the final answer of a turn has it.
     var footer = true
     @ViewBuilder var extras: () -> Extras
+    @Environment(\.replyToAnswer) private var replyToAnswer
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
-                // Headings, lists, code and tables as blocks (phone reads an answer this way), with diagrams
-                // and math drawn as on the Mac.
+                // Headings, lists, code and tables as blocks, with diagrams and math drawn as on the Mac.
                 MarkdownBlocksView(text: text, color: failed ? Theme.coral : Theme.textStrong)
-                    .contextMenu { MessageCopyButton(text: text) }
+                    .contextMenu {
+                        MessageCopyButton(text: text)
+                        // As "Reply" under an answer on the Mac: a quote of it at the top of the session's composer.
+                        if let replyToAnswer {
+                            Button { replyToAnswer(text) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                        }
+                    }
             }
             extras()
             if footer, !text.isEmpty, let date {
@@ -114,6 +128,38 @@ struct TranscriptReply<Extras: View>: View {
 extension TranscriptReply where Extras == EmptyView {
     init(text: String, date: Date? = nil, failed: Bool = false, footer: Bool = true) {
         self.init(text: text, date: date, failed: failed, footer: footer) { EmptyView() }
+    }
+}
+
+extension EnvironmentValues {
+    /// "Reply" in an answer's long-press menu: puts the answer as a quote at the top of the session's composer. Set by
+    /// the session's screen where you can write to it; nil (no Reply) elsewhere.
+    @Entry var replyToAnswer: ((String) -> Void)? = nil
+}
+
+/// The quote a message of yours starts with (`AnswerReply.leadingQuote`), as an inset card at the top of your bubble,
+/// as on the Mac: a bar and the quoted words, quieter than yours, at most a few lines.
+struct TranscriptQuoteCard: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Markdown.text(text)
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.leading, Theme.Spacing.lg)
+        .padding(.trailing, Theme.Spacing.md)
+        .overlay(alignment: .leading) {
+            Capsule().fill(Theme.textTertiary).frame(width: 3)
+                .padding(.vertical, Theme.Spacing.sm).padding(.leading, Theme.Spacing.xs)
+        }
+        .roundedBackground(Theme.wash.opacity(0.05), radius: Theme.Radius.control)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -178,6 +224,8 @@ struct ChatBubbleView: View {
     var last = true
     /// Written on the phone and waiting for the Mac: dimmed, with a clock for its time.
     var pending = false
+    /// Drawn as WhatsApp draws it (`WhatsAppLook`): its green and dark bubbles, its tail and its ticks.
+    var whatsApp = false
     /// Opens your message's info from its ticks (who has it and who read it); nil when the app says nothing per person.
     var onInfo: (() -> Void)? = nil
 
@@ -199,16 +247,19 @@ struct ChatBubbleView: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: line.fromMe ? .trailing : .leading, spacing: Theme.Spacing.xxs) {
-                bubble.opacity(pending ? 0.6 : 1)
-                    // Over the bubble's bottom edge at its leading side, clear of the time at its trailing side.
-                    .overlay(alignment: .bottomLeading) {
-                        if !line.reactions.isEmpty {
-                            reactions.alignmentGuide(.bottom) { $0[.top] + Theme.Spacing.sm }
-                        }
+                // The reactions under the bubble at its leading side, overlapping only its bottom edge, so they never
+                // cover the text or the time. (Aligned in an overlay they sat on the bubble's last line instead.)
+                VStack(alignment: .leading, spacing: line.reactions.isEmpty ? 0 : -Theme.Spacing.sm) {
+                    bubble.opacity(pending ? 0.6 : 1)
+                    if !line.reactions.isEmpty {
+                        reactions
                     }
-                if !line.reactions.isEmpty {
-                    // The room the pill takes under the bubble.
-                    reactions.hidden().frame(width: 0).padding(.top, -Theme.Spacing.sm).accessibilityHidden(true)
+                }
+                // Said in words, not only with a clock: this one has not left the phone.
+                if pending {
+                    Label("Not sent yet · waiting for your Mac", systemImage: "clock")
+                        .font(Theme.TextStyle.caption)
+                        .foregroundStyle(whatsApp ? WhatsAppLook.text.opacity(0.6) : Theme.textTertiary)
                 }
             }
             if !line.fromMe { Spacer(minLength: Self.inset) }
@@ -248,7 +299,7 @@ struct ChatBubbleView: View {
                     if !line.text.isEmpty {
                         Text(verbatim: line.text)
                             .font(Theme.TextStyle.body)
-                            .foregroundStyle(Theme.paper)
+                            .foregroundStyle(whatsApp ? WhatsAppLook.text : Theme.paper)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
@@ -256,11 +307,18 @@ struct ChatBubbleView: View {
                 }
             }
             .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.vertical, whatsApp ? Theme.Spacing.xs + Theme.Spacing.xxs : Theme.Spacing.sm)
             // Room for the tail on its side, on every bubble of the run, so their edges line up.
-            .padding(line.fromMe ? .trailing : .leading, ChatBubbleShape.tail)
-            .background(ChatBubbleShape(mine: line.fromMe, tailed: first, joinsBelow: !last)
-                .fill(line.fromMe ? Theme.chatMine : Theme.chatTheirs))
+            .padding(line.fromMe ? .trailing : .leading, whatsApp ? WhatsAppBubbleShape.tail : ChatBubbleShape.tail)
+            .background {
+                if whatsApp {
+                    WhatsAppBubbleShape(mine: line.fromMe, tailed: first)
+                        .fill(line.fromMe ? WhatsAppLook.mine : WhatsAppLook.theirs)
+                } else {
+                    ChatBubbleShape(mine: line.fromMe, tailed: first, joinsBelow: !last)
+                        .fill(line.fromMe ? Theme.chatMine : Theme.chatTheirs)
+                }
+            }
             .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -276,18 +334,27 @@ struct ChatBubbleView: View {
                 if let ticks = MessageTicks(line.ticks) {
                     if let onInfo {
                         // A tap on the ticks says who read it, who has it, and who does not yet, as on the Mac.
-                        Button(action: onInfo) { MessageTicksMark(ticks: ticks) }
+                        Button(action: onInfo) { ticksMark(ticks) }
                             .buttonStyle(.plain)
                             .accessibilityHint(Text("Message info"))
                     } else {
-                        MessageTicksMark(ticks: ticks)
+                        ticksMark(ticks)
                     }
                 }
             }
         }
-        .font(Theme.TextStyle.caption)
-        .foregroundStyle(Theme.chatStamp)
+        .font(whatsApp ? Theme.font(11.5) : Theme.TextStyle.caption)
+        .foregroundStyle(whatsApp ? (line.fromMe ? WhatsAppLook.stampOnMine : WhatsAppLook.quiet) : Theme.chatStamp)
         .fixedSize()
+    }
+
+    @ViewBuilder
+    private func ticksMark(_ ticks: MessageTicks) -> some View {
+        if whatsApp {
+            WhatsAppTicksMark(ticks: ticks, rest: WhatsAppLook.stampOnMine)
+        } else {
+            MessageTicksMark(ticks: ticks)
+        }
     }
 
     /// The emoji on a message as one pill over the bubble's bottom edge, as on the Mac: each emoji once, the first three,

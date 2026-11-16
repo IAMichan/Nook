@@ -117,7 +117,7 @@ pub async fn whatsapp_audio(c: State<'_, Connectors>, chat: String, message: Str
 /// "Laat Nook antwoorden": a new Nook where Nook reads only this chat and proposes an answer to it as a plan. The
 /// prompt is Nook's own, so nothing of it is learned. Returns the Nook's id.
 #[tauri::command]
-pub fn whatsapp_ask_nook(app: AppHandle, c: State<'_, Connectors>, chat: String) -> Res<String> {
+pub async fn whatsapp_ask_nook(app: AppHandle, c: State<'_, Connectors>, chat: String) -> Res<String> {
     let link = &c.whatsapp;
     let key = jid::normalized(&chat);
     let conversation = link.conversation(&key).ok_or("Deze chat is niet meer in Nook.")?;

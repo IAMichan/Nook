@@ -1,0 +1,19 @@
+{"type":"transcript_start","provider":"codex","protocol":"codex.app-server","scenario":"codex_turn_interrupt","source":"hand-written for Nook","model":"gpt-6-luna"}
+{"type":"expect_outbound","frame":{"id":1,"method":"initialize","params":{"clientInfo":{"name":"nook"}}}}
+{"type":"emit_inbound","frame":{"id":1,"result":{"userAgent":"nook/1 (replay)","codexHome":"/home/replay-user/.codex","platformFamily":"unix","platformOs":"linux"}}}
+{"type":"expect_outbound","frame":{"method":"initialized"}}
+{"type":"expect_outbound","frame":{"id":2,"method":"thread/start","params":{"cwd":"<workspace>","model":"gpt-6-luna","config":{"tools.update_plan.enabled":true}}}}
+{"type":"emit_inbound","frame":{"id":2,"result":{"thread":{"id":"ef2843ff-74cf-46a6-b6dc-0914faa30751","preview":"","ephemeral":false,"modelProvider":"openai","model":"gpt-6-luna","createdAt":1794470400,"updatedAt":1794470400,"status":{"type":"idle"},"path":"/home/replay-user/.codex/sessions/rollout-ef2843ff-74cf-46a6-b6dc-0914faa30751.jsonl","cwd":"<workspace>","cliVersion":"0.160.0","turns":[]},"model":"gpt-6-luna","modelProvider":"openai","cwd":"<workspace>","approvalPolicy":"on-request","sandbox":{"type":"readOnly"}}}}
+{"type":"emit_inbound","frame":{"method":"thread/started","params":{"thread":{"id":"ef2843ff-74cf-46a6-b6dc-0914faa30751","preview":"","ephemeral":false,"modelProvider":"openai","model":"gpt-6-luna","createdAt":1794470400,"updatedAt":1794470400,"status":{"type":"idle"},"path":"/home/replay-user/.codex/sessions/rollout-ef2843ff-74cf-46a6-b6dc-0914faa30751.jsonl","cwd":"<workspace>","cliVersion":"0.160.0","turns":[]}}}}
+{"type":"expect_outbound","frame":{"id":3,"method":"turn/start","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","input":[{"type":"text","text":"Run `sleep 45` in the shell and wait for it, then say: the long wait is over"}],"approvalPolicy":"never","sandboxPolicy":{"type":"dangerFullAccess"}}}}
+{"type":"emit_inbound","frame":{"id":3,"result":{"turn":{"id":"d1798f84-bc21-4121-b24c-01beb8065be4","items":[],"status":"inProgress","error":null}}}}
+{"type":"emit_inbound","frame":{"method":"thread/status/changed","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","status":{"type":"active","activeFlags":[]}}}}
+{"type":"emit_inbound","frame":{"method":"turn/started","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","turn":{"id":"d1798f84-bc21-4121-b24c-01beb8065be4","items":[],"status":"inProgress","error":null,"startedAt":1794470400}}}}
+{"type":"emit_inbound","frame":{"method":"item/started","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","turnId":"d1798f84-bc21-4121-b24c-01beb8065be4","item":{"type":"userMessage","id":"e990d3ba-13fa-4bdc-b067-e0453703cba3","content":[{"type":"text","text":"Run `sleep 45` in the shell and wait for it, then say: the long wait is over"}]}}}}
+{"type":"emit_inbound","frame":{"method":"item/completed","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","turnId":"d1798f84-bc21-4121-b24c-01beb8065be4","item":{"type":"userMessage","id":"e990d3ba-13fa-4bdc-b067-e0453703cba3","content":[{"type":"text","text":"Run `sleep 45` in the shell and wait for it, then say: the long wait is over"}]}}}}
+{"type":"expect_outbound","frame":{"id":4,"method":"turn/interrupt","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","turnId":"d1798f84-bc21-4121-b24c-01beb8065be4"}}}
+{"type":"emit_inbound","frame":{"id":4,"result":{}}}
+{"type":"emit_inbound","frame":{"method":"thread/status/changed","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","status":{"type":"idle"}}}}
+{"type":"emit_inbound","frame":{"method":"turn/completed","params":{"threadId":"ef2843ff-74cf-46a6-b6dc-0914faa30751","turn":{"id":"d1798f84-bc21-4121-b24c-01beb8065be4","items":[],"status":"interrupted","error":null,"startedAt":1794470400,"completedAt":1794470401,"durationMs":1000}}}}
+{"type":"expect_close"}
+{"type":"exit","status":0}

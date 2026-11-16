@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - One row for every connection
 //
-// Laid out lays out its providers, environments and source control: the icon, the name (and a version), one
+// Every connection is laid out the same way: the icon, the name (and a version), one
 // line that starts with the state ("Connected · michan@…"), a dot only when something is wrong, and on the right a
 // switch (switching off keeps it) and a "…" menu whose last item, after a line, removes it after asking. Managing
 // happens in the row itself: a click opens it in place and shows what the sheet used to show, so the page stays the page.
@@ -86,22 +86,19 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                 if let isOn {
                     Toggle("", isOn: isOn)
                         .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .help(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
+                        .compactSwitch()
+                        .nookTip(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
                         .accessibilityLabel(tr("connection.use", title))
                 }
                 moreMenu
                 // The chevron last: every row lines up, whether it opens or not.
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, size: 10, weight: .semibold)
                     .frame(width: 12)
                     .opacity(opens ? 1 : 0)
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
+            .nookClickable(opens)
             .onTapGesture { if opens { withAnimation(NookTheme.reveal) { open.toggle() } } }
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(opens ? .isButton : [])
@@ -117,7 +114,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
             }
         }
         .onAppear { if startsOpen { open = true } }
-        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove) {
+        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove, titleVisibility: .visible) {
             if let removal {
                 Button(removal.title, role: .destructive, action: removal.action)
             }
@@ -155,10 +152,8 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(tr("connection.more"))
+            .nookMenuButton()
+            .nookTip(tr("connection.more"))
             .accessibilityLabel(tr("connection.more"))
         } else {
             // The menu's place kept empty, so every row's switch lines up with the rows above and below it.
@@ -210,20 +205,53 @@ struct ConnectionListHeader: View {
             Spacer()
             if let add {
                 Button(action: add.action) {
-                    Label(add.title, systemImage: symbol)
+                    ConnectionListAddLabel(title: add.title, symbol: symbol)
                 }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
+                .buttonStyle(.nookBorderless)
             }
         }
     }
 }
 
-/// An empty list of connections: what would be here, and the way to add the first one.
+/// `ConnectionListHeader` for a list where adding starts with a choice (which agent, which kind of host): the same
+/// "+ Add …" on the right, opening a menu of the choices.
+struct ConnectionListMenuHeader<Items: View>: View {
+    let title: String
+    var info: String? = nil
+    let add: String
+    @ViewBuilder var items: () -> Items
+
+    var body: some View {
+        HStack {
+            SettingsSectionTitle(title, info: info)
+            Spacer()
+            Menu {
+                items()
+            } label: {
+                ConnectionListAddLabel(title: add, symbol: "plus")
+            }
+            .nookMenuButton()
+        }
+    }
+}
+
+/// The "+ Add …" in a list's header, one look whether it is a button or opens a menu.
+struct ConnectionListAddLabel: View {
+    let title: String
+    let symbol: String
+
+    var body: some View {
+        Label(title, icon: symbol)
+            .font(NookTheme.TextStyle.control)
+            .foregroundStyle(NookTheme.textStrong)
+    }
+}
+
+/// An empty list: what would be here. The way to add the first one is the "+ Add …" in the list's header, never a
+/// second button in here.
 struct ConnectionListEmpty: View {
     let title: String
     let detail: String
-    var add: (title: String, action: () -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -232,10 +260,6 @@ struct ConnectionListEmpty: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let add {
-                Button(action: add.action) { Label(add.title, systemImage: "plus") }
-                    .controlSize(.small)
-            }
         }
         .padding(.vertical, NookTheme.Spacing.xs)
     }

@@ -114,6 +114,16 @@ final class TranscriptPresentationTests: XCTestCase {
         ]), .verifying(.build))
     }
 
+    func testSteerKeepsTheRunningStepAsTheLiveLine() {
+        var steer = message("u2", .user, "What is the URL?", at: 3)
+        steer.queued = true
+        XCTAssertEqual(TranscriptPresentation.activity([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running)], at: 2),
+            steer
+        ]), .verifying(.build))
+    }
+
     func testTheThoughtBeforeTheRunningStepGoesWithTheLiveLine() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Fix de test", at: 0),
@@ -340,6 +350,23 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(messages[4].notice, .compacted(tokens: nil))
         XCTAssertEqual(AgentTranscript.notice(error: "You've hit your usage limit. Try again later."),
                        .limit("You've hit your usage limit. Try again later.", resets: nil))
+    }
+
+    /// A session followed from its transcript reads a limit the way one Nook runs does (`FailureClassifier`): every
+    /// agent's wording, and a reset the text names, counted from when the agent wrote it.
+    func testTranscriptErrorsReadEveryAgentsLimit() {
+        let written = Date(timeIntervalSince1970: 1_760_000_000)
+        func isLimit(_ text: String) -> Bool {
+            if case .limit = AgentTranscript.notice(error: text, at: written) { return true }
+            return false
+        }
+        XCTAssertTrue(isLimit("[API Error: RESOURCE_EXHAUSTED] Quota exceeded for quota metric"), "Gemini")
+        XCTAssertTrue(isLimit("429 Too Many Requests"))
+        XCTAssertTrue(isLimit("You exceeded your current quota, please check your plan"))
+        XCTAssertFalse(isLimit("API Error: 529 Overloaded"), "overloaded has no reset and is no limit")
+        XCTAssertFalse(isLimit("Error: ENOENT /tmp/4290.txt"), "a number that only contains 429 is no status")
+        XCTAssertEqual(AgentTranscript.notice(error: "Too many requests (reset after 1h2m)", at: written),
+                       .limit("Too many requests (reset after 1h2m)", resets: written.addingTimeInterval(3_720)))
     }
 
     func testStepsKeepWhatTheirToolGaveBack() {

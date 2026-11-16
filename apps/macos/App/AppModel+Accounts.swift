@@ -295,29 +295,17 @@ extension AppModel {
     /// Runs a browser login to its end (at most fifteen minutes). Nil when it succeeded, else what went wrong.
     private nonisolated static func runBrowserLogin(_ executable: String, arguments: [String],
                                                     environment: [String: String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.environment = environment
-        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        let output = Pipe()
         // No stdin: the agent cannot ask for a pasted code and waits for the browser instead.
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = output
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
+        let result: ProcessRunner.Output
+        do {
+            result = try ProcessRunner.run(executable, arguments, in: FileManager.default.homeDirectoryForCurrentUser.path,
+                                           environment: environment, timeout: 15 * 60)
+        } catch {
+            return tr("app.connect.browserLoginFailed", error.localizedDescription)
         }
-        do { try process.run() } catch { return tr("app.connect.browserLoginFailed", error.localizedDescription) }
-        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15 * 60, execute: timeout)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        timeout.cancel()
-        guard process.terminationStatus != 0 else { return nil }
-        if process.terminationReason == .uncaughtSignal { return tr("app.connect.browserLoginTimeout") }
-        let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+        if result.timedOut { return tr("app.connect.browserLoginTimeout") }
+        guard result.status != 0 else { return nil }
+        let last = (result.stdout + "\n" + result.stderr).split(separator: "\n").last.map(String.init) ?? ""
         return tr("app.connect.browserLoginFailed", String(last.prefix(200)))
     }
 

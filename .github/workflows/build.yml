@@ -1,31 +1,22 @@
 name: Build
 
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
+# the macOS build and NookTests, on any branch: a clean Mac for an agent whose worktree cannot build (disk, the build
+# slot) or a test that only fails on CI. `only-testing` narrows the tests, so iterating on one class costs one build
+# and seconds of tests:
+#   gh workflow run build.yml --ref my-branch -f only-testing=NookTests/RunStoreTests
 on:
-  push:
-    branches: [main]
-    paths: &paths
-      - 'apps/macos/**'
-      - 'packages/protocol/**'
-      - 'scripts/ui-lint.sh'
-      - 'scripts/perf-lint.sh'
-      - '.github/workflows/build.yml'
-      - '.github/actions/**'
-  pull_request:
-    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
-    types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: *paths
+  workflow_call:
   workflow_dispatch:
+    inputs:
+      only-testing:
+        description: 'Run only these tests, space-separated (NookTests/RunStoreTests NookTests/Foo/testBar). Empty: all.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
   actions: read # verified-check looks up the markers of earlier runs
-
-# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
-# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
-# of merges costs at most two builds instead of cancelling every build before it completes.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ui-lint:
@@ -38,11 +29,13 @@ jobs:
       verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Colors, type, and radii come from NookTheme
         run: scripts/ui-lint.sh
       - name: No self-feeding subscriptions or endless animations
         run: scripts/perf-lint.sh
-      # Keep this list in sync with the paths filter above.
+      # Keep this list in sync with scripts/ci-changes.sh.
       - name: Already verified on these inputs?
         id: verified
         uses: ./.github/actions/verified-check
@@ -68,6 +61,8 @@ jobs:
         working-directory: apps/macos
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Select newest Xcode (the MLX packages need Xcode 26)
         id: xcode
         run: |
@@ -89,7 +84,7 @@ jobs:
           key: macos-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
           restore-keys: macos-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
-        run: brew install xcodegen
+        uses: ./.github/actions/setup-xcodegen
       - name: Generate project
         run: xcodegen
       - name: Resolve Swift packages
@@ -113,10 +108,18 @@ jobs:
           xcodebuild build-for-testing $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" 2>&1 | tee build.log
       - name: Unit tests
         timeout-minutes: 15
+        env:
+          ONLY_TESTING: ${{ inputs.only-testing }}
         run: |
           set -o pipefail
+          SELECTION=(-only-testing:NookTests)
+          if [ -n "$ONLY_TESTING" ]; then
+            SELECTION=()
+            for test in $ONLY_TESTING; do SELECTION+=("-only-testing:$test"); done
+            echo "Running only: $ONLY_TESTING" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           # shellcheck disable=SC2086 # the flags are meant to split into words
-          xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" -only-testing:NookTests \
+          xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" "${SELECTION[@]}" \
             -resultBundlePath "$RUNNER_TEMP/NookTests.xcresult" 2>&1 | tee test.log
       - name: Errors and warnings
         if: always()
@@ -141,7 +144,9 @@ jobs:
         with:
           path: *cache-paths
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      - uses: ./.github/actions/verified-mark
+      # A run of only some tests verified nothing about the rest, so it leaves no marker.
+      - if: inputs.only-testing == ''
+        uses: ./.github/actions/verified-mark
         with:
           name: macos
           fingerprint: ${{ needs.ui-lint.outputs.fingerprint }}

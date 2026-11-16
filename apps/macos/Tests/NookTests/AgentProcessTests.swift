@@ -99,6 +99,18 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(env["NOOK_RUN_ID"], "r")
     }
 
+    func testAgentsDoNotJoinTheSessionNookWasStartedFrom() {
+        var base = ["PATH": "/usr/bin", "HOME": "/Users/x", "KEEP": "1"]
+        for key in ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                    "ELECTRON_RUN_AS_NODE", "NOOK_RUN_ID", "NOOK_BRIDGE_TOKEN", "NOOK_BRIDGE_TOKEN_FILE", "NOOK_BRIDGE_SOCK"] {
+            base[key] = "inherited"
+        }
+        let env = AgentCommand.environment(base: base, executable: "/bin/claude", extra: ["NOOK_RUN_ID": "mine"])
+        for key in AgentCommand.inheritedSessionVariables where key != "NOOK_RUN_ID" { XCTAssertNil(env[key], key) }
+        XCTAssertEqual(env["NOOK_RUN_ID"], "mine", "what Nook sets itself goes back in")
+        XCTAssertEqual(env["KEEP"], "1")
+    }
+
     func testDisplayCommandHidesEnvironment() {
         var withKey = input(.claude)
         withKey.accountEnvironment["ANTHROPIC_API_KEY"] = "sk-ant-geheim"
@@ -156,7 +168,7 @@ final class AgentProcessTests: XCTestCase {
             lines.add(line)
             for event in ClaudeStreamParser.parse(line) {
                 switch event {
-                case .permissionRequest(let request, _, let input, _, _):
+                case .permissionRequest(let request, _, let input, _, _, _):
                     asked.fulfill()
                     process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
                 case .result:
@@ -189,6 +201,27 @@ final class AgentProcessTests: XCTestCase {
         try process.start()
         wait(for: [exited], timeout: 10)
         XCTAssertEqual(lines.all.map { CodexStreamParser.parse($0) }.first, [.threadStarted("t")])
+    }
+
+    /// A coding agent runs at Nook's own priority, and so does what it starts: an agent the user waits on must not be
+    /// slowed down. Heavy builds lower their own priority (scripts/build-slot.sh).
+    func testAgentAndWhatItStartsRunAtNooksPriority() throws {
+        // Nook's own priority (the parent), the agent's, and that of a process the agent starts.
+        let path = try script("for p in $PPID $$; do ps -o nice= -p $p | tr -d ' '; done\nsh -c 'ps -o nice= -p $$' | tr -d ' '\n")
+        let spec = LaunchSpec(executable: path, arguments: [], extraEnvironment: [:], workingDirectory: folder,
+                              initialInput: [], keepsInputOpen: false)
+        let process = AgentProcess(spec: spec)
+        let lines = LineCollector()
+        let exited = expectation(description: "done")
+        process.onLine = { lines.add($0) }
+        process.onExit = { _, _ in exited.fulfill() }
+        try process.start()
+        wait(for: [exited], timeout: 10)
+        let values = lines.all.compactMap { Int32($0) }
+        XCTAssertEqual(values.count, 3, "\(lines.all)")
+        guard values.count == 3 else { return }
+        XCTAssertEqual(values[1], values[0], "the agent runs at Nook's priority")
+        XCTAssertEqual(values[2], values[1], "and so does what it starts")
     }
 
     func testStopEndsALongRunningAgent() throws {

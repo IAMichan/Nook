@@ -29,9 +29,9 @@ describe("scherm lezen en energie", () => {
   const light: EnergyView = { plan: { pace: "light", reasons: ["battery"] }, status: "Rustig aan: je computer draait op de accu" };
 
   it("zegt waarom er niets gelezen wordt, ook als er nog vensters bewaard zijn", () => {
-    expect(screenLine(false, ["Kladblok — plan"], null)).toBe("Uit");
-    expect(screenLine(true, ["Kladblok — plan"], paused)).toBe("Gepauzeerd: je bent even weg");
+    expect(screenLine(false, ["Kladblok — plan"], null)).toBe("Off");
+    expect(screenLine(true, ["Kladblok — plan"], paused)).toBe("Paused: you're away");
     expect(screenLine(true, ["Kladblok — plan"], light)).toBe("Kladblok — plan");
-    expect(screenLine(true, [], light)).toBe("niets gelezen");
+    expect(screenLine(true, [], light)).toBe("nothing read");
   });
 });

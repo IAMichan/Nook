@@ -2,6 +2,7 @@
   // Instellingen › Aanvullen › Testen: een tekstvak om aanvullen te proberen zonder Instellingen te verlaten. Hetzelfde
   // model, dezelfde voorstellen en dezelfde emoji als in andere apps; wat je hier typt wordt niet bewaard en telt niet mee.
   import { nook } from "../../lib/state.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import { autocomplete, nextChunk, type EmojiChoices, type PlaygroundResult } from "../../lib/autocomplete";
 
   const ac = $derived(nook.settings!.autocomplete);
@@ -131,7 +132,7 @@
     bind:this={area}
     bind:value={text}
     rows="5"
-    placeholder="Typ hier een zin en kijk hoe Nook hem aanvult…"
+    placeholder={tr("Typ hier een zin en kijk hoe Nook hem aanvult…", "Type a sentence here and see how Nook completes it…")}
     {oninput}
     {onkeydown}
   ></textarea>
@@ -146,34 +147,36 @@
       </button>
     {/each}
   </div>
-  <p class="faint note">:{picker.choices[selected]?.name} · pijltjes en Tab kiezen, 1–9 in de rij, Esc sluit.</p>
+  <p class="faint note">:{picker.choices[selected]?.name} · {tr("pijltjes en Tab kiezen, 1–9 in de rij, Esc sluit.", "arrows and Tab choose, 1–9 in the row, Esc closes.")}</p>
 {/if}
 
 <p class="faint note">
-  {ac.acceptWord || "Tab"} neemt het volgende woord, {ac.acceptAll || "Shift+Tab"} alles, Esc stuurt het weg.
-  {#if thinking}Model denkt na…{/if}
-  <button class="ghost" onclick={() => { text = ""; suggestion = ""; last = null; taken = 0; picker = null; }}>Wissen</button>
+  {tr("{word} neemt het volgende woord, {all} alles, Esc stuurt het weg.", "{word} takes the next word, {all} everything, Esc dismisses it.", { word: ac.acceptWord || "Tab", all: ac.acceptAll || "Shift+Tab" })}
+  {#if thinking}{tr("Model denkt na…", "Model is thinking…")}{/if}
+  <button class="ghost" onclick={() => { text = ""; suggestion = ""; last = null; taken = 0; picker = null; }}>{tr("Wissen", "Clear")}</button>
 </p>
 {#if error}<p class="err note">{error}</p>{/if}
 
 {#if last}
-  <h3>Laatste voorstel</h3>
+  <h3>{tr("Laatste voorstel", "Last suggestion")}</h3>
   <div class="group">
-    <div class="row"><span>Model</span><span>{last.engine}</span></div>
-    <div class="row"><span>Tijd</span><span>{last.milliseconds} ms{last.confidence ? "" : " · zonder zekerheid per woord"}</span></div>
-    <div class="row"><span>Antwoord van het model</span><span class="mono">{last.raw || "Geen antwoord (te onzeker)"}</span></div>
-    <div class="row"><span>Getoond</span><span class="mono">{last.shown ?? "Niets"}</span></div>
-    <div class="row"><span>Genomen in deze sessie</span><span>{taken}</span></div>
+    <div class="row"><span>{tr("Model", "Model")}</span><span>{last.engine}</span></div>
+    <div class="row"><span>{tr("Tijd", "Time")}</span><span>{last.milliseconds} ms{last.confidence ? "" : " · " + tr("zonder zekerheid per woord", "without per-word confidence")}</span></div>
+    <div class="row"><span>{tr("Antwoord van het model", "The model's answer")}</span><span class="mono">{last.raw || tr("Geen antwoord (te onzeker)", "No answer (too unsure)")}</span></div>
+    <div class="row"><span>{tr("Getoond", "Shown")}</span><span class="mono">{last.shown ?? tr("Niets", "Nothing")}</span></div>
+    <div class="row"><span>{tr("Genomen in deze sessie", "Taken in this session")}</span><span>{taken}</span></div>
   </div>
   <details>
-    <summary class="faint">Wat het model las</summary>
+    <summary class="faint">{tr("Wat het model las", "What the model read")}</summary>
     <pre class="prompt">{last.prompt}</pre>
   </details>
 {/if}
 
 <p class="faint note">
-  Hetzelfde model, dezelfde toetsen en instellingen als in andere apps. Wat je hier typt wordt niet bewaard en telt niet mee in de
-  statistiek. Venster en klembord doen hier niet mee.
+  {tr(
+    "Hetzelfde model, dezelfde toetsen en instellingen als in andere apps. Wat je hier typt wordt niet bewaard en telt niet mee in de statistiek. Venster en klembord doen hier niet mee.",
+    "The same model, keys and settings as in other apps. What you type here isn't kept and doesn't count in the statistics. Window and clipboard don't take part here.",
+  )}
 </p>
 
 <style>

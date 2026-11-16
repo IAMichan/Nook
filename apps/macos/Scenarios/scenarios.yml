@@ -29,7 +29,7 @@ targets:
           - "*.icns"
           - Info.plist
           - "*.entitlements"
-      - path: ../NotchUI
+      - path: ../UI
       - path: ../Demo
       - path: ../Core
       - path: ../Services

@@ -3,6 +3,7 @@
 // antwoord, tool-aanroepen achter elkaar worden één regel ("3 commando's uitgevoerd en 2 bestanden gewijzigd"), en
 // terwijl de agent werkt zegt één levende regel wat hij doet en denkt. Geen interface-code, zodat tests het los gebruiken.
 import type { RunEvent } from "./api";
+import { tr } from "../i18n.svelte";
 
 export type ToolCategory = "command" | "edit" | "read" | "search" | "other";
 const ORDER: ToolCategory[] = ["command", "edit", "read", "search", "other"];
@@ -120,26 +121,25 @@ export function parts(t: ToolTally): { category: ToolCategory; count: number }[]
   return ORDER.filter((c) => (t.counts[c] ?? 0) > 0).map((c) => ({ category: c, count: t.counts[c]! }));
 }
 
-const PHRASES: Record<ToolCategory, [string, string]> = {
-  command: ["1 commando uitgevoerd", "%d commando's uitgevoerd"],
-  edit: ["1 bestand gewijzigd", "%d bestanden gewijzigd"],
-  read: ["1 bestand gelezen", "%d bestanden gelezen"],
-  search: ["1 keer gezocht", "%d keer gezocht"],
-  other: ["1 andere actie", "%d andere acties"],
-};
-
 function phrase(c: ToolCategory, n: number): string {
-  return n === 1 ? PHRASES[c][0] : PHRASES[c][1].replace("%d", String(n));
+  const one = n === 1;
+  switch (c) {
+    case "command": return one ? tr("1 commando uitgevoerd", "Ran 1 command") : tr("{n} commando's uitgevoerd", "Ran {n} commands", { n });
+    case "edit": return one ? tr("1 bestand gewijzigd", "changed 1 file") : tr("{n} bestanden gewijzigd", "changed {n} files", { n });
+    case "read": return one ? tr("1 bestand gelezen", "read 1 file") : tr("{n} bestanden gelezen", "read {n} files", { n });
+    case "search": return one ? tr("1 keer gezocht", "searched once") : tr("{n} keer gezocht", "searched {n} times", { n });
+    case "other": return one ? tr("1 andere actie", "1 other action") : tr("{n} andere acties", "{n} other actions", { n });
+  }
 }
 
 /// "3 commando's uitgevoerd en 2 bestanden gewijzigd": de twee belangrijkste soorten, dan hoeveel acties nog meer.
 export function sentence(t: ToolTally): string {
   const p = parts(t);
-  if (p.length === 0) return "0 andere acties";
+  if (p.length === 0) return tr("{n} andere acties", "{n} other actions", { n: 0 });
   const named = p.slice(0, 2).map((x) => phrase(x.category, x.count));
   const rest = p.slice(2).reduce((s, x) => s + x.count, 0);
-  if (rest > 0) return `${named[0]}, ${named[1]} en nog ${rest} acties`;
-  return named.length === 2 ? `${named[0]} en ${named[1]}` : named[0];
+  if (rest > 0) return tr("{a}, {b} en nog {n} acties", "{a}, {b} and {n} more actions", { a: named[0], b: named[1], n: rest });
+  return named.length === 2 ? tr("{a} en {b}", "{a} and {b}", { a: named[0], b: named[1] }) : named[0];
 }
 
 export type TimelineBlock =
@@ -402,12 +402,12 @@ export function contextPercent(fraction: number): string {
   return pct < 10 ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
 }
 
-/// "< 1 min", "12 min", "2u 5m", "3 d" (AgentPathFormat.duration).
+/// "< 1 min", "12 min", "2h 5m", "3 d" (AgentPathFormat.duration).
 export function duration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 1) return "< 1 min";
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return minutes % 60 === 0 ? `${hours}u` : `${hours}u ${minutes % 60}m`;
+  if (hours < 48) return minutes % 60 === 0 ? tr("{h}u", "{h}h", { h: hours }) : tr("{h}u {m}m", "{h}h {m}m", { h: hours, m: minutes % 60 });
   return `${Math.floor(hours / 24)} d`;
 }

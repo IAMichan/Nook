@@ -79,9 +79,9 @@ enum GitLabStatus {
     }
 }
 
-/// Not connected yet: three numbered steps (make a token, paste it, Nook checks it). Connected (`managing` a host): its
-/// state and replacing the token, shown inside its opened `GitLabHostRow` (embedded, so without header and footer; the
-/// row's "…" menu disconnects), or in a window of its own with Disconnect in the footer.
+/// Not connected yet: three numbered steps (make a token, paste it, Nook checks and saves it). Connected (`managing` a
+/// host): its state and replacing the token, shown inside its opened `GitLabHostRow` (embedded, so without header and
+/// footer; the row's "…" menu disconnects), or in a window of its own with Disconnect on the left of the footer.
 struct GitLabSetupSheet: View {
     var managing: String? = nil
     /// After a token was stored, so whoever shows the sheet can check the host again.
@@ -97,7 +97,6 @@ struct GitLabSetupSheet: View {
     @State private var check: GitLabTokenCheck?
     @State private var saved = false
     @State private var replacing = false
-    @State private var confirmDisconnect = false
 
     private var normalizedHost: String { GitLabCredentials.normalize(host) ?? host }
 
@@ -117,26 +116,17 @@ struct GitLabSetupSheet: View {
         } content: {
             if managing != nil { manageContent } else { connectContent }
         } footer: {
-            if let managing {
-                if confirmDisconnect {
-                    Text(tr("connect.disconnectTitle", "GitLab"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Button(tr("button.cancel")) { confirmDisconnect = false }
-                        .keyboardShortcut(.cancelAction)
-                    Button(tr("settings2.disconnect"), role: .destructive) {
-                        GitLabCredentials.remove(host: managing)
-                        dismiss()
-                    }
-                } else {
-                    Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
+            if managing != nil {
+                ConfirmedButton(tr("settings2.disconnect"), question: tr("connect.disconnectTitle", "GitLab"),
+                                detail: tr("codeHost.removeDetail", managing ?? normalizedHost)) {
+                    guard let managing else { return }
+                    GitLabCredentials.remove(host: managing)
+                    dismiss()
                 }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .task {
             guard let managing, let stored = GitLabCredentials.token(host: managing) else { return }
@@ -150,14 +140,10 @@ struct GitLabSetupSheet: View {
     @ViewBuilder
     private var connectContent: some View {
         SetupStep(number: 1, title: tr("gitlab.step.token"), done: saved) {
-            Text(tr("gitlab.step.tokenDetail"))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
             DisclosureGroup(isExpanded: $showSelfHosted) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("gitlab.host"), text: $host)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("gitlab.host"), text: $host, prompt: Text(tr("gitlab.host")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .frame(maxWidth: 260)
                     SettingNote(tr("gitlab.selfHostedDetail"))
                 }
@@ -165,18 +151,19 @@ struct GitLabSetupSheet: View {
             } label: {
                 Text(tr("gitlab.selfHosted")).font(NookTheme.TextStyle.body)
             }
-            Button {
+            StepAction(detail: tr("gitlab.step.tokenDetail"), button: tr("gitlab.openTokens")) {
                 if let tokenPage { NSWorkspace.shared.open(tokenPage) }
                 keyCatcher.watch()
-            } label: {
-                Label(tr("gitlab.openTokens"), systemImage: "arrow.up.forward.app")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             SettingNote(tr("brain.key.autoPaste"))
         }
         SetupStep(number: 2, title: tr("gitlab.step.paste"), done: saved) {
-            tokenField
+            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…").foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
+                .onSubmit(save)
+            if let note {
+                SettingNote(note, tone: .error)
+            }
         }
         // The token copied on GitLab's page, picked up on the way back and checked at once.
         .onDisappear { keyCatcher.stop() }
@@ -186,9 +173,8 @@ struct GitLabSetupSheet: View {
             keyCatcher.caught = nil
             save()
         }
-        SetupStep(number: 3, title: tr("gitlab.step.check"), done: check?.isValid ?? false) {
-            result
-        }
+        SetupCheckStep(number: 3, title: tr("gitlab.step.check"), detail: tr("gitlab.check.detail"), state: checkState,
+                       check: runCheck, disabled: ConnectorField.clean(token).isEmpty && !saved)
     }
 
     // MARK: Manage
@@ -210,7 +196,7 @@ struct GitLabSetupSheet: View {
                 tokenField
             } else {
                 HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
+                    Label(tr("settings2.service.keySafe"), icon: "lock.fill")
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
@@ -219,18 +205,18 @@ struct GitLabSetupSheet: View {
         }
     }
 
-    // MARK: Token and result
+    // MARK: Token
 
     private var tokenField: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…"))
-                .textFieldStyle(.roundedBorder)
+            SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…").foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .onSubmit(save)
             HStack {
                 Button { pasteFromClipboard() } label: {
-                    Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                    Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 Button(tr("button.save"), action: save)
                     .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty || checking)
                 Spacer()
@@ -241,38 +227,27 @@ struct GitLabSetupSheet: View {
         }
     }
 
-    @ViewBuilder
-    private var result: some View {
-        if checking {
-            HStack(spacing: NookTheme.Spacing.md) {
-                ProgressView().controlSize(.small)
-                Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
-            }
-        } else {
-            switch check {
-            case .valid(let username):
-                Label(tr("gitlab.checkOK", username, normalizedHost), systemImage: "checkmark.seal.fill")
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(ConnectionHealth.working.color)
-            case .rejected:
-                Label(tr("gitlab.rejected"), systemImage: "exclamationmark.triangle.fill")
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(ConnectionHealth.needsYou.color)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .unreachable:
-                Label(tr("gitlab.unreachable", normalizedHost), systemImage: "wifi.exclamationmark")
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(ConnectionHealth.broken.color)
-                    .fixedSize(horizontal: false, vertical: true)
-            case nil:
-                Text(tr("settings2.step.checkWaiting"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
+    /// The last step's state, from the check of the token that was pasted.
+    private var checkState: SetupCheckState {
+        if checking { return .checking }
+        switch check {
+        case .valid(let username): return .passed(tr("gitlab.checkOK", username, normalizedHost))
+        case .rejected: return .failed(tr("gitlab.rejected"))
+        case .unreachable: return .failed(tr("gitlab.unreachable", normalizedHost))
+        case nil: return .idle
         }
     }
 
     // MARK: Actions
+
+    /// The check step's button: checks and saves the pasted token, or checks the saved one again.
+    private func runCheck() {
+        if !ConnectorField.clean(token).isEmpty {
+            save()
+        } else if saved, let stored = GitLabCredentials.token(host: normalizedHost) {
+            Task { await verify(stored) }
+        }
+    }
 
     private func pasteFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string), !ConnectorField.clean(text).isEmpty else {

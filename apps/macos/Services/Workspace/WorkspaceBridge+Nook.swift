@@ -20,7 +20,7 @@ extension WorkspaceBridge {
 
     /// Sources that never go to an agent: the ones the user keeps on this Mac, whatever brain Nook Chat runs on.
     func keptOnMac(_ app: AppModel) -> Set<String> {
-        app.settings.localOnlySources.union(app.settings.privacyLevel.localOnlySources)
+        app.settings.keptOnMac
     }
 
     /// The Nook tools an agent may use now: those of the sources that are on, without the ones kept on this Mac.

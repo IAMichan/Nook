@@ -8,6 +8,7 @@
 //! Wil een tool zelf een bron onder het antwoord noemen, dan zet hij een regel van
 //! `nook_core::brain::retrieval::reference_line` in zijn uitvoer; een https-link in een regel werkt ook.
 
+mod agents;
 mod calls;
 mod charts;
 mod clipboard;
@@ -152,6 +153,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(files::Files),
         Box::new(clipboard::Clipboard),
         Box::new(calls::Calls),
+        Box::new(agents::AgentSessions),
     ]
 }
 

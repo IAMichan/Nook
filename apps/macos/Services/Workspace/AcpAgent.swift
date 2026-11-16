@@ -32,6 +32,9 @@ enum AcpEvent: Equatable, Sendable {
     case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
+    /// An MCP server asks you something through the agent (`elicitation/create`, form mode). `isConfirmation`: nothing to
+    /// fill in, so Allow or Deny answers it; a form with fields is declined, as Claude Code's and Codex's are.
+    case elicitation(rpcID: RPCID, server: String, message: String, isConfirmation: Bool)
     /// The agent's own `/` commands (`available_commands_update`).
     case commands([AgentSlashCommand])
     /// The session's config options changed (`config_option_update`), all of them: a new model can bring other levels.
@@ -49,7 +52,7 @@ extension AcpEvent {
         switch self {
         case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
-        case .permission: return true
+        case .permission, .elicitation: return true
         default: return false
         }
     }
@@ -77,6 +80,23 @@ struct AcpToolCall: Equatable, Sendable {
     var paths: [String]
     /// What the call changed (`diff` content): the text it replaced (nil for a new file) and what it wrote.
     var diffs: [AcpDiff] = []
+    /// The agent's own name for the tool, when its ACP adapter passes it on (Claude Code's `_meta.claudeCode.toolName`).
+    var metaToolName: String? = nil
+
+    /// The call starts a subagent: Claude Code over ACP names its Task or Agent tool in `_meta` (its first report may
+    /// come without input), and a call whose input hands a task to another agent (`subagentInput`) does too.
+    var launchesSubagent: Bool { Subagents.isTool(metaToolName ?? "") || subagentInput != nil }
+
+    /// The input of a call that starts a subagent, in the shape Nook's subagent rows read (Claude Code's Task:
+    /// `description`, `prompt`, `subagent_type`): Claude Code over ACP passes its Task input as it is, Copilot names the
+    /// agent in `agent_type`. Nil for any other call.
+    var subagentInput: JSONBox? {
+        guard var raw = input?.object as? [String: Any], let prompt = raw["prompt"] as? String, !prompt.isEmpty else { return nil }
+        let type = (raw["subagent_type"] as? String) ?? (raw["agent_type"] as? String)
+        guard type != nil || Subagents.isTool(metaToolName ?? "") else { return nil }
+        raw["subagent_type"] = type ?? "agent"
+        return JSONBox(raw)
+    }
 
     /// The call's input with its changes in the form Nook's edit rows read (`old_string`/`new_string`, `edits` when it
     /// changed more than one place), as Claude Code's Edit has them: the line count and the diff panel then work for every
@@ -104,8 +124,10 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(object)
     }
 
-    /// The tool name Nook's timeline groups by (see ToolCategory).
+    /// The tool name Nook's timeline groups by: an ACP kind under a spelling `CanonicalTool` knows. A subagent's call is
+    /// "Agent", as Claude Code's, so it gets the subagent rows, the bar above the composer and the Subagents tab.
     var toolName: String {
+        if launchesSubagent { return CanonicalTool.subagentName }
         switch kind {
         case "execute": return "shell"
         case "edit", "delete", "move": return "edit"
@@ -148,7 +170,7 @@ struct AcpOpenReads: Equatable, Sendable {
             earlier = []
             batch = []
             return done
-        case .userChunk, .plan, .usage, .permission, .commands, .configOptions, .currentMode, .unsupportedRequest:
+        case .userChunk, .plan, .usage, .permission, .elicitation, .commands, .configOptions, .currentMode, .unsupportedRequest:
             endBatch()
             return []
         }
@@ -171,6 +193,44 @@ struct AcpPermissionOption: Equatable, Sendable {
     var name: String
     /// allow_once, allow_always, reject_once, reject_always.
     var kind: String
+}
+
+/// A way an ACP agent lets you sign in (`initialize`'s `authMethods`).
+struct AcpAuthMethod: Equatable, Sendable {
+    /// The agent signs in when asked (`authenticate`): a page in your browser, a key it finds itself.
+    static let agent = "agent"
+    /// Nook runs the agent's own program with `args` (and `env`) in a Terminal window, where you sign in; the agent reads
+    /// the saved login when it starts again.
+    static let terminal = "terminal"
+
+    var id: String
+    var name: String
+    var type: String
+    var args: [String] = []
+    var env: [String: String] = [:]
+
+    init(id: String, name: String = "", type: String = AcpAuthMethod.agent, args: [String] = [], env: [String: String] = [:]) {
+        self.id = id
+        self.name = name
+        self.type = type
+        self.args = args
+        self.env = env
+    }
+
+    init?(_ raw: [String: Any]) {
+        guard let id = raw["id"] as? String, !id.isEmpty, id.count <= 128 else { return nil }
+        // `env` is a list of `{name, value}` in the schema; some agents send an object.
+        var env: [String: String] = [:]
+        if let list = raw["env"] as? [[String: Any]] {
+            for entry in list { if let name = entry["name"] as? String, let value = entry["value"] as? String { env[name] = value } }
+        } else if let object = raw["env"] as? [String: Any] {
+            for (name, value) in object { if let value = value as? String { env[name] = value } }
+        }
+        self.init(id: id, name: String(((raw["name"] as? String) ?? id).prefix(160)),
+                  type: (raw["type"] as? String) ?? Self.agent,
+                  args: ((raw["args"] as? [Any]) ?? []).compactMap { $0 as? String }.prefix(32).map { String($0.prefix(512)) },
+                  env: env.filter { CustomAgents.isEnvironmentName($0.key) && $0.value.count <= 4096 })
+    }
 }
 
 enum AcpRPC {
@@ -197,16 +257,69 @@ enum AcpRPC {
         line(["jsonrpc": "2.0", "id": id.json, "error": ["code": code, "message": message]])
     }
 
-    /// Nook neither reads files nor runs terminals for the agent: it does that itself.
+    /// Which generation of ACP an `initialize` answer is in, read from its shape and not from its `protocolVersion`: some
+    /// agents report version 2 in the v1 shape (`agentCapabilities`, `agentInfo`; Kiro 2.32, Antigravity), and only a
+    /// v2 answer has `info`. Nook speaks v1.
+    static func generation(_ initialize: [String: Any]) -> Int {
+        initialize["info"] != nil ? 2 : 1
+    }
+
+    /// An `initialize` answer in the v1 shape Nook reads: a v1-shaped answer as it is, whatever version it reports; a v2
+    /// answer with its capabilities moved to where v1 has them (`capabilities.session` becomes `agentCapabilities`).
+    static func v1Initialize(_ initialize: [String: Any]) -> [String: Any] {
+        guard generation(initialize) == 2 else { return initialize }
+        let session = ((initialize["capabilities"] as? [String: Any])?["session"]).flatMap { $0 is NSNull ? nil : $0 as? [String: Any] }
+        let prompt = (session?["prompt"] as? [String: Any]) ?? [:]
+        var agent: [String: Any] = ["loadSession": session != nil,
+                                    "promptCapabilities": ["image": prompt["image"].map { !($0 is NSNull) } ?? false]]
+        if let session {
+            var sessions: [String: Any] = ["list": [String: Any](), "resume": [String: Any](), "close": [String: Any]()]
+            if let delete = session["delete"], !(delete is NSNull) { sessions["delete"] = [String: Any]() }
+            agent["sessionCapabilities"] = sessions
+        }
+        var shaped = initialize
+        shaped["agentCapabilities"] = agent
+        shaped["agentInfo"] = initialize["info"]
+        return shaped
+    }
+
+    /// The id after `id` for Nook's next request, kept inside a signed 32-bit integer: the Kotlin ACP SDK (and other
+    /// JSON-RPC libraries) reject a larger one.
+    static func nextRequestID(after id: Int) -> Int {
+        id < 1 || id >= Int(Int32.max) ? 1 : id + 1
+    }
+
+    /// The first request id of a client that attaches to a kept agent (`SessionKeeper`): far from the ids an earlier
+    /// Nook used, so an answer to one of those never matches a new request, and well inside a signed 32-bit integer.
+    static func reattachedFirstID() -> Int {
+        1 + Int.random(in: 1_000_000...2_000_000)
+    }
+
+    /// Whether a stdout line that is not JSON-RPC was meant as a protocol frame (a JSON object that did not parse, or
+    /// one Nook cannot read), rather than text an agent prints between its frames (Antigravity's "Open the following
+    /// link to authenticate the ACP server: …", a log line). Text is skipped; a broken frame is reported.
+    static func isBrokenFrame(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).hasPrefix("{")
+    }
+
+    /// How long `session/load` may stay silent after its replay before it counts as done: some agents replay the
+    /// conversation and never answer the request.
+    static let loadReplayQuiet: TimeInterval = 2
+
+    /// Nook neither reads files nor runs terminals for the agent: it does that itself. No `session.notices` either: Nook
+    /// has nothing to show from them. MCP servers may ask you to confirm something (`elicitation`, form mode), and an agent may sign you in
+    /// in a Terminal window (`auth.terminal`, `AcpAuthMethod.terminal`).
     static func initializeParams() -> [String: Any] {
         [
             "protocolVersion": protocolVersion,
-            "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false],
+            "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false,
+                                   "elicitation": ["form": [String: Any]()], "auth": ["terminal": true]],
             "clientInfo": ["name": "nook", "title": "Nook", "version": "1"]
         ]
     }
 
-    /// `session/new` or, to continue a conversation, `session/load`, with Nook's MCP bridge as a stdio server.
+    /// `session/new` or, to continue a conversation, `session/load` (or `session/fork` to copy it), with Nook's MCP bridge
+    /// as a stdio server.
     static func sessionParams(cwd: String, bridge: (command: String, args: [String], env: [String: String])?, loadID: String?) -> [String: Any] {
         var servers: [[String: Any]] = []
         if let bridge {
@@ -263,8 +376,14 @@ enum AcpRPC {
     }
 
     /// The sign-in methods `initialize` offers, in the agent's order.
+    static func authMethods(_ initialize: [String: Any]) -> [AcpAuthMethod] {
+        ((initialize["authMethods"] as? [[String: Any]]) ?? []).prefix(32).compactMap(AcpAuthMethod.init)
+    }
+
+    /// The methods `authenticate` takes: the agent signs in itself. A terminal method is run for you instead
+    /// (`AcpAuthMethod.terminal`), and one that wants keys in the environment cannot be asked for.
     static func authMethodIDs(_ initialize: [String: Any]) -> [String] {
-        ((initialize["authMethods"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+        authMethods(initialize).filter { $0.type == AcpAuthMethod.agent }.map(\.id)
     }
 
     /// The option to answer a permission request with: the kind you chose, or the closest one the agent offers.
@@ -278,8 +397,23 @@ enum AcpRPC {
         return ["outcome": ["outcome": "cancelled"]]
     }
 
+    /// The kind Nook gives an MCP server's question in `acpRequests`: answered with an elicitation result, never allowed
+    /// by the session's rights.
+    static let elicitationKind = "elicitation"
+
+    /// The answer to an MCP server's question: accepted with nothing filled in, declined, or cancelled (the turn ended).
+    static func elicitationOutcome(_ decision: Bool?) -> [String: Any] {
+        switch decision {
+        case true?: return ["action": "accept", "content": [String: Any]()]
+        case false?: return ["action": "decline"]
+        case nil: return ["action": "cancel"]
+        }
+    }
+
     /// Whether a request may be allowed without asking, under the session's rights.
     static func autoAllows(_ call: AcpToolCall, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
+        // An MCP server's question waits for you, as for Claude Code and Codex.
+        if call.kind == elicitationKind { return false }
         if mode == .plan { return ["read", "search", "think", "fetch"].contains(call.kind) }
         switch permission {
         case .bypass: return true
@@ -317,6 +451,14 @@ enum AcpMapper {
             guard method == "session/update", let update = params.dictionary["update"] as? [String: Any] else { return [] }
             return self.update(update)
         case .request(let id, let method, let params):
+            if method == "elicitation/create" || method == "session/elicitation" {
+                let raw = params.dictionary
+                let fields = ((raw["requestedSchema"] as? [String: Any])?["properties"] as? [String: Any]) ?? [:]
+                let meta = (raw["_meta"] as? [String: Any]) ?? [:]
+                return [.elicitation(rpcID: id, server: (meta["serverName"] as? String) ?? (meta["mcpServerName"] as? String) ?? "",
+                                     message: String(((raw["message"] as? String) ?? "").prefix(600)),
+                                     isConfirmation: ((raw["mode"] as? String) ?? "form") == "form" && fields.isEmpty)]
+            }
             guard method == "session/request_permission" else { return [.unsupportedRequest(id)] }
             let raw = params.dictionary
             let call = toolCall((raw["toolCall"] as? [String: Any]) ?? [:])
@@ -372,7 +514,7 @@ enum AcpMapper {
             case "content":
                 if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
             case "diff":
-                guard let path = item["path"] as? String else { break }
+                guard let path = (item["path"] as? String).map(filePath) else { break }
                 if !paths.contains(path) { paths.append(path) }
                 if let newText = item["newText"] as? String {
                     diffs.append(AcpDiff(path: path, oldText: item["oldText"] as? String, newText: newText))
@@ -381,14 +523,26 @@ enum AcpMapper {
             }
         }
         for location in (raw["locations"] as? [[String: Any]]) ?? [] {
-            if let path = location["path"] as? String, !paths.contains(path), (raw["kind"] as? String) == "edit" { paths.append(path) }
+            if let path = (location["path"] as? String).map(filePath), !paths.contains(path), (raw["kind"] as? String) == "edit" {
+                paths.append(path)
+            }
         }
         // Some agents (Antigravity) put a failed call's reason only in rawOutput: without it the call fails without a word.
         if output.isEmpty, let rawOutput = raw["rawOutput"].flatMap(Self.rawOutput) { output.append(rawOutput) }
         return AcpToolCall(id: (raw["toolCallId"] as? String) ?? UUID().uuidString, title: (raw["title"] as? String) ?? "",
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
                            input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths,
-                           diffs: diffs)
+                           diffs: diffs,
+                           metaToolName: ((raw["_meta"] as? [String: Any])?["claudeCode"] as? [String: Any])?["toolName"] as? String)
+    }
+
+    /// A file as a path. The schema asks for an absolute path, but some agents (Kiro 2.32) name a diff's file as a
+    /// `file://` URL: the edit row and the diff panel would then look for a file of that name.
+    static func filePath(_ value: String) -> String {
+        guard value.hasPrefix("file://") else { return value }
+        if let url = URL(string: value), url.isFileURL, !url.path.isEmpty { return url.path }
+        let rest = String(value.dropFirst("file://".count))
+        return rest.removingPercentEncoding ?? rest
     }
 
     /// rawOutput as text: a string as is, an object's error or output field, otherwise the object as JSON.
@@ -415,7 +569,7 @@ enum AcpMapper {
 
 /// What an ACP agent can do with its sessions, from `initialize`: load one again with its history replayed
 /// (`agentCapabilities.loadSession`), list them (`sessionCapabilities.list`) and resume one without the replay
-/// (`sessionCapabilities.resume`).
+/// (`sessionCapabilities.resume`), and copy one into a new session (`sessionCapabilities.fork`).
 struct AcpSessionCapabilities: Equatable, Sendable {
     var load = false
     var list = false
@@ -425,18 +579,23 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     /// A session can be removed (`session/delete`) or ended (`session/close`).
     var delete = false
     var close = false
+    /// A session can be copied into a new one that goes on apart from it (`session/fork`): Nook's Fork keeps the
+    /// conversation instead of starting from a summary.
+    var fork = false
 
-    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false, delete: Bool = false, close: Bool = false) {
+    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false, delete: Bool = false, close: Bool = false,
+         fork: Bool = false) {
         self.load = load
         self.list = list
         self.resume = resume
         self.images = images
         self.delete = delete
         self.close = close
+        self.fork = fork
     }
 
     init(initialize: [String: Any]) {
-        let agent = (initialize["agentCapabilities"] as? [String: Any]) ?? [:]
+        let agent = (AcpRPC.v1Initialize(initialize)["agentCapabilities"] as? [String: Any]) ?? [:]
         let session = (agent["sessionCapabilities"] as? [String: Any]) ?? [:]
         // A capability is offered by an object ({}), and not by null or its absence.
         load = (agent["loadSession"] as? Bool) ?? false
@@ -444,6 +603,7 @@ struct AcpSessionCapabilities: Equatable, Sendable {
         resume = session["resume"] is [String: Any]
         delete = session["delete"] is [String: Any]
         close = session["close"] is [String: Any]
+        fork = session["fork"] is [String: Any]
         images = ((agent["promptCapabilities"] as? [String: Any])?["image"] as? Bool) ?? false
     }
 
@@ -499,12 +659,9 @@ struct AcpListedSession: Equatable, Sendable {
 
     /// One page of `session/list`, and the cursor of the next one. A session without id or folder is left out.
     static func page(_ result: [String: Any]) -> (sessions: [AcpListedSession], next: String?) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
         let sessions = ((result["sessions"] as? [[String: Any]]) ?? []).compactMap { entry -> AcpListedSession? in
             guard let id = entry["sessionId"] as? String, !id.isEmpty, let cwd = entry["cwd"] as? String, !cwd.isEmpty else { return nil }
-            let updated = (entry["updatedAt"] as? String).flatMap { formatter.date(from: $0) ?? plain.date(from: $0) }
+            let updated = (entry["updatedAt"] as? String).flatMap(NookDates.stamp)
             return AcpListedSession(id: id, cwd: cwd, title: (entry["title"] as? String) ?? "", updated: updated)
         }
         let next = (result["nextCursor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -516,9 +673,7 @@ struct AcpListedSession: Equatable, Sendable {
 enum AgentErrorText {
     /// The agent wants you to sign in first (ACP's "Authentication required", -32000).
     static func needsSignIn(_ message: String) -> Bool {
-        let text = message.lowercased()
-        return ["authentication required", "auth required", "auth_required", "unauthenticated", "not authenticated",
-                "please authenticate", "requires authentication", "not logged in", "login required"].contains { text.contains($0) }
+        FailureClassifier.saysSignIn(message.lowercased())
     }
 
     /// The conversation to continue is gone (cleared, made on another machine, or by an older version of the agent).
@@ -773,7 +928,13 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _authMethods } }
         set { lock.withLock { _authMethods = newValue } }
     }
+    /// The agent's first terminal sign-in (`AcpAuthMethod.terminal`), for when it has no method `authenticate` takes.
+    var terminalSignIn: AcpAuthMethod? {
+        get { lock.withLock { _terminalSignIn } }
+        set { lock.withLock { _terminalSignIn = newValue } }
+    }
     private var _authMethods: [String] = []
+    private var _terminalSignIn: AcpAuthMethod?
     private var _effort: String?
     private var _startingEffort: String?
     private var _startingMode: String?
@@ -788,10 +949,32 @@ final class AcpClient: @unchecked Sendable {
     var applyingSettings = false
     var afterSettings: [() -> Void] = []
 
-    init(spec: LaunchSpec) {
-        process = AgentProcess(spec: spec)
-        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
+    /// `transport` and `scheduler` replace the agent's process and the clock in tests (a recorded agent, `ReplayTransport`).
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+        process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
+        self.scheduler = scheduler
+        if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
+
+    private let scheduler: ProcessScheduler
+    /// Held while a line is written, with the id it takes: requests, answers and notifications reach the agent in the
+    /// order Nook sent them, so a `session/cancel` never overtakes the prompt it cancels.
+    private let writeLock = NSLock()
+    /// Requests that were settled without their answer (a `session/load` whose replay went quiet): a late answer is dropped.
+    private var settled: Set<Int> = []
+    /// Bumped by every `config_option_update`, on the process's queue: a `session/set_config_option` answer that comes
+    /// after one is older than it (see `request(_:_:tracksConfig:completion:)`).
+    private var configUpdates = 0
+    /// Replayed updates seen while a `session/load` waits for its answer, and whether a quiet check is scheduled.
+    private var replayActivity = 0
+    private var loadWaiting: Int?
+    private var quietCheckScheduled = false
+    /// Lines that looked like a frame but were not one Nook could read.
+    private(set) var brokenFrames: Int {
+        get { lock.withLock { _brokenFrames } }
+        set { lock.withLock { _brokenFrames = newValue } }
+    }
+    private var _brokenFrames = 0
 
     /// An answer to a request of an earlier Nook (see `SessionKeeper`): how a kept turn ends, since its request went with it.
     var onOrphanAnswer: (@Sendable (JSONBox) -> Void)?
@@ -807,6 +990,7 @@ final class AcpClient: @unchecked Sendable {
             let waiting = self.lock.withLock { () -> [(Result<JSONBox, CodexAppServerError>) -> Void] in
                 let list = Array(self.pending.values)
                 self.pending.removeAll()
+                self.loadWaiting = nil
                 return list
             }
             for completion in waiting { completion(.failure(.exited(stderr))) }
@@ -816,25 +1000,63 @@ final class AcpClient: @unchecked Sendable {
     }
 
     func request(_ method: String, _ params: [String: Any], completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        let id = lock.withLock { () -> Int in
-            let id = nextID
-            nextID += 1
-            pending[id] = completion
-            return id
-        }
-        process.send(AcpRPC.request(id: id, method: method, params: params))
+        send(method, params, completion: completion)
     }
 
+    /// A request whose answer may bring the session's config options (`session/set_config_option`, `set_model`,
+    /// `set_mode`): `superseded` is true when the agent pushed a `config_option_update` while it was on its way, which is
+    /// then newer than the options in the answer (Kiro answers a model change without the model, then announces it).
+    func request(_ method: String, _ params: [String: Any], tracksConfig: Bool,
+                 completion: @escaping (Result<JSONBox, CodexAppServerError>, _ superseded: Bool) -> Void) {
+        let before = lock.withLock { configUpdates }
+        send(method, params) { [weak self] result in
+            let now = self?.lock.withLock { self?.configUpdates } ?? before
+            completion(result, tracksConfig && now != before)
+        }
+    }
+
+    /// `session/load`, which also counts as answered once the conversation it replays has gone quiet for `quiet` seconds:
+    /// some agents replay it and never answer. Such a load answers with no fields (the session keeps its id); the agent's
+    /// late answer is dropped.
+    func load(_ method: String, _ params: [String: Any], quiet: TimeInterval = AcpRPC.loadReplayQuiet,
+              completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
+        send(method, params, completion: completion) { id in
+            self.loadWaiting = id
+            self.replayActivity = 0
+            self.quiet = quiet
+        }
+    }
+
+    private var quiet: TimeInterval = AcpRPC.loadReplayQuiet
+
+    /// Writes a request; `before` runs under the lock with its id, before the line goes out.
+    @discardableResult
+    private func send(_ method: String, _ params: [String: Any], completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void,
+                      before: ((Int) -> Void)? = nil) -> Int {
+        writeLock.withLock {
+            let id = lock.withLock { () -> Int in
+                let id = nextID
+                nextID = AcpRPC.nextRequestID(after: id)
+                pending[id] = completion
+                before?(id)
+                return id
+            }
+            process.send(AcpRPC.request(id: id, method: method, params: params))
+            return id
+        }
+    }
+
+    /// A notification: no `id` (an agent drops a notification that has one), in order with everything else Nook writes.
     func notify(_ method: String, _ params: [String: Any]) {
-        process.send(AcpRPC.notification(method: method, params: params))
+        writeLock.withLock { process.send(AcpRPC.notification(method: method, params: params)) }
     }
 
     func respond(_ id: RPCID, _ result: [String: Any]) {
-        process.send(AcpRPC.response(id: id, result: result))
+        writeLock.withLock { process.send(AcpRPC.response(id: id, result: result)) }
     }
 
     func respondError(_ id: RPCID, code: Int = -32601, message: String) {
-        process.send(AcpRPC.errorResponse(id: id, code: code, message: message))
+        writeLock.withLock { process.send(AcpRPC.errorResponse(id: id, code: code, message: message)) }
     }
 
     func stop() {
@@ -842,24 +1064,74 @@ final class AcpClient: @unchecked Sendable {
         process.stop(grace: 2)
     }
 
-    /// A line that is not JSON-RPC (Antigravity prints its sign-in link this way).
+    /// A line that is not JSON-RPC (Antigravity prints its sign-in link this way): skipped, after this has seen it.
     var onText: (@Sendable (String) -> Void)?
+    /// A line that looked like a frame but was not one Nook can read: reported (logged), and the session goes on.
+    var onBrokenFrame: (@Sendable (String) -> Void)?
 
     private func handle(_ line: String) {
         guard let message = AcpRPC.parse(line) else {
+            if AcpRPC.isBrokenFrame(line) {
+                brokenFrames += 1
+                onBrokenFrame?(line)
+            }
             onText?(line)
             return
         }
         if case .response(let id, let result, let error) = message {
-            let completion = lock.withLock { pending.removeValue(forKey: id) }
+            let (completion, late) = lock.withLock { () -> (((Result<JSONBox, CodexAppServerError>) -> Void)?, Bool) in
+                if loadWaiting == id { loadWaiting = nil }
+                return (pending.removeValue(forKey: id), settled.remove(id) != nil)
+            }
+            if late { return }
             if completion == nil, error == nil, let result { onOrphanAnswer?(result) }
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }
-        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
         let events = AcpMapper.events(message)
+        if events.contains(where: { if case .configOptions = $0 { return true } else { return false } }) {
+            lock.withLock { configUpdates += 1 }
+        }
+        if case .notification = message { noteReplayActivity() }
+        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
         if replaying, !keepsReplay, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
         onMessage?(message, events)
+    }
+
+    /// A replayed update while a load waits: the load is done once they stop for `quiet` seconds.
+    private func noteReplayActivity() {
+        let schedule = lock.withLock { () -> Bool in
+            guard loadWaiting != nil else { return false }
+            replayActivity += 1
+            guard !quietCheckScheduled else { return false }
+            quietCheckScheduled = true
+            return true
+        }
+        if schedule { scheduleQuietCheck(seen: lock.withLock { replayActivity }) }
+    }
+
+    private func scheduleQuietCheck(seen: Int) {
+        scheduler.schedule(after: lock.withLock { quiet }) { [weak self] in
+            guard let self else { return }
+            enum Next { case done, again(Int), settle(Int, (Result<JSONBox, CodexAppServerError>) -> Void) }
+            let next = self.lock.withLock { () -> Next in
+                guard let id = self.loadWaiting else {
+                    self.quietCheckScheduled = false
+                    return .done
+                }
+                if self.replayActivity != seen { return .again(self.replayActivity) }
+                self.quietCheckScheduled = false
+                self.loadWaiting = nil
+                guard let completion = self.pending.removeValue(forKey: id) else { return .done }
+                self.settled.insert(id)
+                return .settle(id, completion)
+            }
+            switch next {
+            case .done: break
+            case .again(let count): self.scheduleQuietCheck(seen: count)
+            case .settle(_, let completion): completion(.success(JSONBox([String: Any]())))
+            }
+        }
     }
 }
 

@@ -28,7 +28,8 @@ extension SettingsView {
         case .access:
             Section {
                 ForEach(SystemPermission.allCases) { permission in
-                    permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
+                    permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission),
+                                  turnOff: { permission.openSettings() }) {
                         await permissions.request(permission, app: app)
                     }
                 }
@@ -37,6 +38,7 @@ extension SettingsView {
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
+            LinkedAccessSection()
             neverReadAppsSection
         case .onDevice:
             privateSourcesSection
@@ -57,7 +59,7 @@ extension SettingsView {
                 Text(tr("settings.privacy.level"))
             }
             .pickerStyle(.segmented)
-            .help(tr("settings.privacy.levelDetail"))
+            .nookTip(tr("settings.privacy.levelDetail"))
             SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
@@ -80,7 +82,7 @@ extension SettingsView {
         Section {
             ForEach(settings.neverReadApps, id: \.self) { bundleID in
                 HStack {
-                    Label(Self.appName(bundleID), systemImage: "eye.slash")
+                    Label(Self.appName(bundleID), icon: "eye.slash")
                     Spacer()
                     Button(tr("settings.privacy.neverRead.remove")) {
                         settings.neverReadApps.removeAll { $0 == bundleID }
@@ -125,20 +127,27 @@ extension SettingsView {
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
-        .help(detail)
+        .nookTip(detail)
         .accessibilityElement(children: .combine)
         .accessibilityHint(detail)
     }
 
-    func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
+    /// `turnOff` opens the place a granted permission is taken back: macOS lets only the user do that, in System Settings.
+    func permissionRow(_ title: String, detail: String, granted: Bool, turnOff: (() -> Void)? = nil,
+                       request: @escaping @MainActor () async -> Void) -> some View {
         // Once granted, the row is just its name and a check; why Nook asks only shows while it still has to.
         StatusRow(title: title, detail: granted ? "" : detail, state: granted ? .done : .todo) {
             // Granted needs no word: the check in front of the row says it.
+            if granted, let turnOff {
+                Button(tr("access.permission.turnOff"), action: turnOff)
+                    .controlSize(.small)
+                    .nookTip(tr("access.permission.turnOffDetail"))
+            }
             if !granted {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }
                 }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
             }
         }

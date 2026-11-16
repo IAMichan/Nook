@@ -2,14 +2,14 @@ import Foundation
 
 /// A repository's GitHub Actions as the Actions page shows them: its workflows (CI, Promote, Release…), their runs, and
 /// the jobs of one run. Parsed from GitHub's REST answers by `WorkflowRunParser`; Foundation only, so tests can use it.
-struct Workflow: Identifiable, Equatable, Sendable {
+struct Workflow: Identifiable, Equatable, Codable, Sendable {
     let id: Int
     let name: String
     /// ".github/workflows/ci.yml".
     let path: String
 }
 
-struct WorkflowRun: Identifiable, Equatable, Sendable {
+struct WorkflowRun: Identifiable, Equatable, Codable, Sendable {
     let id: Int
     let workflowID: Int
     /// The workflow's name ("CI", "Promote").
@@ -152,8 +152,8 @@ struct WorkflowRepoStatus: Equatable, Sendable {
     /// Nil for a repository without runs: its tab shows no mark.
     init?(runs: [WorkflowRun]) {
         guard let newest = runs.first else { return nil }
-        active = runs.filter { !$0.isCompleted }.count
-        failing = WorkflowRunParser.latestPerWorkflow(runs.filter(\.isCompleted)).values.filter { $0.outcome == .failing }.count
+        active = runs.count(where: { !$0.isCompleted })
+        failing = WorkflowRunParser.latestPerWorkflow(runs.filter(\.isCompleted)).values.count(where: { $0.outcome == .failing })
         running = runs.contains(where: \.running)
         if active > 0 { outcome = .pending }
         else if failing > 0 { outcome = .failing }
@@ -168,10 +168,32 @@ enum WorkflowRunParser {
     /// The runs Nook reads at once: about two screens of a busy repository.
     static let pageSize = 40
 
-    /// `GET /actions/runs`, or the runs of one workflow (`/actions/workflows/{id}/runs`).
+    /// `GET /actions/runs`, or the runs of one workflow (`/actions/workflows/{id}/runs`). Without the pull requests of
+    /// each run, which the list never shows: GitHub looks them up per run, and leaving them out makes its answer quicker
+    /// and smaller.
     static func runsPath(workflowID: Int?) -> String {
         let base = workflowID.map { "/actions/workflows/\($0)/runs" } ?? "/actions/runs"
-        return base + "?per_page=\(pageSize)"
+        return base + "?per_page=\(pageSize)&\(lean)"
+    }
+
+    static let lean = "exclude_pull_requests=true"
+
+    /// A list with nothing to show yet is read in this many pages at once. GitHub's time grows with the page (about
+    /// 0.6 s for 10 runs, 1.2 to 1.6 s for 40), so four pages of 10 side by side come in about twice as fast as one of
+    /// 40. Later reads, while the list is already on screen, ask once, so polling costs one request.
+    static let firstReadPages = 4
+
+    /// The same runs as `runsPath`, as page `page` (from 1) of `firstReadPages`.
+    static func runsPath(workflowID: Int?, page: Int) -> String {
+        let base = workflowID.map { "/actions/workflows/\($0)/runs" } ?? "/actions/runs"
+        return base + "?per_page=\(pageSize / firstReadPages)&page=\(page)&\(lean)"
+    }
+
+    /// Pages read side by side as one list, in page order. A run that started between two pages' reads pushes the
+    /// others down a place, so one can be on two pages: it is kept once.
+    static func merged(_ pages: [[WorkflowRun]]) -> [WorkflowRun] {
+        var seen = Set<Int>()
+        return pages.flatMap { $0 }.filter { seen.insert($0.id).inserted }
     }
 
     /// The active workflows of `GET /actions/workflows`, by name. A disabled one runs no more, so it is no filter.
@@ -209,7 +231,7 @@ enum WorkflowRunParser {
     static func branchRunsPath(workflowID: Int, branch: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~/"))
         let encoded = branch.addingPercentEncoding(withAllowedCharacters: allowed) ?? branch
-        return "/actions/workflows/\(workflowID)/runs?branch=\(encoded)&per_page=30"
+        return "/actions/workflows/\(workflowID)/runs?branch=\(encoded)&per_page=30&\(lean)"
     }
 
     /// How long after a run was cancelled its replacement may have been created: GitHub cancels the older run within a
@@ -345,5 +367,24 @@ enum WorkflowRunParser {
 
     private static func login(_ value: Any?) -> String? {
         (value as? [String: Any])?["login"] as? String
+    }
+}
+
+/// One list as the Actions page read it: its workflows and runs, and when. Kept on disk for the tabs' repositories, so
+/// the page opens with runs after a restart instead of a skeleton; the read that follows replaces them within a second.
+struct ActionsSnapshot: Codable, Equatable, Sendable {
+    var read: Date
+    var workflows: [Workflow]
+    var runs: [WorkflowRun]
+
+    /// The lists by "owner/repo|workflow" (empty workflow for all of them); none when the file is missing or unreadable.
+    static func load(from url: URL) -> [String: ActionsSnapshot] {
+        guard let data = try? Data(contentsOf: url) else { return [:] }
+        return (try? JSONDecoder().decode([String: ActionsSnapshot].self, from: data)) ?? [:]
+    }
+
+    static func save(_ lists: [String: ActionsSnapshot], to url: URL) {
+        guard let data = try? JSONEncoder().encode(lists) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }

@@ -87,7 +87,7 @@ enum ChatServiceData {
                   let source = Self.app(network: (chat["network"] as? String) ?? "", account: (chat["accountID"] as? String) ?? "") else { return nil }
             let title = ((chat["title"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
             guard !title.isEmpty else { return nil }
-            let unread = (chat["unreadCount"] as? Int) ?? Int((chat["unreadCount"] as? Double) ?? 0)
+            let unread = Int(ChatJSON.int64(chat["unreadCount"]) ?? 0)
             let isGroup = chat["type"] as? String == "group"
             let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
             let abilities = chat["capabilities"] as? [String: Any]
@@ -109,7 +109,7 @@ enum ChatServiceData {
     /// other person (`identifiers`: "tel:+31…", "mailto:…", a username; `isBot`).
     static func profile(_ chat: [String: Any], people: [[String: Any]], isGroup: Bool) -> ChatProfile? {
         var profile = ChatProfile(about: ChatProfile.text(chat["description"] as? String))
-        if let seconds = chat["disappearAfter"] as? Double, seconds > 0 { profile.disappearAfter = seconds }
+        if let seconds = ChatJSON.number(chat["disappearAfter"]), seconds > 0 { profile.disappearAfter = seconds }
         if isGroup {
             let admins = people.filter { $0["isAdmin"] as? Bool == true }.compactMap { person -> String? in
                 person["isSelf"] as? Bool == true ? ChatMembership.me : ChatProfile.text(person["fullName"] as? String)
@@ -133,7 +133,7 @@ enum ChatServiceData {
     /// A capability level (-2 rejected … 2 fully supported); one that is not given counts as there, and the app says
     /// so when it is not.
     static func supports(_ level: Any?) -> Bool {
-        guard let level = (level as? Int) ?? (level as? Double).map(Int.init) else { return true }
+        guard let level = ChatJSON.int64(level) else { return true }
         return level > 0
     }
 
@@ -164,6 +164,21 @@ enum ChatServiceData {
     static func isBehind(_ messages: [InboxMessage], chat: Chat) -> Bool {
         guard let last = chat.last, let newest = messages.last?.date else { return false }
         return newest < last.addingTimeInterval(-1)
+    }
+
+    /// The helper's ids of the messages in a `/messages` answer.
+    static func itemIDs(_ json: [String: Any]) -> [String] {
+        (json["items"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+    }
+
+    /// A `/messages` answer with the items of `more` (messages asked by their id) that it lacks.
+    static func adding(_ more: [String: Any], to json: [String: Any]) -> [String: Any] {
+        let have = Set(itemIDs(json))
+        var items = json["items"] as? [[String: Any]] ?? []
+        items += (more["items"] as? [[String: Any]] ?? []).filter { ($0["id"] as? String).map { !have.contains($0) } ?? false }
+        var merged = json
+        merged["items"] = items
+        return merged
     }
 
     /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook: the chat shows them as deleted.
@@ -245,6 +260,9 @@ enum ChatServiceData {
         case ready
         case subscribed
         case changed(chat: String)
+        /// One message of a chat changed (an edit, a deletion, an emoji, a vote): it is read again by its id, also when
+        /// it is older than the newest messages a read brings.
+        case changedMessage(chat: String, message: String)
         /// Someone in a chat is typing (or recording, or sending a file) for `seconds`; 0 says they stopped.
         case typing(chat: String, person: String, name: String, kind: ChatTypist.Kind, seconds: TimeInterval)
         case other
@@ -256,12 +274,13 @@ enum ChatServiceData {
         case "subscriptions.updated": return .subscribed
         case "chat.upserted", "chat.deleted", "message.upserted", "message.deleted":
             guard let chat = json["chatID"] as? String, !chat.isEmpty else { return .other }
+            if let message = json["messageID"] as? String, !message.isEmpty { return .changedMessage(chat: chat, message: message) }
             return .changed(chat: chat)
         case "typing":
             guard let chat = json["chatID"] as? String, !chat.isEmpty,
                   let person = json["userID"] as? String, !person.isEmpty else { return .other }
             let kind = ChatTypist.Kind(rawValue: (json["kind"] as? String) ?? "") ?? .text
-            let millis = (json["timeoutMs"] as? Double) ?? (json["timeoutMs"] as? Int).map(Double.init) ?? 0
+            let millis = ChatJSON.number(json["timeoutMs"]) ?? 0
             return .typing(chat: chat, person: person, name: (json["name"] as? String) ?? "", kind: kind,
                            seconds: max(0, millis / 1000))
         default: return .other
@@ -338,9 +357,7 @@ enum ChatServiceData {
                   let sent = ChatJSON.date(message["timestamp"]) else { return nil }
             let mine = message["isSender"] as? Bool == true
             if let change = membership(message, chat: chat) {
-                var line = InboxMessage(id: messageID(id, chat: chat.id), text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                line.membership = change
-                return line
+                return .notice(id: messageID(id, chat: chat.id), date: sent, membership: change)
             }
             if message["type"] as? String == "GROUP_CHANGE", let change = message["groupChange"] as? [String: Any],
                let kind = (change["kind"] as? String).flatMap(ChatGroupChange.Kind.init(rawValue:)) {
@@ -348,9 +365,8 @@ enum ChatServiceData {
                 let senderID = (message["senderID"] as? String) ?? ""
                 let by: String? = mine ? ChatMembership.me : senderID.isEmpty ? nil
                     : ((message["senderName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? chat.people[senderID] ?? tr("chat.member.someone"))
-                var line = InboxMessage(id: messageID(id, chat: chat.id), text: "", date: sent, fromMe: mine)
-                line.groupChange = ChatGroupChange(kind, by: by, text: change["text"] as? String)
-                return line
+                return .notice(id: messageID(id, chat: chat.id), date: sent,
+                               groupChange: ChatGroupChange(kind, by: by, text: change["text"] as? String), fromMe: mine)
             }
             // Who wrote it in a group, by the service's id for them: their face beside the bubble goes by it.
             let senderID = mine || !chat.isGroup ? nil : (message["senderID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -385,6 +401,11 @@ enum ChatServiceData {
                 inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))
             }
             if message["isEdited"] as? Bool == true { inbox.edited = true }
+            // Someone tagged you (Matrix's `m.mentions`, which the helper passes on as `mentions`, you as your own id in
+            // the chat): a quiet group still tells you, as WhatsApp's groups do.
+            if !mine, chat.isGroup {
+                inbox.mentionsMe = ChatMentions.mentionsMe(message["mentions"] as? [String] ?? [], me: chat.me)
+            }
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
@@ -442,7 +463,7 @@ enum ChatServiceData {
             default: break
             }
         }
-        var media = ChatMedia(kind: kind, name: name, seconds: attachment["duration"] as? Double)
+        var media = ChatMedia(kind: kind, name: name, seconds: ChatJSON.number(attachment["duration"]))
         if let source, let url = URL(string: source), url.isFileURL {
             media.path = url.path
         } else {

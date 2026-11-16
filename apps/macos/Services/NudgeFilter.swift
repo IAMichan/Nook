@@ -22,7 +22,7 @@ enum NudgeFilter {
         }
         line = line.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
         if line.isEmpty { line = fallback ?? "" }
-        return line.count > 64 ? String(line.prefix(62)) + "…" : line
+        return TextKit.clip(line, to: 64)
     }
 
     /// True when the offer is about dates that are all well in the future: a renewal next year is no reason to speak up now.
@@ -31,9 +31,12 @@ enum NudgeFilter {
         return dates.allSatisfy { $0.timeIntervalSince(now) > horizon }
     }
 
+    private static let numericDate = try? NSRegularExpression(
+        pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#)
+
     /// Numeric dates written in the text: "2027-09-20", "20-09-2027" or "20/9/2027". A portable backstop for the system's date detector.
     static func numericDates(in text: String) -> [Date] {
-        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#) else { return [] }
+        guard let regex = numericDate else { return [] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> Date? in
@@ -50,7 +53,7 @@ enum NudgeFilter {
     /// An offer without an action must not ask anything: accepting a question ("Shall I…?") would then do nothing,
     /// wherever in the text the question sits.
     static func asksWithoutAction(_ body: String, hasActions: Bool) -> Bool {
-        !hasActions && body.contains("?")
+        !hasActions && TextKit.asksQuestion(body)
     }
 
     /// An offer must be about what is on screen: it names something visible there (a name, a number, a subject),
@@ -89,10 +92,7 @@ enum NudgeFilter {
 
     /// Two offers say the same thing when most of their meaningful words overlap, even if the brain rephrased them.
     static func similar(_ a: String, _ b: String) -> Bool {
-        let left = words(a), right = words(b)
-        guard !left.isEmpty, !right.isEmpty else { return normalize(a) == normalize(b) }
-        let overlap = Double(left.intersection(right).count) / Double(left.union(right).count)
-        return overlap >= 0.6
+        TextKit.similarity(a, b) >= 0.6
     }
 
     private static func words(_ text: String) -> Set<String> {

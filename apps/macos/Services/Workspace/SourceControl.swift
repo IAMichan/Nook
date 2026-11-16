@@ -9,6 +9,12 @@ enum AutoPull {
     /// At most this often per repository: each look fetches the default branch once.
     static let interval: TimeInterval = 15 * 60
 
+    /// Whether any folder can resolve to auto-pull on: the global default, or a project that switches it on itself
+    /// (`ProjectSettings.resolve` reads only the string "on" as on). When not, the half-minute tick looks at no path.
+    static func enabledAnywhere(global: Bool, overrides: ProjectOverrides) -> Bool {
+        global || overrides.byProject.values.contains { $0[ProjectSettingKey.autoPull.raw] == .string("on") }
+    }
+
     struct Facts: Equatable, Sendable {
         /// The branch the main checkout is on; nil when its HEAD is detached.
         var branch: String?
@@ -105,7 +111,7 @@ enum CloneLayout {
     /// `https://github.com/owner/repo`. GitLab pages are cut at `/-/`; on github.com, bitbucket.org, codeberg.org and
     /// the like everything below `owner/repo` goes; on other hosts (Gitea, Forgejo) a page route right after
     /// `owner/repo` does. The query and fragment are dropped. A path ending in `.git`, an ssh:// or scp-style address, and
-    /// anything else that is no page come back as typed (trimmed)..
+    /// anything else that is no page come back as typed (trimmed).
     static func repositoryURL(fromPage raw: String) -> String {
         let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = clean.lowercased()

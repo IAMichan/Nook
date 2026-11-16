@@ -35,7 +35,7 @@ final class AgentUpdater: ObservableObject {
 
     private var checked: [RunProvider: (path: String, at: Date)] = [:]
     private static let checkSeconds: TimeInterval = 30 * 60
-    private static let updateTimeout: TimeInterval = 10 * 60
+    nonisolated private static let updateTimeout: TimeInterval = 10 * 60
 
     /// Reads who owns each agent's program (`executables`: the agent and its program's path) and looks up the newest
     /// versions that are due. Agents without a program drop out.
@@ -86,8 +86,8 @@ final class AgentUpdater: ObservableObject {
         guard !jobs.isEmpty else { return }
         Task { [weak self] in
             for (provider, command, executable) in jobs {
-                let result = await Self.run(command, agent: executable) { line in
-                    Task { @MainActor [weak self] in self?.setPhase(.updating(line), provider, onlyWhileBusy: true) }
+                let result = await Self.run(command, agent: executable) { [weak self] line in
+                    Task { @MainActor in self?.setPhase(.updating(line), provider, onlyWhileBusy: true) }
                 }
                 guard let self else { return }
                 self.setPhase(result.ok ? .updated : .failed(result.last), provider)
@@ -133,21 +133,12 @@ final class AgentUpdater: ObservableObject {
 
     /// Runs a short read-only command and returns what it printed.
     private nonisolated static func capture(_ command: AgentUpdateCommand, agent: String, timeout: TimeInterval) -> (status: Int32, data: Data)? {
-        let process = process(command, agent: agent, extra: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return nil }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        return (process.terminationStatus, data)
+        let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: agent,
+                                                   extra: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
+        guard let result = try? ProcessRunner.run(command.executable, command.arguments,
+                                                  in: FileManager.default.homeDirectoryForCurrentUser.path,
+                                                  environment: environment, timeout: timeout) else { return nil }
+        return (result.status, result.stdoutData)
     }
 
     /// Runs an update, passing each line it prints; done with whether it exited cleanly and its last line.

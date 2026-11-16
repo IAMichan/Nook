@@ -36,6 +36,10 @@ struct PullRequestDetail: Equatable, Sendable {
     var methods: [PullRequestMergeMethod] = PullRequestMergeMethod.allCases
     /// Whether the account may push to the repository, and so merge. Nil when GitHub did not say.
     var canPush: Bool? = nil
+    /// Whether the account may merge past the base branch's rules (checks still running, a review still missing) instead
+    /// of waiting for auto-merge, as `gh pr merge --admin` does: it administers the repository, and every ruleset on the
+    /// base branch lets it bypass and branch protection does not include administrators (`adminCanBypass`).
+    var canBypass = false
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
     /// The teams among `requestedReviewers`: a team has no picture of its own, so the page draws it differently.
@@ -77,6 +81,8 @@ struct PullRequestDetail: Equatable, Sendable {
     var commitCount: Int? = nil
     var commentCount: Int? = nil
     var lineCommentCount: Int? = nil
+    /// The forge's own viewed state of the files, with the activity (`PullRequestActivity.viewedOnForge`).
+    var viewedOnForge: [String: PullRequestFileViewedState]? = nil
     /// False until the timeline, commits and files have arrived: the summary shows first, the rest follows.
     var activityLoaded = true
     /// GitHub is working out mergeability again (`mergeable` is nil, as after another pull request merged into the
@@ -100,6 +106,7 @@ struct PullRequestDetail: Equatable, Sendable {
         files = activity.files
         linkedIssues = activity.issues
         reactions = activity.reactions
+        viewedOnForge = activity.viewedOnForge
         activityLoaded = true
     }
 
@@ -117,7 +124,8 @@ struct PullRequestDetail: Equatable, Sendable {
     func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
         guard !activityLoaded, let old, old.activityLoaded else { return self }
         var result = self
-        result.apply(PullRequestActivity(reactions: old.reactions, events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
+        result.apply(PullRequestActivity(reactions: old.reactions, events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues,
+                                         viewedOnForge: old.viewedOnForge))
         return result
     }
 
@@ -153,6 +161,20 @@ struct PullRequestDetail: Equatable, Sendable {
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
     /// what certainly fails is held back here.
     var canMerge: Bool { state == .open && !conflicted && canPush != false && !methods.isEmpty }
+    /// Checks or reviews still hold it back and this account may not go past them: the way on is to let GitHub merge
+    /// when they are done (auto-merge), on the pull request's page and in a quick merge from the list alike.
+    var waitsForAutoMerge: Bool {
+        !canBypass && features.autoMerge && autoMergeAllowed && mergeable != nil && !nodeID.isEmpty
+            && (checkSummary == .pending || mergeState == "blocked")
+    }
+    /// An admin who may merge past the checks or reviews can still choose to wait for them: auto-merge sits beside
+    /// Merge in its dropdown.
+    var offersAutoMergeBesideMerge: Bool {
+        canBypass && autoMerge == nil && features.autoMerge && autoMergeAllowed && mergeable != nil && !nodeID.isEmpty
+            && !conflicted && canPush != false && (checkSummary == .pending || mergeState == "blocked")
+    }
+    /// Merging now goes past what holds it back (checks, reviews, an auto-merge that waits): only an admin may.
+    var bypassesRules: Bool { canBypass && (checkSummary == .pending || mergeState == "blocked" || autoMerge != nil) }
 
     /// The checks together: failing as soon as one fails, pending while one still runs.
     var checkSummary: PullRequestItem.CI {
@@ -211,6 +233,9 @@ struct PullRequestActivity: Equatable, Sendable {
     var commits: [PullRequestCommit] = []
     var files: [PullRequestFile] = []
     var issues: [PullRequestLinkedIssue] = []
+    /// The forge's own viewed state of each file for the signed-in user (GitHub's "Viewed" checkbox); nil when the forge
+    /// keeps none or could not be asked.
+    var viewedOnForge: [String: PullRequestFileViewedState]? = nil
 }
 
 /// An issue a pull request closes when it merges.
@@ -489,8 +514,19 @@ enum PullRequestDetailParser {
         if let repository {
             detail.methods = methods(repository)
             detail.canPush = (repository["permissions"] as? [String: Any])?["push"] as? Bool
+            detail.canBypass = (repository["permissions"] as? [String: Any])?["admin"] as? Bool == true
         }
         return detail
+    }
+
+    /// Whether an admin may really merge past the base branch's rules. A ruleset GitHub says this account can never
+    /// bypass (no bypass list, or the admin role is not on it), or branch protection with "Include administrators",
+    /// makes GitHub refuse with "Repository rule violations found": then the page offers auto-merge instead. A
+    /// ruleset that does not say (`current_user_can_bypass` missing) leaves the choice to GitHub.
+    static func adminCanBypass(rulesets: [[String: Any]], protection: [String: Any]?) -> Bool {
+        if rulesets.contains(where: { ($0["current_user_can_bypass"] as? String) == "never" }) { return false }
+        if ((protection?["enforce_admins"] as? [String: Any])?["enabled"] as? Bool) == true { return false }
+        return true
     }
 
     /// The methods the repository allows. GitHub only sends the `allow_*` fields to accounts with write access; a
@@ -507,7 +543,33 @@ enum PullRequestDetailParser {
         }
     }
 
+    /// The repository's `methods` narrowed by the base branch's rules (`GET /repos/{repo}/rules/branches/{branch}`): every
+    /// `pull_request` rule with `allowed_merge_methods` must allow a method. A rule without that list allows all.
+    static func methods(_ methods: [PullRequestMergeMethod], rules: [[String: Any]]) -> [PullRequestMergeMethod] {
+        let allowed = rules.filter { ($0["type"] as? String) == "pull_request" }
+            .compactMap { ($0["parameters"] as? [String: Any])?["allowed_merge_methods"] as? [String] }
+        return methods.filter { method in allowed.allSatisfy { $0.contains(method.rawValue) } }
+    }
+
+    /// The newest check run of each name, as GitHub's own checks list and branch rules count them. A commit keeps every
+    /// run it ever had: a workflow cancelled by a newer push or re-run leaves its failed or cancelled runs behind, and
+    /// counting those would call a pull request failing while its checks passed.
+    static func latestRuns(_ runs: [[String: Any]]) -> [[String: Any]] {
+        func order(_ run: [String: Any]) -> (Date, Int) {
+            (date(run["started_at"]) ?? date(run["completed_at"]) ?? .distantPast, int(run["id"]) ?? 0)
+        }
+        var newest: [String: [String: Any]] = [:]
+        var names: [String] = []
+        for run in runs {
+            let name = (run["name"] as? String) ?? "?"
+            guard let known = newest[name] else { newest[name] = run; names.append(name); continue }
+            if order(run) > order(known) { newest[name] = run }
+        }
+        return names.compactMap { newest[$0] }
+    }
+
     /// Check runs (GitHub Actions and apps) and the older commit statuses, in one list: failing first, then running.
+    /// GitHub's runs go through `latestRuns` first.
     static func checks(runs: [[String: Any]], statuses: [[String: Any]]) -> [PullRequestCheck] {
         var result = runs.map { run -> PullRequestCheck in
             let status = (run["status"] as? String) ?? ""

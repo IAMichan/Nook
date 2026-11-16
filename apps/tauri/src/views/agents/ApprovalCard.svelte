@@ -3,6 +3,7 @@
   // Toestaan, Altijd, Weigeren en In terminal. Wat je toestaat is wat je ziet: niets wordt ingekort.
   import type { AgentApproval } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import DiffView from "./DiffView.svelte";
 
   let { approval, others = 0, compact = false }: { approval: AgentApproval; others?: number; compact?: boolean } = $props();
@@ -18,7 +19,7 @@
 <div class="approval" class:danger={approval.danger} class:compact>
   <div class="context faint">
     <span class="dot waiting"></span>
-    {approval.agentName} · {approval.project}{#if others > 0} · nog {others} wachtend{/if}
+    {approval.agentName} · {approval.project}{#if others > 0} · {tr("nog {n} wachtend", "{n} more waiting", { n: others })}{/if}
   </div>
   <div class="title">{approval.title}</div>
   {#if approval.diff.length}
@@ -29,11 +30,11 @@
   {/if}
   {#if approval.note}<div class="note" class:warn={approval.danger}>{approval.note}</div>{/if}
   <div class="buttons">
-    <button class="ghost" disabled={busy} onclick={() => decide("deny")}>Weigeren</button>
+    <button class="ghost" disabled={busy} onclick={() => decide("deny")}>{tr("Weigeren", "Deny")}</button>
     <span class="spacer"></span>
-    {#if approval.canTerminal}<button disabled={busy} onclick={() => decide("terminal")}>In terminal</button>{/if}
-    {#if approval.canAlways}<button disabled={busy} onclick={() => decide("always")}>Altijd</button>{/if}
-    <button class="primary" disabled={busy} onclick={() => decide("allow")}>Toestaan</button>
+    {#if approval.canTerminal}<button disabled={busy} onclick={() => decide("terminal")}>{tr("In terminal", "In terminal")}</button>{/if}
+    {#if approval.canAlways}<button disabled={busy} onclick={() => decide("always")}>{tr("Altijd", "Always")}</button>{/if}
+    <button class="primary" disabled={busy} onclick={() => decide("allow")}>{tr("Toestaan", "Allow")}</button>
   </div>
 </div>
 

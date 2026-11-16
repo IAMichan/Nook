@@ -3,6 +3,7 @@
   // vast te pinnen, op dit apparaat te houden of te vergeten. Nook leert alleen zelf als "Leer zelf" aan staat.
   import { brainApi, type MemoryItem, type MemoryOverview } from "../../lib/brain";
   import { nook } from "../../lib/state.svelte";
+  import { tr, locale } from "../../lib/i18n.svelte";
 
   const s = $derived(nook.settings!);
   let overview = $state<MemoryOverview | null>(null);
@@ -21,12 +22,14 @@
     refresh();
   });
 
-  const kinds: { id: MemoryItem["kind"]; title: string }[] = [
-    { id: "fact", title: "Feiten" },
-    { id: "preference", title: "Voorkeuren" },
-    { id: "lesson", title: "Geleerd van correcties" },
-  ];
-  const origin: Record<MemoryItem["origin"], string> = { told: "verteld", learned: "geleerd", observed: "gezien", imported: "geïmporteerd" };
+  const kinds: { id: MemoryItem["kind"]; title: string }[] = $derived([
+    { id: "fact", title: tr("Feiten", "Facts") },
+    { id: "preference", title: tr("Voorkeuren", "Preferences") },
+    { id: "lesson", title: tr("Geleerd van correcties", "Learned from corrections") },
+  ]);
+  const origin: Record<MemoryItem["origin"], string> = $derived({
+    told: tr("verteld", "told"), learned: tr("geleerd", "learned"), observed: tr("gezien", "seen"), imported: tr("geïmporteerd", "imported"),
+  });
 
   const filtered = $derived(
     (overview?.items ?? []).filter((m) => !query.trim() || `${m.text} ${m.subject}`.toLowerCase().includes(query.trim().toLowerCase())),
@@ -66,43 +69,43 @@
   }
 
   function ago(iso: string | null): string {
-    if (!iso) return "nog niet gebruikt";
-    return new Date(iso).toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
+    if (!iso) return tr("nog niet gebruikt", "not used yet");
+    return new Date(iso).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
   }
 
   function importGraph(path: string) {
     act(async () => {
       const n = await brainApi.memoryImport(path);
-      imported = `${n} ${n === 1 ? "herinnering" : "herinneringen"} geïmporteerd.`;
+      imported = n === 1 ? tr("1 herinnering geïmporteerd.", "1 memory imported.") : tr("{n} herinneringen geïmporteerd.", "{n} memories imported.", { n });
     });
   }
 </script>
 
-<h2>Geheugen</h2>
-<p class="muted">Wat Nook over je weet. Zeg in de chat "onthoud dat…" of "vergeet…", of pas het hier aan.</p>
+<h2>{tr("Geheugen", "Memory")}</h2>
+<p class="muted">{tr("Wat Nook over je weet. Zeg in de chat \"onthoud dat…\" of \"vergeet…\", of pas het hier aan.", "What Nook knows about you. Say \"remember that…\" or \"forget…\" in the chat, or change it here.")}</p>
 <div class="group">
-  <label class="row"><span>Gebruik wat Nook weet bij elke vraag</span><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Gebruik wat Nook weet bij elke vraag", "Use what Nook knows with every question")}</span><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /></label>
   <label class="row">
-    <span>Leer zelf van gesprekken<br /><span class="faint small">Van je correcties, de plannen die je goedkeurt en de bronnen die je gebruikt.</span></span>
+    <span>{tr("Leer zelf van gesprekken", "Learn from conversations")}<br /><span class="faint small">{tr("Van je correcties, de plannen die je goedkeurt en de bronnen die je gebruikt.", "From your corrections, the plans you approve and the sources you use.")}</span></span>
     <input type="checkbox" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} />
   </label>
 </div>
 {#if overview?.localOnlySource}
-  <p class="faint note">Geheugen staat bij Privacy op "alleen op dit apparaat": een externe AI krijgt het niet.</p>
+  <p class="faint note">{tr("Geheugen staat bij Privacy op \"alleen op dit apparaat\": een externe AI krijgt het niet.", "Memory is set to \"only on this device\" under Privacy: an external AI doesn't get it.")}</p>
 {/if}
 
 <div class="add">
-  <input placeholder="Iets toevoegen, bijv. Mijn manager heet Sanne" bind:value={adding} onkeydown={(e) => e.key === "Enter" && add()} />
-  <button onclick={add} disabled={!adding.trim()}>Onthoud</button>
+  <input placeholder={tr("Iets toevoegen, bijv. Mijn manager heet Sanne", "Add something, e.g. My manager is called Sanne")} bind:value={adding} onkeydown={(e) => e.key === "Enter" && add()} />
+  <button onclick={add} disabled={!adding.trim()}>{tr("Onthoud", "Remember")}</button>
 </div>
 {#if error}<p class="err">{error}</p>{/if}
 
 {#if overview}
   {#if overview.items.length > 6}
-    <input class="search" placeholder="Zoeken in het geheugen…" bind:value={query} />
+    <input class="search" placeholder={tr("Zoeken in het geheugen…", "Search memory…")} bind:value={query} />
   {/if}
   {#if !overview.items.length}
-    <p class="faint note">Nook weet nog niets over je.</p>
+    <p class="faint note">{tr("Nook weet nog niets over je.", "Nook doesn't know anything about you yet.")}</p>
   {/if}
   {#each kinds as kind (kind.id)}
     {@const items = filtered.filter((m) => m.kind === kind.id)}
@@ -114,21 +117,21 @@
             {#if editing[m.id] !== undefined}
               <div class="inline grow">
                 <input class="grow" bind:value={editing[m.id]} use:focusField onkeydown={(e) => e.key === "Enter" && save(m)} />
-                <button onclick={() => save(m)}>Bewaar</button>
-                <button class="ghost" onclick={() => delete editing[m.id]}>Annuleer</button>
+                <button onclick={() => save(m)}>{tr("Bewaar", "Save")}</button>
+                <button class="ghost" onclick={() => delete editing[m.id]}>{tr("Annuleer", "Cancel")}</button>
               </div>
             {:else}
               <div class="text">
                 <span>{m.pinned ? "📌 " : ""}{m.text}</span>
                 <span class="faint small">
-                  {origin[m.origin]} · {m.certainty}% zeker · {m.uses}× gebruikt · {ago(m.lastUsed)}{m.localOnly ? " · alleen op dit apparaat" : ""} · <code>{m.shortId}</code>
+                  {origin[m.origin]} · {tr("{n}% zeker", "{n}% sure", { n: m.certainty })} · {tr("{n}× gebruikt", "used {n}×", { n: m.uses })} · {ago(m.lastUsed)}{m.localOnly ? " · " + tr("alleen op dit apparaat", "only on this device") : ""} · <code>{m.shortId}</code>
                 </span>
               </div>
               <div class="tools">
-                <button class="ghost tiny" title={m.pinned ? "Losmaken" : "Vastpinnen: vervaagt nooit"} onclick={() => act(() => brainApi.memoryPin(m.id, !m.pinned))}>{m.pinned ? "Losmaken" : "Pin"}</button>
-                <button class="ghost tiny" title="Nooit naar een externe AI" onclick={() => act(() => brainApi.memoryLocalOnly(m.id, !m.localOnly))}>{m.localOnly ? "Mag mee" : "🔒"}</button>
-                <button class="ghost tiny" onclick={() => (editing[m.id] = m.text)}>Aanpassen</button>
-                <button class="ghost tiny danger" onclick={() => act(() => brainApi.memoryDelete(m.id))}>Vergeet</button>
+                <button class="ghost tiny" title={m.pinned ? tr("Losmaken", "Unpin") : tr("Vastpinnen: vervaagt nooit", "Pin: never fades")} onclick={() => act(() => brainApi.memoryPin(m.id, !m.pinned))}>{m.pinned ? tr("Losmaken", "Unpin") : tr("Pin", "Pin")}</button>
+                <button class="ghost tiny" title={tr("Nooit naar een externe AI", "Never to an external AI")} onclick={() => act(() => brainApi.memoryLocalOnly(m.id, !m.localOnly))}>{m.localOnly ? tr("Mag mee", "May be shared") : "🔒"}</button>
+                <button class="ghost tiny" onclick={() => (editing[m.id] = m.text)}>{tr("Aanpassen", "Edit")}</button>
+                <button class="ghost tiny danger" onclick={() => act(() => brainApi.memoryDelete(m.id))}>{tr("Vergeet", "Forget")}</button>
               </div>
             {/if}
           </div>
@@ -137,16 +140,16 @@
     {/if}
   {/each}
 
-  <h3>Gewoontes</h3>
-  <p class="faint note">Nook kent {overview.learnedWords} woorden uit je vragen en welke bronnen daarbij hielpen. Dat blijft op deze computer.</p>
+  <h3>{tr("Gewoontes", "Habits")}</h3>
+  <p class="faint note">{tr("Nook kent {n} woorden uit je vragen en welke bronnen daarbij hielpen. Dat blijft op deze computer.", "Nook knows {n} words from your questions and which sources helped with them. That stays on this computer.", { n: overview.learnedWords })}</p>
 
   {#if overview.importable.length}
-    <h3>Importeren</h3>
+    <h3>{tr("Importeren", "Import")}</h3>
     <div class="group">
       {#each overview.importable as [path, count] (path)}
         <div class="row">
-          <span>Kennisgraaf van de MCP-geheugenserver<br /><span class="faint small">{path} · {count} items</span></span>
-          <button onclick={() => importGraph(path)}>Importeer</button>
+          <span>{tr("Kennisgraaf van de MCP-geheugenserver", "Knowledge graph from the MCP memory server")}<br /><span class="faint small">{path} · {tr("{n} items", "{n} items", { n: count })}</span></span>
+          <button onclick={() => importGraph(path)}>{tr("Importeer", "Import")}</button>
         </div>
       {/each}
     </div>
@@ -156,11 +159,11 @@
   {#if overview.items.length}
     <div class="clear">
       {#if confirmClear}
-        <span>Alles vergeten? Dit kan niet ongedaan.</span>
-        <button class="ghost" onclick={() => (confirmClear = false)}>Annuleer</button>
-        <button class="danger" onclick={() => act(async () => { await brainApi.memoryClear(); confirmClear = false; })}>Alles vergeten</button>
+        <span>{tr("Alles vergeten? Dit kan niet ongedaan.", "Forget everything? This can't be undone.")}</span>
+        <button class="ghost" onclick={() => (confirmClear = false)}>{tr("Annuleer", "Cancel")}</button>
+        <button class="danger" onclick={() => act(async () => { await brainApi.memoryClear(); confirmClear = false; })}>{tr("Alles vergeten", "Forget everything")}</button>
       {:else}
-        <button class="ghost danger" onclick={() => (confirmClear = true)}>Alles vergeten…</button>
+        <button class="ghost danger" onclick={() => (confirmClear = true)}>{tr("Alles vergeten…", "Forget everything…")}</button>
       {/if}
     </div>
   {/if}

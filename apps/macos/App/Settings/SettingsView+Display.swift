@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: the languages, how the session list is laid out, and what Nook asks before it acts
-/// General has its sidebar and confirmations. How much Nook does on its own and updates are under Maintenance. Settings › Notch & windows: where
+/// Settings › General: the languages, how the session list is laid out, and what Nook asks before it acts.
+/// How much Nook does on its own and updates are under Maintenance. Settings › Notch & windows: where
 /// Nook shows (the notch and the main window) and how it behaves in meetings and while you share your screen. The look is
 /// under Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {
@@ -89,7 +89,7 @@ extension SettingsView {
                 SettingText("settings.energy.mode")
             }
             .pickerStyle(.segmented)
-            .help(tr("settings.energy.modeDetail"))
+            .nookTip(tr("settings.energy.modeDetail"))
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: NookTheme.Spacing.sm) {
@@ -128,17 +128,18 @@ extension NSColor {
 struct GeneralListAndConfirmations: View {
     @ObservedObject private var inbox = InboxStore.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(QuitHoldMonitor.enabledKey) private var holdToQuit = false
 
     var body: some View {
         Section {
             Toggle(isOn: $inbox.groupByProject) { SettingText("settings.ws.inboxProjects") }
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
-                .disabled(inbox.groupByProject)
         } header: {
             SettingText("settings.general.sessionList")
         }
         Section {
             Toggle(isOn: $confirmQuit) { SettingText("settings.ws.confirmQuit") }
+            SettingToggle(tr("settings.general.holdToQuit"), detail: tr("settings.general.holdToQuit.detail"), isOn: $holdToQuit)
         } header: {
             SettingText("settings.general.confirmations")
         }
@@ -147,14 +148,16 @@ struct GeneralListAndConfirmations: View {
     /// Whether any of General's own settings differs from its default, so "Restore defaults" has something to do.
     @MainActor static var changed: Bool {
         let inbox = InboxStore.shared
-        return !inbox.groupByProject || !inbox.showWorking
+        return inbox.groupByProject || !inbox.showWorking
             || UserDefaults.standard.object(forKey: AppDelegate.confirmQuitKey) as? Bool == false
+            || UserDefaults.standard.bool(forKey: QuitHoldMonitor.enabledKey)
     }
 
     /// Puts General's own settings back to how Nook ships. The languages stay: they are yours, not a default.
     @MainActor static func restoreDefaults() {
-        InboxStore.shared.groupByProject = true
+        InboxStore.shared.groupByProject = false
         InboxStore.shared.showWorking = true
         UserDefaults.standard.removeObject(forKey: AppDelegate.confirmQuitKey)
+        UserDefaults.standard.removeObject(forKey: QuitHoldMonitor.enabledKey)
     }
 }

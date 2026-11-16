@@ -95,10 +95,10 @@ final class BuddyTests: XCTestCase {
         ledger.roll(to: BuddyActivity.dayKey(now, calendar: calendar))
         let moment = BuddyPlanner.next(morning, ledger: ledger)!
         ledger.record(moment, at: now)
-        // A minute later: too soon for anything.
-        var soon = signals(now.addingTimeInterval(60))
-        soon.returnedAfter = 3600
-        XCTAssertNil(BuddyPlanner.next(soon, ledger: ledger))
+        // A minute later: too soon for anything (the shared budget keeps the gap).
+        var budget = InterruptionBudget()
+        budget.spend(.moment, now: now, calendar: calendar)
+        XCTAssertFalse(budget.allows(.moment, now: now.addingTimeInterval(60), calendar: calendar))
         // Half an hour later: the morning greeting is not repeated, but the welcome back may come.
         var later = signals(now.addingTimeInterval(30 * 60))
         later.firstOfDay = true
@@ -113,13 +113,13 @@ final class BuddyTests: XCTestCase {
 
     func testNoMoreThanTheDailyBudget() {
         let now = date(2026, 5, 6, 15)
+        var budget = InterruptionBudget()
+        for hour in 0..<4 { budget.spend(.moment, now: now.addingTimeInterval(Double(hour - 5) * 3600), calendar: calendar) }
+        XCTAssertFalse(budget.allows(.moment, now: now, calendar: calendar))
+        // A new day brings a new budget.
+        XCTAssertTrue(budget.allows(.moment, now: now.addingTimeInterval(24 * 3600), calendar: calendar))
         var ledger = BuddyLedger()
         ledger.roll(to: BuddyActivity.dayKey(now, calendar: calendar))
-        ledger.shownToday = ["morning@x", "welcomeBack@x#0", "breakTime@x#0", "welcomeBack@x#1"]
-        var tired = signals(now)
-        tired.stretch = 3 * 3600
-        XCTAssertNil(BuddyPlanner.next(tired, ledger: ledger))
-        // A new day brings a new budget.
         var tomorrow = signals(now.addingTimeInterval(24 * 3600))
         tomorrow.stretch = 3 * 3600
         XCTAssertEqual(BuddyPlanner.next(tomorrow, ledger: ledger)?.kind, .breakTime)

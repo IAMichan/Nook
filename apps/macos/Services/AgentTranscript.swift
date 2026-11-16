@@ -118,8 +118,8 @@ struct AgentChatMessage: Identifiable, Equatable {
 
 /// Reads a session's conversation from the agent's own transcript: user prompts, agent responses, thinking/reasoning
 /// blocks and the steps in between (commands, files, searches), as the agent's own app shows them. System prompts and
-/// tool output are excluded. Understands Claude Code, Codex and Antigravity (JSONL) and
-/// Gemini CLI (one JSON file per chat).
+/// tool output are excluded. Understands Claude Code, Codex, Antigravity and Cursor (JSONL) and Gemini CLI (one JSON file
+/// per chat, or a JSONL log of it). A JSONL file that grows is read on from where the last read stopped, never again whole.
 enum AgentTranscript {
     /// Number of bytes to read from the end of a JSONL file: enough for the whole conversation of nearly every session.
     private static let tailBytes: UInt64 = 8_000_000
@@ -138,6 +138,10 @@ enum AgentTranscript {
         var parsed: [AgentChatMessage] = []
         var parsedTo: UInt64 = 0
         var lines = 0
+        /// Gemini CLI's JSONL log (0.33 and newer) instead: the chat as replayed up to `parsedTo`.
+        var gemini: GeminiChatLog.Log?
+        /// The file read (its inode): a file replaced by another one under the same name is read from its start.
+        var file: UInt64?
     }
 
     private static let cacheLock = NSLock()
@@ -157,7 +161,9 @@ enum AgentTranscript {
     private static func cost(_ entry: CacheEntry) -> Int {
         let shown = entry.messages.reduce(0) { $0 + weight($1) }
         let extra = entry.parsed.dropLast(entry.messages.count).reduce(0) { $0 + weight($1) }
-        return shown + extra + entry.parsed.count * 32
+        // A replayed Gemini log holds about what its lines held.
+        let log = entry.gemini == nil ? 0 : Int(clamping: entry.parsedTo)
+        return shown + extra + entry.parsed.count * 32 + log
     }
 
     private static func weight(_ message: AgentChatMessage) -> Int {
@@ -171,8 +177,10 @@ enum AgentTranscript {
     }
 
     /// `remember: false` reads without keeping the result (search reads every earlier session once, which would push the
-    /// sessions on screen out of the cache).
-    static func recent(path: String, limit: Int = fullLimit, remember: Bool = true) -> [AgentChatMessage] {
+    /// sessions on screen out of the cache). `whole` reads a long JSONL file from its start instead of its last 8 MB: what
+    /// `SessionArchive` keeps of every session, one at a time in the background.
+    static func recent(path: String, limit: Int = fullLimit, remember: Bool = true, whole: Bool = false) -> [AgentChatMessage] {
+        let tailBytes = whole ? UInt64.max : Self.tailBytes
         // Gemini CLI writes one JSON file per chat, or (0.33 and newer) a JSONL log of changes to it.
         let isGemini = path.hasSuffix(".json") || GeminiChatLog.isLog(path: path)
         guard path.hasSuffix(".jsonl") || isGemini else { return [] }
@@ -190,10 +198,15 @@ enum AgentTranscript {
             cacheLock.unlock()
         }
 
+        let attrFile = (attrs?[.systemFileNumber] as? NSNumber)?.uint64Value
+
         var messages: [AgentChatMessage]
         var size: UInt64 = attrSize ?? 0
         var progress: (parsed: [AgentChatMessage], to: UInt64, lines: Int)?
-        if isGemini {
+        var geminiProgress: (log: GeminiChatLog.Log, to: UInt64)?
+        if isGemini, !GeminiChatLog.isLog(path: path) {
+            // Up to Gemini CLI 0.32 a chat is one JSON object, written whole every time: read whole, and only when it
+            // changed (the cache above).
             guard let data = FileManager.default.contents(atPath: path) else { return [] }
             size = UInt64(data.count)
             messages = gemini(data)
@@ -205,37 +218,64 @@ enum AgentTranscript {
             cacheLock.lock()
             let previous = cache.peek(path)
             cacheLock.unlock()
-            let base: (parsed: [AgentChatMessage], to: UInt64, lines: Int)
-            var data: Data
-            if let previous, previous.parsedTo > 0, end >= previous.parsedTo, end - previous.parsedTo <= tailBytes {
-                // The file grew: only what was added since the last complete line.
-                base = (previous.parsed, previous.parsedTo, previous.lines)
-                try? handle.seek(toOffset: previous.parsedTo)
-                guard let added = try? handle.readToEnd() else { return [] }
-                data = added
-            } else {
-                let start = end > tailBytes ? end - tailBytes : 0
-                try? handle.seek(toOffset: start)
-                guard let read = try? handle.readToEnd() else { return [] }
-                data = read
-                var from = start
-                // If reading started mid-line, skip the initial partial line.
-                if start > 0, let newline = data.firstIndex(of: 0x0A) {
-                    data = Data(data[data.index(after: newline)...])
-                    from = start + UInt64(newline + 1)
-                }
-                base = ([], from, 0)
+            // What was added since the last complete line read before, when it is still the same file and it only grew.
+            // Not for a whole JSONL read: what was parsed before may have started at the last 8 MB.
+            var known: (entry: CacheEntry, added: Data)?
+            if let previous, previous.parsedTo > 0, previous.file == attrFile, end >= previous.parsedTo,
+               isGemini ? previous.gemini != nil : (!whole && end - previous.parsedTo <= tailBytes),
+               let added = appended(handle, after: previous.parsedTo) {
+                known = (previous, added)
             }
-            // Lines up to the last newline are final; a line still being written is parsed for this answer only, and
-            // read again (complete) next time.
-            let cut = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
-            let complete = data[data.startIndex..<cut]
-            let parsed = jsonl(complete, continuing: base.parsed, firstLine: base.lines)
-            let lines = base.lines + complete.split(separator: 0x0A).count
-            let rest = data[cut...]
-            messages = rest.isEmpty ? parsed : jsonl(rest, continuing: parsed, firstLine: lines)
-            // Bounded like a full read: the newest messages are all anyone sees.
-            progress = (Array(parsed.suffix(fullLimit)), base.to + UInt64(cut - data.startIndex), lines)
+            if isGemini {
+                // Gemini CLI 0.33 and newer: a log of changes to the chat, replayed on from where the last read stopped.
+                var log = known?.entry.gemini ?? GeminiChatLog.Log()
+                let from = known?.entry.parsedTo ?? 0
+                let data: Data
+                if let known {
+                    data = known.added
+                } else {
+                    try? handle.seek(toOffset: 0)
+                    guard let read = try? handle.readToEnd() else { return [] }
+                    data = read
+                }
+                // As below: complete lines advance the log, a line still being written counts for this answer only.
+                let cut = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+                log.apply(data[data.startIndex..<cut])
+                var current = log
+                if cut < data.endIndex { current.apply(data[cut...]) }
+                messages = current.chat.map { gemini(messages: $0.messages) } ?? []
+                geminiProgress = (log, from + UInt64(cut - data.startIndex))
+            } else {
+                let base: (parsed: [AgentChatMessage], to: UInt64, lines: Int)
+                var data: Data
+                if let known {
+                    // The file grew: only what was added since the last complete line.
+                    base = (known.entry.parsed, known.entry.parsedTo, known.entry.lines)
+                    data = known.added
+                } else {
+                    let start = end > tailBytes ? end - tailBytes : 0
+                    try? handle.seek(toOffset: start)
+                    guard let read = try? handle.readToEnd() else { return [] }
+                    data = read
+                    var from = start
+                    // If reading started mid-line, skip the initial partial line.
+                    if start > 0, let newline = data.firstIndex(of: 0x0A) {
+                        data = Data(data[data.index(after: newline)...])
+                        from = start + UInt64(newline + 1)
+                    }
+                    base = ([], from, 0)
+                }
+                // Lines up to the last newline are final; a line still being written is parsed for this answer only, and
+                // read again (complete) next time.
+                let cut = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+                let complete = data[data.startIndex..<cut]
+                let parsed = jsonl(complete, continuing: base.parsed, firstLine: base.lines)
+                let lines = base.lines + lineCount(complete)
+                let rest = data[cut...]
+                messages = rest.isEmpty ? parsed : jsonl(rest, continuing: parsed, firstLine: lines)
+                // Bounded like a full read: the newest messages are all anyone sees.
+                progress = (Array(parsed.suffix(fullLimit)), base.to + UInt64(cut - data.startIndex), lines)
+            }
         }
         var result = Array(messages.suffix(limit))
         // A long conversation is read from its tail (and capped): the prompt that started it is still part of it.
@@ -250,11 +290,42 @@ enum AgentTranscript {
                 entry.parsedTo = progress.to
                 entry.lines = progress.lines
             }
+            if let geminiProgress {
+                entry.gemini = geminiProgress.log
+                entry.parsedTo = geminiProgress.to
+            }
+            entry.file = attrFile
             cacheLock.lock()
             cache.set(entry, for: path, cost: cost(entry))
             cacheLock.unlock()
         }
         return result
+    }
+
+    /// What a file holds after `offset`, when the byte just before it is still the newline the last line read there ended
+    /// with: nil when the file was rewritten since, which is then read from its start.
+    private static func appended(_ handle: FileHandle, after offset: UInt64) -> Data? {
+        guard offset > 0, (try? handle.seek(toOffset: offset - 1)) != nil,
+              let data = try? handle.readToEnd(), data.first == 0x0A else { return nil }
+        return Data(data.dropFirst())
+    }
+
+    /// How many lines with something on them `data` holds: as many as `data.split(separator: 0x0A)` gives (the numbering
+    /// `jsonl` uses), counted without making them.
+    static func lineCount(_ data: Data) -> Int {
+        data.withUnsafeBytes { bytes in
+            var count = 0
+            var inLine = false
+            for byte in bytes {
+                if byte == 0x0A {
+                    if inLine { count += 1 }
+                    inLine = false
+                } else {
+                    inLine = true
+                }
+            }
+            return inLine ? count + 1 : count
+        }
     }
 
     /// The first thing you typed in a JSONL transcript, read from its head (the tail read of a long file starts after it).
@@ -316,7 +387,7 @@ enum AgentTranscript {
                     // An API error Claude Code wrote in the place of an answer: an error, not something the agent said.
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text, at: when), date: when))
                 } else {
                     // One line can hold several blocks; keep their order (thinking, text, steps).
                     for (offset, block) in ((message["content"] as? [[String: Any]]) ?? []).enumerated() {
@@ -330,7 +401,7 @@ enum AgentTranscript {
                             let name = (block["name"] as? String) ?? ""
                             let input = (block["input"] as? [String: Any]) ?? [:]
                             append(step: AgentToolStep(id: (block["id"] as? String) ?? blockID, name: toolName(name),
-                                                       summary: toolSummary(name, input), command: ToolSummary.command(input),
+                                                       summary: stepSummary(name, input), command: ToolSummary.command(input),
                                                        tasks: SessionOutputs.taskList(tool: name, input: input),
                                                        path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
                                                        plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
@@ -397,7 +468,7 @@ enum AgentTranscript {
                 case "error":
                     let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text, at: when), date: when))
                 default:
                     continue
                 }
@@ -416,8 +487,11 @@ enum AgentTranscript {
                     let arguments = (payload["arguments"] as? String).flatMap {
                         (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
                     } ?? [:]
-                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments),
-                                               command: ToolSummary.command(arguments) ?? (arguments["cmd"] as? String),
+                    // A patch arrives as a custom tool call with the patch as its input: the step names the files in it.
+                    let patchInput = (payload["input"] as? String).map { ["input": $0] } ?? [:]
+                    append(step: AgentToolStep(id: callID, name: toolName(name),
+                                               summary: stepSummary(name, arguments.merging(patchInput) { old, _ in old }),
+                                               command: ToolSummary.command(arguments),
                                                tasks: SessionOutputs.taskList(tool: name, input: arguments),
                                                // apply_patch arrives as a custom tool call with the patch as its input.
                                                lines: name == "apply_patch"
@@ -433,11 +507,11 @@ enum AgentTranscript {
                            at: when, to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action),
+                    append(step: AgentToolStep(id: callID, name: toolName("local_shell_call"), summary: stepSummary("shell", action),
                                                command: ToolSummary.command(action), input: inputJSON(action)), at: when, to: &messages)
                 case "web_search_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),
+                    append(step: AgentToolStep(id: callID, name: toolName("web_search"), summary: stepSummary("web_search", action)),
                            at: when, to: &messages)
                     finish(step: callID, failed: false, at: when, in: &messages)
                 case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
@@ -455,10 +529,15 @@ enum AgentTranscript {
     /// or the JSONL log newer versions write (see `GeminiChatLog`).
     static func gemini(_ data: Data) -> [AgentChatMessage] {
         guard let list = GeminiChatLog.read(data)?.messages else { return [] }
+        return gemini(messages: list)
+    }
+
+    /// The messages of a Gemini CLI chat as read (`GeminiChatLog.Chat.messages`).
+    static func gemini(messages list: [[String: Any]]) -> [AgentChatMessage] {
         var messages: [AgentChatMessage] = []
         for (index, message) in list.enumerated() {
             let id = (message["id"] as? String) ?? "gemini-\(index)"
-            let content = geminiText(message["content"])
+            let content = TextClip.parts(message["content"])
             let when = date(message["timestamp"])
             switch message["type"] as? String {
             case "user":
@@ -480,7 +559,7 @@ enum AgentTranscript {
                     let input = (call["args"] as? [String: Any]) ?? [:]
                     let callDate = date(call["timestamp"]) ?? when
                     let path = ToolSummary.path(input)
-                    append(step: AgentToolStep(id: callID, name: geminiToolName(raw), summary: geminiSummary(raw, input),
+                    append(step: AgentToolStep(id: callID, name: toolName(raw), summary: stepSummary(raw, input),
                                                command: ToolSummary.command(input),
                                                path: ToolCategory.of(tool: raw) == .edit ? path : nil,
                                                lines: EditLines.of(tool: raw, input: input),
@@ -567,15 +646,22 @@ enum AgentTranscript {
     }
 
     /// An error the agent reported, or the usage limit it ran into: "Claude AI usage limit reached|1760040000" (with when
-    /// it resets), "5-hour limit reached ∙ resets 3pm", "You've hit your usage limit".
-    static func notice(error text: String) -> AgentNotice {
+    /// it resets), "5-hour limit reached ∙ resets 3pm", "You've hit your usage limit", and every other agent's way of
+    /// saying it (Gemini's `RESOURCE_EXHAUSTED`, "quota exceeded", a 429, a gateway's "(reset after 1h2m)"). It reads a
+    /// limit the way a session Nook runs does (`FailureClassifier`), so a session followed from its transcript says the
+    /// same as one Nook runs. `at`: when the agent wrote it, for a reset named by the clock ("resets 3pm").
+    static func notice(error text: String, at date: Date? = nil) -> AgentNotice {
         let lower = text.lowercased()
+        let gateway = FailureClassifier.gatewayResetSeconds(text)
         guard lower.contains("limit reached") || lower.contains("hit your") && lower.contains("limit")
-                || lower.contains("usage limit") || lower.contains("rate limit") else { return .error(errorLine(text) ?? text) }
+                || lower.contains("usage limit") || lower.contains("rate limit") || lower.contains("rate_limit_error")
+                || FailureClassifier.saysUsageLimit(lower) || gateway != nil else { return .error(errorLine(text) ?? text) }
         if let bar = text.lastIndex(of: "|"), let seconds = TimeInterval(text[text.index(after: bar)...].trimmingCharacters(in: .whitespaces)) {
             return .limit(String(text[..<bar]).trimmingCharacters(in: .whitespaces), resets: Date(timeIntervalSince1970: seconds))
         }
-        return .limit(errorLine(text) ?? text, resets: nil)
+        let now = date ?? Date()
+        let resets = gateway.flatMap { $0 > 0 ? now.addingTimeInterval($0) : nil } ?? UsageLimits.textReset(text, now: now)
+        return .limit(errorLine(text) ?? text, resets: resets)
     }
 
     /// What a Codex tool gave back: the `output` of the JSON it wraps it in, or what follows the "Output:" line of the
@@ -618,103 +704,29 @@ enum AgentTranscript {
     /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.
     static func date(_ value: Any?) -> Date? {
         guard let text = value as? String, !text.isEmpty else { return nil }
-        return fractionalStamp.date(from: text) ?? plainStamp.date(from: text)
+        return NookDates.stamp(text)
     }
-
-    // ISO8601DateFormatter is thread-safe; one each is enough for every transcript.
-    private static let fractionalStamp: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let plainStamp = ISO8601DateFormatter()
 
     /// A long run of steps keeps its newest ones.
     private static let maxSteps = 200
 
-    /// A tool keeps its full name, MCP tools too ("mcp__github__create_issue"): the timeline reads its server and tool
-    /// from it ("GitHub › Create issue"), and the computer-use tools by what they do on your screen.
+    /// The name a step shows under, the same for every agent (`CanonicalTool`): Claude Code's own names, which the
+    /// other agents' tools map onto ("Shell", "Edit", "Read"). Any other tool keeps its full name, MCP tools too
+    /// ("mcp__github__create_issue"): the timeline reads its server and tool from it ("GitHub › Create issue"), and the
+    /// computer-use tools by what they do on your screen.
     static func toolName(_ raw: String) -> String {
-        raw.isEmpty ? "Tool" : raw
+        CanonicalTool.of(raw).name
     }
 
-    /// What a Claude Code step was about, the way the Claude app shows it next to the tool's name.
     /// A step that read or wrote one file, which you can open from it (a folder listing names a folder, not a file).
     static func opensFile(_ name: String) -> Bool {
-        let category = ToolCategory.of(tool: name)
-        return (category == .read || category == .edit) && !["ls", "list_directory"].contains(name.lowercased())
+        [.read, .edit, .write].contains(CanonicalTool.kind(name))
     }
 
-    static func toolSummary(_ name: String, _ input: [String: Any]) -> String {
-        func string(_ key: String) -> String? {
-            guard let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            return value
-        }
-        let fileName = string("file_path").map { ($0 as NSString).lastPathComponent }
-            ?? string("notebook_path").map { ($0 as NSString).lastPathComponent }
-        let summary: String?
-        switch name {
-        case "Bash": summary = string("description") ?? string("command")
-        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": summary = fileName
-        case "Grep", "Glob": summary = string("pattern")
-        case "WebFetch": summary = string("url")
-        case "WebSearch", "web_search": summary = string("query")
-        case "Task", "Agent": summary = string("description")
-        case "Skill": summary = string("skill") ?? string("command")
-        default:
-            summary = ["description", "command", "query", "url", "pattern", "path", "title", "name", "prompt"]
-                .lazy.compactMap { string($0) }.first ?? fileName
-        }
-        return oneLine(summary ?? "")
-    }
-
-    private static func codexToolName(_ raw: String) -> String {
-        switch raw {
-        case "shell", "exec_command", "shell_command", "container.exec": return "Shell"
-        case "apply_patch": return "Edit"
-        case "update_plan": return "Plan"
-        default: return toolName(raw)
-        }
-    }
-
-    /// Gemini CLI's tools by the names the other agents' steps use, so a step reads the same whichever agent ran it.
-    private static func geminiToolName(_ raw: String) -> String {
-        switch raw {
-        case "run_shell_command": return "Shell"
-        case "read_file", "read_many_files": return "Read"
-        case "write_file": return "Write"
-        case "replace": return "Edit"
-        case "glob": return "Glob"
-        case "search_file_content": return "Grep"
-        case "google_web_search": return "WebSearch"
-        case "web_fetch": return "WebFetch"
-        default: return toolName(raw)
-        }
-    }
-
-    /// Gemini CLI: what a step was about, from its own argument names.
-    private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
-        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine((path as NSString).lastPathComponent) }
-        if let paths = input["paths"] as? [String], let first = paths.first {
-            return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
-        }
-        for key in ["description", "command", "pattern", "query", "url", "prompt"] {
-            if let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return oneLine(value) }
-        }
-        return ""
-    }
-
-    /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
-    private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
-        if let command = arguments["command"] as? [String] {
-            if command.count >= 3, ["bash", "sh", "zsh"].contains((command[0] as NSString).lastPathComponent),
-               command[1].hasPrefix("-") { return oneLine(command[2]) }
-            return oneLine(command.joined(separator: " "))
-        }
-        for key in ["cmd", "command", "query", "path", "explanation"] {
-            if let value = arguments[key] as? String, !value.isEmpty { return oneLine(value) }
-        }
-        return ""
+    /// What a step was about, the way the agent's own app shows it next to the tool's name, for every agent
+    /// (`ToolInput.subject`): what a command says it does (or the command), the file, the pattern, the address.
+    static func stepSummary(_ name: String, _ input: [String: Any]) -> String {
+        oneLine(ToolInput.subject(tool: name, input: input, describedCommand: true))
     }
 
     /// The exit code a Codex command reported: in the JSON it wraps its output in (`metadata.exit_code`) or on the
@@ -731,18 +743,7 @@ enum AgentTranscript {
     }
 
     /// The first line, shortened: a step reads on one line.
-    private static func oneLine(_ text: String) -> String {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first ?? ""
-        return line.count > 160 ? String(line.prefix(159)) + "…" : line
-    }
-
-    private static func geminiText(_ content: Any?) -> String {
-        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let parts = content as? [[String: Any]] {
-            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return ""
-    }
+    private static func oneLine(_ text: String) -> String { TextClip.firstLine(text, 160) }
 
     /// Extracts the user request text from an Antigravity prompt, removing envelope tags and metadata.
     static func cleanAntigravityPrompt(_ raw: String) -> String {
@@ -760,11 +761,7 @@ enum AgentTranscript {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func text(_ content: Any?) -> String {
-        if let string = content as? String { return string }
-        guard let blocks = content as? [[String: Any]] else { return "" }
-        return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
-    }
+    private static func text(_ content: Any?) -> String { TextClip.blocks(content) }
 
     /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
@@ -935,35 +932,36 @@ enum GeminiChatLog {
         if let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let messages = root["messages"] as? [[String: Any]] {
             return Chat(metadata: root, messages: messages)
         }
+        var log = Log()
+        log.apply(data)
+        return log.chat
+    }
+
+    /// A chat log replayed up to some line. Every line only changes what the lines before it made, so a log that grows is
+    /// read on from where it was instead of from its start (the live view and the history scan both do): replaying the
+    /// new lines on this gives the same chat as replaying the whole file.
+    struct Log {
         var metadata: [String: Any] = [:]
         var order: [String] = []
         var byID: [String: [String: Any]] = [:]
         var sawLine = false
-        func set(_ messages: [[String: Any]]) {
-            order = []
-            byID = [:]
-            for message in messages { if let id = message["id"] as? String { add(id, message) } }
+
+        /// The chat so far; nil while no line was a record.
+        var chat: Chat? {
+            guard sawLine else { return nil }
+            return Chat(metadata: metadata, messages: order.compactMap { byID[$0] })
         }
-        func add(_ id: String, _ message: [String: Any]) {
-            if byID[id] == nil { order.append(id) }
-            byID[id] = message
-        }
-        func patch(_ change: [String: Any]) {
-            guard let id = change["id"] as? String, var message = byID[id] else { return }
-            if let content = change["content"] { message["content"] = content }
-            if let results = change["toolCalls"] as? [[String: Any]], var calls = message["toolCalls"] as? [[String: Any]] {
-                for result in results {
-                    guard let index = calls.firstIndex(where: { ($0["id"] as? String) == (result["id"] as? String) }),
-                          let value = result["result"] else { continue }
-                    calls[index]["result"] = value
-                }
-                message["toolCalls"] = calls
+
+        /// Replays the lines in `data`, in order.
+        mutating func apply(_ data: Data) {
+            for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
+                guard let record = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+                sawLine = true
+                apply(record: record)
             }
-            byID[id] = message
         }
-        for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
-            guard let record = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
-            sawLine = true
+
+        private mutating func apply(record: [String: Any]) {
             if let rewind = record["$rewindTo"] as? String {
                 if let index = order.firstIndex(of: rewind) {
                     for id in order[index...] { byID[id] = nil }
@@ -993,8 +991,31 @@ enum GeminiChatLog {
                 metadata.merge(record.filter { $0.key != "messages" }) { $1 }
             }
         }
-        guard sawLine else { return nil }
-        return Chat(metadata: metadata, messages: order.compactMap { byID[$0] })
+
+        private mutating func set(_ messages: [[String: Any]]) {
+            order = []
+            byID = [:]
+            for message in messages { if let id = message["id"] as? String { add(id, message) } }
+        }
+
+        private mutating func add(_ id: String, _ message: [String: Any]) {
+            if byID[id] == nil { order.append(id) }
+            byID[id] = message
+        }
+
+        private mutating func patch(_ change: [String: Any]) {
+            guard let id = change["id"] as? String, var message = byID[id] else { return }
+            if let content = change["content"] { message["content"] = content }
+            if let results = change["toolCalls"] as? [[String: Any]], var calls = message["toolCalls"] as? [[String: Any]] {
+                for result in results {
+                    guard let index = calls.firstIndex(where: { ($0["id"] as? String) == (result["id"] as? String) }),
+                          let value = result["result"] else { continue }
+                    calls[index]["result"] = value
+                }
+                message["toolCalls"] = calls
+            }
+            byID[id] = message
+        }
     }
 
     /// The folder a chat belongs to: its own `directories`, else the `.project_root` next to the chats, else the project

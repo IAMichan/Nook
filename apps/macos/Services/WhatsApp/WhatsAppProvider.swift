@@ -33,6 +33,9 @@ protocol WhatsAppProvider: Sendable {
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage]
     /// The latest `limit` messages of one chat, oldest first.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage]
+    /// Up to `limit` messages of one chat before its newest `offset`, oldest first: a page further back, for filling
+    /// Nook's archive (`ChatBackfill`).
+    func messages(chat: String, offset: Int, limit: Int, me: String?) async throws -> [WAMessage]
     /// Sends a text to an existing chat, as an answer to the message `replyTo` when set, tagging `mentions` (JIDs, each
     /// written in the text as "@" and its digits); returns the new message's id when the gateway gives it.
     func send(text: String, to chat: String, replyTo: String?, mentions: [String]) async throws -> String?
@@ -105,6 +108,12 @@ protocol WhatsAppProvider: Sendable {
 }
 
 extension WhatsAppProvider {
+    /// A gateway that pages only from the newest: the newest `offset + limit`, without the newest `offset`.
+    func messages(chat: String, offset: Int, limit: Int, me: String?) async throws -> [WAMessage] {
+        let all = try await messages(chat: chat, limit: offset + limit, me: me)
+        return Array(all.dropLast(min(offset, all.count)).suffix(limit))
+    }
+
     func avatar(_ chat: String) async -> URL? { nil }
     func groupNames() async -> [String: String] { [:] }
     func joinedGroups() async -> Set<String>? { nil }
@@ -331,11 +340,16 @@ actor GOWAProvider: WhatsAppProvider {
     func registerWebhook(url: String, secret: String) async throws {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
-        let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
-            "webhook_url": url, "webhook_secret": secret,
-            "webhook_events": "message,message.ack,message.reaction,chat_presence",
-        ])
-        try check(data, code)
+        // Edits, deletions and group changes by name too; a GOWA that does not know one of those names is asked for the
+        // events it always had.
+        for events in [WAGOWA.webhookEvents, WAGOWA.webhookEventsBefore] {
+            let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
+                "webhook_url": url, "webhook_secret": secret, "webhook_events": events,
+            ])
+            if code == 400 || code == 422, events != WAGOWA.webhookEventsBefore { continue }
+            try check(data, code)
+            return
+        }
     }
 
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage] {
@@ -345,7 +359,7 @@ actor GOWAProvider: WhatsAppProvider {
         for chat in chats.prefix(8) where chat.last > date {
             let data = try await scoped("GET", "/chat/\(WAHTTP.pathComponent(chat.jid))/messages", query: [
                 URLQueryItem(name: "limit", value: "10"),
-                URLQueryItem(name: "start_time", value: WADate.iso(date)),
+                URLQueryItem(name: "start_time", value: ChatJSON.iso(date)),
             ])
             out += WAGOWA.messages(data, me: me).map { m in
                 var m = m
@@ -359,9 +373,14 @@ actor GOWAProvider: WhatsAppProvider {
     /// Page by page from the newest back (GOWA refuses more than 100 at once), until `limit` messages are in or the
     /// history runs out. A page that fails after the first keeps what came; a short page is the chat's start.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage] {
+        try await messages(chat: chat, offset: 0, limit: limit, me: me)
+    }
+
+    /// GOWA pages by offset itself, so a page far back costs one request, not every newer one.
+    func messages(chat: String, offset start: Int, limit: Int, me: String?) async throws -> [WAMessage] {
         var out: [WAMessage] = []
         var seen = Set<String>()
-        var offset = 0
+        var offset = start
         while out.count < limit {
             let size = min(WAGOWA.messagePage, max(limit - out.count, 1))
             let data: Data
@@ -371,14 +390,14 @@ actor GOWAProvider: WhatsAppProvider {
                     URLQueryItem(name: "offset", value: String(offset)),
                 ])
             } catch {
-                if offset == 0 { throw error }
+                if offset == start { throw error }
                 break
             }
             let page = WAGOWA.messages(data, me: me).filter { seen.insert($0.id).inserted }
             out += page
             let count = WAGOWA.messageCount(data)
             // A short page is the start; one that brings nothing new means the gateway ignores the offset.
-            if count < size || (page.isEmpty && offset > 0) { break }
+            if count < size || (page.isEmpty && offset > start) { break }
             offset += count
         }
         return Array(out.sorted { $0.date < $1.date }.suffix(limit))
@@ -448,8 +467,13 @@ actor GOWAProvider: WhatsAppProvider {
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
     }
 
+    /// Online while a chat is open; a private chat's person is watched as well (`/user/presence/subscribe`, as WhatsApp
+    /// Web does when a chat opens), so their typing reaches this device too. A group needs no watch.
     func setOnline(_ online: Bool, chat: String?) async {
         _ = try? await scoped("POST", "/send/presence", json: ["type": online ? "available" : "unavailable"])
+        if online, let chat, WAJID.kind(chat) == .person, !chat.hasSuffix("@lid") {
+            _ = try? await scoped("POST", "/user/presence/subscribe", json: ["phone": chat])
+        }
     }
 
     func contacts() async -> [WAContact] {
@@ -661,19 +685,19 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
-        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.receipt",
-                                                                       "message.reaction", "presence.update", "group.join", "group.leave",
-                                                                       "group.update"],
-                                            "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
         let hooks = (try? JSONSerialization.jsonObject(with: list)) as? [[String: Any]] ?? []
-        if let mine = hooks.first(where: { $0["url"] as? String == url }), let hookId = mine["id"] as? String {
-            let (data, code) = try await http.call("PUT", "/api/sessions/\(id)/webhooks/\(hookId)", json: body)
+        let hookId = hooks.first(where: { $0["url"] as? String == url })?["id"] as? String
+        // Edits, deletions and failed sends by name too; an OpenWA that does not know one of those names is asked for
+        // the events it always had.
+        for events in [WAOpenWA.webhookEvents, WAOpenWA.webhookEventsBefore] {
+            let body: [String: any Sendable] = ["url": url, "events": events, "secret": secret]
+            let path = hookId.map { "/api/sessions/\(id)/webhooks/\($0)" } ?? "/api/sessions/\(id)/webhooks"
+            let (data, code) = try await http.call(hookId == nil ? "POST" : "PUT", path, json: body)
+            if code == 400 || code == 422, events != WAOpenWA.webhookEventsBefore { continue }
             try check(data, code)
-        } else {
-            let (data, code) = try await http.call("POST", "/api/sessions/\(id)/webhooks", json: body)
-            try check(data, code)
+            return
         }
     }
 

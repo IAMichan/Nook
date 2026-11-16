@@ -54,13 +54,24 @@ struct ModelManifest: Codable, Equatable, Sendable {
         var id: String
         var name: String
         var status: Status
-        /// "new" shows a New label in the picker.
+        /// "new" shows a New label in the picker, for `newFor` after `released` (see `isNew(at:)`).
         var badge: String?
+        /// When the model came out. Required with a badge, so the New label goes away by itself and never sticks
+        /// to a model that has long been out because nobody edited the file.
+        var released: Date?
+        /// Whether the picker labels the model New at `now`: it has the badge and came out less than `newFor` ago.
+        func isNew(at now: Date) -> Bool {
+            guard badge == "new", let released else { return false }
+            return now < released.addingTimeInterval(ModelManifest.newFor)
+        }
         /// Other names the agent accepts for this model ("opus"), so a saved alias still reads as this model.
         var aliases: [String]?
         /// Per agent, keyed like `agents`: what that agent needs to run the model.
         var adapter: [String: Adapter]?
     }
+
+    /// How long a model reads as New after its release.
+    static let newFor: TimeInterval = 14 * 24 * 3600
 
     struct Adapter: Codable, Equatable, Sendable {
         /// The oldest CLI version that runs the model ("2.1.280"); an older one shows the model as "update required".
@@ -111,6 +122,9 @@ struct ModelManifest: Codable, Equatable, Sendable {
                     guard names.insert(name.lowercased()).inserted else {
                         throw ModelManifestError.invalid("\(key): \"\(name)\" is used twice")
                     }
+                }
+                if model.badge != nil, model.released == nil {
+                    throw ModelManifestError.invalid("\(key): \(model.id) has a badge but no released date")
                 }
                 for (owner, adapter) in model.adapter ?? [:] {
                     // A provider reads only its own entry: settings for another agent are a mistake in the file.
@@ -261,7 +275,8 @@ struct ModelChoice: Equatable, Sendable {
     /// classified by the manifest; then the manifest's models it did not list. An agent that lists its own models cannot
     /// name ones released after its build, so of those only the ones waiting on an update are added. With neither, the
     /// agent's well-known names.
-    static func list(manifest: ModelManifest?, provider: RunProvider, offered: [AgentModel], installed: String?) -> [ModelChoice] {
+    static func list(manifest: ModelManifest?, provider: RunProvider, offered: [AgentModel], installed: String?,
+                     now: Date = Date()) -> [ModelChoice] {
         let entry = manifest?.entry(for: provider)
         var result: [ModelChoice] = []
         var seen = Set<String>()
@@ -269,14 +284,14 @@ struct ModelChoice: Equatable, Sendable {
             let known = manifest?.model(model.id, for: provider)
             if let known { seen.insert(known.id.lowercased()) }
             result.append(ModelChoice(id: model.id, name: model.name, isDefault: model.isDefault,
-                                      isLegacy: known?.status == .legacy, isNew: known?.badge == "new"))
+                                      isLegacy: known?.status == .legacy, isNew: known?.isNew(at: now) == true))
         }
         for model in entry?.models ?? [] where !seen.contains(model.id.lowercased()) {
             let required = manifest?.requiredVersion(model.id, for: provider, installed: installed)
             guard offered.isEmpty || required != nil else { continue }
             seen.insert(model.id.lowercased())
             result.append(ModelChoice(id: model.id, name: model.name, isDefault: entry?.defaultModel == model.id,
-                                      isLegacy: model.status == .legacy, isNew: model.badge == "new", requiredVersion: required))
+                                      isLegacy: model.status == .legacy, isNew: model.isNew(at: now), requiredVersion: required))
         }
         if result.isEmpty {
             result = provider.suggestedModels.filter { !$0.isEmpty }.map { ModelChoice(id: $0, name: $0) }

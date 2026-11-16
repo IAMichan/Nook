@@ -149,6 +149,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var codexAppServer: Bool {
         didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
     }
+    /// OpenCode 2.0.18 and newer runs over its own server (`opencode serve`: questions, deny with a reason, effort as the
+    /// model's variant); off, or for an older OpenCode: over ACP.
+    @Published var openCodeServer: Bool {
+        didSet { defaults.set(openCodeServer, forKey: "ws.openCodeServer") }
+    }
     /// Keeps what agents and Nook say to each other over stdio, per session (`ProviderTrafficLog`). Off by default.
     @Published var providerTrafficLog: Bool {
         didSet { defaults.set(providerTrafficLog, forKey: ProviderTrafficLog.enabledKey) }
@@ -183,7 +188,8 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(textGenerators, forKey: "ws.textGenerators") }
     }
     /// After an agent's turn the empty composer shows the message you will likely send next (`NextPromptSuggestion`).
-    /// Off by default: each suggestion is one more request.
+    /// On by default: Claude Code and Codex predict it from their own conversation on your subscription; for the other
+    /// agents it is one short request to the chosen generator, only while the session is open.
     @Published var suggestNextPrompt: Bool {
         didSet { defaults.set(suggestNextPrompt, forKey: "ws.suggestNextPrompt") }
     }
@@ -260,11 +266,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published private(set) var recentProjects: [String]
     /// What project folders set for themselves on top of the defaults above (see `ProjectSettings`).
     @Published var projectOverrides: ProjectOverrides {
-        didSet { defaults.set(try? JSONEncoder().encode(projectOverrides), forKey: "ws.projectOverrides") }
+        didSet { defaults.setEncoded(projectOverrides, forKey: "ws.projectOverrides") }
     }
     /// What you last chose in the composer per folder (see `FolderChoicesStore`).
     @Published private(set) var folderChoices: FolderChoicesStore {
-        didSet { defaults.set(try? JSONEncoder().encode(folderChoices), forKey: "ws.folderChoices") }
+        didSet { defaults.setEncoded(folderChoices, forKey: "ws.folderChoices") }
     }
 
     static var standardWorktreeRoot: String {
@@ -313,11 +319,12 @@ final class WorkspaceSettings: ObservableObject {
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        openCodeServer = defaults.object(forKey: "ws.openCodeServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
         textGenerators = defaults.dictionary(forKey: "ws.textGenerators") as? [String: String] ?? [:]
-        suggestNextPrompt = defaults.bool(forKey: "ws.suggestNextPrompt")
+        suggestNextPrompt = defaults.object(forKey: "ws.suggestNextPrompt") as? Bool ?? true
         agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
         maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
@@ -336,10 +343,11 @@ final class WorkspaceSettings: ObservableObject {
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         favoriteProjects = defaults.stringArray(forKey: "ws.favoriteProjects") ?? []
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
-        projectOverrides = defaults.data(forKey: "ws.projectOverrides")
-            .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
-        folderChoices = defaults.data(forKey: "ws.folderChoices")
-            .flatMap { try? JSONDecoder().decode(FolderChoicesStore.self, from: $0) } ?? FolderChoicesStore()
+        // What cannot be read is kept aside first (`SafeStorage`), so the next change never loses it for good.
+        projectOverrides = SafeStorage.decode(ProjectOverrides.Lossy.self, defaults: defaults, key: "ws.projectOverrides",
+                                              skipped: { $0.skipped }).value?.overrides ?? ProjectOverrides()
+        folderChoices = SafeStorage.decode(FolderChoicesStore.self, defaults: defaults, key: "ws.folderChoices").value
+            ?? FolderChoicesStore()
     }
 
     func rememberProject(_ path: String) {
@@ -499,6 +507,25 @@ final class WorkspaceSettings: ObservableObject {
     }
 
     func projectIcon(_ path: String) -> ProjectIcon? { ProjectSettings.icon(path, overrides: projectOverrides) }
+
+    func projectDisplayName(_ path: String) -> String { ProjectSettings.displayName(path, overrides: projectOverrides) }
+
+    /// Renames a project in Nook's lists; an empty name (or the folder's own) goes back to the folder's name.
+    func setProjectName(_ name: String, project path: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty || clean == (path as NSString).lastPathComponent {
+            projectOverrides.reset(.name, for: path)
+        } else {
+            projectOverrides.set(.name, .string(clean), for: path)
+        }
+    }
+
+    /// Adds a folder as a project: pinned, so it keeps a folder in the Agents list and leads the project pickers, and out
+    /// of the archive if it was there.
+    func addProject(_ path: String) {
+        if !isFavoriteProject(path) { toggleFavoriteProject(path) }
+        if isArchivedProject(path) { setArchived(false, project: path) }
+    }
 
     func setProjectIcon(_ icon: ProjectIcon?, project path: String) {
         if let icon { projectOverrides.set(.icon, .string(icon.stored), for: path) } else { projectOverrides.reset(.icon, for: path) }

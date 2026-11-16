@@ -56,61 +56,27 @@ enum AntigravityClient {
         }
 
         try await Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: cmd.executable)
-            process.arguments = cmd.baseArguments + ["send-message", conversationID, message]
-            let stdout = Pipe()
-            let stderr = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
-            defer {
-                try? stdout.fileHandleForReading.close()
-                try? stdout.fileHandleForWriting.close()
-                try? stderr.fileHandleForReading.close()
-                try? stderr.fileHandleForWriting.close()
-            }
-
+            // Both pipes are drained at once (a process that writes more than a pipe holds would block otherwise), and a
+            // deadline keeps a hanging agentapi from holding the send for good.
+            let result: ProcessRunner.Output
             do {
-                try process.run()
+                result = try ProcessRunner.run(cmd.executable, cmd.baseArguments + ["send-message", conversationID, message],
+                                               timeout: 120)
             } catch {
                 throw NookError(error.localizedDescription)
             }
 
-            // Both pipes are drained before waiting: a process that writes more than a pipe holds (64 KB) would otherwise
-            // block on the write while Nook blocks on its exit, for good.
-            let errors = PipeDrain(stderr)
-            let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-            let errData = errors.wait()
-            process.waitUntilExit()
-
-            if process.terminationStatus != 0 {
+            if result.status != 0 || result.timedOut {
                 var errorMsg = ""
-                if let json = try? JSONSerialization.jsonObject(with: outData) as? [String: Any],
+                if let json = try? JSONSerialization.jsonObject(with: result.stdoutData) as? [String: Any],
                    let err = json["error"] as? String, !err.isEmpty {
                     errorMsg = err
-                } else if let err = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !err.isEmpty {
-                    errorMsg = err
+                } else {
+                    let err = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !err.isEmpty { errorMsg = err }
                 }
-                throw NookError(errorMsg.isEmpty ? "Antigravity process exited with code \(process.terminationStatus)" : errorMsg)
+                throw NookError(errorMsg.isEmpty ? "Antigravity process exited with code \(result.status)" : errorMsg)
             }
         }.value
-    }
-}
-
-/// Reads a pipe to its end on another thread, so a second pipe of the same process can be read at the same time.
-private final class PipeDrain: @unchecked Sendable {
-    private var data = Data()
-    private let done = DispatchSemaphore(value: 0)
-
-    init(_ pipe: Pipe) {
-        DispatchQueue.global(qos: .utility).async { [self] in
-            data = pipe.fileHandleForReading.readDataToEndOfFile()
-            done.signal()
-        }
-    }
-
-    func wait() -> Data {
-        done.wait()
-        return data
     }
 }

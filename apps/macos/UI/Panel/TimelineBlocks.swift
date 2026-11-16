@@ -1,0 +1,410 @@
+import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+
+/// One block of a session's timeline (see TimelinePresentation): a single event, a group of tool calls behind one
+/// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place, drawn with the same
+/// views as an agent's own transcript (`TranscriptWorkGroup`, `TranscriptFold`).
+struct TimelineBlockView: View, Equatable {
+    let block: TimelineBlock
+    let expanded: Set<String>
+    /// Everything else its rows show (the session's status, what is open, the find bar's match…). With it, a block that
+    /// did not change is not drawn again while the agent writes into the last one (see `.equatable()` where it is used);
+    /// without it, it always is.
+    var context: TimelineRowContext? = nil
+    let toggle: (String) -> Void
+    let eventRow: (RunEvent) -> AnyView
+
+    /// The closures are made again on every redraw of the session and read the panel's current state when they run, so
+    /// they do not count.
+    static func == (lhs: TimelineBlockView, rhs: TimelineBlockView) -> Bool {
+        guard let context = lhs.context else { return false }
+        return context == rhs.context && lhs.expanded == rhs.expanded && lhs.block == rhs.block
+    }
+
+    var body: some View {
+        switch block {
+        case .event(let event):
+            // A picture the step looked at shows under it.
+            let images = ViewedImages.resolved(ViewedImages.paths(event), in: context?.directory)
+            if images.isEmpty {
+                eventRow(event)
+            } else {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    eventRow(event)
+                    ViewedImagesRow(paths: images)
+                }
+            }
+        case .tools(let id, let events, let tally):
+            let key = "group:" + id.uuidString
+            // The pictures its steps looked at stay in sight under the group, open or folded: one row for all of them.
+            TranscriptWorkGroup(tally: tally, open: expanded.contains(key), toggle: { toggle(key) },
+                                images: ViewedImages.resolved(events.flatMap { ViewedImages.paths($0) }, in: context?.directory)) {
+                ForEach(events) { eventRow($0) }
+            }
+        case .fold(let id, let seconds, let blocks, let checks):
+            // What the turn's tests and builds came to stays in sight while its work is folded away.
+            let key = "fold:" + id.uuidString
+            TranscriptFold(text: tr("ws.fold.worked", AgentPathFormat.duration(seconds)), open: expanded.contains(key),
+                           checks: checks, toggle: { toggle(key) }) {
+                ForEach(blocks) { inner in
+                    TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
+                }
+            }
+        case .superseded(let id, let blocks):
+            let key = "superseded:" + id.uuidString
+            TranscriptSupersededFold(open: expanded.contains(key), toggle: { toggle(key) }) {
+                ForEach(blocks) { inner in
+                    TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
+                }
+            }
+        }
+    }
+}
+
+/// What a session's timeline rows show besides their block: each change draws every block again.
+struct TimelineRowContext: Equatable {
+    /// Bumped when the session's events changed in any way but more text in the answer being written: the plan card,
+    /// the turn cards and the menus of your messages read the whole session.
+    var structure: Int
+    var status: RunStatus
+    var directory: String?
+    /// The event the find bar is on.
+    var highlighted: UUID?
+    /// The events whose details are open.
+    var openEvents: Set<UUID>
+    /// The file open beside the conversation.
+    var shownFile: String?
+    /// The lines git counted per turn and file.
+    var counted: [String: TurnLines]
+}
+
+extension TimelineRowContext {
+    /// The same context with only the open details that belong to `block`, so opening one event's details draws that
+    /// block again and not every block of the session.
+    func scoped(to block: TimelineBlock) -> TimelineRowContext {
+        guard !openEvents.isEmpty else { return self }
+        var scoped = self
+        scoped.openEvents = Set(block.eventIDs.filter(openEvents.contains))
+        return scoped
+    }
+}
+
+extension TimelineBlock {
+    /// The ids of the events this block draws.
+    var eventIDs: [UUID] {
+        switch self {
+        case .event(let event): return [event.id]
+        case .tools(_, let events, _): return events.map(\.id)
+        case .fold(_, _, let blocks, _), .superseded(_, let blocks): return blocks.flatMap(\.eventIDs)
+        }
+    }
+}
+
+/// "+7 −8": the lines an edit (or a group of edits) added and removed.
+struct EditLinesLabel: View {
+    let lines: EditLines
+    var size: CGFloat = 10.5
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text("+\(lines.added)").foregroundStyle(NookTheme.diffAdded.opacity(0.85))
+            Text("−\(lines.removed)").foregroundStyle(NookTheme.diffRemoved.opacity(0.85))
+        }
+        .font(NookTheme.mono(size))
+        .monospacedDigit()
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Messages waiting for the turn to end, in the tray above the composer: each can be taken back before it goes out.
+struct QueuedMessagesStrip: View {
+    let queue: MessageQueue
+    /// The message that is being edited in the composer.
+    var editing: UUID? = nil
+    let remove: (UUID) -> Void
+    var edit: ((UUID) -> Void)? = nil
+    var move: ((UUID, Int) -> Void)? = nil
+    /// Sends the message right away: into the running turn, or as the next turn when the agent is idle. Nil when
+    /// neither can happen right now.
+    var sendNow: ((UUID) -> Void)? = nil
+    @State private var collapsed = false
+    @State private var hovered: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    DisclosureChevron(open: !collapsed, size: 8.5, tint: nil)
+                    Text(tr("compose.queue.title", queue.count))
+                        .font(NookTheme.TextStyle.label)
+                    Spacer(minLength: 8)
+                    Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(queue.isHeld ? NookTheme.amber : NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .foregroundStyle(NookTheme.textSecondary)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .padding(.vertical, NookTheme.Spacing.xxs)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.nookPlain)
+            .accessibilityLabel(tr("compose.queue.title", queue.count))
+            .accessibilityHint(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
+            .accessibilityValue(collapsed ? "" : tr("compose.queue.expanded"))
+            if !collapsed {
+                ForEach(Array(queue.messages.enumerated()), id: \.element.id) { index, message in
+                    row(message, index: index)
+                }
+            }
+        }
+    }
+
+    /// One waiting message: its place in line, its text, and its actions. The actions show under the pointer (and while
+    /// the message is open in the box), on the row's own fill so the text runs out softly underneath them.
+    private func row(_ message: QueuedMessage, index: Int) -> some View {
+        let isEditing = editing == message.id
+        let showsActions = hovered == message.id || isEditing
+        let fill = NookTheme.rowFill(selected: isEditing, hovering: hovered == message.id, rest: .clear)
+        // A picture travels as its path at the end of the text; the row shows the picture itself, like the chat does.
+        let parts = ImageAttachment.splittingPaths(from: message.text)
+        return HStack(spacing: NookTheme.Spacing.md) {
+            position(index, editing: isEditing)
+            // After `/clear`: this one starts a new conversation once the turn ends.
+            if message.fresh {
+                Image(icon: "eraser")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .nookTip(tr("ws.fresh.queued"))
+                    .accessibilityLabel(tr("ws.fresh.queued"))
+            }
+            if !parts.images.isEmpty {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    ForEach(parts.images, id: \.self) { QueuedPictureThumbnail(url: $0) }
+                }
+            }
+            Text(ToolSummary.oneLine(ContextRefs.visible(parts.text), 120))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textStrong)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .overlay(alignment: .trailing) {
+            actions(message, index: index, isEditing: isEditing)
+                .rowActionsBackdrop(fill)
+                .revealOnHover(showsActions)
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .contentShape(Rectangle())
+        // The tray above the composer is the card; the row under the pointer and the one open in the box stand out of it.
+        .roundedBackground(fill, radius: NookTheme.Radius.control)
+        .onHover { inside in
+            if inside { hovered = message.id } else if hovered == message.id { hovered = nil }
+        }
+        .animation(NookTheme.hover, value: showsActions)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Its place in line ("1", "2"…), or a pencil while it is open in the box.
+    private func position(_ index: Int, editing: Bool) -> some View {
+        ZStack {
+            Circle().fill(editing ? NookTheme.graphite : NookTheme.smoke)
+            if editing {
+                Image(icon: "pencil").font(NookTheme.font(9, .bold))
+            } else {
+                Text("\(index + 1)").font(NookTheme.rounded(10, .semibold)).monospacedDigit()
+            }
+        }
+        .foregroundStyle(editing ? NookTheme.paper : NookTheme.textSecondary)
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
+
+    /// Send now first (what you reach for most), then edit and remove; moving up and down after a line of their own.
+    private func actions(_ message: QueuedMessage, index: Int, isEditing: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
+            if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
+            iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
+            if let move, queue.count > 1 {
+                NookDivider(vertical: true)
+                    .frame(height: 12)
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+                iconButton("arrow.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
+                iconButton("arrow.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
+            }
+        }
+    }
+
+    private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        ToolbarIconButton(symbol, label, height: 22, width: 22, enabled: enabled, action)
+    }
+}
+
+/// A small picture in a queued message's row, read from disk off the main thread; a click enlarges it.
+private struct QueuedPictureThumbnail: View {
+    let url: URL
+    @State private var image: NSImage?
+
+    var body: some View {
+        ImageModalButton(name: url.lastPathComponent, preview: image, file: { url }) {
+            ZStack {
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                } else {
+                    Image(icon: "photo")
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .background(NookTheme.smoke)
+            .roundedClip(NookTheme.Radius.control)
+        }
+        .task(id: url) {
+            let url = url
+            image = await Task.detached(priority: .utility) {
+                (try? Data(contentsOf: url)).flatMap { ImageAttachment.makeThumbnail($0) }
+            }.value
+        }
+    }
+}
+
+/// "Ran 3 commands and changed 2 files": the two most important kinds of work, then how many other actions.
+enum ToolTallyText {
+    static func sentence(_ tally: ToolTally) -> String {
+        let parts = tally.parts
+        guard !parts.isEmpty else { return tr("ws.group.other.many", 0) }
+        let named = parts.prefix(2).map { phrase($0.category, $0.count) }
+        let rest = parts.dropFirst(2).reduce(0) { $0 + $1.count }
+        let text = rest > 0 ? tr("ws.group.more", named[0], named[1], rest)
+            : (named.count == 2 ? tr("ws.group.and", named[0], named[1]) : named[0])
+        // "changed 2 files" opens a sentence of its own with a capital.
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    private static func phrase(_ category: ToolCategory, _ count: Int) -> String {
+        let key: String
+        switch category {
+        case .command: key = "ws.group.command"
+        case .edit: key = "ws.group.edit"
+        case .read: key = "ws.group.read"
+        case .search: key = "ws.group.search"
+        case .other: key = "ws.group.other"
+        }
+        return count == 1 ? tr(key + ".one") : tr(key + ".many", count)
+    }
+}
+
+/// A plan the agent proposed in Plan mode (Claude Code's ExitPlanMode, a Codex plan): the plan itself, and the button
+/// that carries it out (Agent mode, then "implement the plan").
+struct PlanCard: View {
+    let text: String
+    let canAct: Bool
+    /// "Implement in a new session": the plan goes to a fork, this session stays as it is.
+    var implementInNew: (() -> Void)? = nil
+    let implement: () -> Void
+    /// "Implement" with only the steps you kept (see `PlanChecklist`); nil falls back to `implement`.
+    var implementSelected: ((String) -> Void)? = nil
+    @State private var open = false
+    @State private var checklist: PlanChecklist? = nil
+    @State private var editing = false
+
+    private var title: String { PlanPreview.title(from: text) ?? tr("ws.plan.title") }
+    private var collapsible: Bool { PlanPreview.needsExpand(text) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(icon: "list.bullet.clipboard")
+                    .font(NookTheme.font(13, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1)
+                Spacer(minLength: 0)
+                CopyIconButton(tr("ws.plan.copy"), height: 20, width: 20) { text }
+                iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
+            }
+            .foregroundStyle(NookTheme.paper)
+            if editing, let list = checklist {
+                checklistView(list)
+            } else {
+                MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 14)
+            }
+            if collapsible && !editing {
+                Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
+                    Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                .buttonStyle(.nookPlain)
+                .frame(maxWidth: .infinity)
+            }
+            if canAct {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Spacer()
+                    if let implementInNew {
+                        NookGhostButton(title: tr("ws.plan.implementNew"), action: implementInNew)
+                    }
+                    if PlanChecklist(markdown: text).isUseful, implementSelected != nil {
+                        NookGhostButton(title: editing ? tr("ws.plan.editDone") : tr("ws.plan.edit")) {
+                            if checklist == nil { checklist = PlanChecklist(markdown: text) }
+                            withAnimation(NookTheme.reveal) { editing.toggle() }
+                        }
+                    }
+                    NookPrimaryButton(title: tr("ws.plan.implement")) {
+                        if let checklist, editing, !checklist.allKept, checklist.keptCount > 0, let implementSelected {
+                            implementSelected(checklist.text)
+                        } else {
+                            implement()
+                        }
+                    }
+                }
+            }
+        }
+        .conversationCard()
+    }
+
+    /// The plan's steps as a list you can tick: a step left out is not carried out.
+    private func checklistView(_ list: PlanChecklist) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            ForEach(list.steps) { step in
+                Button {
+                    checklist?.toggle(step.id)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                        Image(icon: step.kept ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(step.kept ? NookTheme.mint : NookTheme.textTertiary)
+                        Text(step.text)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(step.kept ? NookTheme.paper : NookTheme.textTertiary)
+                            .strikethrough(!step.kept)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.leading, CGFloat(step.indent) * 4)
+                }
+                .buttonStyle(.nookPlain)
+            }
+            Text(tr("ws.plan.kept", list.keptCount, list.steps.count))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+        }
+    }
+
+    private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        ToolbarIconButton(symbol, help, height: 20, width: 20, action)
+    }
+
+    /// "Save as file"; the name comes from the plan's title.
+    private func save() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = PlanPreview.fileName(forTitle: title)
+        panel.allowedContentTypes = [.plainText]
+        if panel.runAboveNotch() == .OK, let url = panel.url {
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+}

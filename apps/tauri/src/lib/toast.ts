@@ -3,11 +3,18 @@
 
 export type ToastKind = "success" | "error" | "warning" | "info";
 
+/// One button on a toast that undoes or follows up what just happened ("Ongedaan maken").
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 export interface Toast {
   id: number;
   kind: ToastKind;
   title: string;
   detail?: string;
+  action?: ToastAction;
 }
 
 /// How long a toast stays by itself: an error is read more slowly than a confirmation.
@@ -32,10 +39,10 @@ export class ToastQueue {
     return this.shown[this.shown.length - 1] ?? null;
   }
 
-  show(title: string, kind: ToastKind = "info", detail?: string) {
+  show(title: string, kind: ToastKind = "info", detail?: string, action?: ToastAction) {
     const text = title.trim();
     if (!text) return;
-    const toast: Toast = { id: this.nextId++, kind, title: text, detail: detail?.trim() || undefined };
+    const toast: Toast = { id: this.nextId++, kind, title: text, detail: detail?.trim() || undefined, action };
     const same = (other: Toast) => other.kind === toast.kind && other.title === toast.title && other.detail === toast.detail;
     const shown = this.shown.find(same);
     if (shown) {
@@ -45,6 +52,13 @@ export class ToastQueue {
     if (this.waiting.some(same)) return;
     if (this.shown.length < TOAST_LIMIT) this.present(toast);
     else this.waiting.push(toast);
+  }
+
+  /// Runs toast `id`'s button (the one in front by default) once, then closes it.
+  act(id: number | undefined = this.current?.id) {
+    const action = this.shown.find((toast) => toast.id === id)?.action;
+    this.dismiss(id);
+    action?.run();
   }
 
   /// `elapsed` seconds went by; while `paused` (the pointer is on the stack) every toast stays.
@@ -71,7 +85,8 @@ export class ToastQueue {
 
   private present(toast: Toast) {
     this.shown = [...this.shown, toast];
-    this.left.set(toast.id, TOAST_SECONDS[toast.kind]);
+    // A toast with a button stays a little longer, so there is time to reach it.
+    this.left.set(toast.id, TOAST_SECONDS[toast.kind] + (toast.action ? 3 : 0));
     this.changed(this.shown);
   }
 }

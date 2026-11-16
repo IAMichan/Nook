@@ -4403,6 +4403,34 @@
         }
       }
     },
+    "Group by project" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach Projekt gruppieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agrupar por proyecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grouper par projet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Groeperen per project"
+          }
+        }
+      }
+    },
     "Has a question" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5654,6 +5682,62 @@
         }
       }
     },
+    "New session here" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Sitzung hier"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva sesión aquí"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelle session ici"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe sessie hier"
+          }
+        }
+      }
+    },
+    "New session in %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Sitzung in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva sesión en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelle session dans %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe sessie in %@"
+          }
+        }
+      }
+    },
     "New session · waiting for your Mac" : {
       "localizations" : {
         "de" : {
@@ -5966,6 +6050,34 @@
         }
       }
     },
+    "No folder" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Ordner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin carpeta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun dossier"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen map"
+          }
+        }
+      }
+    },
     "No folders yet." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5991,6 +6103,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog geen mappen."
+          }
+        }
+      }
+    },
+    "No new messages or updates come in until your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bis dein Mac verbunden ist, kommen keine neuen Nachrichten oder Updates an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No llegan mensajes ni actualizaciones nuevos hasta que tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun nouveau message ni mise à jour n’arrive tant que votre Mac n’est pas connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er komen geen nieuwe berichten of updates binnen tot je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "No new messages or updates come in, and what you send waits until your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es kommen keine neuen Nachrichten oder Updates an, und was du sendest, wartet, bis dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No llegan mensajes ni actualizaciones nuevos, y lo que envíes espera hasta que tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun nouveau message ni mise à jour n’arrive, et ce que vous envoyez attend le retour de votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er komen geen nieuwe berichten of updates binnen, en wat je verstuurt wacht tot je Mac terug is."
           }
         }
       }
@@ -6845,6 +7013,34 @@
         }
       }
     },
+    "Not sent yet · waiting for your Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht gesendet · wartet auf deinen Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no enviado · esperando a tu Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore envoyé · en attente de votre Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog niet verstuurd · wacht op je Mac"
+          }
+        }
+      }
+    },
     "Not set up on your Mac yet (Settings › iPhone companion)." : {
       "localizations" : {
         "de" : {
@@ -6897,6 +7093,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet"
+          }
+        }
+      }
+    },
+    "Nothing is kept on this iPhone yet. Your chats appear once your Mac is connected, and stay readable when it is not." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone ist noch nichts gespeichert. Deine Chats erscheinen, sobald dein Mac verbunden ist, und bleiben lesbar, wenn er es nicht ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay nada guardado en este iPhone. Tus chats aparecen cuando tu Mac está conectado y siguen legibles cuando no lo está."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’est encore gardé sur cet iPhone. Vos discussions apparaissent dès que votre Mac est connecté et restent lisibles quand il ne l’est pas."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er staat nog niets op deze iPhone. Je chats verschijnen zodra je Mac verbonden is en blijven leesbaar als hij dat niet is."
           }
         }
       }
@@ -7094,6 +7318,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uit: je bericht wacht tot de beurt klaar is."
+          }
+        }
+      }
+    },
+    "Offline: connect to your Mac to start a session." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Verbinde dich mit deinem Mac, um eine Sitzung zu starten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: conéctate a tu Mac para empezar una sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : connectez-vous à votre Mac pour démarrer une session."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: maak verbinding met je Mac om een sessie te starten."
+          }
+        }
+      }
+    },
+    "Offline: no new messages or updates come in." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Es kommen keine neuen Nachrichten oder Updates an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: no llegan mensajes ni actualizaciones nuevos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : aucun nouveau message ni mise à jour n’arrive."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: er komen geen nieuwe berichten of updates binnen."
+          }
+        }
+      }
+    },
+    "Offline: no new messages or updates come in. Last updated %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Es kommen keine neuen Nachrichten oder Updates an. Zuletzt aktualisiert %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: no llegan mensajes ni actualizaciones nuevos. Última actualización %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : aucun nouveau message ni mise à jour n’arrive. Dernière mise à jour %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: er komen geen nieuwe berichten of updates binnen. Laatst bijgewerkt %@."
+          }
+        }
+      }
+    },
+    "Offline: the session does not start yet. It waits on this iPhone and starts as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: Die Sitzung startet noch nicht. Sie wartet auf diesem iPhone und startet, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión: la sesión aún no empieza. Espera en este iPhone y empieza en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne : la session ne démarre pas encore. Elle attend sur cet iPhone et démarre dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline: de sessie start nog niet. Hij wacht op deze iPhone en start zodra je Mac terug is."
           }
         }
       }
@@ -9172,6 +9508,34 @@
         }
       }
     },
+    "Send a message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nachricht senden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar un mensaje"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer un message"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bericht sturen"
+          }
+        }
+      }
+    },
     "Send to" : {
       "localizations" : {
         "nl" : {
@@ -10821,6 +11185,62 @@
         }
       }
     },
+    "This chat is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Chat ist noch nicht auf diesem iPhone gespeichert. Er öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este chat aún no está guardado en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette discussion n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze chat staat nog niet op deze iPhone. Hij opent zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "This conversation is not kept on this iPhone yet. It opens once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gespräch ist noch nicht auf diesem iPhone gespeichert. Es öffnet sich, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta conversación aún no está guardada en este iPhone. Se abre cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette conversation n’est pas encore gardée sur cet iPhone. Elle s’ouvre dès que votre Mac est connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit gesprek staat nog niet op deze iPhone. Het opent zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
     "This evening" : {
       "localizations" : {
         "de" : {
@@ -12089,6 +12509,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veredicto"
+          }
+        }
+      }
+    },
+    "View" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ansicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affichage"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weergave"
           }
         }
       }
@@ -15357,34 +15805,6 @@
         }
       }
     },
-    "Waiting for your Mac" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wartet auf deinen Mac"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esperando a tu Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En attente de votre Mac"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wacht op je Mac"
-          }
-        }
-      }
-    },
     "Yesterday" : {
       "localizations" : {
         "de" : {
@@ -15913,6 +16333,622 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De agent geeft zijn werk aan sub-threads die hier terugmelden."
+          }
+        }
+      }
+    },
+    "Choose a chat with Nook on the left, or ask him something." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle links einen Chat mit Nook oder frag ihn etwas."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige a la izquierda un chat con Nook o pregúntale algo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis à gauche une discussion avec Nook, ou pose-lui une question."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies links een chat met Nook, of vraag hem iets."
+          }
+        }
+      }
+    },
+    "Choose a chat on the left to read it here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle links einen Chat, um ihn hier zu lesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un chat a la izquierda para leerlo aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis une discussion à gauche pour la lire ici."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies links een chat om hem hier te lezen."
+          }
+        }
+      }
+    },
+    "Choose a pull request on the left to read it here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle links einen Pull Request, um ihn hier zu lesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige una pull request a la izquierda para leerla aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis une pull request à gauche pour la lire ici."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies links een pull request om hem hier te lezen."
+          }
+        }
+      }
+    },
+    "Choose a session on the left, or start one with ⌘N." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle links eine Sitzung oder starte eine mit ⌘N."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige una sesión a la izquierda o inicia una con ⌘N."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis une session à gauche, ou lances-en une avec ⌘N."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies links een sessie, of start er een met ⌘N."
+          }
+        }
+      }
+    },
+    "Nothing open" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts geöffnet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada abierto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien d’ouvert"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niets geopend"
+          }
+        }
+      }
+    },
+    "Go" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gehe zu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aller"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ga"
+          }
+        }
+      }
+    },
+    "Previous session" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorherige Sitzung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sesión anterior"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session précédente"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorige sessie"
+          }
+        }
+      }
+    },
+    "Next session" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächste Sitzung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sesión siguiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session suivante"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende sessie"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoek"
+          }
+        }
+      }
+    },
+    "Find a session" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitzung finden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar una sesión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trouver une session"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoek een sessie"
+          }
+        }
+      }
+    },
+    "Drop to add to your message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loslassen, um es deiner Nachricht hinzuzufügen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suelta para añadirlo a tu mensaje"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dépose pour l’ajouter à ton message"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat los om aan je bericht toe te voegen"
+          }
+        }
+      }
+    },
+    "Only %lld pictures go with a message." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es gehen nur %lld Bilder mit einer Nachricht mit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo %lld imágenes pueden ir con un mensaje."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seules %lld images peuvent accompagner un message."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er gaan maar %lld foto's mee met een bericht."
+          }
+        }
+      }
+    },
+    "%@ is too big to send from here (at most 150 KB). Share it on your Mac instead." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist zu groß, um von hier gesendet zu werden (höchstens 150 KB). Teile es stattdessen auf deinem Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es demasiado grande para enviarlo desde aquí (como máximo 150 KB). Compártelo en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est trop volumineux pour être envoyé d’ici (150 Ko au maximum). Partage-le plutôt sur ton Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is te groot om van hier te versturen (maximaal 150 KB). Deel het in plaats daarvan op je Mac."
+          }
+        }
+      }
+    },
+    "Files cannot go with this message." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien können nicht mit dieser Nachricht mitgehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los archivos no pueden ir con este mensaje."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les fichiers ne peuvent pas accompagner ce message."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestanden kunnen niet mee met dit bericht."
+          }
+        }
+      }
+    },
+    "Remove file" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei entfernen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer le fichier"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestand verwijderen"
+          }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluiten"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
+          }
+        }
+      }
+    },
+    "Loading the conversation" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het gesprek wordt geladen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltung wird geladen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chargement de la conversation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando la conversación"
+          }
+        }
+      }
+    },
+    "Shows what you can do with this session" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toont wat je met deze sessie kunt doen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt, was du mit dieser Sitzung tun kannst"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Montre ce que tu peux faire avec cette session"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra lo que puedes hacer con esta sesión"
+          }
+        }
+      }
+    },
+    "What you send is not sent yet: it waits on this iPhone and goes as soon as your Mac is back." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was du sendest, ist noch nicht gesendet: Es wartet auf diesem iPhone und geht raus, sobald dein Mac zurück ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que envíes aún no se envía: espera en este iPhone y sale en cuanto tu Mac vuelva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que vous envoyez n’est pas encore parti : il attend sur cet iPhone et part dès que votre Mac est de retour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat je verstuurt is nog niet verzonden: het wacht op deze iPhone en gaat zodra je Mac terug is."
+          }
+        }
+      }
+    },
+    "You can send once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du kannst senden, sobald dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Podrás enviar cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pourrez envoyer dès que votre Mac sera connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je kunt versturen zodra je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "Your answer only reaches the agent once your Mac is connected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort erreicht den Agenten erst, wenn dein Mac verbunden ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta solo llega al agente cuando tu Mac esté conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse n’atteint l’agent qu’une fois votre Mac connecté."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord komt pas bij de agent aan als je Mac verbonden is."
+          }
+        }
+      }
+    },
+    "Your chats show up here" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier erscheinen deine Chats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aquí aparecen tus chats"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos discussions s’affichent ici"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier verschijnen je chats"
           }
         }
       }

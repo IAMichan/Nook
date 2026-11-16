@@ -22,7 +22,7 @@
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
   import { barDraft } from "../lib/draft.svelte";
-  import { tr, english } from "../lib/i18n.svelte";
+  import { tr, english, appLanguage, APP_LANGUAGES } from "../lib/i18n.svelte";
   import { heard } from "../components/Orb.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
@@ -130,6 +130,11 @@
     statuses = next;
   });
 
+  // The tray tooltip says how many Nooks wait on you (only the bar reports it, so it is said once).
+  $effect(() => {
+    api.trayStatus(nook.waiting, nook.working).catch(() => {});
+  });
+
   // De ring om Nook in het open paneel: alles waar hij mee bezig is of wat op je wacht.
   const ring = $derived(
     nook.nooks
@@ -202,11 +207,13 @@
     await reading;
   }
 
-  // One click flips the interface and Nook's answers between Dutch and English.
+  // One click moves the interface (and Nook's answers, unless they follow the question) to the next language.
   function toggleLanguage() {
-    const next = english() ? "nl" : "en";
-    nook.saveSettings({ appLanguage: next, language: next });
+    const codes = APP_LANGUAGES.map((l) => l.code);
+    const next = codes[(codes.indexOf(appLanguage()) + 1) % codes.length];
+    nook.saveSettings(nook.settings?.language === "auto" ? { appLanguage: next } : { appLanguage: next, language: next });
   }
+  const nextLanguage = $derived(APP_LANGUAGES[(APP_LANGUAGES.findIndex((l) => l.code === appLanguage()) + 1) % APP_LANGUAGES.length].name);
 
   // "Laat Nook antwoorden" on a WhatsApp card: the new Nook opens in the Nook tab.
   function openNookFromCard(id: string) {
@@ -273,6 +280,23 @@
   // Nook stretched over the whole window.) `resizing` also keeps a stray blur from closing the panel meanwhile.
   let resizing = $state(false);
   const MIN = { w: 480, h: 320 };
+
+  // The outermost pixels of the window belong to the system's own resize border, which sits outside the page, so a
+  // drag there takes the focus before any grip sees it. Such a drag is told apart by the window resizing right after
+  // the blur: the close waits a moment and is dropped when the size changes or the focus comes back meanwhile.
+  let lastResize = 0;
+  $effect(() => {
+    const off = getCurrentWindow().onResized(() => (lastResize = Date.now()));
+    return () => void off.then((f) => f());
+  });
+  function blurClose() {
+    if (barDraft.picking || resizing || Date.now() - openedAt <= 600) return;
+    const blurredAt = Date.now();
+    setTimeout(() => {
+      if (resizing || lastResize >= blurredAt - 100 || document.hasFocus()) return;
+      close();
+    }, 250);
+  }
 
   function resize(e: PointerEvent, grip: (typeof grips)[number]) {
     if (e.button !== 0) return;
@@ -380,12 +404,30 @@
     open();
   }
 
-  // WhatsApp: a new message opens the bar with its card, which stays until you answer or close it.
+  // WhatsApp: a new message never opens the bar by itself. The closed bar shows a chip under the round Nook ("Bericht
+  // van Peter"); once the panel is open (by the chip or any other way) the card of that chat shows in it.
   $effect(() => {
     whatsapp.start();
   });
   $effect(() => {
-    if (whatsapp.chat && !untrack(() => expanded) && !untrack(() => quiet.silent)) untrack(() => open());
+    const waiting = whatsapp.pending;
+    if (waiting && expanded) untrack(() => whatsapp.show(waiting.chat));
+  });
+  const chipName = $derived(whatsapp.pending?.name ?? whatsapp.card?.conversation.name ?? "");
+  const chipVisible = $derived(!expanded && !strip && !!chipName && !quiet.silent);
+  // The window makes room under the round Nook while the chip shows, and goes back to the round size when it leaves.
+  let chipSized = false;
+  $effect(() => {
+    const want = chipVisible;
+    untrack(() => {
+      if (want && !chipSized) {
+        chipSized = true;
+        api.barExpand(false, false, true);
+      } else if (!want && chipSized) {
+        chipSized = false;
+        if (!expanded && !strip) api.barExpand(false);
+      }
+    });
   });
 
   // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
@@ -407,15 +449,15 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !barDraft.picking && !resizing && Date.now() - openedAt > 600 && close()} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={blurClose} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill strip" onmousedown={drag}>
       <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
-      <span class="message">{compactNotice(card.name, card.project, card.status, english())}</span>
+      <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
         <button class="ghost" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>
@@ -444,6 +486,14 @@
       {#if nook.working}<span class="dot working corner"></span>{/if}
       {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
     </div>
+    {#if chipVisible}
+      <div class="chip">
+        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openByClick}>
+          {tr("Bericht van {name}", "Message from {name}", { name: chipName })}
+        </button>
+        <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={() => whatsapp.dismiss()}>×</button>
+      </div>
+    {/if}
   {:else}
     <div class="panel">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -453,7 +503,7 @@
           <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
-          <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "agents"} onclick={() => select("agents")}>{tr("Agents", "Agents")} {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
           {/if}
@@ -463,9 +513,9 @@
           {/if}
         </nav>
         <span class="spacer"></span>
-        <button class="ghost icon lang" title={tr("Taal: klik voor English", "Language: click for Nederlands")} onclick={toggleLanguage}>{english() ? "EN" : "NL"}</button>
+        <button class="ghost icon lang" title={tr("Taal: klik voor {next}", "Language: click for {next}", { next: nextLanguage })} onclick={toggleLanguage}>{appLanguage().toUpperCase()}</button>
         <button class="ghost icon lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
-        <button class="ghost icon" title={tr("Open in venster", "Open in window")} onclick={() => api.showMain("chat")}>⧉</button>
+        <button class="ghost icon" title={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} onclick={() => api.showMain(nook.activeId ? `nook:${nook.activeId}` : "chat")}>⧉</button>
         <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>
       </header>
       <AgentAlerts
@@ -514,6 +564,25 @@
 
 <style>
   .bar { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+  .bar.hasChip { flex-direction: column; align-items: center; gap: 4px; }
+  .bar.hasChip .pill.round { width: 44px; height: 44px; flex: none; }
+  /* The chat chip under the closed round Nook: who wrote, one click opens Nook. */
+  .chip {
+    display: flex;
+    align-items: center;
+    max-width: 100%;
+    box-sizing: border-box;
+    height: 30px;
+    background: var(--notch);
+    border: 2px solid #000;
+    border-radius: 999px;
+    overflow: hidden;
+    animation: drop 0.25s ease-out;
+  }
+  .chip button { background: transparent; border: 0; color: var(--paper); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .chiptext { padding: 0 6px 0 12px; height: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chipclose { padding: 0 10px 0 4px; height: 100%; color: var(--text3); font-size: 15px; }
+  .chipclose:hover { color: var(--paper); }
   .pill {
     height: 100%;
     width: 100%;

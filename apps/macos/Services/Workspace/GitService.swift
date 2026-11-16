@@ -1,79 +1,5 @@
 import Foundation
 
-/// Runs an executable with argument list (never via shell) and returns stdout and stderr.
-enum ProcessRunner {
-    struct Output: Sendable {
-        var status: Int32
-        var stdout: String
-        var stderr: String
-        var timedOut = false
-    }
-
-    static func run(_ executable: String, _ arguments: [String], in directory: String? = nil,
-                    environment: [String: String]? = nil, timeout: TimeInterval = 60) throws -> Output {
-        // Foundation autoreleases the pipes and their file handles. A caller that runs many commands in one long loop
-        // (the Worktrees list runs several per worktree) never reaches a drained pool, so without this pool every pipe
-        // stays open until the loop ends; on 2026-11-10 that piled up 4700 pipes and Nook ran out of file descriptors.
-        try autoreleasepool { try runInPool(executable, arguments, in: directory, environment: environment, timeout: timeout) }
-    }
-
-    /// Body of `run`, called inside its autorelease pool: starts the process, drains stdout and stderr, and waits.
-    private static func runInPool(_ executable: String, _ arguments: [String], in directory: String?,
-                                  environment: [String: String]?, timeout: TimeInterval) throws -> Output {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        if let directory { process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true) }
-        if let environment { process.environment = environment }
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = FileHandle.nullDevice
-
-        defer {
-            try? out.fileHandleForReading.close()
-            try? out.fileHandleForWriting.close()
-            try? err.fileHandleForReading.close()
-            try? err.fileHandleForWriting.close()
-        }
-
-        // Drain both pipes concurrently, otherwise a process with heavy output deadlocks.
-        let outData = DataBox()
-        let errData = DataBox()
-        let group = DispatchGroup()
-        try process.run()
-        try? out.fileHandleForWriting.close()
-        try? err.fileHandleForWriting.close()
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            outData.data = out.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            errData.data = err.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        var timedOut = false
-        if group.wait(timeout: .now() + timeout) == .timedOut {
-            timedOut = true
-            process.terminate()
-            _ = group.wait(timeout: .now() + 5)
-        }
-        process.waitUntilExit()
-        return Output(status: process.terminationStatus,
-                      stdout: String(decoding: outData.data, as: UTF8.self),
-                      stderr: String(decoding: errData.data, as: UTF8.self),
-                      timedOut: timedOut)
-    }
-
-    /// Output populated by background task; read only after `DispatchGroup.wait`.
-    private final class DataBox: @unchecked Sendable {
-        var data = Data()
-    }
-}
-
 /// How often the Git state of a shown folder is read. Each read starts three or four Git processes, about ten when the
 /// branch list is due, so a session left open all day should not keep asking at the rate a working agent needs.
 enum FolderGitPace {
@@ -274,13 +200,20 @@ struct GitService: Sendable {
     }
 
     /// Brings a remote-tracking base (`origin/main`) up to date right before a worktree starts from it. Best effort:
-    /// offline or without access, the worktree starts from the last fetched state. Local bases are left alone.
-    func refreshRemoteBase(_ base: String, in repo: String) {
-        guard let slash = base.firstIndex(of: "/") else { return }
+    /// offline or without access, the worktree starts from the last fetched state. Local bases are left alone. A session
+    /// that waits for the fetch passes a short `timeout`, so a slow network never holds its start for long.
+    @discardableResult
+    func refreshRemoteBase(_ base: String, in repo: String, timeout: TimeInterval = 20) -> RemoteBaseRefresh {
+        guard let slash = base.firstIndex(of: "/") else { return .local }
         let remote = String(base[..<slash])
         let branch = String(base[base.index(after: slash)...])
-        guard !branch.isEmpty, remotes(repo).contains(remote), refExists("refs/remotes/\(base)", in: repo) else { return }
-        _ = try? run(["fetch", "--quiet", "--no-tags", remote, "+refs/heads/\(branch):refs/remotes/\(base)"], in: repo, timeout: 20)
+        guard !branch.isEmpty, remotes(repo).contains(remote), refExists("refs/remotes/\(base)", in: repo) else { return .local }
+        do {
+            _ = try run(["fetch", "--quiet", "--no-tags", remote, "+refs/heads/\(branch):refs/remotes/\(base)"], in: repo, timeout: timeout)
+            return .fetched
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     func refExists(_ ref: String, in repo: String) -> Bool {
@@ -338,7 +271,7 @@ struct GitService: Sendable {
             // Ignored files count too (one entry per ignored folder), but not `node_modules`, which a setup makes again.
             guard let text = try? run(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignored=traditional"],
                                       in: directory) else { return nil }
-            return Self.parseStatus(text).files.filter { !$0.path.split(separator: "/").contains("node_modules") }.count
+            return Self.parseStatus(text).files.count(where: { !$0.path.split(separator: "/").contains("node_modules") })
         }
     }
 
@@ -518,8 +451,8 @@ struct GitService: Sendable {
     /// The files that work after snapshot `from` touched, up to snapshot `to` (relative to `directory`), when HEAD moved
     /// between them: what was uncommitted at either snapshot, what commits made since `since` changed, and what the
     /// commits that left HEAD changed. Files a pull, merge or rebase brought in come from older commits, so they are not
-    /// here; for a merge only the paths where its result differs from Git's own merge count (its conflict fixes), as in
-    ///. Nil when HEAD did not move (every change is the turn's own) or Git cannot tell (it predates
+    /// here; for a merge only the paths where its result differs from Git's own merge count (its conflict fixes).
+    /// Nil when HEAD did not move (every change is the turn's own) or Git cannot tell (it predates
     /// `--diff-merges=remerge`): then nothing is left out.
     func authoredPaths(_ directory: String, from: String, to: String, since: Date) -> Set<String>? {
         guard let start = snapshotHead(directory, from), let end = snapshotHead(directory, to), start != end else { return nil }
@@ -599,7 +532,7 @@ struct GitService: Sendable {
     /// clean") on each status, diff and add. Nook's own git calls never rewrite the index (`GIT_OPTIONAL_LOCKS=0`), so
     /// without this every status of the worktree reads all its files. Called before the worktree is handed out, inside
     /// the caller's `FolderLease`: the refresh holds `index.lock`, so in the background it would race the setup script's
-    /// and the agent's own git commands.. Failures are logged, never thrown.
+    /// and the agent's own git commands. Failures are logged, never thrown.
     func refreshNewWorktreeIndex(_ path: String) {
         // Older Git (such as 2.30) skips the write when racy entries merely check out clean, hence `--force-write-index`.
         // A refresh re-reads every checked-out file, so it may take a while in a large repository.
@@ -723,25 +656,16 @@ struct GitService: Sendable {
         try run(arguments, in: repo, timeout: 120)
     }
 
-    /// Writes `path` as it is in `ref` to `destination`, byte for byte (`run` decodes its output as text, which would
-    /// spoil an image). False when `ref` has no such file; on this Mac only.
+    /// Writes `path` as it is in `ref` to `destination`, byte for byte (from `stdoutData`: `run` decodes its output as
+    /// text, which would spoil an image). False when `ref` has no such file, or Git did not finish in time; on this Mac only.
     func exportFile(repo: String, ref: String, path: String, to destination: URL) -> Bool {
         guard remote == nil, !ref.hasPrefix("-"), (try? run(["cat-file", "-e", "\(ref):\(path)"], in: repo)) != nil else { return false }
+        // Through `ProcessRunner` like every other git call: a deadline, and both pipes drained.
+        guard let output = try? raw(["-C", repo, "cat-file", "blob", "\(ref):\(path)"], in: repo, timeout: 60),
+              output.status == 0, !output.timedOut else { return false }
         let fm = FileManager.default
         try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard fm.createFile(atPath: destination.path, contents: nil), let handle = try? FileHandle(forWritingTo: destination) else { return false }
-        defer { try? handle.close() }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-C", repo, "cat-file", "blob", "\(ref):\(path)"]
-        process.environment = environment
-        process.standardOutput = handle
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return false }
-        process.waitUntilExit()
-        if process.terminationStatus != 0 { try? fm.removeItem(at: destination) }
-        return process.terminationStatus == 0
+        return (try? output.stdoutData.write(to: destination, options: .atomic)) != nil
     }
 
     /// Deletes a branch only if already merged (`git branch -d`, never -D).

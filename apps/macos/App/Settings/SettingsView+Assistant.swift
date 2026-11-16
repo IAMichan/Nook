@@ -31,7 +31,7 @@ extension SettingsView {
                         SettingNote(tr("settings.assistant.thinkAlongLocal"))
                         Spacer(minLength: 0)
                         Button(tr("settings.section.brain")) { app.settingsSection = .brain }
-                            .buttonStyle(.link)
+                            .buttonStyle(.nookLink)
                     }
                 }
             }
@@ -59,7 +59,7 @@ extension SettingsView {
         Section {
             // What a double tap can do takes four paragraphs; they show on hover, so the section stays short.
             Toggle(isOn: $doubleTap.enabled) { SettingText("doubletap.settings.enable") }
-                .help(doubleTapHelp)
+                .nookTip(doubleTapHelp)
             Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
                 ForEach(FlowKey.allCases) { key in
                     Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
@@ -68,7 +68,10 @@ extension SettingsView {
             .disabled(!doubleTap.enabled)
             Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
                 .disabled(!doubleTap.enabled)
-                .help(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+                .nookTip(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+            Toggle(tr("doubletap.settings.suggest"), isOn: $doubleTap.suggests)
+                .disabled(!doubleTap.enabled)
+                .nookTip(tr("doubletap.settings.suggestDetail"))
         } header: {
             SettingText("doubletap.settings.title")
         } footer: {

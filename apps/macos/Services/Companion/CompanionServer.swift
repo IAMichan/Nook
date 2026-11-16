@@ -36,6 +36,9 @@ final class CompanionServer: ObservableObject {
     /// the message that tells them.
     private var revoking: Set<String> = []
     private var watch: AnyCancellable?
+    private var conversationWatch: AnyCancellable?
+    /// A look at the live conversations is planned, after one waited for a slow connection.
+    private var conversationRetry = false
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
     private var timelinePushRunning = false
@@ -45,13 +48,19 @@ final class CompanionServer: ObservableObject {
     func attach(app: AppModel) {
         self.app = app
         // Subscribed phones get the sessions when they change; streaming text changes the workspace many times a
-        // second, so at most one look a second, and only what changed is sent.
+        // second, so at most two looks a second (an agent's words reach the phone as they are written, not in
+        // one-second jumps), and only what changed is sent. Without a live phone `pushChanges` returns at once.
         // The chats follow too (`pushChats`): a new message, someone typing, or Nook writing in one of its conversations.
         watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange,
                                                      ChatCaptureService.shared.objectWillChange, ChatTypingCenter.shared.objectWillChange,
                                                      app.chat.objectWillChange)
-            .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
+        // The open Nook conversation follows faster: while Nook writes, the phone gets its words as the Mac shows them,
+        // at most every 150 ms (`pushConversations`). Without a phone watching one, nothing is read.
+        conversationWatch = app.chat.objectWillChange
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.pushConversations() } }
         apply()
         KeepAwake.shared.attach(app: app)
     }
@@ -481,7 +490,61 @@ final class CompanionServer: ObservableObject {
             update.seq = peer.seq
             send(update, key: key, deviceID: deviceID, on: peer.transport)
         }
+        pushConversations()
     }
+
+    /// Sends every phone that has one of Nook's conversations open (`watchConversation`) its messages when they changed
+    /// since it last got them, only to a phone that may see Nook's chats.
+    private func pushConversations() {
+        guard let app, streams.contains(where: { $0.watchConversation != nil }) else { return }
+        var read: [String: [ChatLine]] = [:]
+        var heldBack = false
+        for peer in streams {
+            guard let conversation = peer.watchConversation, let key = peer.key, let deviceID = peer.deviceID,
+                  let id = peer.streamID, scopes(of: deviceID).contains(.nookChat) else { continue }
+            if read[conversation] == nil {
+                guard let uuid = UUID(uuidString: conversation), let found = app.chat.conversation(uuid) else {
+                    peer.watchConversation = nil
+                    peer.sentMessages = nil
+                    continue
+                }
+                read[conversation] = lines(found)
+            }
+            guard let messages = read[conversation], messages != peer.sentMessages else { continue }
+            // The network has not taken the last updates yet (a slow or shaky connection): wait, and send everything
+            // that changed meanwhile as one update once it has, so the phone never falls further and further behind.
+            if peer.transport.pending > Self.conversationBacklog {
+                heldBack = true
+                continue
+            }
+            var update = CompanionResponse(id: id, ok: true, seq: peer.seq + 1, messagesConversation: conversation)
+            switch ConversationDelta.change(from: peer.sentMessages, to: messages) {
+            case .same:
+                peer.sentMessages = messages
+                continue
+            case .append(let words):
+                update.messageAppend = words
+            case .tail(let after, let lines):
+                update.messages = lines
+                update.messagesAfter = after
+            }
+            peer.sentMessages = messages
+            peer.seq += 1
+            send(update, key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
+        }
+        // Nothing else may change after the last words (the answer is done): look again shortly.
+        if heldBack, !conversationRetry {
+            conversationRetry = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                self?.conversationRetry = false
+                self?.pushConversations()
+            }
+        }
+    }
+
+    /// More than this waiting on a phone's connection and the live conversation waits for it (`pushConversations`).
+    static let conversationBacklog = 24 * 1024
 
     // MARK: The open session, live
 
@@ -581,6 +644,14 @@ final class CompanionServer: ObservableObject {
             audit("update_request", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
             return CompanionResponse(id: request.id, ok: true, message: "available")
         case .register:
+            if request.item == FCMToken.service {
+                // Nook on Android: a Firebase token, whose pushes go through the relay (`RelayPushRequest.service`).
+                guard let token = request.text, FCMToken.valid(token) else { return .failure(request.id, .badRequest) }
+                CompanionStore.shared.setPush(device: deviceID, token: token, production: true, service: FCMToken.service)
+                audit("push_registered", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+                return CompanionResponse(id: request.id, ok: true, macName: macName,
+                                         message: RelayPushClient.shared.reachable && CompanionStore.shared.push.enabled ? "push" : "nopush")
+            }
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
             CompanionStore.shared.setPush(device: deviceID, token: token.lowercased(), production: request.item != "development")
@@ -614,6 +685,9 @@ final class CompanionServer: ObservableObject {
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
             }
+            // Decided before (a retry after a restart of Nook): answered as the first time.
+            let command = SessionCommand.phone(request.id)
+            if workspace.commandReceipt(command) != nil { return CompanionResponse(id: request.id, ok: true, sessions: digests(app)) }
             guard let pending = workspace.approvals[runID]?.first(where: { $0.id == request.item }) else {
                 return .failure(request.id, .unknownItem)
             }
@@ -624,11 +698,14 @@ final class CompanionServer: ObservableObject {
             if always, !pending.canAlways { return .failure(request.id, .notAllowedFromPhone) }
             app.approvals.decide(run: runID, requestID: pending.id, allow ? (always ? .always : .allow) : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
+            workspace.recordCommand(command, .decided)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
             }
+            let command = SessionCommand.phone(request.id)
+            if workspace.commandReceipt(command) != nil { return CompanionResponse(id: request.id, ok: true, sessions: digests(app)) }
             guard let question = workspace.questions[runID]?.first(where: { $0.id == request.item }) else {
                 return .failure(request.id, .unknownItem)
             }
@@ -639,6 +716,7 @@ final class CompanionServer: ObservableObject {
             // A free answer only where the agent accepts one; otherwise it has to be one of the options.
             if !first.allowsOther, !first.options.contains(where: { $0.label == text }) { return .failure(request.id, .badRequest) }
             workspace.answer(runID, questionID: question.id, answers: [first.id: [text]])
+            workspace.recordCommand(command, .answered)
             audit("answer", workspace.run(runID)?.title ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .send:
@@ -652,28 +730,27 @@ final class CompanionServer: ObservableObject {
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
-            guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
-            // While it works: into the running turn when the phone asks to steer and the turn can take it (as the Mac's
-            // composer steers), else in line for after the turn.
-            // `/clear`, and the message after it, start a new conversation as on the Mac (`FreshConversation`).
-            let outcome: String
-            if !run.status.isActive || workspace.startsFreshConversation(runID, text: text) {
-                outcome = workspace.submit(runID, text: text, fromYou: true) ? "sent" : "queued"
-            } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
-                outcome = "steered"
-            } else {
-                workspace.enqueue(runID, text: text)
-                outcome = "queued"
+            let command = SessionCommand.phone(request.id, turn: request.turn)
+            // Sent before (from the phone's outbox, after a restart of Nook): the first outcome, nothing sent twice.
+            if let earlier = workspace.commandReceipt(command) {
+                return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: earlier.outcome.rawValue)
             }
-            audit(outcome == "steered" ? "steer" : "send", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome)
+            guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
+            // While it works: into the running turn when the phone asks to steer, that turn is still the one the phone saw
+            // and it can take it (as the Mac's composer steers), else in line for after the turn.
+            // `/clear`, and the message after it, start a new conversation as on the Mac (`FreshConversation`).
+            let outcome = workspace.message(runID, text: text, steer: request.steer == true, command: command)
+            audit(outcome == .steered ? "steer" : "send", run.title)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome.rawValue)
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
-            workspace.stop(runID)
-            audit("stop", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
+            // Only the turn the phone saw: a Stop that comes late or again never stops work that started after it.
+            let outcome = workspace.stop(runID, command: SessionCommand.phone(request.id, turn: request.turn))
+            if outcome == .stopped { audit("stop", run.title) }
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app),
+                                     message: outcome == .stale ? outcome.rawValue : nil)
         case .options:
             return await launchOptions(request, app: app)
         case .start:
@@ -714,6 +791,8 @@ final class CompanionServer: ObservableObject {
             return inboxMark(request, app: app)
         case .watchChat:
             return await watchChat(request, deviceID: deviceID, app: app)
+        case .watchConversation:
+            return watchConversation(request, deviceID: deviceID, app: app)
         case .avatars:
             return await avatars(request)
         case .pulls:
@@ -766,7 +845,7 @@ final class CompanionServer: ObservableObject {
     func anyBusy(_ app: AppModel) -> Bool {
         let workspace = app.workspace
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
+        let runs = workspace.newestRuns(CompanionHistory.liveCount)
         let working = runs.contains { run in
             let waiting = !(workspace.approvals[run.id] ?? []).isEmpty || !(workspace.questions[run.id] ?? []).isEmpty
             return KeepAwakePolicy.isBusy(attention: String(describing: workspace.attention(run, unseen: false, now: now)),
@@ -779,7 +858,7 @@ final class CompanionServer: ObservableObject {
 
     private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
+        let runs = workspace.newestRuns(CompanionHistory.liveCount)
         return runs.map { digest($0, workspace: workspace, now: now) }
     }
 
@@ -817,9 +896,11 @@ final class CompanionServer: ObservableObject {
         for question in workspace.questions[run.id] ?? [] {
             let first = question.questions.first
             let single = question.questions.count == 1
+            let options = single ? (first?.options ?? []) : []
             items.append(.init(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
                                detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
-                               options: single ? (first?.options.map(\.label) ?? []) : []))
+                               options: options.map(\.label),
+                               optionPreviews: SessionDigest.Item.previews(options.map { QuestionPreview.display($0.preview) })))
         }
         // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
         // also keep them all in memory.
@@ -832,7 +913,9 @@ final class CompanionServer: ObservableObject {
                              actions: Self.actions(run, now: now, access: workspace.settings.bridgeAccess).map(\.rawValue),
                              canSteer: workspace.canSteer(run.id),
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
-                                                                       now: now)?.timeIntervalSince1970)
+                                                                       now: now)?.timeIntervalSince1970,
+                             turn: workspace.turnIdentity(run.id),
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
     }
 }
 
@@ -872,6 +955,9 @@ final class CompanionPeer {
     var watchChat: String?
     var sentChatLines: [InboxLine]?
     var sentChatTyping: [InboxTypist]?
+    /// Nook's conversation the phone has open (`watchConversation`), and its messages as the phone has them.
+    var watchConversation: String?
+    var sentMessages: [ChatLine]?
     /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
     var compression = false
 
@@ -887,15 +973,26 @@ protocol CompanionTransport: AnyObject {
     func send(_ data: Data)
     /// Ends the connection; the server hears of it as for any other close.
     func cancel()
+    /// Bytes sent that the network did not take yet: high on a slow or shaky connection, where the live conversation
+    /// waits a moment and then goes as one update instead of piling up (`pushConversations`).
+    var pending: Int { get }
 }
 
 @MainActor
 final class TCPTransport: CompanionTransport {
     private let connection: NWConnection
+    private(set) var pending = 0
 
     init(_ connection: NWConnection) { self.connection = connection }
 
-    func send(_ data: Data) { connection.send(content: data, completion: .contentProcessed { _ in }) }
+    func send(_ data: Data) {
+        let size = data.count
+        pending += size
+        connection.send(content: data, completion: .contentProcessed { [weak self] _ in
+            Task { @MainActor in self?.pending -= size }
+        })
+    }
+
     func cancel() { connection.cancel() }
 }
 

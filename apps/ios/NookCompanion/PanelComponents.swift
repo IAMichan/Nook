@@ -2,7 +2,7 @@ import SwiftUI
 
 // The phone's panel: its header, tabs, search field, composer and starters, drawn as the Mac's (docs/UI-COMPONENTS.md)
 // with touch instead of hover (a press lights what the pointer lights on the Mac) and room for a finger. The buttons,
-// badges, list parts and agent logos are not here: both apps compile those from apps/macos/NotchUI/Shared.
+// badges, list parts and agent logos are not here: both apps compile those from apps/macos/UI/Shared.
 
 // MARK: Logos
 
@@ -40,10 +40,16 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The tabs along the bottom, in Nook's order: the Mac's three (Nook, Agents, Chats),
-/// then pull requests and Settings, always last.
-enum CompanionTab: Hashable, CaseIterable {
+/// Nook's sections, in the Mac's order: Nook, Agents and Chats along the bottom of the phone, as the Mac's tab bar;
+/// pull requests and Settings open from the header as a sheet, as they open from the Mac's footer. On an iPad with room
+/// all five are the sidebar's sections (`CompanionSplitView`).
+enum CompanionTab: Hashable, CaseIterable, Identifiable {
     case nook, agents, chats, pulls, settings
+
+    var id: Self { self }
+
+    /// Along the bottom of the phone; the others open from the header (`TabRouter.sheet`).
+    var isBarTab: Bool { self == .nook || self == .agents || self == .chats }
 
     var title: LocalizedStringKey {
         switch self {
@@ -71,6 +77,10 @@ enum CompanionTab: Hashable, CaseIterable {
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var tab = CompanionTab.nook
+    /// On the phone: pull requests or Settings, open as a sheet over the tab you were in.
+    @Published var sheet: CompanionTab?
+    /// A chat in your apps to open on the Chats tab (from "For you" on the Nook tab).
+    @Published var openChat: String?
 
     /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`), or cannot serve, is left out.
     func available(_ client: CompanionClient) -> [CompanionTab] {
@@ -90,32 +100,49 @@ final class TabRouter: ObservableObject {
         case .nook: return client.conversations.filter(\.waiting).count
         case .agents: return client.sessions.filter(SessionListView.needsYou).count
         // Chats with something unread, not every message: one busy group is one.
-        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        case .chats: return client.inbox.count(where: { $0.unread > 0 })
         case .pulls, .settings: return 0
         }
     }
 }
 
 /// The row on top of every tab: Nook's orb (its menu holds the Mac, the connection and Live Activities), the tab's name
-/// large with the Mac's name and how it is connected under it header says the machine and "Reconnecting…",
-/// and the tab's own round button on the right. The tabs themselves are along the bottom.
+/// large with the Mac's name and how it is connected (such as "Reconnecting…") under it, and the tab's own round button
+/// on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
+    /// The page's own name where it is not the tab's (Settings in its sheet).
+    var title: LocalizedStringKey? = nil
+    /// The gear to Settings, on the phone where Settings is not a tab.
+    var showsSettings = true
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             MacMenu()
             VStack(alignment: .leading, spacing: 0) {
-                Text(router.tab.title)
+                Text(title ?? router.tab.title)
                     .font(Theme.TextStyle.display)
                     .foregroundStyle(Theme.paper)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 ConnectionTitle()
             }
             Spacer(minLength: 0)
             trailing()
+            if isPresented {
+                NookIconButton(systemName: "xmark", label: String(localized: "Close")) { dismiss() }
+            } else if showsSettings, sizeClass != .regular {
+                NookIconButton(systemName: "gearshape", label: String(localized: "Settings")) {
+                    Haptics.tap()
+                    router.sheet = .settings
+                }
+            }
         }
+        .buttonStyle(.borderless)
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.top, Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.lg)
@@ -123,7 +150,9 @@ struct PanelHeader<Trailing: View>: View {
 }
 
 extension PanelHeader where Trailing == EmptyView {
-    init() { self.init { EmptyView() } }
+    init(title: LocalizedStringKey? = nil, showsSettings: Bool = true) {
+        self.init(title: title, showsSettings: showsSettings) { EmptyView() }
+    }
 }
 
 /// Under the tab's name: the Mac and how the phone has it. "MacBook · live" while connected,
@@ -263,23 +292,39 @@ struct SheetTitle: View {
 
 // MARK: Buttons
 
-/// A press that dims what was tapped a little: the phone's stand-in for the Mac's hover.
+/// A press that dims what was tapped a little: the phone's stand-in for the Mac's hover. Under an iPad's pointer the
+/// system's highlight shows what a click hits.
 struct PressFade: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.6 : 1)
             .animation(Theme.hover, value: configuration.isPressed)
+            .hoverEffect(.highlight)
     }
 }
 
-/// A list row: lit with `rowHover` while your finger is on it, as the Mac lights the row under the pointer.
+/// A list row: lit with `rowHover` while your finger is on it, or an iPad's pointer is over it, as the Mac lights the
+/// row under the pointer.
 struct RowPress: ButtonStyle {
     var radius = PhoneRadius.row
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .roundedBackground(configuration.isPressed ? Theme.rowHover : Color.clear, radius: radius)
-            .animation(Theme.hover, value: configuration.isPressed)
+        RowPressBody(label: configuration.label, pressed: configuration.isPressed, radius: radius)
+    }
+}
+
+private struct RowPressBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let radius: CGFloat
+    @State private var hovered = false
+
+    var body: some View {
+        label
+            .roundedBackground(pressed || hovered ? Theme.rowHover : Color.clear, radius: radius)
+            .contentShape(.hoverEffect, Theme.shape(radius))
+            .onHover { hovered = $0 }
+            .animation(Theme.hover, value: pressed || hovered)
     }
 }
 
@@ -291,6 +336,8 @@ struct NookSearchField: View {
     let prompt: LocalizedStringKey
     @Binding var text: String
     @FocusState private var isFocused: Bool
+    /// ⌘F or ⌘K on a hardware keyboard: the field on screen takes the keys.
+    @Environment(\.searchFocusRequest) private var searchRequest
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -324,6 +371,10 @@ struct NookSearchField: View {
         // input: the field a step above the screen with a faint edge.
         .roundedBackground(Theme.field, radius: PhoneRadius.row)
         .roundedStrokeBorder(Theme.fieldStroke, radius: PhoneRadius.row)
+        // Also when the field only appeared because of the request: it gets the keys once it is on screen.
+        .onChange(of: searchRequest, initial: true) { _, request in
+            if request.isFresh { isFocused = true }
+        }
     }
 }
 
@@ -409,6 +460,9 @@ struct SessionComposer<Controls: View>: View {
         } else {
             round("arrow.up", label: "Send", active: enabled) { onSend() }
                 .disabled(!enabled)
+                // ⌘↩ on a hardware keyboard sends, as on the Mac; only from the composer you type in, so a second one
+                // on screen (the iPad's list beside a session) never takes it.
+                .keyboardShortcut((focus ?? $ownFocus).wrappedValue ? KeyboardShortcut(.return, modifiers: .command) : nil)
         }
     }
 
@@ -514,15 +568,28 @@ struct ComposerTray<Content: View>: View {
 
 /// Where a conversation's composer sits: at the bottom over the canvas, fading the messages out behind it.
 struct ComposerDock<Content: View>: View {
+    @EnvironmentObject private var client: CompanionClient
+    /// The color the messages fade into: the canvas, or a chat's own wallpaper.
+    var fill: Color = Theme.canvas
+    /// What the strip says while the Mac cannot be reached: whether you write here or only read.
+    var offline: OfflineStrip.Kind = .sends
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.md)
-            .padding(.bottom, Theme.Spacing.md)
-            .background(LinearGradient(colors: [Theme.canvas.opacity(0), Theme.canvas], startPoint: .top,
-                                       endPoint: UnitPoint(x: 0.5, y: 0.3)))
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            // Without the Mac the app still reads and writes, and says so where you write: nothing new comes in, and
+            // what you send waits on this iPhone (the outbox) until the Mac answers. A Mac too old for that takes
+            // nothing until it is connected again.
+            if client.isOffline {
+                OfflineStrip(kind: offline).appearsAfterDelay()
+            }
+            content.disabled(client.isOffline && offline == .sends && !client.writingWaits)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.md)
+        .background(LinearGradient(colors: [fill.opacity(0), fill], startPoint: .top,
+                                   endPoint: UnitPoint(x: 0.5, y: 0.3)))
     }
 }
 

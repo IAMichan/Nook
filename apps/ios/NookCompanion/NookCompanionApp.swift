@@ -24,9 +24,32 @@ struct NookCompanionApp: App {
                         client.pair(link: url.absoluteString)
                     }
                 }
+                #if DEBUG
+                .modifier(DemoCompactWindow())
+                #endif
+        }
+        // A hardware keyboard's shortcuts (⌘N, ⌘[, ⌘], ⌘F, ⌘K, ⌘1…), listed when you hold ⌘ on an iPad.
+        .commands { CompanionMenuCommands() }
+    }
+}
+
+#if DEBUG
+/// `-NookDemoCompact YES`: the app in a 375 pt wide column at a compact width, as an iPad shows it in Slide Over or a
+/// narrow Split View, so the fallback to the phone's layout can be looked at in the Simulator.
+private struct DemoCompactWindow: ViewModifier {
+    func body(content: Content) -> some View {
+        if UserDefaults.standard.bool(forKey: "NookDemoCompact") {
+            content
+                .environment(\.horizontalSizeClass, .compact)
+                .frame(width: 375)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .background(Theme.smoke.ignoresSafeArea())
+        } else {
+            content
         }
     }
 }
+#endif
 
 /// Receives the push token and what happens with notifications: a tap opens the session, the buttons answer an approval.
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {

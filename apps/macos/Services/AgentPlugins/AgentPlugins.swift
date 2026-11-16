@@ -160,7 +160,11 @@ enum AgentPlugins {
             }
             const name = EVENTS[event?.type];
             if (!name) return;
-            forward(name, { session_id: props.sessionID || props.info?.id || '', cwd: directory || '' });
+            const fields = { session_id: props.sessionID || props.info?.id || '', cwd: directory || '' };
+            // A failed turn passes its error, so Nook can tell a usage limit or an expired login from other failures.
+            const error = props.error?.data?.message || props.error?.message || props.error?.name;
+            if (name === 'StopFailure' && typeof error === 'string' && error) fields.error = error;
+            forward(name, fields);
           },
           'chat.message': async (input, output) => {
             const parts = Array.isArray(output?.parts) ? output.parts : [];

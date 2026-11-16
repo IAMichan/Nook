@@ -61,7 +61,35 @@ enum AIProvider: String, CaseIterable, Identifiable {
         }
     }
 
-    var keyAccount: String { self == .claude ? "anthropic-api-key" : "\(rawValue)-api-key" }
+    /// Where its API key is kept (`ProviderKeys`): Claude's in `anthropic-api-key` as always, the others in
+    /// `<provider>-api-key`.
+    var keyAccount: String { ProviderKeys.account(provider: rawValue) }
+
+    /// How the provider's own keys start, as its key page shows them (and `keyPlaceholder` says); nil where its keys
+    /// have no fixed start. A pasted key that does not start like this gets a warning, and is still saved and tested.
+    var keyPrefix: String? {
+        switch self {
+        case .claude: return "sk-ant-"
+        case .openai: return "sk-"
+        case .grok: return "xai-"
+        case .groq: return "gsk_"
+        case .openrouter: return "sk-or-"
+        case .gemini, .mistral, .deepseek, .qwen, .moonshot, .ollama, .lmstudio, .claudeCode, .codexCLI, .geminiCLI, .grokCLI,
+             .kimiCLI, .vibeCLI:
+            return nil
+        }
+    }
+
+    /// A note under the model field about choosing a model for this provider; nil where there is nothing to say.
+    var modelHintKey: String? {
+        switch self {
+        // Claude's API: Haiku is fast enough, and a claude.ai subscription is not an API key.
+        case .claude: return "settings.brain.haikuHint"
+        case .claudeCode, .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI, .openai, .gemini, .grok, .mistral, .groq,
+             .openrouter, .deepseek, .qwen, .moonshot, .ollama, .lmstudio:
+            return nil
+        }
+    }
 
     var keyPlaceholder: String {
         switch self {
@@ -164,10 +192,10 @@ enum AIProvider: String, CaseIterable, Identifiable {
     /// Fetches the models this provider offers for the provided key.
     func listModels(key: String?) async throws -> [String] {
         if isSubscription { return suggestedModels }
-        guard let url = URL(string: baseURL + "/models" + (self == .claude ? "?limit=100" : "")) else { return [] }
+        guard let url = URL(string: baseURL + "/models" + (textWire == .anthropicMessages ? "?limit=100" : "")) else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
-        if self == .claude {
+        if textWire == .anthropicMessages {
             request.setValue(key ?? "", forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         } else if let key, !key.isEmpty {

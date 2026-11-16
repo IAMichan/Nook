@@ -105,22 +105,8 @@ enum ChatCalls {
     /// The apps that hold a FaceTime call's microphone.
     static let faceTimeBundles = ["com.apple.FaceTime", "com.apple.avconferenced", "com.apple.TelephonyUtilities"]
 
-    /// "+31 6 1234 5678" → "+31612345678"; nil for what is no phone number (a username, an address, too few digits).
-    /// Without a "+" or "00" the number stays as written (a local number), with a "+" before it.
-    static func phoneDigits(_ text: String) -> String? {
-        var raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A WhatsApp id ("31612345678@s.whatsapp.net") is its number.
-        if let at = raw.firstIndex(of: "@") {
-            let host = raw[raw.index(after: at)...]
-            guard host.hasSuffix("whatsapp.net") || host == "c.us" else { return nil }
-            raw = String(raw[..<at])
-        }
-        guard raw.allSatisfy({ $0.isNumber || "+-() .".contains($0) }) else { return nil }
-        var digits = raw.filter(\.isNumber)
-        if raw.hasPrefix("00") { digits = String(digits.dropFirst(2)) }
-        guard (7...15).contains(digits.count) else { return nil }
-        return "+" + digits
-    }
+    /// "+31 6 1234 5678" → "+31612345678"; nil for what is no phone number (`ChatHandle.e164`).
+    static func phoneDigits(_ text: String) -> String? { ChatHandle.e164(text) }
 
     private static func cleanUsername(_ text: String) -> String? {
         let name = text.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
@@ -217,7 +203,5 @@ enum ChatCommonGroups {
         return shared.sorted { (a: InboxThread, b: InboxThread) in a.last > b.last }
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).trimmingCharacters(in: .whitespaces)
-    }
+    private static func fold(_ text: String) -> String { ChatText.fold(text) }
 }

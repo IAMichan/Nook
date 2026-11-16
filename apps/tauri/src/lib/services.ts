@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PlannedAction } from "./types";
+import { tr } from "./i18n.svelte";
 
 export type EnergyPace = "full" | "light" | "paused";
 export type EnergyReason = "displayAsleep" | "hot" | "lowPowerMode" | "busy" | "away" | "battery" | "saver";
@@ -24,25 +25,26 @@ export interface QuietView {
   status: string;
 }
 
-/// The reason in a few words, as the Rust side writes it (`EnergyReason::text`).
+/// The reason in a few words, as the Rust side writes it (`EnergyReason::text`). Getters, so each read is in the current
+/// interface language.
 export const energyReasons: Record<EnergyReason, string> = {
-  displayAsleep: "je scherm slaapt",
-  hot: "je computer is warm",
-  lowPowerMode: "energiebesparing staat aan",
-  busy: "je computer is druk bezig",
-  away: "je bent even weg",
-  battery: "je computer draait op de accu",
-  saver: "je koos voor Zuinig",
+  get displayAsleep() { return tr("je scherm slaapt", "your screen is asleep"); },
+  get hot() { return tr("je computer is warm", "your computer is warm"); },
+  get lowPowerMode() { return tr("energiebesparing staat aan", "Low Power Mode is on"); },
+  get busy() { return tr("je computer is druk bezig", "your computer is busy"); },
+  get away() { return tr("je bent even weg", "you're away"); },
+  get battery() { return tr("je computer draait op de accu", "your computer is on battery"); },
+  get saver() { return tr("je koos voor Zuinig", "you chose Saver"); },
 };
 
 /// What the screen reading does right now (Settings › Assistant): off, paused and why, the windows it holds, or
 /// nothing. The pause comes before the windows: held windows must not hide that nothing is read right now.
 export function screenLine(enabled: boolean, windows: string[], energy: EnergyView | null): string {
-  if (!enabled) return "Uit";
+  if (!enabled) return tr("Uit", "Off");
   const reason = energy?.plan.reasons[0];
-  if (energy?.plan.pace === "paused" && reason) return `Gepauzeerd: ${energyReasons[reason]}`;
+  if (energy?.plan.pace === "paused" && reason) return tr("Gepauzeerd: {reason}", "Paused: {reason}", { reason: energyReasons[reason] });
   if (windows.length) return windows.slice(0, 4).join(" · ");
-  return "niets gelezen";
+  return tr("niets gelezen", "nothing read");
 }
 
 export interface NowPlaying {

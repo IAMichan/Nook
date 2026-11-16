@@ -12,25 +12,9 @@ enum ToolCategory: Int, Comparable, Sendable {
 
     static func < (lhs: ToolCategory, rhs: ToolCategory) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    /// Claude Code, Codex, Gemini CLI and Nook's own tools by name.
+    /// Every agent's tools and Nook's own, by name (`CanonicalTool`).
     static func of(tool: String) -> ToolCategory {
-        let name = tool.lowercased()
-        if name.hasPrefix(BridgeTool.toolPrefix) {
-            return BridgeTool.named(tool) == .terminalRun ? .command : .other
-        }
-        switch name {
-        case "bash", "shell", "run_shell_command", "nook terminal", "killshell", "bashoutput":
-            return .command
-        case "edit", "multiedit", "write", "notebookedit", "write_file", "replace", "apply_patch":
-            return .edit
-        // Codex looks at a picture with view_image (`imageView` in its app server).
-        case "read", "read_file", "read_many_files", "ls", "list_directory", "notebookread", "view_image":
-            return .read
-        case "grep", "glob", "search_file_content", "websearch", "webfetch", "web_search", "web_fetch", "google_web_search":
-            return .search
-        default:
-            return .other
-        }
+        CanonicalTool.of(tool).category
     }
 }
 
@@ -43,26 +27,19 @@ struct EditLines: Equatable, Sendable {
         EditLines(added: lhs.added + rhs.added, removed: lhs.removed + rhs.removed)
     }
 
-    /// Claude Code's Edit, MultiEdit and Write, Gemini CLI's replace and write_file, and a Codex patch.
+    /// Every agent's edit, write and patch (`EditPatch.change`): Claude Code's Edit, MultiEdit and Write, Gemini CLI's
+    /// replace and write_file, str_replace and create, an ACP agent's diffs, and a Codex patch.
     /// Nil when the input does not say what changed.
     static func of(tool: String, input: [String: Any]) -> EditLines? {
         var result = EditLines()
-        switch tool.lowercased() {
-        case "edit" where input["edits"] == nil, "replace":
-            result = between((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
-        case "multiedit", "edit":
-            guard let edits = input["edits"] as? [[String: Any]] else { return nil }
-            for edit in edits {
-                result = result + between((edit["old_string"] as? String) ?? "", (edit["new_string"] as? String) ?? "")
-            }
-        case "write", "write_file":
-            guard let content = input["content"] as? String else { return nil }
+        switch EditPatch.change(tool: tool, input: input) {
+        case .replace(let replacements):
+            for item in replacements { result = result + between(item.old, item.new) }
+        case .write(let content):
             result.added = lines(content).count
-        case "apply_patch":
-            guard let patch = (input["input"] as? String) ?? (input["patch"] as? String) else { return nil }
+        case .patch(let patch):
             return of(patch: patch)
-        default:
+        case nil:
             return nil
         }
         return result.added + result.removed > 0 ? result : nil
@@ -261,7 +238,9 @@ enum TimelinePresentation {
                 hidden.insert(approval.id)
             }
         }
-        if hidingRunning, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
+        // A subagent keeps its row (with its time) while it runs: hiding it only while nothing else runs made it come and
+        // go with every command the agent ran next to it, and the timeline jumped each time.
+        if hidingRunning, let running = turn.last(where: { isLive($0) && !Subagents.isLaunch($0) }) {
             hidden.insert(running.id)
         }
         return hidden.isEmpty ? turn : turn.filter { !hidden.contains($0.id) }
@@ -276,6 +255,12 @@ enum TimelinePresentation {
         }
     }
 
+    /// A call the agent waits on right now: what the live line under the timeline shows. A subagent or a command it left
+    /// running in the background is not one: the turn goes on without it, and it keeps its own row while it works.
+    static func isLive(_ event: RunEvent) -> Bool {
+        event.kind == .tool && event.state == .running && !Subagents.isBackground(event) && !BackgroundCommands.isCommand(event)
+    }
+
     /// A tool call and the approval that asked for it share tool and summary; a nested call carries "↳ " in front.
     private static func key(_ tool: String?, _ text: String) -> String {
         (tool ?? "") + "\u{0}" + (text.hasPrefix("↳ ") ? String(text.dropFirst(2)) : text)
@@ -283,8 +268,8 @@ enum TimelinePresentation {
 
     /// The live line for the running turn: the tool that runs (or ran last) and what the agent last thought about.
     static func live(_ events: [RunEvent]) -> LiveActivity {
-        let turn = split(events).last ?? []
-        let tool = turn.last { $0.kind == .tool && $0.state == .running } ?? turn.last { $0.kind == .tool }
+        let turn = runningTurn(events)
+        let tool = turn.last(where: isLive) ?? turn.last { $0.kind == .tool }
         let thought = turn.last { $0.kind == .thinking }.map { headline($0.text) }
         return LiveActivity(tool: tool?.text, thought: thought.flatMap { $0.isEmpty ? nil : $0 })
     }
@@ -320,18 +305,52 @@ enum TimelinePresentation {
     /// The last of `split`'s turns, found from the end: what the live line, the running command and the subagents read,
     /// without splitting the whole session for it.
     static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
-        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else { return events }
-        return Array(events[start...])
+        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else {
+            return split(events).last ?? events
+        }
+        // News about a pull request can start a turn inside the tail (see `split`): the tail is one turn or a few.
+        return split(Array(events[start...])).last ?? []
     }
 
-    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
-    /// before the first one is a turn of its own.
+    /// The turn the agent runs, for its live line: from the last message that started a turn (or wake), across every
+    /// message you steered into it since. A steer starts a turn of its own in the timeline, but the agent goes on with
+    /// what it did and reads the steer only after the tool that runs returns: the live line keeps showing that tool
+    /// instead of "Starting…" until then. News about a pull request after a finished turn starts one too (see `split`).
+    static func runningTurn(_ events: [RunEvent]) -> [RunEvent] {
+        guard let start = events.lastIndex(where: { $0.kind == .user && $0.steer == nil || $0.kind == .system && $0.tool == "wake" })
+        else { return events }
+        var from = start
+        var ended = false
+        for index in start..<events.count {
+            if ended && isNews(events[index]) { from = index; ended = false }
+            if events[index].kind == .result { ended = true }
+        }
+        return Array(events[from...])
+    }
+
+    /// A turn starts at each message of yours, where the agent woke up by itself after background work, and at news about
+    /// a watched pull request that came after the turn before it had ended (`isNews`); anything before the first one is
+    /// a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
+        var ended = false
         for event in events {
-            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
+            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty || ended && isNews(event) {
+                turns.append([event])
+                ended = false
+            } else {
+                turns[turns.count - 1].append(event)
+            }
+            if event.kind == .result { ended = true }
         }
         return turns
+    }
+
+    /// News about a pull request the session watches ("ws.prwatch.news"): Nook hands it to the agent without a message of
+    /// yours, so once the turn before it ended it starts a turn of its own. Folded into the earlier turn, that turn's answer
+    /// went under "Worked for…" and only the reply to the news stayed in sight.
+    static func isNews(_ event: RunEvent) -> Bool {
+        event.kind == .system && event.tool == "prwatch"
     }
 
     private static func present(_ turn: [RunEvent], open: Bool,
@@ -341,7 +360,7 @@ enum TimelinePresentation {
         let troubled = turn.contains { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
             || finished?.state == .failed
         // Fold only a turn that ended well: its answer stays, the work in between folds away.
-        guard !open, first.kind == .user, let finished, !troubled,
+        guard !open, first.kind == .user || isNews(first), let finished, !troubled,
               let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
             return group(turn, tally: tally)
         }
@@ -425,6 +444,10 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
     var started: Date = .distantPast
     /// What it thought, wrote and did while it worked, when its agent passes that on (`SubagentStep`).
     var steps: [SubagentStep] = []
+    /// The id its agent knows it by while it runs in the background (Claude Code's `agentId`): what Stop names.
+    var taskID: String? = nil
+    /// How far it is while it runs, when earlier subagents of its kind say (`WorkProgress`).
+    var progress: WorkProgress? = nil
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
@@ -437,7 +460,8 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
 }
 
 enum Subagents {
-    static let tools: Set<String> = ["Task", "Agent"]
+    /// Whether a tool starts a subagent, for every agent (`CanonicalTool`).
+    static func isTool(_ name: String) -> Bool { CanonicalTool.isSubagent(name) }
 
     /// The subagents of the latest turn, in the order they started.
     static func latest(_ events: [RunEvent]) -> [SubagentInfo] {
@@ -455,7 +479,7 @@ enum Subagents {
 
     /// The event is a subagent the agent started (not a call of a subagent's own).
     static func isLaunch(_ event: RunEvent) -> Bool {
-        event.kind == .tool && event.tool.map(tools.contains) == true && !event.text.hasPrefix("↳")
+        event.kind == .tool && event.tool.map(isTool) == true && !event.text.hasPrefix("↳")
     }
 
     /// The subagent was started with `run_in_background`: its call returns at once, and it ends later.
@@ -472,6 +496,13 @@ enum Subagents {
     /// The output of a call that only started a subagent in the background ("Async agent launched successfully…").
     static func isLaunchNote(_ output: String) -> Bool {
         output.hasPrefix("Async agent launched")
+    }
+
+    /// The agent id a background launch note names ("Async agent launched successfully.\nagentId: a1b2 …").
+    static func taskID(launchNote output: String?) -> String? {
+        guard let output, isLaunchNote(output), let range = output.range(of: "agentId: ") else { return nil }
+        let id = output[range.upperBound...].prefix { !$0.isWhitespace && $0 != "," && $0 != ")" }
+        return id.isEmpty ? nil : String(id)
     }
 
     /// The subagent a background task stands for: by the call that started it, else by the agent id its launch named.
@@ -495,7 +526,7 @@ enum Subagents {
             return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
                                 state: event.state, output: event.output,
                                 background: (input["run_in_background"] as? Bool) == true, started: event.date,
-                                steps: event.subagentSteps ?? [])
+                                steps: event.subagentSteps ?? [], taskID: taskID(launchNote: event.output))
         }
     }
 
@@ -515,16 +546,29 @@ struct BackgroundCommandInfo: Identifiable, Equatable, Sendable {
     var state: RunEvent.State?
     var output: String?
     var started: Date
+    /// How far it is while it runs: what it printed, or how long it took before (`WorkProgress`).
+    var progress: WorkProgress? = nil
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
 
+    /// The command with what its latest reading found: the share done its output file reports (Claude Code writes what
+    /// a background command prints there, not into its call).
+    func reading(_ activity: BackgroundCommandActivity?) -> BackgroundCommandInfo {
+        guard isRunning, let reported = activity?.reported else { return self }
+        var command = self
+        command.progress = WorkProgress(reported: reported, started: started, expected: progress?.expected)
+        return command
+    }
+
     /// What the command printed, without the note an agent gets when it starts one in the background ("Command running
-    /// in background with ID: b3k9. Output is being written to: … Read on that file path"): that note says nothing about
-    /// how the command is doing. Nil when nothing else is left.
+    /// in background with ID: b3k9. Output is being written to: … Read on that file path"), or when its call ran past
+    /// its time limit and moved there ("Command did not complete within its 600s timeout and was moved to the
+    /// background …"): that note says nothing about how the command is doing. Nil when nothing else is left.
     var printed: String? {
         guard var text = output?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        if text.hasPrefix("Command running in background with ID:") {
+        if text.hasPrefix("Command running in background with ID:")
+            || (text.hasPrefix("Command did not complete within") && text.contains("moved to the background")) {
             guard let end = text.range(of: "Read on that file path") else { return nil }
             text = String(text[end.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: ".").union(.whitespacesAndNewlines))
         }
@@ -586,6 +630,25 @@ enum BackgroundCommands {
         }
         guard let task = update.taskID, !task.isEmpty else { return nil }
         return events.last { isCommand($0) && $0.output?.contains("ID: " + task) == true }
+    }
+
+    /// How a command's end counts: a failure, or one Claude Code killed that the agent did not ask to stop (it hung
+    /// past its time limit, say). One the agent stopped itself (TaskStop) ended as it wanted.
+    static func failed(_ status: BackgroundTaskUpdate.Status, update: BackgroundTaskUpdate, in events: [RunEvent]) -> Bool {
+        switch status {
+        case .completed, .stopped: return false
+        case .failed: return true
+        case .killed: return !stoppedByAgent(update, in: events)
+        }
+    }
+
+    /// The agent asked to stop this task itself (Claude Code's TaskStop, or the older KillShell/KillBash).
+    static func stoppedByAgent(_ update: BackgroundTaskUpdate, in events: [RunEvent]) -> Bool {
+        guard let task = update.taskID, !task.isEmpty else { return false }
+        let stops: Set<String> = ["TaskStop", "KillShell", "KillBash"]
+        return events.contains { event in
+            event.kind == .tool && stops.contains(event.tool ?? "") && (event.detail?.contains(task) == true || event.text.contains(task))
+        }
     }
 
     /// The order to list them in: those still at work first, then the failed ones, then the rest; newest first within each.
@@ -672,8 +735,8 @@ enum TurnChanges {
 
 /// One alert per piece of background work: a monitor wakes the agent for every line it prints, so the turn of such a
 /// wake ends many times while the monitor still runs. That turn's completion is held (no notification, no result for a
-/// delegating session) until a wake turn ends with no monitor left running, or the monitor ends with its process
-/// (`monitorHoldsWakeCompletion`). For every agent whose timeline reports monitors.
+/// delegating session) until a wake turn ends with no monitor left running, or the monitor ends with its process.
+/// For every agent whose timeline reports monitors.
 enum WakeCompletion {
     /// The latest turn is a wake the agent took by itself, and a monitor still runs.
     static func holds(_ events: [RunEvent]) -> Bool {

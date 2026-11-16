@@ -150,11 +150,6 @@ enum RemoteMCPHTTP {
 
     // MARK: The pairing page
 
-    static func escape(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
-    }
-
     private static let pageHeaders = [
         "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY",
         "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
@@ -173,17 +168,17 @@ enum RemoteMCPHTTP {
     }
 
     static func page(status: Int, message: String, texts: Texts) -> Answer {
-        Answer(status: status, headers: pageHeaders, body: shell("<h1>Nook</h1><p>\(escape(message))</p>", texts: texts))
+        Answer(status: status, headers: pageHeaders, body: shell("<h1>Nook</h1><p>\(HTMLEntities.escape(message))</p>", texts: texts))
     }
 
     static func page(signIn: RemoteMCPAccess.SignIn, error: String?, base: String, texts: Texts) -> Answer {
-        let intro = texts("remotemcp.page.intro").replacingOccurrences(of: "%@", with: escape(signIn.clientName))
-        let problem = error.map { "<p class=\"e\">\(escape($0))</p>" } ?? ""
+        let intro = texts("remotemcp.page.intro").replacingOccurrences(of: "%@", with: HTMLEntities.escape(signIn.clientName))
+        let problem = error.map { "<p class=\"e\">\(HTMLEntities.escape($0))</p>" } ?? ""
         let inner = """
-        <h1>\(escape(texts("remotemcp.page.title")))</h1><p>\(intro)</p>\(problem)
-        <form method="post" action="\(escape(base))/authorize"><input type="hidden" name="id" value="\(escape(signIn.id))">
-        <input type="text" name="code" inputmode="numeric" autocomplete="off" autofocus maxlength="7" placeholder="000 000" aria-label="\(escape(texts("remotemcp.page.code")))">
-        <button type="submit">\(escape(texts("remotemcp.page.connect")))</button></form>
+        <h1>\(HTMLEntities.escape(texts("remotemcp.page.title")))</h1><p>\(intro)</p>\(problem)
+        <form method="post" action="\(HTMLEntities.escape(base))/authorize"><input type="hidden" name="id" value="\(HTMLEntities.escape(signIn.id))">
+        <input type="text" name="code" inputmode="numeric" autocomplete="off" autofocus maxlength="7" placeholder="000 000" aria-label="\(HTMLEntities.escape(texts("remotemcp.page.code")))">
+        <button type="submit">\(HTMLEntities.escape(texts("remotemcp.page.connect")))</button></form>
         """
         return Answer(status: 200, headers: pageHeaders, body: shell(inner, texts: texts))
     }

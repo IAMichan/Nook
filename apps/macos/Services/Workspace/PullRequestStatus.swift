@@ -73,6 +73,8 @@ struct PullRequestStatus: Equatable, Sendable {
     var checks: String?
     /// Nil while no read has said.
     var merge: PullRequestMergeFacts? = nil
+    /// Its title, for a row that only knows the link (the tray above the composer). Nil while no read has said.
+    var title: String? = nil
 
     var mergeStatus: PullRequestMergeStatus { PullRequestMergeStatus(glyph: glyph, checks: checks, merge: merge) }
 
@@ -88,6 +90,17 @@ struct PullRequestStatus: Equatable, Sendable {
         if outcomes.isEmpty { return "" }
         if outcomes.contains(.failing) { return "failure" }
         return outcomes.contains(.pending) ? "pending" : "success"
+    }
+
+    /// The checks as a pull request list row holds them; nil while no read has said, so the row keeps the list's.
+    var ci: PullRequestItem.CI? {
+        switch checks {
+        case "success": return .passing
+        case "failure": return .failing
+        case "pending": return .pending
+        case "": return .unknown
+        default: return nil
+        }
     }
 }
 
@@ -141,12 +154,14 @@ final class PullRequestStatusStore: ObservableObject {
 
     // MARK: Recording reads
 
-    /// `checks` or `merge` nil: this read does not know them, so the last known ones stay.
-    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil, at date: Date = Date()) {
+    /// `checks`, `merge` or `title` nil: this read does not know them, so the last known ones stay.
+    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil,
+                title: String? = nil, at date: Date = Date()) {
         guard let key, glyph != .stack, date >= readAt[key] ?? .distantPast else { return }
         readAt[key] = date
         if checks != nil { checksReadAt[key] = date }
-        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge)
+        let title = title.flatMap { $0.isEmpty ? nil : $0 } ?? statuses[key]?.title
+        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge, title: title)
         if statuses[key] != next { statuses[key] = next }
     }
 
@@ -154,14 +169,15 @@ final class PullRequestStatusStore: ObservableObject {
         let state: PullRequestState = snapshot.state == "merged" ? .merged : snapshot.state == "closed" ? .closed
             : snapshot.draft ? .draft : .open
         record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: state, conflicted: snapshot.conflicted),
-               checks: snapshot.checks, merge: snapshot.merge, at: date)
+               checks: snapshot.checks, merge: snapshot.merge, title: snapshot.title, at: date)
     }
 
     /// What the branch sync found: state and conflict, without checks.
     func record(_ links: [PullRequestLink], at date: Date = Date()) {
         for link in links {
             guard let url = URL(string: link.url) else { continue }
-            record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted), checks: nil, at: date)
+            record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted), checks: nil,
+                   title: link.title, at: date)
         }
     }
 
@@ -169,7 +185,7 @@ final class PullRequestStatusStore: ObservableObject {
         let state = PullRequestState(rawValue: detail.state.rawValue) ?? .open
         let key = detail.url.flatMap(Self.key) ?? Self.key(repo: detail.repo, number: detail.number)
         record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: detail.conflicted),
-               checks: PullRequestStatus.checks(detail.checks), merge: detail.mergeFacts, at: date)
+               checks: PullRequestStatus.checks(detail.checks), merge: detail.mergeFacts, title: detail.title, at: date)
     }
 
     /// What Nook kept from before this launch, shown until the first read of each request: the store starts empty, and a
@@ -200,10 +216,36 @@ final class PullRequestStatusStore: ObservableObject {
         record(url: url, snapshot: snapshot, at: started)
     }
 
-    /// How often a shown pull request is read again (`follow`, in the app): every 30 seconds while it is open (as the
+    /// How often a shown pull request is read again (`follow`, in the app): every 10 seconds while it is about to change
+    /// (checks running, GitHub still working out whether it merges, or no read yet), every 30 while it is open (as the
     /// pull request page does), every 15 minutes once merged or closed (one read is several requests, and a session can
     /// show a merged one all day), stretched by the energy plan.
-    nonisolated static func followInterval(settled: Bool, plan: EnergyPlan) -> TimeInterval {
-        (settled ? 900 : 30) * plan.slowdown
+    nonisolated static func followInterval(_ status: PullRequestStatus?, plan: EnergyPlan) -> TimeInterval {
+        guard let status else { return 10 * plan.slowdown }
+        if status.glyph == .merged || status.glyph == .closed { return 900 * plan.slowdown }
+        return (status.isChanging ? 10 : 30) * plan.slowdown
+    }
+
+    // MARK: Waking the followers
+
+    /// Bumped by `wakeFollowers`: every shown pull request reads again within a few seconds instead of at its next tick.
+    private(set) var wakeCount = 0
+
+    /// Something just happened that may have changed the shown pull requests (a session's turn ended: it may have pushed,
+    /// merged or closed one), so each shown one reads again now rather than up to half a minute later.
+    func wakeFollowers() { wakeCount &+= 1 }
+
+    /// Whether a follower's wait between two reads ends early: you came back to the Mac, or `wakeFollowers` was called.
+    /// (A window that shows again ends it too; `AttentionGate` says that without a timer.)
+    nonisolated static func readEarly(wasIdle: Bool, isIdle: Bool, wakesBefore: Int, wakesNow: Int) -> Bool {
+        (wasIdle && !isIdle) || wakesBefore != wakesNow
+    }
+}
+
+extension PullRequestStatus {
+    /// About to change by itself: checks are running, or GitHub has not yet said whether it merges (just after a push).
+    var isChanging: Bool {
+        guard glyph != .merged, glyph != .closed else { return false }
+        return checks == nil || checks == "pending" || merge == nil || merge?.state == "unknown"
     }
 }

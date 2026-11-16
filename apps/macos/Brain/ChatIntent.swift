@@ -9,6 +9,8 @@ struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
         case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover, network
+        /// Something Nook does by itself again and again, or later ("check my mail every morning and draft the replies").
+        case schedule
     }
 
     /// Recognized kinds, strongest first.
@@ -33,6 +35,9 @@ struct ChatIntent: Equatable {
     /// The one action this request is about, when it clearly asks for one.
     var primaryAction: String? {
         guard wantsAction else { return nil }
+        // "Draft an email to Lisa every morning" asks for an automation, not for that mail now. A recurring meeting or
+        // reminder stays one ("plan elke maandag een overleg", "herinner me elke dag"), and so does a fact to remember.
+        if kinds.contains(.schedule), let first = kinds.first, ![.event, .reminder, .memory].contains(first) { return "schedule_task" }
         for kind in kinds {
             // "Vat mijn notitie over X samen" reads a note; it only makes one when asked to ("zet het in een notitie").
             if kind == .note, readsNotes { continue }
@@ -139,6 +144,10 @@ struct ChatIntent: Equatable {
         if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
         // A task of many steps Nook carries out itself: ordering, booking, unsubscribing, finishing what is on screen.
         if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
+        // Filling in a form ("vul nu het formulier in", "kun je dit formulier invullen", "fill out the form on my screen"):
+        // Nook does it itself in the app or browser where the form is open, however the sentence is built.
+        let fillsForm = Self.fillsForm(text)
+        if fillsForm, !kinds.contains(.takeover) { kinds.append(.takeover) }
         // Posting on a website ("maak posts op Reddit om Nook te promoten"): Nook writes the post and places it there
         // through the browser, with mouse and keyboard; the Post button waits for the user's yes.
         let posts = postsOnline(text)
@@ -160,6 +169,7 @@ struct ChatIntent: Equatable {
         if has(#"github|pull request|\bprs?\b|\bissues?\b|\brepo|\bmerge"#) { kinds.append(.github) }
         if has(#"notion|\bwiki\b"#) { kinds.append(.notion) }
         if has(#"\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b"#) { kinds.append(.network) }
+        if Self.schedules(text) { kinds.append(.schedule) }
         if has(#"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert"#) { kinds.append(.clipboard) }
         if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) { kinds.append(.web) }
         // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
@@ -182,7 +192,7 @@ struct ChatIntent: Equatable {
         // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
         // "I saw a post on Reddit" names a site too, but asks for nothing.
         let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp || fillsForm)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting
@@ -196,7 +206,8 @@ struct ChatIntent: Equatable {
         let raw = fixingSendTypo(raw)
         var intent = detect(raw)
         guard !history.isEmpty, intent.primaryAction == nil else { return intent }
-        let recent = Array(history.suffix(6).reversed())
+        // The recap of a long conversation (`ConversationWindow`) lists old questions, not the request this continues.
+        let recent = Array(ConversationWindow.withoutRecap(history).suffix(6).reversed())
         // "Ja" or "ok" only goes ahead with what Nook just asked ("Wil je het bericht nu verzenden?"), never after a
         // message that was already handled.
         // So does "doe dat" after Nook said what it would do ("Ik zet het in de agenda").
@@ -210,7 +221,7 @@ struct ChatIntent: Equatable {
         if correction {
             // The newest request the user made, with its channel when it was a message.
             carried = recent.lazy.filter(\.fromUser).compactMap { turn -> Kind? in
-                if let kind = detect(turn.text).kinds.first(where: { actionByKind[$0] != nil }) { return kind }
+                if let kind = actionKind(of: turn.text) { return kind }
                 return sends(turn.text) ? channel(of: recent) : nil
             }.first ?? (recent.contains { !$0.fromUser && sends($0.text) } ? channel(of: recent) : nil)
         } else if ((sends(raw) || writesMessage(raw)) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
@@ -218,10 +229,10 @@ struct ChatIntent: Equatable {
             carried = channel(of: recent)
         } else if goAhead {
             // "Ja, doe maar" after "maak een herinnering voor morgen": the action the user asked for last.
-            carried = recent.first(where: \.fromUser).flatMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }
+            carried = recent.first(where: \.fromUser).flatMap { turn in actionKind(of: turn.text) }
         } else if retry {
             // A retry follows a complaint ("hij is niet verzonden") as often as the request itself: the newest request.
-            carried = recent.lazy.filter(\.fromUser).compactMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }.first
+            carried = recent.lazy.filter(\.fromUser).compactMap { turn in actionKind(of: turn.text) }.first
         } else if editsIt(raw), recent.contains(where: { $0.fromUser && pointsAtSomething($0.text) }) {
             // "Pas het aan" after "is deze pitch goed?": the document on screen changes, done with mouse and keyboard.
             carried = .takeover
@@ -240,6 +251,25 @@ struct ChatIntent: Equatable {
         intent.wantsAction = true
         intent.isSmallTalk = false
         return intent
+    }
+
+    /// The kind of action an earlier request asked for, as a follow-up carries it: an automation stays an automation
+    /// ("Draft an email to Lisa every morning", then "No, at 9"), instead of becoming the mail it would write.
+    static func actionKind(of text: String) -> Kind? {
+        let earlier = detect(text)
+        if earlier.primaryAction == "schedule_task" { return .schedule }
+        return earlier.kinds.first { actionByKind[$0] != nil }
+    }
+
+    /// A form to fill in: a form named together with filling it in, in any of Nook's languages. A question about how to
+    /// do it ("hoe vul ik dit formulier in?") asks for an explanation, not for Nook to do it.
+    static func fillsForm(_ text: String) -> Bool {
+        let text = text.lowercased()
+        func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        let form = has(#"formulier|\bforms?\b|formular|formulaire|formulario|\b(de|die|alle|the|all) (velden|fields)\b|\balle felder\b"#)
+        let fill = has(#"\bvul\b|\bvult\b|invul|in te vullen|ingevuld|\bfill(ing|ed)?\b|\bcomplete\b|ausfüll|\bfüll\w*\b[^.?!]{0,40}\baus\b|ausgefüllt|rempli[rst]?\b|remplissez|rellen[aeoá]\w*|\bllen[ae]\w*|\bcompleta\w*"#)
+        guard form, fill else { return false }
+        return !has(#"^(hoe|how|wie|comment|cómo|como)\b|\b(hoe (moet|kan|vul)|how (do|should|can|to)|wie (fülle|kann)|comment (je|on)|cómo (se|lo|relleno))\b"#)
     }
 
     /// Asking for the text itself, to send yourself or as an example.
@@ -406,7 +436,7 @@ struct ChatIntent: Equatable {
         .availability: ["check_availability", "list_events"],
         .note: ["create_note", "search_notes", "read_note", "list_notes"],
         .todo: ["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
-        .mailWrite: ["compose_mail", "search_contacts", "search_mail", "read_mail"],
+        .mailWrite: ["compose_mail", "inbox_mail", "search_contacts", "search_mail", "read_mail"],
         .mailRead: ["inbox_mail", "search_mail", "read_mail", "mail_unread", "trash_mail", "mark_mail"],
         .contacts: ["search_contacts"],
         .music: ["play_music", "search_music", "media_control"],
@@ -426,13 +456,14 @@ struct ChatIntent: Equatable {
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
+        .schedule: ["schedule_task", "set_up_secretary", "list_scheduled_tasks"],
         .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
         .takeover, .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
-        .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
+        .contacts, .chats, .mailRead, .schedule, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.
@@ -441,6 +472,18 @@ struct ChatIntent: Equatable {
         .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
         .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember", .takeover: "take_over"
     ]
+
+    /// "Check elke ochtend mijn mail", "every weekday at 8", "maak een automatisering", "täglich um 7": a task Nook runs by
+    /// itself on a schedule. It only adds the scheduling tools; a recurring meeting stays an event ("plan elke maandag
+    /// een overleg" also matches the calendar, which comes first).
+    static func schedules(_ text: String) -> Bool {
+        let every = #"\b(elke|iedere|every|each|jeden|jede|chaque|tous les|toutes les|cada|todos los|todas las)\s+(dag|ochtend|morgen|middag|avond|nacht|week|maand|werkdag|uur|kwartier|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|day|morning|afternoon|evening|night|week|month|weekday|workday|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tag|abend|woche|monat|werktag|stunde|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|jour|jours|matin|soir|semaine|mois|heure|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|d[ií]a|d[ií]as|ma[ñn]ana|tarde|noche|semana|mes|hora|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"#
+        let named = #"\b(dagelijks|wekelijks|maandelijks|daily|weekly|monthly|täglich|wöchentlich|monatlich|quotidien(ne)?|hebdomadaire|diario|diariamente|semanal)\b|automatiser|automatisering|\bautomation|\bautomate\b|automatisier|automatización|automatizar|geplande taak|scheduled task|geplante aufgabe|tâche planifiée|tarea programada|\broutine\b|secretaresse|secretaris|\bsecretary|sekretär|secrétaire|secretari[oa]\b|persoonlijke assistent|personal assistant|persönliche[rn]? assistent|houd (alles|me) bij|keep (track of|me on top of) (everything|it all)"#
+        // "Zodra Lisa schrijft…", "when a mail about an invoice comes in…": a task that waits for a message.
+        let when = #"\b(zodra|telkens als|telkens wanneer|elke keer als|iedere keer als|as soon as|whenever|every time|sobald|immer wenn|jedes mal wenn|dès que|chaque fois que|en cuanto|cada vez que)\b[^.?!]{0,60}\b(schrijft|stuurt|mailt|appt|belt|binnenkomt|binnen komt|writes|messages|texts|emails|mails|sends|arrives|comes in|schreibt|schickt|ankommt|reinkommt|écrit|envoie|arrive|escribe|env[ií]a|llega)\b"#
+        return text.range(of: every, options: .regularExpression) != nil || text.range(of: named, options: .regularExpression) != nil
+            || text.range(of: when, options: .regularExpression) != nil
+    }
 
     // MARK: Dates
 

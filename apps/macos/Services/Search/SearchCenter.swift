@@ -2,14 +2,15 @@ import Foundation
 import Combine
 
 /// Runs Search everything for the panel: builds the index off the main thread from what `AppModel+Search` collects,
-/// then scores each query there too, so typing never waits on it. Session transcripts that are not in memory are read
-/// from disk once and kept (by when the session last changed), so opening search again is instant. The same goes for
-/// every coding agent's own transcript files: the sessions Nook follows and every earlier (settled) one. The index holds the
-/// newest messages of each chat; after each query every chat app's whole history is searched too (`ChatSearchBridge`,
-/// the same for every app), and what it finds joins the hits as it comes in.
+/// then scores each query there too, so typing never waits on it. The index holds a light description of every coding
+/// agent session (its title, project, branch, prompts) and the whole text only of the sessions in memory now; the text of
+/// every other session, settled ones and every agent's earlier ones included, is in `SessionArchive` on disk, asked after
+/// each query searches its threads. The archive is brought up to date when search opens: only sessions whose
+/// transcript changed are read again. The index holds the newest messages of each chat; after each query every chat
+/// app's whole history is searched too (`ChatSearchBridge`, the same for every app). What these find joins the hits as it
+/// comes in.
 ///
-/// All of this is built when search opens and let go a while after it closes, never at launch: it reads every session and
-/// transcript on disk and holds their text, which is a lot to spend on a panel that may stay closed all day.
+/// The index is built when search opens and let go a while after it closes, never at launch.
 @MainActor
 final class SearchCenter: ObservableObject {
     static let shared = SearchCenter()
@@ -49,10 +50,16 @@ final class SearchCenter: ObservableObject {
     /// The extra pause before the apps are asked: each search is a query to a database or a service.
     private static let historyPause: UInt64 = 250_000_000
 
-    /// Session passages read from disk, by session, with the `updatedAt` they were read at.
-    private static var transcripts: [UUID: (updated: Date, passages: [SearchPassage])] = [:]
-    /// Passages of the agents' own transcript files, by path, with the file's modification date they were read at.
+    /// Passages of the transcript files of the sessions Nook follows now, by path, with the file's modification date they
+    /// were read at. Earlier sessions are in `archive`.
     private static var agentTranscripts: [String: (modified: Date, passages: [SearchPassage])] = [:]
+    /// Every session's text on disk; nil when it cannot be opened (search then finds what is in memory).
+    private lazy var archive: SessionArchive? = SessionArchive()
+    /// What the archive found for the query in the field, by document id: passages that join the index's documents.
+    private var archived: [String: SearchDocument] = [:]
+    private var archiveTask: Task<Void, Never>?
+    /// Most sessions the archive brings per query, newest first, each holding the query's words.
+    static let archiveLimit = 200
     /// How many transcript files are read before the index is built again with them: results fill in as they are read.
     private static let transcriptBatch = 150
     /// How long the index stays after the panel closed, for opening search again at once.
@@ -86,22 +93,9 @@ final class SearchCenter: ObservableObject {
             self.refreshRecentlyOpened()
             self.loadedAt = Date()
             if !self.text.isEmpty { self.rerun() }
-            // The transcripts that are not in memory, read once and kept; a session that was deleted lets go of its own.
-            let known = Set(app.workspace.runs.map(\.id))
-            Self.transcripts = Self.transcripts.filter { known.contains($0.key) }
-            let missing = app.workspace.runs.filter { run in Self.transcripts[run.id]?.updated != run.updatedAt && app.workspace.events[run.id] == nil }
-            for run in missing {
-                guard !Task.isCancelled else { return }
-                let events = await app.workspace.timelineForSearch(run.id)
-                // Off the main thread: a long session's timeline held it up once for every session after launch.
-                let passages = await Task.detached(priority: .utility) { AppModel.searchPassages(events, run: run) }.value
-                Self.transcripts[run.id] = (run.updatedAt, passages)
-            }
-            guard !Task.isCancelled else { return }
-            if !missing.isEmpty { guard await self.rebuild(app) else { return } }
 
-            // Every coding agent's own transcripts (earlier and settled sessions, and the ones Nook follows), newest
-            // first; a file that did not change since it was read is not read again.
+            // The transcripts of the sessions Nook follows now, newest first; a file that did not change since it was
+            // read is not read again.
             let files = app.searchTranscriptFiles()
             let paths = Set(files.map(\.path))
             Self.agentTranscripts = Self.agentTranscripts.filter { paths.contains($0.key) }
@@ -113,7 +107,48 @@ final class SearchCenter: ObservableObject {
                 for file in found { Self.agentTranscripts[file.path] = (file.modified, file.passages) }
                 if !found.isEmpty { guard await self.rebuild(app) else { return } }
             }
+            await self.syncArchive(app)
+            guard !Task.isCancelled else { return }
             self.indexing = false
+        }
+    }
+
+    /// Brings the archive up to date: every session that is gone is forgotten, and every one whose transcript changed
+    /// since it was written is read again, newest first, one at a time off the main thread, so memory holds one session's
+    /// text at most. What is written is searched at once: the query in the field runs again after each batch.
+    private func syncArchive(_ app: AppModel) async {
+        guard let archive else { return }
+        let runs = app.workspace.runs
+        let transcripts = app.archiveTranscripts()
+        let plan = await Task.detached(priority: .utility) {
+            SessionArchiveSync.plan(runs: runs, transcripts: transcripts, stored: archive.stamps())
+        }.value
+        guard !Task.isCancelled else { return }
+        await Task.detached(priority: .utility) { archive.remove(plan.gone) }.value
+        var written = 0
+        for source in plan.changed {
+            guard !Task.isCancelled else { return }
+            switch source.content {
+            case .run(let run):
+                let events = await app.workspace.timelineForSearch(run.id)
+                await Task.detached(priority: .utility) {
+                    archive.save(source.key, stamp: source.stamp, date: source.date,
+                                 passages: SessionPassages.make(events, run: run))
+                }.value
+            case .transcript(let path, let agent):
+                await Task.detached(priority: .utility) {
+                    let messages = AgentTranscript.recent(path: path, limit: SessionArchiveSync.messageLimit, remember: false, whole: true)
+                    archive.save(source.key, stamp: source.stamp, date: source.date,
+                                 passages: SessionPassages.make(messages, agent: agent, limit: SessionArchiveSync.passageLimit))
+                }.value
+            }
+            written += 1
+            if written % Self.transcriptBatch == 0, !text.isEmpty { rerun() }
+        }
+        guard !Task.isCancelled else { return }
+        if written > 0 || !plan.gone.isEmpty {
+            await Task.detached(priority: .utility) { archive.maintain() }.value
+            if !text.isEmpty { rerun() }
         }
     }
 
@@ -122,15 +157,15 @@ final class SearchCenter: ObservableObject {
     private func documents(_ app: AppModel, priority: TaskPriority) async -> [SearchDocument] {
         let runs = app.workspace.runs
         let timelines = app.workspace.events
+        // Only the timelines in memory: every other session's text is in the archive.
         let live = await Task.detached(priority: priority) {
             var passages: [UUID: [SearchPassage]] = [:]
             for run in runs {
-                if let events = timelines[run.id] { passages[run.id] = AppModel.searchPassages(events, run: run) }
+                if let events = timelines[run.id] { passages[run.id] = SessionPassages.make(events, run: run) }
             }
             return passages
         }.value
-        return app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages }.merging(live) { _, new in new },
-                                   agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+        return app.searchDocuments(transcripts: live, agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
     }
 
     /// The index again with every transcript read so far; false when the load was cancelled meanwhile.
@@ -156,7 +191,7 @@ final class SearchCenter: ObservableObject {
             let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
             guard let modified = attributes?[.modificationDate] as? Date, known[file.path] != modified else { return nil }
             let messages = AgentTranscript.recent(path: file.path, remember: false)
-            return (file.path, modified, AppModel.searchPassages(messages, agent: file.agent))
+            return (file.path, modified, SessionPassages.make(messages, agent: file.agent))
         }
     }
 
@@ -169,6 +204,7 @@ final class SearchCenter: ObservableObject {
         hits = []
         searched = ""
         indexHits = []
+        forgetArchived()
         forgetHistory()
     }
 
@@ -198,13 +234,17 @@ final class SearchCenter: ObservableObject {
         index = SearchIndex([])
         loadedAt = nil
         indexing = false
-        Self.transcripts = [:]
         Self.agentTranscripts = [:]
     }
 
-    /// What the field holds now: scored after a short pause, so a burst of keystrokes is one search.
-    func search(_ text: String) {
+    /// Filters the panel adds to what is typed (a scope of sessions), so the index picks its best hits from those only.
+    private var filter = ""
+
+    /// What the field holds now: scored after a short pause, so a burst of keystrokes is one search. `filter` is added to
+    /// it as query words of its own (`in:sessions is:settled`).
+    func search(_ text: String, filter: String = "") {
         self.text = text
+        self.filter = filter
         searchTask?.cancel()
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             reset()
@@ -227,7 +267,7 @@ final class SearchCenter: ObservableObject {
 
     private func rerun() {
         let text = text
-        let parsed = SearchQuery.parse(text)
+        let parsed = SearchQuery.parse(filter.isEmpty ? text : text + " " + filter)
         let index = index
         let limit = Self.limit
         let bonus = openedBonus()
@@ -238,7 +278,28 @@ final class SearchCenter: ObservableObject {
             self.query = parsed
             self.indexHits = found
             self.searched = text
+            self.searchArchive(parsed)
             self.searchHistory(parsed)
+        }
+    }
+
+    // MARK: Every session's text
+
+    /// Asks the archive which sessions hold the query's words and brings their matching passages, which join the hits
+    /// (`remerge`). Only sessions the index describes: a session that is gone is not brought back by its text.
+    private func searchArchive(_ parsed: SearchQuery) {
+        archiveTask?.cancel()
+        archived = [:]
+        guard let archive, TrigramQuery.expression(parsed) != nil else { return }
+        let index = index
+        archiveTask = Task { [weak self] in
+            let found = await Task.detached(priority: .userInitiated) { () -> [SearchDocument] in
+                let found = archive.found(parsed, want: Self.archiveLimit) { index.document($0) != nil } ?? []
+                return found.map { SearchDocument(id: $0.key, kind: .session, title: "", passages: $0.passages) }
+            }.value
+            guard let self, !Task.isCancelled, self.query == parsed, !found.isEmpty else { return }
+            for document in found { self.archived[document.id] = document }
+            self.remerge()
         }
     }
 
@@ -298,11 +359,11 @@ final class SearchCenter: ObservableObject {
     /// The index's hits with what the history found, scored off the main thread.
     private func remerge() {
         mergeTask?.cancel()
-        guard !history.isEmpty else {
+        guard !history.isEmpty || !archived.isEmpty else {
             hits = indexHits
             return
         }
-        let found = Array(history.values)
+        let found = Array(history.values) + Array(archived.values)
         let index = index
         let query = query
         let base = indexHits
@@ -318,6 +379,11 @@ final class SearchCenter: ObservableObject {
         }
     }
 
+    private func forgetArchived() {
+        archiveTask?.cancel()
+        archived = [:]
+    }
+
     private func forgetHistory() {
         historyTask?.cancel()
         mergeTask?.cancel()
@@ -330,6 +396,7 @@ final class SearchCenter: ObservableObject {
         searchTask?.cancel()
         indexTask?.cancel()
         aiTask?.cancel()
+        forgetArchived()
         forgetHistory()
     }
 

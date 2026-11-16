@@ -11,6 +11,8 @@ import Combine
 @MainActor
 final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridge {
     let app = "telegram"
+    /// `getChatHistory` has no deleted messages: one deleted while Nook was not running is found by its absence.
+    var historyOmitsDeleted: Bool { true }
     let interval: TimeInterval = 3
 
     enum State: Equatable {
@@ -120,6 +122,27 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         return url
     }
 
+    /// How far each chat's archived messages of yours were marked read (`ChatStore.markRead`), by Telegram's message id.
+    private var archivedRead: [Int64: Int64] = [:]
+
+    /// A read is asked for this turn of the main thread already (`tellIfChanged`).
+    private var told = false
+
+    /// TDLib sends what changed the moment it does: a chat Nook shows that changed is read now, not at the next turn of
+    /// `interval`, so a message, an edit, a deletion, an emoji or a tick shows at once. Every update of one turn of the
+    /// main thread makes one read.
+    private func tellIfChanged() {
+        guard !told, !changed.isDisjoint(with: shown) || !leftChats.isEmpty || !deleted.isEmpty else { return }
+        told = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.told = false
+                ChatCaptureService.shared.readLive(self)
+            }
+        }
+    }
+
     /// Whether a session was kept from an earlier login: then starting needs no login again.
     var hasSession: Bool {
         FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent("td.binlog").path)
@@ -133,8 +156,13 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         do {
             state = .starting
             loginError = nil
-            client = try TDLibClient(library: library) { [weak self] object in
-                Task { @MainActor in self?.handle(object) }
+            // Only what `handle` reads crosses to the main thread, in the order TDLib sent it (`TDLibClient`).
+            client = try TDLibClient(library: library, types: Self.handledTypes) { [weak self] object in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.handle(object)
+                    self.tellIfChanged()
+                }
             }
             // The first request wakes TDLib up; it answers with where the login stands.
             send(["@type": "getOption", "name": "version"])
@@ -195,6 +223,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         members = [:]
         membersAsked = []
         viewersAsked = [:]
+        archivedRead = [:]
+    }
+
+    /// An edit of a message older than what this bridge holds: Nook's archive takes it, under the chat's key in the
+    /// shared inbox. A deletion needs none of this: `deleted` names every one, held or not.
+    private func archiveChange(_ chat: Int64, message: String, edited text: String?) {
+        guard let known = chats[chat], !known.title.isEmpty else { return }
+        let key = ChatInbox.key(app: app, chat: shownName(known))
+        ChatCaptureService.shared.archiveChange(chat: key, message: message, edited: text)
     }
 
     // MARK: ChatBridge
@@ -218,6 +255,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             var bridged = BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread,
                                       avatar: chat.avatar, members: named.isEmpty ? nil : named, deleted: gone[id] ?? [])
             bridged.profile = profile(of: chat)
+            bridged.mutedInApp = chat.isMuted
             if chat.isGroup {
                 let faces = faces(of: messages[id] ?? [])
                 if !faces.isEmpty { bridged.faces = faces }
@@ -335,6 +373,20 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         client.send(json)
     }
 
+    /// Every `@type` that `handle` has a case for: the rest of what TDLib sends (a person coming online, an option, a
+    /// download's progress…) is dropped on TDLib's thread, so it never wakes the main thread. Keep it equal to the cases
+    /// below; `TelegramBridgeTypesTests` compares the two.
+    nonisolated static let handledTypes: Set<String> = [
+        "updateAuthorizationState", "updateNewChat", "chat", "updateChatPosition", "updateBasicGroup", "updateSupergroup",
+        "updateChatNotificationSettings", "updateDeleteMessages", "updateChatPhoto", "updateChatTitle",
+        "updateChatReadOutbox", "basicGroupFullInfo", "chatMembers", "updateChatPermissions",
+        "updateChatMessageAutoDeleteTime", "updateBasicGroupFullInfo", "updateSupergroupFullInfo", "updateUserFullInfo",
+        "supergroupFullInfo", "userFullInfo", "messageViewers", "users", "messageReadDateRead", "updateChatAction",
+        "updateChatReadInbox", "updateUser", "updateMessageContent", "updateMessageEdited", "updateMessageInteractionInfo",
+        "updateNewMessage", "updateMessageSendSucceeded", "message", "updateMessageSendFailed", "chats", "foundMessages",
+        "messages", "file", "updateFile", "user", "error",
+    ]
+
     private func handle(_ object: [String: Any]) {
         switch TelegramData.type(object) {
         case "updateAuthorizationState":
@@ -373,7 +425,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             }
         case "updateChatNotificationSettings":
             if let id = TelegramData.int64(object["chat_id"]), let settings = object["notification_settings"] as? [String: Any] {
-                chats[id]?.isMuted = TelegramData.isMuted(settings)
+                let muted = TelegramData.isMuted(settings)
+                // Muted or unmuted in Telegram: the chat goes to the inbox again, so Nook's notice rules follow it.
+                if chats[id] != nil, chats[id]?.isMuted != muted { changed.insert(id) }
+                chats[id]?.isMuted = muted
                 notificationSettings[id] = settings
             }
         case "updateDeleteMessages":
@@ -403,6 +458,17 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 chats[id]?.readOutbox = upTo
                 markRead(upTo: upTo, in: id)
                 askViewers(in: id)
+                // Your older messages Nook keeps beyond what this bridge holds: read too, as far as Telegram says. The
+                // held ones reach the archive the usual way, so only a mark below them is passed on, once per mark.
+                let marked = archivedRead[id] ?? 0
+                let held = upTo > marked ? messages[id]?.compactMap { TelegramData.ids($0.id)?.message }.min() : nil
+                let mark = min(upTo, held.map { $0 - 1 } ?? upTo)
+                if mark > marked, let known = chats[id], !known.title.isEmpty {
+                    archivedRead[id] = mark
+                    ChatCaptureService.shared.archiveRead(chat: ChatInbox.key(app: app, chat: shownName(known))) { message in
+                        TelegramData.ids(message.id).map { $0.message <= mark } ?? false
+                    }
+                }
             }
         case "basicGroupFullInfo", "chatMembers":
             if let extra = object["@extra"] as? String, extra.hasPrefix("members:"), let id = Int64(extra.dropFirst("members:".count)) {
@@ -486,11 +552,21 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateMessageContent":
             // A poll's votes moved (or a message was edited): the chat shows the new content.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
-               let content = object["new_content"] as? [String: Any],
-               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
+               let content = object["new_content"] as? [String: Any] {
+                // A file's text in Nook is its caption (`TelegramData.message`): an edited caption is its new text,
+                // also when it was taken away.
+                let isFile = TelegramData.file(content) != nil
+                let text: String? = isFile ? TelegramData.caption(content) : TelegramData.text(content)
+                guard let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) else {
+                    // Older than what this bridge holds: Nook's archive takes the new text.
+                    if TelegramData.poll(content) == nil, let text, !text.isEmpty || isFile {
+                        archiveChange(chat, message: "telegram-\(chat)-\(id)", edited: text)
+                    }
+                    break
+                }
                 if let poll = TelegramData.poll(content) {
                     messages[chat]?[index].poll = poll
-                } else if let text = TelegramData.text(content), !text.isEmpty, TelegramData.file(content) == nil {
+                } else if let text, !text.isEmpty || isFile {
                     messages[chat]?[index].text = text
                 }
                 changed.insert(chat)
@@ -498,11 +574,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateMessageEdited":
             // A message's text or caption was changed: it says "Edited" from now on.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
-               (TelegramData.int64(object["edit_date"]) ?? 0) > 0,
-               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }),
-               messages[chat]?[index].edited != true {
-                messages[chat]?[index].edited = true
-                changed.insert(chat)
+               (TelegramData.int64(object["edit_date"]) ?? 0) > 0 {
+                guard let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) else {
+                    archiveChange(chat, message: "telegram-\(chat)-\(id)", edited: nil)
+                    break
+                }
+                if messages[chat]?[index].edited != true {
+                    messages[chat]?[index].edited = true
+                    changed.insert(chat)
+                }
             }
         case "updateMessageInteractionInfo":
             // Someone put an emoji on a message, or took theirs back: the chat shows it.
@@ -940,20 +1020,19 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     }
 }
 
-/// TDLib's JSON client in Nook's own process: requests go in as JSON strings, every answer and update comes back on a
-/// thread of its own and is handed over as a JSON object.
+/// TDLib's JSON client in Nook's own process: requests go in as JSON strings, every answer and update comes back on
+/// TDLib's receiving thread (`TDLibReceiver`) and is handed to the main thread as a JSON object, in the order it came.
 final class TDLibClient: @unchecked Sendable {
     private typealias CreateClient = @convention(c) () -> Int32
     private typealias Send = @convention(c) (Int32, UnsafePointer<CChar>) -> Void
-    private typealias Receive = @convention(c) (Double) -> UnsafePointer<CChar>?
+    fileprivate typealias Receive = @convention(c) (Double) -> UnsafePointer<CChar>?
     private typealias Execute = @convention(c) (UnsafePointer<CChar>) -> UnsafePointer<CChar>?
 
     private let id: Int32
     private let sendFunction: Send
-    private let lock = NSLock()
-    private var running = true
 
-    init(library: URL, onUpdate: @escaping @Sendable ([String: Any]) -> Void) throws {
+    /// `types` are the `@type`s the caller reads; everything else is dropped before it reaches the main thread.
+    init(library: URL, types: Set<String>, onUpdate: @escaping @Sendable ([String: Any]) -> Void) throws {
         guard let handle = dlopen(library.path, RTLD_NOW | RTLD_LOCAL) else {
             throw NookError(tr("chats.telegram.loadFailed", dlerror().map { String(cString: $0) } ?? ""))
         }
@@ -966,33 +1045,67 @@ final class TDLibClient: @unchecked Sendable {
         _ = executeFunction(#"{"@type":"setLogVerbosityLevel","new_verbosity_level":1}"#)
         id = unsafeBitCast(create, to: CreateClient.self)()
         sendFunction = unsafeBitCast(send, to: Send.self)
-        let receiveFunction = unsafeBitCast(receive, to: Receive.self)
-        let client = id
-        let thread = Thread { [weak self] in
-            while self?.isRunning ?? false {
-                guard let answer = receiveFunction(1.0) else { continue }
+        TDLibReceiver.shared.register(id, receive: unsafeBitCast(receive, to: Receive.self)) { object in
+            guard types.contains(TelegramData.type(object)) else { return }
+            // One queue, so updates reach the bridge in TDLib's order (unstructured tasks would not keep it).
+            DispatchQueue.main.async { onUpdate(object) }
+        }
+    }
+
+    deinit { TDLibReceiver.shared.unregister(id) }
+
+    func send(_ json: String) {
+        json.withCString { sendFunction(id, $0) }
+    }
+
+    /// Closes the session cleanly; TDLib then stops sending, and nothing more of this client is handed over.
+    func close() {
+        send(#"{"@type":"close"}"#)
+        TDLibReceiver.shared.unregister(id)
+    }
+}
+
+/// The one thread that waits for TDLib's answers, for every client this process makes. TDLib's `td_receive` serves all
+/// clients at once and must not run on two threads at the same time, so a client started again after a log out does not
+/// get a thread of its own: its answers are handed to whichever client they name (`@client_id`). The thread waits in
+/// `td_receive` until TDLib has something, with a long timeout, so a quiet Telegram does not wake Nook every second; it
+/// needs no stop flag, since a closed client is simply no longer registered.
+private final class TDLibReceiver: @unchecked Sendable {
+    static let shared = TDLibReceiver()
+    /// How long one `td_receive` waits when TDLib has nothing: only a bound, TDLib answers as soon as it has something.
+    private static let timeout = 60.0
+
+    private let lock = NSLock()
+    private var clients: [Int32: @Sendable ([String: Any]) -> Void] = [:]
+    private var started = false
+
+    func register(_ id: Int32, receive: @escaping TDLibClient.Receive, handler: @escaping @Sendable ([String: Any]) -> Void) {
+        lock.lock()
+        clients[id] = handler
+        let start = !started
+        started = true
+        lock.unlock()
+        guard start else { return }
+        let thread = Thread { [self] in
+            while true {
+                guard let answer = receive(Self.timeout) else { continue }
                 let text = String(cString: answer)
                 guard let object = TelegramData.object(text) else { continue }
-                if let from = TelegramData.int64(object["@client_id"]), from != Int64(client) { continue }
-                onUpdate(object)
+                for handler in handlers(for: TelegramData.int64(object["@client_id"])) { handler(object) }
             }
         }
         thread.name = "TDLib"
         thread.start()
     }
 
-    private var isRunning: Bool {
+    func unregister(_ id: Int32) {
+        lock.lock(); clients[id] = nil; lock.unlock()
+    }
+
+    /// The client an answer names; one that names none goes to every client (there is only ever one at a time).
+    private func handlers(for client: Int64?) -> [@Sendable ([String: Any]) -> Void] {
         lock.lock(); defer { lock.unlock() }
-        return running
-    }
-
-    func send(_ json: String) {
-        json.withCString { sendFunction(id, $0) }
-    }
-
-    /// Closes the session cleanly; TDLib then stops sending.
-    func close() {
-        send(#"{"@type":"close"}"#)
-        lock.lock(); running = false; lock.unlock()
+        guard let client else { return Array(clients.values) }
+        return clients[Int32(truncatingIfNeeded: client)].map { [$0] } ?? []
     }
 }

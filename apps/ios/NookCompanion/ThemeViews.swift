@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// The phone's own views, built on the parts it shares with the Mac (apps/macos/NotchUI/Shared): each one draws as its
+// The phone's own views, built on the parts it shares with the Mac (apps/macos/UI/Shared): each one draws as its
 // counterpart in Nook on the Mac, with touch instead of hover. Change the shared part, not a copy of it here.
 
 // MARK: Surfaces
@@ -106,24 +106,24 @@ struct PulseDot: View {
     let color: Color
     var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var on = false
 
     var body: some View {
         ZStack {
             if !reduceMotion {
+                // The ring's scale and fade only, in a keyframe loop of its own: a repeating `withAnimation` from
+                // `onAppear` also caught the dot's position, so a row with it drifted while the list moved.
                 Circle().fill(color)
                     .frame(width: size, height: size)
-                    .scaleEffect(on ? 1.9 : 1.0)
-                    .opacity(on ? 0 : 0.45)
+                    .keyframeAnimator(initialValue: 0.0, repeating: true) { ring, progress in
+                        ring.scaleEffect(1 + 0.9 * progress).opacity(0.45 * (1 - progress))
+                    } keyframes: { _ in
+                        CubicKeyframe(1.0, duration: 1.2)
+                    }
             }
             Circle().fill(color)
                 .frame(width: size, height: size)
         }
         .frame(width: size * 2, height: size * 2)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) { on = true }
-        }
     }
 }
 
@@ -182,12 +182,9 @@ struct NookMark: View {
         )
         .contentShape(Circle())
         .onTapGesture { squish() }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
+        // Scoped to the breathing alone, so the mark's place never animates with it.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 2.2).repeatForever(autoreverses: true), value: breathing)
+        .onAppear { if !reduceMotion { breathing = true } }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Double.random(in: 3.5...5.5)))
@@ -243,6 +240,61 @@ struct Banner: View {
         .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
         // notice: a wash of its color with an edge of it, so a warning reads as one at a glance.
         .cardBackground(color.opacity(0.1), stroke: color.opacity(0.32), radius: PhoneRadius.row + Theme.Spacing.xxs)
+    }
+}
+
+/// While the Mac cannot be reached: one quiet line in place of what the phone did not keep (a chat or a conversation it
+/// never saw). What stays in sight over a composer is the `OfflineStrip`.
+struct OfflineNote: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            Image(icon: "wifi.slash")
+            Text(text).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
+        .multilineTextAlignment(.leading)
+    }
+}
+
+/// While the Mac cannot be reached, in every conversation where it stays in sight (over the composer, or over what waits
+/// on you): that nothing new comes in and what shows is from when, and what happens to what you do here. Amber, so it
+/// never reads as live.
+struct OfflineStrip: View {
+    /// What the place it sits in lets you do.
+    enum Kind {
+        /// You write here (a session, a Nook chat, a WhatsApp chat).
+        case sends
+        /// You only read here (a chat answered in its own app).
+        case reads
+        /// An approval or a question waits on you.
+        case answers
+    }
+
+    @EnvironmentObject private var client: CompanionClient
+    var kind: Kind = .sends
+
+    var body: some View {
+        Banner(text: text, symbol: "wifi.slash")
+            .accessibilityElement(children: .combine)
+    }
+
+    private var text: String {
+        let stale = client.lastUpdated.map {
+            String(localized: "Offline: no new messages or updates come in. Last updated \($0.formatted(date: .omitted, time: .shortened)).")
+        } ?? String(localized: "Offline: no new messages or updates come in.")
+        switch kind {
+        case .reads:
+            return stale
+        case .answers:
+            return stale + " " + String(localized: "Your answer only reaches the agent once your Mac is connected.")
+        case .sends:
+            return stale + " " + (client.writingWaits
+                ? String(localized: "What you send is not sent yet: it waits on this iPhone and goes as soon as your Mac is back.")
+                : String(localized: "You can send once your Mac is connected."))
+        }
     }
 }
 

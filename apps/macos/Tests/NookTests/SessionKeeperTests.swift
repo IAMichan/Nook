@@ -158,13 +158,25 @@ final class SessionKeeperTests: XCTestCase {
                               workingDirectory: "/tmp", initialInput: [], keepsInputOpen: true,
                               keeper: KeeperPlacement(folder: folder.path, script: script.path))
         let process = AgentProcess(spec: spec)
+        // Stopping flushes the half line ("tw") to onLines as well, after this test may have ended; an assertion inside
+        // the callback would then fail whichever test runs next. Record the batches and check them here instead.
+        let batches = Batches()
         process.onLines = { [weak process] lines in
-            XCTAssertEqual(lines, ["one"])
+            guard batches.add(lines) == 1 else { return }
             process?.markHandled(process?.consumed ?? 0)
         }
         try process.start()
         wait("handled") { process.handledOffset == 4 }
+        XCTAssertEqual(batches.first, ["one"])
         process.stop()
+    }
+
+    final class Batches: @unchecked Sendable {
+        private let lock = NSLock()
+        private var all: [[String]] = []
+        /// Adds a batch and returns how many there are now.
+        func add(_ lines: [String]) -> Int { lock.withLock { all.append(lines); return all.count } }
+        var first: [String]? { lock.withLock { all.first } }
     }
 
     func testAnOldPromptsAnswerReachesTheNewNook() throws {
@@ -227,5 +239,23 @@ extension SessionKeeperTests {
         while FileManager.default.fileExists(atPath: folder.path), Date() < gone { usleep(50_000) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
         XCTAssertFalse(KeptTransport.stop(folder: folder))
+    }
+}
+
+extension SessionKeeperTests {
+    /// A new keeper's "ready" is read with a deadline: one that never answers cannot hold the thread that starts a session.
+    func testTheReadyAnswerHasADeadline() throws {
+        let pipe = Pipe()
+        defer {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+        }
+        let started = Date()
+        let silent = KeptTransport.readReady(pipe.fileHandleForReading.fileDescriptor, until: Date().addingTimeInterval(0.3))
+        XCTAssertTrue(silent.isEmpty)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        pipe.fileHandleForWriting.write(Data("ready\nmore".utf8))
+        let answer = KeptTransport.readReady(pipe.fileHandleForReading.fileDescriptor, until: Date().addingTimeInterval(5))
+        XCTAssertEqual(String(decoding: answer, as: UTF8.self), "ready\n")
     }
 }

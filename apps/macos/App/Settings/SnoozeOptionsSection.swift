@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings › Sessions › Snooze options: the choices of every snooze menu (a row's hover and right-click menu, the command
-/// palette) them. Each is a duration ("3 hours") or a time on a day ("21:00 tomorrow"); the menus list them
+/// palette). Each is a duration ("3 hours") or a time on a day ("21:00 tomorrow"); the menus list them
 /// soonest first and hide a today option once its time has passed.
 struct SnoozeOptionsSection: View {
     @ObservedObject private var inbox = InboxStore.shared
@@ -74,7 +74,7 @@ struct SnoozeOptionsSection: View {
             switch kind {
             case .duration:
                 TextField("", value: $amount, format: .number)
-                    .textFieldStyle(.roundedBorder)
+                    .settingsField()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 56)
                     .accessibilityLabel(tr("snooze.settings.amount"))

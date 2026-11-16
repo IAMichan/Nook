@@ -4,6 +4,10 @@ import { untrack } from "svelte";
 import { nook } from "./state.svelte";
 import { toast } from "./toast.svelte";
 import { pruneDismissed, rank, type InboxItem, type Prioritizer, type Ranked, type Target } from "./inbox";
+import {
+  catchUp, parseFocus, pruneSnoozed, remember, snoozeUntil, splitByFocus, splitSnoozed,
+  type CatchUp, type FocusMode, type HistoryEntry, type SnoozeChoice,
+} from "./attention";
 
 export interface InboxProvider {
   id: string;
@@ -16,6 +20,7 @@ export interface InboxProvider {
 }
 
 const CACHE = "inbox.cache";
+const HISTORY = "inbox.history";
 const REFRESH = 60_000;
 
 function cached(): Record<string, InboxItem[]> {
@@ -24,6 +29,15 @@ function cached(): Record<string, InboxItem[]> {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch {
     return {};
+  }
+}
+
+function savedHistory(): HistoryEntry[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(HISTORY) ?? "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
   }
 }
 
@@ -44,7 +58,21 @@ class InboxService {
   loading = $derived(this.pendingLoads > 0 && Object.keys(this.byProvider).length === 0);
   items = $derived([...Object.values(this.byProvider).flat(), ...this.pushed]);
   dismissed = $derived(nook.settings?.inboxDismissed ?? {});
-  ranked: Ranked = $derived.by(() => (this.orderVersion, rank(this.items, this.dismissed, Date.now(), this.order)));
+  /// Everything seen so far, newest first: the notification history page reads it.
+  history = $state<HistoryEntry[]>(savedHistory());
+  /// Which sources may interrupt right now (Work, Deep work, Off hours); "all" until the user picks one.
+  focus: FocusMode = $derived(parseFocus(nook.settings?.focusMode));
+  /// Open items that are not dismissed, split into awake and snoozed, then by focus.
+  private open = $derived(this.items.filter((i) => !(i.id in this.dismissed)));
+  private split = $derived(splitSnoozed(this.open, nook.settings?.inboxSnoozed ?? {}, Date.now()));
+  private focused = $derived(splitByFocus(this.split.awake, this.focus));
+  /// Items waiting for their snooze to end.
+  snoozedItems = $derived(this.split.asleep);
+  /// Items the current focus mode keeps from interrupting; they are still here, just out of the way.
+  held = $derived(this.focused.held);
+  ranked: Ranked = $derived.by(() => (this.orderVersion, rank(this.focused.allowed, this.dismissed, Date.now(), this.order)));
+  /// "Catch me up": what arrived since the user last looked.
+  summary: CatchUp = $derived(catchUp(this.open, nook.settings?.inboxSeenAt, Date.now()));
 
   register(provider: InboxProvider) {
     if (this.providers.has(provider.id)) return;
@@ -86,6 +114,32 @@ class InboxService {
     await nook.saveSettings((s) => ({ inboxDismissed: { ...pruneDismissed(s.inboxDismissed ?? {}, now), [id]: new Date(now).toISOString() } }));
   }
 
+  /// Hides an item until the chosen time; it comes back on its own.
+  async snooze(id: string, choice: SnoozeChoice) {
+    this.pushed = this.pushed.filter((i) => i.id !== id);
+    if (!nook.settings) return;
+    const now = new Date();
+    const until = snoozeUntil(choice, now).toISOString();
+    await nook.saveSettings((s) => ({ inboxSnoozed: { ...pruneSnoozed(s.inboxSnoozed ?? {}, now.getTime()), [id]: until } }));
+  }
+
+  /// Brings a snoozed item back right away.
+  async wake(id: string) {
+    await nook.saveSettings((s) => {
+      const { [id]: _, ...rest } = s.inboxSnoozed ?? {};
+      return { inboxSnoozed: rest };
+    });
+  }
+
+  async setFocus(mode: FocusMode) {
+    await nook.saveSettings(() => ({ focusMode: mode }));
+  }
+
+  /// The user has looked: "Catch me up" starts counting again from now.
+  async markSeen() {
+    await nook.saveSettings(() => ({ inboxSeenAt: new Date().toISOString() }));
+  }
+
   /// Read: it stays answered, so it leaves the inbox like a dismissal.
   markAsRead(id: string) {
     return this.dismiss(id);
@@ -122,6 +176,7 @@ class InboxService {
     this.pendingLoads++;
     try {
       this.byProvider = { ...this.byProvider, [p.id]: await p.load() };
+      this.history = remember(this.history, this.items);
       this.save();
     } catch {
       // The provider keeps what it showed; the next refresh tries again.
@@ -133,6 +188,7 @@ class InboxService {
   private save() {
     try {
       localStorage.setItem(CACHE, JSON.stringify(this.byProvider));
+      localStorage.setItem(HISTORY, JSON.stringify(this.history));
     } catch {
       // Only a head start for the next visit.
     }

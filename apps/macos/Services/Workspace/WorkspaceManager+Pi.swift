@@ -58,6 +58,9 @@ extension WorkspaceManager {
         case .retrying(let reason):
             append(id, RunEvent(kind: .system, text: reason.isEmpty ? tr("pi.event.retrying") : reason))
         case .failed(let message):
+            // A turn you stopped ends with an error of Pi's own ("This operation was aborted", see the pi_turn_interrupt
+            // fixture): that is the stop, which the timeline already says, not a failure.
+            if turns[id]?.stopping == true { break }
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
         case .commandDone(_, let error):
@@ -112,7 +115,7 @@ extension WorkspaceManager {
                 run.move(to: .completed)
             }
         }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failed ? .failed : .done))
         processes[id]?.closeInput()
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)

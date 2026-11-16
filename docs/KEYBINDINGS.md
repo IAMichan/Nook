@@ -7,7 +7,7 @@ shows what your file could not use, and the keys that claim the same chord.
 
 ## How a key is handled
 
-1. One local key monitor (`KeyCommandCenter`, `apps/macos/NotchUI/Components/KeyCommands.swift`) sees every key
+1. One local key monitor (`KeyCommandCenter`, `apps/macos/UI/Components/KeyCommands.swift`) sees every key
    pressed in a Nook window.
 2. It builds the **context** from what is on screen in that window:
    - `composerFocus`, `composerDraft` (the focused composer holds text), `turnRunning` (the agent is working): from the
@@ -42,6 +42,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘F | `chat.find` | `!terminalFocus` | Find in the session (also one read from its transcript), or jump to the pull requests' search |
 | ⌘K | `search.toggle` | `!terminalFocus` | Search everything, from every tab (also ⇧⌘F) |
 | ⇧⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
+| ⌘/ | `shortcuts.cheatSheet` | `!terminalFocus` | The shortcut cheat sheet: every command with its keys as they are now, grouped, with a filter; "Change keys" opens Settings › Shortcuts. `?` (⇧/) is deliberately not bound, so a question mark can always be typed |
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
 | ⌘Z | `session.undo` | `!terminalFocus && !editableFocus && !composerFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
 | ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
@@ -65,7 +66,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘O | `session.openInEditor` | `!terminalFocus` | Opens the open session's folder in your editor (Settings › Workspace), else in Finder |
 | ⇧⌘C | `session.copyReference` | `!terminalFocus && !editableFocus` | Copies the open session's folder and branch: `/code/app (feature/x)` |
 | ⌥⌘↩ | `composer.startInBackground` | `composerFocus` | In the new-session box: starts the session without opening it, and keeps a fresh box with the same folder, agent and worktree choices |
-| ⌘↩ | `composer.send` | `composerFocus && !turnRunning` | In the new-session box, the same as ⌥⌘↩ (as in a draft thread); Return starts the session and opens it |
+| ⌘↩ | `composer.send` | `composerFocus && !turnRunning` | In the new-session box, the same as ⌥⌘↩; Return starts the session and opens it |
 | ⌘B | `sidebar.toggle` | `!terminalFocus` | Puts the Agents list away, or brings it back |
 | ⌘J | `terminal.toggle` | | The terminal in the bottom panel under the session, and again to put it away |
 | ⌥⌘B | `sidePanel.toggle` | | Puts the side panel away with its tabs, or opens it again on what it showed |
@@ -82,13 +83,15 @@ Keys that are not commands stay with their view: Return, Tab, Escape and the pla
 `.cancelAction` / `.defaultAction`.
 
 In a session composer that shows a suggested next prompt (ghost text after a finished turn, Settings › Sessions ›
-Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing anything dismisses it too.
+Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing hides it, and it comes back
+when you clear the box again.
 
 ## Keys in the Agents list and the pickers
 
 - After F6 the Agents list has the keyboard: ↑ ↓ move the lit row without opening it, Return opens it, ← folds its
   project (or its Snoozed or Settled shelf) and → unfolds it, F2 renames it.
-- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first), what you
+- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first; for three weeks, the session you last picked
+  after typing the same words comes first when you type them again, `PalettePicks`), what you
   can do with the open session (pin, settle, snooze, rename, fork, copy the branch, path or both, open in your editor,
   show the changes, interrupt), navigation (a new session, **New session in…** with your projects, back and forward,
   the pages and panels) and settings. Each command shows its key; `>` first leaves only the actions.

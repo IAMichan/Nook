@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  candidateRepos, isLive, jobCheck, latestPerWorkflow, matchRepos, neighborTab, noJobsReason, openTab, parseRepo, repoStatus, runClock,
-  type RunJob, type WorkflowRun,
+  candidateRepos, dispatchDefaults, dispatchValues, filterRuns, isLive, missingInputs, jobCheck, latestPerWorkflow, matchRepos, neighborTab, noJobsReason, openTab, parseRepo, repoStatus, runClock,
+  type DispatchInput, type RunJob, type WorkflowRun,
 } from "./actions";
 import type { AccountPullRequests, PullRequestItem } from "./connectors";
 import { jobId } from "./pulls";
@@ -111,5 +111,52 @@ describe("a run without jobs", () => {
     expect(why.text).toContain(".github/workflows/ci.yml");
     expect(why.link?.url).toBe("https://github.com/o/r/blob/abc/.github/workflows/ci.yml");
     expect(noJobsReason({ kind: "cancelled" }, run(1, 1, "completed", "cancelled")).link).toBeNull();
+  });
+});
+
+const input = (name: string, extra: Partial<DispatchInput> = {}): DispatchInput => ({
+  name, description: "", required: false, default: null, kind: "string", options: [], ...extra,
+});
+
+describe("dispatch form", () => {
+  const inputs = [
+    input("channel", { kind: "choice", options: ["beta", "stable"], default: "stable", required: true }),
+    input("flavour", { kind: "choice", options: ["a", "b"], default: "c" }),
+    input("dry", { kind: "boolean", default: "True" }),
+    input("quiet", { kind: "boolean" }),
+    input("count", { kind: "number", default: "3" }),
+    input("tag", { required: true }),
+    input("note"),
+  ];
+
+  it("prefills defaults, a boolean as true or false and a choice from its options", () => {
+    expect(dispatchDefaults(inputs)).toEqual({ channel: "stable", flavour: "a", dry: "true", quiet: "false", count: "3", tag: "", note: "" });
+  });
+
+  it("asks for required inputs, never for a boolean", () => {
+    const values = dispatchDefaults(inputs);
+    expect(missingInputs(inputs, values).map((i) => i.name)).toEqual(["tag"]);
+    expect(missingInputs(inputs, { ...values, tag: "  " }).map((i) => i.name)).toEqual(["tag"]);
+    expect(missingInputs(inputs, { ...values, tag: "v1" })).toEqual([]);
+    expect(missingInputs([input("ok", { kind: "boolean", required: true })], {})).toEqual([]);
+  });
+
+  it("sends text, booleans as true or false, and leaves empty optional inputs out", () => {
+    const values = { ...dispatchDefaults(inputs), tag: "v1", count: " 4 " };
+    expect(dispatchValues(inputs, values)).toEqual({ channel: "stable", flavour: "a", dry: "true", quiet: "false", count: "4", tag: "v1" });
+  });
+});
+
+describe("filterRuns", () => {
+  const run = (id: number, workflowId: number, status: string, conclusion: string | null) =>
+    ({ id, workflowId, status, conclusion }) as WorkflowRun;
+  const runs = [run(1, 1, "in_progress", null), run(2, 2, "completed", "failure"), run(3, 1, "completed", "success"), run(4, 1, "queued", null)];
+
+  it("keeps the runs that match the workflow and GitHub's status filter", () => {
+    expect(filterRuns(runs, null, "all").map((r) => r.id)).toEqual([1, 2, 3, 4]);
+    expect(filterRuns(runs, 1, "all").map((r) => r.id)).toEqual([1, 3, 4]);
+    expect(filterRuns(runs, null, "running").map((r) => r.id)).toEqual([1]);
+    expect(filterRuns(runs, null, "failed").map((r) => r.id)).toEqual([2]);
+    expect(filterRuns(runs, 1, "failed")).toEqual([]);
   });
 });

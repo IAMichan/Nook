@@ -42,6 +42,7 @@ export interface Settings {
   localOnlySources: string[];
   evidenceFirst: boolean;
   checkAnswers: boolean;
+  selectionAsk: boolean;
   useMemory: boolean;
   learnFromChats: boolean;
   onboardingDone: boolean;
@@ -63,6 +64,24 @@ export interface Settings {
   homeEssentials: string[] | null;
   /** Dismissed inbox item ids, with when they were dismissed (ISO). */
   inboxDismissed: Record<string, string>;
+  /** Snoozed inbox item ids, with when they come back (ISO). */
+  inboxSnoozed: Record<string, string>;
+  /** Which sources may interrupt: "all" | "work" | "deep" | "off_hours". */
+  focusMode: string;
+  /** When the inbox was last looked at (ISO); "Catch me up" summarises what came after. */
+  inboxSeenAt: string | null;
+  /// Start an installed local brain (Ollama, LM Studio) that is not running.
+  startLocalBrain: boolean;
+  trayHintShown: boolean;
+  mainWindow: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
+  /** The windows' look (Settings › Appearance); old files stay dark. */
+  theme: "system" | "light" | "dark";
+  /** How much room text and rows get. */
+  density: "compact" | "comfortable" | "spacious";
+  /** The default answer style (Settings › Instructions). */
+  answerStyle: "standard" | "concise" | "explanatory" | "formal" | "casual";
+  /** The user's own standing instructions, sent with every question. */
+  instructions: string;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.

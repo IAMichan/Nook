@@ -5,6 +5,7 @@
   import { brainApi, type SourceChoice } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
   import ModelAdvice from "./ModelAdvice.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
   let step = $state(0);
@@ -32,48 +33,48 @@
   const connected = $derived(sources.filter((c) => !builtIn.has(c.id)));
 </script>
 
-<div class="overlay" role="dialog" aria-modal="true" aria-label="Welkom bij Nook">
+<div class="overlay" role="dialog" aria-modal="true" aria-label={tr("Welkom bij Nook", "Welcome to Nook")}>
   <div class="card">
     <div class="head">
-      <h2>Welkom bij Nook</h2>
-      <span class="faint">Stap {step + 1} van {steps}</span>
+      <h2>{tr("Welkom bij Nook", "Welcome to Nook")}</h2>
+      <span class="faint">{tr("Stap {n} van {total}", "Step {n} of {total}", { n: step + 1, total: steps })}</span>
     </div>
     <div class="progress"><div style="width: {((step + 1) / steps) * 100}%"></div></div>
 
     <div class="body">
       {#if step === 0}
-        <h3>Waarmee denkt Nook?</h3>
-        <p class="muted">Standaard op je eigen computer: er verlaat niets je computer. Nook stelt het model voor dat bij je geheugen past.</p>
+        <h3>{tr("Waarmee denkt Nook?", "What does Nook think with?")}</h3>
+        <p class="muted">{tr("Standaard op je eigen computer: er verlaat niets je computer. Nook stelt het model voor dat bij je geheugen past.", "On your own computer by default: nothing leaves your computer. Nook suggests the model that fits your memory.")}</p>
         {#if nook.info?.brainReady}
-          <p class="ok">✓ Klaar: {nook.info.brainLabel}</p>
+          <p class="ok">✓ {tr("Klaar: {name}", "Ready: {name}", { name: nook.info.brainLabel })}</p>
         {/if}
         <ModelAdvice compact />
-        <button class="link" onclick={() => openSettings("brain")}>Liever een externe AI (Claude, OpenAI, …)? Kies die bij Instellingen › Brein.</button>
+        <button class="link" onclick={() => openSettings("brain")}>{tr("Liever een externe AI (Claude, OpenAI, …)? Kies die bij Instellingen › Brein.", "Prefer an external AI (Claude, OpenAI, …)? Choose it in Settings › Brain.")}</button>
       {:else if step === 1}
-        <h3>Wat Nook mag zien</h3>
-        <p class="muted">Alleen wat je hier toestaat. Je kunt het later altijd weer uitzetten bij Instellingen.</p>
+        <h3>{tr("Wat Nook mag zien", "What Nook may see")}</h3>
+        <p class="muted">{tr("Alleen wat je hier toestaat. Je kunt het later altijd weer uitzetten bij Instellingen.", "Only what you allow here. You can always turn it off later in Settings.")}</p>
         <div class="toggles">
           {#if caps?.screenReading}
-            <label><input type="checkbox" checked={s.liveScreen} onchange={(e) => nook.saveSettings({ liveScreen: e.currentTarget.checked })} /> Je scherm lezen als je erom vraagt</label>
-            <label><input type="checkbox" checked={s.screenWithEveryQuestion} onchange={(e) => nook.saveSettings({ screenWithEveryQuestion: e.currentTarget.checked })} /> Je scherm meesturen met elke vraag</label>
+            <label><input type="checkbox" checked={s.liveScreen} onchange={(e) => nook.saveSettings({ liveScreen: e.currentTarget.checked })} /> {tr("Je scherm lezen als je erom vraagt", "Read your screen when you ask")}</label>
+            <label><input type="checkbox" checked={s.screenWithEveryQuestion} onchange={(e) => nook.saveSettings({ screenWithEveryQuestion: e.currentTarget.checked })} /> {tr("Je scherm meesturen met elke vraag", "Send your screen with every question")}</label>
           {/if}
-          <label><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /> Onthouden wat je Nook vertelt</label>
-          <label><input type="checkbox" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} /> Zelf leren van je correcties en plannen</label>
+          <label><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /> {tr("Onthouden wat je Nook vertelt", "Remember what you tell Nook")}</label>
+          <label><input type="checkbox" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} /> {tr("Zelf leren van je correcties en plannen", "Learn from your corrections and plans")}</label>
         </div>
       {:else}
-        <h3>Koppelingen (optioneel)</h3>
-        <p class="muted">Mail, agenda, GitHub, Notion en meer. Nu gekoppeld: {connected.length}. Je kunt later altijd koppelen of overslaan.</p>
+        <h3>{tr("Koppelingen (optioneel)", "Connections (optional)")}</h3>
+        <p class="muted">{tr("Mail, agenda, GitHub, Notion en meer. Nu gekoppeld: {n}. Je kunt later altijd koppelen of overslaan.", "Mail, calendar, GitHub, Notion and more. Connected now: {n}. You can always connect later or skip this.", { n: connected.length })}</p>
         {#if connected.length}<p class="faint">{connected.map((c) => c.title).join(", ")}</p>{/if}
-        <button onclick={() => openSettings("connections")}>Koppelingen bekijken</button>
-        <p class="faint hint">Probeer daarna bijvoorbeeld: “Wat staat er vandaag in mijn agenda?”</p>
+        <button onclick={() => openSettings("connections")}>{tr("Koppelingen bekijken", "View connections")}</button>
+        <p class="faint hint">{tr("Probeer daarna bijvoorbeeld: “Wat staat er vandaag in mijn agenda?”", "Then try, for example: “What is on my calendar today?”")}</p>
       {/if}
     </div>
 
     <div class="buttons">
-      <button class="ghost" onclick={finish}>Later</button>
+      <button class="ghost" onclick={finish}>{tr("Later", "Later")}</button>
       <span class="spacer"></span>
-      {#if step > 0}<button class="ghost" onclick={() => (step -= 1)}>Terug</button>{/if}
-      <button class="primary" onclick={() => (step === steps - 1 ? finish() : (step += 1))}>{step === steps - 1 ? "Klaar" : "Volgende"}</button>
+      {#if step > 0}<button class="ghost" onclick={() => (step -= 1)}>{tr("Terug", "Back")}</button>{/if}
+      <button class="primary" onclick={() => (step === steps - 1 ? finish() : (step += 1))}>{step === steps - 1 ? tr("Klaar", "Done") : tr("Volgende", "Next")}</button>
     </div>
   </div>
 </div>

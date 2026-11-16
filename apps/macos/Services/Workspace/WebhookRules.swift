@@ -88,7 +88,13 @@ struct WebhookRequestData: Sendable {
         case let text as String: return .text(text)
         case let number as NSNumber:
             // JSON booleans come in as NSNumber too; they read as true/false, not 1/0.
-            if CFGetTypeID(number) == CFBooleanGetTypeID() { return .text(number.boolValue ? "true" : "false") }
+            #if canImport(Darwin)
+            let isBool = CFGetTypeID(number) == CFBooleanGetTypeID()
+            #else
+            // swift-corelibs-foundation (the tests on Linux): a JSON boolean is an NSNumber of type "c".
+            let isBool = String(cString: number.objCType) == "c"
+            #endif
+            if isBool { return .text(number.boolValue ? "true" : "false") }
             return .text(number.stringValue)
         default:
             guard JSONSerialization.isValidJSONObject(value),

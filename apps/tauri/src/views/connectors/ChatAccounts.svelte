@@ -1,6 +1,7 @@
 <script lang="ts">
   // Welke accounts deze chat mag gebruiken ("GitHub · Werk"), alleen bij diensten met meer dan één account.
   import { connectorsApi, connectorEvents, type ChatService } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
 
   // Een nieuwe chat heeft nog geen id: `ensure` maakt hem aan zodra je iets kiest.
   let { nookId, ensure }: { nookId: string | null; ensure?: () => Promise<string> } = $props();
@@ -31,7 +32,7 @@
   <div class="accounts">
     {#each services as s (s.service)}
       {#each s.accounts as a (a.id)}
-        <label title="Mag deze chat {a.title} gebruiken?">
+        <label title={tr("Mag deze chat {name} gebruiken?", "May this chat use {name}?", { name: a.title })}>
           <input type="checkbox" checked={a.allowed} onchange={(e) => toggle(a.id, e.currentTarget.checked)} />
           {a.title}
         </label>

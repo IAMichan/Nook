@@ -22,6 +22,9 @@ struct PullRequestForgeFeatures: Equatable, Sendable {
     var commitView = true
     /// Approve and request changes; without it a review is only a comment.
     var verdicts = true
+    /// A "Viewed" mark per file that the forge keeps for you (GitHub's checkbox), read and written with the page's own
+    /// marks (`PullRequestViewedFiles`). Without it the marks stay on this Mac.
+    var viewedFiles = true
 
     static let github = PullRequestForgeFeatures()
 }
@@ -51,10 +54,30 @@ protocol PullRequestForgeClient: Sendable {
     func labels() async -> [PullRequestLabelChoice]
     /// Your name on the forge, as comments show their author: it decides which comments you can edit. "" when unknown.
     func viewer() async -> String
+    /// The viewed state the forge keeps of each file for you; nil when it keeps none (`features.viewedFiles` off) or
+    /// could not be asked.
+    func viewedFiles(number: Int) async -> [String: PullRequestFileViewedState]?
+    /// Ticks or clears a file's viewed state on the forge. Throws `unsupported` where `features.viewedFiles` is off.
+    func setViewed(_ viewed: Bool, path: String, number: Int, detail: PullRequestDetail) async throws
 }
 
 extension PullRequestForgeClient {
     func viewer() async -> String { "" }
+    func viewedFiles(number: Int) async -> [String: PullRequestFileViewedState]? { nil }
+    func setViewed(_ viewed: Bool, path: String, number: Int, detail: PullRequestDetail) async throws {
+        throw PullRequestForgeError.unsupported("This forge")
+    }
+}
+
+extension PullRequestForgeClient {
+    /// The activity with the forge's own viewed state of the files, where it keeps one: the page's marks follow it.
+    func activityWithViewed(number: Int) async -> PullRequestActivity {
+        guard features.viewedFiles else { return await activity(number: number) }
+        async let viewed = viewedFiles(number: number)
+        var result = await activity(number: number)
+        result.viewedOnForge = await viewed
+        return result
+    }
 }
 
 enum PullRequestForgeError: LocalizedError, Equatable {
@@ -133,7 +156,7 @@ enum UnifiedDiffFiles {
         var inHunk = false
         func flush() {
             guard let current = header else { return }
-            let additions = body.filter { $0.hasPrefix("+") }.count, deletions = body.filter { $0.hasPrefix("-") }.count
+            let additions = body.count(where: { $0.hasPrefix("+") }), deletions = body.count(where: { $0.hasPrefix("-") })
             files.append(PullRequestFile(path: current.path, status: current.status, additions: additions, deletions: deletions,
                                          patch: body.isEmpty ? nil : body.joined(separator: "\n"), previousPath: current.previous))
         }
@@ -226,6 +249,6 @@ extension PullRequestForges {
         return PullRequestSnapshot(state: state, checks: checks, failedChecks: detail.checks.filter { $0.outcome == .failing }.map(\.name),
                                    reviews: conversation.filter(\.review).map(\.note), comments: conversation.filter { !$0.review }.map(\.note),
                                    draft: detail.state == .draft, conflicted: detail.conflicted, merge: detail.mergeFacts,
-                                   mergeabilityKnown: detail.mergeable != nil)
+                                   mergeabilityKnown: detail.mergeable != nil, title: detail.title)
     }
 }

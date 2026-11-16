@@ -35,7 +35,7 @@ struct LocalQualitySection: View {
                 DisclosureGroup(tr("settings.quality.details"), isExpanded: $showDetails) {
                     ForEach(runner.results) { result in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            Label(result.question, systemImage: result.verdict.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            Label(result.question, icon: result.verdict.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .foregroundStyle(result.verdict.passed ? NookTheme.mint : NookTheme.coral)
                             Text(result.answer).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(3).textSelection(.enabled)
                             if !result.verdict.passed {

@@ -1,0 +1,43 @@
+name: Browser extension
+
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
+# the extension's tests.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nook's browser extension (apps/browser-extension): which pages Nook may touch, how commands are checked, its texts in
+# five languages, and that its id and protocol match the Mac app's host. Node's own test runner; Ubuntu only, seconds.
+# Its composer is Nook's shared one (packages/web-ui), built into ui/composer.js and checked in: the build must give
+# exactly the file in the commit.
+jobs:
+  test:
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/browser-extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Test
+        run: npm test
+      - name: Install the composer's build tools
+        working-directory: packages/web-ui
+        run: npm ci --no-audit --no-fund
+      - name: The built composer is up to date
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- ui)" ]; then
+            git status --short -- ui
+            echo "::error::apps/browser-extension/ui is not what packages/web-ui builds: run npm run build in apps/browser-extension and commit it."
+            exit 1
+          fi

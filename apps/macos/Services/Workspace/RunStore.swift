@@ -238,6 +238,15 @@ final class RunStore: @unchecked Sendable {
         try? fileManager.removeItem(at: eventsURL(id))
     }
 
+    /// `deleteEvents` on the background queue, after the saves handed to it before: deleting a long session's rows is a
+    /// write to runs.sqlite the main thread need not wait for. Saves handed to the queue after it are dropped, as the
+    /// timeline is marked deleted by then.
+    func deleteEventsAsync(_ id: UUID) {
+        ioQueue.async { [weak self] in
+            self?.deleteEvents(id)
+        }
+    }
+
     /// Waits until every save handed to the background queue is written.
     func flush() {
         ioQueue.sync {}
@@ -263,9 +272,10 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
-    /// Set once every session is indexed. The third key: the first index (`run_text`) and the second, which kept a copy of
-    /// the text (`RunEventLog.dropSearchWithText`), are dropped and built anew.
-    private static let indexedKey = "search_index_v3_built"
+    /// Set once every session is indexed. The fourth key: the first index (`run_text`), the second, which kept a copy of
+    /// the text, and the third, which kept every trigram's position (`RunEventLog.dropSearchWithText`), are dropped and
+    /// built anew.
+    private static let indexedKey = "search_index_v4_built"
 
     /// Indexes every session written before the index existed, once, in the background. Rows are read on the read
     /// connection and folded without the lock; only writing a session's index takes it, so a timeline you open never waits
@@ -283,12 +293,17 @@ final class RunStore: @unchecked Sendable {
             lock.unlock()
             if skip { continue }
             guard let rows = reader?.readRows(id) ?? lockedRows(id) else { continue }
-            let entries = TimelineSearchText.entries(RunEventFold.fold(rows, decoder: Self.decoder).events)
+            let folded = RunEventFold.fold(rows, decoder: Self.decoder)
+            let entries = TimelineSearchText.entries(folded.events)
+            // Every version a streamed answer or a tool went through stays in the log until the session is read again,
+            // which a settled one rarely is: a quarter of the file on one Mac. Folded into one snapshot here, once.
+            let payload = Self.worthCompacting(folded, rows: rows.count) ? try? Self.encoder.encode(folded.events) : nil
             lock.lock()
             if let log, !deleted.contains(id) {
                 // A row written after the read: its save indexed it already, and these older entries must not undo that.
                 if log.lastSequence(id) == rows.last?.seq {
                     log.reindex(id, entries)
+                    if let payload { try? writeSnapshot(id, payload: payload, log: log) }
                 } else {
                     log.reindex(id, TimelineSearchText.entries(RunEventFold.fold(log.rows(id), decoder: Self.decoder).events))
                 }
@@ -297,7 +312,8 @@ final class RunStore: @unchecked Sendable {
         }
         lock.lock()
         log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
-        // An index that kept the text was dropped on opening: its room goes back to the disk.
+        // An index that kept the text or the positions was dropped on opening, and the logs were folded: their room goes
+        // back to the disk.
         log?.compact()
         lock.unlock()
     }
@@ -382,6 +398,27 @@ final class RunStore: @unchecked Sendable {
         return result.events
     }
 
+    /// Whether a log is worth folding into one snapshot: it holds rows no longer needed, and nothing a newer version
+    /// wrote (compacting would drop that).
+    static func worthCompacting(_ result: RunEventFold.Result, rows: Int) -> Bool {
+        result.unreadableRows == 0 && result.supersededRows >= 8 && rows > 1
+    }
+
+    /// Folds a session's log into one snapshot when it holds versions no longer needed: for a session that was just
+    /// settled or archived, which may not be read again for a long time. In the background; a row written meanwhile
+    /// leaves the log as it is.
+    func compactSettled(_ id: UUID) {
+        ioQueue.async { [weak self] in
+            guard let self, let rows = self.readRows(id) else { return }
+            let folded = RunEventFold.fold(rows, decoder: Self.decoder)
+            guard Self.worthCompacting(folded, rows: rows.count), let payload = try? Self.encoder.encode(folded.events) else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            guard !self.deleted.contains(id), let log = self.openLog(), log.lastSequence(id) == rows.last?.seq else { return }
+            try? self.writeSnapshot(id, payload: payload, log: log)
+        }
+    }
+
     /// Reads what the log holds for a timeline this launch has not seen yet, before a save takes the lock for it.
     private func prepareWritten(_ id: UUID) {
         lock.lock()
@@ -431,6 +468,7 @@ final class RunStore: @unchecked Sendable {
         hasher.combine(event.subagentSteps)
         hasher.combine(event.steer)
         hasher.combine(event.steerStatus)
+        hasher.combine(event.ended)
         return hasher.finalize()
     }
 
@@ -664,5 +702,82 @@ struct UsageReport: Equatable, Sendable {
     static func displayModel(_ run: WorkspaceRun) -> String {
         if let resolved = run.resolvedModel, !resolved.isEmpty { return resolved }
         return run.model.isEmpty ? "default" : run.model
+    }
+}
+
+/// What waits on you in a session survives a restart of Nook. The process that asked is gone after one, so:
+/// - A question the agent asked (Claude Code's AskUserQuestion, Codex's `requestUserInput`, an ACP agent's form, Pi's
+///   dialogs, OpenCode's `question` tool) shows again where it was, and your answer goes to the agent as a message of
+///   yours, which resumes its conversation the way every message does.
+/// - An approval cannot be given any more: the timeline says it expired because Nook restarted.
+/// - Messages you queued stay queued, held as after a stop: they go out once you send or resume (also after "Continue
+///   where you left off"), never by themselves at launch.
+/// They are written into `runs.json` with the session (`merged`) and taken out again when it is read (`take`), so the
+/// sessions in memory never carry them.
+enum RestartRequests {
+    /// What was saved with one session.
+    struct Saved: Equatable, Sendable {
+        var questions: [SavedQuestion] = []
+        /// The summaries of the approvals it waited for.
+        var approvals: [String] = []
+        var queue: MessageQueue?
+
+        var isEmpty: Bool { questions.isEmpty && approvals.isEmpty && (queue?.isEmpty ?? true) }
+    }
+
+    /// The list as it is written: each session with what waits on it now. Only the sessions in `runs` are written, so what
+    /// waited on a deleted session is gone with it.
+    static func merged(_ runs: [WorkspaceRun], questions: [UUID: [SavedQuestion]], approvals: [UUID: [String]],
+                       queues: [UUID: MessageQueue]) -> [WorkspaceRun] {
+        guard !questions.isEmpty || !approvals.isEmpty || !queues.isEmpty
+                || runs.contains(where: { $0.waitingQuestions != nil || $0.waitingApprovals != nil || $0.queue != nil })
+        else { return runs }
+        return runs.map { run in
+            var run = run
+            let asked = questions[run.id] ?? []
+            run.waitingQuestions = asked.isEmpty ? nil : asked
+            let waiting = approvals[run.id] ?? []
+            run.waitingApprovals = waiting.isEmpty ? nil : waiting
+            if let queue = queues[run.id], !queue.isEmpty { run.queue = queue } else { run.queue = nil }
+            return run
+        }
+    }
+
+    /// Takes what was saved out of the loaded sessions, by session.
+    static func take(_ runs: inout [WorkspaceRun]) -> [UUID: Saved] {
+        var saved: [UUID: Saved] = [:]
+        for index in runs.indices
+            where runs[index].waitingQuestions != nil || runs[index].waitingApprovals != nil || runs[index].queue != nil {
+            let entry = Saved(questions: runs[index].waitingQuestions ?? [], approvals: runs[index].waitingApprovals ?? [],
+                              queue: restoredQueue(runs[index].queue))
+            runs[index].waitingQuestions = nil
+            runs[index].waitingApprovals = nil
+            runs[index].queue = nil
+            if !entry.isEmpty { saved[runs[index].id] = entry }
+        }
+        return saved
+    }
+
+    /// A saved queue as it comes back: held, so nothing goes out by itself at launch; nil when it is empty.
+    static func restoredQueue(_ queue: MessageQueue?) -> MessageQueue? {
+        guard var queue, !queue.isEmpty else { return nil }
+        queue.hold()
+        return queue
+    }
+
+    /// The question as it is saved; one without anything to ask is not.
+    static func saved(id: String, questions: [RunQuestion], created: Date) -> SavedQuestion? {
+        let asked = questions.filter { !$0.question.isEmpty || !$0.options.isEmpty }
+        return asked.isEmpty ? nil : SavedQuestion(id: id, questions: asked, created: created)
+    }
+
+    /// Your answers as the message the agent gets: each question with what you chose or wrote. After a restart the agent
+    /// no longer waits for them, so the message says what they answer.
+    static func message(_ questions: [RunQuestion], answers: [String: [String]], restored: Bool) -> String {
+        let lines = questions.map { item in
+            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
+        }.joined(separator: "\n")
+        guard restored else { return lines }
+        return "My answers to the questions you asked before Nook restarted:\n" + lines
     }
 }

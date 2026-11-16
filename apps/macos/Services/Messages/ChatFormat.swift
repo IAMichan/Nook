@@ -104,7 +104,7 @@ enum ChatFormat {
         let cache = NSCache<NSString, Value>()
         cache.countLimit = 2_000
         cache.totalCostLimit = textCacheBytes
-        MemoryPressure.shared.register(name) { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register(name, emptying: cache)
         return cache
     }
 
@@ -304,11 +304,14 @@ enum ChatFormat {
 
     /// The kind of a link by its file's extension; anything without a known one is a page.
     static func linkKind(_ url: URL) -> LinkKind {
-        switch url.pathExtension.lowercased() {
-        case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp": return .image
-        case "mp4", "mov", "m4v", "webm": return .video
-        case "mp3", "m4a", "aac", "wav", "ogg", "opus", "flac": return .audio
-        default: return .page
+        // The same file names as a file in a chat (`ChatMedia.kind`): one list for both.
+        let ext = url.pathExtension
+        guard !ext.isEmpty else { return .page }
+        switch ChatMedia.kind(name: "link." + ext) {
+        case .photo, .gif, .sticker: return .image
+        case .video: return .video
+        case .audio, .voice: return .audio
+        case .file: return .page
         }
     }
 
@@ -582,6 +585,7 @@ struct ChatGroupChange: Codable, Equatable, Sendable {
 extension ChatGroupChange {
     /// "7 days", "24 hours", "1 hour, 30 minutes", in your language.
     static func duration(_ seconds: Double) -> String {
+        #if canImport(Darwin)
         let formatter = DateComponentsFormatter()
         formatter.unitsStyle = .full
         formatter.maximumUnitCount = 2
@@ -591,6 +595,14 @@ extension ChatGroupChange {
         calendar.locale = Locale(identifier: NookDates.appLocale)
         formatter.calendar = calendar
         return formatter.string(from: seconds) ?? "\(Int(seconds)) s"
+        #else
+        // swift-corelibs-foundation (the core tests on Linux) has no DateComponentsFormatter: the largest whole unit.
+        let units: [(Double, String)] = [(7 * 86_400, "w"), (86_400, "d"), (3_600, "h"), (60, "min")]
+        for (size, name) in units where seconds >= size && seconds.truncatingRemainder(dividingBy: size) == 0 {
+            return "\(Int(seconds / size)) \(name)"
+        }
+        return "\(Int(seconds)) s"
+        #endif
     }
 }
 
@@ -755,13 +767,18 @@ enum ChatMentions {
         return result + rest
     }
 
-    /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code.
-    /// Nil for something too short to be a number.
-    static func key(_ number: String) -> String? {
-        let digits = number.filter { $0.isASCII && $0.isNumber }
-        guard digits.count >= 6 else { return nil }
-        return String(digits.suffix(9))
+    /// Whether a message tags you: one of the ids its app says it tags (`ids`) is yours (`me`). Every app's parser reads
+    /// its own tags (WhatsApp's "@number" and mention list, Slack's "<@U1>", a Teams mention, a Telegram mention entity)
+    /// and hands them here, so a group that stays quiet still tells you when it names you, the same in every app
+    /// (`InboxMessage.mentionsMe`, `ChatNoticeRules.isQuiet`). "@here" and "@channel" are not you: calm by default.
+    static func mentionsMe<S: Sequence>(_ ids: S, me: String?) -> Bool where S.Element == String {
+        guard let me, !me.isEmpty else { return false }
+        return ids.contains(me)
     }
+
+    /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code
+    /// (`ChatHandle.phoneKey`). Nil for something too short to be a number.
+    static func key(_ number: String) -> String? { ChatHandle.phoneKey(number) }
 }
 
 /// Someone a message can tag: their name as the chat shows it and their id in their app (a WhatsApp JID, a Slack user
@@ -841,7 +858,5 @@ enum ChatTags {
         return result + text[last...]
     }
 
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).trimmingCharacters(in: .whitespaces)
-    }
+    private static func fold(_ text: String) -> String { ChatText.fold(text) }
 }

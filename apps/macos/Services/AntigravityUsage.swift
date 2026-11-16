@@ -128,7 +128,8 @@ final class AntigravityUsage: ObservableObject {
                     urls.append(directory.appendingPathComponent(name))
                 }
             }
-            urls.append(home.appendingPathComponent("oauth_creds.json"))
+            // Not `<home>/oauth_creds.json`: that is Gemini CLI's own sign-in in the same `~/.gemini`, so its quota
+            // would show as Antigravity's. Gemini CLI's limits are not read (see docs/INTEGRATIONS.md, Subscription limits).
         }
         for url in urls {
             guard let data = try? Data(contentsOf: url),
@@ -301,10 +302,7 @@ final class AntigravityUsage: ObservableObject {
         return nil
     }
 
-    private nonisolated static func number(_ value: Any?) -> Double? {
-        let result = (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap(Double.init)
-        return result?.isFinite == true ? result : nil
-    }
+    private nonisolated static func number(_ value: Any?) -> Double? { JSONNumber.double(value) }
 
     private nonisolated static func resetDate(_ quota: [String: Any]) -> Date? {
         let value = quota["resetTime"] ?? quota["reset_time"]

@@ -89,8 +89,18 @@ enum ContextMeter {
     /// Past the warning line the meter suggests summarizing the conversation (`/compact`) before the window runs out.
     static func suggestsCompact(_ fraction: Double) -> Bool { level(fraction) != .normal }
 
-    /// The composer stays quiet until half the window is used: only then does the ring tell you something.
-    static func worthShowing(_ fraction: Double) -> Bool { fraction >= 0.5 }
+    /// The ring shows from the first token, like the usage ring: a 1M window is rarely half used, so a threshold on
+    /// the window hid it in nearly every session.
+    static func worthShowing(used: Int, window: Int) -> Bool { window > 0 && used > 0 }
+
+    /// How close the session is to the point where it is best summarized: the auto-compact point (Nook's size limit or
+    /// the agent's own threshold) when it falls inside the window, else the window itself. A 1M window is compacted at
+    /// 350k by default, so measuring against the window alone would never warn.
+    static func pressure(used: Int, window: Int, autoCompactAt: Int?) -> Double {
+        let budget = autoCompactAt.map { min($0, window) }.flatMap { $0 > 0 ? $0 : nil } ?? window
+        guard budget > 0 else { return 0 }
+        return min(1, Double(used) / Double(budget))
+    }
 
     static func percentText(_ fraction: Double) -> String {
         let pct = min(max(fraction, 0), 1) * 100

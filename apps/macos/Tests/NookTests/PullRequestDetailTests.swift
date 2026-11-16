@@ -74,6 +74,95 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(detail.canMerge)
         XCTAssertEqual(detail.mergeNote, "agents.pr.note.noAccess")
         XCTAssertEqual(PullRequestDetailParser.methods([:]), PullRequestMergeMethod.allCases)
+        XCTAssertFalse(detail.canBypass)
+    }
+
+    func testRulesetsNarrowTheMergeMethods() throws {
+        let rules = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(#"""
+        [{"type": "deletion"}, {"type": "pull_request", "parameters": {"allowed_merge_methods": ["squash"]}}]
+        """#.utf8)) as? [[String: Any]])
+        let all = PullRequestMergeMethod.allCases
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: rules), [.squash])
+        XCTAssertEqual(PullRequestDetailParser.methods([.merge, .rebase], rules: rules), [])
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: [["type": "pull_request", "parameters": [String: Any]()]]), all)
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: []), all)
+        XCTAssertEqual(PullRequestQuickAction.mergeMethod(preferred: .merge,
+                                                          allowed: PullRequestDetailParser.methods(all, rules: rules)), .squash)
+    }
+
+    func testAnAdminMayMergePastWhatHoldsItBack() throws {
+        var object = try json(pull)
+        object["mergeable_state"] = "blocked"
+        let admin = try json(#"{"permissions": {"push": true, "admin": true}}"#)
+        let blocked = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
+        XCTAssertTrue(blocked.canBypass)
+        XCTAssertTrue(blocked.canMerge)
+        XCTAssertTrue(blocked.bypassesRules)
+
+        let writer = try json(#"{"permissions": {"push": true, "admin": false}}"#)
+        let notAdmin = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: writer))
+        XCTAssertFalse(notAdmin.canBypass)
+        XCTAssertFalse(notAdmin.bypassesRules)
+
+        let clean = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull), repository: admin))
+        XCTAssertFalse(clean.bypassesRules, "Nothing holds a clean pull request back: a plain merge")
+    }
+
+    func testWhoWaitsForAutoMerge() throws {
+        var object = try json(pull)
+        object["mergeable_state"] = "blocked"
+        object["node_id"] = "PR_1"
+        let writer = try json(#"{"allow_auto_merge": true, "permissions": {"push": true, "admin": false}}"#)
+        let blocked = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: writer))
+        XCTAssertTrue(blocked.waitsForAutoMerge, "Held back and no bypass: GitHub merges it once it may")
+
+        let admin = try json(#"{"allow_auto_merge": true, "permissions": {"push": true, "admin": true}}"#)
+        let bypass = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
+        XCTAssertFalse(bypass.waitsForAutoMerge, "An admin who may bypass merges at once")
+        XCTAssertTrue(bypass.offersAutoMergeBesideMerge, "An admin may still choose to wait: auto-merge in Merge's dropdown")
+        XCTAssertFalse(blocked.offersAutoMergeBesideMerge, "Without a bypass auto-merge is the main action already")
+
+        let noAutoMerge = try json(#"{"allow_auto_merge": false, "permissions": {"push": true}}"#)
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: noAutoMerge)).waitsForAutoMerge)
+
+        var clean = try json(pull)
+        clean["node_id"] = "PR_1"
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: clean, repository: writer)).waitsForAutoMerge)
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: clean, repository: admin)).offersAutoMergeBesideMerge,
+                       "Nothing holds it back: nothing to wait for")
+    }
+
+    func testAdminBypassFollowsTheRulesetsOfTheBaseBranch() throws {
+        let bypassable = try json(#"{"name": "Protect main", "current_user_can_bypass": "always"}"#)
+        let viaPullRequest = try json(#"{"name": "Reviews", "current_user_can_bypass": "pull_requests_only"}"#)
+        let strict = try json(#"{"name": "Require Check", "bypass_actors": [], "current_user_can_bypass": "never"}"#)
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable, viaPullRequest], protection: nil))
+        XCTAssertFalse(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable, strict], protection: nil),
+                       "One ruleset nobody may bypass makes GitHub refuse the merge")
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [], protection: nil))
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [[:]], protection: nil), "Unknown: GitHub decides")
+
+        let includesAdmins = try json(#"{"enforce_admins": {"enabled": true}}"#)
+        let excludesAdmins = try json(#"{"enforce_admins": {"enabled": false}}"#)
+        XCTAssertFalse(PullRequestDetailParser.adminCanBypass(rulesets: [], protection: includesAdmins))
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable], protection: excludesAdmins))
+    }
+
+    /// A workflow cancelled by a newer run leaves its failed run on the commit; only the newest run of each check counts,
+    /// as on GitHub, so a pull request whose re-run passed is not called failing.
+    func testChecksCountOnlyTheNewestRunOfEachName() throws {
+        let runs = try list("""
+        [{"id": 10, "name": "Check", "status": "completed", "conclusion": "failure", "started_at": "2026-11-12T21:54:28Z"},
+         {"id": 11, "name": "Changes", "status": "completed", "conclusion": "cancelled", "started_at": "2026-11-12T21:54:25Z"},
+         {"id": 30, "name": "Check", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T22:12:00Z"},
+         {"id": 20, "name": "Changes", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T21:54:39Z"},
+         {"id": 40, "name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T21:59:31Z"}]
+        """)
+        let checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(runs), statuses: [])
+        XCTAssertEqual(checks.map(\.name), ["Check", "Changes", "build"])
+        XCTAssertEqual(checks.map(\.outcome), [.passing, .passing, .passing])
+        XCTAssertEqual(PullRequestStatus.checks(checks), "success")
+        XCTAssertEqual(PullRequestDetailParser.latestRuns(runs).compactMap { $0["id"] as? Int }, [30, 20, 40])
     }
 
     func testChecksPutFailuresFirst() throws {

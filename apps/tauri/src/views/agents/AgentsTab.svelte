@@ -4,6 +4,7 @@
   // wacht staat bovenaan, daarna wat werkt, dan de rest; eerdere sessies wachten ingeklapt onderaan.
   import { agentNames, type AgentSession, type PastSession } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { tr, locale } from "../../lib/i18n.svelte";
   import { isActive, projectName, workspaceApi, type WorkspaceRun } from "../../lib/workspace/api";
   import { workspace } from "../../lib/workspace/store.svelte";
   import Browser from "../workspace/Browser.svelte";
@@ -156,9 +157,9 @@
   const list = $derived(inbox.sections(rows, inboxState, { showWorking: !inboxState.groupByProject, now, settledLimit, selectedId: agents.selectedId }));
   const groups = $derived(inboxState.groupByProject ? inbox.projectGroups(list) : []);
   const shelves = $derived(list.filter((s) => (inboxState.groupByProject ? s.kind !== "working" && s.kind !== "active" : true)));
-  const shelfTitle: Record<inbox.SectionKind, string> = {
-    pinned: "Vastgezet", active: "Actief", working: "Bezig", snoozed: "Gesnoozed", settled: "Afgerond",
-  };
+  const shelfTitle = $derived<Record<inbox.SectionKind, string>>({
+    pinned: tr("Vastgezet", "Pinned"), active: tr("Actief", "Active"), working: tr("Bezig", "Working"), snoozed: tr("Gesnoozed", "Snoozed"), settled: tr("Afgerond", "Done"),
+  });
   const items = $derived(rows);
   const earlier = $derived(past.filter((p) => !query.trim() || `${p.title} ${p.cwd} ${agentNames[p.agent]}`.toLowerCase().includes(query.trim().toLowerCase())));
 
@@ -200,7 +201,7 @@
   });
 
   async function takeover(s: AgentSession, endTerminal: boolean, message?: string) {
-    if (endTerminal && !confirm(`${s.name} in ${s.project} beëindigen en hier verdergaan? De agent bewaart zijn gesprek, zodat Nook verdergaat waar hij was.`)) return;
+    if (endTerminal && !confirm(tr("{name} in {project} beëindigen en hier verdergaan? De agent bewaart zijn gesprek, zodat Nook verdergaat waar hij was.", "End {name} in {project} and continue here? The agent keeps its conversation, so Nook picks up where it left off.", { name: s.name, project: s.project }))) return;
     try {
       const id = await workspaceApi.continueLive(s.id, message ?? null, endTerminal);
       await workspace.refresh();
@@ -220,9 +221,9 @@
     }
   }
 
-  const statusText: Record<Status, string> = {
-    waiting: "wacht op jou", input: "vraagt iets", failed: "mislukt", limited: "limiet", working: "", idle: "", finished: "",
-  };
+  const statusText = $derived<Record<Status, string>>({
+    waiting: tr("wacht op jou", "waiting for you"), input: tr("vraagt iets", "has a question"), failed: tr("mislukt", "failed"), limited: tr("limiet", "limit"), working: "", idle: "", finished: "",
+  });
   const dotClass: Record<Status, string> = {
     waiting: "waiting", input: "waiting", failed: "error", limited: "waiting", working: "working", idle: "", finished: "",
   };
@@ -231,9 +232,9 @@
 <div class="tab" class:compact class:docked>
   <aside use:dock class:docked>
     <div class="head">
-      <input class="search" placeholder="Zoek in sessies" bind:value={query} />
-      <button class="new" class:on={inboxState.groupByProject} title="Groepeer per project" aria-label="Groepeer per project" onclick={() => update({ ...inboxState, groupByProject: !inboxState.groupByProject })}>▤</button>
-      <button class="new" class:on={selected.kind === "new"} title="Nieuwe sessie" aria-label="Nieuwe sessie" onclick={() => agents.select("new")}>✎</button>
+      <input class="search" placeholder={tr("Zoek in sessies", "Search sessions")} bind:value={query} />
+      <button class="new" class:on={inboxState.groupByProject} title={tr("Groepeer per project", "Group by project")} aria-label={tr("Groepeer per project", "Group by project")} onclick={() => update({ ...inboxState, groupByProject: !inboxState.groupByProject })}>▤</button>
+      <button class="new" class:on={selected.kind === "new"} title={tr("Nieuwe sessie", "New session")} aria-label={tr("Nieuwe sessie", "New session")} onclick={() => agents.select("new")}>✎</button>
     </div>
     <div class="list">
       {#snippet entryRow(entry: InboxEntry, kind: inbox.SectionKind)}
@@ -244,33 +245,33 @@
               <span class="line0">
                 <span class="folder" title={i.path}>{i.folder}</span>
                 <span class="spacer"></span>
-                {#if kind === "snoozed"}<span class="faint">tot {new Date(inboxState.snoozed[i.id]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                {:else if entry.woke}<span class="badge done">wakker</span>
+                {#if kind === "snoozed"}<span class="faint">{tr("tot {time}", "until {time}", { time: new Date(inboxState.snoozed[i.id]).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}</span>
+                {:else if entry.woke}<span class="badge done">{tr("wakker", "awake")}</span>
                 {:else if statusText[i.status]}<span class="badge {i.status}">{statusText[i.status]}</span>
-                {:else if i.unseen}<span class="badge done">klaar</span>
+                {:else if i.unseen}<span class="badge done">{tr("klaar", "done")}</span>
                 {:else}<span class="faint">{ago(i.started, now)}</span>{/if}
               </span>
               <span class="line1">{#if dotClass[i.status]}<span class="dot {dotClass[i.status]}"></span>{/if}{i.title}</span>
-              <span class="line2 faint">⑂ {i.branch ?? "geen branch"}<span class="spacer"></span>{i.agent}</span>
+              <span class="line2 faint">⑂ {i.branch ?? tr("geen branch", "no branch")}<span class="spacer"></span>{i.agent}</span>
             </button>
-            <button class="more" aria-label="Acties voor sessie" title="Acties" onclick={(e) => { e.stopPropagation(); menuFor = menuFor === i.id ? null : i.id; }}>⋯</button>
+            <button class="more" aria-label={tr("Acties voor sessie", "Session actions")} title={tr("Acties", "Actions")} onclick={(e) => { e.stopPropagation(); menuFor = menuFor === i.id ? null : i.id; }}>⋯</button>
             {#if menuFor === i.id}
               <div class="menu" role="menu">
                 {#if inboxState.pinned.includes(i.id)}
-                  <button role="menuitem" onclick={() => update(inbox.unpin(inboxState, i.id))}>Los maken</button>
+                  <button role="menuitem" onclick={() => update(inbox.unpin(inboxState, i.id))}>{tr("Los maken", "Unpin")}</button>
                 {:else}
-                  <button role="menuitem" onclick={() => update(inbox.pin(inboxState, i.id))}>Vastzetten</button>
+                  <button role="menuitem" onclick={() => update(inbox.pin(inboxState, i.id))}>{tr("Vastzetten", "Pin")}</button>
                 {/if}
                 {#if inboxState.settled.includes(i.id)}
-                  <button role="menuitem" onclick={() => update(inbox.unsettle(inboxState, i.id))}>Heropenen</button>
+                  <button role="menuitem" onclick={() => update(inbox.unsettle(inboxState, i.id))}>{tr("Heropenen", "Reopen")}</button>
                 {:else}
-                  <button role="menuitem" onclick={() => update(inbox.settle(inboxState, i.id))}>Afronden</button>
+                  <button role="menuitem" onclick={() => update(inbox.settle(inboxState, i.id))}>{tr("Afronden", "Mark as done")}</button>
                 {/if}
                 {#if kind === "snoozed"}
-                  <button role="menuitem" onclick={() => update(inbox.wake(inboxState, i.id))}>Wakker maken</button>
+                  <button role="menuitem" onclick={() => update(inbox.wake(inboxState, i.id))}>{tr("Wakker maken", "Wake up")}</button>
                 {:else if !needsYou(entry.row.attention)}
-                  <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, now + 3_600_000))}>Snooze 1 uur</button>
-                  <button role="menuitem" onclick={() => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); update(inbox.snooze(inboxState, i.id, d.getTime())); }}>Snooze tot morgen</button>
+                  <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, now + 3_600_000))}>{tr("Snooze 1 uur", "Snooze 1 hour")}</button>
+                  <button role="menuitem" onclick={() => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); update(inbox.snooze(inboxState, i.id, d.getTime())); }}>{tr("Snooze tot morgen", "Snooze until tomorrow")}</button>
                 {/if}
               </div>
             {/if}
@@ -285,7 +286,7 @@
         {#each groups as group (group.project)}
           {@const folded = inboxState.collapsedProjects.includes(group.project) && !query.trim()}
           <button class="project" class:ask={group.needsYou} aria-expanded={!folded} onclick={() => update(inbox.toggleProject(inboxState, group.project))}>
-            <span class="chev">{folded ? "▸" : "▾"}</span><span class="pname">{group.project || "geen map"}</span>
+            <span class="chev">{folded ? "▸" : "▾"}</span><span class="pname">{group.project || tr("geen map", "no folder")}</span>
             <span class="spacer"></span>{#if folded && group.needsYou}<span class="dot waiting"></span>{/if}<span class="faint count">{group.rows.length}</span>
           </button>
           {#each group.rows.filter((r) => !folded || r.entry.row.id === currentId) as r (r.entry.row.id)}{@render entryRow(r.entry, r.kind)}{/each}
@@ -295,30 +296,30 @@
         <p class="section">{shelfTitle[shelf.kind]} ({shelf.rows.length + shelf.hiddenCount})</p>
         {#each shelf.rows as entry (entry.row.id)}{@render entryRow(entry, shelf.kind)}{/each}
         {#if shelf.hiddenCount > 0}
-          <button class="section toggle" onclick={() => (settledLimit += inbox.settledPage)}>Toon {Math.min(inbox.settledPage, shelf.hiddenCount)} meer</button>
+          <button class="section toggle" onclick={() => (settledLimit += inbox.settledPage)}>{tr("Toon {n} meer", "Show {n} more", { n: Math.min(inbox.settledPage, shelf.hiddenCount) })}</button>
         {/if}
       {/each}
       {#if earlier.length}
-        <button class="section toggle" onclick={() => (showFinished = !showFinished)}>Afgerond ({earlier.length}) {showFinished ? "▾" : "▸"}</button>
+        <button class="section toggle" onclick={() => (showFinished = !showFinished)}>{tr("Afgerond ({n})", "Done ({n})", { n: earlier.length })} {showFinished ? "▾" : "▸"}</button>
         {#if showFinished}
           {#each earlier as p (p.agent + p.sessionId)}
             <button class="row slim" class:on={currentId === `past:${p.agent}:${p.sessionId}`} onclick={() => agents.select(`past:${p.agent}:${p.sessionId}`)}>
-              <span class="line1">{p.title || "Sessie zonder titel"}</span>
+              <span class="line1">{p.title || tr("Sessie zonder titel", "Untitled session")}</span>
               <span class="line2 faint">{folderName(p.cwd)} · {agentNames[p.agent]} · {ago(p.ended, now)}</span>
             </button>
           {/each}
         {/if}
       {/if}
       {#if !list.length && !earlier.length}
-        <p class="faint empty">{agents.history ? "Er werkt nu geen agent." : "Even kijken…"}</p>
+        <p class="faint empty">{agents.history ? tr("Er werkt nu geen agent.", "No agent is working right now.") : tr("Even kijken…", "Just a moment…")}</p>
       {/if}
     </div>
     <div class="footer">
       <button class="glyph" class:on={selected.kind === "page" && selected.page === "pulls"} title="Pull requests" aria-label="Pull requests" onclick={() => agents.select("pulls")}><PullGlyph size={13} /></button>
       <button class="glyph" class:on={selected.kind === "page" && selected.page === "actions"} title="Actions" aria-label="Actions" onclick={() => agents.select("actions")}><ActionsGlyph size={13} /></button>
-      <button class:on={selected.kind === "page" && selected.page === "usage"} title="Gebruik" onclick={() => agents.select("usage")}>Gebruik</button>
+      <button class:on={selected.kind === "page" && selected.page === "usage"} title={tr("Gebruik", "Usage")} onclick={() => agents.select("usage")}>{tr("Gebruik", "Usage")}</button>
       <span class="vsep"></span>
-      <button class:on={selected.kind === "page" && selected.page === "terminals"} title="Alle terminals" onclick={() => agents.select("terminals")}>›_</button>
+      <button class:on={selected.kind === "page" && selected.page === "terminals"} title={tr("Alle terminals", "All terminals")} onclick={() => agents.select("terminals")}>›_</button>
       <button class:on={selected.kind === "page" && selected.page === "browser"} title="Browser" onclick={() => agents.select("browser")}>◍</button>
       <button class:on={selected.kind === "page" && selected.page === "worktrees"} title="Worktrees" onclick={() => agents.select("worktrees")}>⑂</button>
     </div>

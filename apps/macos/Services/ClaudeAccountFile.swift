@@ -9,7 +9,8 @@ enum ClaudeAccountFile {
         var displayName: String?
         var organizationName: String?
         var organizationID: String?
-        /// subscriptionType, planType and rateLimitTier, when set.
+        /// subscriptionType, planType, rateLimitTier and organizationRateLimitTier ("default_claude_max_5x", what newer
+        /// versions of Claude Code write instead), when set.
         var plan: [String: String]
         var hasOAuth: Bool
         var hasAPIKey: Bool
@@ -41,8 +42,8 @@ enum ClaudeAccountFile {
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         let oauth = root["oauthAccount"] as? [String: Any]
         var plan: [String: String] = [:]
-        for key in ["subscriptionType", "planType", "rateLimitTier"] {
-            if let value = oauth?[key] as? String { plan[key] = value }
+        for key in ["subscriptionType", "planType", "rateLimitTier", "organizationRateLimitTier"] {
+            if let value = oauth?[key] as? String, !value.isEmpty { plan[key] = value }
         }
         return Account(email: oauth?["emailAddress"] as? String, displayName: oauth?["displayName"] as? String,
                        organizationName: oauth?["organizationName"] as? String, organizationID: oauth?["organizationUuid"] as? String,

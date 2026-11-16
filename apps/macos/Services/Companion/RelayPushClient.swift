@@ -38,7 +38,11 @@ final class RelayPushClient: ObservableObject {
     var relay: String? { CompanionRelayClient.shared.current }
 
     /// Notifications go through the relay now.
-    var active: Bool { route == .relay && relay.flatMap(RelayPush.endpoint(relay:)) != nil }
+    var active: Bool { route == .relay && reachable }
+
+    /// A relay is set up at all: an Android phone's pushes go through it whatever the route for iPhones is, since only the
+    /// relay holds the Firebase key.
+    var reachable: Bool { relay.flatMap(RelayPush.endpoint(relay:)) != nil }
 
     /// Seals `content` for `device` and posts it to the relay.
     func send(_ content: RelayPushContent, to device: PairedDevice, collapseKey: String, urgent: Bool) async -> APNsClient.Result {
@@ -49,7 +53,8 @@ final class RelayPushClient: ObservableObject {
         let collapse = RelayPush.collapseID(collapseKey, pushKey: RelayPush.pushKey(pairingKey: key))
         guard let envelope = try? RelayPush.seal(content, pairingKey: key, deviceID: device.id),
               let request = RelayPush.request(envelope: envelope, room: CompanionRelay.room(forKey: key), token: token,
-                                              production: device.pushProduction ?? true, collapse: collapse, urgent: urgent),
+                                              production: device.pushProduction ?? true, collapse: collapse, urgent: urgent,
+                                              service: device.pushService),
               let body = try? JSONEncoder().encode(request) else {
             return APNsClient.Result(outcome: .configuration, status: 0, reason: "could not seal")
         }

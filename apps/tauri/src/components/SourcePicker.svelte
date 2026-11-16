@@ -10,7 +10,7 @@
   let choices = $state<SourceChoice[]>([]);
   const scope = $derived<SourceScope>(nook.active?.scope ?? { mode: "automatic", included: [], excluded: [], focus: [] });
   const label = $derived(
-    scope.mode === "only" ? tr(`Alleen ${scope.included.length}`, `Only ${scope.included.length}`) : scope.excluded.length ? tr(`Zonder ${scope.excluded.length}`, `Without ${scope.excluded.length}`) : tr("Automatisch", "Automatic"),
+    scope.mode === "only" ? tr("Alleen {n}", "Only {n}", { n: scope.included.length }) : scope.excluded.length ? tr("Zonder {n}", "Without {n}", { n: scope.excluded.length }) : tr("Automatisch", "Automatic"),
   );
 
   async function toggle() {

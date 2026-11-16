@@ -154,7 +154,7 @@ final class CodexAppServerTests: XCTestCase {
     }
 }
 
-/// Codex's generated pictures and the questions it asks while it works (CodexAdapterV2).
+/// Codex's generated pictures and the questions it asks while it works.
 final class CodexImagesAndAsyncQuestionsTests: XCTestCase {
     private func events(_ line: String) -> [CodexStreamEvent] { CodexAppServerMapper.events(CodexRPC.parse(line)!) }
 

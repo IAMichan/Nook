@@ -7,6 +7,7 @@
   import { sourceDomain, sourceGroups, sourcesSummary, statusText, type SourceGroup } from "../lib/sources";
   import type { ChatMessage, SourceReference } from "../lib/types";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   let { message, live = false, onRetry }: { message: ChatMessage; live?: boolean; onRetry?: () => void } = $props();
 
@@ -35,8 +36,8 @@
       class="toggle"
       onclick={() => (expanded = !expanded)}
       aria-expanded={expanded}
-      aria-label={summary + (failed ? `, ${failed} niet gelezen` : "")}
-      title={message.scopeLabel ? `Alleen deze bronnen mochten voor dit antwoord: ${message.scopeLabel}` : "Toon waar Nook keek"}
+      aria-label={summary + (failed ? tr(", {n} niet gelezen", ", {n} not read", { n: failed }) : "")}
+      title={message.scopeLabel ? tr("Alleen deze bronnen mochten voor dit antwoord: {sources}", "Only these sources were allowed for this answer: {sources}", { sources: message.scopeLabel }) : tr("Toon waar Nook keek", "Show where Nook looked")}
     >
       <span class="stack" aria-hidden="true">
         {#each groups.slice(0, 4) as g (g.title)}
@@ -44,7 +45,7 @@
         {/each}
       </span>
       <span>{summary}</span>
-      {#if failed > 0 && !searching}<span class="badge">{failed} niet gelezen</span>{/if}
+      {#if failed > 0 && !searching}<span class="badge">{tr("{n} niet gelezen", "{n} not read", { n: failed })}</span>{/if}
       <span class="chev" class:open={expanded}>▾</span>
     </button>
     {#if expanded}
@@ -62,7 +63,7 @@
             {#if g.status === "failed"}
               <div class="failure">
                 <span class="reason">{g.reason}</span>
-                {#if onRetry}<button class="fix" onclick={onRetry}>↻ Probeer opnieuw</button>{/if}
+                {#if onRetry}<button class="fix" onclick={onRetry}>↻ {tr("Probeer opnieuw", "Try again")}</button>{/if}
               </div>
             {/if}
             {#if !live && g.references.length}

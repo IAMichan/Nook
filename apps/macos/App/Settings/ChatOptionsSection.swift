@@ -14,6 +14,7 @@ struct ChatOptionsSection: View {
     @State private var giphyKey = ""
     @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
+    @AppStorage(AppModel.readInAppOnOpenKey) private var readInAppOnOpen = true
 
     var body: some View {
         Group {
@@ -34,6 +35,10 @@ struct ChatOptionsSection: View {
 
             Section {
                 SettingToggle(tr("chats.settings.readOnOpen"), detail: tr("chats.settings.readOnOpenDetail"), isOn: $readOnOpen)
+                if readOnOpen {
+                    SettingToggle(tr("chats.settings.readInAppOnOpen"), detail: tr("chats.settings.readInAppOnOpenDetail"),
+                                  isOn: $readInAppOnOpen)
+                }
             } header: {
                 Text(tr("chats.settings.reading"))
             }
@@ -77,9 +82,9 @@ struct ChatOptionsSection: View {
     private var giphyRow: some View {
         SettingLabel(tr("chats.giphy.key"), hint: tr("chats.giphy.keyDetail"))
         HStack(spacing: NookTheme.Spacing.sm) {
-            SecureField("", text: $giphyKey, prompt: Text(giphySet ? "••••••••" : tr("chats.giphy.key")))
+            SecureField("", text: $giphyKey, prompt: Text(giphySet ? "••••••••" : tr("chats.giphy.key")).foregroundStyle(NookTheme.textTertiary))
                 .labelsHidden()
-                .textFieldStyle(.roundedBorder)
+                .settingsField()
                 .frame(maxWidth: .infinity)
                 .onSubmit { saveGiphyKey() }
             Button(tr("chats.slack.save")) { saveGiphyKey() }
@@ -114,9 +119,9 @@ struct ChatOptionsSection: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.settings.addField"), hint: tr("chats.settings.addDetail"))
             HStack(spacing: NookTheme.Spacing.sm) {
-                TextField("", text: $typed, prompt: Text(tr("chats.settings.addPrompt")))
+                TextField("", text: $typed, prompt: Text(tr("chats.settings.addPrompt")).foregroundStyle(NookTheme.textTertiary))
                     .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
+                    .settingsField()
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity)
                     .onSubmit { addTyped() }

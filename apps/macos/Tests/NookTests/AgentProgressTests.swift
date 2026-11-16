@@ -66,6 +66,21 @@ final class AgentProgressTests: XCTestCase {
 
     // MARK: Activity
 
+    /// A steer starts a turn of its own in the timeline, but the agent reads it only after the tool that runs returns:
+    /// the live line goes on with that tool instead of falling back to "Starting…".
+    func testSteerKeepsTheRunningToolAsTheLiveLine() {
+        var steer = event(.user, "What is the URL?", at: 2)
+        steer.steer = .steer
+        let events = [event(.user, "Fix it"), bash("swift test", .running, at: 1), steer]
+        XCTAssertEqual(AgentActivity.current(events), .verifying(.tests))
+        XCTAssertEqual(AgentActivity.current(TimelinePresentation.runningTurn(events)), .verifying(.tests))
+        XCTAssertEqual(TimelinePresentation.live(events).tool, "Bash · swift test")
+        let done = [event(.user, "Fix it"), bash("swift test", .done, at: 1), steer]
+        XCTAssertEqual(AgentActivity.current(done), .reviewing, "a steer is not what the agent does")
+        XCTAssertEqual(AgentActivity.current([event(.user, "Fix it"), bash("swift test", .done, at: 1), event(.user, "Next", at: 2)]),
+                       .starting, "a new message of yours does start a turn")
+    }
+
     func testRunningToolSaysWhatItDoes() {
         let user = event(.user, "Fix it")
         XCTAssertEqual(AgentActivity.current([user]), .starting)
@@ -120,6 +135,18 @@ final class AgentProgressTests: XCTestCase {
         XCTAssertFalse(TaskChecklist.showsInline(nil, active: true))
         XCTAssertEqual(TaskChecklist.activeStep(steps), "Writing")
         XCTAssertNil(TaskChecklist.activeStep([RunTaskStep(text: "Check", status: .pending)]))
+    }
+
+    func testStripAboveComposerShowsThePhaseWhileWorking() {
+        let steps = [RunTaskStep(text: "Phase 1: crash fixes", status: .done),
+                     RunTaskStep(text: "Phase 2: agent parity", status: .active),
+                     RunTaskStep(text: "Phase 3: hot paths", status: .pending)]
+        XCTAssertTrue(TaskChecklist.showsAboveComposer(steps), "the phase that runs shows above the composer too")
+        XCTAssertTrue(TaskChecklist.isRunning(steps, active: true))
+        XCTAssertFalse(TaskChecklist.isRunning(steps, active: false), "a stopped agent runs no phase")
+        XCTAssertFalse(TaskChecklist.isRunning([RunTaskStep(text: "Check", status: .pending)], active: true))
+        XCTAssertFalse(TaskChecklist.showsAboveComposer([]))
+        XCTAssertFalse(TaskChecklist.showsAboveComposer(nil))
     }
 
     // MARK: Transcripts
@@ -200,6 +227,22 @@ final class AgentProgressTests: XCTestCase {
         let kept = [RunTaskStep(text: "Now", status: .active)]
         XCTAssertEqual(SessionOutputs.collect([todo], tasks: kept, directory: "/p").first?.kind, .tasks(kept),
                        "the list the session keeps wins over the one in its timeline")
+    }
+
+    func testEditedMarkdownDoesNotOpenOutputsByItself() {
+        let edit = event(.tool, "Edit · README.md", tool: "Edit", detail: #"{"file_path":"/p/README.md"}"#, state: .done, at: 2)
+        let page = event(.tool, "Write · index.html", tool: "Write", detail: #"{"file_path":"/p/index.html"}"#, state: .done, at: 3)
+        let share = event(.tool, "SendUserFile · notes.md", tool: "SendUserFile", detail: #"{"files":["notes.md"]}"#,
+                          state: .done, at: 4)
+        let outputs = SessionOutputs.collect([edit, page, share], tasks: nil, directory: "/p")
+        func opens(_ id: String) -> Bool {
+            SessionOutputs.opensByItself(outputs.first { $0.id == id }!, turnStart: start)
+        }
+        XCTAssertFalse(opens("file:/p/README.md"), "a Markdown file the agent edits stays in the outputs tab")
+        XCTAssertTrue(opens("file:/p/index.html"), "a page still opens by itself")
+        XCTAssertTrue(opens("file:/p/notes.md"), "a document handed to you still opens")
+        XCTAssertFalse(SessionOutputs.opensByItself(outputs[0], turnStart: start.addingTimeInterval(60)),
+                       "earlier work does not open")
     }
 
     func testNewOutputs() {

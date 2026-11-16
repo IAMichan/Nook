@@ -91,6 +91,8 @@ extension AppModel {
     func stop(conversation: UUID) {
         chatTasks[conversation]?.cancel()
         chatTasks[conversation] = nil
+        // Stopping a scheduled run's answer (its deadline) leaves a spoken question elsewhere waiting for its answer.
+        let scheduled = replies[conversation].map(ScheduledTaskStore.shared.isScheduledReply) ?? false
         if let id = replies[conversation] {
             chat.update(id) { message in
                 message.streaming = false
@@ -106,7 +108,7 @@ extension AppModel {
         replies[conversation] = nil
         chat.setBusy(false, conversation: conversation)
         chat.holdQueue(conversation: conversation)
-        spokenRequest = false
+        if !scheduled { spokenRequest = false }
     }
 
     /// Tools that count as reading but put something in the answer itself: not for a brain that only looks things up.
@@ -137,15 +139,24 @@ extension AppModel {
     /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
     /// `ReplyContext.selfContained`.
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
-             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false) {
+             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false,
+             page: ScreenSnapshot? = nil) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
+        // A follow-up after a scheduled quiet check is the user's own question: it gets its answer and notice as usual.
+        ScheduledTaskStore.shared.turnStarted(in: conversation)
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
         // screen brain answers it (`ScreenBrain`), so the screen text never leaves the Mac. Everything else goes to the
         // chosen brain as always.
         // With a relaying screen brain it writes a filtered note instead, and the chosen brain answers from that.
-        let needed = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
-        let relay = needed != nil && ScreenBrain.relays(text, images: !images.isEmpty) ? settings.relayWorker : nil
+        // A page from the browser's side panel while the browser stays on this Mac goes the same way (`pageWorker`). A
+        // request to act on it (fill in, click) stays with the model here: only it has the page and the browser tools.
+        let screenWork = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
+        let pageWork = screenWork == nil && page != nil ? pageWorker(for: text, in: conversation) : nil
+        let needed = screenWork ?? pageWork
+        let acts = page != nil && ScreenBrain.actsOnPage(text)
+        let relay = needed != nil && !acts && ScreenBrain.relays(text, images: !images.isEmpty)
+            ? (pageWork != nil ? settings.pageRelayWorker : settings.relayWorker) : nil
         let screenBrain = relay == nil ? needed : nil
         let runs = screenBrain ?? relay ?? settings.selection
         var question = ChatMessage(role: .user, text: text)
@@ -167,17 +178,19 @@ extension AppModel {
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
         // If prompt originated from a card or voice, reveal chat. If user is already typing in chat, stay there.
-        if !viewModel.isShowing(.chat) {
-            warmUp()
-            if reveal { showChat() }
-        }
+        // The connection to the brain is opened while Nook still prepares (plans, searches), also with the chat open:
+        // the first word of the answer then does not wait for a TLS handshake.
+        warmUp()
+        if !viewModel.isShowing(.chat), reveal { showChat() }
         // The screen brain is on this Mac: it may read the whole conversation.
-        let history = chat.history(before: question.id, hiding: screenBrain != nil ? [] : settings.privateSources)
+        // As much of the conversation as the brain's window has room for (`ConversationWindow.Limits.fitting`).
+        let historyLimits = ConversationWindow.Limits.fitting(settings.brainProfile)
+        let history = chat.history(before: question.id, limits: historyLimits, hiding: screenBrain != nil ? [] : settings.privateSources)
         // Also the chosen brain's part: that one sees the conversation without what stays on this Mac.
         let together = screenBrain != nil && ScreenBrain.routed == nil && ScreenBrain.needsBoth(text) && images.isEmpty
-        let outside = together ? chat.history(before: question.id, hiding: settings.privateSources) : nil
+        let outside = together ? chat.history(before: question.id, limits: historyLimits, hiding: settings.privateSources) : nil
         // The model on this Mac reads the whole conversation for its note, the chosen brain what it may see.
-        let local = relay.map { _ in chat.history(before: question.id) } ?? []
+        let local = relay.map { _ in chat.history(before: question.id, limits: historyLimits) } ?? []
         let replyID = reply.id
         // The answer's task inherits the brain it runs on.
         chatTasks[conversation] = ScreenBrain.$routed.withValue(screenBrain) {
@@ -188,10 +201,12 @@ extension AppModel {
                             await ReplyContext.$messageID.withValue(replyID) {
                                 await ReplyContext.$note.withValue(note) {
                                     await ReplyContext.$selfContained.withValue(selfContained) {
-                                        if let relay {
-                                            await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
-                                        } else {
-                                            await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                        await ReplyContext.$page.withValue(page) {
+                                            if let relay {
+                                                await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
+                                            } else {
+                                                await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                            }
                                         }
                                     }
                                 }
@@ -216,6 +231,14 @@ extension AppModel {
         let afterScreen = last?.used(anyOf: [SourceCatalog.screen]) == true || last?.privateBrief.isEmpty == false
         // The question itself was appended just before this: it is not a conversation of its own.
         return ScreenBrain.handles(text, conversation: messages.count > 1, afterScreen: afterScreen) ? worker : nil
+    }
+
+    /// The model on this Mac for a question from the browser's side panel about its page, while the browser stays on
+    /// this Mac (`AppSettings.pageWorker`). Nil when the chosen brain may read the page, no screen brain was picked, or
+    /// the question is about something else.
+    private func pageWorker(for text: String, in conversation: UUID) -> BrainSelection? {
+        guard let worker = settings.pageWorker else { return nil }
+        return ScreenBrain.handlesPage(text) ? worker : nil
     }
 
     /// The model on this Mac reads what stays here and writes a filtered note; the chosen brain answers from that note,
@@ -256,17 +279,23 @@ extension AppModel {
                     // Never a raw screen to anything but a model on this Mac.
                     guard settings.selection.isLocal else { return nil }
                     let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
-                    let sources = kept.subtracting([SourceCatalog.screen]).filter { wanted.allows($0) }
-                    let readsScreen = kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
+                    // The page from the browser's side panel is read here instead of the screen: it is what the
+                    // question is about, and it never leaves the Mac.
+                    let page = kept.contains(SourceCatalog.browserExtension) && wanted.allows(SourceCatalog.browserExtension) ? ReplyContext.page : nil
+                    let sources = kept.subtracting([SourceCatalog.screen, SourceCatalog.browserExtension]).filter { wanted.allows($0) }
+                    let readsScreen = page == nil && kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
                         && (ScreenBrain.refersToScreen(text) || ScreenBrain.followsUp(text))
-                    let screen = readsScreen ? try? await screenSnapshot() : nil
+                    // Read first: the right side of ?? cannot await.
+                    let captured = readsScreen ? try? await screenSnapshot() : nil
+                    let screen = page ?? captured
                     let prepared = await prepareRun(text: text, scope: SourceScope(mode: .only, included: sources), snapshotText: nil,
                                                     ledger: RetrievalLedger(), prefetch: !sources.isEmpty, history: history)
                     guard screen != nil || !prepared.fetched.isEmpty else { return nil }
                     let profile = settings.brainProfile
                     let prompt = PrivateBrief.prompt(request: text, history: BrainService.historyPrefix(history, limit: 6, length: 300),
                                                      context: prepared.fetched.isEmpty ? "" : prepared.context, screen: screen?.text,
-                                                     budget: profile.promptCharacterBudget)
+                                                     budget: profile.promptCharacterBudget,
+                                                     place: page.map { PrivateBrief.pagePlace($0.windowTitle) } ?? PrivateBrief.screenPlace)
                     let raw = await brain.rewrite(system: PrivateBrief.system, prompt: prompt, timeout: 60)
                     guard let sealed = raw.flatMap(PrivateBrief.sealed) else { return nil }
                     return (sealed, PrivateBrief.addresses(in: [screen?.text ?? "", prepared.context, raw ?? ""].joined(separator: "\n")))
@@ -298,19 +327,24 @@ extension AppModel {
             await ReplyContext.$images.withValue([]) {
                 await ReplyContext.$note.withValue("") {
                     await ReplyContext.$focus.withValue([]) {
-                        let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
-                        let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
-                        let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
-                                                        context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
-                        // Its citations point at lookups the answer on this Mac does not have.
-                        return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        await ReplyContext.$page.withValue(nil) {
+                            let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
+                            let prepared = await prepareRun(text: text, scope: privacyScope(wanted), snapshotText: nil, ledger: RetrievalLedger(), history: history)
+                            let plan = try? await brain.run(userText: text + "\n\n(" + ScreenBrain.outsideInstruction + ")", followUp: !history.isEmpty, history: history,
+                                                            context: prepared.context, tools: prepared.tools.filter { $0.kind == .read && !Self.chatOnlyTools.contains($0.name) })
+                            // Its citations point at lookups the answer on this Mac does not have.
+                            return plan.map { Citations.sanitize(FollowUps.split($0.text).body, valid: []) } ?? ""
+                        }
                     }
                 }
             }
         }
     }
 
-    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil) async {
+    /// `reusing`: what the first try already prepared (plan, searches, documents read). A retry for the same question writes
+    /// the answer again from it instead of planning and searching all over, which only cost time.
+    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil,
+                reusing earlier: PreparedRun? = nil) async {
         // Scope permitted sources: conversation scope plus query-level constraints ("only my calendar and mail").
         let requested = SourceScope.parse(text)
         let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
@@ -321,6 +355,9 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        // The answer read the browser's page: recorded as using the browser extension, so it stays where that source
+        // stays (an agent never reads an answer built from a source kept on this Mac).
+        var readPage = false
         var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
@@ -334,6 +371,12 @@ extension AppModel {
             attachedName = file.name
             images = attachmentImages
             shouldCaptureScreen = false
+        } else if let page = ReplyContext.page, scope.allows(BrowserExtensionTools.sourceID) {
+            // Asked from the browser's side panel: the page it read goes along, so no tool round is spent reading it.
+            let limit = settings.brainProfile.isSmall ? 8_000 : BrowserExtensionPanel.textLimit
+            snapshot = ScreenSnapshot(appName: page.appName, windowTitle: page.windowTitle, text: String(page.text.prefix(limit)))
+            readPage = true
+            shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (!selfContained && settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
             shouldCaptureScreen = true
@@ -346,7 +389,7 @@ extension AppModel {
         let wantsChart = ChartRescue.wantsChart(text)
 
         // Live retrieval steps appear above the streaming response.
-        let ledger = RetrievalLedger()
+        let ledger = earlier?.ledger ?? RetrievalLedger()
         ledger.onChange = { [weak self, weak ledger] in
             guard let self, let ledger, self.replies[conversation] == id else { return }
             let steps = ledger.steps
@@ -371,13 +414,23 @@ extension AppModel {
         let initialSources = attachedName.map { [$0] } ?? []
         // The chosen brain already searched: the small window here goes to its findings and the screen.
         let outsideFound = ReplyContext.outside
-        let prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, prefetch: outsideFound.isEmpty, history: history) { [weak self] summary in
+        let showSummary: ((text: String, titles: [String])) -> Void = { [weak self] summary in
             self?.chat.update(id) {
                 if !initialSources.isEmpty { $0.sources = initialSources }
                 $0.contextSources = summary.titles
+                let browser = SourceCatalog.title(SourceCatalog.browserExtension)
+                if readPage, !$0.contextSources.contains(browser) { $0.contextSources.append(browser) }
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
                 $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }
+        }
+        let prepared: PreparedRun
+        if let earlier {
+            showSummary(earlier.summary)
+            prepared = earlier
+        } else {
+            prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, prefetch: outsideFound.isEmpty,
+                                        history: history, onSummary: showSummary)
         }
 
         if shouldCaptureScreen {
@@ -409,6 +462,11 @@ extension AppModel {
         var brainContext = outsideFound.isEmpty ? prepared.context
             : "What Nook's main brain found for this question, without the screen:\n\(outsideFound.prefix(settings.brainProfile.isSmall ? 2_000 : 8_000))\n\n" + prepared.context
         if !ReplyContext.brief.isEmpty { brainContext = PrivateBrief.context(ReplyContext.brief) + "\n\n" + brainContext }
+        // The answer style and the space's instructions of this conversation go to the brain with the request, as the
+        // user's own words (not inside the context, which is third-party data); then what the context inspector shows.
+        let instructionLines = InstructionStore.shared.instructionLines(for: conversation)
+        InstructionStore.shared.noteContext(Self.contextBreakdown(instructions: instructionLines, prepared: prepared,
+                                                                  budget: settings.brainProfile.contextTokens))
 
         var request = text
         if let correction {
@@ -421,7 +479,9 @@ extension AppModel {
 
         // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
         // answer may still be checked and written again: then it is read once it is final.
-        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil
+        // A scheduled run is never the spoken question, also while one waits for its answer in another conversation.
+        let scheduledRun = ScheduledTaskStore.shared.isScheduledReply(id)
+        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil && !scheduledRun
             && !(settings.checkAnswers && settings.brainProfile.isSmall)
         var spokenQueue = SpokenText.Queue()
         if speaksLive { speech.stop() }
@@ -455,6 +515,7 @@ extension AppModel {
                     untrusted: snapshot?.text,
                     images: images,
                     tools: tools,
+                    instructions: instructionLines,
                     onText: { [weak self] partial in
                         guard let self, self.replies[conversation] == id else { return }
                         flusher.push(partial)
@@ -471,16 +532,27 @@ extension AppModel {
             let split = FollowUps.split(plan.text)
             var rawBody = split.body
 
+            // A quiet scheduled check that found nothing new: this is its final answer, so no retry of any kind follows;
+            // no notice, and the run removes the conversation.
+            let schedules = ScheduledTaskStore.shared
+            let quietNothing = schedules.isQuietRun(conversation) && NookSchedule.isNothingNew(rawBody) && plan.actions.isEmpty
+                && (chat.message(id)?.mails.isEmpty ?? true) && (chat.message(id)?.charts.isEmpty ?? true)
+            if quietNothing {
+                schedules.noteNothingNew(conversation)
+                rawBody = tr("sched.nook.nothingNew")
+            }
+
             // A small brain sometimes invents a number, time or address. Nook compares those with everything it was given
             // and tool results, and has the answer written again when one is found nowhere.
-            if settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
+            if !quietNothing, settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
                !Grounding.mayCompute(text) {
                 let given = [brainContext, text, snapshot?.text ?? "", ledger.retrievedText, history.map(\.text).joined(separator: "\n")]
                 let loose = Grounding.ungrounded(answer: rawBody, sources: given.joined(separator: "\n"))
                 if !loose.isEmpty {
                     Log.brain.info("ungrounded details: \(loose.count, privacy: .public)")
                     chat.update(id) { $0.text = ""; $0.status = tr("app.status.checking") }
-                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, correction: Grounding.correction(for: loose))
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, correction: Grounding.correction(for: loose),
+                                 reusing: prepared)
                     return
                 }
             }
@@ -488,7 +560,7 @@ extension AppModel {
             // Did the model write chart code, JSON, or a table? Parse and rescue into native chart.
             var rescued: [ChatChart] = []
             let alreadyDrawn = !(chat.message(id)?.charts.isEmpty ?? true)
-            if !alreadyDrawn {
+            if !alreadyDrawn, !quietNothing {
                 let extracted = ChartRescue.extract(from: rawBody, title: Conversation.title(from: text))
                 if !extracted.charts.isEmpty || wantsChart {
                     rawBody = extracted.text
@@ -500,7 +572,7 @@ extension AppModel {
                 // Still missing chart: retry once with strict instruction to invoke show_chart.
                 if rescued.isEmpty, wantsChart, !retry, !settings.brainProfile.isSmall {
                     chat.update(id) { $0.text = ""; $0.status = tr("app.status.drawing") }
-                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, reusing: prepared)
                     return
                 }
             }
@@ -511,15 +583,15 @@ extension AppModel {
                 && (chat.message(id)?.charts.isEmpty ?? true) && (chat.message(id)?.mails.isEmpty ?? true) && plan.actions.isEmpty
             // Code or JSON for a question that is not about code, or an answer in another language: also try once more.
             let broken = !nothing && rescued.isEmpty && plan.actions.isEmpty && Self.looksBroken(rawBody, question: text, expected: settings.answerLanguage(for: text))
-            if nothing || broken, !retry {
+            if nothing || broken, !retry, !quietNothing {
                 chat.update(id) { $0.text = ""; $0.status = tr("app.status.searching") }
-                await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                await answer(text, history: history, replyID: id, conversation: conversation, retry: true, reusing: prepared)
                 return
             }
 
             // Strip citations pointing to sources that were not actually retrieved.
             let references = ledger.references
-            var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
+            var body = Citations.withoutSourceList(Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number))))
             let bareBody = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
             // Still empty, or still code/JSON or the wrong language after the second try: show what Nook found instead.
             let unusable = bareBody.isEmpty || bareBody == "NONE" || (retry && Self.looksBroken(body, question: text, expected: settings.answerLanguage(for: text)))
@@ -579,7 +651,7 @@ extension AppModel {
                         speech.enqueue(sentence, language: settings.language)
                     }
                     spokenRequest = false
-                } else {
+                } else if !scheduledRun {
                     speakIfAsked(spoken)
                 }
             }
@@ -589,14 +661,42 @@ extension AppModel {
             NookPresence.shared.nod()
             // Actions the chosen access lets Nook do by itself start before the notice, so a notice only asks for a
             // click on what still waits for one.
-            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            // A scheduled run's plan always waits for the user's own click, whatever the access level: nobody asked just now.
+            if !ScheduledTaskStore.shared.isScheduledReply(id),
+               canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
             nookFinished(conversation)
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
+            nameAfterFirstAnswer(question: text, reply: id, conversation: conversation)
             sendQueued(conversation)
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
+        }
+    }
+
+    /// After a Nook's first answer: the chosen brain gives it a short title ("Offer from Infaris") in place of the first
+    /// words of the question, so the list reads at a glance. Only while the title is still the one the question gave: a
+    /// name you gave it or a scheduled task's stays. In the background; on failure the title stays as it was.
+    func nameAfterFirstAnswer(question: String, reply id: UUID, conversation: UUID) {
+        guard settings.brainReady, !ScheduledTaskStore.shared.isScheduledReply(id),
+              let current = chat.conversation(conversation), current.scheduledTaskID == nil,
+              current.messages.filter({ $0.role == .user }).count == 1,
+              let first = current.messages.first(where: { $0.role == .user }),
+              current.title == Conversation.title(from: first.text),
+              let answer = chat.message(id)?.text, !answer.isEmpty else { return }
+        let seed = current.title
+        Task { [weak self] in
+            // Let the next question go first, as a reflection does.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self else { return }
+            // A model on this Mac runs one thing at a time: a title never waits for, or holds up, an answer.
+            if self.settings.isLocalBrain,
+               self.chat.conversations.contains(where: \.busy) || !EnergyMonitor.shared.plan.runsLocalModels { return }
+            let reply = await self.brain.rewrite(system: ConversationTitle.system,
+                                                 prompt: ConversationTitle.prompt(question: question, answer: answer), timeout: 45)
+            guard let title = reply.flatMap(ConversationTitle.clean), self.chat.conversation(conversation)?.title == seed else { return }
+            self.chat.rename(conversation, to: title)
         }
     }
 
@@ -615,7 +715,8 @@ extension AppModel {
         }
         replies[conversation] = nil
         chatTasks[conversation] = nil
-        spokenRequest = false
+        // A scheduled run's answer was never the spoken question: its error leaves a spoken answer elsewhere alone.
+        if !ScheduledTaskStore.shared.isScheduledReply(id) { spokenRequest = false }
         chat.setBusy(false, conversation: conversation)
         chat.holdQueue(conversation: conversation)
     }
@@ -628,6 +729,8 @@ extension AppModel {
         // Asked from the notch (the Double Tap field, a notice's field): you wait for it there.
         let followed = NotchFollow.shared.conversations.remove(id) != nil
         let watching = viewModel.isInSight(.chat) && chat.activeID == id
+        // A quiet scheduled check that found nothing new does not disturb.
+        if ScheduledTaskStore.shared.foundNothingNew(id) { return }
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
@@ -728,7 +831,6 @@ extension AppModel {
             let heading = plain.hasPrefix("#")
             height += CGFloat(max(1, Int(ceil(Double(plain.count) / perLine)))) * (heading ? 26 : 23) + (heading ? 10 : 4)
         }
-        if !answer.cited.isEmpty { height += 36 }
         if !answer.offers.isEmpty { height += 40 }
         // The header, the buttons and the margins around them.
         return min(470, max(150, 104 + height + field))

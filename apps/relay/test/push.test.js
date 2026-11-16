@@ -174,3 +174,95 @@ test("refuses what is not a push", async () => {
   assert.equal((await handlePush(request("x".repeat(MAX_BODY + 1)), env, deps())).status, 413);
   assert.equal((await handlePush(request(null, { method: "GET" }), env, deps())).status, 405);
 });
+
+// Android: the same sealed blob as a data message through Firebase Cloud Messaging.
+
+import { fcmMessage, fcmOutcome } from "../worker/push.js";
+
+const fcmToken = "dQw4w9WgXcQ:APA91b" + "x".repeat(140);
+
+async function fcmEnv() {
+  const pair = await crypto.subtle.generateKey(
+    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+    true,
+    ["sign", "verify"],
+  );
+  const der = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64");
+  const pem = `-----BEGIN PRIVATE KEY-----\n${der.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----\n`;
+  const account = { client_email: "nook@project.iam.gserviceaccount.com", private_key: pem, project_id: "nook-test" };
+  return { env: { FCM_SERVICE_ACCOUNT: JSON.stringify(account) }, publicKey: pair.publicKey };
+}
+
+function fcmDeps({ status = 200, error } = {}) {
+  const sent = [];
+  return {
+    sent,
+    fcmCache: {},
+    now: () => 1_760_000_000,
+    limit: async () => true,
+    fetch: async (url, init) => {
+      sent.push({ url, init });
+      if (url.startsWith("https://oauth2.googleapis.com/")) return new Response(JSON.stringify({ access_token: "ya29.token", expires_in: 3600 }), { status: 200 });
+      return new Response(error ? JSON.stringify({ error }) : "{}", { status });
+    },
+  };
+}
+
+test("an Android token only goes to FCM, with the blob as data", async () => {
+  assert.equal(parsePushRequest({ room, token: fcmToken, production: true, sealed, service: "fcm" }).value.token, fcmToken, "kept as it is");
+  assert.ok(parsePushRequest({ room, token, production: true, sealed, service: "fcm" }).error, "an APNs token is no FCM token");
+  assert.ok(parsePushRequest({ room, token: fcmToken, production: true, sealed }).error, "an FCM token is no APNs token");
+  assert.ok(parsePushRequest({ room, token: fcmToken, production: true, sealed, service: "gcm" }).error);
+  const message = fcmMessage({ token: fcmToken, sealed, urgent: true, collapse: "ab12" });
+  assert.deepEqual(message.message.data, { "nook-sealed-d": sealed.d, "nook-sealed-s": sealed.s });
+  assert.equal(message.message.android.priority, "HIGH");
+  assert.equal(message.message.android.collapse_key, "ab12");
+  assert.equal(message.message.notification, undefined, "no text Google could read");
+});
+
+test("signs in with the service account and sends through FCM", async () => {
+  const { env, publicKey } = await fcmEnv();
+  const d = fcmDeps();
+  const response = await handlePush(request({ room, token: fcmToken, production: true, sealed, service: "fcm" }), env, d);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { apns: 200 });
+  const [oauth, send] = d.sent;
+  const assertion = new URLSearchParams(oauth.init.body).get("assertion");
+  const [header, claims, signature] = assertion.split(".");
+  assert.equal(JSON.parse(fromBase64url(header)).alg, "RS256");
+  assert.equal(JSON.parse(fromBase64url(claims)).scope, "https://www.googleapis.com/auth/firebase.messaging");
+  assert.ok(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", publicKey, fromBase64url(signature), new TextEncoder().encode(`${header}.${claims}`)));
+  assert.equal(send.url, "https://fcm.googleapis.com/v1/projects/nook-test/messages:send");
+  assert.equal(send.init.headers.authorization, "Bearer ya29.token");
+  // The access token is reused.
+  await handlePush(request({ room, token: fcmToken, production: true, sealed, service: "fcm" }), env, d);
+  assert.equal(d.sent.filter((s) => s.url.startsWith("https://oauth2")).length, 1);
+});
+
+test("Google's answers read as Apple's, so the Mac drops a token that is gone", async () => {
+  assert.deepEqual(fcmOutcome(404, { status: "NOT_FOUND", details: [{ errorCode: "UNREGISTERED" }] }), { apns: 410, reason: "Unregistered" });
+  assert.deepEqual(fcmOutcome(400, { status: "INVALID_ARGUMENT" }), { apns: 400, reason: "BadDeviceToken" });
+  const { env } = await fcmEnv();
+  const gone = await handlePush(request({ room, token: fcmToken, production: true, sealed, service: "fcm" }), env, fcmDeps({ status: 404, error: { status: "NOT_FOUND" } }));
+  assert.deepEqual(await gone.json(), { apns: 410, reason: "Unregistered" });
+  // Without the secret: 501, also when the APNs key is there.
+  const { env: apple } = await makeEnv();
+  assert.equal((await handlePush(request({ room, token: fcmToken, production: true, sealed, service: "fcm" }), apple, fcmDeps())).status, 501);
+  assert.equal((await handlePush(request({ room, token, production: true, sealed }), env, deps())).status, 501, "iPhone push needs the APNs key");
+});
+
+test("a body without a length is read only up to the limit", async () => {
+  const { env } = await makeEnv();
+  let pulled = 0;
+  const big = new ReadableStream({
+    pull(controller) {
+      pulled += 1;
+      if (pulled > 1000) return controller.close();
+      controller.enqueue(new Uint8Array(1024).fill(32));
+    },
+  });
+  const chunked = new Request("https://relay.example/v1/push", { method: "POST", body: big, duplex: "half" });
+  assert.equal(chunked.headers.get("content-length"), null);
+  assert.equal((await handlePush(chunked, env, deps())).status, 413);
+  assert.ok(pulled < 20, "stopped reading");
+});

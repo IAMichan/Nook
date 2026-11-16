@@ -148,7 +148,7 @@ enum RenderedPageFile {
                 guard let equals = match.firstIndex(of: "=") else { return nil }
                 let name = match[..<equals].trimmingCharacters(in: .whitespaces).lowercased()
                 let quoted = match[match.index(after: equals)...].trimmingCharacters(in: .whitespaces)
-                let value = Self.decodeEntities(String(quoted.dropFirst().dropLast()))
+                let value = HTMLEntities.decode(String(quoted.dropFirst().dropLast()))
                 // Only images, media and fonts are embedded: a link to another page or a frame stays as it is (and goes
                 // nowhere in the sandbox).
                 guard isLocalReference(value), mimeType(Self.strip(value)) != nil else { return nil }
@@ -161,7 +161,7 @@ enum RenderedPageFile {
 
         /// Where the page's `<script>…</script>` elements are.
         static func scriptRanges(_ page: String) -> [Range<String.Index>] {
-            guard let regex = try? NSRegularExpression(pattern: #"<script\b[\s\S]*?</script\s*>"#, options: [.caseInsensitive]) else { return [] }
+            guard let regex = RegexCache.regex(#"<script\b[\s\S]*?</script\s*>"#, options: .caseInsensitive) else { return [] }
             return regex.matches(in: page, range: NSRange(page.startIndex..., in: page)).compactMap { Range($0.range, in: page) }
         }
 
@@ -183,7 +183,7 @@ enum RenderedPageFile {
                 let inner = match.dropFirst(4).dropLast().trimmingCharacters(in: .whitespaces)
                 let reference = inner.hasPrefix("\"") || inner.hasPrefix("'") ? String(inner.dropFirst().dropLast()) : inner
                 guard isLocalReference(reference), mimeType(Self.strip(reference)) != nil else { return nil }
-                return "url(\"" + (dataURL(Self.decodeEntities(reference), base: base) ?? "") + "\")"
+                return "url(\"" + (dataURL(HTMLEntities.decode(reference), base: base) ?? "") + "\")"
             }
             return text
         }
@@ -219,7 +219,7 @@ enum RenderedPageFile {
 
         /// Replaces every match of `pattern` with what `transform` makes of it; nil keeps the match as it is.
         private static func replace(_ pattern: String, in text: String, _ transform: (String) -> String?) -> String {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return text }
+            guard let regex = RegexCache.regex(pattern, options: .caseInsensitive) else { return text }
             let source = text as NSString
             var result = ""
             var last = 0
@@ -235,10 +235,10 @@ enum RenderedPageFile {
 
         static func attribute(_ name: String, in tag: String) -> String? {
             let pattern = #"\b"# + name + #"\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))"#
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+            guard let regex = RegexCache.regex(pattern, options: .caseInsensitive),
                   let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)) else { return nil }
             for group in 2...4 {
-                if let range = Range(match.range(at: group), in: tag) { return decodeEntities(String(tag[range])) }
+                if let range = Range(match.range(at: group), in: tag) { return HTMLEntities.decode(String(tag[range])) }
             }
             return nil
         }
@@ -249,9 +249,5 @@ enum RenderedPageFile {
             return String(value.prefix { $0 != "?" && $0 != "#" })
         }
 
-        static func decodeEntities(_ value: String) -> String {
-            value.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&#39;", with: "'")
-                .replacingOccurrences(of: "&amp;", with: "&")
-        }
     }
 }

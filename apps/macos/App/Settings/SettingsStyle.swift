@@ -21,6 +21,7 @@ extension SettingsSection {
         case .brain: return "brain"
         case .assistant: return "sparkles"
         case .memory: return "books.vertical.fill"
+        case .instructions: return "text.badge.checkmark"
         case .autocomplete: return "keyboard.fill"
         case .dictation: return "waveform"
         case .chats: return "bubble.left.and.bubble.right.fill"
@@ -50,8 +51,8 @@ extension SettingsSection {
         }
     }
 
-    /// The line symbol in front of the page's name in the sidebar: one quiet stroke icon per page
-    /// has, so the column reads as a list of words rather than a row of tiles.
+    /// The line symbol in front of the page's name in the sidebar: one quiet stroke icon per page, so the
+    /// column reads as a list of words rather than a row of tiles.
     var sidebarSymbol: String {
         switch self {
         case .start: return "house"
@@ -65,6 +66,7 @@ extension SettingsSection {
         case .brain: return "brain"
         case .assistant: return "sparkles"
         case .memory: return "books.vertical"
+        case .instructions: return "text.badge.checkmark"
         case .autocomplete: return "text.cursor"
         case .agents: return "terminal"
         case .sessions: return "bubble.left.and.text.bubble.right"
@@ -74,7 +76,7 @@ extension SettingsSection {
         case .pullRequests: return "arrow.triangle.branch"
         case .chats: return "bubble.left.and.bubble.right"
         case .connections: return "person.crop.circle.badge.checkmark"
-        case .iphone: return "iphone"
+        case .iphone: return "laptopcomputer.and.iphone"
         case .machines: return "server.rack"
         case .privacy: return "hand.raised"
         case .maintenance: return "wrench.and.screwdriver"
@@ -192,26 +194,21 @@ enum ConnectionHealth: Equatable {
     }
 }
 
-/// Small colored capsule: "Werkt", "Uit", "Er gaat iets mis".
+/// A connection's state beside a sheet's title ("Works", "Off", "Something is wrong"): its dot (a small spinner while
+/// busy) and its word in the state's color, without a fill, as every status reads (`StatusBadgeLabel`).
 struct HealthPill: View {
     let health: ConnectionHealth
     var text: String? = nil
 
     var body: some View {
-        HStack(spacing: 5) {
+        StatusBadgeLabel(word: text ?? health.label,
+                         tint: health == .off || health == .notLinked ? NookTheme.textSecondary : health.color) {
             if health == .busy {
                 ProgressView().controlSize(.mini)
             } else {
                 Circle().fill(health.color).frame(width: 6, height: 6)
             }
-            Text(text ?? health.label)
-                .font(NookTheme.TextStyle.label)
-                .lineLimit(1)
         }
-        .foregroundStyle(health == .off || health == .notLinked ? NookTheme.textSecondary : health.color)
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .padding(.vertical, 3)
-        .background(NookTheme.shape(NookTheme.Radius.chip).fill(health.color.opacity(0.12)))
     }
 }
 
@@ -243,6 +240,62 @@ struct SetupStep<Content: View>: View {
     }
 }
 
+/// How the last step of a setup flow is doing: Nook checking what the steps before it set up.
+enum SetupCheckState: Equatable {
+    /// Nothing checked yet (or something earlier changed): the check button shows.
+    case idle
+    case checking
+    /// It works; the line says what Nook found ("Signed in as …", "Reached build-server").
+    case passed(String)
+    /// It does not work; the line says why in plain words, and the button tries again.
+    case failed(String)
+}
+
+/// The last step of every setup flow in Settings: Nook checks the link, the key or the address before it is saved, or,
+/// where there is nothing to check, says it is ready to add. One look everywhere: the step's number, "Check the
+/// connection" (or the caller's title), one line, and the button or the outcome under it.
+struct SetupCheckStep: View {
+    let number: Int
+    var title: String = tr("settings2.step.check")
+    /// What will be checked, shown while idle.
+    let detail: String
+    let state: SetupCheckState
+    /// The button that runs the check; nil for a flow with nothing to check (the step then only says it is ready).
+    var check: (() -> Void)? = nil
+    /// The earlier steps are not done yet: the button stays off.
+    var disabled = false
+
+    var body: some View {
+        SetupStep(number: number, title: title, done: isPassed) {
+            switch state {
+            case .idle:
+                if let check {
+                    StepAction(detail: detail, button: tr("setup.check.button"), prominent: false, disabled: disabled, action: check)
+                } else {
+                    SettingNote(detail)
+                }
+            case .checking:
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    SettingNote(tr("setup.check.checking"))
+                }
+            case .passed(let line):
+                SettingNote(line, tone: .success)
+            case .failed(let line):
+                SettingNote(line, tone: .error)
+                if let check {
+                    Button(tr("setup.check.retry"), action: check).disabled(disabled)
+                }
+            }
+        }
+    }
+
+    private var isPassed: Bool {
+        if case .passed = state { return true }
+        return false
+    }
+}
+
 /// A friendly explanation at the top of a page, under the header that already shows the section's icon.
 struct IntroCard: View {
     let title: String
@@ -270,7 +323,6 @@ struct SettingsPickRow: View {
     let detail: String
     let selected: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -286,12 +338,10 @@ struct SettingsPickRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5)),
-                               radius: NookTheme.Radius.control)
+            .hoverRowFill(selected: selected, rest: NookTheme.smoke.opacity(0.5))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(.nookPlain)
     }
 }
 
@@ -323,6 +373,7 @@ struct SheetPart<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .roundedBackground(embedded ? Color.clear : NookTheme.surface, radius: NookTheme.Radius.card)
         }
+        .disclosureGroupStyle(SettingsDisclosureStyle())
     }
 }
 
@@ -347,7 +398,7 @@ struct StepAction: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if prominent {
-                Button(button, action: action).buttonStyle(.borderedProminent).disabled(disabled)
+                Button(button, action: action).buttonStyle(.nookProminent).disabled(disabled)
             } else {
                 Button(button, action: action).disabled(disabled)
             }
@@ -372,6 +423,21 @@ struct AgentName: View {
         } icon: {
             LogoImage.agent(kind)
         }
+    }
+}
+
+extension View {
+    /// A sheet's one step in its footer (Done, Add, Save): Nook's prominent button at the large size, run by Return.
+    func sheetPrimaryButton() -> some View {
+        keyboardShortcut(.defaultAction)
+            .buttonStyle(.nookProminent)
+            .controlSize(.large)
+    }
+
+    /// A sheet's Cancel in its footer, beside `sheetPrimaryButton()`: the large size, run by Escape.
+    func sheetCancelButton() -> some View {
+        keyboardShortcut(.cancelAction)
+            .controlSize(.large)
     }
 }
 

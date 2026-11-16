@@ -2,6 +2,7 @@
   // Een grafiek in de chat, in SVG: staaf, lijn, vlak, taart of punten. Dunne lijnen, een rustige as, een tooltip bij
   // aanwijzen, een legenda vanaf twee reeksen en een tabel als je de getallen wilt zien. Kleuren in vaste volgorde.
   import type { ChatChart } from "../lib/brain";
+  import { tr, locale } from "../lib/i18n.svelte";
 
   let { chart }: { chart: ChatChart } = $props();
   let showTable = $state(false);
@@ -30,7 +31,7 @@
   const band = $derived((W - L - R) / Math.max(labels.length, 1));
   const cx = (i: number) => L + band * (i + 0.5);
   function fmt(v: number): string {
-    const text = Math.abs(v) >= 1000 ? v.toLocaleString("nl-NL", { maximumFractionDigits: 0 }) : v.toLocaleString("nl-NL", { maximumFractionDigits: 2 });
+    const text = Math.abs(v) >= 1000 ? v.toLocaleString(locale(), { maximumFractionDigits: 0 }) : v.toLocaleString(locale(), { maximumFractionDigits: 2 });
     return chart.unit === "€" || chart.unit === "$" ? `${chart.unit} ${text}` : chart.unit ? `${text} ${chart.unit}` : text;
   }
   function bar(i: number, s: number) {
@@ -71,7 +72,7 @@
 <figure class="chart">
   <figcaption>
     <strong>{chart.title}</strong>
-    <button class="ghost tiny" onclick={() => (showTable = !showTable)}>{showTable ? "Grafiek" : "Tabel"}</button>
+    <button class="ghost tiny" onclick={() => (showTable = !showTable)}>{showTable ? tr("Grafiek", "Chart") : tr("Tabel", "Table")}</button>
   </figcaption>
   {#if showTable}
     <table>
@@ -134,7 +135,7 @@
     </div>
     {#if series.length > 1 && chart.kind !== "pie"}
       <div class="legend">
-        {#each series as s, j (j)}<span><i style="background:{colors[j]}"></i>{s.name || `Reeks ${j + 1}`}</span>{/each}
+        {#each series as s, j (j)}<span><i style="background:{colors[j]}"></i>{s.name || tr("Reeks {n}", "Series {n}", { n: j + 1 })}</span>{/each}
       </div>
     {/if}
   {/if}

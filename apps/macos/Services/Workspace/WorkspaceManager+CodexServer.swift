@@ -41,8 +41,10 @@ extension WorkspaceManager {
                                      workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleCodexServer(id, client, message, events)
                 client.process.markHandled(end)
             }
@@ -183,16 +185,20 @@ extension WorkspaceManager {
         }
         let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
         if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
-        if let process = processes[id], run(id)?.provider == .claude {
-            append(id, steerEvent(id, text: clean, mark: mark))
-            turns[id]?.steered = true
-            process.send(ClaudeStreamParser.userMessage(clean, steer: true))
-            return true
-        }
-        if let process = processes[id], run(id)?.provider == .pi {
-            append(id, steerEvent(id, text: clean, mark: mark))
-            process.send(PiRPC.prompt(clean, steer: true))
-            return true
+        if let process = processes[id], let channel = run(id)?.provider.capabilities.processChannel {
+            switch channel {
+            case .claudeStreamJSON:
+                append(id, steerEvent(id, text: clean, mark: mark))
+                turns[id]?.steered = true
+                process.send(ClaudeStreamParser.userMessage(clean, steer: true))
+                return true
+            case .piRPC:
+                append(id, steerEvent(id, text: clean, mark: mark))
+                process.send(PiRPC.prompt(clean, steer: true))
+                return true
+            case .none:
+                break
+            }
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
         append(id, steerEvent(id, text: clean, mark: mark))
@@ -218,7 +224,7 @@ extension WorkspaceManager {
 
     func steerRoute(_ id: UUID) -> SteerRoute {
         guard let run = run(id) else { return .unavailable }
-        let nativeReady = run.provider == .claude || run.provider == .pi
+        let nativeReady = run.provider.capabilities.processChannel != .none
             ? processes[id]?.isRunning == true && questions[id] == nil
             : codexServers[id]?.turnID != nil
         return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,
@@ -285,21 +291,20 @@ extension WorkspaceManager {
     /// Answers a question: per question id the chosen labels, or your own text.
     func answer(_ runID: UUID, questionID: String, answers: [String: [String]]) {
         guard let question = questions[runID]?.first(where: { $0.id == questionID }) else { return }
-        // Nobody left to answer (the process ended): drop the question instead of pretending the agent works on.
+        // Nobody left to answer (the process ended): the answer goes as a message, as after a restart.
+        let gone: Bool
         switch question.origin {
-        case .claude, .pi:
-            guard processes[runID] != nil else {
-                questions[runID] = nil
-                return
-            }
-        case .codex, .message:
-            break
+        case .claude, .pi: gone = processes[runID] == nil
+        case .openCode: gone = openCodeLinks[runID] == nil
+        case .codex, .message, .restored: gone = false
         }
         questions[runID]?.removeAll { $0.id == questionID }
         if questions[runID]?.isEmpty == true { questions[runID] = nil }
-        let shown = question.questions.map { item in
-            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
-        }.joined(separator: "\n")
+        let shown = RestartRequests.message(question.questions, answers: answers, restored: question.isRestored || gone)
+        if gone {
+            _ = deliver(runID, text: shown, mode: .auto)
+            return
+        }
         switch question.origin {
         case .codex(let rpcID):
             codexServers[runID]?.respond(rpcID, CodexRPC.answers(answers))
@@ -309,8 +314,11 @@ extension WorkspaceManager {
         case .pi(let requestID):
             processes[runID]?.send(PiRPC.dialogResponse(requestID: requestID,
                                                         value: question.questions.first.flatMap { answers[$0.id]?.first }))
-        case .message:
+        case .openCode(let form):
+            answerOpenCode(runID, form: form, answers: answers)
+        case .message, .restored:
             // Into the turn when the agent takes it there, else as the next message: your bubble shows it either way.
+            // A restored one resumes the conversation the way any message of yours does.
             _ = deliver(runID, text: shown, mode: .auto)
             return
         }
@@ -326,6 +334,7 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                client.lastTurnID = turn
                 noteConversationTurn(id, turnID: turn)
                 // Codex started a turn on its own (background work it waited for finished): the session works again.
                 if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
@@ -395,7 +404,7 @@ extension WorkspaceManager {
             append(id, RunEvent(kind: .system, text: tr("ws.event.sessionAllowed", ToolSummary.oneLine(request.command.isEmpty ? request.reason : request.command, 80))))
             return
         }
-        let requestID = "codex-" + request.rpcID.text
+        let requestID = PermissionRequestID.scoped("codex", session: id, native: request.rpcID.text)
         if request.kind == .mcpTool {
             presentCodexMcpApproval(id, request, requestID: requestID)
             return
@@ -412,31 +421,21 @@ extension WorkspaceManager {
         append(id, event)
         // A non-empty suggestion list enables "Always", which Codex knows as "accept for this session".
         let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
-                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
+                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date(),
+                                        // Why a command asks (it wants the network, say); a file change's reason is its title.
+                                        ask: PermissionAsk(reason: isCommand ? request.reason : ""))
         codexRequests[requestID] = request
         approvals[id, default: []].append(pending)
         update(id) { $0.move(to: .waitingApproval) }
         if let run = run(id) { onApproval?(run, pending) }
     }
 
-    /// An MCP server's request through Codex (a tool that wants to run, or something to confirm): the same approval
-    /// card as a command, titled with the tool and its server in readable words.
+    /// An MCP server's request through Codex (a tool that wants to run, or something to confirm). Nook remembers
+    /// "Always" for this tool itself, so it is offered even when Codex cannot remember it.
     private func presentCodexMcpApproval(_ id: UUID, _ request: CodexApprovalRequest, requestID: String) {
-        let tool = "mcp__\(request.server.isEmpty ? "mcp" : request.server)__\(request.tool.isEmpty ? "confirm" : request.tool)"
-        var input: [String: Any] = request.arguments
-        // Without arguments to show, the server's own question says what is being allowed.
-        if input.isEmpty, !request.reason.isEmpty { input["message"] = request.reason }
-        let label = McpToolName(tool)?.label ?? tool
-        let summary = request.reason.isEmpty ? label : "\(label) · \(ToolSummary.oneLine(request.reason, 120))"
-        let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
-        append(id, event)
-        // Nook remembers "Always" for this tool itself, so it is offered even when Codex cannot remember it.
-        let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
-                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
         codexRequests[requestID] = request
-        approvals[id, default: []].append(pending)
-        update(id) { $0.move(to: .waitingApproval) }
-        if let run = run(id) { onApproval?(run, pending) }
+        presentMcpRequest(id, requestID: requestID, server: request.server, tool: request.tool, message: request.reason,
+                          arguments: request.arguments, suggestions: JSONBox(["session"]))
     }
 
     /// The events only app-server sends, routed here from `handleCodex`.
@@ -470,7 +469,7 @@ extension WorkspaceManager {
             guard turns[id]?.timeline.eventID(forCall: callID) == nil else { return }
             let input: [String: Any] = ["description": TimelinePresentation.headline(prompt, limit: 80), "prompt": prompt,
                                         "subagent_type": model ?? "codex"]
-            feed(id, .toolStarted(AgentToolCall(id: callID, name: "Agent", title: "Agent · " + TimelinePresentation.headline(prompt, limit: 80),
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: CanonicalTool.subagentName, title: CanonicalTool.subagentName + " · " + TimelinePresentation.headline(prompt, limit: 80),
                                                 detail: ToolSummary.json(input), input: JSONBox(input), state: failed ? .failed : .running)))
             guard let eventID = turns[id]?.timeline.eventID(forCall: callID) else { return }
             for thread in threads { codexSubagents[id, default: [:]][thread] = eventID }
@@ -520,7 +519,7 @@ extension WorkspaceManager {
             noteFailure(id, text: error)
         }
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
-        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
+        append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0, for: id), state: failed ? .failed : .done))
         expireApprovals(id)
         questions[id] = nil
         turns[id] = nil

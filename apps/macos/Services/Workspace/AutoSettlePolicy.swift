@@ -9,7 +9,7 @@ enum AutoSettlePolicy {
         /// Quiet for longer than this many days settles; 0 or less switches the inactivity rule off.
         var inactivityDays = 3
         var settleOnMergedPullRequest = false
-        /// A pull request closed without merging settles its idle session too (as).
+        /// A pull request closed without merging settles its idle session too.
         var settleOnClosedPullRequest = false
         /// A session whose pull request is still open never settles for inactivity ("Keep sessions with an open PR").
         var keepWithOpenPullRequest = false
@@ -44,6 +44,35 @@ enum AutoSettlePolicy {
     static let newInstallDefaults = Settings(enabled: true, inactivityDays: 7, settleOnMergedPullRequest: true,
                                              settleOnClosedPullRequest: true)
 
+    /// Once, for an install that still has the old default (off, never changed): the rules a new install gets,
+    /// them. Settings you changed stay as they are; the sessions you kept out of it stay out.
+    static func upgradingOldDefault(_ settings: Settings) -> Settings {
+        var untouched = settings
+        untouched.perThreadOptOut = []
+        guard untouched == Settings() else { return settings }
+        var upgraded = newInstallDefaults
+        upgraded.perThreadOptOut = settings.perThreadOptOut
+        return upgraded
+    }
+
+    /// The key of this Mac among the machines with rules of their own; an SSH machine goes by its `RemoteMachine.id`.
+    static let thisMac = "local"
+
+    /// The rules for sessions on `machine` (nil: this Mac): its own when it has them, else the ones for all machines, per
+    /// environment. The sessions you kept out of it stay out on every machine.
+    static func settings(for machine: String?, all: Settings, perMachine: [String: Settings]) -> Settings {
+        guard var own = perMachine[machine ?? thisMac] else { return all }
+        own.perThreadOptOut = all.perThreadOptOut
+        return own
+    }
+
+    /// One rule changed for all machines: the machines with their own rules take it too.
+    static func settingAll<Value>(_ field: WritableKeyPath<Settings, Value>, to value: Value, all: inout Settings,
+                                  perMachine: inout [String: Settings]) {
+        all[keyPath: field] = value
+        for key in perMachine.keys { perMachine[key]?[keyPath: field] = value }
+    }
+
     /// How long after Nook first remembered anything a launch still counts as the first one.
     static let firstLaunchWindow: TimeInterval = 10 * 60
 
@@ -62,8 +91,8 @@ enum AutoSettlePolicy {
     enum SettleReason: String, Equatable, Sendable { case mergedPullRequest, closedPullRequest, inactivity }
 
     enum KeepReason: String, Equatable, Sendable {
-        case disabled, alreadySettled, optedOut, pinned, openRequest, turnRunning, backgroundWork, queuedMessages
-        case snoozed, openPullRequest, recentActivity
+        case disabled, alreadySettled, optedOut, unsettledByYou, pinned, openRequest, turnRunning, backgroundWork
+        case queuedMessages, snoozed, openPullRequest, recentActivity
     }
 
     enum Decision: Equatable, Sendable {
@@ -79,6 +108,8 @@ enum AutoSettlePolicy {
         if row.settled { return .keep(.alreadySettled) }
         guard settings.enabled else { return .keep(.disabled) }
         if settings.perThreadOptOut.contains(row.id) { return .keep(.optedOut) }
+        // You brought it back from Settled: it stays until something new happens in it, then the rules apply again.
+        if let unsettled = row.unsettledAt, row.lastActivity <= unsettled { return .keep(.unsettledByYou) }
         if row.pinned { return .keep(.pinned) }
         if row.needsYou { return .keep(.openRequest) }
         if row.isActive { return .keep(.turnRunning) }
@@ -95,8 +126,11 @@ enum AutoSettlePolicy {
         case .open where settings.keepWithOpenPullRequest: return .keep(.openPullRequest)
         default: break
         }
+        // A snooze that ran out brought the session back to you: its quiet time counts from then.
+        let woke = row.snoozedUntil.flatMap { $0 <= now ? $0 : nil }
+        let quietSince = max(row.lastActivity, woke ?? .distantPast)
         if settings.inactivityDays > 0,
-           row.lastActivity < now.addingTimeInterval(-Double(settings.inactivityDays) * 86_400) {
+           quietSince < now.addingTimeInterval(-Double(settings.inactivityDays) * 86_400) {
             return .settle(.inactivity)
         }
         return .keep(.recentActivity)

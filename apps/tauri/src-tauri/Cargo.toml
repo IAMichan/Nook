@@ -38,6 +38,8 @@ reqwest.workspace = true
 fancy-regex = "0.20"
 url = "2"
 iana-time-zone = "0.1"
+# Screenshots are shrunk and cropped on every platform (games.rs, services/part.rs), mobile included.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
@@ -45,7 +47,6 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 cpal = "0.18"
 arboard = "3"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-dialog = "2"
 portable-pty = "0.9"
 

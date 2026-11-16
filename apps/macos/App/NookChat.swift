@@ -14,6 +14,9 @@ struct MailDraft: Identifiable, Equatable {
     var from: String = ""
     /// Files on this Mac that go with it, attached at the end of its text.
     var attachments: [String] = []
+    /// The Message-ID of the mail this answers (from inbox_mail, search_mail or read_mail). Set: Mail sends it as a reply
+    /// to that message, in its thread and from the account it came to; empty, or a message Mail cannot find: a new mail.
+    var replyTo: String = ""
     var state: State = .draft
 
     /// Not sent, opened or closed yet.
@@ -32,6 +35,8 @@ struct MailDraft: Identifiable, Equatable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: #"^((re|fw|fwd|aw|wg|tr|rv)\s*:\s*)+"#, with: "", options: .regularExpression)
         }
+        // Answers to two different messages are two mails, also to the same person; a new answer to the same one replaces it.
+        if !replyTo.isEmpty, !other.replyTo.isEmpty { return replyTo == other.replyTo }
         let recipients = people(to)
         if !recipients.isEmpty, recipients == people(other.to) { return true }
         let ownTopic = topic(subject)
@@ -56,6 +61,8 @@ struct ChatMessage: Identifiable {
     var status = ""
     var streaming = false
     var isError = false
+    /// A question a scheduled task asked (`ScheduledTaskTarget.nook`), not one the user typed: shown as the run's marker.
+    var scheduled = false
     /// Context attached without tools: screen content, a Shelf file.
     var sources: [String] = []
     /// What Nook consulted for this answer, with outcome per source.
@@ -193,8 +200,13 @@ struct Conversation: Identifiable, ConversationListItem {
     var pinned = false
     /// Out of the active list but kept; found again through the archive.
     var archived = false
+    /// The scheduled task whose run Nook answered here (`ScheduledTaskTarget.nook`): the list shows a clock and the
+    /// conversation the task's bar.
+    var scheduledTaskID: UUID?
 
     var isEmpty: Bool { messages.isEmpty }
+    var asksAttention: Bool { status != .idle }
+    var isScheduledRun: Bool { scheduledTaskID != nil }
 
     /// While Nook answers: when you asked, so the list and the header can show how long it has been going.
     var turnStarted: Date? { busy ? messages.last(where: { $0.role == .user })?.date : nil }
@@ -229,10 +241,29 @@ struct Conversation: Identifiable, ConversationListItem {
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
         // One line for a notification or the strip: the citations' numbers mean nothing there.
-        let sample = String(Citations.sanitize(last.text, valid: []).prefix(240)).replacingOccurrences(of: "\n", with: " ")
+        let sample = Self.withoutCitations(last.text, keeping: 240).replacingOccurrences(of: "\n", with: " ")
         let cleaned = String(sample.unicodeScalars.filter { !Self.markdownStripSet.contains($0) })
             .trimmingCharacters(in: .whitespaces)
         return String(cleaned.prefix(80))
+    }
+
+    /// The first `length` characters of `text` with every citation taken out, as `Citations.sanitize` of the whole text
+    /// gives them. Only its start is read: the preview keeps 80 characters, and running the citation search over a long
+    /// answer on every redraw of a list cost far more than that. The start is cut before its last "[", so a citation is
+    /// never cut in half (its digits would be left behind); a citation holds no "[", so every one before the cut is
+    /// whole. The spaces before the cut go too, since a citation after it would take them out. When the citations took
+    /// out so much that fewer than `length` characters are left, the whole text is read.
+    static func withoutCitations(_ text: String, keeping length: Int) -> String {
+        var head = text.prefix(length + 160)
+        if head.endIndex < text.endIndex {
+            if let open = head.lastIndex(of: "[") { head = head[..<open] }
+            // A citation taken out takes the spaces before it along: they may belong to one after the cut.
+            while head.last == " " { head = head.dropLast() }
+        }
+        guard head.endIndex < text.endIndex else { return String(Citations.sanitize(text, valid: []).prefix(length)) }
+        let clean = Citations.sanitize(String(head), valid: [])
+        guard clean.count > length else { return String(Citations.sanitize(text, valid: []).prefix(length)) }
+        return String(clean.prefix(length))
     }
 
     /// Extracts a concise title from the initial user prompt.
@@ -292,12 +323,80 @@ final class NookChat: ObservableObject {
 
     /// The list as shown: with a search, and optionally the archive instead.
     func list(query: String, showArchived: Bool) -> [Conversation] {
-        ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
+        guard query.isEmpty else {
+            return ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
+        }
+        let order = listOrder()
+        let ids = showArchived ? order.archived() : order.active
+        guard !ids.isEmpty else { return [] }
+        let byID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
     }
 
     /// How many `list` would give, without sorting them: the archive shelf shows its count while it is closed.
     func count(query: String, showArchived: Bool) -> Int {
-        ConversationList.matching(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived).count
+        guard query.isEmpty else {
+            return ConversationList.matching(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived).count
+        }
+        let order = listOrder()
+        return showArchived ? order.archivedCount : order.active.count
+    }
+
+    /// What decides a conversation's place in the list without a search: whether it is listed, archived or pinned, and
+    /// when it was last touched. A streamed chunk changes none of these (`update` leaves `updated` alone while streaming).
+    /// Sorted by `ConversationList` itself, so the order is the one a search-less `visible` gives.
+    private struct ListSlot: Equatable, ConversationListItem {
+        let id: UUID
+        let listed: Bool
+        let archived: Bool
+        let pinned: Bool
+        let updated: Date
+        var title: String { "" }
+        var preview: String { "" }
+        var busy: Bool { false }
+    }
+
+    /// The order of the list without a search, kept until a conversation's place in it changes (`ListSlot`). The list,
+    /// the count of the archive and the ring around Nook ask for it on every redraw, and `conversations` publishes for
+    /// every streamed chunk: filtering and sorting every conversation each time was most of what drawing the list cost.
+    /// The ids are kept, not the conversations, so what a row shows (its preview, its status) is always the latest.
+    private final class ListOrder {
+        let slots: [ListSlot]
+        let active: [UUID]
+        let archivedCount: Int
+        private var sortedArchive: [UUID]?
+        private let sortArchive: () -> [UUID]
+
+        init(slots: [ListSlot], active: [UUID], archivedCount: Int, sortArchive: @escaping () -> [UUID]) {
+            self.slots = slots
+            self.active = active
+            self.archivedCount = archivedCount
+            self.sortArchive = sortArchive
+        }
+
+        /// The archive (up to 500) is sorted only once something shows it.
+        func archived() -> [UUID] {
+            if let sortedArchive { return sortedArchive }
+            let sorted = sortArchive()
+            sortedArchive = sorted
+            return sorted
+        }
+    }
+    private var listOrderMemo: ListOrder?
+
+    private func listOrder() -> ListOrder {
+        let slots = conversations.map {
+            ListSlot(id: $0.id, listed: !$0.isEmpty || $0.busy, archived: $0.archived, pinned: $0.pinned, updated: $0.updated)
+        }
+        if let memo = listOrderMemo, memo.slots == slots { return memo }
+        let listed = slots.filter(\.listed)
+        let active = ConversationList.visible(listed, query: "", showArchived: false).map(\.id)
+        let archivedCount = listed.lazy.filter(\.archived).count
+        let memo = ListOrder(slots: slots, active: active, archivedCount: archivedCount) {
+            ConversationList.visible(listed, query: "", showArchived: true).map(\.id)
+        }
+        listOrderMemo = memo
+        return memo
     }
 
     var hasArchived: Bool { conversations.contains { $0.archived && !$0.isEmpty } }
@@ -375,6 +474,23 @@ final class NookChat: ObservableObject {
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
         if activeID == id { activeID = history.first?.id }
+        scheduleSave()
+    }
+
+    /// The latest conversation a scheduled task's runs answered in; nil before its first run or after the user deleted
+    /// them all.
+    func conversation(forTask task: UUID) -> Conversation? {
+        conversations.filter { $0.scheduledTaskID == task }.max { $0.updated < $1.updated }
+    }
+
+    /// Marks a run's conversation as the task's (the list's clock, the bar over it) and its question as the run's own,
+    /// not one the user typed.
+    func markScheduledRun(_ id: UUID, task: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].scheduledTaskID = task
+        if let first = conversations[index].messages.firstIndex(where: { $0.role == .user }) {
+            conversations[index].messages[first].scheduled = true
+        }
         scheduleSave()
     }
 
@@ -510,7 +626,7 @@ final class NookChat: ObservableObject {
     func setScope(_ scope: SourceScope, conversation id: UUID) {
         guard let index = index(of: id) else { return }
         conversations[index].scope = scope
-        UserDefaults.standard.set(try? JSONEncoder().encode(scope), forKey: Self.lastScopeKey)
+        UserDefaults.standard.setEncoded(scope, forKey: Self.lastScopeKey)
         scheduleSave()
     }
 
@@ -571,16 +687,19 @@ final class NookChat: ObservableObject {
         conversations[index].queue.hold()
     }
 
-    /// Chat history turns formatted for model context, excluding current turn.
+    /// Chat history turns formatted for model context, excluding current turn: the newest turns in full, older ones
+    /// shortened, and what the user asked before that as a short recap, all within one budget (`ConversationWindow`).
     /// `hiding`: sources an external brain may not see; answers built from them are left out, with the question that led to them.
-    func history(before id: UUID, limit: Int = 16, hiding hidden: Set<String> = []) -> [ChatTurn] {
+    func history(before id: UUID, limits: ConversationWindow.Limits = .standard, hiding hidden: Set<String> = []) -> [ChatTurn] {
         guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == id } }) else { return [] }
         let earlier = Self.withoutPrivate(Array(conversation.messages.prefix { $0.id != id }), hiding: hidden)
-        return earlier.suffix(limit).compactMap { message in
+        // The recap only needs the questions of a very long conversation, so its oldest answers are not even formatted.
+        let turns: [ChatTurn] = earlier.suffix(200).compactMap { message in
             let text = message.isError ? "" : message.historyText
             guard !text.isEmpty else { return nil }
-            return ChatTurn(fromUser: message.role == .user, text: String(text.prefix(4000)))
+            return ChatTurn(fromUser: message.role == .user, text: text)
         }
+        return ConversationWindow.fit(turns, limits: limits)
     }
 
     /// Drops the answers that were built from a hidden source and the question right before each of them.
@@ -630,6 +749,17 @@ final class NookChat: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.save()
         }
+    }
+
+    /// On quit: a save still waiting for its debounce is written now, and every queued write finishes before this returns,
+    /// so the last edits are not lost when the process ends right after.
+    func flush() {
+        if let task = saveTask {
+            task.cancel()
+            saveTask = nil
+            save()
+        }
+        Self.saveQueue.sync {}
     }
 
     private func save() {
@@ -721,6 +851,7 @@ private struct StoredConversation: Codable, Sendable {
     var scope: SourceScope?
     var pinned: Bool?
     var archived: Bool?
+    var scheduledTask: UUID?
 
     @MainActor
     init(_ conversation: Conversation) {
@@ -733,6 +864,7 @@ private struct StoredConversation: Codable, Sendable {
         scope = conversation.scope == .automatic ? nil : conversation.scope
         pinned = conversation.pinned ? true : nil
         archived = conversation.archived ? true : nil
+        scheduledTask = conversation.scheduledTaskID
     }
 
     func restored() -> Conversation {
@@ -741,6 +873,7 @@ private struct StoredConversation: Codable, Sendable {
         conversation.scope = scope ?? .automatic
         conversation.pinned = pinned ?? false
         conversation.archived = archived ?? false
+        conversation.scheduledTaskID = scheduledTask
         conversation.messages = messages.map { $0.restored() }
         return conversation
     }
@@ -764,6 +897,7 @@ private struct StoredMessage: Codable {
     var plan: StoredPlan?
     var tasks: [RunTaskStep]?
     var privateBrief: String?
+    var scheduled: Bool?
 
     @MainActor
     init?(_ message: ChatMessage) {
@@ -785,6 +919,7 @@ private struct StoredMessage: Codable {
         notices = message.notices.isEmpty ? nil : message.notices
         tasks = message.tasks.isEmpty ? nil : message.tasks
         privateBrief = message.privateBrief.isEmpty ? nil : message.privateBrief
+        scheduled = message.scheduled ? true : nil
     }
 
     func restored() -> ChatMessage {
@@ -802,6 +937,7 @@ private struct StoredMessage: Codable {
         message.notices = notices ?? []
         message.tasks = tasks ?? []
         message.privateBrief = privateBrief ?? ""
+        message.scheduled = scheduled ?? false
         if let plan {
             plan.restore(into: &message)
         } else if let legacy = StoredPlan.legacy(in: text) {
@@ -897,6 +1033,7 @@ private struct StoredMail: Codable {
     var subject: String
     var body: String
     var from: String?
+    var replyTo: String?
     var state: String
 
     init(_ mail: MailDraft) {
@@ -905,6 +1042,7 @@ private struct StoredMail: Codable {
         subject = mail.subject
         body = mail.body
         from = mail.from.isEmpty ? nil : mail.from
+        replyTo = mail.replyTo.isEmpty ? nil : mail.replyTo
         switch mail.state {
         case .sent: state = "sent"
         case .opened: state = "opened"
@@ -915,6 +1053,7 @@ private struct StoredMail: Codable {
 
     func restored() -> MailDraft {
         var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, from: from ?? "")
+        mail.replyTo = replyTo ?? ""
         switch state {
         case "sent": mail.state = .sent
         case "opened": mail.state = .opened
@@ -941,6 +1080,10 @@ enum ReplyContext {
     /// The question brings its own material (words selected in Nook, `SelectionAsk`): no screen and no dropped file go
     /// with it unless it asks about the screen itself.
     @TaskLocal static var selfContained = false
+    /// The page the user asked about from Nook's browser extension, with its text as they see it
+    /// (`BrowserExtensionPanel.Page`): it goes with the question like a dropped file, so Nook answers about the page at
+    /// once instead of first reading it with a tool. Only when the conversation's sources allow the browser extension.
+    @TaskLocal static var page: ScreenSnapshot?
     /// What the chosen brain found for a question both brains work on (`ScreenBrain.needsBoth`).
     @TaskLocal static var outside = ""
     /// The note the model on this Mac wrote for the chosen brain (`PrivateBrief`), and the mail addresses it read: those

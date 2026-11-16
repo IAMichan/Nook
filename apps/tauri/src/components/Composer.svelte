@@ -1,16 +1,20 @@
 <script lang="ts">
-  // Het invoerveld: Return verstuurt, Shift+Return is een nieuwe regel. Afbeeldingen plakken of slepen kan ook, en een
-  // document (tekst, PDF, Word) slepen: Rust leest de tekst eruit en die gaat mee met je vraag.
-  // Onder het veld: welke bronnen Nook mag gebruiken en welk brein denkt (klik om een ander lokaal model te kiezen).
+  // The Tauri app's composer: Nook's shared composer (packages/web-ui, the same one the browser extension uses) with
+  // what only this app has: dropped documents read by Rust, drafts kept per Nook, a picture of the screen from the
+  // bar, the microphone, and under the box the sources Nook may use and the brain that thinks.
+  import { untrack } from "svelte";
+  import SharedComposer from "@nook/web-ui/Composer.svelte";
+  import type { ComposerMessage } from "@nook/web-ui/Composer.svelte";
   import { api } from "../lib/api";
+  import { askedBefore } from "../lib/recall";
+  import { drafts } from "../lib/drafts";
   import { brainApi, type ServerModel } from "../lib/brain";
   import { barDraft, Draft } from "../lib/draft.svelte";
   import { nook } from "../lib/state.svelte";
-  import { tr, english } from "../lib/i18n.svelte";
+  import { tr, locale } from "../lib/i18n.svelte";
   import { attachments } from "../lib/attachments.svelte";
   import { listening } from "../lib/listening.svelte";
   import { heard } from "./Orb.svelte";
-  import Icon from "./Icon.svelte";
   import MicButton from "./MicButton.svelte";
   import Listening from "../views/services/Listening.svelte";
   import SourcePicker from "./SourcePicker.svelte";
@@ -20,59 +24,45 @@
   // The bar's field keeps its draft when the panel closes; other fields keep theirs only while they are open.
   const ownDraft = new Draft();
   const draft = $derived(compact ? barDraft : ownDraft);
-  let dragging = $state(false);
   let brainMenu = $state(false);
   let servers = $state<ServerModel[]>([]);
-  let field: HTMLTextAreaElement;
-  let fileInput: HTMLInputElement;
   let brainRoot = $state<HTMLDivElement>();
+  let composer = $state<SharedComposer>();
+
+  const history = $derived(askedBefore(nook.active?.messages ?? []));
+
+  // Every Nook keeps what you were typing: switch away and back (or close the window) and it is still there. The bar
+  // and the main window share it, so a question started in the bar can be finished in the window.
+  let draftFor: string | null = null;
+  $effect(() => {
+    const id = nook.activeId;
+    untrack(() => {
+      if (id === draftFor) return;
+      draftFor = id;
+      draft.text = drafts.get(id);
+    });
+  });
+  $effect(() => {
+    const value = draft.text;
+    untrack(() => drafts.set(draftFor, value));
+  });
 
   export function focus() {
-    field?.focus();
+    composer?.focus();
   }
-
-  $effect(() => {
-    if (autofocus) field?.focus();
-  });
 
   // Een schermdeel komt als afbeelding bij het invoerveld van de balk.
   $effect(() => {
     if (!compact || !attachments.pending.length) return;
     for (const { mediaType, base64 } of attachments.take()) draft.addImage(mediaType, base64);
-    field?.focus();
+    composer?.focus();
   });
 
-  async function send() {
-    const value = draft.text.trim();
-    if (draft.empty || nook.busy || draft.reading) return;
-    const attached = draft.images.map(({ mediaType, base64 }) => ({ mediaType, base64 }));
-    const file = draft.attachment;
-    draft.clear();
+  async function send({ text, images, attachment }: ComposerMessage) {
+    drafts.clear(draftFor);
     heard();
-    await nook.ask(value || (file ? tr(`Wat staat er in ${file.name}?`, `What is in ${file.name}?`) : tr("Wat staat er op deze afbeelding?", "What is in this image?")), attached.length ? attached : undefined, file ?? undefined);
-  }
-
-  function key(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      send();
-    }
-  }
-
-  function pickFile() {
-    draft.picking = true;
-    fileInput.click();
-  }
-
-  function picked() {
-    draft.picking = false;
-    if (fileInput.files) draft.addFiles(fileInput.files);
-    fileInput.value = "";
-  }
-
-  function paste(e: ClipboardEvent) {
-    const files = Array.from(e.clipboardData?.files ?? []);
-    if (files.length) draft.addFiles(files);
+    const question = text || (attachment ? tr("Wat staat er in {name}?", "What is in {name}?", { name: attachment.name }) : tr("Wat staat er op deze afbeelding?", "What is in this image?"));
+    await nook.ask(question, images.length ? images : undefined, attachment ?? undefined);
   }
 
   async function openBrainMenu() {
@@ -91,104 +81,104 @@
     localStorage.setItem("settings.section", "brain");
     api.showMain("settings");
   }
+
+  const texts = $derived({
+    placeholder: tr("Vraag Nook iets…", "Ask Nook anything…"),
+    placeholderFor: (name: string) => tr("Vraag iets over {name}…", "Ask about {name}…", { name }),
+    field: tr("Bericht aan Nook", "Message Nook"),
+    send: tr("Versturen (Enter)", "Send message (Enter)"),
+    stop: tr("Antwoord stoppen", "Stop response"),
+    attach: tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents"),
+    removeImage: tr("Afbeelding weghalen", "Remove image"),
+    removeFile: tr("Weghalen", "Remove"),
+    reading: tr("Document lezen…", "Reading document…"),
+    characters: tr("tekens", "characters"),
+  });
 </script>
 
 <svelte:window onclick={(e) => brainMenu && !brainRoot?.contains(e.target as Node) && (brainMenu = false)} />
 
-<div
-  class="composer"
-  class:compact
-  class:dragging
-  role="group"
-  ondragover={(e) => { e.preventDefault(); dragging = e.dataTransfer?.types.includes("Files") ?? false; }}
-  ondragleave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dragging = false; }}
-  ondrop={(e) => {
-    e.preventDefault();
-    dragging = false;
-    if (e.dataTransfer?.files) draft.addFiles(e.dataTransfer.files);
-  }}
->
-  {#if listening.active}<Listening onclose={() => listening.stop()} />{/if}
-  {#if draft.images.length || draft.attachment || draft.reading || dragging}
-    <div class="thumbs">
-      {#each draft.images as img, i (img.url)}
-        <button class="thumb" title={tr("Afbeelding weghalen", "Remove image")} aria-label={tr("Afbeelding weghalen", "Remove image")} onclick={() => (draft.images = draft.images.filter((_, j) => j !== i))}>
-          <img src={img.url} alt="" />
-        </button>
-      {/each}
-      {#if draft.reading}<span class="file faint">{tr("Document lezen…", "Reading document…")}</span>{/if}
-      {#if draft.attachment}
-        <button class="file" title={tr("Weghalen", "Remove")} onclick={() => (draft.attachment = null)}>
-          📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString(english() ? "en-GB" : "nl-NL")} {tr("tekens", "characters")} ×</span>
-        </button>
-      {/if}
-      {#if dragging}<span class="slot" aria-hidden="true">+</span>{/if}
-    </div>
-  {/if}
-  {#if draft.fileError}<p class="err">{draft.fileError}</p>{/if}
-  <input class="file-input" type="file" multiple accept="image/*,.txt,.md,.csv,.json,.pdf,.docx" bind:this={fileInput} onchange={picked} oncancel={() => (draft.picking = false)} aria-label={tr("Bestanden bijvoegen", "Attach files")} />
-  <div class="row">
-    <button class="ghost attach" onclick={pickFile} title={tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents")} aria-label={tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents")} disabled={draft.reading}><Icon name="attach" size={18} /></button>
-    <textarea
-      bind:this={field}
-      bind:value={draft.text}
-      onkeydown={key}
-      onpaste={paste}
-      rows="1"
-      aria-label={tr("Bericht aan Nook", "Message Nook")}
-      placeholder={draft.attachment ? tr(`Vraag iets over ${draft.attachment.name}…`, `Ask about ${draft.attachment.name}…`) : tr("Vraag Nook iets…", "Ask Nook anything…")}
-    ></textarea>
-    <MicButton />
-    {#if nook.busy}
-      <button class="ghost" onclick={() => nook.stop()} title={tr("Antwoord stoppen", "Stop response")} aria-label={tr("Antwoord stoppen", "Stop response")}>■</button>
-    {:else}
-      <button class="primary" onclick={send} disabled={draft.empty || draft.reading} title={tr("Versturen (Enter)", "Send message (Enter)")} aria-label={tr("Versturen", "Send message")}><Icon name="arrow" size={18} /></button>
-    {/if}
-  </div>
-  {#if nook.info && !compact}
-    <div class="under">
-      <SourcePicker />
-      <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
-      <div class="brain" bind:this={brainRoot}>
-        <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
-          title={nook.info.brainLocal ? tr("Denkt op deze computer", "Thinks on this computer") : tr("Externe AI", "External AI")}>
-          {nook.info.brainLocal ? tr("● lokaal", "● local") : tr("○ extern", "○ external")} · {nook.info.brainLabel}{nook.info.brainReady ? "" : tr(" · niet klaar", " · not ready")}
-        </button>
-        {#if brainMenu}
-          <div class="menu">
-            {#each servers as m (m.server + m.name)}
-              <button class="ghost item" onclick={() => chooseModel(m)}>{m.name} <span class="faint">{m.server === "ollama" ? "Ollama" : "LM Studio"}</span></button>
-            {:else}
-              <p class="faint item">{tr("Geen lokale modellen gevonden.", "No local models found.")}</p>
-            {/each}
-            <div class="sep"></div>
-            <button class="ghost item" onclick={openBrainSettings}>{tr("Brein-instellingen…", "Brain settings…")}</button>
+<div class="composer" class:compact>
+  <SharedComposer
+    bind:this={composer}
+    {draft}
+    {texts}
+    {compact}
+    {autofocus}
+    {history}
+    historyKey={nook.activeId}
+    locale={locale()}
+    busy={nook.busy}
+    escapeStops={!compact}
+    onsend={send}
+    onstop={() => nook.stop()}
+  >
+    {#snippet top()}
+      {#if listening.active}<Listening onclose={() => listening.stop()} />{/if}
+    {/snippet}
+    {#snippet extras()}
+      <MicButton />
+    {/snippet}
+    {#snippet under()}
+      {#if nook.info && !compact}
+        <div class="under">
+          <SourcePicker />
+          <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
+          <div class="brain" bind:this={brainRoot}>
+            <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
+              title={nook.info.brainLocal ? tr("Denkt op deze computer", "Thinks on this computer") : tr("Externe AI", "External AI")}>
+              {nook.info.brainLocal ? tr("● lokaal", "● local") : tr("○ extern", "○ external")} · {nook.info.brainLabel}{nook.info.brainReady ? "" : tr(" · niet klaar", " · not ready")}
+            </button>
+            {#if brainMenu}
+              <div class="menu">
+                {#each servers as m (m.server + m.name)}
+                  <button class="ghost item" onclick={() => chooseModel(m)}>{m.name} <span class="faint">{m.server === "ollama" ? "Ollama" : "LM Studio"}</span></button>
+                {:else}
+                  <p class="faint item">{tr("Geen lokale modellen gevonden.", "No local models found.")}</p>
+                {/each}
+                <div class="sep"></div>
+                <button class="ghost item" onclick={openBrainSettings}>{tr("Brein-instellingen…", "Brain settings…")}</button>
+              </div>
+            {/if}
           </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
+        </div>
+      {/if}
+    {/snippet}
+  </SharedComposer>
 </div>
 
 <style>
-  .composer { width: calc(100% - 64px); max-width: 760px; align-self: center; margin: 0 0 24px; padding: 12px; border: 1px solid var(--line2); border-radius: 16px; background: var(--graphite); box-shadow: 0 4px 24px #0002; }
-  .composer:focus-within { border-color: color-mix(in srgb, var(--iris) 36%, var(--line2)); }
-  .file-input { display: none; }
-  .composer.dragging { outline: 2px dashed var(--iris); outline-offset: -4px; }
-  .composer.compact { padding: 8px 10px; width: 100%; max-width: none; margin: 0; border-radius: 0; border: 0; border-top: 1px solid var(--line); box-shadow: none; }
-  .row { display: flex; gap: 8px; align-items: flex-end; }
-  textarea {
-    flex: 1;
-    min-width: 0;
-    resize: none;
-    min-height: 36px;
-    max-height: 140px;
-    field-sizing: content;
-    line-height: 1.6;
-    background: transparent; border: 0; padding: 8px 2px; box-shadow: none;
+  /* The shared composer in this app's theme (app.css). */
+  .composer {
+    --nc-surface: var(--graphite);
+    --nc-line: var(--line2);
+    --nc-line-focus: color-mix(in srgb, var(--iris) 36%, var(--line2));
+    --nc-text: var(--paper);
+    --nc-faint: var(--text3);
+    --nc-hover: var(--row-hover);
+    --nc-accent: var(--iris);
+    --nc-on-accent: var(--on-iris);
+    --nc-accent-hover: color-mix(in srgb, var(--iris) 88%, var(--canvas));
+    --nc-disabled: var(--line2);
+    --nc-stop: var(--paper);
+    --nc-on-stop: var(--canvas);
+    --nc-error: var(--coral);
+    --nc-shadow: 0 4px 24px #0002;
+    --nc-pad: 12px;
+    width: calc(100% - 64px);
+    max-width: 760px;
+    align-self: center;
+    margin: 0 0 24px;
   }
-  .row :global(button) { flex-shrink: 0; width: 36px; height: 36px; padding: 0; font-size: 15px; }
-  .under { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); min-width: 0; }
+  .composer.compact {
+    --nc-radius: 0;
+    --nc-shadow: none;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  .composer.compact :global(.box) { border-width: 1px 0 0; border-color: var(--line); }
+  .under { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 4px; min-width: 0; }
   .brain { position: relative; min-width: 0; margin-left: auto; max-width: 100%; }
   .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
   .chip.local { color: var(--text2); }
@@ -196,16 +186,8 @@
   .menu { position: absolute; bottom: 32px; right: 0; max-width: min(320px, 80vw); box-shadow: var(--shadow-popover); z-index: 20; min-width: 220px; background: var(--smoke); border: 1px solid var(--line2); border-radius: 10px; padding: 6px; }
   .item { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; font-size: 12px; padding: 4px 6px; margin: 0; }
   .sep { border-top: 1px solid var(--line2); margin: 4px 0; }
-  .thumbs { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
-  .thumb { padding: 0; width: 46px; height: 46px; overflow: hidden; border-radius: 8px; }
-  .thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .slot { display: grid; place-items: center; width: 46px; height: 46px; box-sizing: border-box; border: 1.5px dashed var(--iris); border-radius: 8px; color: var(--iris); background: color-mix(in srgb, var(--iris) 12%, transparent); font-size: 18px; pointer-events: none; }
-  .file { max-width: 100%; overflow-wrap: anywhere; text-align: left; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
-  .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }
-  textarea:focus-visible { box-shadow: none; }
-  .row .attach { display: grid; place-items: center; }
   @media (max-width: 640px) {
-    .composer { width: calc(100% - 24px); margin-bottom: 12px; padding: 8px; }
+    .composer { width: calc(100% - 24px); margin-bottom: 12px; }
     .under { gap: 6px; }
     .brain { margin-left: 0; }
     .menu { left: 0; right: auto; }

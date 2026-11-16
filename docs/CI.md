@@ -4,24 +4,85 @@ Nook's CI runs on GitHub Actions. The macOS runners are the scarce resource: the
 time, and every queued macOS job makes the next pull request wait. The workflows are built to start one only when it
 can tell us something new.
 
-| Workflow | Runs on | When |
+Every push and pull request goes through one entry point, `ci.yml`. Its *Changes* job reads the diff with git (seconds on
+ubuntu) and starts only the areas the change can affect; `scripts/ci-changes.sh` holds the path lists. Each area is a
+reusable workflow that can also be started on its own with *Run workflow*.
+
+| Workflow | Runs on | When (`scripts/ci-changes.sh`) |
 |---|---|---|
+| `ci.yml` | ubuntu, then the areas below; ends with the `Check` job | every push to `main`, every ready pull request, and every area once a week (Monday) on `main` |
 | `build.yml` | ubuntu (UI and performance lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh`, `scripts/perf-lint.sh` |
-| `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
+| `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol`, and the Mac app's files the companion compiles too (`path: ../macos/…` in `apps/ios/project.yml`) |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
-| `relay-deploy.yml` | ubuntu, on `main` or by hand | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set |
-| `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
+| `browser-extension.yml` | ubuntu, seconds | `apps/browser-extension` (Nook's browser extension's tests) and `apps/macos/Services/BrowserExtension` |
+| `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri`; the Fuzz job runs each cargo-fuzz target of `apps/tauri/core/fuzz` for a minute |
+| `chatd.yml` | ubuntu | `apps/chatd`: `gofmt`, `go vet`, `go test` and 30 seconds of `go test -fuzz=FuzzTag` of the chat helper; the tests link a libsignal built once per pinned commit and cached |
+| `core-tests.yml` | ubuntu | `apps/macos`: `scripts/core-tests.sh`, the portable part of `NookTests`, so it keeps working for contributors without a Mac |
+| `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`, `.github/dependabot.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments), and [actionlint](https://github.com/rhysd/actionlint) catches unknown `needs`, outputs and inputs, expression typos and bad cron lines before a release or schedule runs into them |
+| `ci.yml` → *Workflow scripts* | ubuntu, seconds | `.github/scripts`: `node --test` for the scripts below |
+| `ci.yml` → *Markdown links* | ubuntu, seconds | any `*.md`: [lychee](https://lychee.cli.rs) checks relative links and `#anchors` offline |
+| `ci.yml` → *Dependency review* | ubuntu, seconds, pull requests only | manifests and lock files (`package.json`, `Cargo.lock`, `Package.resolved`, `project.yml`, …): fails on a new dependency with a high or critical vulnerability |
+| `macos-preview.yml` | macOS, only with the `preview` label | builds an ad-hoc signed `Nook.app` of the pull request (artifact `nook-macOS-preview`, 14 days) so testers can try it without Xcode; every push rebuilds while the label stays |
+| `relay-deploy.yml` | ubuntu, on `main` or by hand (main only) | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set, in the `production` environment, and marks the commit with a *Relay deploy / production* status |
+| `testflight.yml` | ubuntu (gate), then macOS; by hand on `main`, or on every companion change on `main` with `NOOK_TESTFLIGHT_ON_MAIN=true` | archives Nook Companion and uploads it to TestFlight when the App Store Connect key secrets are set (see the header of the workflow) |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 | `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |
+| `pr-size.yml` | ubuntu, seconds | labels every pull request `size:XS` to `size:XXL` from its changed lines (tests excluded) |
+| `pr-vouch.yml` | ubuntu, seconds | labels every pull request `vouch:trusted`, `vouch:unvouched` or `vouch:denounced` from its author and `.github/VOUCHED.td`; it blocks nothing. Comment `/recheck-vouch` to run it again |
+| `agent-context-budget.yml` | ubuntu, seconds | fails a pull request that makes the root `AGENTS.md` or `CLAUDE.md` larger than on the base branch (`scripts/agent-context-size.sh`), unless a maintainer adds the `agent-context-increase` label |
+| `pr-overview.yml` | ubuntu, seconds, on pull request changes, reviews and when a pull request workflow finishes | keeps one comment at the top of every open pull request up to date: size, author, areas, CI, test cases added and removed, the macOS preview download, description, review and the next steps (`.github/scripts/pr-overview.cjs`) |
+| `welcome.yml` | ubuntu, seconds | welcomes someone on their first issue or pull request with what happens next (`.github/scripts/welcome.cjs`) |
+| `pr-limits.yml` | ubuntu, on new pull requests and daily | for authors not in `.github/VOUCHED.td`: closes a fourth open pull request, and labels a conflicting one `needs rebase` and closes it after 7 days without activity (`.github/scripts/pr-limits.cjs`). Only logs until the variable `NOOK_PR_LIMITS_ENFORCE` is `true` |
+| `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later; locks issues and pull requests closed for 30 days (`keep open` exempts all of it) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
+| `scorecard.yml` | ubuntu, weekly, when the branch rules or workflows change | [OpenSSF Scorecard](https://scorecard.dev): rates the supply-chain practices; results in the Security tab and behind the README badge |
+| `gradle-wrapper.yml` | ubuntu, when the Gradle wrapper changes | checks `gradle-wrapper.jar` of the Tauri Android project against the checksums Gradle publishes |
+| `release.yml` | ubuntu (plan), macOS, then ubuntu and Windows | by hand, on a `v*` tag, or daily as a fresh beta with `NOOK_FRESH_BETA=true`: builds a draft release with the macOS files, attaches the Windows and Linux installers built by `tauri.yml`, and publishes it only when every file is there (see Releases below) |
+| CodeQL (default setup, in the repository settings) | ubuntu | code scanning of the workflows, JavaScript/TypeScript and Go on pull requests and `main`; Swift is left out because it needs a macOS runner, and Rust because the default setup API does not offer it yet |
 
-A workflow also runs when its own file changes (and `.github/actions/**` for the ones that use it).
+An area also runs when its own workflow file changes (and `.github/actions/**` for the ones that use it); a change to
+`ci.yml` or `scripts/ci-changes.sh` runs every area.
+
+## The `Check` job (required on `main`)
+
+`Check`, the last job of `ci.yml`, passes only when every job in the run passed, or was skipped because `Changes` said
+its area was not needed. It fails when a job failed or was cancelled, and when detection itself failed (detection
+fails open: if the diff cannot be read, every area runs). This is the one status check the *Require Check* ruleset asks for on `main` (see Merging), so a
+red pull request cannot be merged, by accident or by an admin, however many come in, and adding or splitting jobs needs no ruleset
+change: add the new job to `needs` of `Check` (and to `scripts/ci-changes.sh` when it can be skipped).
+
+`ci.yml` also runs *Committed files* on every pull request (`scripts/pr-files-check.sh`): it fails on build logs,
+`.xcresult` bundles, `.DS_Store`, files under `.scratch/` or derived data, and any added or changed file over 2 MiB outside
+`apps/macos/Resources/` and `docs/assets/`. Screenshots that prove a change belong in the pull request description, not
+in the repository.
+
+## Community workflows
+
+The workflows that comment or label run on `pull_request_target`, `workflow_run` or `issues`, which have a write token
+also for pull requests from forks. That is only safe because they never check out or run pull request code: they load
+their script from the default branch (`.github/scripts`) and talk to the GitHub API. Keep it that way; zizmor fails the
+pull request that adds such a trigger without an `ignore` comment saying why it is safe. A bot comment must never
+contain `/recheck-vouch`, the command `pr-vouch.yml` listens for.
+
+New issues come in through the bug report and platform test report templates and get `needs triage`; remove it once
+the issue has an area and a kind. Ideas and questions go to Discussions (`.github/ISSUE_TEMPLATE/config.yml`).
+
+## Merging
+
+`main` has two rulesets. *Protect main* asks for a pull request with one approval; repository admins may bypass it, so
+a maintainer can merge their own pull request. *Require Check* asks for the `Check` status and nobody can bypass it, so
+nothing lands on `main` while `Check` is red or still running, not even from an admin. Merge with auto-merge
+(`gh pr merge --auto`) and it lands by itself once `Check` is green.
+
+Auto-merge and the *Update branch* button are on: a pull request with auto-merge enabled merges by itself once `Check`
+is green and it has an approval. `ci.yml` already runs on `merge_group`, so a merge queue can be turned on in the
+`main` ruleset when many pull requests land at the same time; until then it costs nothing.
 
 ## What keeps the minutes down
 
-- **Path filters.** A pull request that only touches docs starts no runner at all; one that only touches the Tauri app
-  starts no macOS runner.
+- **Change detection.** A pull request that only touches docs starts only the seconds-long *Changes*, *Committed files*
+  and `Check` jobs on ubuntu; one that only touches the Tauri app starts no macOS runner.
 - **One run per pull request.** A new push, or merging or closing the PR, cancels the run that is still going. On `main`
   a running build finishes and only the newest push waits behind it, so a burst of merges costs at most two builds.
 - **Drafts wait.** Draft pull requests run nothing; marking one ready for review starts CI.
@@ -31,7 +92,8 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
   from. When a run of this repository already passed on exactly that hash, the macOS job is skipped and the summary
   links that run. This catches the push to `main` after merging a pull request that was green on an up-to-date base,
   and a pull request that merged in unrelated changes from `main`. `verified-mark` uploads the small marker artifact
-  (kept 30 days) at the end of a passing job. Markers from forks never count, and *Run workflow* always builds.
+  (kept 30 days) at the end of a passing job. Markers from forks never count, and *Run workflow* and the weekly
+  scheduled run always build: they are there to catch a new runner image, Xcode or toolchain, which no diff shows.
 - **Caches.** `build.yml` caches the Swift packages' checkouts and build products (MLX, FluidAudio, llama.cpp, …) per
   Xcode build and `project.yml`; Nook's own sources always rebuild. The Tauri jobs cache Rust with `rust-cache` and npm
   with `setup-node`. Only `main` saves caches, so pull requests cannot push each other's entries out of the quota.
@@ -57,9 +119,12 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
 
 ## Adding a workflow
 
-Copy the `on:` block (with `closed` in the pull request types), the `concurrency` block, and the `if:` on the first job
-from `build.yml`. For a job on a macOS runner, put `verified-check` in a cheap ubuntu job before it (with the same paths
-as the filter) and `verified-mark` as the last step of the macOS job.
+For a new build or test area, write a reusable workflow (`on: workflow_call` and `workflow_dispatch`, no `concurrency`
+block: it would share `ci.yml`'s group and deadlock), add its paths to `scripts/ci-changes.sh`, and add a job that calls
+it to `ci.yml` and to the `needs` of `Check`. A workflow outside `ci.yml` (labels, triage) copies the `on:` block (with
+`closed` in the pull request types) and the `concurrency` block from `ci.yml`. For a job on a macOS runner, put
+`verified-check` in a cheap ubuntu job before it (with the same paths as in `scripts/ci-changes.sh`) and `verified-mark` as
+the last step of the macOS job.
 
 ## Release notes
 
@@ -69,15 +134,38 @@ are left out. Area labels come from `labeler.yml` automatically; the kind (`enha
 the pull request by a maintainer (issue templates only label the issue). The short summary for people lives in
 [`CHANGELOG.md`](../CHANGELOG.md).
 
+## Releases (`release.yml`)
+
+- **Plan first.** A seconds-long ubuntu job picks the tag and the commit before a macOS runner starts. `beta`, `patch`,
+  `minor` and `major` release `main`; `stable` releases the current version without its suffix, built from its newest
+  beta, so a regular release only ships code beta users already ran. Run `stable` on that beta's tag (*Use workflow
+  from* › *Tags*); the beta must be on `main`.
+- **Fresh beta.** With the variable `NOOK_FRESH_BETA=true`, a daily schedule releases the next beta, but only when
+  `main` changed something besides docs since the newest release and that release is at least 20 hours old.
+- **Launch check.** Before anything is published, the app is started from the final `.dmg` with an empty home folder
+  and must stay up for 30 seconds. `codesign --verify` does not catch a crash at launch; this does.
+- **Draft until complete.** The release is created as a draft and the `publish` job makes it public (and creates the
+  tag) only when the macOS, Windows and Linux files are all attached. A failed run leaves a draft nobody sees.
+- **Build provenance.** Every download is attested: `gh attestation verify <file> --repo IAMichan/Nook`. The Sigstore bundles are attached as `Nook-<version>-macOS.intoto.jsonl` and `Nook-<version>-Windows-Linux.intoto.jsonl`, so the check also works offline with `--bundle <bundle>` (and OpenSSF Scorecard counts the releases as signed with provenance).
+
 ## Release signing (`release.yml`)
 
 The release workflow signs Nook with the best identity the repository secrets provide:
 
 | Secrets | Result |
 | --- | --- |
-| `MACOS_DEVELOPER_ID_P12`, `MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID`, `APPLE_NOTARY_PASSWORD` (app-specific password), `APPLE_TEAM_ID` | Developer ID, notarized and stapled: macOS opens Nook without the "Apple could not verify" block, and Keychain access and privacy permissions stay granted across updates. Needs a paid Apple Developer account. |
+| `MACOS_DEVELOPER_ID_P12`, `MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_TEAM_ID`, and for notarization an App Store Connect API key (`APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`; preferred) or `APPLE_NOTARY_APPLE_ID` with `APPLE_NOTARY_PASSWORD` (app-specific password) | Developer ID, notarized and stapled: macOS opens Nook without the "Apple could not verify" block, and Keychain access and privacy permissions stay granted across updates. Needs a paid Apple Developer account. |
 | `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD` (make them once with `scripts/make-release-identity.sh`) | A stable self-signed identity: the first launch is still blocked, but every update keeps the same signature, so the Keychain password and the permissions are asked for once. |
 | none | Ad hoc, as before: blocked on first launch, and every update is a new app to macOS. |
+
+**Release token.** GitHub refuses to create or publish a release on a commit whose `.github/workflows` differ from
+`main`'s unless the token has the Workflows permission, and the workflow's own `GITHUB_TOKEN` can never get it. A
+workflow change merged into `main` while a release builds (about an hour) therefore fails the release at *Create the
+draft release* with `HTTP 403: Resource not accessible by integration`, and re-running the failed jobs fails the same
+way. Set the repository secret `NOOK_RELEASE_TOKEN` to a fine-grained personal access token (or a GitHub App token)
+for this repository with **Contents** and **Workflows** read and write; the release steps then use it. Without it,
+start a new release from `main` instead of re-running. A tag made with this token starts `release.yml` again (the
+workflow's own token does not); `plan` sees that the tag's release is already published and stops.
 
 The installer window's background is `apps/macos/Config/DMG/background.png` (and `@2x`), drawn by
 `scripts/generate_dmg_background.py`; `apps/macos/Config/DMG/settings.py` lays out the window with `dmgbuild`.

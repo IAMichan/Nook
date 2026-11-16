@@ -4,7 +4,7 @@
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { nook } from "../../lib/state.svelte";
-  import { tr, english } from "../../lib/i18n.svelte";
+  import { tr, locale } from "../../lib/i18n.svelte";
   import { inbox } from "../../lib/inbox.svelte";
   import { registerInboxSources } from "../../lib/inbox-sources";
   import { daypart, type Target } from "../../lib/inbox";
@@ -47,7 +47,7 @@
     const hello = part === "morning" ? tr("Goedemorgen", "Good morning") : part === "afternoon" ? tr("Goedemiddag", "Good afternoon") : tr("Goedenavond", "Good evening");
     return name ? `${hello}, ${name}.` : `${hello}.`;
   });
-  const date = $derived(now.toLocaleDateString(english() ? "en-GB" : "nl-NL", { weekday: "long", day: "numeric", month: "long" }));
+  const date = $derived(now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" }));
   const count = $derived(inbox.ranked.shown.length);
   const line = $derived(
     inbox.loading
@@ -56,7 +56,7 @@
         ? tr("Niets wacht op je. De rest kan wachten.", "Nothing needs you right now. Everything else can wait.")
         : count === 1
           ? tr("Eén ding is je aandacht waard.", "One thing worth your attention.")
-          : tr(`${count} dingen die je aandacht waard zijn.`, `${count} things worth your attention.`),
+          : tr("{n} dingen die je aandacht waard zijn.", "{n} things worth your attention.", { n: count }),
   );
 
   async function openTarget(target: Target | void) {

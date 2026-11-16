@@ -28,6 +28,7 @@ jobs:
         with:
           sparse-checkout: .github/labels.yml
           sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Create or update the labels
         run: |
           yq -o=json '.[]' .github/labels.yml | jq -c '.' | while read -r label; do

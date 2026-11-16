@@ -1,65 +1,88 @@
 import Foundation
 
 // Timeline scroll behaviour as a state machine without UI. The view reports what
-// happened; it reads `shouldFollowEnd`, `anchorMessageID` and `cancelQueuedScrolls` back.
+// happened; it reads `shouldFollowEnd` and `cancelQueuedScrolls` back.
+//
+// A message you send lands at the end, under what came before, and the view follows the reply from there. It used to
+// be held near the top with room under it for the reply; the view jumped up when it was sent and again when the room
+// gave way, so it no longer is.
 
 struct ScrollModel: Equatable, Sendable {
     enum Mode: Equatable, Sendable {
         /// Stick to the end while content grows.
         case following
-        /// A message was just sent: it sits near the top and the reply streams below it.
-        case anchoringNewTurn
         /// The reader moved on their own.
         case free
     }
 
-    /// Distance between the top edge and the anchored message.
-    let anchorOffset: Double = 24
     /// How long the end must be out of view before the "Scroll to end" pill shows.
     static let pillDelay: TimeInterval = 0.15
 
     private(set) var mode: Mode = .following
-    private(set) var anchorMessageID: UUID?
     private(set) var isFinding = false
     /// Set by any manual scroll or find: the view must drop scrolls it already queued, or they would yank the reader
-    /// back. Cleared by the next programmatic intent (`sent`, `jumpedToEnd`).
+    /// back. Cleared by the next programmatic intent (`jumpedToEnd`).
     private(set) var cancelQueuedScrolls = false
 
     var shouldFollowEnd: Bool { mode == .following }
     /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
     /// on the rail) checks this first, so it writes its state once instead of drawing the whole conversation again for
     /// each frame, which made scrolling stutter.
-    var isFreeAfterUserScroll: Bool { mode == .free && anchorMessageID == nil && cancelQueuedScrolls }
-
-    /// You sent a message: the view goes to its end, except while a message you sent before is still held near the top.
-    /// The view stands at its end then already, and the new message takes over the room under it once it shows; going to
-    /// the end first released that room, so the conversation dropped down and came back up.
-    var goesToEndOnSend: Bool { mode != .anchoringNewTurn }
+    var isFreeAfterUserScroll: Bool { mode == .free && cancelQueuedScrolls }
 
     mutating func userScrolled() {
         mode = .free
-        anchorMessageID = nil
         cancelQueuedScrolls = true
     }
 
-    mutating func sent(messageID: UUID) {
-        mode = .anchoringNewTurn
-        anchorMessageID = messageID
-        cancelQueuedScrolls = false
+    /// The view moved while its sizes stayed the same: that is you scrolling, also with a mouse wheel, which reports no
+    /// scroll phase, and also within the margin `atEnd` allows. Up and off the end stops following at once, so a working
+    /// agent's output no longer pulls the view back down under your fingers (it jumped up and down while you scrolled);
+    /// down to the end (within `ScrollFrame.endMargin`) follows again. A move caused by a size change (the reply growing, a row measured) is left
+    /// to the end-keeping, as is a scroll the view animates itself.
+    ///
+    /// Only says what to do (`apply`), and nothing when nothing changes: the view calls this for every frame of a scroll,
+    /// and writing its scroll state each time would draw the whole conversation again for each frame.
+    func reaction(movedFrom old: ScrollFrame, to new: ScrollFrame) -> Reaction? {
+        guard !new.resized(from: old) else { return nil }
+        let fromEnd = new.maxOffset - new.offset
+        if new.offset < old.offset - 0.5, fromEnd > 4 {
+            return isFreeAfterUserScroll ? nil : .userScrolled
+        }
+        if new.offset > old.offset, fromEnd <= ScrollFrame.endMargin, mode == .free, !isFinding {
+            return .reachedEnd
+        }
+        return nil
     }
 
-    /// Once the agent starts working with tools and the content no longer fits, the anchor gives way to following.
-    mutating func contentGrew(toolActivityStarted: Bool, overflows: Bool) {
-        if mode == .anchoringNewTurn, toolActivityStarted, overflows {
-            mode = .following
-            anchorMessageID = nil
+    /// A scroll-wheel or trackpad step of yours over the conversation, before the view moves by it: `deltaY` as AppKit
+    /// gives it (above zero toward the start), `nearEnd` where the view stood. The step itself is the clearest sign of
+    /// you scrolling: while an agent works, the sizes change on nearly every frame (a running command's output, a pull
+    /// request being written, a page that measures itself), so `reaction(movedFrom:to:)` took every step for a size
+    /// change and the end-keeping pulled the view back down, and it shook up and down under your fingers.
+    /// Up stops following at once, also within the margin of the end; down at the end follows again.
+    func reaction(toWheel deltaY: Double, nearEnd: Bool) -> Reaction? {
+        if deltaY > 0.5 { return isFreeAfterUserScroll ? nil : .userScrolled }
+        if deltaY < -0.5, nearEnd, mode == .free, !isFinding { return .reachedEnd }
+        return nil
+    }
+
+    /// What a move of the view means for following (`reaction(movedFrom:to:)`).
+    enum Reaction: Equatable, Sendable {
+        case userScrolled
+        case reachedEnd
+    }
+
+    mutating func apply(_ reaction: Reaction) {
+        switch reaction {
+        case .userScrolled: userScrolled()
+        case .reachedEnd: reachedEnd()
         }
     }
 
     mutating func findStarted() {
         isFinding = true
         mode = .free
-        anchorMessageID = nil
         cancelQueuedScrolls = true
     }
 
@@ -67,7 +90,6 @@ struct ScrollModel: Equatable, Sendable {
 
     mutating func jumpedToEnd() {
         mode = .following
-        anchorMessageID = nil
         cancelQueuedScrolls = false
     }
 
@@ -76,9 +98,8 @@ struct ScrollModel: Equatable, Sendable {
         if mode == .free, !isFinding { mode = .following }
     }
 
-    /// The "Scroll to end" pill shows only once you scrolled away yourself and the end is out of view. Not while a
-    /// message you sent is held near the top (the reply grows under it and following takes over by itself), and not
-    /// while you are at the end: there it showed over a conversation that was already at its last line.
+    /// The "Scroll to end" pill shows only once you scrolled away yourself and the end is out of view; not while you are
+    /// at the end: there it showed over a conversation that was already at its last line.
     func showsToEndPill(atEnd: Bool) -> Bool {
         mode == .free && !isFinding && !atEnd
     }
@@ -88,26 +109,34 @@ struct ScrollModel: Equatable, Sendable {
     }
 }
 
-/// A message you just sent, held near the top of the view while the reply grows under it. The end of a conversation can
-/// only reach the top of the view with room under the reply; as the reply grows it takes that room over, so what you
-/// read stands still and no blank end stays behind.
-///
-/// `below` is measured between two rows that are both laid out (the message and the end of the conversation), never
-/// from an offset in the whole conversation: a long conversation's height is an estimate that changes as its rows are
-/// measured, and scrolling to an offset worked out from it landed in a stretch where the lazy rows drew nothing, which
-/// left the whole conversation blank.
-struct TurnPin: Equatable, Sendable {
-    /// From the top of the message to the end of the conversation, without the room under it.
-    let below: Double
-    /// Distance between the top edge and the message.
-    var anchorOffset = 24.0
+/// Whether a lazy conversation shows any of its rows, from where the drawn rows stand and what the scroll view shows,
+/// both in the conversation's own coordinates. A lazy stack's own reports are not enough for this: the rows it reports
+/// in view go stale after a jump, and a row it keeps drawn just outside the view counts as drawn. Where the rows and
+/// the view really stand is what the user sees.
+enum RowsInView {
+    /// The top and bottom of a drawn row.
+    struct Span: Equatable, Sendable {
+        var top: Double
+        var bottom: Double
+    }
 
-    /// The room under the reply that brings the message to `anchorOffset` once the view is at its end, in a view
-    /// `container` tall. The container has already given up the composer's height (a safe area inset), so that does
-    /// not count again; checked on a real scroll view, where counting it left the message that much lower.
-    func room(container: Double) -> Double {
-        guard below >= 0 else { return 0 }
-        return max(0, container - anchorOffset - below)
+    /// How far a row must reach into the view to count: a hairline at the edge does not make a conversation readable.
+    static let margin = 8.0
+
+    /// `rows` is how many rows the conversation has, `drawn` where the drawn ones stand, `top` and `height` the part
+    /// of the conversation in view. Blank: rows to show, and none of them reaches into the view.
+    static func blank(rows: Int, drawn: some Collection<Span>, top: Double, height: Double) -> Bool {
+        guard rows > 0, height > margin * 2 else { return false }
+        let bottom = top + height
+        return !drawn.contains { $0.bottom - $0.top > 1 && $0.bottom > top + margin && $0.top < bottom - margin }
+    }
+
+    /// Whether try `attempt` (0 first) of a blank conversation's recovery makes its scroll view again instead of only
+    /// scrolling: from the third try on, every fourth. A lazy stack can get stuck drawing no row at all, even at the end
+    /// it was scrolled to (seen on 2026-11-13: 45 rows, none drawn, for minutes of tries); a new scroll view lays its
+    /// rows out from scratch, as when the conversation opens.
+    static func rebuilds(attempt: Int) -> Bool {
+        attempt >= 2 && (attempt - 2) % 4 == 0
     }
 }
 
@@ -121,7 +150,21 @@ struct ScrollFrame: Equatable, Sendable {
     var insetBottom = 0.0
 
     var minOffset: Double { -insetTop }
-    var maxOffset: Double { max(minOffset, content + insetBottom - container) }
+    /// The offset at the very end. `container` is the height between the insets already (checked on a real scroll view
+    /// with a composer under it and a toolbar above it), so the room under the content does not count again. Counting it
+    /// put the end a composer's height further down than the view can go: at its end, a view counted as off its end.
+    var maxOffset: Double { max(minOffset, content - container - insetTop) }
+
+    /// How far the view may stand from its end and still count as there (`nearEnd`).
+    static let endMargin = 48.0
+
+    /// At its end, or within `endMargin` of it: following goes on from here, and no pill back to the end shows.
+    var nearEnd: Bool { maxOffset - offset <= Self.endMargin }
+
+    /// The content, the view, or the room under it changed size since `old`.
+    func resized(from old: ScrollFrame) -> Bool {
+        content != old.content || container != old.container || insetBottom != old.insetBottom
+    }
 }
 
 /// Where a session's timeline was left, per session id; bounded so it cannot grow forever.

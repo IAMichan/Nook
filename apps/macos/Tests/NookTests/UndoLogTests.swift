@@ -49,7 +49,7 @@ final class UndoLogTests: XCTestCase {
         var log = UndoLog()
         log.record(.snoozed, ids: [], now: t0)
         XCTAssertNil(log.current(now: t0))
-        for kind in [UndoEntry.Kind.settled, .snoozed, .unsettled, .pinned, .unpinned, .archived, .discarded] {
+        for kind in [UndoEntry.Kind.settled, .autoSettled, .snoozed, .unsettled, .pinned, .unpinned, .archived, .discarded] {
             XCTAssertEqual(UndoEntry(kind: kind, ids: ["a"], createdAt: t0).messageKey, "undo.\(kind.rawValue).one")
         }
     }

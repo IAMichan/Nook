@@ -8,6 +8,7 @@
   import { renderMarkdown } from "../lib/markdown";
   import { visibleNotices } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
+  import { toast } from "../lib/toast.svelte";
   import type { ChatMessage } from "../lib/types";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
@@ -24,7 +25,26 @@
     enlargedImages[src] = !enlargedImages[src];
   }
 
+  let copied = $state(false);
+  async function copyAnswer() {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch { /* The clipboard can be busy; the button simply stays. */ }
+  }
+
   function click(e: MouseEvent) {
+    const copy = (e.target as HTMLElement).closest("[data-copy-code]") as HTMLButtonElement | null;
+    if (copy) {
+      const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
+      navigator.clipboard.writeText(code).then(() => {
+        copy.textContent = tr("Gekopieerd", "Copied");
+        copy.classList.add("copied");
+        setTimeout(() => { copy.textContent = tr("Kopieer", "Copy"); copy.classList.remove("copied"); }, 1500);
+      }).catch(() => {});
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
@@ -35,18 +55,36 @@
   function recoveryTitle(r: Recovery): string {
     switch (r.kind) {
       case "chooseModel": return tr("Kies een model", "Choose a model");
-      case "openLocalServer": return tr(`Hoe start ik ${r.name}?`, `How do I start ${r.name}?`);
+      case "openLocalServer": return starting ? tr("{name} starten…", "Starting {name}…", { name: r.name }) : tr("Start {name} en probeer opnieuw", "Start {name} and retry", { name: r.name });
       case "reconnectBrain":
       case "reconnectConnection": return tr("Opnieuw koppelen", "Reconnect");
       default: return tr("Instellingen", "Settings");
     }
   }
 
-  function recover(r: Recovery) {
-    if (r.kind === "openLocalServer") {
-      openUrl(r.name === "Ollama" ? "https://ollama.com/download" : "https://lmstudio.ai");
-      return;
+  // A local brain that is installed but not running is started by Nook itself, and the question asked again. Only
+  // when it is not installed does the button lead to the download page.
+  let starting = $state(false);
+  async function startLocal(name: string) {
+    if (starting) return;
+    starting = true;
+    try {
+      const outcome = await api.startLocalBrain(name);
+      if (outcome === "notInstalled") {
+        openUrl(name === "Ollama" ? "https://ollama.com/download" : "https://lmstudio.ai");
+        return;
+      }
+      if (outcome === "noAnswer") return void toast.warning(tr("{name} start niet", "{name} does not start", { name }), tr("Hij is gestart maar antwoordt nog niet. Probeer het zo nog eens.", "It started but is not answering yet. Try again in a moment."));
+      await brainApi.retryLast(nookId);
+    } catch (e) {
+      toast.error(tr("{name} kon niet starten", "{name} could not start", { name }), e);
+    } finally {
+      starting = false;
     }
+  }
+
+  function recover(r: Recovery) {
+    if (r.kind === "openLocalServer") return void startLocal(r.name);
     localStorage.setItem("settings.section", r.kind === "reconnectConnection" ? "connections" : "brain");
     api.showMain("settings");
     window.dispatchEvent(new CustomEvent("nook-navigate", { detail: "settings" }));
@@ -77,11 +115,14 @@
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="markdown" onclick={click}>{@html html}</div>
+      {#if !message.streaming && !message.isError}
+        <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
+      {/if}
     {/if}
     {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}
     {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
     {#if message.actions.length}
-      <PlanCard {nookId} {message} />
+      <PlanCard {nookId} {message} {last} />
     {/if}
     {#if message.references.length && !message.streaming}
       <ol class="refs">
@@ -100,7 +141,7 @@
     {/if}
     {#if message.recovery || (message.isError && last)}
       <div class="offers">
-        {#if message.recovery}<button onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
+        {#if message.recovery}<button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
         {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>{tr("Probeer opnieuw", "Try again")}</button>{/if}
       </div>
     {/if}
@@ -128,6 +169,10 @@
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+  .tools { display: flex; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.15s; }
+  .msg:hover .tools, .tools:focus-within { opacity: 1; }
+  .tools button { font-size: 11px; padding: 2px 8px; color: var(--text3); }
+  .tools button:hover { color: var(--paper); }
   .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
 </style>

@@ -11,6 +11,8 @@ struct GiteaPullRequestForge: PullRequestForgeClient {
         features.autoMerge = false
         // Neither Gitea nor Forgejo has a revert or cherry-pick API.
         features.revert = false
+        // Both keep a "Viewed" tick per file, but only behind their web pages (pulls/{n}/files/reviewed), not in API v1.
+        features.viewedFiles = false
         return features
     }()
 

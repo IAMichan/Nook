@@ -77,9 +77,8 @@ enum TeamsWebData {
             token = String(token.dropFirst(prefix.count))
         }
         guard !token.isEmpty, let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return nil }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
         return Session(base: String(url[range]), token: token,
-                      expires: exp.map(Date.init(timeIntervalSince1970:)) ?? now.addingTimeInterval(3600),
+                      expires: ChatJSON.epoch(seconds: claims["exp"]) ?? now.addingTimeInterval(3600),
                       me: id.hasPrefix("8:") ? id : "8:" + id)
     }
 
@@ -107,15 +106,13 @@ enum TeamsWebData {
     static func isSpacesToken(_ token: String, now: Date = Date()) -> Bool {
         guard let claims = claims(token), let audience = claims["aud"] as? String,
               audience.contains("api.spaces.skype.com") else { return false }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
-        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+        return ChatJSON.epoch(seconds: claims["exp"]).map { $0 > now } ?? true
     }
 
     /// A session token itself (it says who you are) that has not run out, as the website may keep it.
     static func isSkypeToken(_ token: String, now: Date = Date()) -> Bool {
         guard let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return false }
-        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
-        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+        return ChatJSON.epoch(seconds: claims["exp"]).map { $0 > now } ?? true
     }
 
     /// The session for a session token found on its own, with the chat service of `region` ("emea").
@@ -182,12 +179,13 @@ enum TeamsWebData {
                                       readUntil: readUntil(conversation["properties"] as? [String: Any]))
             // When the chat was made (`createdat`, milliseconds) and by whom (`creator`), for a group chat.
             if !oneOnOne {
-                let created = Double("\(thread["createdat"] ?? "")").map { Date(timeIntervalSince1970: $0 / 1000) }
+                let created = ChatJSON.epoch(millis: thread["createdat"])
                 let creator = (thread["creator"] as? String).flatMap { $0 == me ? ChatMembership.me : nil }
                 let profile = ChatProfile(created: created, createdBy: creator)
                 chat.profile = profile.isEmpty ? nil : profile
             }
             chat.preview = messages(["messages": [last]], chat: chat, me: me).first
+            chat.version = ChatJSON.number(conversation["lastUpdatedMessageVersion"]) ?? ChatJSON.number(conversation["version"])
             return chat
         }
     }
@@ -195,8 +193,8 @@ enum TeamsWebData {
     /// Until when you read a chat: the first part of its "consumption horizon", in milliseconds.
     static func readUntil(_ properties: [String: Any]?) -> Date? {
         guard let horizon = properties?["consumptionhorizon"] as? String,
-              let first = horizon.split(separator: ";").first, let ms = Double(first), ms > 0 else { return nil }
-        return Date(timeIntervalSince1970: ms / 1000)
+              let first = horizon.split(separator: ";").first else { return nil }
+        return ChatJSON.epoch(millis: String(first))
     }
 
     /// Who a message is from: the last part of its "from" address ("…/contacts/8:orgid:…").
@@ -225,14 +223,10 @@ enum TeamsWebData {
                let sent = date(message) {
                 let content = (message["content"] as? String) ?? ""
                 if let change = membership(type, content, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.membership = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, membership: change)
                 }
                 if type.lowercased() == "threadactivity/topicupdate", let change = topicUpdate(content, names: names, me: me) {
-                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
-                    line.groupChange = change
-                    return line
+                    return .notice(id: "teams-\(id)", date: sent, groupChange: change)
                 }
             }
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
@@ -261,6 +255,8 @@ enum TeamsWebData {
             inbox.media = media
             if mine { inbox.receipt = .sent }
             if properties["edittime"] != nil { inbox.edited = true }
+            // Someone tagged you (the `mentions` property, each with the id it names): a quiet group still tells you.
+            if !mine, chat.isGroup { inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs(properties["mentions"]), me: me) }
             inbox.quote = answer.quote
             inbox.reactions = reactions(properties["emotions"], me: me, names: names)
             return inbox
@@ -359,8 +355,14 @@ enum TeamsWebData {
         return horizons
     }
 
+    /// Your messages among `messages` that not everyone read yet, the newest 20: their ticks can still move.
+    static func unseen(_ messages: [InboxMessage]) -> [InboxMessage] {
+        Array(messages.filter { $0.isMine && !$0.isDeleted && $0.receipt != .read }.suffix(20))
+    }
+
     /// Your messages read as far as each member says (`horizons`): who read each, by name in a group, and two ticks
     /// once everyone did. Teams keeps read receipts only where they are on (and in chats of up to 20 people).
+
     static func read(_ messages: [InboxMessage], horizons: [String: Int64], group: Bool, names: [String: String]) -> [InboxMessage] {
         guard !horizons.isEmpty else { return messages }
         return messages.map { message in
@@ -509,7 +511,7 @@ enum TeamsWebData {
 
     /// An attribute's value with the entities HTML puts in an address ("&amp;") as they are meant.
     private static func unescaped(_ value: String) -> String {
-        value.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+        HTMLEntities.decode(value)
     }
 
     /// The other people who wrote in a chat, by name, in the order they first wrote: what a chat without a topic is
@@ -570,15 +572,25 @@ enum TeamsWebData {
             var written = ""
             var last = line.startIndex
             for tag in ChatTags.found(in: line, people: people) {
-                written += escaped(String(line[last..<tag.range.lowerBound]))
+                written += HTMLEntities.escape(String(line[last..<tag.range.lowerBound]))
                 written += "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"\(mentions.count)\">"
-                    + escaped(tag.person.name) + "</span>"
+                    + HTMLEntities.escape(tag.person.name) + "</span>"
                 mentions.append(tag.person)
                 last = tag.range.upperBound
             }
-            return "<p>" + written + escaped(String(line[last...])) + "</p>"
+            return "<p>" + written + HTMLEntities.escape(String(line[last...])) + "</p>"
         }.joined()
         return (html, mentions)
+    }
+
+    /// The ids a message's `mentions` property tags: its `mri`s ("8:orgid:…"), from the JSON list the website keeps as a
+    /// string (or a list, as some replies carry it). The reverse of `mentionsProperty`.
+    static func mentionedIDs(_ value: Any?) -> [String] {
+        var list = value as? [[String: Any]]
+        if list == nil, let text = value as? String, let data = text.data(using: .utf8) {
+            list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+        }
+        return (list ?? []).compactMap { ($0["mri"] as? String).flatMap { $0.isEmpty ? nil : $0 } }
     }
 
     /// The `mentions` property of a message with tags: a JSON list, as a string, of each one's number, id and name.
@@ -594,22 +606,14 @@ enum TeamsWebData {
     /// The quote an answer starts with, as the website writes it (and `reply(_:me:)` reads it): the answered message's
     /// id in Nook ("teams-…"), who wrote it (their id, when known, and name) and the start of its text.
     static func replyHTML(to message: String, author: String?, sender: String, text: String) -> String {
-        let id = escaped(message.hasPrefix("teams-") ? String(message.dropFirst("teams-".count)) : message)
+        let id = HTMLEntities.escape(message.hasPrefix("teams-") ? String(message.dropFirst("teams-".count)) : message)
         let preview = text.count > 200 ? String(text.prefix(200)) + "…" : text
         return #"<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="\#(id)">"#
-            + #"<strong itemprop="mri" itemid="\#(escaped(author ?? ""))">\#(escaped(sender))</strong>"#
+            + #"<strong itemprop="mri" itemid="\#(HTMLEntities.escape(author ?? ""))">\#(HTMLEntities.escape(sender))</strong>"#
             + #"<span itemprop="time" itemid="\#(id)"></span>"#
-            + #"<p itemprop="preview">\#(escaped(preview))</p></blockquote>"#
+            + #"<p itemprop="preview">\#(HTMLEntities.escape(preview))</p></blockquote>"#
     }
 
-    /// Text escaped for HTML.
-    static func escaped(_ text: String) -> String {
-        var escaped = text
-        for (character, entity) in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;")] {
-            escaped = escaped.replacingOccurrences(of: character, with: entity)
-        }
-        return escaped
-    }
 
     /// The messages Teams marked as deleted (`properties.deletetime`), by their id in Nook ("teams-…"): the chat in Nook
     /// shows them as deleted.
@@ -682,8 +686,6 @@ enum TeamsWebData {
 
     /// Whether the messages already list the newest one the chat list announced (see `TeamsData.caughtUp`).
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
-        guard let last else { return true }
-        let newest = (json["messages"] as? [[String: Any]] ?? []).compactMap(date).max()
-        return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
+        TeamsData.caughtUp(newest: (json["messages"] as? [[String: Any]] ?? []).compactMap(date).max(), last: last)
     }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RetrievalStep } from "./brain";
-import { INTERRUPTED, UNKNOWN_ERROR, readableFailure, sourceGroups, sourcesSummary, statusText, visibleNotices } from "./sources";
+import { interrupted, unknownError, readableFailure, sourceGroups, sourcesSummary, statusText, visibleNotices } from "./sources";
 import type { ChatMessage } from "./types";
 
 function step(sourceTitle: string, outcome: RetrievalStep["outcome"], sourceId: string | null = null): RetrievalStep {
@@ -28,28 +28,28 @@ describe("sourceGroups", () => {
     });
     const groups = sourceGroups(m, false);
     expect(groups.map((g) => g.title)).toEqual(["Notion", "GitHub", "Agenda", "Mail"]);
-    expect(groups.map(statusText)).toEqual(["Niet gelezen", "2 resultaten", "Meegestuurd als context", "Niets gevonden"]);
+    expect(groups.map(statusText)).toEqual(["Not read", "2 results", "Sent as context", "Nothing found"]);
     expect(groups[0].reason).toBe("401");
-    expect(sourcesSummary(groups, false)).toBe("2 bronnen gebruikt");
+    expect(sourcesSummary(groups, false)).toBe("2 sources used");
   });
 
   it("shows a search that never finished as interrupted once the answer is done", () => {
     const m = message({ retrieval: [step("Bestanden", { kind: "running" })] });
     expect(sourceGroups(m, true)[0].status).toBe("running");
-    expect(sourcesSummary(sourceGroups(m, true), true)).toBe("Zoekt in je bronnen…");
+    expect(sourcesSummary(sourceGroups(m, true), true)).toBe("Searching your sources…");
     const done = sourceGroups(m, false)[0];
     expect(done.status).toBe("failed");
-    expect(done.reason).toBe(INTERRUPTED);
-    expect(sourcesSummary([done], false)).toBe("Niets gevonden");
+    expect(done.reason).toBe(interrupted());
+    expect(sourcesSummary([done], false)).toBe("Nothing found");
   });
 });
 
 describe("readableFailure", () => {
   it("turns raw system errors into plain language", () => {
-    expect(readableFailure("Swift.CancellationError")).toBe(INTERRUPTED);
-    expect(readableFailure("gestopt")).toBe(INTERRUPTED);
-    expect(readableFailure("The operation couldn’t be completed.")).toBe(UNKNOWN_ERROR);
-    expect(readableFailure("")).toBe(UNKNOWN_ERROR);
+    expect(readableFailure("Swift.CancellationError")).toBe(interrupted());
+    expect(readableFailure("gestopt")).toBe(interrupted());
+    expect(readableFailure("The operation couldn’t be completed.")).toBe(unknownError());
+    expect(readableFailure("")).toBe(unknownError());
     expect(readableFailure("Geen antwoord binnen 8 seconden.")).toBe("Geen antwoord binnen 8 seconden.");
   });
 });

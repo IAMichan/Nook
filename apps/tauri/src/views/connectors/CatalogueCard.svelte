@@ -2,6 +2,7 @@
   // De ene kaartvorm van alles wat je kunt toevoegen in Instellingen › Accounts & koppelingen: icoon, naam, één regel
   // en een label dat zegt hoe het koppelt (Inloggen, Met sleutel, MCP). Inloggen is gevuld, omdat dat het makkelijkst is.
   import { methodLabel, type ConnectMethod } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   let {
@@ -41,7 +42,7 @@
       <span class="detail" class:bad>{detail}</span>
     </span>
     {#if busy}
-      <span class="spin" aria-label="Bezig"></span>
+      <span class="spin" aria-label={tr("Bezig", "Busy")}></span>
     {:else}
       <span class="badge {method}">{badge ?? methodLabel[method]}</span>
     {/if}
@@ -52,7 +53,7 @@
 <style>
   .card { display: flex; flex-direction: column; background: var(--smoke); border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; }
   .main { display: flex; gap: 10px; align-items: center; text-align: left; padding: 10px 12px; background: none; border: none; border-radius: 0; flex: 1; }
-  .main:hover:not(:disabled) { background: #2a2a33; }
+  .main:hover:not(:disabled) { background: var(--row-hover); }
   .text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
   .detail { font-size: 11px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .detail.bad { color: var(--coral); }

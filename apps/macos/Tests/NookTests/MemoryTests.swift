@@ -98,6 +98,24 @@ final class MemoryTests: XCTestCase {
         XCTAssertLessThanOrEqual(recalled.reduce(0) { $0 + $1.text.count + 24 }, 400)
     }
 
+    func testRecallKeepsEachMemorysWordsAndFollowsAnEdit() {
+        var book = sampleBook()
+        let question = "Wat doet de gebruiker aan project Apollo?"
+        let first = book.recall(question, now: now)
+        XCTAssertEqual(first.first?.subject, "Apollo")
+        XCTAssertTrue(book.items.allSatisfy { MemoryTokens.of($0) == MemoryText.tokens($0.text + " " + $0.subject) })
+        XCTAssertTrue(book.items.allSatisfy(MemoryTokens.isCached), "recall keeps the words of every memory it read")
+        XCTAssertEqual(book.recall(question, now: now), first, "the kept words give the same answer")
+
+        // An edited memory is read again under its new text, not answered from what was kept for the old one.
+        guard let index = book.items.firstIndex(where: { $0.subject == "Apollo" }) else { return XCTFail("no Apollo memory") }
+        book.items[index].text = "De gebruiker schildert aquarellen"
+        book.items[index].subject = "Schilderen"
+        XCTAssertFalse(MemoryTokens.isCached(book.items[index]))
+        XCTAssertFalse(book.recall(question, now: now).contains { $0.subject == "Schilderen" })
+        XCTAssertEqual(book.recall("Welke aquarellen schildert hij?", now: now).first?.subject, "Schilderen")
+    }
+
     func testMemoriesKeptOnThisMacStayOnThisMac() {
         var book = MemoryBook()
         book.remember("Lisa is de vrouw van de gebruiker", kind: .fact, subject: "Lisa", origin: .told, localOnly: true, now: now)

@@ -12,6 +12,15 @@ extension WorkspaceManager {
         children(of: parent).filter { $0.status.isActive }
     }
 
+    /// The sub-threads at every level that still work for `parent` (`DelegatedTask.workingSubThreads`).
+    /// Read from a table made once per change of `runs` (`DelegatedTask.workingSubThreadCounts`).
+    func workingSubThreads(of parent: UUID) -> Int {
+        if let subThreadCounts { return subThreadCounts[parent] ?? 0 }
+        let counts = DelegatedTask.workingSubThreadCounts(in: runs)
+        subThreadCounts = counts
+        return counts[parent] ?? 0
+    }
+
     /// The child a repeated call with the same `client_request_id` already started.
     func delegatedChild(of parent: UUID, key: String) -> WorkspaceRun? {
         children(of: parent).first { $0.delegation?.key == key }
@@ -52,21 +61,24 @@ extension WorkspaceManager {
     func deliverDelegatedResult(_ id: UUID) {
         guard let child = run(id), var link = child.delegation, link.wake, !link.delivered,
               DelegatedTask.mayDeliver(child.status, hasQueuedWork: hasQueuedWork(id)), !heldWakeCompletions.contains(id),
-              let parent = run(link.parentID), !parent.archived, parent.status != .stopped else { return }
+              let parent = run(link.parentID), !parent.archived, parent.status != .stopped,
+              // A full queue cannot take the result: it stays undelivered rather than marked delivered and dropped
+              // (`delivered` is only set once the result went out or waits in line), so a later wake can still bring it.
+              (queued[parent.id]?.count ?? 0) < MessageQueue.limit else { return }
         link.delivered = true
         update(id) { $0.delegation = link }
         let text = DelegatedTask.wakeMessage(snapshot(of: child))
         append(parent.id, RunEvent(kind: .system, text: tr("ws.event.delegatedDone", child.title)))
-        // The parent carries on its own work: its working timer keeps going (`TurnTimer`).
-        if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
-            send(parent.id, text: text, origin: .notice)
-        } else {
+        // The parent carries on its own work: its working timer keeps going (`TurnTimer`). A send that cannot go out
+        // (its agent or folder is gone for now) leaves the result waiting in the queue, never lost.
+        let free = parent.canContinue && processes[parent.id] == nil && !checkpointing.contains(parent.id)
+        if !free || !send(parent.id, text: text, origin: .notice) {
             enqueue(parent.id, text: text, origin: .notice)
         }
     }
 
     /// A new turn of a task that already reported (a message from you, its parent, or a client without a session of its
-    /// own): its parent hears of this one too when it ends.
+    /// own): its parent hears of this one too when it ends (a send to a finished child notifies its parent).
     func rearmDelegation(_ id: UUID) {
         guard run(id)?.delegation?.delivered == true else { return }
         update(id) { $0.delegation?.delivered = false }
@@ -80,7 +92,7 @@ extension WorkspaceManager {
     }
 
     /// A task its parent did not wait for asks a question: the parent hears of it once, the way it hears of a result
-    /// (: nobody watches a child, so its question would go unanswered). A waiting parent learns it from its wait.
+    /// (nobody watches a child, so its question would go unanswered). A waiting parent learns it from its wait.
     func deliverDelegatedQuestion(_ id: UUID, _ pending: PendingQuestion) {
         guard let child = run(id), var link = child.delegation, link.wake,
               !(link.toldQuestions ?? []).contains(pending.id),
@@ -159,5 +171,48 @@ extension WorkspaceManager {
     /// Stopping a session stops what it delegated.
     func stopDelegatedChildren(of id: UUID) {
         for child in activeChildren(of: id) { cancelDelegated(child.id) }
+    }
+}
+
+// MARK: Lineage
+
+extension WorkspaceRun {
+    /// The session this one came from: the one that delegated it, or the one it was forked, compared or asked beside.
+    var parentRunID: UUID? { delegation?.parentID ?? lineage?.parentID }
+
+    /// How it came from `parentRunID` (`SubThreadLineage`).
+    var subThreadRelation: SubThreadRelation? {
+        if delegation != nil { return .delegated }
+        switch lineage?.kind {
+        case .fork?: return .fork
+        case .comparison?: return .comparison
+        case .side?: return .side
+        case nil: return nil
+        }
+    }
+}
+
+extension WorkspaceManager {
+    /// The sessions related to `id`, in the groups of its Lineage control: its parent and forks, the tasks it delegated
+    /// (at work, or ended), and its side chats.
+    func lineageGroups(of id: UUID) -> LineageGroups {
+        guard let me = run(id) else { return LineageGroups() }
+        // Only the sessions that can show up: this one, its parent, and its own children.
+        let related = runs.filter { $0.id == id || $0.id == me.parentRunID || $0.parentRunID == id }
+        let nodes = related.map { run in
+            LineageNode(id: run.id, parentID: run.parentRunID, relation: run.subThreadRelation, title: run.title,
+                        status: lineageStatus(run), createdAt: run.createdAt)
+        }
+        return LineageLayout.groups(for: id, nodes: nodes)
+    }
+
+    private func lineageStatus(_ run: WorkspaceRun) -> LineageStatus {
+        switch attention(run, unseen: false, includeSnooze: false) {
+        case .approval: return .approval
+        case .input: return .question
+        case .working: return .working
+        case .failed: return .failed
+        case .limited, .ready, .idle, .finished: return run.status == .stopped ? .stopped : .done
+        }
     }
 }

@@ -23,9 +23,9 @@ describe("agent notices", () => {
   });
 
   it("say in one line what the agent did", () => {
-    expect(compactNotice("Claude Code", "nook", "done")).toBe("Claude Code is klaar · nook");
-    expect(compactNotice("Codex", "", "failed")).toBe("Codex is gestopt met een fout");
-    expect(compactNotice("Codex", "site", "waiting")).toBe("Codex wacht op je · site");
+    expect(compactNotice("Claude Code", "nook", "done")).toBe("Claude Code is done · nook");
+    expect(compactNotice("Codex", "", "failed")).toBe("Codex stopped with an error");
+    expect(compactNotice("Codex", "site", "waiting")).toBe("Codex is waiting for you · site");
     expect(noticeTone("running")).toBe("waiting");
   });
 });

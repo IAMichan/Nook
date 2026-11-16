@@ -33,6 +33,31 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertEqual(HistoryWindow.revealing(nil, from: 40), 40)
     }
 
+    func testTheEndOfAConversationIsDrawnInFull() {
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [], start: 0), 0)
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [3, 4], start: 0), 7, "a short conversation is drawn in full")
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [10, 10, 10, 10, 10], start: 0), 20, "its last two turns")
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: Array(repeating: 2, count: 30), start: 0), HistoryWindow.eagerMinRows,
+                       "short turns: enough rows to fill a view")
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [5, 300], start: 0), HistoryWindow.eagerMaxRows,
+                       "a turn at work with hundreds of rows stays bounded")
+        XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [40, 40, 2, 3], start: 3), 3, "never more than the window shows")
+    }
+
+    func testRowsMoveIntoTheLazyStackInSteps() {
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 20, eager: 12), 0, "fewer than a step: all drawn in full")
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 100, eager: 48), 48)
+        // A working agent adds rows one by one: the split between the parts stays where it is for a while.
+        let splits = (100...115).map { HistoryWindow.lazyRows(count: $0, eager: 48) }
+        XCTAssertEqual(Set(splits).count, 2, "moves once in sixteen new rows, not with every one")
+        for count in 0...300 {
+            let lazy = HistoryWindow.lazyRows(count: count, eager: 48)
+            XCTAssertGreaterThanOrEqual(count - lazy, min(count, 48), "the last rows are always drawn in full")
+            XCTAssertLessThan(count - lazy, 48 + HistoryWindow.lazyStep)
+        }
+        XCTAssertEqual(HistoryWindow.lazyRows(count: 5, eager: 9), 0)
+    }
+
     func testAConversationThatWentBackKeepsAValidStart() {
         XCTAssertEqual(HistoryWindow.clamped(40, turnCount: 10), 9)
         XCTAssertEqual(HistoryWindow.clamped(40, turnCount: 0), 0)

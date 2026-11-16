@@ -329,8 +329,10 @@ final class MailConnector: ContextSource {
         // One load at a time: a question that arrives during a background refresh waits for that one.
         if let loading { await loading.value; return }
         let mark = await MailChangeMark.current()
+        // Read from Mail's index, a changed mark costs Mail nothing: no need to wait while you work in it.
+        let minGap = MailChangeMark.mailIsFront && !MailChangeMark.isIndexed(mark) ? Self.frontGap : 0
         guard MailStats.needsFullRead(mark: mark, lastMark: changeMark, lastRead: loadedAt, now: Date(), maxAge: 15 * 60,
-                                      minGap: MailChangeMark.mailIsFront ? Self.frontGap : 0) else { return }
+                                      minGap: minGap) else { return }
         changeMark = mark
         let task = Task { await self.load() }
         loading = task
@@ -339,7 +341,8 @@ final class MailConnector: ContextSource {
     }
 
     private func load() async {
-        let list = await ScriptText.run(MailStats.accountsScript, timeout: Self.loadTimeout)
+        // One quick question to Mail (a tenth of a second): the enabled accounts and their ids.
+        let list = await ScriptText.run(MailChatData.accountsScript, timeout: Self.loadTimeout)
         if list.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
@@ -348,15 +351,27 @@ final class MailConnector: ContextSource {
         // the inbox it had until it answers again.
         var failure: (number: Int?, message: String?)?
         var answered = 0
-        if let names = list.text.map(MailStats.accounts) {
-            for name in names {
-                let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
-                if let text = result.text {
-                    let parsed = MailStats.recent(text)
-                    inboxes[name] = (parsed.unread, parsed.rows)
-                    answered += 1
-                } else {
-                    failure = (result.errorNumber, result.errorMessage)
+        if let accounts = list.text.map(MailChatData.accounts) {
+            let names = accounts.map(\.name)
+            // Mail's index answers for every account in milliseconds; asking Mail kept it from responding for many
+            // seconds per big mailbox. The script stays for when Nook may not read the index (no Full Disk Access).
+            if let indexed = await MailLibrary.inboxRows(accounts: accounts, perMailbox: 40, bodyLength: 300) {
+                for (name, inbox) in indexed {
+                    inboxes[name] = inbox
+                    // The index's text, or none: either way Mail is not asked for it again each refresh.
+                    for row in inbox.rows { bodies[row.key] = row.body }
+                }
+                answered = indexed.count
+            } else {
+                for name in names {
+                    let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
+                    if let text = result.text {
+                        let parsed = MailStats.recent(text)
+                        inboxes[name] = (parsed.unread, parsed.rows)
+                        answered += 1
+                    } else {
+                        failure = (result.errorNumber, result.errorMessage)
+                    }
                 }
             }
             // A removed or disabled account goes at once, also when no other account answers this time.
@@ -414,7 +429,7 @@ final class MailConnector: ContextSource {
     }
 
     /// Recent inbox mail from memory, refreshed first only when it is stale.
-    func inbox(days: Int, unansweredOnly: Bool) async throws -> String {
+    func inbox(days: Int, unansweredOnly: Bool, unreadOnly: Bool = false, limit: Int = 15) async throws -> String {
         try await Self.ensureRunning()
         if !isFresh { await refresh() }
         // A failed refresh shortly after a good one still leaves the inbox of a few minutes ago, which beats no answer.
@@ -424,9 +439,25 @@ final class MailConnector: ContextSource {
         // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
         // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
         guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
-        var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
+        var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly, unreadOnly: unreadOnly, limit: limit)
+        // Nook holds the newest mails of each mailbox only: unread mail older than those is counted, not listed. Say so,
+        // instead of "no unread mail" while some waits.
+        let older = unreadOnly ? MailStats.unreadBeyond(loaded: recent, unreadTotal: inboxes.values.reduce(0) { $0 + $1.unread }) : 0
+        let beyond = older > 0 ? "\n\n" + MailStats.unreadBeyondNote(older) : ""
         guard !rows.isEmpty else {
-            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
+            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : unreadOnly ? " die nog ongelezen is." : ".") + beyond
+        }
+        // Each message with its own id, so the brain can open it (read_mail), change it (mark_mail, trash_mail) or answer it
+        // (compose_mail with reply_to) without searching for it again. Mail's index gives its row; the id is in its file,
+        // which is read once and kept with the message for read_mail.
+        for index in rows.indices where rows[index].messageID.isEmpty {
+            guard let found = await MailLibrary.message(of: rows[index]) else { continue }
+            let row = rows[index]
+            rows[index].messageID = found.message.id
+            MailConnector.messageCache[found.message.id] = CachedMail(subject: row.subject, sender: row.sender, recipients: row.recipient,
+                                                                      date: NookDates.iso(row.date), body: found.message.text,
+                                                                      cachedAt: Date())
+            MailConnector.indexedFiles[found.message.id] = found.file
         }
         // The refresh only reads the text of mail that waits for a reply: a subject alone says too little about what someone
         // asks, so read the start of the rest of these now (once; kept for the next refresh).
@@ -439,7 +470,7 @@ final class MailConnector: ContextSource {
                 bodies[rows[index].key] = text
             }
         }
-        return MailStats.describe(rows, date: NookDates.iso)
+        return MailStats.describe(rows, date: NookDates.iso) + beyond
     }
 
     /// Inbox mail Nook already holds whose sender or subject has one of `words`, newest first, with the start of each
@@ -477,13 +508,17 @@ final class MailConnector: ContextSource {
             for row in waiting {
                 let snippet = row.body.replacingOccurrences(of: "\n", with: " ").prefix(160)
                 lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date)) | \(row.read ? "gelezen" : "ongelezen")"
+                             + (row.messageID.isEmpty ? "" : " | id: \(row.messageID)")
                              + (snippet.isEmpty ? "" : " | \"\(snippet)\""))
             }
         }
         let unread = recent.filter { !$0.read && !waiting.contains($0) }.prefix(8)
         if !unread.isEmpty {
             lines.append("Andere nieuwste ongelezen:")
-            for row in unread { lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))") }
+            for row in unread {
+                let trust = row.trust
+                lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))" + (trust.isSuspicious ? " | " + trust.marker : ""))
+            }
         }
         return lines
     }
@@ -516,10 +551,12 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "inbox_mail",
-                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, and the start of the body text, with a link per message. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, and spam do not.",
+                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, the account, its id and the start of the body text. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', 'what happened in my mail' or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, spam, phishing and scams do not (a message marked WARNING looks fake: never count it as one to answer). Open a message in full with read_mail and its id; answer it with compose_mail and reply_to set to that id.",
                 schema: ["type": "object", "properties": [
-                    "days": ["type": "integer", "description": "How many days back (default 7, at most 30)."],
-                    "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any]
+                    "days": ["type": "integer", "description": "How many days back (default 7, at most 30). 1 for today and last night."],
+                    "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any],
+                    "unread_only": ["type": "boolean", "description": "Only mail the user has not read yet (default false)."] as [String: Any],
+                    "limit": ["type": "integer", "description": "How many messages at most (default 15, at most 40)."]
                 ]],
                 kind: .read,
                 summarize: { _ in "Read inbox" },
@@ -528,7 +565,9 @@ final class MailConnector: ContextSource {
                     guard let self else { throw NookError("Mail is niet beschikbaar.") }
                     let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
                     let unanswered = (input["unanswered_only"] as? Bool) ?? false
-                    return try await self.inbox(days: days, unansweredOnly: unanswered)
+                    let unread = (input["unread_only"] as? Bool) ?? false
+                    let limit = min(40, max(1, (input["limit"] as? Int) ?? Int((input["limit"] as? Double) ?? 15)))
+                    return try await self.inbox(days: days, unansweredOnly: unanswered, unreadOnly: unread, limit: limit)
                 }
             ),
             ToolSpec(
@@ -609,9 +648,9 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "read_mail",
-                description: "Reads one whole message from the Mail app (inbox or sent): subject, sender, recipients, date and the full text. Give the id from search_mail. Use this when the start of a message is not enough to answer.",
+                description: "Reads one whole message from the Mail app (inbox or sent): subject, sender, recipients, date and the full text. Give the id from search_mail or inbox_mail. Use this when the start of a message is not enough to answer.",
                 schema: ["type": "object", "properties": [
-                    "id": ["type": "string", "description": "The message id from search_mail (the part after \"id:\")."]
+                    "id": ["type": "string", "description": "The message id from search_mail or inbox_mail (the part after \"id:\")."]
                 ], "required": ["id"]],
                 kind: .read,
                 summarize: { _ in "Read mail" },
@@ -632,7 +671,8 @@ final class MailConnector: ContextSource {
                         var body = cached.body
                         if body.count > 12_000 { body = String(body.prefix(12_000)) + "\n… (truncated: the first 12,000 characters)" }
                         let to = cached.recipients.trimmingCharacters(in: CharacterSet(charactersIn: ", "))
-                        return "## \(cached.subject)\nFrom: \(cached.sender)\nTo: \(to)\nDate: \(cached.date)\n\n\(body)\n"
+                        return "## \(cached.subject)\nFrom: \(cached.sender)\nTo: \(to)\nDate: \(cached.date)\n"
+                            + MailConnector.trustLine(sender: cached.sender, subject: cached.subject, body: body) + "\n\(body)\n"
                             + ReferenceParser.line(title: cached.subject.isEmpty ? "(no subject)" : cached.subject, url: MailConnector.messageLink(id),
                                                    detail: "\(MailConnector.name(cached.sender)) · \(String(cached.date.prefix(10)))")
                     }
@@ -692,7 +732,8 @@ final class MailConnector: ContextSource {
                     MailConnector.messageCache[id] = CachedMail(
                         subject: header[0], sender: header[1], recipients: to, date: header[3], body: body, cachedAt: Date()
                     )
-                    return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n\n\(body)\n"
+                    return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n"
+                        + MailConnector.trustLine(sender: header[1], subject: header[0], body: body) + "\n\(body)\n"
                         + ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: MailConnector.messageLink(id),
                                                detail: "\(MailConnector.name(header[1])) · \(String(header[3].prefix(10)))")
                 }
@@ -810,11 +851,19 @@ final class MailConnector: ContextSource {
             let who = sent ? "to \(header[2])" : "from \(header[1])"
             let state = status && !header[2].isEmpty ? " | \(header[2])" : ""
             let id = header[4].trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
-            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\(id.isEmpty ? "" : " [id: \(id)]")\n\(body)")
+            let trust = sent ? nil : MessageTrust.assess(sender: header[1], subject: header[0], body: body)
+            let warning = trust?.isSuspicious == true ? "\n" + trust!.marker : ""
+            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\(id.isEmpty ? "" : " [id: \(id)]")\(warning)\n\(body)")
             refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: messageLink(header[4]),
                                              detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
         }
         return (blocks + refs).joined(separator: "\n\n")
+    }
+
+    /// The warning line `read_mail` puts under a message's header when it looks like phishing or a scam; empty otherwise.
+    nonisolated static func trustLine(sender: String, subject: String, body: String) -> String {
+        let trust = MessageTrust.assess(sender: sender, subject: subject, body: body)
+        return trust.isSuspicious ? trust.marker + "\n" : ""
     }
 
     /// message:%3C…%3E opens the message in Mail. Only with a valid message id, otherwise no link.
@@ -859,13 +908,10 @@ final class BrowserConnector: ContextSource {
         }
     }
 
-    private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
-        ("Safari", "com.apple.Safari", true),
-        ("Google Chrome", "com.google.Chrome", false),
-        ("Arc", "company.thebrowser.Browser", false),
-        ("Brave Browser", "com.brave.Browser", false),
-        ("Microsoft Edge", "com.microsoft.edgemac", false)
-    ]
+    /// The browsers Nook reads (`AppCatalog.readableBrowsers`).
+    nonisolated private static let browsers: [(name: String, bundle: String, safari: Bool)] = AppCatalog.readableBrowsers.map {
+        ($0.name, $0.bundleID, $0.engine == .webkit)
+    }
 
     var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
     /// Every read scripts each open browser tab by tab, which holds up the browser while it answers.
@@ -912,11 +958,12 @@ final class BrowserConnector: ContextSource {
                         set ti to 0
                         repeat with u in us
                             set ti to ti + 1
-                            if ti > 15 or ti > (count of ns) then exit repeat
+                            if ti > (count of ns) then exit repeat
                             set u to contents of u
                             set mark to "0"
                             if u is act then set mark to "1"
-                            set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
+                            -- The first fifteen tabs, and always the one the window shows, however far along it is.
+                            if ti < 16 or mark is "1" then set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
                         end repeat
                     end repeat
                     return out
@@ -975,115 +1022,18 @@ final class BrowserConnector: ContextSource {
         [
             ToolSpec(
                 name: "read_browser_tab",
-                description: "Leest de tekst van het huidige actieve tabblad (of een specifiek tabblad) in Safari, Google Chrome, Microsoft Edge of Arc. Gebruik dit wanneer de gebruiker vraagt wat er op het scherm/tabblad in de browser staat, of om een webpagina die open staat samen te vatten.",
+                description: "Reads the web page open in the user's browser (Safari, Chrome, Edge, Brave or Arc): its title, address and text, also while Nook's chat is in front. Without arguments it reads the page shown in the browser the user works in; with tab it finds the open tab whose title or address contains that text in any window (\"FileSender\", \"bol.com\"). Use it when the user talks about a page, form or site that is open in their browser. A page it finds is open, even when its text cannot be read: never tell the user it is not open. To fill in or click on the page, use the chrome_* tools when Nook's extension is connected in that browser, else take_over.",
                 schema: ["type": "object", "properties": [
-                    "browser": ["type": "string", "description": "Optionele browsernaam (Safari, Google Chrome, Microsoft Edge, Arc). Indien leeg, pakt hij de actieve browser."] as [String: Any]
+                    "tab": ["type": "string", "description": "Part of the title or address of the tab to read, when the user names the site or page. Leave empty for the page shown now."] as [String: Any],
+                    "browser": ["type": "string", "description": "Optional browser name (Safari, Google Chrome, Microsoft Edge, Brave, Arc)."] as [String: Any]
                 ]],
                 kind: .read,
                 summarize: { _ in "Browsertabblad lezen" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    let targetBrowser = (input["browser"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                    var scripts: [(name: String, bundle: String, script: String)] = []
-
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("safari") == true {
-                        if ScriptText.isRunning("com.apple.Safari") {
-                            scripts.append(("Safari", "com.apple.Safari", """
-                            tell application "Safari"
-                                if (count of documents) > 0 then
-                                    set doc to front document
-                                    set docTitle to name of doc
-                                    set docURL to URL of doc
-                                    set docText to text of doc
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("chrome") == true {
-                        if ScriptText.isRunning("com.google.Chrome") {
-                            scripts.append(("Google Chrome", "com.google.Chrome", """
-                            tell application "Google Chrome"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("edge") == true {
-                        if ScriptText.isRunning("com.microsoft.edgemac") {
-                            scripts.append(("Microsoft Edge", "com.microsoft.edgemac", """
-                            tell application "Microsoft Edge"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("brave") == true {
-                        if ScriptText.isRunning("com.brave.Browser") {
-                            scripts.append(("Brave Browser", "com.brave.Browser", """
-                            tell application "Brave Browser"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("arc") == true {
-                        if ScriptText.isRunning("company.thebrowser.Browser") {
-                            scripts.append(("Arc", "company.thebrowser.Browser", """
-                            tell application "Arc"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    return docTitle & "|||" & docURL
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-
-                    // Prioritize the frontmost browser if one is currently active on screen.
-                    if let frontBundle, let idx = scripts.firstIndex(where: { $0.bundle == frontBundle }), idx > 0 {
-                        let front = scripts.remove(at: idx)
-                        scripts.insert(front, at: 0)
-                    }
-
-                    for (browserName, _, script) in scripts {
-                        let result = await ScriptText.run(script, timeout: 3.0)
-                        if let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-                            let header = String(lines.first ?? "").components(separatedBy: "|||")
-                            let body = lines.count > 1 ? String(lines[1]) : ""
-                            let title = header.first ?? "Webpagina"
-                            let url = header.count > 1 ? header[1] : ""
-                            return "## \(title) (\(browserName))\nBron: \(url)\n\n\(body)\n\n" + ReferenceParser.line(title: title, url: url.isEmpty ? nil : url, detail: browserName)
-                        }
-                    }
-                    return "Geen geopende webpagina met tekst gevonden in Safari, Chrome of Edge."
+                    let tab = ((input["tab"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let browser = ((input["browser"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    return await BrowserTabReader.read(target: tab.isEmpty ? (browser.isEmpty ? nil : browser) : tab)
                 }
             )
         ]

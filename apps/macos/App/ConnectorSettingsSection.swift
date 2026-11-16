@@ -235,7 +235,6 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @State private var stored: Set<String> = []
     @State private var note = ""
     @State private var replacing = false
-    @State private var confirmDisconnect = false
     @State private var showKeySteps = false
 
     private var health: ConnectionHealth { ServiceState.health(of: connector, configured: configured, isOn: isOn) }
@@ -254,22 +253,12 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             capabilityNote
         } footer: {
             if configured {
-                if confirmDisconnect {
-                    Text(tr("connect.disconnectTitle", connector.title))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Button(tr("button.cancel")) { confirmDisconnect = false }
-                        .keyboardShortcut(.cancelAction)
-                    Button(tr("settings2.disconnect"), role: .destructive) { clear() }
-                } else {
-                    Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
-                }
+                ConfirmedButton(tr("settings2.disconnect"), question: tr("connect.disconnectTitle", connector.title),
+                                detail: tr("confirm.keychain.detail")) { clear() }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
         .onAppear {
             load()
@@ -323,7 +312,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
                 } label: {
-                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
+                    Label(tr("settings2.openSite", connector.title), icon: "arrow.up.forward.app")
                 }
             }
             fieldsAndPaste
@@ -335,17 +324,14 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     private var ghCLIButton: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Button { gitHubSignIn.reconnect() } label: {
-                Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), systemImage: "person.badge.key.fill")
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), icon: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             .disabled(gitHubSignIn.phase == .checkingCLI || gitHubSignIn.phase == .waitingForCLI)
             if gitHubSignIn.phase == .waitingForCLI {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("connector.githubFinishLogin")).font(NookTheme.TextStyle.detail)
-                }
+                BusyLine(tr("connector.githubFinishLogin"), tone: .inherited, font: NookTheme.TextStyle.detail)
             } else if case .failed(let message) = gitHubSignIn.phase {
                 SettingNote(message, tone: .error)
             } else {
@@ -358,20 +344,17 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     private var keySteps: some View {
         SetupStep(number: 1, title: connector.signupURL != nil ? tr("settings2.step.getKey", connector.title) : tr("settings2.step.findInfo"),
                   done: configured) {
-            Text(connector.helpText)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
             if let url = connector.signupURL {
-                Button {
+                StepAction(detail: connector.helpText, button: tr("settings2.openSite", connector.title)) {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
-                } label: {
-                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
+            } else {
+                Text(connector.helpText)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         SetupStep(number: 2, title: tr("settings2.step.paste"), done: configured) {
@@ -392,35 +375,17 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     /// The last step of every connection: Nook checks the link. `waiting` says what has to happen first.
     private func resultStep(number: Int, waiting: String = tr("settings2.step.checkWaiting")) -> some View {
-        SetupStep(number: number, title: tr("settings2.step.check"), done: health == .working) {
-            resultView(waiting: waiting)
-        }
+        SetupCheckStep(number: number, detail: waiting, state: checkState,
+                       check: health == .notLinked ? nil : { refreshNow() })
     }
 
-    @ViewBuilder
-    private func resultView(waiting: String) -> some View {
+    /// The check step's state, from how the service is doing.
+    private var checkState: SetupCheckState {
         switch health {
-        case .notLinked:
-            Text(waiting)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-        case .busy:
-            HStack(spacing: NookTheme.Spacing.md) {
-                ProgressView().controlSize(.small)
-                Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
-            }
-        case .working, .needsYou:
-            Label(tr("settings2.step.checkOK", connector.title), systemImage: "checkmark.seal.fill")
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(ConnectionHealth.working.color)
-        case .broken, .off:
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Label(ServiceState.summary(of: connector, health: health), systemImage: "exclamationmark.triangle.fill")
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(ConnectionHealth.broken.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(tr("connector.retry")) { refreshNow() }
-            }
+        case .notLinked: return .idle
+        case .busy: return .checking
+        case .working, .needsYou: return .passed(tr("settings2.step.checkOK", connector.title))
+        case .broken, .off: return .failed(ServiceState.summary(of: connector, health: health))
         }
     }
 
@@ -433,13 +398,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         SheetPart(tr("sheet.part.status")) {
             // How it is doing is the pill beside the title; here only what you can do about it.
             if health == .broken {
-                HStack {
-                    Text(ServiceState.summary(of: connector, health: health))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button(tr("connector.retry")) { refreshNow() }
-                }
+                StepAction(detail: ServiceState.summary(of: connector, health: health), button: tr("connector.retry"),
+                           prominent: false) { refreshNow() }
             }
             // In a row the switch is the row's own; only the sheet shows it here.
             if !embedded {
@@ -462,11 +422,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             } else if replacing || connector.configFields.contains(where: { !$0.secret }) {
                 fieldsAndPaste
             } else {
-                HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Spacer()
-                    Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
+                StepAction(detail: tr("settings2.service.keySafe"), button: tr("settings2.service.replaceKey"), prominent: false) {
+                    withAnimation { replacing = true }
                 }
             }
         }
@@ -502,9 +459,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             HStack {
                 if connector.configFields.contains(where: \.secret) {
                     Button { pasteFromClipboard() } label: {
-                        Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                        Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
                 Button(tr("button.save")) { save() }
                     .disabled(!hasDraft)
@@ -529,13 +486,13 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         )
         if field.secret {
             SecureField(field.label, text: binding,
-                        prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder))
-                .textFieldStyle(.roundedBorder)
+                        prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .labelsHidden()
                 .onSubmit { save() }
         } else {
-            TextField(field.label, text: binding, prompt: Text(field.placeholder))
-                .textFieldStyle(.roundedBorder)
+            TextField(field.label, text: binding, prompt: Text(field.placeholder).foregroundStyle(NookTheme.textTertiary))
+                .settingsField()
                 .labelsHidden()
                 .onSubmit { save() }
         }
@@ -570,10 +527,10 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             }
         case .idle, .checkingCLI, .waitingForCLI, .done:
             Button { gitHubSignIn.start() } label: {
-                Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), icon: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
         }
     }
@@ -639,7 +596,6 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             Keychain.write("", account: field.account)
         }
         load()
-        confirmDisconnect = false
         note = tr("connector.keysCleared")
         refreshNow()
         dismiss()
@@ -680,8 +636,8 @@ struct ExtraAccountsView: View {
         // Shown inside the "Accounts" part of the sheet or row, which already names it.
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack {
-                TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
-                    .textFieldStyle(.roundedBorder)
+                TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
                 if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
                     Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
@@ -699,20 +655,20 @@ struct ExtraAccountsView: View {
                         }
                     }
                     .frame(width: 120, alignment: .leading)
-                    SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))
-                        .textFieldStyle(.roundedBorder)
+                    SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .onSubmit { save(account) }
                     Button(tr("button.save")) { save(account) }
                         .disabled((drafts[account.id] ?? "").isEmpty)
                     ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.remove", account.label),
                                     detail: tr("confirm.keychain.detail")) { remove(account) }
                         .labelled(tr("button.delete"))
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.nookBorderless)
                 }
             }
             HStack {
-                TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")))
-                    .textFieldStyle(.roundedBorder)
+                TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                 Button(tr("accounts.add")) {
                     AccountRegistry.shared.add(service: service, label: newLabel)
                     newLabel = ""

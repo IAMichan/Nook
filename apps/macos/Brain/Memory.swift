@@ -62,9 +62,8 @@ struct MemoryItem: Codable, Equatable, Identifiable {
     func currentStrength(at now: Date = Date()) -> Double {
         if pinned || origin == .told || origin == .imported { return strength }
         let reference = max(updated, lastUsed ?? updated)
-        let days = max(0, now.timeIntervalSince(reference) / 86_400)
-        let halfLife: Double = kind == .lesson ? 45 : 90
-        return strength * pow(0.5, days / halfLife)
+        let halfLifeDays: Double = kind == .lesson ? 45 : 90
+        return Decay.value(strength, elapsed: now.timeIntervalSince(reference), halfLife: halfLifeDays * 86_400)
     }
 }
 
@@ -87,38 +86,26 @@ enum MemoryText {
     /// Content words, lowercased, without accents, lightly stemmed, so "afspraken" and "afspraak" or "meetings" and
     /// "meeting" meet.
     static func tokens(_ text: String) -> Set<String> {
-        let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
-        var result = Set<String>()
-        for raw in folded.split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
-            let word = String(raw)
-            let isNumber = word.allSatisfy(\.isNumber)
-            guard isNumber ? word.count >= 2 : word.count >= 3 else { continue }
-            guard !Research.stopwords.contains(word), !filler.contains(word) else { continue }
-            result.insert(stem(word))
-        }
-        return result
+        TextKit.tokens(text, stem: true, stopwords: ignored, minLength: 3, minNumberLength: 2)
     }
 
-    static func stem(_ word: String) -> String {
-        guard word.count > 5 else { return word }
-        for suffix in ["ingen", "ing", "en", "es", "er", "s", "e"] where word.hasSuffix(suffix) && word.count - suffix.count >= 4 {
-            return String(word.dropLast(suffix.count))
-        }
-        return word
-    }
+    /// The research stopwords and the memory filler, together.
+    private static let ignored = Research.stopwords.union(filler)
+
+    static func stem(_ word: String) -> String { TextKit.stem(word) }
 
     /// Overlap of content words, 0…1 (Jaccard).
     static func similarity(_ a: String, _ b: String) -> Double {
         let left = tokens(a), right = tokens(b)
         guard !left.isEmpty, !right.isEmpty else { return a.lowercased() == b.lowercased() ? 1 : 0 }
-        return Double(left.intersection(right).count) / Double(left.union(right).count)
+        return TextKit.overlap(left, right)
     }
 
     /// Trimmed, on one line, at most `maxLength` characters.
     static func clean(_ text: String) -> String {
         let flat = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-•*\"'")))
-        return flat.count > maxLength ? String(flat.prefix(maxLength - 1)) + "…" : flat
+        return TextKit.clip(flat, to: maxLength)
     }
 
     private static let instruction = try? NSRegularExpression(pattern: #"\b(ignore|ignoreer|negeer|ignoriere)\b[^.]{0,30}\b(instruct|instructie|opdracht|previous|vorige|eerdere|above|rules|regels|anweisung)|system ?prompt|\byou are now\b|\bje bent nu\b|\bdu bist jetzt\b|\bact as\b|<\/?[a-z_]+>|```|\b(run_command|send_to_source|github_merge\w*|compose_mail)\b|\bwithout (asking|confirmation|approval)\b|\bzonder (te vragen|bevestiging|toestemming)\b|\bohne (zu fragen|bestätigung)\b|\b(execute|voer uit|führe aus)\b"#, options: [.caseInsensitive])
@@ -154,6 +141,35 @@ enum MemoryText {
             return word
         }
         return ""
+    }
+}
+
+/// The content words of each memory, kept by its text and subject. Recall reads them for every memory (up to 400),
+/// several times per chat request and on every pause while the user types for autocomplete, and folding, splitting and
+/// stemming every text again each time added up. Keyed by the text itself, so a memory that changes simply gets a new
+/// entry and nothing goes stale; entries of memories that are gone are dropped when the cache grows past twice the book.
+enum MemoryTokens {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: Set<String>] = [:]
+
+    static func of(_ item: MemoryItem) -> Set<String> {
+        let key = item.text + " " + item.subject
+        lock.lock()
+        let hit = cache[key]
+        lock.unlock()
+        if let hit { return hit }
+        let tokens = MemoryText.tokens(key)
+        lock.lock()
+        if cache.count >= MemoryBook.capacity * 2 { cache.removeAll(keepingCapacity: true) }
+        cache[key] = tokens
+        lock.unlock()
+        return tokens
+    }
+
+    /// Whether the words of this text and subject are kept; for tests.
+    static func isCached(_ item: MemoryItem) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cache[item.text + " " + item.subject] != nil
     }
 }
 
@@ -274,7 +290,7 @@ struct MemoryBook: Equatable {
             if !item.subject.isEmpty, item.subject.lowercased() == lower { return true }
             if lower.count >= 4, item.text.lowercased().contains(lower) { return true }
             guard !wanted.isEmpty else { return false }
-            let have = MemoryText.tokens(item.text + " " + item.subject)
+            let have = MemoryTokens.of(item)
             // Every word of the request is in the memory ("vergeet mijn adres" → the memory about the address).
             return wanted.isSubset(of: have) || MemoryText.similarity(item.text, needle) >= 0.5
         }
@@ -313,7 +329,7 @@ struct MemoryBook: Equatable {
                 guard let tool = item.tool, tools.contains(tool), item.evidence >= Self.habitEvidence else { continue }
             }
             var relevance = 0.0
-            let have = MemoryText.tokens(item.text + " " + item.subject)
+            let have = MemoryTokens.of(item)
             if !have.isEmpty, !words.isEmpty {
                 let common = words.filter { word in have.contains(word) || (word.count >= 5 && have.contains { $0.hasPrefix(word) || word.hasPrefix($0) }) }
                 relevance += Double(common.count) / Double(min(have.count, max(words.count, 1))) * 1.2

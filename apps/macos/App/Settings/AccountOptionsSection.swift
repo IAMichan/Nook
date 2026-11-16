@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What lets you set per provider instance, for any agent account in Settings › Agents: the switch that turns it
+/// What you can set for any agent account in Settings › Agents: the switch that turns it
 /// off, the program it runs, the arguments added to every launch, the environment variables it runs with, and the models
 /// that no list offers. Folded away under "Advanced", because most accounts need none of it.
 struct AccountOptionsSection: View {
@@ -25,8 +25,8 @@ struct AccountOptionsSection: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     field(tr("accounts.program"), help: tr("accounts.program.help", profile.kind.command)) {
                         HStack {
-                            TextField(app.history.executables[profile.kind] ?? profile.kind.command, text: $program)
-                                .textFieldStyle(.roundedBorder)
+                            TextField(app.history.executables[profile.kind] ?? profile.kind.command, text: $program, prompt: Text(app.history.executables[profile.kind] ?? profile.kind.command).foregroundStyle(NookTheme.textTertiary))
+                                .settingsField()
                                 .font(NookTheme.TextStyle.code)
                                 .onSubmit(saveProgram)
                             Button(tr("accounts.program.choose"), action: chooseProgram)
@@ -65,37 +65,37 @@ struct AccountOptionsSection: View {
             .padding(NookTheme.Spacing.xs)
             .frame(height: 64)
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
-            .onChange(of: text.wrappedValue) { onChange($0) }
+            .onChange(of: text.wrappedValue) { _, new in onChange(new) }
     }
 
     private var variablesView: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach($rows) { $row in
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("accounts.variables.name"), text: $row.name)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("accounts.variables.name"), text: $row.name, prompt: Text(tr("accounts.variables.name")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .font(NookTheme.TextStyle.code)
                         .frame(maxWidth: 180)
                     if row.sensitive {
-                        SecureField(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value"), text: $row.value)
-                            .textFieldStyle(.roundedBorder)
+                        SecureField(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value"), text: $row.value, prompt: Text(row.hasStoredValue ? tr("accounts.variables.stored") : tr("accounts.variables.value")).foregroundStyle(NookTheme.textTertiary))
+                            .settingsField()
                     } else {
-                        TextField(tr("accounts.variables.value"), text: $row.value)
-                            .textFieldStyle(.roundedBorder)
+                        TextField(tr("accounts.variables.value"), text: $row.value, prompt: Text(tr("accounts.variables.value")).foregroundStyle(NookTheme.textTertiary))
+                            .settingsField()
                             .font(NookTheme.TextStyle.code)
                     }
                     Toggle(isOn: $row.sensitive) { Image(icon: "key.fill") }
                         .toggleStyle(.button)
-                        .help(tr("accounts.variables.secret"))
+                        .nookTip(tr("accounts.variables.secret"))
                     Button { rows.removeAll { $0.id == row.id }; saveVariables() } label: { Image(icon: "minus.circle") }
-                        .buttonStyle(.plain)
-                        .help(tr("accounts.variables.remove"))
+                        .buttonStyle(.nookPlain)
+                        .nookTip(tr("accounts.variables.remove"))
                         .accessibilityLabel(tr("accounts.variables.remove"))
                 }
                 .onSubmit(saveVariables)
             }
             HStack {
-                Button { rows.append(VariableRow()) } label: { Label(tr("accounts.variables.add"), systemImage: "plus") }
+                Button { rows.append(VariableRow()) } label: { Label(tr("accounts.variables.add"), icon: "plus") }
                     .controlSize(.small)
                 Spacer()
                 Button(tr("button.save"), action: saveVariables).controlSize(.small)

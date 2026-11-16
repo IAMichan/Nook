@@ -75,8 +75,8 @@ enum TimelineSearch {
 }
 
 /// "Find in conversation" (⌘F) over a transcript read from the agent's own files (`TranscriptConversation`, a session
-/// that runs outside Nook). Searches what was said: your messages, the agent's answers and notices
-/// find does; not the steps between them. Matching is the same as `TimelineSearch`: literal, case- and
+/// that runs outside Nook). Searches what was said: your messages, the agent's answers and notices;
+/// not the steps between them. Matching is the same as `TimelineSearch`: literal, case- and
 /// diacritic-insensitive.
 enum TranscriptSearch {
     struct Match: Equatable, Sendable {

@@ -5,7 +5,19 @@
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
   import { conversationGroups, recoverDeletedConversation } from "../lib/conversation-list";
+  import { tr, locale } from "../lib/i18n.svelte";
   import type { ConversationSummary } from "../lib/types";
+
+  function groupTitle(id: string): string | undefined {
+    switch (id) {
+      case "pinned": return tr("Vastgezet", "Pinned");
+      case "today": return tr("Vandaag", "Today");
+      case "yesterday": return tr("Gisteren", "Yesterday");
+      case "previous7": return tr("Afgelopen 7 dagen", "Previous 7 days");
+      case "older": return tr("Ouder", "Older");
+      default: return undefined;
+    }
+  }
 
   type SearchState = { kind: "idle" } | { kind: "loading" } | { kind: "error" } | { kind: "ready"; items: ConversationSummary[] };
   let query = $state("");
@@ -18,10 +30,14 @@
   let pending = $state(false);
   let itemsElement: HTMLDivElement;
   const deleted = new Set<string>();
+  /// Deleted with Undo still on screen: hidden right away, removed for good once the undo time is over.
+  let hidden = $state<Set<string>>(new Set());
+  const UNDO_MS = 7000;
 
-  const groups = $derived(query.trim()
-    ? search.kind === "ready" ? [{ title: "Search results", items: search.items }] : []
-    : conversationGroups(nook.nooks, nook.activeId));
+  const groups = $derived((query.trim()
+    ? search.kind === "ready" ? [{ id: "search", title: tr("Zoekresultaten", "Search results"), items: search.items }] : []
+    : conversationGroups(nook.nooks, nook.activeId))
+    .map((group) => ({ ...group, items: group.items.filter((item) => !hidden.has(item.id)) })));
   const list = $derived(groups.flatMap((group) => group.items));
 
   onMount(() => { refresh(); });
@@ -62,12 +78,56 @@
     menu = null;
     confirming = null;
     try { await nook.select(id); }
-    catch (e) { toast.error("Could not open conversation", e); }
+    catch (e) { toast.error(tr("Kon het gesprek niet openen", "Could not open conversation"), e); }
   }
 
   async function newNook() {
     try { await nook.newNook(); }
-    catch (e) { toast.error("Could not create Nook", e); }
+    catch (e) { toast.error(tr("Kon geen nieuwe Nook maken", "Could not create Nook"), e); }
+  }
+
+  /// Delete without a confirmation step: the row goes at once and the toast offers Undo for a few seconds.
+  async function deleteWithUndo(item: ConversationSummary) {
+    if (hidden.has(item.id)) return;
+    const index = list.findIndex((row) => row.id === item.id);
+    const wasActive = nook.activeId === item.id;
+    hidden = new Set(hidden).add(item.id);
+    menu = null;
+    confirming = null;
+    let state: "waiting" | "undone" | "deleted" = "waiting";
+    const unhide = () => {
+      const next = new Set(hidden);
+      next.delete(item.id);
+      hidden = next;
+    };
+    if (wasActive) {
+      const next = list.find((row) => row.id !== item.id && !hidden.has(row.id));
+      if (next) await select(next.id);
+      else { nook.activeId = null; nook.active = null; }
+    }
+    const timer = setTimeout(async () => {
+      if (state !== "waiting") return;
+      state = "deleted";
+      try {
+        await api.deleteNook(item.id);
+        deleted.add(item.id);
+        await nook.refreshList();
+      } catch (e) {
+        toast.error(tr("Kon het gesprek niet verwijderen", "Could not delete conversation"), e);
+      } finally { unhide(); }
+    }, UNDO_MS);
+    toast.withAction(tr("“{title}” verwijderd", "Deleted “{title}”", { title: item.title }), {
+      label: tr("Ongedaan maken", "Undo"),
+      run: () => {
+        if (state !== "waiting") return;
+        state = "undone";
+        clearTimeout(timer);
+        unhide();
+        if (wasActive) select(item.id);
+      },
+    });
+    await tick();
+    focusRow(Math.min(index, list.length - 1));
   }
 
   async function mutate(item: ConversationSummary, action: "pin" | "archive" | "delete") {
@@ -92,7 +152,11 @@
       const target = itemsElement.querySelector<HTMLButtonElement>(".conversation[aria-current='true']") ?? itemsElement.querySelector<HTMLButtonElement>(".conversation");
       target?.focus();
     } catch (e) {
-      toast.error(changed ? "Conversation changed, but could not refresh the list" : `Could not ${action === "pin" ? item.pinned ? "unpin" : "pin" : action} conversation`, e);
+      toast.error(changed
+        ? tr("Gesprek aangepast, maar de lijst kon niet worden vernieuwd", "Conversation changed, but could not refresh the list")
+        : action === "delete" ? tr("Kon het gesprek niet verwijderen", "Could not delete conversation")
+        : action === "archive" ? (item.archived ? tr("Kon het gesprek niet terugzetten", "Could not restore conversation") : tr("Kon het gesprek niet archiveren", "Could not archive conversation"))
+        : item.pinned ? tr("Kon het gesprek niet losmaken", "Could not unpin conversation") : tr("Kon het gesprek niet vastzetten", "Could not pin conversation"), e);
       if (changed) { menu = null; confirming = null; retry++; }
     } finally { pending = false; }
   }
@@ -106,6 +170,10 @@
     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
       e.preventDefault();
       focusRow(e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : Math.max(0, Math.min(list.length - 1, index + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Delete" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const item = list[index];
+      if (item) deleteWithUndo(item);
     } else if (e.key === "F10" && e.shiftKey) {
       e.preventDefault();
       menu = id;
@@ -126,38 +194,38 @@
 
 <svelte:window onkeydown={closeActions} />
 
-<aside class="list" aria-label="Conversations">
-  <header><span>Conversations</span><span class="count">{list.length}</span></header>
-  <button class="new-nook" onclick={newNook}><Icon name="plus" size={16} /><span>New Nook</span><kbd>Ctrl N</kbd></button>
-  <label class="search"><Icon name="search" size={15} /><input aria-label="Search conversations" placeholder="Search conversations" bind:value={query} onkeydown={(e) => { if (e.key === "ArrowDown" && list.length) { e.preventDefault(); focusRow(0); } }} />{#if query}<button class="ghost" aria-label="Clear search" onclick={() => query = ""}>×</button>{/if}</label>
+<aside class="list" aria-label={tr("Gesprekken", "Conversations")}>
+  <header><span>{tr("Gesprekken", "Conversations")}</span><span class="count">{list.length}</span></header>
+  <button class="new-nook" onclick={newNook}><Icon name="plus" size={16} /><span>{tr("Nieuwe Nook", "New Nook")}</span><kbd>Ctrl N</kbd></button>
+  <label class="search"><Icon name="search" size={15} /><input aria-label={tr("Gesprekken zoeken", "Search conversations")} placeholder={tr("Gesprekken zoeken (Ctrl+F)", "Search conversations (Ctrl+F)")} bind:value={query} onkeydown={(e) => { if (e.key === "ArrowDown" && list.length) { e.preventDefault(); focusRow(0); } }} />{#if query}<button class="ghost" aria-label={tr("Zoekopdracht wissen", "Clear search")} onclick={() => query = ""}>×</button>{/if}</label>
   <div class="items" bind:this={itemsElement} aria-busy={query.trim() ? search.kind === "loading" : loading}>
     {#if query.trim() && search.kind === "loading" || !query.trim() && loading && !list.length}
-      <p class="state" role="status">{query.trim() ? "Searching conversations…" : "Loading conversations…"}</p>
+      <p class="state" role="status">{query.trim() ? tr("Gesprekken doorzoeken…", "Searching conversations…") : tr("Gesprekken laden…", "Loading conversations…")}</p>
     {:else if query.trim() && search.kind === "error" || !query.trim() && listError}
-      <div class="state" role="alert"><p>{query.trim() ? "Could not search conversations." : "Could not load conversations."}</p><button class="ghost" onclick={() => query.trim() ? retry++ : refresh()}>Try again</button></div>
+      <div class="state" role="alert"><p>{query.trim() ? tr("Kon de gesprekken niet doorzoeken.", "Could not search conversations.") : tr("Kon de gesprekken niet laden.", "Could not load conversations.")}</p><button class="ghost" onclick={() => query.trim() ? retry++ : refresh()}>{tr("Probeer opnieuw", "Try again")}</button></div>
     {/if}
     {#each groups as group}
-      {#if group.items.length}<h2 class="section-label">{group.title}<span>{group.items.length}</span></h2>{/if}
+      {#if group.items.length}<h2 class="section-label">{groupTitle(group.id) ?? group.title}<span>{group.items.length}</span></h2>{/if}
       {#each group.items as item (item.id)}
         <div class="item" class:active={item.id === nook.activeId}>
           <div class="line">
             <button class="conversation" aria-current={item.id === nook.activeId ? "true" : undefined} onclick={() => select(item.id)} onkeydown={(e) => rowKeys(e, list.findIndex((row) => row.id === item.id), item.id)} oncontextmenu={(e) => { e.preventDefault(); menu = item.id; confirming = null; }}>
               <span class="heading"><span class="dot {item.status}" title={item.status}></span><span class="title" title={item.title}>{item.title}</span></span>
               {#if item.preview}<span class="preview faint">{item.preview}</span>{/if}
-              <span class="meta">{item.archived ? "Archived · " : ""}{new Date(item.updated).toLocaleDateString("en", { month: "short", day: "numeric" })}</span>
+              <span class="meta">{item.archived ? tr("Gearchiveerd · ", "Archived · ") : ""}{new Date(item.updated).toLocaleDateString(locale(), { month: "short", day: "numeric" })}</span>
             </button>
-            <button class="ghost menu-trigger" aria-label={`Actions for ${item.title}`} title="Conversation actions (Shift+F10)" aria-expanded={menu === item.id} disabled={pending} onclick={() => { menu = menu === item.id ? null : item.id; confirming = null; }}>···</button>
+            <button class="ghost menu-trigger" aria-label={tr("Acties voor {title}", "Actions for {title}", { title: item.title })} title={tr("Gespreksacties (Shift+F10)", "Conversation actions (Shift+F10)")} aria-expanded={menu === item.id} disabled={pending} onclick={() => { menu = menu === item.id ? null : item.id; confirming = null; }}>···</button>
           </div>
           {#if menu === item.id}
-            <div class="actions" role="group" aria-label={`Actions for ${item.title}`}>
+            <div class="actions" role="group" aria-label={tr("Acties voor {title}", "Actions for {title}", { title: item.title })}>
               {#if confirming === item.id}
-                <p>Delete this conversation? This cannot be undone.</p>
-                <button class="ghost" disabled={pending} onclick={() => confirming = null}>Cancel</button>
-                <button class="danger" disabled={pending} onclick={() => mutate(item, "delete")}>{pending ? "Deleting…" : "Delete conversation"}</button>
+                <p>{tr("Dit gesprek verwijderen? Dit kan niet ongedaan worden gemaakt.", "Delete this conversation? This cannot be undone.")}</p>
+                <button class="ghost" disabled={pending} onclick={() => confirming = null}>{tr("Annuleer", "Cancel")}</button>
+                <button class="danger" disabled={pending} onclick={() => mutate(item, "delete")}>{pending ? tr("Verwijderen…", "Deleting…") : tr("Gesprek verwijderen", "Delete conversation")}</button>
               {:else}
-                <button class="ghost" disabled={pending} onclick={() => mutate(item, "pin")}>{item.pinned ? "Unpin" : "Pin"}</button>
-                <button class="ghost" disabled={pending} onclick={() => mutate(item, "archive")}>{item.archived ? "Restore" : "Archive"}</button>
-                <button class="ghost danger" disabled={pending} onclick={() => { confirming = item.id; tick().then(() => itemsElement.querySelector<HTMLButtonElement>(".actions button")?.focus()); }}>Delete…</button>
+                <button class="ghost" disabled={pending} onclick={() => mutate(item, "pin")}>{item.pinned ? tr("Losmaken", "Unpin") : tr("Vastzetten", "Pin")}</button>
+                <button class="ghost" disabled={pending} onclick={() => mutate(item, "archive")}>{item.archived ? tr("Terugzetten", "Restore") : tr("Archiveren", "Archive")}</button>
+                <button class="ghost danger" disabled={pending} title={tr("Verwijderen (Del) · ongedaan maken via de melding die volgt", "Delete (Del) · undo from the message that follows")} onclick={() => deleteWithUndo(item)}>{tr("Verwijderen", "Delete")}</button>
               {/if}
             </div>
           {/if}
@@ -165,7 +233,7 @@
       {/each}
     {/each}
     {#if !list.length && (query.trim() ? search.kind === "ready" : !loading && !listError)}
-      <div class="list-empty"><Icon name="chat" size={24} /><p>{query.trim() ? "No conversations found" : "A little room to think"}</p><span>{query.trim() ? "Search titles and messages, including archived Nooks." : "Start a Nook. Your conversations will appear here."}</span>{#if query.trim()}<button class="ghost" onclick={() => query = ""}>Clear search</button>{/if}</div>
+      <div class="list-empty"><Icon name="chat" size={24} /><p>{query.trim() ? tr("Niets gevonden", "No conversations found") : tr("Ruimte om na te denken", "A little room to think")}</p><span>{query.trim() ? tr("Zoek in titels en berichten, ook in gearchiveerde Nooks.", "Search titles and messages, including archived Nooks.") : tr("Begin een Nook. Je gesprekken verschijnen hier.", "Start a Nook. Your conversations will appear here.")}</span>{#if query.trim()}<button class="ghost" onclick={() => query = ""}>{tr("Zoekopdracht wissen", "Clear search")}</button>{:else}<button class="ghost" onclick={newNook}>{tr("Nieuwe Nook", "New Nook")}</button>{/if}</div>
     {/if}
   </div>
 </aside>
@@ -180,7 +248,7 @@
   .search:focus-within { border-color: var(--iris); }
   .search input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 9px 0; font-size: 12px; box-shadow: none; }
   .search button { padding: 0 4px; }
-  .section-label { display: flex; justify-content: space-between; margin: 0; padding: 20px 12px 10px; font-size: 10px; color: var(--text3); letter-spacing: 1px; font-weight: 600; }
+  .section-label { display: flex; justify-content: space-between; margin: 0; padding: 16px 12px 6px; font-size: 11px; color: var(--text3); font-weight: 500; }
   .items { overflow-y: auto; flex: 1; padding: 0 10px 14px; }
   .item { border: 1px solid transparent; border-radius: var(--radius-control); margin-bottom: 3px; }
   .item:hover { background: var(--row-hover); }

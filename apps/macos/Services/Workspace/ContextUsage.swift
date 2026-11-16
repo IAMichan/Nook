@@ -1,0 +1,113 @@
+import Foundation
+
+/// What fills an agent's context window, part by part: the card behind the composer's context ring. Claude Code says it
+/// itself (`get_context_usage`, the same breakdown as its `/context`); for an agent that only reports how many tokens
+/// the conversation takes, the card shows that, the room kept for summarizing, and what is left (`estimate`).
+struct ContextUsage: Equatable, Sendable {
+    enum Kind: String, Sendable {
+        /// In every request now.
+        case used
+        /// Known to the agent but only loaded when it asks for it (tool search): not in the window.
+        case deferred
+        /// Kept free so the agent can summarize before the window is full.
+        case buffer
+        case free
+    }
+
+    struct Category: Equatable, Identifiable, Sendable {
+        /// The agent's id (`messages`, `mcp_tools`, …); `ContextUsage.conversation` for an estimate.
+        var id: String
+        /// The agent's own label, used when Nook has no translation for the id.
+        var name: String
+        var tokens: Int
+        var kind: Kind
+    }
+
+    var categories: [Category]
+    /// Tokens in the window now.
+    var usedTokens: Int
+    var window: Int
+    /// How many MCP tools, memory files, custom agents and skills there are; nil when the agent does not say.
+    var mcpTools: Int?
+    var memoryFiles: Int?
+    var agents: Int?
+    var skills: Int?
+    /// False for an estimate: then only the conversation as a whole is known, not its parts.
+    var detailed: Bool
+    /// The agent can say what fills its window but has not yet for the context the session holds now: the breakdown
+    /// shows a skeleton instead of a guessed split. Nil for a real breakdown and for an agent that never says its parts.
+    var pending: Pending?
+
+    enum Pending: Equatable, Sendable {
+        /// Asked, the answer is on its way.
+        case loading
+    }
+
+    static let conversation = "conversation"
+    /// Claude Code's id for the part of the window the conversation takes.
+    static let conversationPart = "messages"
+
+    var fraction: Double { window > 0 ? min(1, Double(usedTokens) / Double(window)) : 0 }
+
+    /// The parts in the window, the buffer and the free space, in the agent's order: the bar and the first list.
+    var inWindow: [Category] { categories.filter { $0.kind != .deferred && $0.tokens > 0 } }
+    /// The parts the agent knows of but loads only when needed.
+    var deferred: [Category] { categories.filter { $0.kind == .deferred && $0.tokens > 0 } }
+
+    /// The category's share of the window, 0…1.
+    func share(_ category: Category) -> Double { window > 0 ? Double(category.tokens) / Double(window) : 0 }
+
+    /// Claude Code's answer to `get_context_usage`. Nil when it holds no window.
+    static func claude(_ answer: [String: Any]) -> ContextUsage? {
+        guard let window = int(answer["maxTokens"]), window > 0 else { return nil }
+        let categories = ((answer["categories"] as? [[String: Any]]) ?? []).compactMap { raw -> Category? in
+            guard let id = raw["id"] as? String, let tokens = int(raw["tokens"]) else { return nil }
+            let kind = (raw["kind"] as? String).flatMap(Kind.init(rawValue:))
+                ?? ((raw["isDeferred"] as? Bool) == true ? .deferred : .used)
+            return Category(id: id, name: (raw["name"] as? String) ?? id, tokens: tokens, kind: kind)
+        }
+        let skills = (answer["skills"] as? [String: Any]).flatMap { int($0["includedSkills"]) ?? int($0["totalSkills"]) }
+        return ContextUsage(categories: categories,
+                            usedTokens: int(answer["totalTokens"]) ?? categories.filter { $0.kind == .used }.reduce(0) { $0 + $1.tokens },
+                            window: window,
+                            mcpTools: (answer["mcpTools"] as? [Any])?.count,
+                            memoryFiles: (answer["memoryFiles"] as? [Any])?.count,
+                            agents: (answer["agents"] as? [Any])?.count,
+                            skills: skills,
+                            detailed: true)
+    }
+
+    /// This breakdown when the context has since grown to `used`: what was said since is added to the messages and taken
+    /// from the free space (then the buffer), so the parts show at once while the agent is asked again. Nil when the
+    /// context shrank (a summary replaced the conversation) or the breakdown has no messages: then the old parts are wrong.
+    func grown(to used: Int) -> ContextUsage? {
+        let added = used - usedTokens
+        guard added >= 0, let messages = categories.firstIndex(where: { $0.id == Self.conversationPart }) else { return nil }
+        var grown = self
+        grown.usedTokens = used
+        grown.categories[messages].tokens += added
+        var left = added
+        for kind in [Kind.free, .buffer] {
+            for index in grown.categories.indices where grown.categories[index].kind == kind && left > 0 {
+                let taken = min(left, grown.categories[index].tokens)
+                grown.categories[index].tokens -= taken
+                left -= taken
+            }
+        }
+        return grown
+    }
+
+    /// For an agent that reports only how many tokens the conversation takes: that, the room between the auto-compact
+    /// point and the end of the window, and the rest.
+    static func estimate(used: Int, window: Int, autoCompactAt: Int?) -> ContextUsage {
+        let used = max(0, min(used, window))
+        let buffer = autoCompactAt.map { max(0, window - max($0, used)) } ?? 0
+        return ContextUsage(categories: [
+            Category(id: conversation, name: "Conversation", tokens: used, kind: .used),
+            Category(id: "autocompact_buffer", name: "Autocompact buffer", tokens: buffer, kind: .buffer),
+            Category(id: "free_space", name: "Free space", tokens: max(0, window - used - buffer), kind: .free),
+        ], usedTokens: used, window: window, detailed: false)
+    }
+
+    private static func int(_ value: Any?) -> Int? { JSONNumber.int(value) }
+}

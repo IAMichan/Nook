@@ -49,35 +49,44 @@ final class RunEventLog {
         """
     ]
 
-    /// Opens (or creates) the log. Nil when the file cannot be opened as a database.
+    /// The first failure while the log sets itself up, for `SQLiteRecovery` to tell damage from other trouble.
+    private var setupFailure: Int32 = SQLITE_OK
+
+    /// Opens (or creates) the log. A damaged file is moved aside and a fresh one made (`SQLiteRecovery`); nil when there
+    /// is no file to use this session.
     /// - Parameter readOnly: a second connection to a log that exists, only for reading. With WAL it sees the last commit
-    ///   and never waits for a write, nor a write for it.
-    init?(url: URL, readOnly: Bool = false) {
+    ///   and never waits for a write, nor a write for it. It never moves the file.
+    init?(url: URL, readOnly: Bool = false, incidents: DatabaseIncidents = .shared) {
         let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_FULLMUTEX
-        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
-            sqlite3_close(db)
-            return nil
-        }
         if readOnly {
+            guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
+                sqlite3_close(db)
+                return nil
+            }
             sqlite3_busy_timeout(db, 2_000)
             return
         }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        sqlite3_busy_timeout(db, 2_000)
-        exec("PRAGMA journal_mode = WAL;")
-        // Durable across a crash of Nook; only a power cut can lose the last commits, never corrupt the file.
-        exec("PRAGMA synchronous = NORMAL;")
-        guard migrate() else {
-            sqlite3_close(db)
-            return nil
+        db = SQLiteRecovery.open(url, flags: flags, incidents: incidents) { handle in
+            db = handle
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            sqlite3_busy_timeout(handle, 2_000)
+            exec("PRAGMA journal_mode = WAL;")
+            // Durable across a crash of Nook; only a power cut can lose the last commits, never corrupt the file.
+            exec("PRAGMA synchronous = NORMAL;")
+            setupFailure = SQLITE_OK
+            guard migrate() else { return setupFailure == SQLITE_OK ? SQLITE_ERROR : setupFailure }
+            return SQLITE_OK
         }
+        guard db != nil else { return nil }
         // The search index is extra: a SQLite without FTS5 or its trigram tokenizer only means search scans instead.
         dropSearchWithText()
         searchAvailable = exec(Self.searchSchema(contentless: true)) || exec(Self.searchSchema(contentless: false))
     }
 
-    /// An index that kept its own copy of every event's text (as built before 2026-11-10) is dropped, with its keys:
-    /// searching only matches, so the copy (a fifth of the file) was never read. `RunStore` builds it anew.
+    /// An index that kept its own copy of every event's text (as built before 2026-11-10), or the position of every
+    /// trigram (before 2026-11-12), is dropped with its keys: searching only matches, so neither was ever read, and the
+    /// positions made the index larger than the timelines themselves (273 MB against 39 MB on one Mac). `RunStore`
+    /// builds it anew.
     @discardableResult
     private func dropSearchWithText() -> Bool {
         // An older SQLite cannot build the contentless index: it keeps the one it has (dropping it would repeat each launch).
@@ -85,8 +94,9 @@ final class RunEventLog {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, "SELECT sql FROM sqlite_master WHERE name = 'run_search'", -1, &stmt, nil) == SQLITE_OK,
-              sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0),
-              !String(cString: text).contains("content") else { return false }
+              sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) else { return false }
+        let schema = String(cString: text)
+        guard !schema.contains("content") || !schema.contains("detail") else { return false }
         sqlite3_finalize(stmt)
         stmt = nil
         return exec("DROP TABLE IF EXISTS run_search; DROP TABLE IF EXISTS run_search_keys;")
@@ -113,9 +123,11 @@ final class RunEventLog {
     ///
     /// Contentless: a search only matches and joins the rowids, so FTS5 keeps no copy of the text (a fifth of the file
     /// on one Mac). `contentless_delete` (SQLite 3.43) lets a row be replaced; without it the index keeps the text.
+    /// `detail = none`: which rows hold a trigram, not where in them, so a query is its trigrams together rather than a
+    /// phrase (`TrigramQuery`), and a row that holds them all apart is a false hit the caller's own search drops.
     private static func searchSchema(contentless: Bool) -> String {
         """
-        CREATE VIRTUAL TABLE IF NOT EXISTS run_search USING fts5(body, tokenize = 'trigram'\(contentless ? ", content = '', contentless_delete = 1" : ""));
+        CREATE VIRTUAL TABLE IF NOT EXISTS run_search USING fts5(body, tokenize = 'trigram', detail = none\(contentless ? ", content = '', contentless_delete = 1" : ""));
         CREATE TABLE IF NOT EXISTS run_search_keys (
             id INTEGER PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -180,8 +192,9 @@ final class RunEventLog {
         exec("DROP TABLE IF EXISTS run_text;")
     }
 
-    /// The sessions whose events contain `query` (folded), newest match first. Nil when the index cannot answer: it is
-    /// not there, or the query is shorter than a trigram; then the caller reads the timelines itself.
+    /// The sessions that may mention `query` (folded), newest match first: every one that does, and a few whose event
+    /// only holds its trigrams apart, which the caller's own search drops. Nil when the index cannot answer: it is not
+    /// there, or the query is shorter than a trigram; then the caller reads the timelines itself.
     func sessions(mentioning query: String, limit: Int = 2_000) -> [UUID]? {
         let folded = TimelineSearchText.fold(query)
         guard searchAvailable, folded.count >= 3 else { return nil }
@@ -192,8 +205,7 @@ final class RunEventLog {
             WHERE run_search MATCH ? GROUP BY k.run_id ORDER BY last DESC LIMIT ?
             """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        // One phrase: the literal text, quotes doubled, never FTS syntax.
-        sqlite3_bind_text(stmt, 1, "\"" + folded.replacingOccurrences(of: "\"", with: "\"\"") + "\"", -1, transient)
+        sqlite3_bind_text(stmt, 1, TrigramQuery.text(folded), -1, transient)
         sqlite3_bind_int(stmt, 2, Int32(limit))
         var result: [UUID] = []
         var step = sqlite3_step(stmt)
@@ -285,7 +297,11 @@ final class RunEventLog {
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
-        sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+            if setupFailure == SQLITE_OK { setupFailure = sqlite3_extended_errcode(db) }
+            return false
+        }
+        return true
     }
 
     /// Runs `body` in one transaction: all of its rows are written, or none.
@@ -436,9 +452,7 @@ enum RunEventFold {
 /// What the search index keeps of an event: the same fields "Find in session" searches (not thinking), folded the way
 /// it compares (case and diacritics ignored).
 enum TimelineSearchText {
-    static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    static func fold(_ text: String) -> String { TextKit.fold(text) }
 
     static func body(_ event: RunEvent) -> String {
         guard event.kind != .thinking else { return "" }

@@ -21,8 +21,7 @@ Nook is an open-source project. **English is the default language across the ent
 
 - **Git Commits:** Always write commit subjects and bodies in **English**, using imperative mood (`<= 72` characters for the subject line), even if the user's prompt or conversation is in Dutch or another language.
 - **Pull Requests & Branches:** Always write branch names, pull request titles, and pull request descriptions in **English** (following [`.github/pull_request_template.md`](.github/pull_request_template.md)).
-- **Linking Issues:** Before opening a pull request, search the open issues for any the change resolves, and list them under *Related issues* in the description as `Closes #123` (`Part of #123` when the issue stays open). Only link an issue the diff actually resolves; write "None" when nothing matches.
-- **PR Description Check:** The `PR template` workflow (`scripts/pr-body-check.py`) fails a pull request whose description leaves a template section out or empty, links no issue and does not say "None", or says nothing under *Testing* beyond the empty checklist (tick a box, or add a line on what was run or not run). Run the script locally before opening one: `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py`.
+- **PR Description:** Every description, also one a tool or "Create PR" button wrote, has exactly the template's four sections in order: `## Summary`, `## Related issues` (`Closes #123` / `Part of #123` for issues the diff resolves, after searching open issues; else `None`), `## Why`, `## Testing` (tick only what you verified; with nothing ticked, add a line of its own on what was or was not run). No other headings (`## Changes`). The `PR template` check (`scripts/pr-body-check.py`) fails anything else; run it first: `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py`.
 - **Code & Comments:** All Swift types, functions, variables, code comments, docstrings, and test names must be written in **English**.
 - **Documentation:** All root and technical documentation (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/*.md`) should be written and maintained in **English**.
 - **UI Localization (`I18n`):**
@@ -43,6 +42,7 @@ apps/
 packages/
   protocol/    # Shared Companion protocol, ChaCha20-Poly1305 sealing & webhook security
   core/        # Cross-platform Foundation-only Swift core package
+  web-ui/      # Shared Svelte interface (the composer) for the Tauri app and the browser extension
 docs/          # Architecture and feature documentation
 scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 ```
@@ -51,9 +51,9 @@ scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 
 ## 3. Architecture & Security Invariants
 
-- **Shared UI first:** Reuse the components listed in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) instead of rebuilding them inline; add new shared views to `apps/macos/NotchUI/Components`.
-- **One design, from the theme:** Every view under `apps/macos/NotchUI` and `apps/macos/App` takes its colors, type, corner radii, and spacing from `NookTheme` (`NookTheme.TextStyle`, `font`/`mono`/`rounded`, `Radius`, `Spacing`, and the named colors). No inline `Font.system(size:)` or SwiftUI text style (`.caption`, `.callout`, `.headline`), no literal `Color(hex:)`/`Color(red:)`, no system `.red`/`.orange`/`.green`/`.secondary`, no corner radius written as a number. State colors keep their meaning: `iris` = Nook, `mint` = done, `amber` = waiting on you, `coral` = error, `violet` = merged. `UIConsistencyTests` and `scripts/ui-lint.sh` enforce this; a file that draws its own colors (a brand mark, a chart palette) is added to both allow-lists with a reason, never by loosening the rule.
-- **Idle costs nothing:** Nook runs all day next to everything else, so at rest its main thread is near 0% CPU. A subscription to published state (`store.$value … .sink`) drops repeats with `removeDuplicates`, `throttle`, or `debounce`: a `@Published` property publishes on every write, also of the same value, so a subscriber that writes back to what it watches loops forever. One that must see every write says why on the line above (`// perf: <reason>`). Write published state only when it changed. Animations that loop while work goes on (a pulse, a halo, a spinner, a shimmer, the writing dots, a symbol that pulses or turns) are a `LayerLoop`, `ShimmerLayer`, `LayerLevelBars`, or `LayerSymbol` (`LayerLoops.swift`): Core Animation runs them in the render server at the `EnergyMonitor` rate, so the main thread does nothing per frame however many agents work. Never `.repeatForever`, `.symbolEffect`, or a SwiftUI timeline for those: each frame of a timeline is drawn on the main thread, and a hosting view of its own still lays out the whole window around it. Only what follows live input (Nook's pose, voice levels) stays a pausing `.nookFrames` timeline, with a `// perf:` reason. `scripts/perf-lint.sh` enforces this; `scripts/idle-profile.sh` measures a running Nook (CPU of the process and its main thread, footprint, mapped models, and the Nook functions the main thread spends its time in). What only the notch draws (its state, size, the pointer on it, its strips) lives in `NotchSurface`, apart from `NotchViewModel`, which the main window observes; keep notch-only state there. Views that redraw while an agent streams (timeline blocks, diffs, list rows) are `Equatable` with `.equatable()` on what they show, so only the part that changed is drawn again.
+- **Shared UI first:** Reuse the components listed in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) instead of rebuilding them inline; add new shared views to `apps/macos/UI/Components`.
+- **One design, from the theme:** Every view under `apps/macos/UI` and `apps/macos/App` takes its colors, type, corner radii, and spacing from `NookTheme` (`NookTheme.TextStyle`, `font`/`mono`/`rounded`, `Radius`, `Spacing`, and the named colors). No inline `Font.system(size:)` or SwiftUI text style (`.caption`, `.callout`, `.headline`), no literal `Color(hex:)`/`Color(red:)`, no system `.red`/`.orange`/`.green`/`.secondary`, no corner radius written as a number. State colors keep their meaning: `iris` = Nook, `mint` = done, `amber` = waiting on you, `coral` = error, `violet` = merged. `UIConsistencyTests` and `scripts/ui-lint.sh` enforce this; a file that draws its own colors (a brand mark, a chart palette) is added to both allow-lists with a reason, never by loosening the rule.
+- **Idle costs nothing:** Nook runs all day next to everything else, so at rest its main thread is near 0% CPU. A subscription to published state (`store.$value … .sink`) drops repeats with `removeDuplicates`, `throttle`, or `debounce`: a `@Published` property publishes on every write, also of the same value, so a subscriber that writes back to what it watches loops forever. One that must see every write says why on the line above (`// perf: <reason>`). Write published state only when it changed. Animations that loop while work goes on (a pulse, a halo, a spinner, a shimmer, the writing dots, a symbol that pulses or turns) are a `LayerLoop`, `ShimmerLayer`, `LayerLevelBars`, or `LayerSymbol` (`LayerLoops.swift`): Core Animation runs them in the render server at the `EnergyMonitor` rate, so the main thread does nothing per frame however many agents work. Never `.repeatForever`, `.symbolEffect`, or a SwiftUI timeline for those: each frame of a timeline is drawn on the main thread, and a hosting view of its own still lays out the whole window around it. Only what follows live input (Nook's pose, voice levels) stays a pausing `.nookFrames` timeline, with a `// perf:` reason. `scripts/perf-lint.sh` enforces this; `scripts/idle-profile.sh` measures a running Nook (CPU of the process and its main thread, footprint, mapped models, and the Nook functions the main thread spends its time in). What only the notch draws (its state, size, the pointer on it, its strips) lives in `NotchSurface`, apart from `PanelViewModel`, which the main window observes; keep notch-only state there. Views that redraw while an agent streams (timeline blocks, diffs, list rows) are `Equatable` with `.equatable()` on what they show, so only the part that changed is drawn again.
 - **One layout:** The notch, the main window, and sheets all render the same `PanelView`; Settings is the single place for configuration. Change the panel once and every surface follows. Do not add a second window with its own layout, and open tasks inside the panel.
 - **`AppModel` is composition-only:** Put feature logic in dedicated services/types or modular `AppModel+….swift` extensions, never directly inside `AppModel.swift`.
 - **Single Brain Pipeline:** Chat, notch cards, and proactive suggestions (*Think Along*) must all route through `prepareRun`. Do not create separate LLM execution paths.
@@ -71,7 +71,13 @@ Run the fast Foundation-only core & localization test suite before committing:
 ./scripts/core-tests.sh
 ```
 
-After touching anything under `apps/macos/NotchUI` or `apps/macos/App`, also run the UI consistency check (no Swift toolchain needed; CI runs it on every pull request):
+The build is kept in `.build/core-tests` (git-ignored), so a second run compiles only what changed. While you work, `--changed` runs only the tests your change can affect (since origin's default branch, uncommitted files included; `--changed=<rev>` for another base). It picks test files that changed, that use a type from a changed core source, or that read the app's sources, and runs everything when `project.yml` or the test scripts change. Run the full suite once before a commit or pull request.
+
+```sh
+./scripts/core-tests.sh --changed
+```
+
+After touching anything under `apps/macos/UI` or `apps/macos/App`, also run the UI consistency check (no Swift toolchain needed; CI runs it on every pull request):
 
 ```sh
 ./scripts/ui-lint.sh
@@ -93,19 +99,36 @@ To build and test the full macOS app with Xcode, use the wrapper (it runs `xcode
 ./scripts/xcode.sh test
 ```
 
-It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. Do not call
+It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. `test` uses the `NookTests` scheme, which builds only the unit tests and not Nook.app with its packages (`NOOK_XCODE_SCHEME=Nook` builds the app too, as CI does). The wrapper keeps the Mac usable while it builds: lower priority (`nice`), one job per performance core, no index store, no package update check when nothing changed, and tests in one process (see the script's header for the switches). Do not call
 `xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
 
+Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: at most two
+heavy builds at a time on this Mac, at nice 10; the tests run after the build, outside the slot. When both slots are
+taken, yours prints that it is waiting and starts when one frees up. Do not work around it: several agents compiling at
+once once drove the load to 185 on 14 cores, filled the swap, and froze the Mac and the running Nook. Run any other
+heavy build (`xcodebuild`, `swift build`, `cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off`
+skips the wait, only for a quick build the user is waiting on.
+
+Nook starts every coding agent at full priority, so agents are as fast as the Mac allows; a heavy build lowers its own
+priority through the build slot. `AgentGovernor` watches the Mac while agents run: when
+memory is tight or the Mac is hot, the commands agents run move to macOS's background band; when the Mac swaps hard, the
+commands of the youngest agents hold still (never the agent itself, never the oldest one, at most two minutes) until
+there is room, with a strip above the composer to let them go on. It finds those commands by the process tree, since
+agents start each command in a process group of its own, and always resumes what it paused: when the agent stops, when
+Nook quits, and after a crash. Terminals you type in are your own work and are left alone. Its optional background work (reading the screen, thinking along,
+local models) pauses while the Mac is hot, busy, or short on memory (`EnergyPolicy`); a Mac that keeps reading memory
+back from swap counts as short even when macOS's own pressure level still says normal.
+
 Test programs must leave the user's screen, focus, and input alone. This Mac is in use while agents work, and a throwaway
 harness that opens a window interrupts whatever the user is doing:
 
-- Prefer a unit test. When a behavior needs AppKit or SwiftUI, host the view in an offscreen window (`orderBack` or a frame
-  outside every screen, never `makeKeyAndOrderFront`).
+- Prefer a unit test. For AppKit or SwiftUI, host the view with `scripts/harness/OffscreenWindow.swift` (`orderBack`
+  alone stays on screen behind the user's windows) and take pictures with its `snapshot`, never with screen capture.
 - Do not set `.floating` or a higher window level, call `activate`, or use the `.regular` activation policy in a harness.
 - Send events to the window directly (`NSWindow.sendEvent`, `hitTest`). Never post real input with `CGEvent` or
-  `osascript`: it moves the user's cursor and lands on whatever is under it.
+  `osascript`.
 - If a check only works on the real screen, ask the user first and run it once, not in a loop.
 
 To show a behavior end to end, or to prove a fix (it fails on the base commit and passes on the fix), write a scenario:

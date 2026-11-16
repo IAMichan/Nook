@@ -64,7 +64,7 @@ SOFTWARE.
 
 ## Provider & Brand Icons
 
-Vector icon paths in `apps/macos/NotchUI/Components/BrandLogo.swift` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
+Vector icon paths in `apps/macos/UI/Components/BrandLogo.swift` and the agent logos in the website's `site/_partials/sprite.html` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
 
 ```text
 MIT License
@@ -94,9 +94,13 @@ All third-party brand names and logos are trademarks of their respective owners 
 
 ---
 
+The chat app and service logos on the website (`site/_partials/sprite.html`, ids starting with `app-`) come from [Simple Icons](https://github.com/simple-icons/simple-icons) (CC0 1.0); the brands remain trademarks of their owners.
+
+---
+
 ## Interface Icons (Lucide)
 
-The interface icons in `apps/macos/Resources/Lucide.xcassets` are generated from [Lucide](https://lucide.dev) (`lucide-static` 0.564.0) by `scripts/lucide-icons.sh`:
+The interface icons in `apps/macos/Resources/Lucide.xcassets` are generated from [Lucide](https://lucide.dev) (`lucide-static` 0.564.0) by `scripts/lucide-icons.sh`, and the Android companion's icons in `apps/tauri/src/lib/lucide.ts` are copied from the same version:
 
 ```text
 ISC License
@@ -170,8 +174,6 @@ Nook uses the following open-source Swift packages:
 
 ---
 
----
-
 ## Chat Helper (`apps/chatd`)
 
 `apps/chatd` is a separate program, **nook-chatd**, licensed under the **GNU Affero General Public License v3.0** (see
@@ -197,4 +199,4 @@ Nook does not bundle any AI model weights or proprietary agent binaries in this 
 
 [Mermaid](https://github.com/mermaid-js/mermaid) 12.3.0 ships in `apps/macos/Resources/mermaid` (`dist/mermaid.min.js` from the npm package, sha256 `336df803d87a38b70a01e736e666c8f7601d2ce42f5e47c8fafe5d721074b9a3`) under the MIT license; its license text is in that folder.
 
-[KaTeX](https://github.com/KaTeX/KaTeX) 0.16.22 ships in `apps/macos/Resources/katex` (`dist/katex.min.js`, sha256 `e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89`, `dist/katex.min.css` with its `.woff` and `.ttf` font sources removed, and the `.woff2` fonts from the npm package) under the MIT license; its license text is in that folder. Nook uses it to typeset math in answers without asking a server.
+[KaTeX](https://github.com/KaTeX/KaTeX) 0.16.22 ships in `apps/macos/Resources/katex` (`dist/katex.min.js`, sha256 `e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89`, `dist/katex.min.css` with its `.woff` and `.ttf` font sources removed, and the `.woff2` fonts from the npm package) under the MIT license; its license text is in that folder. Nook uses it to typeset math in answers without asking a server. The Android companion (`apps/tauri`) uses the same versions of Mermaid and KaTeX from npm (`mermaid` 12.3.0, `katex` 0.16.22, MIT), bundled into the app and loaded only when an answer holds a diagram or math.

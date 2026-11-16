@@ -1,14 +1,16 @@
 import AppKit
 import Contacts
 
-/// Profile photos for the Chats tab, from the photos in Contacts: matched on a chat's phone number (a WhatsApp chat) or,
-/// for a chat collected from a notification, on its name. Read on this Mac only, nothing is fetched from a chat app's
-/// servers, and only with access to Contacts; `requestAccess` asks for it when you click the hint in the Chats tab.
+/// Profile photos for the Chats tab, from the photos in Contacts: matched on a chat's phone number or address (what any
+/// app says of the person, `InboxThread.handle`) or, for a chat that says neither, on its name. Read on this Mac only,
+/// nothing is fetched from a chat app's servers, and only with access to Contacts; `requestAccess` asks for it when you
+/// click the hint in the Chats tab.
 @MainActor
 final class ContactPhotos: ObservableObject {
     static let shared = ContactPhotos()
 
-    /// Photos per handle key (`AppData.key`: a phone number by its last nine digits, an address in lowercase).
+    /// Photos per handle key (`ChatHandle.key` through `AppData.key`: a phone number by its last nine digits, an address
+    /// in lowercase). A chat's handle is its number or address in every app (`InboxThread.contactHandle`).
     @Published private(set) var byHandle: [String: NSImage] = [:]
     /// Photos per folded name ("marie dupont"), for chats that only know who by name.
     @Published private(set) var byName: [String: NSImage] = [:]
@@ -98,8 +100,6 @@ final class ContactPhotos: ObservableObject {
         return found
     }
 
-    nonisolated static func fold(_ name: String) -> String {
-        name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
-            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    }
+    /// A name as People keys it (`ChatText.words`), so a chat's name finds the contact People finds.
+    nonisolated static func fold(_ name: String) -> String { ChatText.words(name) }
 }

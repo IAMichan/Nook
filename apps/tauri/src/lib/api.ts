@@ -20,8 +20,11 @@ export const api = {
   nook: (id: string) => invoke<Conversation | null>("nook_get", { id }),
   activeNook: () => invoke<string>("nook_active"),
   newNook: () => invoke<string>("nook_new"),
+  /// A new Nook that does not become the active one (a question about a selection, `SelectionAsk`).
+  newNookInBackground: () => invoke<string>("nook_new_background"),
+  askAboutSelection: (nookId: string, text: string) => invoke<string | null>("ask_about_selection", { nookId, text }),
   deleteNook: (id: string) => invoke<void>("nook_delete", { id }),
-  setNookFlags: (id: string, flags: { pinned?: boolean; archived?: boolean }) => invoke<void>("nook_set_flags", { id, ...flags }),
+  setNookFlags: (id: string, flags: { pinned?: boolean; archived?: boolean; title?: string }) => invoke<void>("nook_set_flags", { id, ...flags }),
 
   ask: (nookId: string, text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) =>
     invoke<string | null>("ask", { nookId, text, images, attachment }),
@@ -36,10 +39,14 @@ export const api = {
   auditEntries: (query = "") => invoke<AuditEntry[]>("audit_entries", { query }),
   clearAudit: () => invoke<void>("clear_audit"),
 
-  barExpand: (expanded: boolean, notice = false) => invoke<void>("bar_expand", { expanded, notice }),
+  barExpand: (expanded: boolean, notice = false, chip = false) => invoke<void>("bar_expand", { expanded, notice, chip }),
   barMoved: () => invoke<void>("bar_moved"),
   showMain: (route: string) => invoke<void>("show_main", { route }),
   takeRoute: () => invoke<string | null>("take_route"),
+  /// Starts Ollama or LM Studio when it is installed but not running.
+  startLocalBrain: (name: string) => invoke<"alreadyRunning" | "started" | "notInstalled" | "noAnswer">("start_local_brain", { name }),
+  trayStatus: (waiting: number, working: number) => invoke<void>("tray_status", { waiting, working }),
+  shortcutProblems: () => invoke<string[]>("shortcut_problems"),
 };
 
 export const events = {

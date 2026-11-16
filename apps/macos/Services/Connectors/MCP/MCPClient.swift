@@ -241,7 +241,18 @@ final class MCPStdioTransport: MCPTransport, @unchecked Sendable {
             if data.isEmpty { self?.finish(NookError("The MCP server stopped.")) } else { self?.receive(data) }
         }
         process.terminationHandler = { [weak self] _ in self?.finish(NookError("The MCP server stopped.")) }
-        try process.run()
+        do {
+            try process.run()
+            try? input.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        } catch {
+            output.fileHandleForReading.readabilityHandler = nil
+            try? input.fileHandleForReading.close()
+            try? input.fileHandleForWriting.close()
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+            throw error
+        }
     }
 
     static func quote(_ text: String) -> String {

@@ -848,11 +848,32 @@ final class AgentWorkTests: XCTestCase {
         }
         XCTAssertNil(info("a", .running, note).printed, "the start note says nothing about the command")
         XCTAssertEqual(info("a", .done, note + "\nready on :3000").printed, "ready on :3000")
+        let moved = "Command did not complete within its 600s timeout and was moved to the background (ID: b2z8). Output is being written to: /tmp/x. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. To check interim output, use Read on that file path."
+        XCTAssertNil(info("a", .running, moved).printed, "the note of a call moved to the background says nothing either")
+        XCTAssertEqual(info("a", .done, moved + "\n12 tests passed").printed, "12 tests passed")
         XCTAssertEqual(info("a", .done, "  built\n").printed, "built")
         XCTAssertNil(info("a", .done, "  ").printed)
         let ordered = BackgroundCommands.ordered([info("old done", .done), info("failed", .failed), info("run", .running),
                                                   info("new done", .done)])
         XCTAssertEqual(ordered.map(\.title), ["run", "failed", "new done", "old done"])
+    }
+
+    /// Claude Code kills a command that hangs past its time limit (`<status>killed</status>`): that is no success. One
+    /// the agent stopped itself (TaskStop) ended as it wanted.
+    func testKilledBackgroundCommandFailsUnlessTheAgentStoppedIt() {
+        let note = "<task-notification>\n<task-id>bmu0</task-id>\n<tool-use-id>toolu_7</tool-use-id>\n<status>killed</status>\n"
+            + "<summary>Background command \"find ~\" was stopped after reaching its background time limit</summary>\n</task-notification>"
+        let update = BackgroundTaskUpdate.notification(note)
+        XCTAssertEqual(update?.status, .killed)
+        let command = RunEvent(kind: .tool, text: "Bash · find ~", tool: "Bash", callID: "toolu_7",
+                               detail: #"{"command":"find ~"}"#, state: .running)
+        XCTAssertTrue(BackgroundCommands.failed(.killed, update: update!, in: [command]))
+        let stop = RunEvent(kind: .tool, text: "TaskStop", tool: "TaskStop", callID: "toolu_8",
+                            detail: #"{"task_id":"bmu0"}"#, state: .done)
+        XCTAssertFalse(BackgroundCommands.failed(.killed, update: update!, in: [command, stop]))
+        XCTAssertFalse(BackgroundCommands.failed(.completed, update: update!, in: [command]))
+        XCTAssertFalse(BackgroundCommands.failed(.stopped, update: update!, in: [command]))
+        XCTAssertTrue(BackgroundCommands.failed(.failed, update: update!, in: [command]))
     }
 
     func testBackgroundCommandOutlivesItsTurnAndShows() {

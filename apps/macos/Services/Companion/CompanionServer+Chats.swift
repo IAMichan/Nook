@@ -45,7 +45,7 @@ extension CompanionServer {
         // The chat may have changed while its history loaded.
         guard let current = inboxEntry(entry.id) else { return .failure(request.id, .unknownItem) }
         let readOnOpen = UserDefaults.standard.object(forKey: ChatsTab.readOnOpenKey) as? Bool ?? true
-        if readOnOpen, current.read.isUnread { app.markChatReadInNook(current) }
+        if readOnOpen, current.read != .read { app.readOpenedChat(current) }
         return CompanionResponse(id: request.id, ok: true, inboxLines: inboxLines(current), inboxTyping: Self.typing(current.id))
     }
 

@@ -92,11 +92,11 @@
         <ul class="rows" bind:this={list}>
           {#each chosen as feature (feature.id)}
             <li class="row" class:dragging={dragging === feature.id} data-id={feature.id} animate:flip={{ duration: 200, easing: cubicOut }}>
-              <button class="ghost grip" title={tr("Slepen om te verplaatsen", "Drag to reorder")} aria-label={tr(`${feature.title[0]} verplaatsen met de pijltjestoetsen`, `Move ${feature.title[1]} with the arrow keys`)}
+              <button class="ghost grip" title={tr("Slepen om te verplaatsen", "Drag to reorder")} aria-label={tr("{name} verplaatsen met de pijltjestoetsen", "Move {name} with the arrow keys", { name: tr(...feature.title) })}
                 onpointerdown={(e) => grab(e, feature.id)} onpointermove={drag} onpointerup={drop} onpointercancel={drop} onkeydown={(e) => nudge(e, feature.id)}><Icon name="grip" size={16} /></button>
               <span class="glyph"><Icon name={feature.icon} size={16} /></span>
               <span class="what"><span>{tr(...feature.title)}</span><span class="faint">{tr(...feature.hint)}</span></span>
-              <button class="ghost toggle on" onclick={() => remove(feature.id)} title={tr("Van Home halen", "Remove from Home")} aria-label={tr(`${feature.title[0]} van Home halen`, `Remove ${feature.title[1]} from Home`)}><Icon name="check" size={15} /></button>
+              <button class="ghost toggle on" onclick={() => remove(feature.id)} title={tr("Van Home halen", "Remove from Home")} aria-label={tr("{name} van Home halen", "Remove {name} from Home", { name: tr(...feature.title) })}><Icon name="check" size={15} /></button>
             </li>
           {/each}
         </ul>
@@ -111,7 +111,7 @@
             <li class="row" animate:flip={{ duration: 200, easing: cubicOut }}>
               <span class="glyph dim"><Icon name={feature.icon} size={16} /></span>
               <span class="what"><span>{tr(...feature.title)}</span><span class="faint">{tr(...feature.hint)}</span></span>
-              <button class="ghost toggle" onclick={() => add(feature.id)} title={tr("Op Home zetten", "Add to Home")} aria-label={tr(`${feature.title[0]} op Home zetten`, `Add ${feature.title[1]} to Home`)}><Icon name="plus" size={15} /></button>
+              <button class="ghost toggle" onclick={() => add(feature.id)} title={tr("Op Home zetten", "Add to Home")} aria-label={tr("{name} op Home zetten", "Add {name} to Home", { name: tr(...feature.title) })}><Icon name="plus" size={15} /></button>
             </li>
           {/each}
         </ul>

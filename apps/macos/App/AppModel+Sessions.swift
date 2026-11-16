@@ -94,15 +94,22 @@ extension AppModel {
     /// The merged list and what follows from it, worked out again only when a list it comes from changes. The Agents
     /// tab asks on every redraw, and merging every session list costs more than the rest of the tab.
     private func sessionLists() -> SessionListsCache {
-        let key = SessionListsCache.Key(sessions: (hub.sessions + hub.detected).map(SessionListsCache.Key.live),
-                                        runs: workspace.runs.map(SessionListsCache.Key.run),
-                                        past: history.sessions, profiles: profiles.all)
-        if let cache = sessionListsCache, cache.key == key { return cache }
+        // The same lists as last time (most redraws: a streamed token, the pointer, a chat): comparing arrays whose
+        // storage was not replaced is a pointer check, so this skips making a key line per session.
+        let sources = SessionListsCache.Sources(sessions: hub.sessions, detected: hub.detected, runs: workspace.runs,
+                                                past: history.sessions, profiles: profiles.all)
+        if let cache = sessionListsCache, cache.sources == sources { return cache }
+        let key = SessionListsCache.Key(sources)
+        if var cache = sessionListsCache, cache.key == key {
+            cache.sources = sources
+            sessionListsCache = cache
+            return cache
+        }
         let merged = AgentSessionRegistry.merge(sessionRecords())
         let free = pastNotCovered(merged: merged)
         let transcripts = detectedTranscripts(free: free)
         let linked = Set(transcripts.values.map(\.id))
-        let cache = SessionListsCache(key: key, merged: merged, transcripts: transcripts,
+        let cache = SessionListsCache(sources: sources, key: key, merged: merged, transcripts: transcripts,
                                       past: free.filter { !linked.contains($0.id) })
         sessionListsCache = cache
         return cache
@@ -194,24 +201,25 @@ extension AppModel {
         guard !candidates.isEmpty else { return }
         // Each transcript by "family|session id", and by "family|earlier id" for one that resumed another, the first in
         // history's order as before: this runs every two seconds while an agent works, and looking each session up in
-        // the whole history went through every earlier session for every session Nook runs.
-        var ownTranscripts: [String: PastSession] = [:]
-        var resumedTranscripts: [String: PastSession] = [:]
-        for past in history.sessions where !past.path.isEmpty {
-            let family = AgentSessionRecord.family(past.agent.name)
-            if ownTranscripts["\(family)|\(past.sessionID)"] == nil { ownTranscripts["\(family)|\(past.sessionID)"] = past }
-            for earlier in past.earlierIDs where earlier != past.sessionID && resumedTranscripts["\(family)|\(earlier)"] == nil {
-                resumedTranscripts["\(family)|\(earlier)"] = past
-            }
+        // the whole history went through every earlier session for every session Nook runs. Built again only when
+        // history has a new list (`ContinuationIndex`).
+        let index = ContinuationIndex.shared
+        index.update(history.sessions)
+        let ownTranscripts = index.own
+        let resumedTranscripts = index.resumed
+        // The agents' apps and terminals by "family|conversation id", the first in the hub's order as before.
+        var liveSessions: [String: AgentSession] = [:]
+        for session in hub.sessions where !session.transcriptPath.isEmpty {
+            guard let conversation = session.ownConversationID else { continue }
+            let key = "\(AgentSessionRecord.family(session.name))|\(conversation)"
+            if liveSessions[key] == nil { liveSessions[key] = session }
         }
         for run in candidates {
             guard let current = run.providerSessionID, !current.isEmpty else { continue }
             let agent = run.provider.displayName
             let family = AgentSessionRecord.family(agent)
             // The agent's app or terminal working on this conversation right now, with the transcript it writes.
-            let live = hub.sessions.first {
-                AgentSessionRecord.family($0.name) == family && $0.ownConversationID == current && !$0.transcriptPath.isEmpty
-            }
+            let live = liveSessions["\(family)|\(current)"]
             // A transcript that resumed this one under a new id, else this conversation's own.
             let resumed = resumedTranscripts["\(family)|\(current)"]
             let own = ownTranscripts["\(family)|\(current)"]
@@ -291,6 +299,15 @@ extension AppModel {
 
 /// The merged session lists and the inputs they were worked out from (see `AppModel.sessionLists()`).
 struct SessionListsCache {
+    /// The lists themselves, as last read. While none of them was replaced the key cannot have changed either.
+    struct Sources: Equatable {
+        let sessions: [AgentSession]
+        let detected: [AgentSession]
+        let runs: [WorkspaceRun]
+        let past: [PastSession]
+        let profiles: [AgentProfile]
+    }
+
     /// Only what `sessionRecords()` reads of a running session or a session Nook runs: their steps, replies and streamed
     /// text change many times a second while agents work, and none of it changes the lists.
     struct Key: Equatable {
@@ -298,6 +315,13 @@ struct SessionListsCache {
         let runs: [String]
         let past: [PastSession]
         let profiles: [AgentProfile]
+
+        init(_ sources: Sources) {
+            sessions = (sources.sessions + sources.detected).map(Self.live)
+            runs = sources.runs.map(Self.run)
+            past = sources.past
+            profiles = sources.profiles
+        }
 
         static func live(_ s: AgentSession) -> String {
             "\(s.id)|\(s.status)|\(s.approvalID != nil)|\(s.name)|\(s.home)|\(s.cwd)|\(s.project)|\(s.sessionID)"
@@ -312,10 +336,38 @@ struct SessionListsCache {
         }
     }
 
+    var sources: Sources
     let key: Key
     let merged: [AgentSessionRecord]
     /// The transcript behind each process Nook only sees, by session id.
     let transcripts: [String: PastSession]
     /// Earlier sessions no running session, Nook session or process covers.
     let past: [PastSession]
+}
+
+/// `followTerminalContinuations`' lookups into history: each transcript by "family|session id", and by "family|earlier
+/// id" for one that resumed another, the first in history's order. History replaces its list as a whole, so comparing
+/// the list kept here with the current one is a check of the array's storage, and the index is built again only for a
+/// new list.
+@MainActor
+private final class ContinuationIndex {
+    static let shared = ContinuationIndex()
+    private var source: [PastSession] = []
+    private(set) var own: [String: PastSession] = [:]
+    private(set) var resumed: [String: PastSession] = [:]
+
+    func update(_ sessions: [PastSession]) {
+        // Array's `==` answers at once for the same storage; a new list with equal sessions is compared, not rebuilt.
+        guard sessions != source else { return }
+        source = sessions
+        own = [:]
+        resumed = [:]
+        for past in sessions where !past.path.isEmpty {
+            let family = AgentSessionRecord.family(past.agent.name)
+            if own["\(family)|\(past.sessionID)"] == nil { own["\(family)|\(past.sessionID)"] = past }
+            for earlier in past.earlierIDs where earlier != past.sessionID && resumed["\(family)|\(earlier)"] == nil {
+                resumed["\(family)|\(earlier)"] = past
+            }
+        }
+    }
 }

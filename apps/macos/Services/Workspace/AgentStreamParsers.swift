@@ -22,6 +22,62 @@ struct JSONBox: Equatable, @unchecked Sendable {
     static func == (lhs: JSONBox, rhs: JSONBox) -> Bool { lhs.json == rhs.json }
 }
 
+/// What an agent says about a permission request besides the tool and its input: why it asks (Claude Code's
+/// `decision_reason`, Codex's `reason`, OpenCode's `message`), whether its own safety check stopped it, and whether the
+/// answer may become a standing rule. The reason is the agent's text: one line on the approval card, never instructions.
+struct PermissionAsk: Equatable, Sendable {
+    var reason = ""
+    /// The agent's own safety check sent the request to you (Claude Code's `safetyCheck`): the card reads as dangerous.
+    var safetyCheck = false
+    /// The agent says the answer must not become a rule for later requests: the card offers no "Always".
+    var noAlways = false
+
+    static let maxReason = 400
+
+    init(reason: String = "", safetyCheck: Bool = false, noAlways: Bool = false) {
+        self.reason = Self.clean(reason)
+        self.safetyCheck = safetyCheck
+        self.noAlways = noAlways
+    }
+
+    /// Claude Code's `can_use_tool` request. A reason of the kind "mode" (the permission mode asks for every such tool)
+    /// or "permissionPromptTool" (Nook itself was asked) says nothing new and is left out.
+    static func claude(_ request: [String: Any]) -> PermissionAsk {
+        let kind = request["decision_reason_type"] as? String
+        let reason = ["mode", "permissionPromptTool"].contains(kind ?? "") ? "" : (request["decision_reason"] as? String) ?? ""
+        // `classifier_approvable` is only there when a safety check took part, also inside a compound command.
+        return PermissionAsk(reason: reason, safetyCheck: kind == "safetyCheck" || request["classifier_approvable"] != nil,
+                             noAlways: (request["suppress_always_allow_rule"] as? Bool) == true)
+    }
+
+    /// One line of plain text: terminal escapes (Claude Code's reason may carry colors) and control characters out,
+    /// whitespace collapsed, at most `maxReason` characters.
+    static func clean(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        var iterator = text.unicodeScalars.makeIterator()
+        while let scalar = iterator.next() {
+            if scalar == "\u{1B}" {
+                // CSI (`ESC [ … final`) and OSC (`ESC ] … BEL` or `ESC \`): skip to their end; any other escape: one character.
+                guard let next = iterator.next() else { break }
+                if next == "[" {
+                    while let c = iterator.next(), !(0x40...0x7E).contains(c.value) {}
+                } else if next == "]" {
+                    var previous: Unicode.Scalar = " "
+                    while let c = iterator.next(), c != "\u{07}", !(previous == "\u{1B}" && c == "\\") { previous = c }
+                }
+                continue
+            }
+            if CharacterSet.controlCharacters.contains(scalar) || CharacterSet.newlines.contains(scalar) {
+                scalars.append(" ")
+            } else {
+                scalars.append(scalar)
+            }
+        }
+        let words = String(scalars).split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")
+        return words.count > maxReason ? String(words.prefix(maxReason - 1)) + "…" : words
+    }
+}
+
 /// Tokens from a single model call, as reported by the agent.
 struct TokenCounts: Equatable, Sendable {
     var input = 0
@@ -61,7 +117,10 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// to the cache (see `PromptCacheWindow`).
     case requestStarted(cacheTTL: TimeInterval?)
     /// The agent requests permission (`--permission-prompt-tool stdio`).
-    case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
+    case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?,
+                           ask: PermissionAsk = PermissionAsk())
+    /// An MCP server asks you something through Claude Code (`elicitation`).
+    case elicitation(ClaudeElicitation)
     case result(ClaudeTurnResult)
     case notice(String)
     /// Claude Code started compacting the conversation (`system/status` with `status: "compacting"`), or a compaction
@@ -76,6 +135,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// `task_started` and `task_notification` messages or the `<task-notification>` it hands the model. `toolUseID` is
     /// the call that started it, `taskID` the id its launch output names; `status` is nil while it runs.
     case backgroundTask(BackgroundTaskUpdate)
+    /// Claude Code's prediction of your next message, after a turn (`--prompt-suggestions`).
+    case promptSuggestion(String)
     /// An entry of the main conversation chain (an assistant or user message's `uuid`): where `--resume-session-at` can
     /// pick the conversation up again.
     case chainEntry(String)
@@ -89,7 +150,7 @@ extension ClaudeStreamEvent {
     /// The agent is working: it writes, thinks, uses a tool or asks permission (not a notice, usage or limits).
     static func isWork(_ event: ClaudeStreamEvent) -> Bool {
         switch event {
-        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .subagentStep, .permissionRequest: return true
+        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .subagentStep, .permissionRequest, .elicitation: return true
         default: return false
         }
     }
@@ -97,7 +158,8 @@ extension ClaudeStreamEvent {
 
 /// News about a task Claude Code runs in the background.
 struct BackgroundTaskUpdate: Equatable, Sendable {
-    enum Status: String, Sendable { case completed, failed, stopped }
+    /// `killed`: Claude Code ended it, at the agent's request (TaskStop) or because it ran past its time limit.
+    enum Status: String, Sendable { case completed, failed, stopped, killed }
 
     var taskID: String?
     var toolUseID: String?
@@ -121,6 +183,40 @@ struct BackgroundTaskUpdate: Equatable, Sendable {
                                           status: tag("status").flatMap(Status.init(rawValue:)) ?? .completed,
                                           summary: tag("summary"), result: tag("result"))
         return update.taskID == nil && update.toolUseID == nil ? nil : update
+    }
+}
+
+/// An MCP server's question through Claude Code (`control_request` `elicitation`). Nook answers one it can put as Allow
+/// or Deny: a confirmation without fields to fill in, as for Codex (`CodexAppServerMapper.mcpApproval`). A form with
+/// fields or a page to open is declined at once, as Claude Code's own SDK does without a handler, so nothing waits on it.
+struct ClaudeElicitation: Equatable, Sendable {
+    /// Before the request's id in `PendingPermission.id`: its answer is an elicitation result, not a tool permission.
+    static let pendingPrefix = "claude-elicitation-"
+
+    var requestID: String
+    var server: String
+    var message: String
+    /// The server's own title for the question (`_meta['anthropic/permissionDisplay']`), when it gave one.
+    var title: String = ""
+    var isConfirmation: Bool
+
+    init(requestID: String, server: String, message: String, title: String = "", isConfirmation: Bool) {
+        self.requestID = requestID
+        self.server = server
+        self.message = message
+        self.title = title
+        self.isConfirmation = isConfirmation
+    }
+
+    init?(requestID: String, _ request: [String: Any]) {
+        guard (request["subtype"] as? String) == "elicitation" else { return nil }
+        let mode = (request["mode"] as? String) ?? "form"
+        let schema = (request["requested_schema"] as? [String: Any]) ?? [:]
+        let fields = (schema["properties"] as? [String: Any]) ?? [:]
+        self.init(requestID: requestID, server: (request["mcp_server_name"] as? String) ?? "",
+                  message: String(((request["message"] as? String) ?? "").prefix(600)),
+                  title: PermissionAsk.clean((request["title"] as? String) ?? ""),
+                  isConfirmation: mode == "form" && fields.isEmpty)
     }
 }
 
@@ -264,15 +360,17 @@ enum ClaudeStreamParser {
 
         case "control_request":
             guard let requestID = object["request_id"] as? String,
-                  let request = object["request"] as? [String: Any],
-                  (request["subtype"] as? String) == "can_use_tool",
+                  let request = object["request"] as? [String: Any] else { return [] }
+            if let elicitation = ClaudeElicitation(requestID: requestID, request) { return [.elicitation(elicitation)] }
+            guard (request["subtype"] as? String) == "can_use_tool",
                   let tool = request["tool_name"] as? String else { return [] }
             return [.permissionRequest(
                 requestID: requestID,
                 tool: tool,
                 input: JSONBox(request["input"] ?? [String: Any]()),
                 suggestions: request["permission_suggestions"].flatMap { $0 is NSNull ? nil : JSONBox($0) },
-                toolUseID: request["tool_use_id"] as? String
+                toolUseID: request["tool_use_id"] as? String,
+                ask: PermissionAsk.claude(request)
             )]
 
         case "control_response":
@@ -281,6 +379,10 @@ enum ClaudeStreamParser {
                 return [.controlReply(requestID: requestID, response: nil, error: (response["error"] as? String) ?? "error")]
             }
             return [.controlReply(requestID: requestID, response: JSONBox(response["response"] ?? [String: Any]()), error: nil)]
+
+        case "prompt_suggestion":
+            let text = ((object["suggestion"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? [] : [.promptSuggestion(text)]
 
         case "rate_limit_event":
             let info = object["rate_limit_info"] as? [String: Any]
@@ -345,17 +447,7 @@ enum ClaudeStreamParser {
     }
 
     static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber {
-            // JSON booleans are also NSNumber; they do not count as numbers (0 or 1 do).
-            #if canImport(Darwin)
-            return CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : number.doubleValue
-            #else
-            // swift-corelibs-foundation (the tests on Linux): a JSON boolean is an NSNumber of type "c".
-            return String(cString: number.objCType) == "c" ? nil : number.doubleValue
-            #endif
-        }
-        if let text = value as? String { return Double(text) }
-        return nil
+        JSONNumber.double(value)
     }
 
     // MARK: Messages to Claude Code (stdin)
@@ -389,6 +481,12 @@ enum ClaudeStreamParser {
         var filled: [String: String] = [:]
         for question in questions { filled[question.question] = (answers[question.id] ?? []).joined(separator: ", ") }
         updated["answers"] = filled
+        // Which preview you picked, as Claude Code's own question dialog tells it.
+        let annotations = QuestionPreview.annotations(questions.map { question in
+            (question: question.question, options: question.options.map { (label: $0.label, preview: $0.preview) },
+             chosen: answers[question.id] ?? [])
+        })
+        if !annotations.isEmpty { updated["annotations"] = annotations }
         return line(["type": "control_response",
                      "response": ["subtype": "success", "request_id": requestID,
                                   "response": ["behavior": "allow", "updatedInput": updated]]])
@@ -400,11 +498,24 @@ enum ClaudeStreamParser {
             guard let text = raw["question"] as? String else { return nil }
             let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
                 guard let label = option["label"] as? String else { return nil }
-                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")
+                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "",
+                                         preview: QuestionPreview.read(option))
             }
             return RunQuestion(id: "q\(index)", header: (raw["header"] as? String) ?? "", question: text, options: options,
                                multiSelect: (raw["multiSelect"] as? Bool) ?? false, allowsOther: true)
         }
+    }
+
+    /// The answer to an MCP server's question (`elicitation`): accepted with nothing filled in, or declined.
+    static func elicitationResponse(requestID: String, accept: Bool) -> String {
+        var result: [String: Any] = ["action": accept ? "accept" : "decline"]
+        if accept { result["content"] = [String: Any]() }
+        return line(["type": "control_response", "response": ["subtype": "success", "request_id": requestID, "response": result]])
+    }
+
+    /// Stops one task Claude Code runs in the background (a subagent), by the id its launch named; the turn goes on.
+    static func stopTaskRequest(id: String, taskID: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "stop_task", "task_id": taskID]])
     }
 
     /// Requests Claude Code to interrupt the current turn.
@@ -433,6 +544,12 @@ enum ClaudeStreamParser {
     /// Asks how each connector is doing (`mcpServers`, rows with `name` and `status`).
     static func mcpStatusRequest(id: String) -> String {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_status"]])
+    }
+
+    /// Asks what fills the context window (`ContextUsage.claude`). `summary` answers from the last response's usage and
+    /// local estimates, without the token-count calls of `full`.
+    static func contextUsageRequest(id: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "get_context_usage", "detail": "summary"]])
     }
 
     /// Connects a connector again, as after signing in to it on claude.ai.
@@ -524,13 +641,12 @@ enum CodexStreamParser {
         case "turn.completed":
             var usage = TurnUsage()
             if let raw = object["usage"] as? [String: Any] {
-                let cached = Int(ClaudeStreamParser.number(raw["cached_input_tokens"]) ?? 0)
-                let input = Int(ClaudeStreamParser.number(raw["input_tokens"]) ?? 0)
                 // Codex includes cached tokens in input_tokens; separated so they are not double-counted.
-                usage.inputTokens = max(0, input - cached)
-                usage.cacheReadTokens = cached
-                usage.outputTokens = Int(ClaudeStreamParser.number(raw["output_tokens"]) ?? 0)
-                usage.contextTokens = input
+                let counts = TokenUsageSplit.codex(raw)
+                usage.inputTokens = counts.input
+                usage.cacheReadTokens = counts.cacheRead
+                usage.outputTokens = counts.output
+                usage.contextTokens = counts.input + counts.cacheRead
             }
             return [.turnCompleted(usage)]
         case "turn.failed":
@@ -651,13 +767,12 @@ enum GeminiStreamParser {
         case "result":
             var usage = TurnUsage()
             if let stats = object["stats"] as? [String: Any] {
-                // `input_tokens` includes the cached part; keep them apart like the other agents.
-                let cached = ClaudeStreamParser.number(stats["cached"]).map { Int($0) }
-                let input = ClaudeStreamParser.number(stats["input"]).map { Int($0) }
-                    ?? ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) - (cached ?? 0) }
-                usage.inputTokens = input
-                usage.cacheReadTokens = cached
-                usage.outputTokens = ClaudeStreamParser.number(stats["output_tokens"]).map { Int($0) }
+                // `input_tokens` includes the cached part, and thoughts count as output: the same split as the
+                // history read from its chat files (`TokenUsageSplit.gemini`).
+                let counts = TokenUsageSplit.gemini(stats)
+                usage.inputTokens = counts.input
+                usage.cacheReadTokens = stats["cached"] == nil ? nil : counts.cacheRead
+                usage.outputTokens = counts.output
                 usage.contextTokens = ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) }
                 usage.durationSeconds = ClaudeStreamParser.number(stats["duration_ms"]).map { $0 / 1000 }
             }

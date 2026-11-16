@@ -10,11 +10,18 @@ struct AccountsSettingsSection: View {
     @State private var before: Set<String> = []
     /// The account just added: its row opens by itself, so signing in or naming it is right there.
     @State private var justAdded: String?
+    /// Only this agent's accounts (Settings › Coding agents shows one agent at a time); nil lists every agent's, with
+    /// the ACP agents after them.
+    private let only: AgentKind?
+
+    init(only: AgentKind? = nil) {
+        self.only = only
+    }
 
     /// Every account of every agent in one list, its agent's logo on each row. ACP agents you added follow in a section
     /// of their own (pick from the registry, or enter a command).
     var body: some View {
-        let kinds = AgentKind.allCases.filter { $0 != .acp }
+        let kinds = AgentKind.allCases.filter { $0 != .acp && (only == nil || only == $0) }
         let profiles = kinds.flatMap { app.profiles.profiles(for: $0) }
         // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
         let info = kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n")
@@ -28,18 +35,25 @@ struct AccountsSettingsSection: View {
                     .id(profile.id == justAdded ? profile.id + ".added" : profile.id)
             }
         } header: {
-            ConnectionListMenuHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info,
-                                     add: tr("accounts.add")) {
-                // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
-                ForEach(kinds.filter(\.supportsProfiles)) { kind in
-                    Button { startAdding(kind) } label: { AgentName(kind) }
+            // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
+            let addable = kinds.filter(\.supportsProfiles)
+            if addable.isEmpty {
+                ConnectionListHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info)
+            } else {
+                ConnectionListMenuHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info,
+                                         add: tr("accounts.add")) {
+                    ForEach(addable) { kind in
+                        Button { startAdding(kind) } label: { AgentName(kind) }
+                    }
                 }
             }
         }
         .sheet(item: $adding, onDismiss: noteAdded) { kind in
             AddAccountSheet(kind: kind)
         }
-        AcpAgentsSection()
+        if only == nil {
+            AcpAgentsSection()
+        }
     }
 
     private var profileIDs: Set<String> {
@@ -56,31 +70,6 @@ struct AccountsSettingsSection: View {
         guard let id = profileIDs.subtracting(before).first, let profile = app.profiles.profile(id: id) else { return }
         justAdded = id
         ToastCenter.shared.success(tr("connection.added", profile.label.isEmpty ? profile.kind.name : profile.label))
-    }
-}
-
-/// The header of a list of connections whose Add first asks which kind ("+ Add account" › Claude Code, Codex, …):
-/// `ConnectionListHeader` with a menu in place of its button, so adding stays in the same place and looks the same.
-struct ConnectionListMenuHeader<Items: View>: View {
-    let title: String
-    var info: String? = nil
-    let add: String
-    @ViewBuilder var items: () -> Items
-
-    var body: some View {
-        HStack {
-            SettingsSectionTitle(title, info: info)
-            Spacer()
-            Menu {
-                items()
-            } label: {
-                Label(add, systemImage: "plus")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .controlSize(.small)
-        }
     }
 }
 
@@ -102,13 +91,20 @@ private struct AgentAccountCardRow: View {
     }
 
     /// Antigravity's hooks may be set up while Nook holds no Google sign-in for it yet.
-    private var antigravitySignedOut: Bool { profile.kind == .antigravity && app.antigravityUsage.noLogin }
+    private var antigravitySignedOut: Bool { Self.antigravitySignedOut(profile, app: app) }
 
-    private var health: ConnectionHealth {
-        if busy { return .busy }
-        if !profile.isEnabled { return .off }
-        if antigravitySignedOut { return .needsYou }
-        if account != nil { return .working }
+    private static func antigravitySignedOut(_ profile: AgentProfile, app: AppModel) -> Bool {
+        profile.kind == .antigravity && app.antigravityUsage.noLogin
+    }
+
+    private var health: ConnectionHealth { Self.health(profile, enabled: profile.isEnabled, app: app) }
+
+    /// How an account is doing: one rule for its row and its manage sheet.
+    static func health(_ profile: AgentProfile, enabled: Bool, app: AppModel) -> ConnectionHealth {
+        if app.agentConnect[profile.id]?.isBusy == true { return .busy }
+        if !enabled { return .off }
+        if antigravitySignedOut(profile, app: app) { return .needsYou }
+        if app.history.profileAccounts[profile.id] != nil { return .working }
         if app.history.executables[profile.kind] == nil { return .notLinked }
         return .needsYou
     }
@@ -194,31 +190,20 @@ private struct ManageAccountSheet: View {
     var body: some View {
         SetupSheet(
             title: profile.kind.name,
-            subtitle: subtitle
+            subtitle: subtitle,
+            status: health
         ) {
             AgentMark(agent: profile.kind.name, account: AccountTag.badge(current, app: app), size: 44)
         } content: {
             // The same parts as every sheet for something linked: the account, how it signs in, then its place in Nook.
             SheetPart(tr("agents.name")) {
                 HStack {
-                    TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name, prompt: Text(profile.isDefault ? tr("agents.personal") : tr("agents.name")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .onSubmit(saveName)
                     Button(tr("button.save"), action: saveName)
                         .disabled(!nameChanged)
                 }
-            }
-            // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
-            SheetPart(tr("accounts.color")) {
-                AccountColorPicker(accent: Binding(get: { current.accent },
-                                                   set: { app.profiles.setAccent(profile.id, $0) }))
-                SettingNote(tr("accounts.color.help"))
-            }
-            // Its own icon, centered on that badge instead of the first letter of its name.
-            SheetPart(tr("accounts.icon")) {
-                AccountIconPicker(icon: Binding(get: { current.icon }, set: { app.profiles.setIcon(profile.id, $0) }),
-                                  tag: AccountTag.of(current, app: app))
-                SettingNote(tr("accounts.icon.help"))
             }
             if profile.kind != .gemini && profile.kind != .antigravity {
                 // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
@@ -241,6 +226,18 @@ private struct ManageAccountSheet: View {
             if profile.kind == .antigravity {
                 SheetPart(tr("accounts.method")) { antigravitySignInView }
             }
+            // Its own color, on the account's badge wherever the agent's logo shows.
+            SheetPart(tr("accounts.color")) {
+                AccountColorPicker(accent: Binding(get: { current.accent },
+                                                   set: { app.profiles.setAccent(profile.id, $0) }))
+                SettingNote(tr("accounts.color.help"))
+            }
+            // Its own icon, centered on that badge instead of the first letter of its name.
+            SheetPart(tr("accounts.icon")) {
+                AccountIconPicker(icon: Binding(get: { current.icon }, set: { app.profiles.setIcon(profile.id, $0) }),
+                                  tag: AccountTag.of(current, app: app))
+                SettingNote(tr("accounts.icon.help"))
+            }
             AccountOptionsSection(profile: current)
             if let error {
                 SettingNote(error, tone: .error)
@@ -255,6 +252,9 @@ private struct ManageAccountSheet: View {
             name = profile.label
         }
     }
+
+    /// How the account is doing, the same as its row says.
+    private var health: ConnectionHealth { AgentAccountCardRow.health(profile, enabled: current.isEnabled, app: app) }
 
     private var nameChanged: Bool {
         name != profile.label && !name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -280,9 +280,9 @@ private struct ManageAccountSheet: View {
             Button {
                 app.reauthenticate(profile)
             } label: {
-                Label(account == nil ? tr("button.login") : tr("accounts.reauth"), systemImage: "arrow.triangle.2.circlepath")
+                Label(account == nil ? tr("button.login") : tr("accounts.reauth"), icon: "arrow.triangle.2.circlepath")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
 
             if account != nil {
                 ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) {
@@ -302,14 +302,13 @@ private struct ManageAccountSheet: View {
                     app.reauthenticate(profile)
                 } label: {
                     Label(app.antigravityUsage.noLogin ? tr("accounts.antigravitySignIn") : tr("accounts.reauth"),
-                          systemImage: "arrow.triangle.2.circlepath")
+                          icon: "arrow.triangle.2.circlepath")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(progress?.isBusy == true)
 
                 if let progress, progress.isBusy {
-                    ProgressView().controlSize(.small)
-                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    BusyLine(progress.text, font: NookTheme.TextStyle.detail)
                 }
             }
             if case .failed(let message)? = progress {
@@ -324,7 +323,7 @@ private struct ManageAccountSheet: View {
         let stored = profile.kind == .claude ? app.profiles.hasAPIKey(profile) : account != nil
         if stored && key.isEmpty {
             HStack {
-                Label(tr("accounts.keyStored"), systemImage: "key.fill")
+                Label(tr("accounts.keyStored"), icon: "key.fill")
                     .foregroundStyle(NookTheme.mint)
                 Spacer()
                 if profile.kind == .claude {
@@ -340,14 +339,14 @@ private struct ManageAccountSheet: View {
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         } else {
             HStack {
-                SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                    .textFieldStyle(.roundedBorder)
+                SecureField(tr("accounts.keyPlaceholder"), text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .settingsField()
                     .onSubmit(saveKey)
                 if saving {
                     ProgressView().controlSize(.small)
                 } else {
                     Button(tr("accounts.saveKey"), action: saveKey)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -385,7 +384,7 @@ private struct AccountColorPicker: View {
                 set: { accent = NSColor($0).nookHex }
             ), supportsOpacity: false)
             .labelsHidden()
-            .help(tr("accounts.color.custom"))
+            .nookTip(tr("accounts.color.custom"))
         }
     }
 
@@ -406,8 +405,8 @@ private struct AccountColorPicker: View {
             .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .help(tr(name))
+        .buttonStyle(.nookPlain)
+        .nookTip(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.color"))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -449,15 +448,16 @@ private struct AccountIconPicker: View {
             .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .help(tr(name))
+        .buttonStyle(.nookPlain)
+        .nookTip(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.icon"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// Add an account sheet: simple and guided
+/// Adding an account in numbered steps: its name (or a folder found on this Mac that already has a login), how it
+/// signs in, and the last step that says it is ready or checks the key as it is added.
 private struct AddAccountSheet: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -467,11 +467,13 @@ private struct AddAccountSheet: View {
     @State private var key = ""
     @State private var saving = false
     @State private var error: String?
+    /// A folder found on this Mac, picked in step 1: it is added as it is, with the login it already has.
+    @State private var picked: URL?
 
     /// Folders with a login on this Mac not added yet; looked up once as the sheet opens, not on every redraw (it lists
     /// the home folder).
     @State private var found: [(kind: AgentKind, url: URL)] = []
-    private var canAdd: Bool { method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var canAdd: Bool { picked != nil || method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         SetupSheet(
@@ -482,14 +484,26 @@ private struct AddAccountSheet: View {
         } content: {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 SetupStep(number: 1, title: tr("agents.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")))
-                        .textFieldStyle(.roundedBorder)
+                    TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
+                    if !found.isEmpty {
+                        Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+                        ForEach(found, id: \.url) { item in
+                            SettingsPickRow(title: AgentProfile.tildePath(item.url.path),
+                                            detail: AgentProfileStore.label(forFolder: item.url),
+                                            selected: picked == item.url) {
+                                pick(item.url)
+                            }
+                        }
+                    }
                 }
 
                 // Step 2 is signing in with the agent's own login, in the browser, right after adding. A key instead is
                 // folded away for whoever needs one.
-                SetupStep(number: 2, title: tr("accounts.signInStep"), done: method == .apiKey && canAdd) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                SetupStep(number: 2, title: tr("accounts.signInStep"), done: picked != nil || (method == .apiKey && canAdd)) {
+                    if picked != nil {
+                        SettingNote(tr("accounts.found.signedIn"))
+                    } else {
                         if method == .cli {
                             SettingNote(tr("accounts.signInStepDetail", kind.shortName))
                         }
@@ -497,8 +511,9 @@ private struct AddAccountSheet: View {
                         if kind.takesAPIKeyAccounts {
                             DisclosureGroup(isExpanded: Binding(get: { method == .apiKey },
                                                                 set: { method = $0 ? .apiKey : .cli })) {
-                                SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                                    .textFieldStyle(.roundedBorder)
+                                SecureField(tr("accounts.keyPlaceholder"), text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                                    .settingsField()
+                                    .onSubmit { if canAdd { add() } }
                                     .padding(.top, NookTheme.Spacing.xs)
                             } label: {
                                 Text(tr("accounts.useKeyInstead"))
@@ -507,52 +522,60 @@ private struct AddAccountSheet: View {
                     }
                 }
 
-                if !found.isEmpty {
-                    Divider()
-                    Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.strong)
-                    ForEach(found, id: \.url) { item in
-                        HStack {
-                            Text(AgentProfile.tildePath(item.url.path))
-                                .font(NookTheme.TextStyle.code)
-                            Spacer()
-                            Button(tr("agents.add")) {
-                                app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
-                                dismiss()
-                            }
-                        }
-                        .padding(NookTheme.Spacing.md)
-                        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
-                    }
-                }
-
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.coral)
-                }
+                checkStep
             }
             .onAppear { found = app.profiles.discover().filter { $0.kind == kind } }
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
-            if saving {
-                ProgressView().controlSize(.small)
-            } else {
-                Button(method == .cli
-                       ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
-                       : tr("agents.add")) { add() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!canAdd)
-            }
+                .sheetCancelButton()
+            Button(addTitle) { add() }
+                .sheetPrimaryButton()
+                .disabled(!canAdd || saving)
         }
+    }
+
+    /// The last step: a key is checked as the account is added (Add runs it); signing in in the browser or a folder
+    /// found on this Mac has nothing to check here, so it says it is ready.
+    @ViewBuilder
+    private var checkStep: some View {
+        if picked == nil, method == .apiKey {
+            SetupCheckStep(number: 3, detail: tr("accounts.check.keyDetail", kind.shortName), state: keyState)
+        } else {
+            SetupCheckStep(number: 3, title: tr("setup.ready.title"),
+                           detail: picked != nil ? tr("accounts.ready.found") : tr("accounts.ready.signIn", kind.shortName),
+                           state: .idle)
+        }
+    }
+
+    private var keyState: SetupCheckState {
+        if saving { return .checking }
+        if let error { return .failed(error) }
+        return .idle
+    }
+
+    private var addTitle: String {
+        if picked != nil || method == .apiKey { return tr("agents.add") }
+        return app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin")
+    }
+
+    /// Picks a found folder (again: lets go of it); its name fills in an empty name field.
+    private func pick(_ url: URL) {
+        if picked == url {
+            picked = nil
+            return
+        }
+        picked = url
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = AgentProfileStore.label(forFolder: url) }
     }
 
     private func add() {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let picked {
+            app.addAccount(kind, label: clean.isEmpty ? AgentProfileStore.label(forFolder: picked) : clean, home: picked)
+            dismiss()
+            return
+        }
         let label = clean.isEmpty ? tr("agents.work") : clean
         if method == .cli {
             app.addAccount(kind, label: label)

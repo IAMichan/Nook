@@ -61,36 +61,57 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [soundTranslations, chatCallTranslations, workflowParityTranslations, transcriptTranslations, phoneTranslations, remoteTranslations, lookThemesTranslations, browserCaptureTranslations, agentMaintenanceTranslations, sourceControlTranslations, secretsTranslations, automationTranslations, sessionControlsTranslations, textGenTranslations, accountOptionTranslations, goalTranslations, connectionsAgentsTranslations, connectionsDevicesTranslations, sessionContextTranslations, worktreeCleanupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, limitsTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, musicPageTranslations, musicRedesignTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [nookTaskTranslations, attentionTranslations, browserExtensionTranslations, browserMemoryTranslations, safeguardsTranslations, forgeWorkTranslations, telemetryTranslations, settingsFlowsATranslations, settingsFlowsBTranslations, settingsFlowsCTranslations, lineageControlTranslations, polishReliabilityTranslations, chatFollowUpTranslations, instructionsTranslations, soundTranslations, chatCallTranslations, workflowParityTranslations, transcriptTranslations, phoneTranslations, remoteTranslations, lookThemesTranslations, browserCaptureTranslations, agentMaintenanceTranslations, sourceControlTranslations, secretsTranslations, automationTranslations, sessionControlsTranslations, textGenTranslations, accountOptionTranslations, goalTranslations, connectionsAgentsTranslations, connectionsDevicesTranslations, sessionContextTranslations, worktreeCleanupTranslations, worktreeSetupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, agentAsksTranslations, limitsTranslations, cliProxyTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, doubleTapSuggestTranslations, noticesTranslations, splitTranslations, privacyTranslations, accessOverviewTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, musicPageTranslations, musicRedesignTranslations, musicControlsTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
-    /// the fallback languages underneath. Built once, so a lookup is a single dictionary read: `tr` runs thousands of
-    /// times per redraw of the notch, and walking fourteen tables (three times over for a missing key) for each of them
-    /// was a measurable share of every frame.
-    private static let resolved: [AppLanguage: [String: String]] = {
-        // Earlier tables win over later ones: merge back to front so an earlier text overwrites a later one.
-        var merged: [AppLanguage: [String: String]] = [:]
-        for table in tables.reversed() {
-            for (language, texts) in table { merged[language, default: [:]].merge(texts) { _, earlier in earlier } }
-        }
-        var result: [AppLanguage: [String: String]] = [:]
-        for language in AppLanguage.allCases {
+    /// the fallback languages underneath. Built once per language, so a lookup is a single dictionary read: `tr` runs
+    /// thousands of times per redraw of the notch, and walking every table (three times over for a missing key) for each
+    /// of them was a measurable share of every frame. A language is built the first time it is looked up, not all five
+    /// at once: the first `tr` runs on the main thread early at launch, and merging every table for languages nobody reads
+    /// held it up for nothing. Switching language builds the new one on its first lookup.
+    private static let resolved = ResolvedTexts()
+
+    /// The lazily built texts per language, behind a lock because `tr` is called from any thread.
+    private final class ResolvedTexts: @unchecked Sendable {
+        private let lock = NSLock()
+        /// The fallback languages' keys from every table, an earlier table winning; no fallbacks of their own.
+        private var merged: [AppLanguage: [String: String]] = [:]
+        /// One language's keys with its fallbacks underneath: what `lookup` reads.
+        private var resolved: [AppLanguage: [String: String]] = [:]
+
+        func texts(for language: AppLanguage) -> [String: String] {
+            lock.lock()
+            defer { lock.unlock() }
+            if let texts = resolved[language] { return texts }
             // Everyone but a Dutch reader falls back to English before Dutch.
             let fallbacks: [AppLanguage] = language == .nl ? [.en] : [.en, .nl].filter { $0 != language }
-            var texts: [String: String] = [:]
-            for fallback in fallbacks.reversed() { texts.merge(merged[fallback] ?? [:]) { _, preferred in preferred } }
-            texts.merge(merged[language] ?? [:]) { _, own in own }
-            result[language] = texts
+            // The language's own texts first, then each fallback fills only the keys still missing, in order.
+            var texts = mergedTexts(for: language)
+            for fallback in fallbacks { texts.merge(mergedTexts(for: fallback)) { own, _ in own } }
+            resolved[language] = texts
+            return texts
         }
-        return result
-    }()
+
+        /// Called with the lock held.
+        private func mergedTexts(for language: AppLanguage) -> [String: String] {
+            if let texts = merged[language] { return texts }
+            // Earlier tables win over later ones: merge back to front so an earlier text overwrites a later one.
+            var texts: [String: String] = [:]
+            for table in I18n.tables.reversed() {
+                if let own = table[language] { texts.merge(own) { _, earlier in earlier } }
+            }
+            // Only English and Dutch are read again, as fallbacks under another language; the rest live on in `resolved`.
+            if language == .en || language == .nl { merged[language] = texts }
+            return texts
+        }
+    }
 
     /// `String(format:locale:)` needs a Locale; making one per call is not free.
     private static let locales: [AppLanguage: Locale] = Dictionary(uniqueKeysWithValues: AppLanguage.allCases.map { ($0, Locale(identifier: $0.rawValue)) })
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        resolved[lang]?[key] ?? key
+        resolved.texts(for: lang)[key] ?? key
     }
 
     public func lookup(_ key: String, for lang: AppLanguage) -> String {
@@ -119,8 +140,6 @@ public func tr(_ key: String, _ args: CVarArg...) -> String {
 private let translations: [AppLanguage: [String: String]] = [
     .nl: [
         // MARK: Menu Bar & General
-        "menu.talk": "Praat met Nook",
-        "menu.screen": "Kijk mee met mijn scherm",
         "menu.developer": "Ontwikkelaar",
         "menu.demoScenes": "Voorbeeldscènes",
         "menu.demoData": "Voorbeelddata tonen",
@@ -128,6 +147,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Nook afsluiten",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Open Nook",
+        "menu.ask": "Vraag Nook iets",
         "menu.now": "nu",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d agents bezig",
@@ -187,7 +207,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "button.tryAgain": "Probeer opnieuw",
         "button.installAndLink": "Installeer en koppel",
         "button.loginAndLink": "Log in en koppel",
-        "button.add": "Voeg toe",
+        "button.add": "Toevoegen",
         "button.resumeInTerminal": "Hervat in Terminal",
         "button.copyCommand": "Kopieer commando",
         "button.openInMail": "Open in Mail",
@@ -777,7 +797,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.addHintClaude": "Nook opent Terminal; log daar in met het andere account. Nook ziet het vanzelf en koppelt voortgang, goedkeuren en limieten.",
         "agents.addHint": "Nook opent Terminal; log daar in met het andere account. Nook ziet het vanzelf en koppelt voortgang en goedkeuren.",
         "agents.foundOnMac": "Al gevonden op je Mac",
-        "agents.add": "Voeg toe",
+        "agents.add": "Toevoegen",
         "agents.youHave": "Je hebt nu:",
         "agents.work": "Werk",
         "agents.loginWithAccount": "Log in met dit account",
@@ -858,6 +878,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.references.more": "Nog %d tonen",
         "chat.references.open": "Open het origineel",
         "chat.references.noLink": "Geen link beschikbaar voor deze bron",
+        "chat.citation.open": "Openen",
+        "chat.citation.more": "En nog %d bronnen",
+        "chat.citation.noExcerpt": "Nook heeft de tekst van deze bron bij dit antwoord niet bewaard. Stel de vraag opnieuw om hem te zien.",
         "scope.automatic": "Automatisch: alle relevante bronnen",
         "scope.automaticShort": "Alle bronnen",
         "scope.onlyThese": "Alleen deze bronnen",
@@ -892,8 +915,6 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         // MARK: Menu Bar & General
-        "menu.talk": "Talk to Nook",
-        "menu.screen": "Look at my screen",
         "menu.developer": "Developer",
         "menu.demoScenes": "Demo scenes",
         "menu.demoData": "Show demo data",
@@ -901,6 +922,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Quit Nook",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Open Nook",
+        "menu.ask": "Ask Nook something",
         "menu.now": "now",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d agents running",
@@ -1631,6 +1653,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.references.more": "Show %d more",
         "chat.references.open": "Open the original",
         "chat.references.noLink": "No link available for this source",
+        "chat.citation.open": "Open",
+        "chat.citation.more": "And %d more sources",
+        "chat.citation.noExcerpt": "Nook did not keep this source's text for this answer. Ask again to see it.",
         "scope.automatic": "Automatic: all relevant sources",
         "scope.automaticShort": "All sources",
         "scope.onlyThese": "Only these sources",
@@ -1665,8 +1690,6 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         // MARK: Menu Bar & General
-        "menu.talk": "Mit Nook sprechen",
-        "menu.screen": "Auf meinen Bildschirm schauen",
         "menu.developer": "Entwickler",
         "menu.demoScenes": "Beispielszenen",
         "menu.demoData": "Beispieldaten anzeigen",
@@ -1674,6 +1697,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.quit": "Nook beenden",
         "menu.accessibility": "Nook",
         "menu.openPanel": "Nook öffnen",
+        "menu.ask": "Nook etwas fragen",
         "menu.now": "jetzt",
         "menu.nextEvent": "%@ · %@",
         "menu.agentsRunning": "%d Agents aktiv",
@@ -2402,6 +2426,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.references.more": "%d weitere anzeigen",
         "chat.references.open": "Original öffnen",
         "chat.references.noLink": "Für diese Quelle ist kein Link verfügbar",
+        "chat.citation.open": "Öffnen",
+        "chat.citation.more": "Und %d weitere Quellen",
+        "chat.citation.noExcerpt": "Nook hat den Text dieser Quelle zu dieser Antwort nicht gespeichert. Frag noch einmal, um ihn zu sehen.",
         "scope.automatic": "Automatisch: alle relevanten Quellen",
         "scope.automaticShort": "Alle Quellen",
         "scope.onlyThese": "Nur diese Quellen",

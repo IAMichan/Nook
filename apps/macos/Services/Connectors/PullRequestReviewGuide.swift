@@ -151,7 +151,7 @@ enum PullRequestReviewGuides {
             let kept = Set(guides.sorted { $0.value.written > $1.value.written }.prefix(limit).map(\.key))
             guides = guides.filter { kept.contains($0.key) }
         }
-        defaults.set(try? JSONEncoder().encode(guides), forKey: defaultsKey)
+        defaults.setEncoded(guides, forKey: defaultsKey)
     }
 
     private static func all(_ defaults: UserDefaults) -> [String: PullRequestReviewGuide] {

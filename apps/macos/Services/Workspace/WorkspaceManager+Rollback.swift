@@ -39,7 +39,18 @@ extension WorkspaceManager {
     func followContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage],
                             finished: Bool = true) {
         guard let run = run(id), !run.status.isActive, run.providerSessionID == previous else { return }
-        loadTimeline(id)
+        // The timeline is read off the main thread when it is not in memory (this runs in the background, every few
+        // seconds while an agent works outside Nook); the session is looked at again once it is here.
+        whenTimelineLoaded(id) { [weak self] in
+            guard let self, let run = self.run(id), !run.status.isActive, run.providerSessionID == previous else { return }
+            self.applyContinuation(id, from: previous, to: session, messages: messages, finished: finished)
+        }
+    }
+
+    /// `followContinuation` with the session's timeline in memory.
+    private func applyContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage],
+                                   finished: Bool) {
+        timelineStore.use[id] = Date()
         if session != previous {
             rememberEarlierSession(id, replacedBy: session)
             update(id) { $0.providerSessionID = session }
@@ -96,7 +107,8 @@ extension WorkspaceManager {
     /// Going back to before a message also rolls back this session's conversation: Claude Code, and Codex over app-server.
     func canRollbackConversation(_ id: UUID) -> Bool {
         guard let run = run(id), run.provider.capabilities.canRollbackConversation else { return false }
-        if run.provider == .codex {
+        // Codex rolls back over app-server only, not over `codex exec`.
+        if run.provider.capabilities.rollback == .threadRollback {
             guard settings.codexAppServer, let executable = launchExecutable(run) else { return false }
             return !codexExecOnly.contains(executable)
         }

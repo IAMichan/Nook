@@ -26,6 +26,9 @@ extension WorkspaceManager {
         }
         closeClaudeProcess(id)
         claudeIdle[id] = (process, changed ? "" : claudeKey(run))
+        // The connectors listed at the start of the turn may have changed since (a plugin's server dropped for a
+        // claude.ai connector): ask again, so the row above the composer only offers ones that still need you.
+        if connectorSignIns[id]?.isEmpty == false { checkClaudeConnectors(id) }
         let seconds = idleSeconds(id, Self.claudeIdleSeconds)
         claudeIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
@@ -56,8 +59,13 @@ extension WorkspaceManager {
                 claudeChangedDuringTurn.insert(id)
             }
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
-            guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort,
-                  let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
+            guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort else { return }
+            // OpenCode over its own server: the session's model, agent and rules count from its next step.
+            if openCodeLinks[id]?.sessionID != nil {
+                Task { await applyOpenCodeSettings(id) }
+                return
+            }
+            guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
         case .codex, .pi:
             break
@@ -111,6 +119,18 @@ extension WorkspaceManager {
         mutateEvent(id, launch.id) { $0.subagentSteps = SubagentStep.appending(step, to: $0.subagentSteps) }
     }
 
+    /// Stops one subagent at work in the background; the turn and the other subagents go on
+    /// (`ProviderCapabilities.stopsOneSubagent`). Its row settles from the agent's own report that it stopped. Only a
+    /// process that runs takes it: a closed one has no subagents left.
+    func stopSubagent(_ id: UUID, _ agent: SubagentInfo) {
+        guard let run = run(id), run.provider.capabilities.stopsOneSubagent, agent.isRunning, let task = agent.taskID else { return }
+        let sent = claudeControl(id, starts: false, { ClaudeStreamParser.stopTaskRequest(id: $0, taskID: task) }) { [weak self] _, error in
+            guard let self, let error else { return }
+            self.append(id, RunEvent(kind: .error, text: tr("ws.subagents.stopFailed", agent.title, error)))
+        }
+        if sent { append(id, RunEvent(kind: .system, text: tr("ws.subagents.stopping", agent.title))) }
+    }
+
     /// Claude Code says work it runs in the background (see `BackgroundTaskUpdate`) started or ended: a subagent, or a
     /// command (`BackgroundCommands`). Its row keeps running until then, and then settles with what it answered. The
     /// line where the agent picks up its result names it.
@@ -137,14 +157,16 @@ extension WorkspaceManager {
                 return
             }
             guard event.state == .running || event.state == nil || event.background != true else { return }
+            let failed = BackgroundCommands.failed(status, update: update, in: timeline(id))
             mutateEvent(id, event.id) { event in
                 event.background = true
-                event.state = status == .failed ? .failed : .done
+                event.state = failed ? .failed : .done
                 if let summary = update.summary, !summary.isEmpty {
                     event.output = RunEvent.clip([event.output, summary].compactMap { $0 }.joined(separator: "\n\n"))
                 }
             }
-            line = tr("ws.wake.command", BackgroundCommands.list([event]).first.map { ToolSummary.oneLine($0.title, 80) } ?? event.text)
+            let title = BackgroundCommands.list([event]).first.map { ToolSummary.oneLine($0.title, 80) } ?? event.text
+            line = tr(status == .killed && failed ? "ws.wake.commandStopped" : "ws.wake.command", title)
         } else {
             return
         }
@@ -155,6 +177,22 @@ extension WorkspaceManager {
         } else if processes[id] == nil {
             wakeLine[id] = line
         }
+        if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
+    }
+
+    /// A background command whose processes have been gone a while, though its agent never said it ended (Claude Code
+    /// drops the note for a call it moved to the background past its time limit, say): it settles as ended, with a line
+    /// under its output that says how Nook knows, so the bar no longer shows it running and the session can settle too.
+    /// For every agent: the bar above the composer reads the process table the same way for each.
+    func settleGoneBackgroundCommand(_ id: UUID, _ eventID: UUID) {
+        guard let event = timeline(id).first(where: { $0.id == eventID }), BackgroundCommands.isCommand(event),
+              BackgroundCommands.list([event]).first?.isRunning == true else { return }
+        mutateEvent(id, eventID) { event in
+            event.background = true
+            event.state = .done
+            event.output = RunEvent.clip([event.output, tr("ws.background.endedUnreported")].compactMap { $0 }.joined(separator: "\n\n"))
+        }
+        noteSubagentsWorking(id)
         if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
     }
 
@@ -217,12 +255,21 @@ extension WorkspaceManager {
     /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.
     func probeClaudeFlags(_ executable: String) {
         claudeThinkingDisplay[executable] = false
+        claudePromptSuggestionFlag[executable] = false
         Task { [weak self] in
             let help = await Task.detached(priority: .utility) {
                 let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable, extra: [:])
                 return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout ?? ""
             }.value
             self?.claudeThinkingDisplay[executable] = help.contains("--thinking-display")
+            self?.claudePromptSuggestionFlag[executable] = help.contains("--prompt-suggestions")
         }
+    }
+
+    /// Whether Claude Code is launched to predict your next message itself (`PromptSuggestionSource.agentStream`): with the
+    /// suggestion on, for a session you write in (a delegated one has no one typing), and a CLI that knows the flag.
+    func launchesPromptSuggestions(_ run: WorkspaceRun, executable: String) -> Bool {
+        run.provider.capabilities.promptSuggestions == .agentStream && settings.suggestNextPrompt && run.delegation == nil
+            && claudePromptSuggestionFlag[executable] == true
     }
 }

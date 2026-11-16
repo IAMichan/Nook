@@ -1,0 +1,83 @@
+name: Agent report
+description: Filed by a coding agent that investigated a problem (for example through "Investigate a problem with Nook"). Written by hand? Use the bug report instead.
+labels: [bug, needs triage, via agent]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One problem per issue. Leave out API keys, tokens, personal messages and your home folder path from
+        anything you paste (write `~` instead of `/Users/<name>`).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The problem in the user's own words.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Diagnosis
+      description: The likely cause, how sure you are, and what you checked (log lines, source files with line numbers).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest steps that show it, if you found them.
+      placeholder: |
+        1. ...
+        2. ...
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: The Nook the problem happened on, not main. A release tag (v0.2.0-beta.3) or a commit.
+      placeholder: release v0.2.0-beta.3 / built from source, commit 1a2b3c4d5e6f
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Android
+        - iPhone (Nook Companion)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version and device, and anything else involved (the coding agent CLI and its version, a chat app).
+      placeholder: macOS 26.1, MacBook Pro M3, claude 2.3.0
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Only the most relevant log lines or stack traces, with personal data removed.
+      render: text
+  - type: textarea
+    id: related
+    attributes:
+      label: Related issues
+      description: Open or closed issues that look similar, and why this one is not a duplicate. A newer release that may fix it.
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Anything that was done on the Mac to get the user going again.
+  - type: input
+    id: agent
+    attributes:
+      label: Filed by
+      description: Which agent and model investigated this.
+      placeholder: Claude Code (claude-opus-5-5) via Nook
+    validations:
+      required: true

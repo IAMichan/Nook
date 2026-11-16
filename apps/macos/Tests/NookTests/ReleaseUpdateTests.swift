@@ -68,6 +68,22 @@ final class ReleaseUpdateTests: XCTestCase {
         XCTAssertEqual(ReleaseSelection.check([release("v0.2.5", prerelease: true)], for: stable), .upToDate)
     }
 
+    func testAChosenChannelOverridesTheBuildsButNeverGoesBack() {
+        let releases = [release("v0.3.0-beta.3"), release("v0.2.1"), release("v0.2.0")]
+        let stable = ReleaseBuild(version: ReleaseVersion("0.2.0")!, publicKey: key)
+        XCTAssertEqual(stable.defaultChannel, .stable)
+        guard case .available(let beta) = ReleaseSelection.check(releases, for: stable, channel: .beta) else { return XCTFail() }
+        XCTAssertEqual(beta.version, ReleaseVersion("0.3.0-beta.3"), "a regular release that opts into Beta gets betas")
+
+        let onBeta = ReleaseBuild(version: ReleaseVersion("0.3.0-beta.2")!, publicKey: key)
+        XCTAssertEqual(onBeta.defaultChannel, .beta)
+        XCTAssertEqual(ReleaseSelection.check(releases, for: onBeta, channel: .stable), .upToDate,
+                       "a beta that moves to Stable is never offered the older 0.2.1")
+        guard case .available(let next) = ReleaseSelection.check(releases + [release("v0.3.0")], for: onBeta, channel: .stable)
+        else { return XCTFail() }
+        XCTAssertEqual(next.version, ReleaseVersion("0.3.0"), "it takes the first regular release after it")
+    }
+
     func testNeverOffersWhatCannotBeChecked() {
         let build = ReleaseBuild(version: ReleaseVersion("0.2.0")!, publicKey: key)
         let unsigned = release("v0.2.1", signed: false)

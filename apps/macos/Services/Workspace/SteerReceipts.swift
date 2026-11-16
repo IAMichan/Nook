@@ -1,6 +1,6 @@
 import Foundation
 
-/// Whether an agent read a steer yet it ("Steer · waiting to be read"). An agent that steers natively
+/// Whether an agent read a steer yet ("Steer · waiting to be read"). An agent that steers natively
 /// takes a steered message in between steps, after a running tool returns, so it can sit unread for a while. Agents that
 /// echo a message of yours when they read it (`ProviderCapabilities.echoesSteers`: Pi's user `message_start`, a Codex
 /// app-server `userMessage` item) mark the steer `pending` until that echo; Stop drops an unread one (`cancelled`).

@@ -24,13 +24,13 @@ struct ShortcutRecorder: View {
                             Text(tr("shortcut.off")).foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                     if current != action.defaultShortcut, !recording {
                         Button { app.setShortcut(action.defaultShortcut, for: action); note = "" } label: {
                             Image(icon: "arrow.uturn.backward")
                         }
-                        .buttonStyle(.borderless)
-                        .help(tr("shortcut.reset"))
+                        .buttonStyle(.nookBorderless)
+                        .nookTip(tr("shortcut.reset"))
                         .accessibilityLabel(tr("shortcut.reset"))
                     }
                 }

@@ -1,16 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { conversationGroups, recoverDeletedConversation } from "./conversation-list";
+import { conversationGroups, dayBucket, recoverDeletedConversation } from "./conversation-list";
 import type { ConversationSummary } from "./types";
 
 const item = (id: string, patch: Partial<ConversationSummary> = {}): ConversationSummary => ({
   id, title: id, updated: "2026-10-22T12:00:00Z", status: "idle", preview: "A message", pinned: false, archived: false, ...patch,
 });
 
+const NOW = new Date(2026, 9, 22, 14, 0);
+const at = (days: number, hour = 12) => new Date(2026, 9, 22 - days, hour).toISOString();
+
 describe("conversation list", () => {
+  it("buckets by calendar day", () => {
+    expect(dayBucket(at(0, 1), NOW)).toBe("today");
+    expect(dayBucket(at(1, 23), NOW)).toBe("yesterday");
+    expect(dayBucket(at(2), NOW)).toBe("previous7");
+    expect(dayBucket(at(7), NOW)).toBe("previous7");
+    expect(dayBucket(at(30), NOW)).toBe("older");
+    expect(dayBucket(new Date(2026, 9, 23).toISOString(), NOW)).toBe("today");
+  });
+
+  it("lists every age group in order and leaves empty ones out", () => {
+    const rows = [item("a", { updated: at(40) }), item("b", { updated: at(1) }), item("c", { updated: at(0) })];
+    expect(conversationGroups(rows, null, NOW).map((group) => group.id)).toEqual(["today", "yesterday", "older"]);
+  });
+
   it("groups pins and recent conversations without hiding empty pins or the active draft", () => {
     const rows = [item("old", { updated: "2026-10-20T12:00:00Z" }), item("pin", { pinned: true, preview: "" }), item("new"), item("draft", { preview: "" }), item("hidden", { preview: "" }), item("archive", { archived: true })];
-    expect(conversationGroups(rows, "draft").map((group) => [group.title, group.items.map((row) => row.id)])).toEqual([
-      ["Pinned", ["pin"]], ["Recent", ["new", "draft", "old"]],
+    expect(conversationGroups(rows, "draft", NOW).map((group) => [group.title, group.items.map((row) => row.id)])).toEqual([
+      ["Pinned", ["pin"]], ["Today", ["new", "draft"]], ["Previous 7 days", ["old"]],
     ]);
     expect(rows[0].id).toBe("old");
   });

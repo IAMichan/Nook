@@ -224,12 +224,20 @@ extension WorktreeCleanupReport {
 }
 
 extension WorkspaceManager {
-    /// At most this often: each sweep lists the temporary folders, scratchpads and DerivedData.
-    private static let buildLeftoversInterval: TimeInterval = 6 * 60 * 60
+    /// At most this often: each sweep lists the temporary folders, scratchpads, DerivedData and the worktrees' build
+    /// folders. Hourly, so a settled session's build goes about an hour after it settled (`BuildLeftovers.settledAge`).
+    private static let buildLeftoversInterval: TimeInterval = 60 * 60
+
+    /// The session is done with its worktree for now: its pull request merged, or it was archived or marked finished.
+    func hasSettled(_ run: WorkspaceRun) -> Bool {
+        PullRequestSync.shared.merged(run.id) || run.prWatch?.state == "merged"
+            || run.archived || FinishedSessions.shared.contains(FinishedSessions.key(run: run))
+    }
 
     /// Builds agents left where removing a worktree does not reach (see `BuildLeftovers`), and the installed
     /// dependencies of worktrees nobody used for a week. Every removal lands in the audit log. `force` skips the
-    /// interval (the disk runs low); `done` gets the bytes freed.
+    /// interval (the disk runs low), and then the build output of every worktree nothing works in right now goes after
+    /// an hour, not only a settled session's; `done` gets the bytes freed.
     func sweepBuildLeftovers(now: Date = Date(), force: Bool = false, done: ((Int64) -> Void)? = nil) {
         guard settings.buildLeftoverCleanup else { done?(0); return }
         if !force, let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
@@ -241,22 +249,47 @@ extension WorkspaceManager {
         let containers = [(settings.worktreeRoot, 2)] + Set(local.compactMap(\.repoRoot)).map { ($0 + "/.claude/worktrees", 1) }
         // In use within a week: a session runs or ran there, or a terminal is open there. Everything else is idle.
         let recent = now.addingTimeInterval(-BuildLeftovers.idleAge)
+        let terminals = openTerminalFolders?() ?? []
         let busy = local.filter { $0.status.isActive || processes[$0.id] != nil || $0.updatedAt > recent }
             .flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
-            + (openTerminalFolders?() ?? [])
+            + terminals
+        // Working right now: a turn or the agent's process, or a terminal open there.
+        let working = local.filter { $0.status.isActive || processes[$0.id] != nil }
+        let workingIDs = Set(working.map(\.id))
+        // A settled session's worktree, unless a session that is not settled (or is working) or a terminal holds it.
+        let settledPaths = local.filter { hasSettled($0) }.compactMap(\.worktreePath)
+        let unsettled = local.filter { !hasSettled($0) || workingIDs.contains($0.id) }
+            .flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) } + terminals
+        let workingNow = working.flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) } + terminals
         let mainCheckouts = Set(local.compactMap(\.repoRoot).map(WorkspacePathPolicy.normalize))
         Task.detached(priority: .background) { [weak self] in
-            var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
-            for (container, depth) in containers {
-                var level = [URL(fileURLWithPath: (container as NSString).expandingTildeInPath)]
-                for _ in 0..<depth {
-                    level = level.flatMap { (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+            // One pool for the whole sweep: Foundation's path calls autorelease, and a task's thread may not drain them
+            // for a long time (each sweep left some 100,000 path strings behind).
+            let removed = autoreleasepool { () -> [(leftover: BuildLeftovers.Leftover, bytes: Int64)] in
+                var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
+                for (container, depth) in containers {
+                    var level = [URL(fileURLWithPath: (container as NSString).expandingTildeInPath)]
+                    for _ in 0..<depth {
+                        level = level.flatMap { (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+                    }
+                    worktrees.formUnion(level)
                 }
-                worktrees.formUnion(level)
+                let held = BuildLeftovers.heldFolders(busy)
+                let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, held: held, mainCheckouts: mainCheckouts) }
+                // Low on disk: every worktree nothing works in counts as settled; otherwise only a settled session's.
+                let settled: [URL]
+                if force {
+                    let heldNow = BuildLeftovers.heldFolders(workingNow)
+                    settled = worktrees.filter { BuildLeftovers.isIdle($0.path, held: heldNow, mainCheckouts: mainCheckouts) }
+                } else {
+                    let heldUnsettled = BuildLeftovers.heldFolders(unsettled)
+                    settled = settledPaths.map { URL(fileURLWithPath: $0) }
+                        .filter { BuildLeftovers.isIdle($0.path, held: heldUnsettled, mainCheckouts: mainCheckouts) }
+                }
+                return BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle),
+                                                      settledWorktrees: settled))
             }
-            let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, busy: busy, mainCheckouts: mainCheckouts) }
-            let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 for item in removed {
                     self?.onAudit?("build_cleanup", "\(AgentPathFormat.tilde(item.leftover.url.path)) · \(item.leftover.kind.rawValue)",
                                    "removed \(DiskUsage.format(item.bytes))")
@@ -400,7 +433,17 @@ extension WorkspaceManager {
     func watchDiskSpace(now: Date = Date()) {
         if let last = diskSpaceCheckedAt, now.timeIntervalSince(last) < Self.diskSpaceInterval { return }
         diskSpaceCheckedAt = now
-        guard let available = DiskSpace.available() else { return }
+        // Reading the "important usage" capacity asks CacheDelete, which can take hundreds of milliseconds: read it
+        // off the main thread and act on it here.
+        Task { [weak self] in
+            let available = await Task.detached(priority: .utility) { DiskSpace.available() }.value
+            guard let self, let available else { return }
+            self.applyDiskSpace(available, now: now)
+        }
+    }
+
+    /// Acts on a free-space reading from `watchDiskSpace`.
+    private func applyDiskSpace(_ available: Int64, now: Date) {
         let wasLow = diskSpaceLow
         diskSpaceLow = DiskSpace.isLow(available: available, wasLow: wasLow)
         guard diskSpaceLow, !wasLow else { return }
@@ -409,9 +452,11 @@ extension WorkspaceManager {
         let root = (settings.worktreeRoot as NSString).expandingTildeInPath
         sweepBuildLeftovers(now: now, force: true) { [weak self] freed in
             Task { [weak self] in
-                let worktrees = await Task.detached(priority: .utility) { DiskUsage.allocatedSize(of: root) }.value
+                let (worktrees, freeNow) = await Task.detached(priority: .utility) {
+                    (DiskUsage.allocatedSize(of: root), DiskSpace.available())
+                }.value
                 guard let self else { return }
-                let free = DiskSpace.available() ?? available
+                let free = freeNow ?? available
                 self.onAudit?("disk_space", "\(DiskUsage.format(free)) free", "freed \(DiskUsage.format(freed))")
                 // Freeing lifted it above the limit: nothing to say, and the next drop says it.
                 guard free < DiskSpace.lowBytes else { self.diskSpaceLow = false; return }

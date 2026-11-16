@@ -3,11 +3,14 @@
 
 pub mod agents;
 pub mod autocomplete;
+pub mod automation;
 pub mod brain;
 pub mod chat;
 pub mod companion;
 pub mod games;
+pub mod maintenance;
 pub mod plans;
+pub mod selection_ask;
 pub mod workspace;
 pub mod workspace_tools;
 
@@ -68,11 +71,17 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let saved = state.update_settings(|s| *s = settings);
     #[cfg(desktop)]
     {
+        if before.app_language != saved.app_language {
+            crate::platform::desktop::refresh_tray(&app);
+        }
         if before.shortcuts != saved.shortcuts {
             crate::platform::desktop::register_shortcuts(&app);
         }
         if before.placement != saved.placement || before.panel_large != saved.panel_large {
             crate::platform::desktop::place_bar(&app, false);
+        }
+        if before.provider != saved.provider && saved.start_local_brain {
+            crate::platform::desktop::start_local_brain(&app, saved.provider);
         }
     }
     let _ = app.emit("settings-changed", &saved);
@@ -159,7 +168,14 @@ pub fn nook_delete(app: AppHandle, state: State<'_, AppState>, id: String) {
 }
 
 #[tauri::command]
-pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pinned: Option<bool>, archived: Option<bool>) {
+pub fn nook_set_flags(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    pinned: Option<bool>,
+    archived: Option<bool>,
+    title: Option<String>,
+) {
     state.with_chat(|c| {
         if let Some(conv) = c.get_mut(&id) {
             if let Some(p) = pinned {
@@ -167,6 +183,10 @@ pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pi
             }
             if let Some(a) = archived {
                 conv.archived = a;
+            }
+            // A new name from the title in the header; a blank one keeps the old name.
+            if let Some(t) = title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                conv.title = t.chars().take(120).collect();
             }
         }
     });
@@ -231,13 +251,14 @@ pub fn clear_audit(state: State<'_, AppState>) {
 
 // Vensters
 
-/// Opens or closes the bar; `notice` keeps it closed but wide enough for a compact agent notice.
+/// Opens or closes the bar; `notice` keeps it closed but wide enough for a compact agent notice, `chip` keeps it closed
+/// with room under the round Nook for a chat chip.
 #[tauri::command]
-pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>) {
+pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>, chip: Option<bool>) {
     #[cfg(desktop)]
-    crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false));
+    crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false), chip.unwrap_or(false));
     #[cfg(not(desktop))]
-    let _ = (app, expanded, notice);
+    let _ = (app, expanded, notice, chip);
 }
 
 #[tauri::command]
@@ -246,6 +267,42 @@ pub fn show_main(app: AppHandle, route: String) {
     crate::platform::desktop::show_main(&app, &route);
     #[cfg(not(desktop))]
     let _ = (app, route);
+}
+
+/// Starts the local brain by name ("Ollama", "LM Studio") when it is installed but not running: "alreadyRunning",
+/// "started", "notInstalled" or "noAnswer".
+#[tauri::command]
+pub async fn start_local_brain(name: String) -> Res<String> {
+    #[cfg(desktop)]
+    {
+        use crate::platform::local_brain::{ensure_running, Server};
+        let server = Server::from_name(&name).ok_or_else(|| format!("{name} is geen lokaal brein."))?;
+        let outcome = ensure_running(server).await;
+        Ok(serde_json::to_value(outcome).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = name;
+        Ok("notInstalled".into())
+    }
+}
+
+/// The tray tooltip follows what waits on you and what Nook is working on.
+#[tauri::command]
+pub fn tray_status(app: AppHandle, waiting: usize, working: usize) {
+    #[cfg(desktop)]
+    crate::platform::desktop::tray_status(&app, waiting, working);
+    #[cfg(not(desktop))]
+    let _ = (app, waiting, working);
+}
+
+/// The global shortcuts (by action) that another app already holds.
+#[tauri::command]
+pub fn shortcut_problems() -> Vec<String> {
+    #[cfg(desktop)]
+    return crate::platform::desktop::shortcut_problems();
+    #[cfg(not(desktop))]
+    vec![]
 }
 
 /// De route die het hoofdvenster moet tonen, één keer.

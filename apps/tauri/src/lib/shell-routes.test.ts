@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Component } from "svelte";
-import { parseRoute, reloadRoute, resumeRoute, retryableView, type ViewModule } from "./shell-routes";
+import { matchesSearch, parseRoute, reloadRoute, resumeRoute, retryableView, settingsSection, type ViewModule } from "./shell-routes";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("shell route loading", () => {
   it("falls back to chat for unknown external routes", () => {
     for (const route of [null, "", "__proto__", "constructor", "missing"]) expect(parseRoute(route)).toBe("chat");
-    for (const route of ["chat", "agents", "workspace", "games", "settings", "companion"]) expect(parseRoute(route)).toBe(route);
+    for (const route of ["chat", "agents", "chats", "music", "workspace", "games", "settings", "companion"]) expect(parseRoute(route)).toBe(route);
   });
 
   it("shares a pending import and reuses a successful download", async () => {
@@ -57,5 +57,22 @@ describe("shell route loading", () => {
     reloadRoute("agents");
     expect(reload).toHaveBeenCalledTimes(1);
     expect(resumeRoute()).toBe("chat");
+  });
+});
+
+describe("settings pages", () => {
+  it("opens a known page, an alias, or Overview", () => {
+    expect(settingsSection("brain")).toBe("brain");
+    expect(settingsSection("connections")).toBe("accounts");
+    expect(settingsSection("start")).toBe("overview");
+    for (const value of [null, undefined, "", "__proto__", "constructor", "missing"]) expect(settingsSection(value)).toBe("overview");
+  });
+
+  it("finds a page by any word of its name or group, ignoring case and accents", () => {
+    expect(matchesSearch("", "Brain")).toBe(true);
+    expect(matchesSearch("geluid", "Stem en Geluid")).toBe(true);
+    expect(matchesSearch("reglages gen", "Réglages généraux")).toBe(true);
+    expect(matchesSearch("coding", "Coding agents", "Agents")).toBe(true);
+    expect(matchesSearch("memory", "Brain", "Intelligence")).toBe(false);
   });
 });

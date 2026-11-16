@@ -32,7 +32,7 @@ struct CILog: Equatable, Sendable {
     /// The step that runs now, if any.
     var runningStep: Step? { steps.first(where: \.running) }
     /// Steps that are done (passed, failed or skipped), for "step 8 of 15".
-    var doneSteps: Int { steps.filter { $0.outcome != .pending }.count }
+    var doneSteps: Int { steps.count(where: { $0.outcome != .pending }) }
 }
 
 /// What a check that is not a GitHub Actions job has to say, read in Nook instead of on its own page: the report a check
@@ -82,7 +82,7 @@ enum CILogParser {
 
     /// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); nil for a check from another app.
     static func jobID(from url: URL?) -> Int? {
-        guard let url, url.host?.hasSuffix("github.com") == true else { return nil }
+        guard let url, url.host.map { $0 == "github.com" || $0.hasSuffix(".github.com") } == true else { return nil }
         let parts = url.path.split(separator: "/").map(String.init)
         guard let index = parts.firstIndex(of: "job"), parts.index(after: index) < parts.endIndex,
               parts.contains("actions") else { return nil }

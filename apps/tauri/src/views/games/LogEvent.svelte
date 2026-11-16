@@ -55,7 +55,7 @@
   </label>
   {#if needsAbility}
     <label>
-      <span>Agent</span>
+      <span>{tr("Agent", "Agent")}</span>
       <select bind:value={agent}>
         <option value="" disabled>{tr("Kies", "Choose")}</option>
         {#each catalog.agents as a (a.id)}<option value={a.id}>{a.name}</option>{/each}

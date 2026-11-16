@@ -3,7 +3,7 @@
   // every round. The coach itself is `nook_core::games::valorant` (Rust); this page shows it and words it.
   import { games, clock, coachingText, confidenceLabel, generalText, habitText, statusLabel, type ValorantCatalog } from "../../lib/games";
   import { gamer } from "../../lib/gamer.svelte";
-  import { english, tr } from "../../lib/i18n.svelte";
+  import { appLanguage, locale, tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toast } from "../../lib/toast.svelte";
   import Icon from "../../components/Icon.svelte";
@@ -20,7 +20,7 @@
     games.catalog().then((c) => (catalog = c)).catch(() => {});
   });
 
-  const lang = $derived(english() ? "en" : "nl");
+  const lang = $derived(appLanguage());
   const view = $derived(gamer.view);
   const match = $derived(view?.current ?? null);
   const analysis = $derived(view?.analysis ?? null);
@@ -45,7 +45,7 @@
     looking = true;
     try {
       const added = await games.look();
-      if (added) toast.success(tr(`${added} gebeurtenis(sen) onthouden`, `Remembered ${added} event(s)`));
+      if (added) toast.success(tr("{n} gebeurtenis(sen) onthouden", "Remembered {n} event(s)", { n: added }));
       else toast.info(tr("Niets nieuws gezien", "Nothing new seen"), gamer.view?.lastError ?? undefined);
     } catch (e) {
       toast.error(tr("Kon niet naar je scherm kijken", "Could not look at your screen"), e);
@@ -60,7 +60,7 @@
   const icon = (severity: string) => (severity === "success" ? "✓" : severity === "warning" ? "⚠" : "•");
   const effectLabel = (effect: string) =>
     effect === "hit" ? tr("raakte mij", "caught me") : effect === "avoided" ? tr("ontweken", "avoided") : effect === "destroyed" ? tr("kapot", "destroyed") : tr("gezien", "seen");
-  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(english() ? "en-GB" : "nl-NL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
+  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 </script>
 
 <div class="coach">
@@ -79,7 +79,7 @@
       <section class="card session">
         <h3>{tr("Huidige sessie", "Current session")}</h3>
         <dl>
-          <dt>Game</dt><dd>Valorant</dd>
+          <dt>{tr("Game", "Game")}</dt><dd>Valorant</dd>
           <dt>{tr("Map", "Map")}</dt>
           <dd>
             <select value={match?.map ?? ""} onchange={(e) => gamer.run(() => games.setMatch(e.currentTarget.value || null, match?.myAgent ?? null), tr("Kon de map niet zetten", "Could not set the map"))}>
@@ -131,7 +131,7 @@
             <div class="line"><strong>{p.agentName}</strong><span class="badge {p.status.state}">{statusLabel(p.status, p.occurrences, lang)}</span></div>
             <div>{p.abilityName} · {p.location}</div>
             <div class="faint small">
-              {tr(`${p.occurrences} keer gebruikt`, `Used ${p.occurrences} times`)} · {tr("rondes", "rounds")} {p.rounds.join(", ")}
+              {tr("{n} keer gebruikt", "Used {n} times", { n: p.occurrences })} · {tr("rondes", "rounds")} {p.rounds.join(", ")}
               {#if p.typicalTime !== null} · ~{clock(p.typicalTime)}{/if}
               · {tr("Zekerheid", "Confidence")}: {confidenceLabel(p.confidence, lang)}
             </div>
@@ -139,7 +139,7 @@
         {:else}
           <p class="faint">{tr("Nog geen herhaling gezien.", "No repeats seen yet.")}</p>
         {/each}
-        {#if seenOnce > 0}<p class="faint small">{tr(`${seenOnce} setup(s) één keer gezien.`, `${seenOnce} setup(s) seen once.`)}</p>{/if}
+        {#if seenOnce > 0}<p class="faint small">{tr("{n} setup(s) één keer gezien.", "{n} setup(s) seen once.", { n: seenOnce })}</p>{/if}
       </section>
 
       <section class="card">
@@ -190,7 +190,7 @@
           <h3>{tr("Eerdere potjes", "Earlier matches")}</h3>
           <p class="faint small">{tr("Apart bewaard; ze tellen niet mee voor dit potje.", "Kept apart; they don't count toward this match.")}</p>
           {#each view.history.slice(0, 5) as h (h.id)}
-            <div class="event"><span>{new Date(h.started).toLocaleDateString(english() ? "en-GB" : "nl-NL")} · {h.map ?? "?"} · {agentName(h.myAgent)} · {h.rounds} {tr("rondes", "rounds")} · {h.patterns} {tr("patronen", "patterns")}</span></div>
+            <div class="event"><span>{new Date(h.started).toLocaleDateString(locale())} · {h.map ?? "?"} · {agentName(h.myAgent)} · {h.rounds} {tr("rondes", "rounds")} · {h.patterns} {tr("patronen", "patterns")}</span></div>
           {/each}
         {/if}
       </section>

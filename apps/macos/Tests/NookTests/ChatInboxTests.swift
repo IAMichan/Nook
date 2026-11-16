@@ -453,6 +453,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatHiddenMessages(file: file).ids(in: "instagram|anna"), ["m2"], "a restart does not bring it back")
     }
 
+    @MainActor
+    func testChatsPinnedInNookStayPinnedForEveryApp() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pins-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let pins = ChatPins(file: file)
+        // Apps that let no other app pin a chat are pinned in Nook all the same.
+        for chat in ["messages|Anna", "mail|jan@example.com", "slack|general", "teams|Team"] { pins.setPinned(true, chat: chat) }
+        pins.toggle("slack|general")
+        XCTAssertTrue(pins.isPinned("messages|Anna"))
+        XCTAssertFalse(pins.isPinned("slack|general"), "toggling again lets it go")
+        XCTAssertFalse(pins.isPinned("telegram|Jan"), "only the chats you pinned")
+        XCTAssertEqual(ChatPins(file: file).pinned, ["messages|Anna", "mail|jan@example.com", "teams|Team"],
+                       "a restart keeps them")
+    }
+
     func testChatMovedBeforeItsMessageIsReadAgain() {
         let moved = Date(timeIntervalSince1970: 1_000)
         let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)
@@ -518,6 +533,25 @@ final class ChatInboxTests: XCTestCase {
                        [ChatInbox.key(app: "telegram", chat: "Cas"), ChatInbox.key(app: "telegram", chat: "Anna")],
                        "oldest first; Ben had nothing new and Dirk's message is too old to be news")
         XCTAssertEqual(ChatInbox.fresh(before: after, after: after, since: since), [])
+    }
+
+    func testOnlyChatsWhoseMessagesChangedCanBringSomethingNew() {
+        var before = ChatInbox()
+        before.add(notice("Anna", "hi", at: 0), id: "1")
+        before.add(notice("Ben", "yo", at: 5), id: "2")
+        var after = before
+        // Anna's message changes in place (edited: no new id), Ben's chat stays the very same, and Cas writes.
+        after.threads[ChatInbox.key(app: "telegram", chat: "Anna")]?.messages[0].text = "hi!"
+        after.add(notice("Cas", "hello", at: 10), id: "3")
+        XCTAssertEqual(ChatInbox.added(before: before, after: after, apps: ["telegram"]), [now.addingTimeInterval(10)])
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: after, since: now.addingTimeInterval(-600)),
+                       [ChatInbox.key(app: "telegram", chat: "Cas")])
+        // Messages equal to the ones before, held in another array, are no news either.
+        var rebuilt = before
+        let anna = ChatInbox.key(app: "telegram", chat: "Anna")
+        rebuilt.threads[anna]?.messages = Array(before.threads[anna]?.messages ?? [])
+        XCTAssertEqual(ChatInbox.added(before: before, after: rebuilt, apps: ["telegram"]), [])
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: rebuilt, since: now.addingTimeInterval(-600)), [])
     }
 
     func testTheSameNotificationTwiceIsOneMessage() {
@@ -1570,6 +1604,19 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatServiceData.subscribeAll["chatIDs"] as? [String], ["*"])
     }
 
+    /// A change to one message names it, so it is read again by its id when it is older than the newest messages a read
+    /// brings, and laid beside them.
+    func testALinkedChatsChangedMessageIsReadByItsID() {
+        XCTAssertEqual(ChatServiceData.event(["type": "message.upserted", "chatID": "!a", "messageID": "$old"]),
+                       .changedMessage(chat: "!a", message: "$old"))
+        XCTAssertEqual(ChatServiceData.event(["type": "message.deleted", "chatID": "!a", "messageID": ""]), .changed(chat: "!a"))
+        let newest: [String: Any] = ["items": [["id": "$new", "text": "new"]]]
+        let asked: [String: Any] = ["items": [["id": "$old", "text": "old!"], ["id": "$new", "text": "dup"]]]
+        let merged = ChatServiceData.adding(asked, to: newest)
+        XCTAssertEqual(ChatServiceData.itemIDs(merged), ["$new", "$old"], "each message once, the newest answer's own kept")
+        XCTAssertEqual((merged["items"] as? [[String: Any]])?.first?["text"] as? String, "new")
+    }
+
     // MARK: Slack
 
     func testSlackMarkup() {
@@ -2039,6 +2086,10 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatReceipt.read.advanced(to: .failed), .failed, "a failure always shows")
         XCTAssertEqual(ChatReceipt(status: "played"), .read)
         XCTAssertNil(ChatReceipt(status: "typing"))
+        XCTAssertEqual(ChatReceipt(ack: 3), .read, "OpenWA's numeric ack, without a status word")
+        XCTAssertEqual(ChatReceipt(ack: 2), .delivered)
+        XCTAssertEqual(ChatReceipt(ack: -1), .failed)
+        XCTAssertNil(ChatReceipt(ack: 9))
         let reader = ChatReader(name: "Anna", receipt: .delivered, date: now)
         XCTAssertEqual(reader.advanced(to: .read, at: now.addingTimeInterval(60)).date, now.addingTimeInterval(60))
         XCTAssertEqual(reader.advanced(to: .delivered, at: now.addingTimeInterval(60)), reader, "nothing new keeps the time")
@@ -2063,6 +2114,9 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(all.last?.receipt, .sent)
         XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "Gone", receipt: .read)], members: ["Anna"]).map(\.name),
                        ["Gone", "Anna"], "someone who left since still shows")
+        let noah = ChatReceipts.everyone([ChatReader(name: "Noah", receipt: .delivered)], members: ["Noah✝️", "Émile 🙂"])
+        XCTAssertEqual(noah.map(\.name), ["Noah", "Émile 🙂"], "one person with a sign in one list shows once")
+        XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "emile", receipt: .read)], members: ["Émile 🙂"]).count, 1)
     }
 
     func testAPrivateChatsInfoNamesItsPerson() {
@@ -2706,5 +2760,48 @@ final class ChatSenderFaceTests: XCTestCase {
         XCTAssertTrue(inbox.merge(later), "a new face alone is a change")
         XCTAssertEqual(inbox.threads.values.first?.faces, ["u1": "/a.jpg", "u2": "/b.jpg"])
         XCTAssertFalse(inbox.merge(later), "the same faces again change nothing")
+    }
+
+    // MARK: Suggested reply
+
+    func testSuggestedReplyAnswersOnlySomeoneElsesNewestMessage() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let theirs = ChatReplySuggestion.turn(chat: "t1", messages: [("a", true, now), ("b", false, now)])
+        XCTAssertEqual(theirs, ChatReplySuggestion.Turn(chat: "t1", message: "b", date: now))
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "t1", messages: [("a", false, now), ("b", true, now)]),
+                     "you already answered")
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "t1", messages: []), "nothing to answer")
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "", messages: [("a", false, now)]), "no chat to key it on")
+    }
+
+    func testSuggestedReplyGate() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let open = ChatReplySuggestion.Gate(enabled: true, brainReady: true, fieldEmpty: true, busy: false,
+                                            alreadyTried: false, stale: false)
+        XCTAssertTrue(open.allows)
+        for blocked in [\ChatReplySuggestion.Gate.enabled, \.brainReady, \.fieldEmpty] {
+            var gate = open
+            gate[keyPath: blocked] = false
+            XCTAssertFalse(gate.allows)
+        }
+        for blocked in [\ChatReplySuggestion.Gate.busy, \.alreadyTried, \.stale] {
+            var gate = open
+            gate[keyPath: blocked] = true
+            XCTAssertFalse(gate.allows)
+        }
+        XCTAssertTrue(ChatReplySuggestion.Gate.isStale(now.addingTimeInterval(-2 * 24 * 3600), now: now))
+        XCTAssertFalse(ChatReplySuggestion.Gate.isStale(now.addingTimeInterval(-3600), now: now))
+        XCTAssertFalse(ChatReplySuggestion.Gate.isStale(nil, now: now), "a message without a date still gets one")
+    }
+
+    func testSuggestedReplyShowsOnlyForItsOwnMessage() {
+        let turn = ChatReplySuggestion.Turn(chat: "t1", message: "b", date: nil)
+        let state = ChatReplySuggestionState(turn: turn, phase: .ready("Sounds good!"))
+        XCTAssertEqual(state.shown(for: turn), "Sounds good!")
+        XCTAssertNil(state.shown(for: ChatReplySuggestion.Turn(chat: "t1", message: "c", date: nil)), "a newer message came")
+        XCTAssertNil(ChatReplySuggestionState(turn: turn, phase: .done).shown(for: turn))
+        XCTAssertEqual(ChatReplySuggestion.clean("\"See you at eight\""), "See you at eight")
+        XCTAssertNil(ChatReplySuggestion.clean(String(repeating: "a", count: 500)), "too long to be a reply")
+        XCTAssertNil(ChatReplySuggestion.clean(nil))
     }
 }

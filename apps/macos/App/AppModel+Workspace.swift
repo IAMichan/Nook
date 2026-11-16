@@ -86,8 +86,8 @@ final class WorkspaceWindowController {
             // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle, as in
-            //: the sidebar's head (Nook, talk, split view) and a session's header share that row
+            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle: the
+            // sidebar's head (Nook, talk, split view) and a session's header share that row
             // (`PanelSidebarMetrics.titleBand`). Clicks in it still reach the content.
             window.toolbar = NSToolbar(identifier: "NookWorkspace")
             window.toolbarStyle = .unified
@@ -96,7 +96,13 @@ final class WorkspaceWindowController {
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
             let frameMemory = WindowFrameMemory(window: window, name: "NookWorkspace")
-            if !frameMemory.restore() { window.center() }
+            if !frameMemory.restore() {
+                // First launch: about three quarters of the screen, never below the window's minimum.
+                let visible = (screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1600, height: 1000)
+                window.setContentSize(NSSize(width: max(window.minSize.width, (visible.width * 0.75).rounded()),
+                                             height: max(window.minSize.height, (visible.height * 0.75).rounded())))
+                window.center()
+            }
             self.frameMemory = frameMemory
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -173,7 +179,9 @@ final class WindowPresence: ObservableObject {
 ///
 /// The buttons in that row (the panel toggles, a side panel's tabs and cross, the sidebar's head) work on the first
 /// click, as a toolbar's do, also while the window is in the background: otherwise that click only brought the window
-/// forward and the button seemed not to respond. Below the row a first click still only activates the window.
+/// forward and the button seemed not to respond. Below the row a first click still only activates the window, unless
+/// Nook is in front and only one of this window's own popovers holds the keyboard (`NSWindow.keyIsOwnPopover`): a row's
+/// hover card is a popover, and the click that opens the row under it would otherwise only take key status back.
 ///
 /// The view reports no safe area. With the title bar's safe area, a scroll view that starts inside that row grows up to
 /// the window's top, whatever `.ignoresSafeArea` and `.clipped()` around it say, and lies over what sits above it: the
@@ -194,7 +202,8 @@ final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
         guard let event else { return super.acceptsFirstMouse(for: event) }
         let point = convert(event.locationInWindow, from: nil)
         let fromTop = isFlipped ? point.y : bounds.height - point.y
-        return fromTop <= PanelSidebarMetrics.titleBand || super.acceptsFirstMouse(for: event)
+        return fromTop <= PanelSidebarMetrics.titleBand || window?.keyIsOwnPopover == true
+            || super.acceptsFirstMouse(for: event)
     }
 }
 
@@ -233,6 +242,11 @@ extension AppModel {
             return self.profiles.launchEnvironment(profile)
         }
         workspace.accountExecutable = { [weak self] profileID in self?.profiles.profile(id: profileID)?.executableOverride }
+        // The composers' sentence suggestions on your subscription: the agent's CLI, in an empty folder, briefly.
+        ComposerCompleter.shared.agentWriter = { [weak self] prompt, schema in
+            await self?.workspace.generateText(prompt, schema: schema, task: nil, prefer: nil, profileID: nil,
+                                               cwd: FileManager.default.temporaryDirectory.path, timeout: 25)
+        }
         workspace.accountArguments = { [weak self] profileID in self?.profiles.profile(id: profileID)?.launchArguments ?? [] }
         workspace.accountModels = { [weak self] profileID in self?.profiles.profile(id: profileID)?.customModels ?? [] }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
@@ -319,6 +333,8 @@ extension AppModel {
         }
         workspace.pullRequestCreated = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
+        // Auto-settle and the branch pull request sync run with or without a list on screen, from just after launch.
+        SessionTidier.shared.start(app: self)
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in
             let terminal = TerminalStore.shared.open(in: folder, command: command, title: title)
@@ -454,7 +470,7 @@ extension AppModel {
         let runID = run.id
         let message = tr("ws.notice.question", run.provider.displayName, run.title)
         logNotice(.waiting, title: message, target: .run(runID), key: "wsquestion-" + runID.uuidString,
-                  source: .agents, app: run.provider.rawValue)
+                  source: .agents, app: run.provider.rawValue, urgent: true)
         // The question is in the conversation, which a click opens: the card is the same line as the strip.
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
@@ -624,29 +640,14 @@ extension AppModel {
     }
 
     private nonisolated static func pipeKey(_ key: String, to executable: String, arguments: [String], environment: [String: String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.environment = environment
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = output
-        defer {
-            try? input.fileHandleForReading.close()
-            try? input.fileHandleForWriting.close()
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        try process.run()
-        input.fileHandleForWriting.write(Data((key + "\n").utf8))
-        try? input.fileHandleForWriting.close()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        // The key goes in over stdin from a background queue, with a deadline: a login command that hangs or exits
+        // without reading it can neither block nor crash Nook.
+        let result = try ProcessRunner.run(executable, arguments, environment: environment,
+                                           stdin: Data((key + "\n").utf8), timeout: 60)
+        guard result.status == 0, !result.timedOut else {
             // The output cannot contain the key (passed via stdin), but only the last line is displayed.
-            let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+            let text = result.stdout + "\n" + result.stderr
+            let last = text.split(separator: "\n").last.map(String.init) ?? ""
             throw NookError(tr("accounts.codexKeyFailed") + (last.isEmpty ? "" : " " + String(last.prefix(200))))
         }
     }

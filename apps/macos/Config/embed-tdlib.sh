@@ -8,6 +8,10 @@ if [ ! -f "$LIB" ]; then
   rm -f "$DEST/libtdjson.dylib"
   exit 0
 fi
+# Already copied (and signed) since TDLib was last built: touching the app again would make Xcode sign it on every build.
+if [ "$DEST/libtdjson.dylib" -nt "$LIB" ] && { [ "$CODE_SIGNING_ALLOWED" = "NO" ] || codesign --verify "$DEST/libtdjson.dylib" 2>/dev/null; }; then
+  exit 0
+fi
 mkdir -p "$DEST"
 cp -f "$LIB" "$DEST/libtdjson.dylib"
 if [ "$CODE_SIGNING_ALLOWED" != "NO" ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then

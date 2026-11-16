@@ -307,4 +307,28 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertTrue(both.hasSuffix("\n\nBe brief."), "the session's own instructions come last, so they win")
         XCTAssertFalse(ProjectSettings.instructions(project: "Use pnpm.", session: "").hasSuffix("\n\n"))
     }
+
+    func testDisplayNameIsTheGivenNameElseTheFolders() {
+        var overrides = ProjectOverrides()
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook", overrides: overrides), "nook")
+        overrides.set(.name, .string("  Nook app "), for: "/code/nook")
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook/", overrides: overrides), "Nook app")
+        overrides.set(.name, .string("   "), for: "/code/nook")
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook", overrides: overrides), "nook")
+    }
+
+    func testDisplayOnlyKeysNeverMakeAFolderTheSettingsProject() {
+        var overrides = ProjectOverrides()
+        overrides.set(.provider, .string("codex"), for: "/work")
+        overrides.set(.name, .string("App"), for: "/work/app")
+        overrides.set(.icon, .string("emoji:🚀"), for: "/work/app")
+        // A renamed subfolder still starts its sessions with the parent's settings.
+        XCTAssertEqual(overrides.project(containing: "/work/app/src"), "/work")
+        XCTAssertEqual(overrides.project(containing: "/work/app"), "/work")
+        // Its name and icon stay its own.
+        XCTAssertEqual(ProjectSettings.displayName("/work/app", overrides: overrides), "App")
+        // Once it sets a real setting, it is its own settings project.
+        overrides.set(.permission, .string("ask"), for: "/work/app")
+        XCTAssertEqual(overrides.project(containing: "/work/app/src"), "/work/app")
+    }
 }

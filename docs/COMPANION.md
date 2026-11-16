@@ -11,18 +11,22 @@ The phone sees two kinds of sessions:
 
 ## Starting from the phone
 
-The app follows iPhone app in look and layout. Its tabs, **Nook**, **Agents**, **Chats**, **Pull requests** and
-**Settings**, sit in the system tab bar along the bottom, each with what waits there as a badge. Every tab starts with
-the same header (`PanelHeader`): Nook's orb on the left opens the menu with the paired Macs, how the phone reaches the
-Mac, checking the connection, Live Activities and unpairing (`MacMenu`; a small amber dot on the orb means the Mac cannot
-be reached), then the tab's name with the Mac and the connection's state under it (`ConnectionTitle`: live, catching
-up, looking for it), and the tab's own round button on the right.
+The app is laid out as Nook's panel on the Mac: the Mac's three tabs, **Nook**, **Agents** and **Chats**, along the
+bottom, with what waits for you as a count on each. Every tab starts with the same header (`PanelHeader`): Nook's orb on
+the left opens the menu with the paired Macs, how the phone reaches the Mac, checking the connection, Live Activities
+and unpairing (`MacMenu`; a small amber dot on the orb means the Mac cannot be reached), and the gear on the right opens
+**Settings** as a sheet over the tab, as Settings opens from the Mac's footer. **Pull requests** open the same way from
+the Agents header, as from the Mac's Agents footer. On an iPad with room all five are sections of the sidebar.
 
-The phone's look is too: its dark palette (a #0a0a0a screen, #111111 cards, #191919 lines, blue for links;
-`NookPalette.companionDark`), DM Sans for text (`NookTheme.textFont`, bundled in `apps/ios/NookCompanion/Fonts`), its
+The **Nook** tab is the Mac's home: the date and a greeting, what waits on you, works and is unread as tiles, and
+**For you**, the sessions that wait on you and the unread chats by name in one card, a tap away (`ForYouCard`). A
+session's header is the Mac's: *folder / title ⌄*, the title opening what you can do with the session (stop, snooze,
+rename, archive…), with the agent and branch under it.
+
+The phone has its own look: a dark palette (a #0a0a0a screen, #111111 cards, #191919 lines, blue for links;
+`NookPalette.companionDark`), DM Sans for text (`NookTheme.textFont`, bundled in `apps/ios/NookCompanion/Fonts`),
 rounder shapes (`PhoneRadius`), capitalized section labels (`SectionHeader`) and Liquid Glass for what floats
-(`floatingGlass`). Sky marks work in progress and indigo a question for you list. The Mac keeps its own
-`NookTheme` palette.
+(`floatingGlass`). Sky marks work in progress and indigo a question for you. The Mac keeps its own `NookTheme` palette.
 
 The **Agents** list can be narrowed to one project (`ProjectChips`) once sessions work in more than one. Under the
 overview of what waits, the **Nook** tab shows the next meetings and what plays on the Mac with play/pause
@@ -43,6 +47,13 @@ read. The Agents list has search and a project filter, and touching and holding 
 Nook, Answer a chat and the two sessions that need you most (`AppShortcut`).
 
 **The whole conversation.** An agent's answer reads as blocks on the phone, as on the Mac: headings, lists, quotes and call-outs as type, and code and tables in a card that scrolls sideways (code can wrap and be copied); the parser is the Mac's `MarkdownBlock`. One entry travels cut at `CompanionConstants.lineLimit`; with a Mac that lists `fullTranscript` a cut entry says so (`TimelineEntry.clipped`) and *Read the whole message* asks for all of it (`CompanionOp.entry`, up to `TimelineEntry.fullLimit`). *Earlier messages* at the top asks for the page before the oldest entry the phone has (`timeline` with `item`), kept beside the live conversation so a live update never drops it.
+
+**Reading holds still.** Every conversation on the phone (a session, a chat with Nook, a chat in your apps) reads in
+one scroll view (`ConversationScroll`). It opens at the newest message and follows what arrives only while you are at
+the end; once you scroll up it holds still however much the agent writes, and an arrow over the composer brings you
+back. Only your own scrolling leaves the end, so a long answer arriving never counts as you scrolling away. What floats
+over the end ("Working for 12s", the arrow) is an overlay and never changes the conversation's room, the rows are a
+plain stack (a lazy stack corrected its height guesses while you read), and the live step breathes in its opacity only.
 
 **Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
 session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only
@@ -95,10 +106,11 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 
 ## What the App Does
 
-- **Agents tab:** every session on the Mac, the ones waiting on you first, then the working ones, then the eight most recent (*Show more* for the rest; a search once there are more than eight). The live list holds the newest 25 sessions (`CompanionHistory.liveCount`); with a Mac that lists `history`, *Show older sessions* below them pages in the settled ones, 25 at a time and newest first, under *Older* (`CompanionOp.history`; a page ends at a cursor of the last session's time and id, so a session that moves to the top in between shifts no page), and the search also asks the Mac, a moment after you stop typing, for every session that matches all the words in its title, folder, branch or agent, the older ones listed under *Older matches* (*More matches* for the next page). An older session opens like any other; one you write to moves back into the live list. A session opens as a conversation: your messages, the agent's replies, the tools it ran and the files it changed, what waits on you (approve, deny, answer), and a field to send the next message. **Stop** ends a running session.
+- **Agents tab:** every session on the Mac, the ones waiting on you first, then the working ones, then the rest. As in the Mac's Agents list, the search and a view menu sit on one row above the list; with *Group by project* on (the default, remembered on the phone) the rest reads under each project, newest project first, grouped as the Mac's list groups it (`SessionDigest.project`: an agent's own worktree under the repository it was made from; an older Mac sends none, and the session's folder stands in), each folder folding away (remembered) and its **+** opening New session on that project (when the Mac offers it among the folders a session can start in, `ProjectGroups` in `apps/ios/Core/AgentsLayout.swift`); with it off, the eight most recent show under *Recent* (*Show more* for the rest). Touching and holding a row offers *Send a message* (the session opens with the keyboard in its composer), *Stop* (after a confirmation, for a session Nook runs that works or waits) and *New session here*, beside snooze, archive and end. What a new session can start with is asked once per connection, so the New session sheet opens on it at once; a session that was just started opens straight away and is asked for until the Mac lists it. An approval or a question you answer leaves every list at the tap, before the Mac confirms it (`SettledItems`): for 15 seconds a list from the Mac that still holds it does not bring it back, and it shows again only when the Mac could not take the answer. Rows are drawn again only when their session changed or their age moved on a minute (`AgentRow`, `.equatable()`), not each time the list redraws while an agent streams. The live list holds the newest 25 sessions (`CompanionHistory.liveCount`); with a Mac that lists `history`, *Show older sessions* below them pages in the settled ones, 25 at a time and newest first, under *Older* (`CompanionOp.history`; a page ends at a cursor of the last session's time and id, so a session that moves to the top in between shifts no page), and the search also asks the Mac, a moment after you stop typing, for every session that matches all the words in its title, folder, branch or agent, the older ones listed under *Older matches* (*More matches* for the next page). An older session opens like any other; one you write to moves back into the live list. A session opens as a conversation: your messages, the agent's replies, the tools it ran and the files it changed, what waits on you (approve, deny, answer), and a field to send the next message. **Stop** ends a running session.
 - **New session (`+`):** type a task, pick a connected agent and one of the folders you recently worked in on the Mac, and optionally *plan first*, start it as a *main thread* (the agent hands its work to sub-threads that report back; `LaunchRequest.mainThread`, offered for an agent the Mac lists with `canMainThread`) or work *on its own branch (worktree)*. Account, model, and effort come from the Mac's remembered choices for that agent.
 - **Prompt links:** a `nook://prompt?text=…&project=…&agent=…` link (the same links the Mac opens; the Mac also reads `repo=owner/name` to pick the project with that GitHub remote, and `pr=owner/name/123` to open the session linked to that pull request or, after you confirm, a new worktree on its branch) opens *New session* with the task filled in and the named folder and agent picked when the Mac offers them. It never starts by itself: you read the task and tap Start. Links are parsed by the shared `PromptLink` (`packages/protocol`), which strips hidden characters and refuses overlong text.
 - **Quiet for what you are looking at:** a push about the session open on screen arrives without a banner or sound; the session's screen already shows what changed.
+- **The Mac's rules for pushes too:** the quiet hours are the Mac's (Settings › Notifications, `NoticeRules.quietHours`; hours set for the phone before carry over once), and an agent switched off there, or a session you snoozed or marked finished, sends no "finished" or "failed" push. Approvals and questions always go (`NoticeRules.allowsAgentPush`).
 - **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search and *All / Unread* once there are more than eight, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it in Nook the way opening it on the Mac does (Settings › Chat apps); *Mark as read* in a chat's menu passes that on to the chat's app where Nook can tell it (WhatsApp, Telegram, an app Nook's chat helper links), and *Mark as unread* is Nook's alone.
 - **Chat pictures:** with a Mac that lists `avatars`, every chat in the list names the version of its picture (`InboxChatDigest.avatar`, a hash of the file and when it changed), and the phone asks for the pictures it does not have yet with `avatars` (up to 8 chats per request, `ChatAvatar`: 120 px square JPEGs of at most 16 KB, made from the same file the Mac's Chats tab shows; `CompanionAvatars`). It keeps them in its caches folder (`ChatPictures`) and asks again only when a version changes; a chat without a picture shows its initials, as before.
 - **Nook tab:** Nook's own conversations (the same ones as in the notch), with the box to ask him something at the bottom. Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
@@ -111,7 +123,92 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 - **Snooze:** besides an hour, this evening and tomorrow morning, *Pick a time…* snoozes to any moment up to a month ahead (`snoozeUntil`) and *Until the limit resets* to when the usage limit that stopped the session resets (`snoozeLimitReset`, offered while the Mac knows that moment, `SessionDigest.limitResetsAt`).
 - **Main thread:** a session's menu turns its main thread on or off (`mainThreadOn` / `mainThreadOff` in `SessionDigest.actions`), as the Mac composer's switch does; the Mac lists the one that applies, only for an agent that may delegate. A phone that predates them leaves the two names out.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `allowAlways`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app (`apps/tauri`) does not list `allowAlways` or `deviceKey` yet: with it the phone offers Allow once and Decline and sends its requests unsigned, as before.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `fullTranscript`, `appIcons`, `liveConversation`, `allowAlways`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app (`apps/tauri`) does not list `allowAlways` or `deviceKey` yet: with it the phone offers Allow once and Decline and sends its requests unsigned, as before.
+
+## iPad
+
+The same app runs on an iPad (`TARGETED_DEVICE_FAMILY` 1,2), in every orientation and next to other apps. The iPhone's
+layout does not change.
+
+- **Split view:** at a regular width (`horizontalSizeClass == .regular`) the tabs become one `NavigationSplitView`
+  (`CompanionSplitView` in `SplitViews.swift`): the chosen section's list on the left (Nook's chats, Agents, Chats, Pull
+  requests or Settings, with the sections in a bar under it) and what you opened on the right. The lists and screens are
+  the phone's own; only where a row opens differs (`OpenLink`: a navigation link on the phone, the detail column on the
+  iPad), and the open row is lit (`detailSelected`). Both layouts share the same paths, so what you had open stays open
+  when the window gets narrow (Slide Over, a small Split View, Stage Manager) and the phone's tabs take over.
+- **Workspace beside the session:** a session's Files, Terminals and Pull requests open in an inspector next to the
+  conversation (`SessionWorkspaceMenu`, `WorkspaceInspector`), so you read the files while you follow the agent (where
+  the conversation would get too narrow, as in portrait, the list folds away while the inspector is open); at a compact
+  width they push, as on the phone. Conversations and composers keep a reading width (`readingColumn`).
+- **Keyboard:** with a hardware keyboard, ⌘N starts a new session, ⌘[ and ⌘] open the session above or below in the
+  Agents list, ⌘F shows and focuses the search of the list on screen, ⌘K finds a session, ⌘1… switches section, and
+  ⌘↩ sends from the composer you type in (`CompanionMenuCommands`; hold ⌘ to see them). The pointer lights rows and
+  buttons as the Mac's hover does.
+- **Drag and drop:** pictures, a file, links and text dragged onto a session, the New session sheet or Nook's chat wait
+  in its composer to read first (`composerDrop` in `ComposerDrop.swift`); nothing is sent by dropping. Pictures follow the
+  photo picker's rules (`CompanionImage.maxCount`, needs `images`), one file of at most 150 KB goes with a session's
+  message as from the share sheet (`CompanionFile`, needs `attachments`), and Nook's chat takes words only. What does
+  not fit is named in a notice.
+
+## Android
+
+Nook for Android (`apps/tauri`, see [`TAURI.md`](TAURI.md)) is the same companion as the iPhone app, laid out and
+worded the same. Once a phone is paired, the companion is the whole Android app (`companion-shell.svelte.ts`); Nook on
+the phone itself (its own brain) is in Settings › *Nook on this phone*, and is the app again while nothing is paired.
+
+- **Look:** the iPhone's screens rebuilt in `apps/tauri/src/views/companion` from its SwiftUI views: the tabs Nook,
+  Agents and Chats along the bottom with their counts, `PanelHeader` with Nook's face (`NookMark`) for the Mac menu and
+  the gear for Settings, the cards of what waits on you, the shelves, the transcript in turns ("Worked for 1m 3s", "Ran 3
+  commands and read 2 files", `lib/transcript.ts`), the docked approval or question, the composer, New session, Nook's
+  chat, the Chats tab with its WhatsApp skin, and Settings as a sheet. Colors are `NookPalette.nookDark` and the type is
+  the phone's scale (`views/companion/ui/phone.css`), the icons are the same Lucide set (`lib/lucide.ts`) and agents carry
+  the Mac's brand marks (`lib/brand-logos.ts`, generated from `BrandLogo.swift`). The words come from the iPhone's own
+  catalog (`lib/i18n/companion-ios.ts`, from `Localizable.xcstrings`). Fonts differ: Android has no SF Pro.
+- **Live:** while the app is in front and the computer lists `stream`, the phone keeps one connection (`subscribe`,
+  `ping` every 5 seconds with `foreground`), the open session follows with `watch` (`TimelineDelta` as
+  `applyTimeline`) and the open chat with `watchChat`. In the background, or with a computer without `stream`, it asks
+  instead (`CompanionClient::stream`, `src-tauri/src/companion/poll.rs`).
+- **Requests:** `ClientCall` in `core/src/companion/client.rs` sends every op the phone uses; the phone offers only what
+  the computer lists in `features` and allows in `scopes`, and sends `protocolVersion` and `appVersion`.
+- **Review and pull requests:** *Changes* in a session's bar (`diff`, line comments into the message as
+  `<review_comment>`, `lib/patch.ts`), and Pull requests from the Agents header and a session's menu (`pulls`, `pull`,
+  `pullAct` with line comments at the head the phone saw, `pullWork`).
+- **Pictures and dictation:** up to two pictures with a message or a new session, made JPEGs under 90 KB on the phone
+  (`lib/images.ts`, `images`); the microphone in every composer uses Android's speech recognizer through `MainActivity.kt`
+  (`NookAndroid.dictate`), on the device where it can, the words landing in the field (`lib/dictation.svelte.ts`).
+- **Also as on the iPhone:** a session's Files (with previews of pictures, PDFs and films) and Terminals, older sessions
+  and the Mac's search through them (`history`), *Read the whole message* and *Earlier messages*, snoozing to a time you
+  pick, chat pictures and app icons, who read your message, version notices and *Show the update on your Mac*, and
+  `nook://` links (a pairing code from the camera, a prompt link opening New session; `lib/prompt-link.ts`).
+- **Reaching the Mac:** up to eight paired Macs, one active and the others asked for their sessions every 30 seconds
+  ("On <Mac>"); every route the code and the Mac name (`a=`, `endpoints`), the last that worked first, and the relay as
+  the last resort (`r=`, `relay`; a WebSocket to `/v1/rooms/<room>?role=phone`); compressed answers (`compression`);
+  and an outbox for messages to a session or a chat, new sessions and questions to Nook while the Mac is away (`retry`,
+  sent again with the same id, a session message for a day and the rest for an hour, `outbox_max_age`). Code:
+  `core/src/companion/client.rs`, `core/src/companion/transport.rs`.
+- **Without the Mac:** as on the iPhone (*Without the Mac the app stays usable*), the phone keeps what it saw last of
+  each Mac (`lib/companion-cache.ts`, in the app's own storage). It keeps the session list with when the Mac answered it,
+  the last five session conversations, what a new session can start with, Nook's chats and the Chats tab, and the
+  newest messages of the last eight chats of each kind, all settled. Every tab reads from it while the Mac is away, and
+  every conversation shows `OfflineStrip` over its composer. A waiting message says *Not sent yet · waiting for your Mac*,
+  the connection line says *Last updated … · not connected*, and a chat it never kept says it opens once the Mac is
+  connected.
+- **Push notifications:** with a Firebase configuration in the app (`google-services.json`), the phone gives each paired
+  Mac its FCM token (`register` with `item` "fcm"; `PairedDevice.pushService`), and the Mac sends that phone's pushes
+  sealed through the relay (`RelayPushRequest.service` "fcm", `apps/relay/worker/push.js`) as a data message. The app's
+  `NookMessagingService` opens it with the push key the app gave it (`RelayPush.pushKey`, never the pairing key) and shows
+  it with Allow / Deny (category `NOOK_APPROVAL_ALLOW`, `NOOK_APPROVAL_DENY`) or Reply (`NOOK_INFO`); a button opens the
+  app, which acts on that Mac and shows the session. While pushes come, the app shows no notifications of its own.
+- **Tablets and the icon:** at 900 points and wider the list and what you opened sit side by side, as the iPad's split
+  view. Touch and hold the app's icon for New session, Ask Nook, Answer a chat and the two sessions that need you most
+  (`res/xml/shortcuts.xml`, `NookAndroid.setShortcuts`, links `nook://companion/…`).
+- **Diagrams and math:** a Mermaid fence and `$…$`, `$$…$$` or a `math` fence draw as on the Mac (`lib/rich.ts`,
+  the same Mermaid and KaTeX versions, loaded only when needed; nothing goes to a server).
+- **Widgets:** *Agents* (what works or waits on you, waiting first, at most five, "Out of date" ten minutes after the app
+  last heard from the Mac) and *Limits* (each account's plan limits and when they reset), written by the app with every
+  list it takes in (`NookAndroid.setWidgetData`, `NookWidgets.kt`); a row opens its session.
+- **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
+  owner has to set up (Firebase for push, the relay key, testing on a real phone).
 
 ## Compression
 
@@ -130,8 +227,8 @@ the relay and on mobile data. Sealed bytes look random and do not compress, so i
   compressed requests; the phone's requests are small, so it does not compress them yet.
 - The limits of one answer (`linesBudget`, `DiffFileDigest.maxTotal`, `CompanionWorkspace.maxEncodedBytes`) stay as they
   are, so an answer fits one frame for a phone without compression too.
-- Not in the Tauri app (`apps/tauri`) yet: it lists none of `history`, `compression` and `filePreview`, so a phone talks to
-  it as before, and its Android client sends no `compression`, so a Mac answers it in plain JSON.
+- Nook on Windows and Linux (`apps/tauri`) lists none of `history`, `compression` and `filePreview` as a computer, so a
+  phone talks to it as before. Its Android companion sets `compression` and opens compressed answers.
 
 ## Versions
 
@@ -173,9 +270,27 @@ The phone keeps one live connection to the Mac while the app is in front, modele
 - **Routes:** a paired Mac has an ordered list of ways to reach it (`CompanionRoute`): its `.local` name, its LAN addresses, and its Tailscale address. The pairing code carries the addresses the Mac has now (`&a=…`), so a phone that cannot resolve the `.local` name still pairs. Routes are ordered local network first, then the tailnet or another VPN, then the internet (`CompanionRoutes.rank`).
 - **The Mac shares where it can be reached:** every `hello`, `list` and `subscribe` answer carries `endpoints` (`CompanionEndpoints`: the Bonjour name and the IPv4 addresses of its interfaces; an address in 100.64/10 on a `utun` interface is marked as Tailscale). The phone keeps them as *learned* routes and drops the ones the Mac stops reporting (`CompanionRoutes.merge`), so the Mac's new Wi-Fi address, or its Tailscale address away from home, works without pairing again. Routes from the pairing code's host are never dropped. Settings › iPhone shows the addresses on the Mac.
 - **Picking a route:** all routes are asked for the list at once (`RouteProbe.pick`). The earliest route that answers wins once every earlier one failed; the earlier routes get a head start of half a second, after which any route that answered is used, so a LAN the phone left does not hold up the Tailscale route. An answer only counts when it opens with the pairing key, so an address that now belongs to another machine is skipped. When nothing answers, Bonjour looks for the Mac on another port.
-- **Live connection:** with a Mac that lists `stream`, the phone subscribes (`subscribe`). The Mac answers like `list`, then sends the sessions again whenever they change (at most once a second, with a growing `seq` the phone checks, so an old message played back cannot turn the list back). Other requests travel over the same connection. The phone pings every 5 seconds and drops a connection that sent nothing back for 15 seconds; the Mac closes one that was quiet for 45 seconds, and keeps one live connection per phone. A Mac without `stream` is asked for the list every 5 seconds, as before.
-- **Catching up after a break:** when the app comes back to the front on a connection that still answers, the phone asks again for the list, the open session from its last entry, the open chat and the chat lists (`CompanionClient.resynchronize`) from its last sequence on every wakeup; after a longer break the connection is replaced, as before. The header under each tab's name says the Mac and the state: *live*, *catching up…* while it synchronizes, or *Looking for …* once it has been away for a moment.
-- **Chats, live:** with a Mac that lists `liveChats`, the chats follow over the same connection as the sessions: the Chats tab's list (`inbox`) and Nook's conversations (`conversations`) are sent again whenever they change (a new message, someone typing, Nook writing), each only to a phone whose scopes let it see them. A chat opened in the Chats tab is watched (`watchChat`, its id; nil when it closes): its messages and who is typing follow by themselves (`inboxLines` with `inboxChat`), and are watched again after a reconnect. The Mac looks at the chats when Nook's chat inbox, typing or Nook's chats change, at most once a second, and every 5 seconds. A Mac without `liveChats` is asked as before: the open chat every few seconds and the list every 30.
+- **Live connection:** with a Mac that lists `stream`, the phone subscribes (`subscribe`). The Mac answers like `list`, then sends the sessions again whenever they change (at most twice a second, with a growing `seq` the phone checks, so an old message played back cannot turn the list back). Other requests travel over the same connection. The phone pings every 5 seconds and drops a connection that sent nothing back for 15 seconds; the Mac closes one that was quiet for 45 seconds, and keeps one live connection per phone. A Mac without `stream` is asked for the list every 5 seconds, as before.
+- **Catching up after a break:** when the app comes back to the front on a connection that still answers, the phone asks again for the list, the open session from its last entry, the open chat and the chat lists (`CompanionClient.resynchronize`) on every wakeup; after a longer break the connection is replaced, as before. The header under each tab's name says the Mac and the state: *live*, *catching up…* while it synchronizes, or *Looking for …* once it has been away for a moment.
+- **Chats, live:** with a Mac that lists `liveChats`, the chats follow over the same connection as the sessions: the Chats tab's list (`inbox`) and Nook's conversations (`conversations`) are sent again whenever they change (a new message, someone typing, Nook writing), each only to a phone whose scopes let it see them. A chat opened in the Chats tab is watched (`watchChat`, its id; nil when it closes): its messages and who is typing follow by themselves (`inboxLines` with `inboxChat`), and are watched again after a reconnect. The Mac looks at the chats when Nook's chat inbox, typing or Nook's chats change, at most twice a second, and every 5 seconds. A Mac without `liveChats` is asked as before: the open chat every few seconds and the list every 30.
+- **Nook's conversation, live:** with a Mac that lists `liveConversation`, the Nook conversation open on the phone is
+  watched (`watchConversation`, its `conversation`; nil when it closes). Its messages follow by themselves while Nook
+  writes (`messages` with `messagesConversation`), at most every 150 ms, so the answer streams in as on the Mac, and the
+  conversation is watched again after a reconnect. Built for a slow or shaky connection (`ConversationDelta`):
+  - While Nook writes, only its new words go (`messageAppend`: the message, the length it had, the words after it),
+    a few bytes instead of the conversation. Otherwise only the messages after the last one both sides have alike
+    (`messagesAfter`), as the session timeline does.
+  - When a phone's connection has not taken more than 24 KB of earlier updates yet (`CompanionTransport.pending`),
+    the Mac waits and sends everything that changed meanwhile as one update, so the phone never falls further and
+    further behind.
+  - After a reconnect the phone names its last finished message (`item`), and only what came after it comes back.
+  - An update that does not build on what the phone has is refused, and the phone asks for the conversation again; an
+    answer that stays quiet for 6 seconds while Nook writes is asked again from where the phone is. Only a phone with the `nookChat` scope gets it. A Mac without
+  `liveConversation` is asked as before: every 1.5 seconds while Nook writes and every 6 seconds otherwise. Nook's
+  browser extension follows its side panel's conversation the same way (`docs/BROWSER-EXTENSION.md`). The Android
+  companion does the same (`NookChat.svelte`, `applyConversation` and `resumePoint` in `lib/companion.ts`, the fields
+  passed through by `core/src/companion/models.rs`), including the 6-second check. The Tauri app as a computer serves
+  only the first version of the protocol (no Nook chat) and so has nothing to offer here.
 - **Reconnecting:** one supervisor owns retries: exponential backoff with jitter from 1 second up to a minute, reset after a connection stayed up for 30 seconds (`RetryBackoff`). Coming back to the app after 10 seconds or more replaces the connection at once (iOS can kill a suspended socket without a word); after a shorter glance a 3-second probe is enough (`CompanionWakeup`). A change of network (Wi-Fi to cellular, another Wi-Fi network) probes the connection and ends any wait.
 - **Moving back to a better route:** while connected over a later route (Tailscale), the phone checks the earlier ones every minute and on a network change, and moves over as soon as one answers. A route that answered but then failed to connect is left alone for 5 minutes (`RouteCooldowns`), so a flaky network cannot bounce the connection.
 - **Outbox and retries:** with a Mac that lists `retry`, what you write goes through an outbox on the phone (`CompanionOutbox`, a protected file): a message to a session, a new session, a question to Nook and a message to a chat. Each shows where it belongs as waiting (in its session; *New session · waiting for your Mac* at the top of the Agents list; *New chat · waiting for your Mac* in the Nook tab, or dimmed in its chat; dimmed in a chat of the Chats tab; a long press lets it go), goes as soon as the Mac answers, and keeps its request id. A new chat whose first question waited becomes that chat once the Mac took it. The Mac remembers its answer to every request that changes something (`CommandReceipts`: messages, approvals, answers, stops, starts, questions to Nook, chat messages and marks, the player, session management and token registrations), so a repeat of the same id (a lost answer, a message sent again from the outbox) gets that answer and is never carried out twice; a repeat that arrives while the first is still running waits for its answer. The repeat must still be fresh and within the rate. The Mac keeps at most 256 answers per phone, the least recently asked for dropped first, each for at most 25 hours (longer than a message may wait in the outbox). A message to a session that waited more than a day is dropped; a new session, a question to Nook or a chat message after an hour, since started or sent much later it would surprise more than help (`CompanionOutbox.maxAge(for:)`). A refusal that will not pass (a folder another session works in, no brain on the Mac) takes a new session, a question or a chat message out of the outbox with why, so it never holds up what waits behind it; only a busy session keeps a message waiting (`CompanionOutbox.waitsAfter`). Approvals, answers and stops never wait in the outbox: they mean something only now (a button on a notification is the one exception, see below).
@@ -185,7 +300,7 @@ The phone keeps one live connection to the Mac while the app is in front, modele
   app does: a phone on mobile data easily needs longer for one round trip, and that is not a dead connection.
 - **Buttons on notifications reach their Mac from anywhere.** A push names the pairing it went out for (`mac` under `nook`, `APNsPayload.make`, and in the sealed relay content, `RelayPushContent.mac`): the pairing key's public identifier, which the Mac knows the phone by and the phone knows the Mac by. Allow, Deny and Reply go to that Mac, also when another Mac is active and from a cold start (the pairings are read again once the phone is unlocked; the buttons ask to unlock, since the pairings only open then). With a live connection to that Mac the request goes over it; otherwise the app keeps running in the background for it (`beginBackgroundTask`), looks for the best route over all of that Mac's routes, Tailscale and the relay included (`RouteProbe.pick`, with a `list`), and sends the request once over the route that answered. When nothing answers it posts a notification of its own, *Couldn't reach <Mac>. Tap to try again.* A Deny or a Reply is kept for 15 minutes (`NotificationRetries`, `companion-notification-retries.json`) and tried again on that tap, when the app comes to the front and when the phone connects to that Mac; a Reply also waits in that Mac's outbox. The request keeps its id, so trying again is safe (`CommandReceipts`). An Allow is never kept: allowing later than you meant is another decision; its notification says to answer again.
 - **No stale notifications.** On every list a Mac answers, the phone removes the delivered notifications of that Mac about an approval or a question that no longer waits (answered on the Mac or elsewhere), and sets the badge to what still waits on the active Mac (`DeliveredNotifications`). A notification from a Mac that does not name itself counts as the active Mac's only when the phone is paired with one Mac.
-- **What the phone saw last.** The phone keeps, per Mac, the last list with the time the Mac answered it, what a new session can start with, and the conversations of the last five sessions that were open (the newest 200 entries each) in `companion-cache-<id>.json` (readable after the first unlock; `CompanionCache`, `CacheStore`). At launch they show at once; while the Mac cannot be reached the Agents list says *Last updated HH:mm · not connected*, so it never looks live, and a live answer always replaces it (an older list never replaces a newer one). With a Mac that lists `resume`, opening a session sends the last entry the phone has with `watch` (`item`), and the Mac answers with that entry and what came after it (`TimelineDelta.resume`), so only the change travels.
+- **What the phone saw last.** The phone keeps, per Mac, the last list with the time the Mac answered it, what a new session can start with, the conversations of the last five sessions that were open (the newest 200 entries each), Nook's chats and the Chats tab's chats with the messages of the last eight of each kind that were open (the newest 200 each) in `companion-cache-<id>.json` (readable after the first unlock; `CompanionCache`, `CacheStore`). Chats are kept settled: an answer that was still streaming, Nook busy writing, or someone typing is never kept as still going. A cache written by an older build still opens, with what it did not keep empty. At launch they show at once; while the Mac cannot be reached every tab says *Last updated HH:mm · not connected*, so it never looks live, and a live answer always replaces it (an older list never replaces a newer one). With a Mac that lists `resume`, opening a session sends the last entry the phone has with `watch` (`item`), and the Mac answers with that entry and what came after it (`TimelineDelta.resume`), so only the change travels.
 - **A clock that is off.** The Mac refuses a request more than 60 seconds off its clock (`stale`). A Mac that lists `clock` says its own time with that refusal (`macTime`); the phone keeps the difference per Mac, at most a day either way (`CompanionClock`, `ClockOffsets`), adds it to the time of every later request to that Mac, and tries again at once. A `stale` refusal that does not correct itself waits the longest backoff (up to a minute) instead of asking again every second.
 - **Removed on the Mac.** With `revoke`, a Mac that removes a phone (Settings › Connections › iPhone) first sends it, over its live connection, an update with `revoked` (sealed with its key, which the Mac forgets a moment later). From that moment the Mac refuses anything else from the phone, so a lost phone cannot slip in a last request while the message goes out. The phone stops looking for that Mac, ends its Live Activities, forgets its push key, its outbox and what it kept of it, and says *<Mac> removed this iPhone. Pair again to use it from here.* (on the pairing screen, or above the list when another Mac is still paired). A phone that is not connected when it is removed finds out the old way: the Mac no longer answers it.
 - **No push for what is on screen.** With `foreground`, the phone says with `subscribe` and its probes whether the app is in front, and that it went to the background. The Mac leaves out the push for a phone that is connected live, in front, and heard from in the last 10 seconds (`ForegroundPolicy`): the live connection already shows it. A phone that goes quiet gets its pushes again.
@@ -230,7 +345,8 @@ On the power adapter Nook holds off all sleep (`PreventSystemSleep`), which keep
 ## Scope & Intentional Boundaries
 
 - Works on the same local network, over Tailscale or another VPN, and through a relay: Nook's own, or one on your own Cloudflare account (see *Away from Home*). Either way the relay only passes sealed bytes; without Tailscale or a relay, the Mac is reachable only at home. Using a relay is opt-in.
-- Interactive actions (approve, answer, send, stop) require a connection to the Mac; push notifications arrive anywhere with internet access, and their buttons look for the Mac over every route, the relay included (see *When the Mac is out of reach*). What you write waits in the outbox instead.
+- **Without the Mac the app stays usable.** Every tab reads from what the phone kept (above): the sessions and their conversations, Nook's chats, the Chats tab and pull requests. What you write (a message to a session, a new session, a question to Nook, a chat message) waits in the outbox and goes once the Mac answers; while the Mac cannot be reached every conversation keeps an amber strip in sight over its composer, or over what waits on you (`OfflineStrip` in `ComposerDock`): offline, no new messages or updates come in, last updated at what time, and that what you send is not sent yet but waits on this iPhone (a read-only chat says only the first; an approval says the answer reaches the agent once the Mac is connected). The New session sheet says the session does not start yet, the lists add that nothing new comes in under *Last updated*, and each message that waits says *Not sent yet · waiting for your Mac* under it, in a session, a Nook chat and a chat of the Chats tab alike. With a Mac that does not list `retry` nothing can wait, so the composers and Start are off until it is connected again. A chat or a conversation the phone never kept says it opens once the Mac is connected, instead of loading forever. The work itself cannot happen on the phone: the agents run on the Mac and the chat accounts are linked there.
+- Interactive actions (approve, answer, stop) require a connection to the Mac; push notifications arrive anywhere with internet access, and their buttons look for the Mac over every route, the relay included (see *When the Mac is out of reach*). What you write waits in the outbox instead.
 - Nothing runs in the background on the phone: the live connection exists while the app is in front, and pushes cover the rest.
 - The Mac listener only runs when **iPhone Companion** is enabled in Settings.
 

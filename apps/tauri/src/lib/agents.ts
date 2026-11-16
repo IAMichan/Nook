@@ -1,6 +1,7 @@
 // Agents: dezelfde vormen als de Rust-structs in nook_core::agents, en de aanroepen naar de Rust-kant.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { locale, tr } from "./i18n.svelte";
 
 export type AgentKind = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "cursor" | "grok";
 export type AgentStatus = "waiting" | "running" | "failed" | "done" | "detected";
@@ -206,16 +207,22 @@ export function colorFor(name: string): string {
   return kind ? agentColors[kind] : "#9c9aa8";
 }
 
+/// Read through getters, so each read is in the current interface language.
 export const statusLabels: Record<AgentStatus, string> = {
-  detected: "gezien", waiting: "wacht op jou", running: "bezig", failed: "mislukt", done: "klaar",
+  get detected() { return tr("gezien", "seen"); },
+  get waiting() { return tr("wacht op jou", "waiting for you"); },
+  get running() { return tr("bezig", "working"); },
+  get failed() { return tr("mislukt", "failed"); },
+  get done() { return tr("klaar", "done"); },
 };
 
 /// "845k", "1,2M".
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 100_000) return (n / 1000).toFixed(1).replace(".", ",") + "k";
+  const one = (x: number) => x.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  if (n < 100_000) return one(n / 1000) + "k";
   if (n < 1_000_000) return Math.floor(n / 1000) + "k";
-  return (n / 1_000_000).toFixed(1).replace(".", ",") + "M";
+  return one(n / 1_000_000) + "M";
 }
 
 export function total(t: TokenTally): number {
@@ -228,7 +235,7 @@ export function planLabel(u: PlanUsage | null | undefined): string {
   const now = Date.now();
   const eff = (w: PlanWindow) => (new Date(w.resetsAt).getTime() <= now ? 0 : w.usedPercent);
   const parts: string[] = [];
-  if (u.fiveHour) parts.push(`5u ${Math.round(eff(u.fiveHour))}%`);
-  if (u.sevenDay) parts.push(`week ${Math.round(eff(u.sevenDay))}%`);
+  if (u.fiveHour) parts.push(tr("5u {n}%", "5h {n}%", { n: Math.round(eff(u.fiveHour)) }));
+  if (u.sevenDay) parts.push(tr("week {n}%", "week {n}%", { n: Math.round(eff(u.sevenDay)) }));
   return parts.join(" · ");
 }

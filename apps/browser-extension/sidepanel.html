@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nook</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <img class="face" src="icons/nook-32.png" alt="" width="22" height="22">
+    <h1 data-i18n="appName">Nook</h1>
+    <span id="status" class="pill" role="status"></span>
+  </header>
+
+  <section id="setup" class="card setup" hidden>
+    <h2 data-i18n="setupTitle"></h2>
+    <ol>
+      <li data-i18n="setupStep1"></li>
+      <li data-i18n="setupStep2"></li>
+      <li data-i18n="setupStep3"></li>
+    </ol>
+    <p class="note" id="setup-detail"></p>
+  </section>
+
+  <section class="card site">
+    <div class="row">
+      <div class="grow">
+        <div id="site-name" class="site-name"></div>
+        <div id="site-note" class="note"></div>
+      </div>
+      <label class="switch" id="site-switch-wrap">
+        <input type="checkbox" id="site-switch" role="switch">
+        <span aria-hidden="true"></span>
+      </label>
+    </div>
+    <div class="row pause-row">
+      <div id="paused-note" class="note grow"></div>
+      <button id="pause" type="button" class="quiet"></button>
+    </div>
+  </section>
+
+  <main id="chat" class="chat" aria-live="polite">
+    <p id="intro" class="intro" data-i18n="intro"></p>
+  </main>
+
+  <section class="activity" aria-labelledby="activity-title">
+    <details id="activity-box">
+      <summary id="activity-title"><span data-i18n="activityTitle"></span></summary>
+      <ul id="activity"></ul>
+    </details>
+  </section>
+
+  <!-- Nook's shared composer (packages/web-ui), mounted by sidepanel.js from ui/composer.js. -->
+  <div id="composer" class="composer"></div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

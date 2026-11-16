@@ -1,6 +1,10 @@
 import XCTest
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 final class AutocompleteTests: XCTestCase {
     // MARK: GGUF
@@ -194,7 +198,10 @@ final class AutocompleteTests: XCTestCase {
         let policy = CompletionPolicy()
         XCTAssertTrue(policy.shouldComplete(before: "Dear Anna, thanks for", after: "", hasSelection: false))
         XCTAssertTrue(policy.shouldComplete(before: "Dear Anna", after: "  \nnext line", hasSelection: false))
-        XCTAssertFalse(policy.shouldComplete(before: "Hi", after: "", hasSelection: false))
+        // From the first letter of a message, but never in an empty field.
+        XCTAssertTrue(policy.shouldComplete(before: "H", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: "", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: " \n", after: "", hasSelection: false))
         XCTAssertFalse(policy.shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))
         XCTAssertFalse(policy.shouldComplete(before: "Dear Anna", after: "", hasSelection: true))
         XCTAssertTrue(CompletionPolicy(midLine: true).shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))
@@ -368,6 +375,53 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionPrompt(context: "Header", text: "Hoi,").healed().pending, "")
     }
 
+    func testTypedSpaceIsSpelledFirst() {
+        // The builder takes the typed space off the text and remembers it.
+        let prompt = PromptBuilder().build(CompletionContext(before: "Ik stuur hem donderdag "))
+        XCTAssertEqual(prompt.text, "Ik stuur hem donderdag")
+        XCTAssertTrue(prompt.typedSpace)
+        XCTAssertFalse(PromptBuilder().build(CompletionContext(before: "Ik stuur hem donderdag")).typedSpace)
+        // The finished word is read as it is; only the space has to be spelled, so "middag" cannot stick to it.
+        let healed = prompt.healed()
+        XCTAssertEqual(healed.prompt, CompletionPrompt(context: prompt.context, text: "Ik stuur hem donderdag"))
+        XCTAssertEqual(healed.pending, " ")
+    }
+
+    func testWordLimitIsToldApartFromDoubt() {
+        let options = CompletionOptions(maxWords: 2, eagerness: 0.5)
+        var capped = CompletionCandidate()
+        XCTAssertTrue(capped.keep(probability: 0.9, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        capped.end(atWordLimit: true)
+        let result = capped.result(text: " tot morgen")
+        XCTAssertEqual(result?.reachedWordLimit, true)
+        XCTAssertEqual(result?.sequenceProbability ?? 0, 0.9, accuracy: 0.0001)
+        var unsure = CompletionCandidate()
+        _ = unsure.keep(probability: 0.9, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false)
+        _ = unsure.keep(probability: 0.001, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false)
+        XCTAssertEqual(unsure.result(text: " tot")?.reachedWordLimit, false)
+    }
+
+    func testExtendingKeepsTheWholeSuggestionsBars() {
+        let options = CompletionOptions(maxWords: 8, eagerness: 0.5)
+        let rest = options.extending(after: 0.5, maxWords: 6)
+        XCTAssertEqual(rest.maxWords, 6)
+        XCTAssertEqual(rest.candidates, 1)
+        // Its first token is in the middle of the suggestion: the per-token bar.
+        XCTAssertEqual(rest.minFirstProbability, options.minProbability)
+        // Half the certainty is spent already: the rest may lose only what is left.
+        XCTAssertEqual(rest.minSequenceProbability, options.minSequenceProbability / 0.5, accuracy: 0.0001)
+        XCTAssertEqual(options.extending(after: 0.00001, maxWords: 6).minSequenceProbability, 1)
+    }
+
+    func testNoMarkAfterATypedSpaceAndNoPlaceholders() {
+        XCTAssertNil(CompletionSuggestion.make(raw: "?", before: "Zal ik iets meenemen ", maxWords: 8))
+        XCTAssertNil(CompletionSuggestion.make(raw: ", graag", before: "Ja ", maxWords: 8))
+        XCTAssertEqual(CompletionSuggestion.make(raw: "?", before: "Zal ik iets meenemen", maxWords: 8)?.remaining, "?")
+        XCTAssertNil(CompletionSuggestion.make(raw: " [Naam],", before: "Hoi", maxWords: 8))
+        XCTAssertEqual(CompletionSuggestion.make(raw: " team, hier is <name> zijn", before: "Hoi", maxWords: 8)?.remaining, " team, hier is")
+        XCTAssertEqual(CompletionSuggestion.make(raw: " array[0] waarde", before: "De", maxWords: 8)?.remaining, " array[0] waarde")
+    }
+
     func testWindowMovesInSteps() {
         let builder = PromptBuilder(windowLength: 10, windowStep: 5)
         XCTAssertEqual(builder.window(of: "short"), "short")
@@ -442,7 +496,7 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(opening.count, 9)
         XCTAssertEqual(opening.first?.character, "🔥")
         XCTAssertEqual(opening.dropFirst().first?.character, "😂", "then the most used")
-        XCTAssertEqual(opening.filter { $0.character == "🔥" }.count, 1)
+        XCTAssertEqual(opening.count(where: { $0.character == "🔥" }), 1)
         XCTAssertEqual(CompletionEmojiCatalog.choices(for: "lachen", recent: [], limit: 9).first?.character, "😂")
         XCTAssertTrue(CompletionEmojiCatalog.choices(for: "zzzzqq", recent: [], limit: 9).isEmpty)
     }
@@ -587,6 +641,36 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(samples.relevant(for: "chat", about: "Is de offerte voor Jansen al klaar?", limit: 1).first?.hasPrefix("De offerte"), true)
         let own = "Zullen we vrijdag gaan eten bij dat nieuwe restaurant? Ik heb er zin in"
         XCTAssertFalse(samples.relevant(for: "chat", excluding: own).contains { $0.hasPrefix("Zullen we") }, "the field's own text is not a sample")
+    }
+
+    func testSamplesAreFoundByTheContextTheyWereWrittenIn() {
+        var samples = CompletionSamples()
+        let context = CompletionSamples.contextWords("Lisa\nZullen we vrijdag de presentatie voor het kwartaaloverleg doornemen?")
+        XCTAssertNotNil(context)
+        samples.add("Prima, dan zie ik je om tien uur in de", app: "chat", context: context)
+        samples.add("Prima, dan zie ik je om tien uur in de kleine zaal!", app: "chat")
+        XCTAssertEqual(samples.samples.first?.context, context, "a sample that grows keeps its context")
+        samples.add("Haha ja, zaterdag naar het strand lijkt me echt top", app: "chat")
+        let about = samples.relevant(for: "chat", about: "Kunnen we de presentatie voor het kwartaaloverleg verzetten?", limit: 1)
+        XCTAssertEqual(about.first, "Prima, dan zie ik je om tien uur in de kleine zaal!", "the conversation it answered makes it fit, not its own words")
+    }
+
+    func testContextWordsLeaveSecretsOut() {
+        let words = CompletionSamples.contextWords("Wachtwoord: Geheim123!xyz voor de server") ?? ""
+        XCTAssertFalse(words.contains("geheim123"))
+        XCTAssertNil(CompletionSamples.contextWords(""))
+    }
+
+    func testOnlyWhatWasTypedIsLearnedWithoutASuggestion() {
+        XCTAssertEqual(CompletionSamples.typed(from: "H", to: "Hoi Jan, tot morgen"), "Hoi Jan, tot morgen")
+        let quote = "\n\nOp maandag schreef Piet: kun je de offerte sturen?"
+        XCTAssertEqual(CompletionSamples.typed(from: quote, to: "Ja, ik stuur hem vandaag nog" + quote), "Ja, ik stuur hem vandaag nog",
+                       "the quoted mail the field held is not the user's writing")
+        XCTAssertEqual(CompletionSamples.typed(from: "Beste Piet, de offerte", to: "Beste Piet, de offerte komt morgen"), "offerte komt morgen")
+        XCTAssertNil(CompletionSamples.typed(from: "Hallo", to: "Hallo"))
+        XCTAssertNil(CompletionSamples.typed(from: "Hallo daar", to: "Hallo"))
+        XCTAssertTrue(CompletionPreferences().learnWithoutSuggestion)
+        XCTAssertFalse(CompletionPreferences.decode(Data(#"{"learn":false}"#.utf8)).personalHintsDismissed)
     }
 
     func testTopicReadsWhereAndWhatIsWritten() {
@@ -1101,6 +1185,7 @@ final class CompletionCandidateTests: XCTestCase {
 }
 
 final class CompletionTextColorTests: XCTestCase {
+    #if canImport(Darwin)
     func testGhostIsATranslucentShadeOfTheText() throws {
         let blue = try XCTUnwrap(CompletionTextColor(cgColor: CGColor(srgbRed: 0, green: 0.4, blue: 1, alpha: 1)))
         let ghost = try XCTUnwrap(blue.ghost)
@@ -1108,15 +1193,20 @@ final class CompletionTextColorTests: XCTestCase {
         XCTAssertEqual(ghost.green, 0.4, accuracy: 0.001)
         XCTAssertEqual(ghost.alpha, CompletionTextColor.ghostAlpha, accuracy: 0.001)
     }
+    #endif
 
     func testReadsAccessibilityColorsOnly() throws {
+        #if canImport(Darwin)
         XCTAssertNotNil(CompletionTextColor(axValue: CGColor(gray: 0.2, alpha: 1)))
         XCTAssertNil(CompletionTextColor(axValue: "black"))
+        #endif
         // A nearly transparent colour says nothing about what is on screen.
         XCTAssertNil(CompletionTextColor(red: 0, green: 0, blue: 0, alpha: 0.1).ghost)
     }
 }
 
+// CryptoKit only (the Mac): scripts/core-tests.sh leaves CompletionSealing.swift out on Linux.
+#if canImport(CryptoKit)
 final class CompletionSealingTests: XCTestCase {
     func testSealedDataOpensOnlyWithItsKey() throws {
         let key = SymmetricKey(size: .bits256)
@@ -1138,3 +1228,4 @@ final class CompletionSealingTests: XCTestCase {
         XCTAssertNil(CompletionSealing.decode("not a key"))
     }
 }
+#endif

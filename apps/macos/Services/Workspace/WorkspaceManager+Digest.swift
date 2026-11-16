@@ -3,9 +3,18 @@ import Foundation
 /// The user's agent sessions as text, for whoever asks about them: another agent through the bridge (`session_list`,
 /// `session_read`) and Nook Chat (`list_agent_sessions`, `read_agent_session`). One description, so both see the same.
 extension WorkspaceManager {
+    /// The `limit` newest sessions that are not archived, newest first. Sorts positions instead of the sessions, so only
+    /// the ones returned are copied: the keep-awake check asks every two seconds while sessions change.
+    func newestRuns(_ limit: Int) -> [WorkspaceRun] {
+        let all = runs
+        return all.indices.filter { !all[$0].archived }
+            .sorted { all[$0].updatedAt > all[$1].updatedAt }
+            .prefix(max(0, limit)).map { all[$0] }
+    }
+
     /// One line per session that is not archived, most recent first: id, title, agent, status, folder and branch.
     func sessionLines(limit: Int) -> [String] {
-        runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(max(1, limit)).map { "- " + sessionLine($0) }
+        newestRuns(max(1, limit)).map { "- " + sessionLine($0) }
     }
 
     /// One session in a line: id, title, agent, status, folder and branch (`session_list`, `session_search`).

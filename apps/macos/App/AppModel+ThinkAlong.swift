@@ -55,6 +55,25 @@ extension AppModel {
 
     /// Pending proactive offer awaiting response, displayed temporarily in Today.
 
+    /// Runs `thinkAlongTick` every 10 seconds while Think Along is on, and not at all while it is off: a timer that only
+    /// found the setting off woke Nook thousands of times a day for nothing. Zero cost otherwise; the model is only
+    /// invoked when Think Along determines assistance is genuinely helpful.
+    func startThinkAlongWatch() {
+        settings.$autoWatch
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                guard let self else { return }
+                self.watchTimer?.invalidate()
+                self.watchTimer = nil
+                guard on else { return }
+                self.watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
+                    Task { @MainActor in self?.thinkAlongTick() }
+                }
+            }
+            .store(in: &bag)
+    }
+
     /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     func thinkAlongTick() {
         // Not while you share your screen or sit in a meeting and chose quiet for it.
@@ -67,6 +86,10 @@ extension AppModel {
         // On battery that look waits altogether (`EnergyPlan.runsLocalModels`): a cloud brain still thinks along.
         let plan = EnergyMonitor.shared.plan
         guard plan.thinksAlong else { return }
+        // Inside the quiet hours, or with the day's offers and moments spent (`InterruptionBudget`), there is no reason to
+        // look at all: an offer could not be shown.
+        guard !AttentionNow.shared.context.quietHours,
+              noticePacer.budget.allows(.suggestion, now: Date(), extraGap: thinkAlong.offerGap) else { return }
         let local = (settings.screenWorker ?? settings.selection).isLocal
         guard !local || plan.runsLocalModels else { return }
         let minGap = max(local ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
@@ -111,6 +134,9 @@ extension AppModel {
         - Dates more than two days away. Always read the full year and compare with the current date ("Now").
         - A calendar item or reminder for ongoing work (code, a pull request, a document, a tool or app).
         - Summaries, compliments, generic productivity advice, or describing what they are already doing.
+        - Answering, paying or acting on a mail or message that looks like phishing, a scam or spam (a sender name claiming a \
+        bank, shop, carrier or government from another address, pressure to log in, verify or pay by a deadline, prizes, gift cards). \
+        At most a tip that starts with "Tip:" and says it looks fake and why.
         - Offering something without calling the tool in this same answer. A question without an action is never allowed.
 
         Form: when you take something over, call the tool right away and start your text with one short question of at most \
@@ -140,7 +166,7 @@ extension AppModel {
             return copy
         }
 
-        let split = FollowUps.split(plan.text)
+        let split = FollowUps.split(plan.text, limit: FollowUps.cardLimit)
         var body = split.body
         let bare = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
         if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }
@@ -161,8 +187,9 @@ extension AppModel {
         // On the notch it needs a resting notch; when it is busy, the offer waits for a later look.
         let decision = settings.noticeRules.decide(.suggestions, app: bundleID, quiet: quiet.silent)
         if let style = decision.style, style != .system, !viewModel.nudgeFits { return }
+        let gapFactor = AttentionFeedbackStore.shared.feedback.gapFactor(source: NoticeSource.suggestions.rawValue, app: bundleID)
         let paced = decision.style != nil
-            && !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer)
+            && !noticePacer.permits(.suggestion, key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer, gapFactor: gapFactor)
         logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
         // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes into
@@ -200,23 +227,27 @@ extension AppModel {
         viewModel.register("\(token)#yes") { [weak self] in
             guard let self else { return }
             self.thinkAlong.accepted()
+            AttentionFeedbackStore.shared.record(.answered, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self.missedNudge = nil
             self.cardReplies[token] = nil
             if !plan.actions.isEmpty { self.continueInChat(shown, title: topic, sources: [appName], offers: offers) }
         }
         viewModel.register("\(token)#no") { [weak self] in
             self?.thinkAlong.declined(topic)
+            AttentionFeedbackStore.shared.record(.dismissed, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self?.missedNudge = nil
             self?.cardReplies[token] = nil
         }
         viewModel.register("\(token)#mute") { [weak self] in
             self?.thinkAlong.mute(bundleID: bundleID, name: appName)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self?.missedNudge = nil
             self?.cardReplies[token] = nil
         }
         registerCardReply(token) { [weak self] in
             guard let self else { return }
             self.thinkAlong.accepted()
+            AttentionFeedbackStore.shared.record(.answered, source: NoticeSource.suggestions.rawValue, app: bundleID, subject: topic)
             self.missedNudge = nil
             self.continueInChat(shown, title: topic, sources: [appName], offers: offers, run: false)
         }

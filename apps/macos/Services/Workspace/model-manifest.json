@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-09T00:00:00Z",
+  "updatedAt": "2026-11-12T00:00:00Z",
   "agents": {
     "claude": {
       "models": [
@@ -53,7 +53,6 @@
           "id": "claude-haiku-5-5",
           "name": "Claude Haiku 5.5",
           "status": "current",
-          "badge": "new",
           "aliases": [
             "haiku",
             "haiku-5.5",

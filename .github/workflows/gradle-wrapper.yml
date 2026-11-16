@@ -1,0 +1,28 @@
+name: Gradle wrapper
+
+# The Android project of the Tauri app (apps/tauri/src-tauri/gen/android) carries gradle-wrapper.jar, the one binary in
+# the repository. This checks it against the checksums Gradle publishes for its releases, so a swapped jar cannot run
+# in an Android build. Runs on ubuntu in seconds when the wrapper or this workflow changes, and on demand; it runs none
+# of the repository's code.
+on:
+  push:
+    branches: [main]
+    paths: ['**/gradle-wrapper.jar', '**/gradle-wrapper.properties', '.github/workflows/gradle-wrapper.yml']
+  pull_request:
+    paths: ['**/gradle-wrapper.jar', '**/gradle-wrapper.properties', '.github/workflows/gradle-wrapper.yml']
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate the Gradle wrapper
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1

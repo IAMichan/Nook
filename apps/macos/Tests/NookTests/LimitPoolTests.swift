@@ -68,11 +68,61 @@ final class LimitPoolTests: XCTestCase {
         XCTAssertEqual(session.columns[0].refill, 100)
     }
 
+    func testASpentWeekOfAnotherGroupLeavesTheSessionWindowAlone() throws {
+        let account = LimitPool.Account(id: "a", name: "a", limits: [
+            .init(label: "Gemini · 5 hours", used: 19, resetsAt: now.addingTimeInterval(3 * 3600), duration: fiveHours),
+            .init(label: "Gemini · Week", used: 8, resetsAt: now.addingTimeInterval(4 * 86_400), duration: week),
+            .init(label: "Gemini 4 Argon · Week", used: 100, resetsAt: now.addingTimeInterval(4 * 86_400), duration: week),
+        ])
+        let pool = try XCTUnwrap(LimitPool.make([account], now: now))
+        let session = try XCTUnwrap(pool.windows.first { $0.label == "Gemini · 5 hours" })
+        XCTAssertEqual(session.used, 19)
+        XCTAssertEqual(session.columns[0].limit?.resetsAt, now.addingTimeInterval(3 * 3600))
+    }
+
     func testSessionWindowsSortBeforeTheWeek() throws {
         let account = LimitPool.Account(id: "a", name: "a", limits: [
             .init(label: "Week", used: 10, resetsAt: now.addingTimeInterval(86_400), duration: week),
             .init(label: "5 hours", used: 10, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
         ])
         XCTAssertEqual(try XCTUnwrap(LimitPool.make([account], now: now)).windows.map(\.label), ["5 hours", "Week"])
+    }
+
+    func testAPoolWeighsItsAccountsByPlanSize() throws {
+        let weights = (max: LimitPool.weights(agent: "claude", plan: "Max 5x"), pro: LimitPool.weights(agent: "claude", plan: "Pro"))
+        let max = LimitPool.Account(id: "m", name: "Max", limits: [
+            .init(label: "5 hours", used: 0, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
+            .init(label: "Week", used: 0, resetsAt: now.addingTimeInterval(86_400), duration: week),
+        ], sessionWeight: weights.max.session, weeklyWeight: weights.max.weekly)
+        let pro = LimitPool.Account(id: "p", name: "Pro", limits: [
+            .init(label: "5 hours", used: 60, resetsAt: now.addingTimeInterval(1800), duration: fiveHours),
+            .init(label: "Week", used: 60, resetsAt: now.addingTimeInterval(7_200), duration: week),
+        ], sessionWeight: weights.pro.session, weeklyWeight: weights.pro.weekly)
+        let pool = try XCTUnwrap(LimitPool.make([max, pro], now: now))
+        // Max 5x holds five times Pro's session: 60 % of one sixth of the pool is 10 %.
+        let session = try XCTUnwrap(pool.windows.first { $0.kind == .session })
+        XCTAssertEqual(session.used, 10)
+        XCTAssertEqual(session.nextRefill?.restores, 10)
+        // Claude's plans name no weekly size, so the week counts both accounts once.
+        XCTAssertEqual(try XCTUnwrap(pool.windows.first { $0.kind == .weekly }).used, 30)
+    }
+
+    func testAnUnknownPlanCountsEveryAccountOnce() throws {
+        let plus = LimitPool.weights(agent: "codex", plan: "Plus")
+        let a = LimitPool.Account(id: "a", name: "a", limits: [.init(label: "5 hours", used: 80, resetsAt: nil, duration: fiveHours)],
+                                  sessionWeight: plus.session, weeklyWeight: plus.weekly)
+        let b = LimitPool.Account(id: "b", name: "b", limits: [.init(label: "5 hours", used: 20, resetsAt: nil, duration: fiveHours)])
+        XCTAssertEqual(try XCTUnwrap(LimitPool.make([a, b], now: now)).windows[0].used, 50)
+    }
+
+    func testPlanSizes() {
+        XCTAssertEqual(LimitPool.weights(agent: "claude", plan: "Max 20x").session, 20)
+        XCTAssertEqual(LimitPool.weights(agent: "claude", plan: "Max").session, 5)
+        XCTAssertNil(LimitPool.weights(agent: "claude", plan: "Max 5x").weekly)
+        XCTAssertNil(LimitPool.weights(agent: "claude", plan: "Team").session)
+        XCTAssertEqual(LimitPool.weights(agent: "codex", plan: "Pro").weekly, 20)
+        XCTAssertEqual(LimitPool.weights(agent: "codex", plan: "Plus").session, 1)
+        XCTAssertNil(LimitPool.weights(agent: "gemini", plan: "Pro").session)
+        XCTAssertNil(LimitPool.weights(agent: "codex", plan: "").session)
     }
 }

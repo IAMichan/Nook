@@ -370,4 +370,18 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertNil(read[2].readers)
         XCTAssertNil(read[3].readers, "theirs keeps no readers")
     }
+
+    func testYourMessagesNotEveryoneReadAreAskedAgain() {
+        var read = InboxMessage(id: "teams-3", text: "seen", date: Date(timeIntervalSince1970: 3), fromMe: true)
+        read.receipt = .read
+        var sent = InboxMessage(id: "teams-4", text: "out", date: Date(timeIntervalSince1970: 4), fromMe: true)
+        sent.receipt = .sent
+        let theirs = InboxMessage(id: "teams-5", sender: "Anna", text: "hi", date: Date(timeIntervalSince1970: 5))
+        let gone = InboxMessage(id: "teams-6", text: "x", date: Date(timeIntervalSince1970: 6), fromMe: true).withdrawn()
+        XCTAssertEqual(TeamsWebData.unseen([read, sent, theirs, gone]).map(\.id), ["teams-4"],
+                       "only yours whose ticks can still move")
+        let now = TeamsWebData.read([sent], horizons: ["8:orgid:anna": 4], group: false, names: [:])
+        XCTAssertEqual(now.first?.receipt, .read, "once the horizon passes it, it is read")
+        XCTAssertTrue(TeamsWebData.unseen(now).isEmpty, "and is no longer asked")
+    }
 }

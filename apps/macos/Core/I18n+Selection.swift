@@ -21,6 +21,8 @@ let selectionTranslations: [AppLanguage: [String: String]] = [
         "select.reopen": "Zet weer open",
         "select.delete": "Verwijder",
         "select.deleteConfirm": "Verwijder %ld?",
+        "select.partial": "%@ (%ld van %ld)",
+        "select.moreOptions": "Meer opties: %@",
     ],
     .en: [
         "select.start": "Select",
@@ -39,6 +41,8 @@ let selectionTranslations: [AppLanguage: [String: String]] = [
         "select.reopen": "Reopen",
         "select.delete": "Delete",
         "select.deleteConfirm": "Delete %ld?",
+        "select.partial": "%@ (%ld of %ld)",
+        "select.moreOptions": "More options: %@",
     ],
     .de: [
         "select.start": "Auswählen",
@@ -57,6 +61,8 @@ let selectionTranslations: [AppLanguage: [String: String]] = [
         "select.reopen": "Wieder öffnen",
         "select.delete": "Löschen",
         "select.deleteConfirm": "%ld löschen?",
+        "select.partial": "%@ (%ld von %ld)",
+        "select.moreOptions": "Weitere Optionen: %@",
     ],
     .fr: [
         "select.start": "Sélectionner",
@@ -75,6 +81,8 @@ let selectionTranslations: [AppLanguage: [String: String]] = [
         "select.reopen": "Rouvrir",
         "select.delete": "Supprimer",
         "select.deleteConfirm": "Supprimer %ld ?",
+        "select.partial": "%@ (%ld sur %ld)",
+        "select.moreOptions": "Plus d’options : %@",
     ],
     .es: [
         "select.start": "Seleccionar",
@@ -93,5 +101,7 @@ let selectionTranslations: [AppLanguage: [String: String]] = [
         "select.reopen": "Reabrir",
         "select.delete": "Eliminar",
         "select.deleteConfirm": "¿Eliminar %ld?",
+        "select.partial": "%@ (%ld de %ld)",
+        "select.moreOptions": "Más opciones: %@",
     ],
 ]

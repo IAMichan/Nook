@@ -5,6 +5,7 @@ extension AppModel {
     /// `runOnSettle` scripts run, by the project's `nook.json` (`SettleActions`). Only on this Mac: a remote session's
     /// terminals and scripts are not Nook's to touch.
     func applySettleActions(_ items: [AgentListItem]) {
+        for id in items.compactMap({ Self.runID($0.id) }) { workspace.settled(id) }
         let settledIDs = Set(items.map(\.id))
         let local = items.filter { item in
             guard !item.path.isEmpty else { return false }

@@ -3,13 +3,22 @@ import Foundation
 // Session state beyond start/stop: going on after a restart and snoozing.
 
 extension WorkspaceManager {
-    /// Sessions a restart of Nook cut off get "Continue where you left off." once. Called a moment after launch, when the
-    /// agents' executables are known; with the setting off nothing happens.
+    /// Sessions that quitting or restarting Nook cut off get "Continue where you left off." once. Called a moment after
+    /// launch, when the agents' executables are known; with the setting off nothing happens.
     func continueInterruptedRuns(now: Date = Date()) {
         let enabled = settings.continueAfterRelaunch
         for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: waitsOnQuestion(run.id),
                                                                  settled: FinishedSessions.shared.contains(FinishedSessions.key(run: run)),
                                                                  now: now) {
+            // A turn whose result was saved had finished; only its status was not saved yet. Sending it back to work
+            // would repeat what it did: it is no longer "interrupted", and waits for you like any stopped session.
+            if run.status == .stopped, run.statusDetail == "interrupted" {
+                loadTimeline(run.id)
+                if RestartContinuation.turnEnded(timeline(run.id)) {
+                    update(run.id) { $0.statusDetail = nil }
+                    continue
+                }
+            }
             let message = RestartContinuation.message(for: run)
             let waited = run.cutBackgroundWork != nil
             update(run.id) {
@@ -21,6 +30,11 @@ extension WorkspaceManager {
             }
             append(run.id, RunEvent(kind: .system, text: tr(waited ? "ws.event.continueAfterBackgroundStop" : "ws.event.continueAfterRelaunch")))
             send(run.id, text: message)
+        }
+        // Only the first launch after the quit counts: a session left alone now (the setting off, or one that waits on you)
+        // must not go on at some later launch.
+        for run in runs where run.stoppedByQuit != nil {
+            update(run.id) { $0.stoppedByQuit = nil }
         }
         // Summaries planned before Nook quit, for the sessions whose cache is still warm.
         scheduleIdleCompactions()
@@ -72,6 +86,8 @@ extension WorkspaceManager {
             unseen: unseen,
             settled: settled,
             subagentsWorking: subagentsWorking.contains(run.id),
+            // Only read for a turn that ended: a running one is busy anyway.
+            subThreadsWorking: run.status == .completed ? workingSubThreads(of: run.id) : 0,
             quietTurn: idleCompacting.contains(run.id)
         )
         let base = AgentAttention.resolve(input)

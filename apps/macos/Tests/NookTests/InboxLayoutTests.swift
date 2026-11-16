@@ -27,11 +27,38 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(ids(s, .active), ["b"])
     }
 
-    func testActiveSortsByAttentionThenManualOrderThenRecency() {
+    func testActiveSortsNeedsYouThenNewestReturnThenManualOrder() {
         let rows = [row("idle-old", age: 500), row("idle-new", age: 10), row("fail", .failed), row("ask", .approval),
                     row("m1", age: 900), row("m2", age: 5)]
         let s = sections(rows, InboxState(order: ["m1", "m2"]))
-        XCTAssertEqual(ids(s, .active), ["ask", "fail", "m1", "m2", "idle-new", "idle-old"])
+        // What needs you, then what came back newest first, then what you gave a place.
+        XCTAssertEqual(ids(s, .active), ["ask", "idle-new", "fail", "idle-old", "m1", "m2"])
+    }
+
+    func testPlacedSessionThatComesBackRisesToTheTop() {
+        let placed = now.addingTimeInterval(-50)
+        let state = InboxState(order: ["back", "stays"], orderedAt: ["back": placed, "stays": placed])
+        // "back" finished after you placed it (age 10 < 50); "stays" has nothing new since.
+        let rows = [row("back", .ready, age: 10), row("stays", age: 80), row("fresh", age: 30)]
+        XCTAssertEqual(ids(sections(rows, state), .active), ["back", "fresh", "stays"])
+    }
+
+    func testReorderStampsThePlacesShown() {
+        let rows = [row("a", age: 10), row("b", age: 20)]
+        var st = InboxState()
+        st.reorder("b", toIndex: 0, within: sections(rows).first { $0.kind == .active }!, now: now)
+        XCTAssertEqual(st.order, ["b", "a"])
+        XCTAssertEqual(st.orderedAt, ["a": now, "b": now])
+        XCTAssertEqual(ids(sections(rows, st), .active), ["b", "a"])
+    }
+
+    func testOrderSavedWithoutTimesIsLetGo() throws {
+        let old = try JSONDecoder().decode(InboxState.self, from: Data(#"{"order":["a","b"]}"#.utf8))
+        XCTAssertEqual(old.order, [])
+        var st = InboxState(order: ["a"], orderedAt: ["a": now])
+        st = try JSONDecoder().decode(InboxState.self, from: JSONEncoder().encode(st))
+        XCTAssertEqual(st.order, ["a"])
+        XCTAssertEqual(st.orderedAt, ["a": now])
     }
 
     func testOrderIsStableAcrossInputPermutations() {
@@ -52,10 +79,10 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(Set(ids(off, .active)), ["w", "bg", "asks", "f"])
     }
 
-    func testWorkingShelfSitsAboveEverythingElse() {
+    func testWorkingShelfSitsAtTheFootAboveSettled() {
         let rows = [row("a"), row("w", .working), row("p"), row("z")]
         let s = sections(rows, InboxState(pinned: ["p"], settled: ["z"]))
-        XCTAssertEqual(s.map(\.kind), [.working, .pinned, .active, .settled])
+        XCTAssertEqual(s.map(\.kind), [.pinned, .active, .working, .settled])
     }
 
     func testSnoozeAndWakeAreReversible() {
@@ -113,9 +140,10 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(InboxLayout.shownRows(snoozed, folded: false, selectedID: "b").map(\.id), ["a", "b"])
     }
 
-    func testFoldedSettledShelfShowsNothing() {
+    func testFoldedSettledShelfStillShowsTheOpenSession() {
         let settled = sections([row("a"), row("b")], InboxState(settled: ["a", "b"]))[0]
-        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "b").map(\.id), [])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "b").map(\.id), ["b"])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "x").map(\.id), [])
         XCTAssertEqual(InboxLayout.shownRows(settled, folded: false, selectedID: "b").map(\.id), ["a", "b"])
     }
 
@@ -139,15 +167,63 @@ final class InboxLayoutTests: XCTestCase {
 
     // MARK: Projects
 
-    func testProjectGroupsHoldWorkingAndActiveRowsPerProject() {
+    func testProjectGroupsHoldActiveRowsPerProjectWithWorkingInTheirFolderWhenTheShelfIsOff() {
         let rows = [row("n1", project: "Nook"), row("w1", .working, age: 50, project: "WhoBench"),
                     row("n2", .working, age: 10, project: "Nook"), row("p", project: "Nook"), row("z", project: "Nook")]
-        let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"])))
+        let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"]), working: false))
         XCTAssertEqual(groups.map(\.project), ["Nook", "WhoBench"])
         // Newest activity first inside the project; pinned and settled keep their own sections.
         XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n2", "n1"])
-        XCTAssertEqual(groups[0].rows.map(\.kind), [.working, .active])
         XCTAssertEqual(groups[1].rows.map(\.entry.id), ["w1"])
+    }
+
+    func testWorkingShelfStaysUnderTheProjectsWhenOn() {
+        let rows = [row("n1", project: "Nook"), row("w1", .working, age: 50, project: "WhoBench"), row("n2", .working, project: "Nook")]
+        let s = sections(rows)
+        let groups = InboxLayout.projectGroups(s)
+        XCTAssertEqual(groups.map(\.project), ["Nook"])
+        XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n1"])
+        XCTAssertEqual(Set(ids(s, .working)), ["w1", "n2"])
+    }
+
+    func testPinnedProjectsLeadInPinOrderAndStayWhenEmpty() {
+        let rows = [row("a", project: "Alpha"), row("z", project: "Zed"), row("s", project: InboxProject.none)]
+        let groups = InboxLayout.projectGroups(sections(rows), pinned: ["Zed", "Empty"])
+        XCTAssertEqual(groups.map(\.project), ["Zed", "Empty", "Alpha", InboxProject.none])
+        XCTAssertEqual(groups.map(\.pinned), [true, true, false, false])
+        XCTAssertTrue(groups[1].rows.isEmpty)
+    }
+
+    func testArchivedProjectsComeLastAndOnlyWithActiveSessions() {
+        let rows = [row("o", project: "Old"), row("a", project: "Alpha"), row("s", project: InboxProject.none)]
+        let groups = InboxLayout.projectGroups(sections(rows), pinned: ["Gone"], archived: ["Old", "Gone"])
+        XCTAssertEqual(groups.map(\.project), ["Alpha", InboxProject.none, "Old"])
+        XCTAssertEqual(groups.map(\.archived), [false, false, true])
+    }
+
+    func testFolderDotSaysTheMostUrgentState() {
+        func dot(_ attentions: [AgentAttention]) -> InboxProjectGroup.Dot? {
+            let rows = attentions.enumerated().map { row("r\($0.offset)", $0.element) }
+            return InboxLayout.projectGroups(sections(rows, working: false)).first?.dot
+        }
+        XCTAssertEqual(dot([.working, .ready, .failed, .approval]), .needsYou)
+        XCTAssertEqual(dot([.working, .ready, .limited]), .failed)
+        XCTAssertEqual(dot([.working, .ready]), .done)
+        XCTAssertEqual(dot([.idle, .working]), .working)
+        XCTAssertNil(dot([.idle, .finished]))
+    }
+
+    func testSessionsWithoutAProjectShareOneGroup() {
+        let root = "/Users/me/.nook/scratch"
+        func key(_ folder: String, _ path: String) -> String {
+            InboxProject.key(folder: folder, path: path, scratchRoot: root, home: "/Users/me")
+        }
+        XCTAssertEqual(key("2026-11-04-fix-the-login-a1b2c3", root + "/2026-11-04-fix-the-login-a1b2c3"), InboxProject.none)
+        XCTAssertEqual(key("sub", root + "/2026-11-04-x-a1b2c3/sub"), InboxProject.none)
+        XCTAssertEqual(key("me", "/Users/me/"), InboxProject.none)
+        XCTAssertEqual(key("no folder", ""), InboxProject.none)
+        XCTAssertEqual(key("nook", "/Users/me/code/nook"), "nook")
+        XCTAssertEqual(key("scratchy", "/Users/me/.nook/scratchy"), "scratchy")
     }
 
     func testProjectsKeepTheirPlaceWhenOneChanges() {
@@ -228,7 +304,7 @@ final class InboxLayoutTests: XCTestCase {
         let rows = [row("a", .input), row("b", age: 100), row("c", age: 200), row("d", age: 300)]
         let active = sections(rows).first { $0.kind == .active }!
         XCTAssertEqual(active.rows.map(\.id), ["a", "b", "c", "d"])
-        // "a" needs you and sorts first by attention: it cannot trade places with the idle rows.
+        // "a" needs you and sorts first: it cannot trade places with the rows that do not.
         XCTAssertNil(InboxLayout.moveTarget("a", up: false, in: active))
         XCTAssertNil(InboxLayout.moveTarget("b", up: true, in: active))
         XCTAssertNil(InboxLayout.moveTarget("d", up: false, in: active))
@@ -306,12 +382,116 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(s.first { $0.kind == .active }?.rows.map(\.depth), [0, 0, 1])
     }
 
-    func testSpawnedSessionThatNeedsYouStaysInItsOwnPlace() {
+    func testSubThreadThatNeedsYouBringsItsWorkingParentUpToActive() {
         var child = row("child", .approval)
         child.parentID = "parent"
         let s = sections([row("parent", .working), child])
-        XCTAssertEqual(ids(s, .working), ["parent"])
-        XCTAssertEqual(ids(s, .active), ["child"])
+        XCTAssertEqual(ids(s, .working), [])
+        XCTAssertEqual(ids(s, .active), ["parent", "child"])
+        XCTAssertEqual(s.first { $0.kind == .active }?.rows.map(\.depth), [0, 1])
+    }
+
+    func testSubThreadThatNeedsYouFollowsAPinnedParent() {
+        var child = row("child", .input)
+        child.parentID = "parent"
+        let s = sections([row("parent"), child], InboxState(pinned: ["parent"]))
+        XCTAssertEqual(ids(s, .pinned), ["parent", "child"])
+        XCTAssertEqual(ids(s, .active), [])
+    }
+
+    func testSubThreadOfASubThreadFollowsTheWholeChain() {
+        var child = row("child", .working), grandchild = row("grandchild", .working)
+        child.parentID = "parent"; grandchild.parentID = "child"
+        let s = sections([row("parent"), child, grandchild])
+        XCTAssertEqual(ids(s, .working), [])
+        XCTAssertEqual(ids(s, .active), ["parent", "child", "grandchild"])
+        let active = s.first { $0.kind == .active }?.rows ?? []
+        XCTAssertEqual(active.map(\.depth), [0, 1, 2])
+        XCTAssertEqual(active.map(\.ancestors), [[], ["parent"], ["child", "parent"]])
+    }
+
+    func testSubThreadIsNeverAlsoATopLevelRow() {
+        var child = row("child", .working)
+        child.parentID = "parent"
+        let s = sections([row("parent", .ready), child])
+        let all = s.flatMap(\.rows)
+        XCTAssertEqual(all.count(where: { $0.id == "child" }), 1)
+        XCTAssertEqual(all.first { $0.id == "child" }?.depth, 1)
+    }
+
+    // MARK: Threads
+
+    private func entries(_ rows: [InboxRow]) -> [InboxEntry] {
+        InboxLayout.nest(rows.map { InboxEntry(row: $0, receded: false, woke: false) })
+    }
+
+    func testParentCountsItsSubThreadsAtEveryLevelAndWhatTheyNeed() {
+        var a = row("a"), b = row("b", .approval), c = row("c", .working), d = row("d")
+        a.parentID = "p"; b.parentID = "p"; c.parentID = "a"; d.parentID = "c"
+        let nested = entries([row("p"), a, b, c, d, row("lone")])
+        let byID = Dictionary(uniqueKeysWithValues: nested.map { ($0.id, $0) })
+        XCTAssertEqual(nested.map(\.id), ["p", "a", "c", "d", "b", "lone"])
+        XCTAssertEqual(byID["p"]?.subThreads, 4)
+        XCTAssertEqual(byID["a"]?.subThreads, 2)
+        XCTAssertEqual(byID["c"]?.subThreads, 1)
+        XCTAssertEqual(byID["lone"]?.subThreads, 0)
+        XCTAssertEqual(byID["p"]?.subThreadNeedsYou, true)
+        XCTAssertEqual(byID["a"]?.subThreadNeedsYou, false)
+        XCTAssertEqual(byID["a"]?.subThreadActive, true)
+        XCTAssertEqual(byID["c"]?.subThreadActive, false)
+        // Deeper than two steps the row stays at the second step; the tree is kept in `ancestors`.
+        XCTAssertEqual(byID["d"]?.depth, 2)
+        XCTAssertEqual(byID["d"]?.ancestors, ["c", "a", "p"])
+    }
+
+    func testThreadsOpenWhileASubThreadWorksOrAsksAndFoldWhenQuiet() {
+        var busy = row("busy", .working), quiet = row("quiet"), asks = row("asks", .input)
+        busy.parentID = "p1"; quiet.parentID = "p2"; asks.parentID = "p3"
+        let nested = entries([row("p1"), busy, row("p2"), quiet, row("p3"), asks])
+        func open(_ id: String, opened: Set<String> = [], folded: Set<String> = []) -> Bool {
+            InboxLayout.threadOpen(nested.first { $0.id == id }!, opened: opened, folded: folded)
+        }
+        XCTAssertTrue(open("p1"))
+        XCTAssertFalse(open("p2"))
+        XCTAssertTrue(open("p3"))
+        // What you chose wins over the default, either way.
+        XCTAssertFalse(open("p1", folded: ["p1"]))
+        XCTAssertTrue(open("p2", opened: ["p2"]))
+    }
+
+    func testFoldingHidesEveryLevelUnderTheSessionButKeepsTheOpenOne() {
+        var a = row("a"), b = row("b"), c = row("c")
+        a.parentID = "p"; b.parentID = "a"; c.parentID = "p"
+        let nested = entries([row("p"), a, b, c, row("other")])
+        let folded = InboxLayout.foldThreads(nested, isOpen: { $0.id != "p" }, selectedID: nil)
+        XCTAssertEqual(folded.map(\.id), ["p", "other"])
+        let keepsOpen = InboxLayout.foldThreads(nested, isOpen: { $0.id != "p" }, selectedID: "b")
+        XCTAssertEqual(keepsOpen.map(\.id), ["p", "b", "other"])
+        let inner = InboxLayout.foldThreads(nested, isOpen: { $0.id != "a" }, selectedID: nil)
+        XCTAssertEqual(inner.map(\.id), ["p", "a", "c", "other"])
+        XCTAssertEqual(InboxLayout.foldThreads(nested, isOpen: { _ in true }, selectedID: nil).map(\.id), nested.map(\.id))
+    }
+
+    func testSearchKeepsAMatchingSubThreadUnderItsParentOrOnItsOwn() {
+        var child = row("child", title: "fix login")
+        child.parentID = "parent"
+        let both = [row("parent", title: "login work"), child]
+        let nested = sections(InboxSearch.filter(rows: both, query: "login"))
+        XCTAssertEqual(ids(nested, .active), ["parent", "child"])
+        XCTAssertEqual(nested.first { $0.kind == .active }?.rows.map(\.depth), [0, 1])
+        // The parent does not match: the sub-thread shows as a session of its own.
+        let alone = sections(InboxSearch.filter(rows: both, query: "fix"))
+        XCTAssertEqual(ids(alone, .active), ["child"])
+        XCTAssertEqual(alone.first { $0.kind == .active }?.rows.first?.depth, 0)
+    }
+
+    func testFoldedThreadKeepsItsBlockTogetherInsideProject() {
+        var child = row("child", age: 1, project: "A"); child.parentID = "parent"
+        let groups = InboxLayout.projectGroups(sections([row("other", age: 50, project: "A"), row("parent", age: 500, project: "A"), child]))
+        let rows = groups[0].rows.map(\.entry)
+        XCTAssertEqual(rows.first { $0.id == "parent" }?.subThreads, 1)
+        let folded = InboxLayout.foldThreads(rows, isOpen: { _ in false }, selectedID: nil)
+        XCTAssertEqual(folded.map(\.id), ["parent", "other"])
     }
 
     func testNestingSurvivesALoopAndAMissingParent() {

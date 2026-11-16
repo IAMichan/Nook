@@ -30,6 +30,13 @@ final class MemoryPressure: @unchecked Sendable {
         startIfNeeded()
     }
 
+    /// Registers a purge under `key` that empties `cache`. `NSCache` is thread-safe but not marked `Sendable`, so it is
+    /// captured here once instead of at every call site.
+    func register<Key: AnyObject, Value: AnyObject>(_ key: String, emptying cache: NSCache<Key, Value>) {
+        nonisolated(unsafe) let cache = cache
+        register(key) { _ in cache.removeAllObjects() }
+    }
+
     func unregister(_ key: String) {
         lock.lock()
         purges[key] = nil

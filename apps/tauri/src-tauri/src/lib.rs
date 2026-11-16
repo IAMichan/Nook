@@ -77,6 +77,8 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
+                    platform::desktop::closed_main(window.app_handle());
+                    platform::desktop::remember_main(window.app_handle());
                     let _ = window.hide();
                 }
             }
@@ -87,6 +89,11 @@ pub fn run() {
             commands::app_info,
             commands::get_settings,
             commands::save_settings,
+            commands::maintenance::maintenance_info,
+            commands::maintenance::open_data_folder,
+            commands::maintenance::clear_caches,
+            commands::maintenance::export_settings,
+            commands::maintenance::reset_settings,
             commands::providers,
             commands::list_models,
             commands::key_status,
@@ -96,6 +103,8 @@ pub fn run() {
             commands::nook_get,
             commands::nook_active,
             commands::nook_new,
+            commands::selection_ask::nook_new_background,
+            commands::selection_ask::ask_about_selection,
             commands::nook_delete,
             commands::nook_set_flags,
             commands::ask,
@@ -112,6 +121,9 @@ pub fn run() {
             commands::bar_moved,
             commands::take_route,
             commands::repair_start_menu_shortcut,
+            commands::start_local_brain,
+            commands::tray_status,
+            commands::shortcut_problems,
             commands::companion::companion_info,
             commands::companion::companion_set_enabled,
             commands::companion::companion_begin_pairing,
@@ -129,6 +141,13 @@ pub fn run() {
             commands::companion::companion_client_answer,
             commands::companion::companion_client_send,
             commands::companion::companion_client_stop,
+            commands::companion::companion_client_deny,
+            commands::companion::companion_client_switch,
+            commands::companion::companion_client_push_keys,
+            commands::companion::companion_client_register_push,
+            commands::companion::companion_client_discard,
+            commands::companion::companion_client_others,
+            commands::companion::companion_client_call,
             commands::companion::companion_client_clear_notice,
             commands::companion::companion_client_visible,
             commands::connectors::connectors_overview,
@@ -152,6 +171,8 @@ pub fn run() {
             commands::connectors::github_actions_runs,
             commands::connectors::github_actions_run,
             commands::connectors::github_actions_run_action,
+            commands::connectors::github_actions_dispatch_form,
+            commands::connectors::github_actions_dispatch,
             commands::connectors::pull_watch_add,
             commands::connectors::pull_watch_remove,
             commands::connectors::mcp_paste,
@@ -346,6 +367,15 @@ pub fn run() {
             commands::workspace::workspace_pull_request_draft,
             commands::workspace::workspace_create_pull_request,
             commands::workspace::workspace_continue_past,
+            commands::automation::automation_overview,
+            commands::automation::automation_save_settings,
+            commands::automation::automation_save_task,
+            commands::automation::automation_delete_task,
+            commands::automation::automation_set_task_enabled,
+            commands::automation::automation_run_task,
+            commands::automation::automation_webhook_secret,
+            commands::automation::workspace_hand_off,
+            commands::automation::workspace_delegation,
             commands::workspace_tools::terminal_list,
             commands::workspace_tools::terminal_open,
             commands::workspace_tools::terminal_write,
@@ -364,6 +394,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")
         .run(|app, event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                platform::desktop::remember_main(app);
+            }
             if let tauri::RunEvent::Exit = event {
                 // Bij afsluiten: de WhatsApp-gateway en lopende agents van de werkruimte netjes stoppen.
                 connectors::shutdown(app);

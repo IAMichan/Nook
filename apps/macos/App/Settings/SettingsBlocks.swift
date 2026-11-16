@@ -30,19 +30,16 @@ struct ConfigPreview: View {
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
+                .sheetCancelButton()
             Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .sheetPrimaryButton()
         }
     }
 
     private func color(_ kind: DiffLine.Kind) -> Color {
         switch kind {
-        case .add: return NookTheme.mint
-        case .remove: return NookTheme.coral
+        case .add: return NookTheme.diffAdded
+        case .remove: return NookTheme.diffRemoved
         case .context: return NookTheme.textSecondary
         }
     }
@@ -118,8 +115,8 @@ struct StatusRow<Trailing: View>: View {
     }
 }
 
-/// Toggle switch that shows only its title. The explanation is there when you want it, on hover and for VoiceOver,
-/// so a page full of switches reads as a calm list instead of a wall of captions.
+/// A switch on a Settings row: its name, the explanation in smaller text under it, and the switch on the right
+/// (`SettingsRowToggleStyle`), so every row of a page reads the same way.
 struct SettingToggle: View {
     let title: String
     let detail: String
@@ -132,20 +129,18 @@ struct SettingToggle: View {
     }
 
     var body: some View {
-        Toggle(title, isOn: $isOn)
-            .help(detail)
-            .accessibilityHint(detail)
-            .settingsAnchor(title)
+        Toggle(isOn: $isOn) {
+            SettingRowText(title: title, detail: detail)
+        }
+        .settingsAnchor(title)
     }
 }
 
-/// A setting's title for rows that hold a button or a picker. With `detail:` a short caption stays under it, for what
-/// you need to see (a state, a size, the step to take); with `hint:` only the title shows and the explanation is on
-/// hover and for VoiceOver, as with `SettingToggle`.
+/// A setting's title for rows that hold a button or a picker, with its explanation in smaller text under it, as
+/// `SettingToggle`. `detail:` and `hint:` read the same; both stay for the callers.
 struct SettingLabel: View {
     let title: String
     let detail: String
-    private var showsDetail = true
 
     init(_ title: String, detail: String) {
         self.title = title
@@ -155,33 +150,70 @@ struct SettingLabel: View {
     init(_ title: String, hint: String) {
         self.title = title
         self.detail = hint
-        self.showsDetail = false
     }
 
     var body: some View {
-        label.settingsAnchor(title)
+        SettingRowText(title: title, detail: detail).settingsAnchor(title)
+    }
+}
+
+/// A text field on a Settings row with its name beside it, or above it for a field of several lines (`stacked`),
+/// with an optional explanation under the name. The field keeps its own title for VoiceOver; the row shows the name, as
+/// a field in a Settings card draws no label of its own.
+struct SettingFieldRow<Field: View>: View {
+    let title: String
+    var detail = ""
+    var stacked = false
+    @ViewBuilder var field: () -> Field
+
+    init(_ title: String, detail: String = "", stacked: Bool = false, @ViewBuilder field: @escaping () -> Field) {
+        self.title = title
+        self.detail = detail
+        self.stacked = stacked
+        self.field = field
     }
 
-    @ViewBuilder private var label: some View {
-        if showsDetail {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title)
+    var body: some View {
+        if stacked {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                SettingRowText(title: title, detail: detail).settingsAnchor(title)
+                field().labelsHidden().settingsField()
+            }
+        } else {
+            HStack(spacing: NookTheme.Spacing.xl) {
+                SettingRowText(title: title, detail: detail).settingsAnchor(title)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+                field().labelsHidden().settingsField()
+                    .frame(maxWidth: SettingsControl.fieldWidth)
+            }
+        }
+    }
+}
+
+/// The left side of a Settings row: the name, and under it the explanation in smaller, softer text. An empty
+/// explanation leaves the name alone on one line.
+struct SettingRowText: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Text(title)
+                .foregroundStyle(NookTheme.paper)
+            if !detail.isEmpty {
                 Text(detail)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        } else {
-            Text(title)
-                .help(detail)
-                .accessibilityHint(detail)
         }
     }
 }
 
-/// A section's title with an optional ⓘ next to it. The explanation of a section lives behind that ⓘ (a click opens it,
-/// hovering shows it too) instead of in a footer, so every page reads as titles and controls. Footers stay for what
-/// must be seen: a warning, an error, or the one step that unlocks the section.
+/// A section's title with, under it, what the section is for in smaller text, always visible: every group of a page
+/// says what it does without a click. Footers stay for what must stand out: a warning, an error, or the one step that
+/// unlocks the section.
 struct SettingsSectionTitle: View {
     let title: String
     var info: String? = nil
@@ -192,9 +224,14 @@ struct SettingsSectionTitle: View {
     }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Text(title)
-            if let info { SettingsInfoButton(text: info) }
+            if let info, !info.isEmpty {
+                Text(info)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .settingsAnchor(title)
     }
@@ -203,17 +240,19 @@ struct SettingsSectionTitle: View {
 /// The small ⓘ that holds an explanation: a click opens it in a popover, hovering shows it as a tooltip.
 struct SettingsInfoButton: View {
     let text: String
+    /// Amber or coral when the explanation is a warning (a context that is getting full).
+    var tint: Color = NookTheme.textTertiary
     @State private var shown = false
 
     var body: some View {
         Button { shown.toggle() } label: {
             Image(icon: "info.circle")
                 .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
+                .foregroundStyle(tint)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .help(text)
+        .buttonStyle(.nookPlain)
+        .nookTip(text)
         .accessibilityLabel(tr("settings.info.more"))
         .accessibilityHint(text)
         .popover(isPresented: $shown, arrowEdge: .bottom) {
@@ -308,7 +347,7 @@ struct SettingsLinkRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 }
 
@@ -333,8 +372,7 @@ struct HoverActionsRow<Content: View, Idle: View, Actions: View>: View {
                     .opacity(shown ? 0 : 1)
                     .accessibilityHidden(shown)
                 HStack(spacing: NookTheme.Spacing.xs) { actions() }
-                    .opacity(shown ? 1 : 0)
-                    .allowsHitTesting(shown)
+                    .revealOnHover(shown)
             }
         }
         .contentShape(Rectangle())
@@ -351,7 +389,7 @@ struct InUseLabel: View {
     init(_ title: String) { self.title = title }
 
     var body: some View {
-        Label(title, systemImage: "checkmark.circle.fill")
+        Label(title, icon: "checkmark.circle.fill")
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.mint)
             .lineLimit(1)
@@ -385,7 +423,7 @@ struct Keycap: View {
 /// each) and Settings › Automation (scheduled tasks and what agents may use of Nook). The machines sessions run on have
 /// a page of their own (`RemoteMachinesSection`).
 struct WorkspaceSettingsSection: View {
-    /// One page each them: never tabs.
+    /// One page each, never tabs.
     enum Part {
         /// How a new session starts for all projects, how sessions behave, and how the list tidies itself.
         case sessions
@@ -405,7 +443,6 @@ struct WorkspaceSettingsSection: View {
     let part: Part
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
-    @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
     @ObservedObject private var relay = WebhookRelayClient.shared
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
@@ -453,13 +490,14 @@ struct WorkspaceSettingsSection: View {
                     SettingNote(tr("sched.webhook.failed", message), tone: .warning)
                 }
                 Toggle(tr("sched.public.toggle"), isOn: $ws.scheduledWebhooksPublic)
-                    .help(tr("sched.public.help"))
+                    .nookTip(tr("sched.public.help"))
                 if ws.scheduledWebhooksPublic {
                     SettingNote(tr("sched.public.readable"), tone: .warning)
                     if relay.state == .noRelay { SettingNote(tr("sched.public.noRelay"), tone: .warning) }
                 }
-                Button(tr("sched.settings.open")) { showScheduled = true }
             }
+            // Nook's own tasks (made in the chat or here) run without the switch for agent tasks, so the list is always there.
+            Button(tr("sched.settings.open")) { showScheduled = true }
         } header: {
             SettingsSectionTitle(tr("sched.title"), info: tr("sched.settings.footer"))
         }
@@ -502,8 +540,10 @@ struct WorkspaceSettingsSection: View {
     /// One project's own defaults: the project to show, then each row with what it inherits or sets itself.
     @ViewBuilder
     private var projects: some View {
-        let choices = ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
-                                                   overrides: ws.projectOverrides)
+        let listed = ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
+                                                  overrides: ws.projectOverrides)
+        // A project opened from the Agents list is shown even when it is not one of the recent ones.
+        let choices = scope.isEmpty || listed.contains(scope) ? listed : [scope] + listed
         let shown = choices.contains(scope) ? scope : (choices.first ?? "")
         Section {
             if shown.isEmpty {
@@ -511,14 +551,26 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        let name = (path as NSString).lastPathComponent
+                        let name = ws.projectDisplayName(path)
                         Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
-                            .tag(path).help(AgentPathFormat.tilde(path))
+                            .tag(path).help(AgentPathFormat.tilde(path))  // menu item: AppKit draws its tooltip
                     }
                 } label: {
                     SettingText("settings.projects.project")
                 }
+                ProjectNameRow(path: shown)
                 projectDefaults(shown)
+            }
+            LabeledContent {
+                Button(tr("inbox.project.add")) {
+                    if let path = ProjectFolderPanel.choose() {
+                        ws.addProject(path)
+                        scope = ProjectOverrides.normalize(path)
+                    }
+                }
+                .controlSize(.small)
+            } label: {
+                SettingText("settings.projects.add")
             }
         } header: {
             SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.scope.footer"))
@@ -589,8 +641,8 @@ struct WorkspaceSettingsSection: View {
                 HStack {
                     TextField("", text: Binding(
                         get: { overrideText(.branchPrefix, path) ?? resolved.branchPrefix },
-                        set: { ws.setOverride(.branchPrefix, $0, for: path) }), prompt: Text(resolved.branchPrefix))
-                        .textFieldStyle(.roundedBorder)
+                        set: { ws.setOverride(.branchPrefix, $0, for: path) }), prompt: Text(resolved.branchPrefix).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         // The row already has its label: a titled field in a form would show the prefix a second time.
                         .labelsHidden()
                         .accessibilityLabel(tr("settings.ws.branchPrefix"))
@@ -618,29 +670,33 @@ struct WorkspaceSettingsSection: View {
                 })) {
                 ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
             }
-            .help(tr("settings.ws.browserSignIns.help"))
+            .nookTip(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
-            TextField(tr("settings.ws.titleInstructions"), text: Binding(
-                get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
-                set: { ws.setOverride(.titleInstructions, $0, for: path) }),
-                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
-                .lineLimit(1...4)
+            SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
+                TextField(tr("settings.ws.titleInstructions"), text: Binding(
+                    get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
+                    set: { ws.setOverride(.titleInstructions, $0, for: path) }),
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                    .lineLimit(1...4)
+            }
         }
         inheritable(.agentInstructions, path) {
-            TextField(tr("settings.ws.agentInstructions"), text: Binding(
-                get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
-                set: { ws.setOverride(.agentInstructions, $0, for: path) }),
-                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
-                .lineLimit(2...8)
-                .help(tr("settings.ws.agentInstructions.help"))
+            SettingFieldRow(tr("settings.ws.agentInstructions"), detail: tr("settings.ws.agentInstructions.help"),
+                            stacked: true) {
+                TextField(tr("settings.ws.agentInstructions"), text: Binding(
+                    get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
+                    set: { ws.setOverride(.agentInstructions, $0, for: path) }),
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                    .lineLimit(2...8)
+            }
         }
         inheritable(.submodules, path) {
             Picker(tr("sc.submodules"), selection: Binding(
                 get: { resolved.submodules }, set: { ws.setOverride(.submodules, $0.rawValue, for: path) })) {
                 ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
             }
-            .help(tr("sc.submodules.help"))
+            .nookTip(tr("sc.submodules.help"))
         }
         inheritable(.autoPull, path) {
             Picker(tr("sc.autoPull"), selection: Binding(
@@ -648,7 +704,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("sc.autoPull.on")).tag(true)
                 Text(tr("sc.autoPull.off")).tag(false)
             }
-            .help(tr("sc.autoPull.help"))
+            .nookTip(tr("sc.autoPull.help"))
         }
         ProjectSourceControlRows(path: path)
     }
@@ -668,7 +724,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.scope.inherited"))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("settings.scope.inheritedHelp"))
+                    .nookTip(tr("settings.scope.inheritedHelp"))
             }
         }
     }
@@ -697,7 +753,8 @@ struct WorkspaceSettingsSection: View {
     }
 
     /// Nook's browser: the search engine of its address bar, whether an agent's links open there or in your own, its
-    /// sign-ins (kept, imported from another browser), and Nook as the Mac's default browser.
+    /// sign-ins (kept, imported from another browser), the pages it remembers, its saved passwords, its extensions, and
+    /// Nook as the Mac's default browser.
     @ViewBuilder
     private var browser: some View {
         Section(tr("settings.browser.title")) {
@@ -713,10 +770,15 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingText("settings.browser.signIns")
             }
-            .help(tr("settings.browser.signIns.detail"))
+            .nookTip(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
+            BrowserHistoryRow()
+            BrowserPasswordsRow()
+            TrustedCertificatesRow()
         }
+        BrowserExtensionsSettings()
         DefaultBrowserSection()
+        BrowserExtensionSection()
     }
 
     /// How a choice for browser sign-ins reads in a picker.
@@ -839,14 +901,18 @@ struct WorkspaceSettingsSection: View {
         Section(tr("settings.ws.behavior")) {
             Toggle(isOn: $ws.autoTitles) { SettingText("settings.ws.autoTitles") }
             // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
-            TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
-                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
-                .lineLimit(1...4)
+            SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
+                TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                    .lineLimit(1...4)
+            }
             // Every agent gets these at launch, in every project that does not set its own.
-            TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
-                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
-                .lineLimit(2...8)
-                .help(tr("settings.ws.agentInstructions.help"))
+            SettingFieldRow(tr("settings.ws.agentInstructions"), detail: tr("settings.ws.agentInstructions.help"),
+                            stacked: true) {
+                TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                    .lineLimit(2...8)
+            }
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             // A session can choose for itself in its menu.
             Picker(selection: $ws.timelineDetail) {
@@ -865,10 +931,10 @@ struct WorkspaceSettingsSection: View {
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
                 }
             }
-            .help(tr("settings.ws.maxWorking.help"))
+            .nookTip(tr("settings.ws.maxWorking.help"))
             .onChange(of: ws.maxWorkingSessions) { _, _ in app.workspace.startWaitingTurns() }
         }
-        // How the session list is laid out and confirming quit are on General its sidebar and confirmations.
+        // How the session list is laid out and confirming quit are on General.
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
@@ -898,8 +964,8 @@ struct WorkspaceSettingsSection: View {
             }
             LabeledContent {
                 HStack {
-                    TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix))
-                        .textFieldStyle(.roundedBorder)
+                    TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
                         .labelsHidden()
                         .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
@@ -917,15 +983,7 @@ struct WorkspaceSettingsSection: View {
     /// The session list keeps itself tidy: sessions settle and archive by themselves.
     private var sessionTidying: some View {
         Section {
-            Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
-            if inbox.autoSettle.enabled {
-                Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
-                Toggle(tr("settings.ws.autoSettleClosed"), isOn: $inbox.autoSettle.settleOnClosedPullRequest)
-                Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
-                        value: $inbox.autoSettle.inactivityDays, in: 1...30)
-                Toggle(tr("settings.ws.autoSettleKeepOpenPR"), isOn: $inbox.autoSettle.keepWithOpenPullRequest)
-                    .help(tr("settings.ws.autoSettleKeepOpenPR.help"))
-            }
+            AutoSettleRulesRows()
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)
                 Text(tr("settings.ws.days", 7)).tag(7)
@@ -933,7 +991,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
             Toggle(tr("settings.ws.buildLeftovers"), isOn: $ws.buildLeftoverCleanup)
-                .help(tr("settings.ws.buildLeftovers.help"))
+                .nookTip(tr("settings.ws.buildLeftovers.help"))
         } header: {
             SettingsSectionTitle(tr("ws.section.tidy"))
         }
@@ -953,7 +1011,7 @@ struct WorkspaceSettingsSection: View {
             Picker(tr("settings.ws.worktreeKeepWhen"), selection: $ws.worktreeKeepWhen) {
                 ForEach(WorktreeCleanup.KeepWhen.allCases) { Text(tr("settings.ws.keepWhen." + $0.rawValue)).tag($0) }
             }
-            .help(tr("settings.ws.worktreeKeepWhen.help"))
+            .nookTip(tr("settings.ws.worktreeKeepWhen.help"))
             WorktreeCleanupReportView(workspace: app.workspace)
         } header: {
             SettingsSectionTitle(tr("ws.worktrees.title"), info: tr("settings.ws.worktreeCleanup.footer"))
@@ -976,7 +1034,7 @@ struct WorkspaceSettingsSection: View {
         ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
             Button { link(provider) } label: { AgentName(provider.kind, name: provider.displayName) }
                 .controlSize(.small)
-                .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
+                .nookTip(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
         }
     }
 
@@ -1015,7 +1073,7 @@ struct WorkspaceSettingsSection: View {
 
     /// "All tools", or how many groups are on, for one agent.
     private func accessSummary(_ provider: RunProvider) -> String {
-        let on = BridgeCapability.allCases.filter { ws.bridgeAccess.isOn($0, agent: provider.rawValue) }.count
+        let on = BridgeCapability.allCases.count(where: { ws.bridgeAccess.isOn($0, agent: provider.rawValue) })
         let all = BridgeCapability.allCases.count
         return on == all ? tr("settings.bridge.access.all") : tr("settings.bridge.access.some", on, all)
     }
@@ -1055,7 +1113,7 @@ struct WatchedPullRequestsSection: View {
 
     private var full: Bool { watching.entries.count >= PullRequestWatchList.limit }
 
-    /// The header's button and the empty list's: none once the list is full.
+    /// The header's button: none once the list is full.
     private var addAction: (title: String, action: () -> Void)? {
         full ? nil : (tr("watch.add"), { adding = true })
     }
@@ -1074,7 +1132,7 @@ struct WatchedPullRequestsSection: View {
             SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
                           isOn: $watching.includeOrganizations)
             if watching.entries.isEmpty {
-                ConnectionListEmpty(title: tr("watch.empty.title"), detail: tr("watch.empty.detail"), add: addAction)
+                ConnectionListEmpty(title: tr("watch.empty.title"), detail: tr("watch.empty.detail"))
             }
             ForEach(watching.entries, id: \.self) { entry in
                 let repository = PullRequestWatchList.isRepository(entry)
@@ -1107,7 +1165,8 @@ struct WatchedPullRequestsSection: View {
         }
     }
 
-    /// Typing an organization or repository to watch, with Cancel and Watch on the right.
+    /// Watching an organization or repository in two steps: its name, then ready to add (nothing to check: it is
+    /// searched with every connected GitHub account, which may each see different ones). Cancel and Watch on the right.
     private struct AddSheet: View {
         @Environment(\.dismiss) private var dismiss
         @ObservedObject private var watching = PullRequestWatchSettings.shared
@@ -1120,23 +1179,22 @@ struct WatchedPullRequestsSection: View {
             SetupSheet(title: tr("watch.addTitle"), subtitle: tr("settings.pulls.footer"), width: 460) {
                 ServiceTile(domain: "github.com", fallback: "building.2", size: 48)
             } content: {
-                Text(tr("watch.name")).font(NookTheme.TextStyle.strong)
-                TextField("", text: $text, prompt: Text(tr("settings.pulls.placeholder")))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                    .onChange(of: text) { _, _ in invalid = false }
-                if invalid {
-                    SettingNote(tr("settings.pulls.invalid"), tone: .warning)
+                SetupStep(number: 1, title: tr("watch.name"), done: canAdd) {
+                    TextField(tr("watch.name"), text: $text, prompt: Text(tr("settings.pulls.placeholder")).foregroundStyle(NookTheme.textTertiary))
+                        .settingsField()
+                        .onSubmit(add)
+                        .onChange(of: text) { _, _ in invalid = false }
+                    if invalid {
+                        SettingNote(tr("settings.pulls.invalid"), tone: .warning)
+                    }
                 }
+                SetupCheckStep(number: 2, title: tr("setup.ready.title"), detail: tr("watch.ready.detail"), state: .idle)
             } footer: {
                 Spacer()
                 Button(tr("button.cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.large)
+                    .sheetCancelButton()
                 Button(tr("settings.pulls.addButton"), action: add)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .sheetPrimaryButton()
                     .disabled(!canAdd)
             }
         }
@@ -1187,7 +1245,7 @@ private struct DefaultBrowserSection: View {
             } label: {
                 SettingText("browserDefault.target")
             }
-            .help(tr("browserDefault.target.help"))
+            .nookTip(tr("browserDefault.target.help"))
             if let error { SettingNote(error, tone: .error) }
         }
         .onAppear {
@@ -1214,6 +1272,25 @@ private struct AgentLinkTargetPicker: View {
             ForEach(AgentLinkTarget.allCases) { Text($0.name).tag($0.rawValue) }
         } label: {
             SettingText("settings.ws.linkTarget")
+        }
+    }
+}
+
+/// The local servers whose own HTTPS certificate you chose to always trust in Nook's browser (`CertificateTrustStore`),
+/// with a way to forget them. Only shown once there is one.
+private struct TrustedCertificatesRow: View {
+    @State private var count = CertificateTrustStore.shared.remembered.count
+
+    var body: some View {
+        if count > 0 {
+            HStack {
+                SettingLabel(tr("settings.browser.trustedCerts"), detail: tr("settings.browser.trustedCerts.detail", count))
+                Spacer()
+                Button(tr("settings.browser.trustedCerts.forget")) {
+                    CertificateTrustStore.shared.forgetAll()
+                    count = 0
+                }
+            }
         }
     }
 }

@@ -22,6 +22,20 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(accounts[0].key("token"), "connector.github.token", "existing keys become the primary account")
     }
 
+    func testEveryChangeIsAnnouncedAlsoFromOtherThreads() {
+        let registry = AccountRegistry(defaults: defaults)
+        let lock = NSLock()
+        var changes = 0
+        registry.onChange = { lock.lock(); changes += 1; lock.unlock() }
+        DispatchQueue.concurrentPerform(iterations: 20) { index in
+            registry.add(service: "github", label: "Account \(index)")
+        }
+        registry.rename("github", to: "Main")
+        lock.lock(); defer { lock.unlock() }
+        XCTAssertEqual(changes, 21)
+        XCTAssertEqual(registry.accounts(for: "github").count, 21)
+    }
+
     func testAddedAccountsGetTheirOwnKeysAndSurviveRestart() {
         let registry = AccountRegistry(defaults: defaults)
         let work = registry.add(service: "github", label: "Werk")

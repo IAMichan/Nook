@@ -150,6 +150,17 @@ final class TextGeneratorTests: XCTestCase {
         XCTAssertFalse(long.contains("ab"))
     }
 
+    /// A long turn of tool calls and replies still reaches back to your messages, so a prompt is always written.
+    func testNextPromptMessagesReachBackToYourMessages() throws {
+        let replies = (1...300).flatMap { [RunEvent(kind: .tool, text: "Bash · ls", tool: "Bash"), RunEvent(kind: .assistant, text: "step \($0)")] }
+        let events = [RunEvent(kind: .user, text: "fix the build")] + replies
+        let messages = NextPromptSuggestion.messages(events)
+        XCTAssertEqual(messages.first, NextPromptSuggestion.Message(role: .user, text: "fix the build"))
+        XCTAssertEqual(messages.last?.text, "step 300")
+        XCTAssertEqual(messages.count, 41, "the last 40 replies and your message")
+        XCTAssertNotNil(NextPromptSuggestion.prompt(messages))
+    }
+
     func testNextPromptClean() {
         XCTAssertEqual(NextPromptSuggestion.clean(#"{"prompt":"  \"Add a test for it\"  "}"#), "Add a test for it")
         XCTAssertEqual(NextPromptSuggestion.clean("Prompt: run   the\tbuild\nsecond line"), "run the build")
@@ -183,5 +194,31 @@ final class TextGeneratorTests: XCTestCase {
         XCTAssertNil(ready.shown(for: UUID()), "a newer reply hides an old suggestion")
         XCTAssertNil(NextPromptState(turn: turn, phase: .writing).shown(for: turn))
         XCTAssertNil(NextPromptState(turn: turn, phase: .done).shown(for: turn))
+    }
+
+    /// When Claude Code stays silent, the fallback writes with the session's own model at low effort; any other agent's
+    /// model name means nothing to `claude`, so those get the small default.
+    func testTheFallbackWritesWithTheSessionsOwnClaudeModel() {
+        var run = WorkspaceRun(id: UUID(), title: "t", task: "t", provider: .claude, profileID: "p", model: "claude-opus-5-5",
+                               resolvedModel: nil, mode: .agent, permission: .acceptEdits, isolation: .folder, projectPath: "/w",
+                               workingDirectory: "/w", repoRoot: nil, branch: nil, baseBranch: nil, worktreePath: nil,
+                               instructions: "", status: .completed, statusDetail: nil, providerSessionID: nil, createdAt: Date(),
+                               updatedAt: Date(), archived: false, usage: RunUsage(), turnStartedAt: nil, reviewedAt: nil,
+                               lastChangeAt: nil, changedFiles: nil)
+        XCTAssertEqual(NextPromptSuggestion.agentModel(run), "claude-opus-5-5")
+        run.model = ""
+        run.resolvedModel = "claude-sonnet-5-5"
+        XCTAssertEqual(NextPromptSuggestion.agentModel(run), "claude-sonnet-5-5", "the default model as Claude Code reported it")
+        run.resolvedModel = nil
+        XCTAssertNil(NextPromptSuggestion.agentModel(run))
+        run.provider = .codex
+        run.model = "gpt-5.5"
+        XCTAssertNil(NextPromptSuggestion.agentModel(run))
+
+        let arguments = TextGeneration.claudeArguments(schema: NextPromptSuggestion.schema, model: "claude-opus-5-5",
+                                                       effort: NextPromptSuggestion.agentEffort)
+        guard let index = arguments.firstIndex(of: "--effort") else { return XCTFail("effort missing") }
+        XCTAssertEqual(arguments[index + 1], "low")
+        XCTAssertFalse(TextGeneration.claudeArguments(schema: NextPromptSuggestion.schema).contains("--effort"))
     }
 }

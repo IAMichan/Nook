@@ -7,11 +7,11 @@ import Foundation
 /// decision). Without Nook, or when you decline, the helper exits 1 and sudo fails as it would after a wrong password.
 ///
 /// The protocol is one JSON line each way:
-///   helper → Nook  `{"askpass": {"prompt": "…", "command": "…"}, "agent": "askpass", "cwd": "…", "env": {"NOOK_RUN_ID": "…", "NOOK_BRIDGE_TOKEN": "…"}}`
+///   helper → Nook  `{"askpass": {"prompt": "…", "command": "…"}, "agent": "askpass", "cwd": "…", "env": {"NOOK_RUN_ID": "…", "NOOK_BRIDGE_TOKEN": "…"}}` (the token read from the session's `NOOK_BRIDGE_TOKEN_FILE`)
 ///   Nook → helper  `{"ok": true, "value": "…"}` or `{"ok": false}`
 enum SudoAskpass {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 1
+    static let version = 2
     /// The agent id the helper names itself with; it never takes a session's rights.
     static let agentID = "askpass"
     /// How long the helper waits for your answer: as long as any bridge request does.
@@ -30,6 +30,35 @@ enum SudoAskpass {
         let command = (body["command"] as? String) ?? ""
         // Both come from the agent's side: kept short and on one line each, so they cannot fake the card's layout.
         return Request(prompt: oneLine(prompt, limit: 200), command: oneLine(command, limit: 2_000))
+    }
+
+    /// What the password is for, as the card says it: the command sudo will run as administrator, or none when the agent
+    /// only checks that sudo works (`sudo -v`, `sudo -A true`, `sudo -l`), which runs nothing itself.
+    struct Purpose: Equatable {
+        /// The command after `sudo` and its options, as it will run; empty for a check.
+        var command: String
+        var isCheck: Bool { command.isEmpty }
+    }
+
+    /// Reads the command line sudo was started with (`sudo -A -u root make install`) into what it will run.
+    static func purpose(of commandLine: String) -> Purpose {
+        var words = commandLine.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let first = words.first, (first as NSString).lastPathComponent == "sudo" else {
+            return Purpose(command: commandLine.trimmingCharacters(in: .whitespaces))
+        }
+        words.removeFirst()
+        // sudo's options before the command; these take a value as the next word.
+        let withValue: Set<String> = ["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "-R"]
+        var checkOnly = false
+        while let word = words.first, word.hasPrefix("-") {
+            words.removeFirst()
+            if word == "--" { break }
+            if ["-v", "--validate", "-l", "--list"].contains(word) { checkOnly = true }
+            if withValue.contains(word), !words.isEmpty { words.removeFirst() }
+        }
+        let rest = words.joined(separator: " ")
+        if checkOnly || ["", "true", "/usr/bin/true", "/bin/true", ":"].contains(rest) { return Purpose(command: "") }
+        return Purpose(command: rest)
     }
 
     /// Nook's answer to the helper: the value to give sudo, or nil to decline.
@@ -62,7 +91,7 @@ enum SudoAskpass {
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook sudo helper (version 1): sudo runs it for `sudo -A` (SUDO_ASKPASS). It asks Nook for the password over a local
+    # Nook sudo helper (version 2): sudo runs it for `sudo -A` (SUDO_ASKPASS). It asks Nook for the password over a local
     # Unix socket that only your user can open; Nook shows you the command and a password field. The password goes to sudo
     # on stdout and nowhere else. Without Nook, or when you decline, it exits 1. See docs/WORKSPACE-AGENTS.md.
     use strict;
@@ -80,6 +109,15 @@ enum SudoAskpass {
     my $cwd = getcwd();
     $cwd = (defined $ENV{PWD} ? $ENV{PWD} : '') unless defined $cwd;
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) } qw(NOOK_RUN_ID NOOK_BRIDGE_TOKEN);
+    # The session's token from its file (NOOK_BRIDGE_TOKEN_FILE), as the MCP server reads it.
+    if ($env{NOOK_BRIDGE_TOKEN} eq '' && defined $ENV{NOOK_BRIDGE_TOKEN_FILE} && open(my $fh, '<', $ENV{NOOK_BRIDGE_TOKEN_FILE})) {
+        local $/;
+        my $token = <$fh>;
+        close $fh;
+        $token = '' unless defined $token;
+        $token =~ s/\s+\z//;
+        $env{NOOK_BRIDGE_TOKEN} = $token;
+    }
     my $json = JSON::PP->new->utf8->canonical;
     unless (-S $sock_path) {
         print STDERR "Nook is not running, so it cannot ask for the password.\n";

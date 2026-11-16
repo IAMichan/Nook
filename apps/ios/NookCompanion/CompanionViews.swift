@@ -4,10 +4,16 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
+    /// Regular on an iPad with room (`CompanionSplitView`); compact on the phone and in a narrow iPad window.
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @StateObject private var router = TabRouter()
+    // Where each tab is, shared by both layouts: the first entry is what the iPad shows beside the list.
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
     @State private var inboxPath: [String] = []
+    @State private var pullPath: [PullRoute] = []
+    /// Counts ⌘F and ⌘K: the list on screen shows its search field and takes the keys (`searchFocusRequest`).
+    @State private var searchRequest = SearchRequest()
     /// A quick action asked for a new session: the Agents tab opens its New session sheet.
     @State private var newSessionRequested = false
     /// The launch screen (`LaunchView`) over everything while the app opens, until the Mac answers or a moment passes.
@@ -19,9 +25,16 @@ struct RootView: View {
             switch client.addingMac ? CompanionClient.Phase.unpaired : client.phase {
             case .unpaired, .pairing:
                 PairingView()
+            case .connected where sizeClass == .regular, .offline where sizeClass == .regular:
+                // An iPad with room: the list and what you opened side by side, on the same places as the tabs.
+                CompanionSplitView(sessionPath: $sessionPath, chatPath: $chatPath, inboxPath: $inboxPath, pullPath: $pullPath,
+                                   newSessionRequested: $newSessionRequested)
+                    .environmentObject(router)
+                    .environment(\.searchFocusRequest, searchRequest)
+                    .modifier(TabFallback(router: router, available: router.available(client)))
             case .connected, .offline:
-                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
-                // each with what waits there as a badge. Each tab keeps where it was.
+                // The Mac's three tabs along the bottom: Nook, Agents and Chats, each with what waits there as a
+                // badge, each keeping where it was. Pull requests and Settings open from the header.
                 let available = router.available(client)
                 TabView(selection: $router.tab) {
                     if available.contains(.nook) {
@@ -42,23 +55,45 @@ struct RootView: View {
                             .tag(CompanionTab.chats)
                             .badge(router.count(.chats, client))
                     }
-                    if available.contains(.pulls) {
-                        NavigationStack { PullRequestListView() }
-                            .tabItem { tabLabel(.pulls) }
-                            .tag(CompanionTab.pulls)
-                    }
-                    NavigationStack { SettingsView() }
-                        .tabItem { tabLabel(.settings) }
-                        .tag(CompanionTab.settings)
                 }
                 .environmentObject(router)
-                // A tab the Mac no longer allows falls back to Agents.
-                .onChange(of: available) { _, tabs in
-                    if !tabs.contains(router.tab) { router.tab = .agents }
+                .environment(\.searchFocusRequest, searchRequest)
+                .modifier(TabFallback(router: router, available: available))
+                .onChange(of: router.tab) { old, tab in
+                    // Pull requests and Settings are not along the bottom on the phone: they open as a sheet over the
+                    // tab you were in, as on the Mac they open from its footer.
+                    if !tab.isBarTab {
+                        router.sheet = tab
+                        router.tab = old.isBarTab ? old : .agents
+                    } else {
+                        Haptics.tap()
+                    }
                 }
-                .onChange(of: router.tab) { _, _ in Haptics.tap() }
+                .sheet(item: $router.sheet) { section in
+                    Group {
+                        switch section {
+                        case .pulls:
+                            NavigationStack(path: $pullPath) {
+                                PullRequestListView()
+                                    .toolbar {
+                                        ToolbarItem(placement: .cancellationAction) {
+                                            Button("Done") { router.sheet = nil }.foregroundStyle(Theme.paper)
+                                        }
+                                    }
+                            }
+                        default:
+                            NavigationStack { SettingsView() }
+                        }
+                    }
+                    .environmentObject(router)
+                    .environmentObject(client)
+                    .preferredColorScheme(.dark)
+                    .tint(Theme.paper)
+                }
             }
         }
+        // The hardware keyboard's shortcuts, in both layouts (`CompanionMenuCommands`).
+        .focusedSceneValue(\.companionCommands, commands)
         .tint(Theme.paper)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
@@ -73,9 +108,13 @@ struct RootView: View {
         #if DEBUG
         // `-NookDemoShow agents|chats|session|chat` with `-NookDemo`: opens that screen of the demo.
         .task {
+            // After the launch screen, so the tab's stack is in place to push onto.
+            try? await Task.sleep(for: .seconds(1.5))
             switch UserDefaults.standard.string(forKey: "NookDemoShow") {
             case "agents": router.tab = .agents
-            case "session": router.tab = .agents; sessionPath = ["s2"]
+            case "session", "files": router.tab = .agents; try? await Task.sleep(for: .seconds(1)); client.openSession = "s2"
+            case "pulls": router.tab = .pulls
+            case "settings": router.tab = .settings
             case "chats": router.tab = .chats
             case "chat": router.tab = .chats; inboxPath = ["w1"]
             default: break
@@ -115,6 +154,13 @@ struct RootView: View {
         }
         // The icon's quick actions follow the sessions: the ones that need you, then the newest.
         .onChange(of: client.sessions, initial: true) { _, sessions in AppShortcut.update(sessions: sessions) }
+        // "For you" on the Nook tab opens a chat.
+        .onChange(of: router.openChat) { _, id in
+            guard let id else { return }
+            router.tab = .chats
+            inboxPath = [id]
+            router.openChat = nil
+        }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
@@ -136,6 +182,35 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
+    /// What the keyboard shortcuts do here; nil before a Mac is paired.
+    private var commands: CompanionCommands? {
+        guard client.phase != .unpaired, client.phase != .pairing, !client.addingMac else { return nil }
+        return CompanionCommands(
+            newSession: {
+                router.tab = .agents
+                newSessionRequested = true
+            },
+            previousSession: { stepSession(by: -1) },
+            nextSession: { stepSession(by: 1) },
+            search: { searchRequest.ask() },
+            findSession: {
+                router.tab = .agents
+                // In the phone's layout an open session covers the list: back to it, where the search is.
+                if sizeClass != .regular { sessionPath = [] }
+                searchRequest.ask()
+            },
+            section: { router.tab = $0 },
+            sections: router.available(client).filter { $0 != .settings })
+    }
+
+    /// The session above or below the open one in the Agents list (what needs you, what works, the rest): ⌘[ and ⌘].
+    private func stepSession(by step: Int) {
+        let order = SessionListView.order(client.sessions).map(\.id)
+        guard let next = SessionStepping.target(order: order, current: sessionPath.first, step: step) else { return }
+        router.tab = .agents
+        sessionPath = [next]
+    }
+
     /// Holds the launch screen for at least a short moment, so it does not flash, and, with a paired Mac, until it
     /// answers or `LaunchView.maxWait` passes: then the tabs show what was kept, marked as not live.
     private func finishLaunch() async {
@@ -154,6 +229,18 @@ struct RootView: View {
             Text(tab.title)
         } icon: {
             Image(icon: tab.symbol(selected: router.tab == tab))
+        }
+    }
+}
+
+/// A tab the Mac no longer allows falls back to Agents, in the tabs and in the split view alike.
+private struct TabFallback: ViewModifier {
+    @ObservedObject var router: TabRouter
+    let available: [CompanionTab]
+
+    func body(content: Content) -> some View {
+        content.onChange(of: available) { _, tabs in
+            if !tabs.contains(router.tab) { router.tab = .agents }
         }
     }
 }
@@ -384,6 +471,8 @@ struct QRScanner: UIViewControllerRepresentable {
 /// you answer right there, then the sessions that work and the recent ones as quiet rows.
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
+    @EnvironmentObject private var router: TabRouter
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var path: [String]
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
@@ -396,17 +485,27 @@ struct SessionListView: View {
     @State private var project: String?
     /// Recent sessions beyond the first few, shown on request so the list stays short.
     @State private var showsAllRecent = false
+    /// ⌘F or ⌘K asked for search: the field shows also while the list is short.
+    @Environment(\.searchFocusRequest) private var searchRequest
     /// The Working and Recent shelves, open or folded; remembered.
     @AppStorage("nook.companion.shelf.working") private var workingOpen = true
     @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
     @AppStorage("nook.companion.shelf.older") private var olderOpen = true
+    /// The recent sessions under their project's folder, as the Mac's Agents list with "Group by project" on. Remembered.
+    @AppStorage("nook.companion.groupByProject") private var groupByProject = true
+    /// The project folders folded away (`ProjectGroups.encode`); remembered.
+    @AppStorage("nook.companion.foldedProjects") private var foldedProjectsStored = ""
+    /// The project folder the New session sheet opens on (a project's "+", "New session here"); nil for your defaults.
+    @State private var startFolder: String?
+    /// A Stop asked for from a row's menu, waiting for its confirmation.
+    @State private var stopping: SessionDigest?
 
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.sessions
             .filter { project == nil || $0.folder == project }
             .filter { session in
-                words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
+                words.isEmpty || [session.title, session.folder, session.projectKey, session.branch ?? "", session.agent]
                     .contains { $0.localizedCaseInsensitiveContains(words) }
             }
             .sorted { $0.updated > $1.updated }
@@ -420,9 +519,29 @@ struct SessionListView: View {
             .prefix(8)
             .map { $0 }
     }
-    private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
-    private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
-    private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
+
+    /// The list's three lanes (what needs you, what works, the rest), from one filter, sort and pass over the sessions:
+    /// worked out once per redraw and handed to the parts that read them.
+    private struct Lanes {
+        var all: [SessionDigest] = []
+        var needsYou: [SessionDigest] = []
+        var working: [SessionDigest] = []
+        var rest: [SessionDigest] = []
+    }
+
+    private var lanes: Lanes {
+        var lanes = Lanes(all: ordered)
+        for session in lanes.all {
+            if Self.needsYou(session) {
+                lanes.needsYou.append(session)
+            } else if session.attention == "working" {
+                lanes.working.append(session)
+            } else {
+                lanes.rest.append(session)
+            }
+        }
+        return lanes
+    }
     /// Settled sessions older than the live list, paged in from the Mac (`CompanionFeature.history`).
     private var older: [SessionDigest] { CompanionHistory.merge(live: client.sessions, older: client.olderSessions) }
     /// What the Mac found for the words beyond what the live list already shows.
@@ -443,11 +562,30 @@ struct SessionListView: View {
         !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
     }
 
+    /// The sessions in the order the list shows them: what needs you, what works, then the rest, each newest first.
+    static func order(_ sessions: [SessionDigest]) -> [SessionDigest] {
+        let newest = sessions.sorted { $0.updated > $1.updated }
+        let waiting = newest.filter(needsYou)
+        let working = newest.filter { !needsYou($0) && $0.attention == "working" }
+        return waiting + working + newest.filter { !needsYou($0) && $0.attention != "working" }
+    }
+
     var body: some View {
+        let lanes = self.lanes
+        let needsYou = lanes.needsYou
+        let working = lanes.working
+        let rest = lanes.rest
         // A list, not a stack, so a row swipes to its actions as in Mail.
         List {
             Group {
                 PanelHeader {
+                    // The pull requests, as in the Mac's Agents footer (on an iPad they are a section of the sidebar).
+                    if sizeClass != .regular, router.available(client).contains(.pulls) {
+                        NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) {
+                            Haptics.tap()
+                            router.sheet = .pulls
+                        }
+                    }
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
                     NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
@@ -459,16 +597,20 @@ struct SessionListView: View {
                         WaitingRow(symbol: "square.and.pencil", title: entry.request.launch?.task ?? "",
                                    detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
                     }
-                    // Finding one among many: words that match its title, folder, branch or agent.
-                    // With a Mac that searches its older sessions too, also while the list is short.
-                    if client.sessions.count > 8 || hasOlder {
-                        NookSearchField(prompt: "Search sessions", text: $query)
+                    // Finding one among many: words that match its title, folder, branch or agent (with a Mac that
+                    // searches its older sessions, those too). As on the Mac, the search and the view menu sit on one row
+                    // above the list, whatever its length.
+                    if !client.sessions.isEmpty || hasOlder || searchRequest.asked {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            NookSearchField(prompt: "Search sessions", text: $query)
+                            viewMenu
+                        }
                     }
                     // Narrowing to one project, once sessions work in more than one.
                     if projects.count > 1 {
                         ProjectChips(projects: projects, chosen: $project)
                     }
-                    if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
+                    if lanes.all.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
@@ -477,9 +619,13 @@ struct SessionListView: View {
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 group(String(localized: "Working"), working, open: $workingOpen)
-                group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
-                      open: $recentOpen)
-                if recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
+                if groupByProject {
+                    projectShelves(rest)
+                } else {
+                    group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
+                          open: $recentOpen)
+                }
+                if !groupByProject, recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
                     Button { withAnimation(Theme.reveal) { showsAllRecent = true } } label: {
                         Text("Show \(rest.count - Self.recentShown) more")
                             .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
@@ -488,7 +634,7 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
-                olderShelves
+                olderShelves(restCount: rest.count)
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     WSEmptyState(symbol: "square.stack.3d.up", title: String(localized: "No sessions"),
@@ -503,6 +649,21 @@ struct SessionListView: View {
         .environment(\.defaultMinListRowHeight, 0)
         .animation(Theme.reveal, value: client.sessions)
         .refreshable { await client.refresh() }
+        // What a new session can start with, asked once per connection: the New session sheet opens on it at once, and a
+        // project's "+" knows its folder.
+        .task(id: client.phase == .connected) {
+            // Only where the sheet could open (`QuickActionBlock`): a Mac that does not let this phone start sessions is
+            // never asked, so its refusal never shows up as a notice.
+            guard client.phase == .connected, QuickActionBlock.session(client) == nil else { return }
+            await client.loadLaunchOptions()
+        }
+        .confirmationDialog("Stop this session?", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }),
+                            titleVisibility: .visible, presenting: stopping) { session in
+            Button("Stop the session", role: .destructive) {
+                Haptics.warning()
+                Task { await client.stop(session) }
+            }
+        }
         // The words go to the Mac once you pause typing, for the sessions older than the live list.
         .task(id: query) {
             guard client.can(CompanionFeature.history) else { return }
@@ -512,8 +673,8 @@ struct SessionListView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
-        .sheet(isPresented: $composing, onDismiss: { link = nil }) {
-            NewSessionView(link: link) { id in path.append(id) }
+        .sheet(isPresented: $composing, onDismiss: { link = nil; startFolder = nil }) {
+            NewSessionView(link: link, startIn: startFolder) { id in path.append(id) }
         }
         .onChange(of: newSessionRequested, initial: true) { _, requested in
             guard requested else { return }
@@ -535,26 +696,137 @@ struct SessionListView: View {
         .screen()
     }
 
-    /// The New session sheet, or why this Mac does not let the phone start one.
-    private func newSession() {
+    /// The New session sheet, or why this Mac does not let the phone start one. `folder` opens it on that project.
+    private func newSession(in folder: String? = nil) {
         if let blocked = QuickActionBlock.session(client) {
             client.notice = blocked
         } else {
+            startFolder = folder
             composing = true
+        }
+    }
+
+    /// The folders a new session can start in, by name, when this phone may start one (`QuickActionBlock`).
+    private var startProjects: [(name: String, path: String)] {
+        guard QuickActionBlock.session(client) == nil, let projects = client.launchOptions?.projects else { return [] }
+        return projects.map { (name: $0.name, path: $0.path) }
+    }
+
+    /// The project folder on the Mac a new session for `folder` starts in, when the Mac offers it.
+    private func startPath(_ folder: String, in projects: [(name: String, path: String)]? = nil) -> String? {
+        let projects = projects ?? startProjects
+        guard !projects.isEmpty else { return nil }
+        return ProjectGroups.path(forFolder: folder, in: projects)
+    }
+
+    private var foldedProjects: Set<String> { ProjectGroups.decode(foldedProjectsStored) }
+
+    /// How a project's fold is stored: never empty, also for the sessions without a folder.
+    private static func foldKey(_ folder: String) -> String { "folder:" + folder }
+
+    /// How the list is laid out, the Mac's view menu beside the search: under each project, or by time.
+    private var viewMenu: some View {
+        Menu {
+            Toggle(isOn: Binding(get: { groupByProject }, set: { value in
+                Haptics.tap()
+                withAnimation(Theme.reveal) { groupByProject = value }
+            })) {
+                Label("Group by project", systemImage: "folder")
+            }
+        } label: {
+            Image(icon: "line.3.horizontal.decrease")
+                .font(Theme.textFont(14, .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: SharedMetrics.iconButton, height: SharedMetrics.iconButton)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text("View"))
+    }
+
+    /// The recent sessions under their project's folder, newest project first, as the Mac's list grouped by project:
+    /// the header folds it (remembered), and its "+" starts a new session right in that project.
+    @ViewBuilder
+    private func projectShelves(_ rest: [SessionDigest]) -> some View {
+        // Worked out once for every shelf, not per header.
+        let projects = startProjects
+        let folded = foldedProjects
+        ForEach(ProjectGroups.group(rest) { $0.projectKey }) { project in
+            let key = Self.foldKey(project.folder)
+            let open = !folded.contains(key) || !query.isEmpty
+            let name = project.folder.isEmpty ? String(localized: "No folder") : project.folder
+            HStack(spacing: 0) {
+                NookShelfHeader(title: name, count: project.items.count, open: open) {
+                    Haptics.tap()
+                    var next = foldedProjects
+                    if next.contains(key) { next.remove(key) } else { next.insert(key) }
+                    withAnimation(Theme.reveal) { foldedProjectsStored = ProjectGroups.encode(next) }
+                }
+                if let folder = startPath(project.folder, in: projects) {
+                    Button {
+                        Haptics.tap()
+                        newSession(in: folder)
+                    } label: {
+                        Image(icon: "plus")
+                            .font(Theme.textFont(13, .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: SharedMetrics.iconButton, height: SharedMetrics.iconButton)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(Text("New session in \(name)"))
+                }
+            }
+            .padding(.top, Theme.Spacing.md)
+            .padding(.horizontal, Theme.Spacing.md)
+            if open {
+                ForEach(project.items) { session in sessionRow(session) }
+            }
+        }
+    }
+
+    /// One session in a shelf: a tap opens it, a swipe snoozes or archives it, and a long press offers what you do
+    /// with it most from here (write to it, stop it, start another in its folder) beside the rest.
+    private func sessionRow(_ session: SessionDigest) -> some View {
+        Button { path.append(session.id) } label: { AgentRow(session: session).equatable().detailSelected(session.id) }
+            .buttonStyle(RowPress())
+            .padding(.horizontal, Theme.Spacing.md)
+            .contextMenu {
+                rowShortcuts(session)
+                SessionQuickActions(session: session)
+            }
+            .sessionSwipeActions(session)
+    }
+
+    @ViewBuilder
+    private func rowShortcuts(_ session: SessionDigest) -> some View {
+        if client.allows(.operate), session.canSend != false {
+            Button {
+                // The session opens with the keyboard in its composer.
+                client.focusComposer = session.id
+                path.append(session.id)
+            } label: { Label("Send a message", systemImage: "arrowshape.turn.up.left") }
+            // Stopping is for sessions Nook runs; one outside Nook ends instead (its swipe).
+            if ["working", "approval", "input"].contains(session.attention),
+               !(session.actions ?? []).contains(SessionAction.end.rawValue) {
+                Button(role: .destructive) { stopping = session } label: { Label("Stop", systemImage: "stop.circle") }
+            }
+        }
+        if let folder = startPath(session.projectKey) {
+            Button { newSession(in: folder) } label: { Label("New session here", systemImage: "square.and.pencil") }
         }
     }
 
     /// Below the recent sessions, as the Mac's settled sessions: the older ones, a page at a time, or while searching,
     /// the older ones that match.
     @ViewBuilder
-    private var olderShelves: some View {
+    private func olderShelves(restCount: Int) -> some View {
         if !query.isEmpty {
             group(String(localized: "Older matches"), foundOlder, open: $olderOpen)
             if olderOpen, client.foundCursor != nil, !foundOlder.isEmpty {
                 PageButton(title: String(localized: "More matches")) { await client.searchSessions(query, more: true) }
                     .padding(.horizontal, Theme.Spacing.xl)
             }
-        } else if hasOlder, recentOpen, showsAllRecent || rest.count <= Self.recentShown {
+        } else if hasOlder, groupByProject || (recentOpen && (showsAllRecent || restCount <= Self.recentShown)) {
             group(String(localized: "Older"), older, open: $olderOpen)
             if olderOpen || older.isEmpty, !client.olderEnded {
                 PageButton(title: older.isEmpty ? String(localized: "Show older sessions") : String(localized: "Show more older sessions")) {
@@ -581,7 +853,7 @@ struct SessionListView: View {
                     Button {
                         client.switchMac(to: mac.id)
                         path.append(session.id)
-                    } label: { AgentRow(session: session) }
+                    } label: { AgentRow(session: session).equatable() }
                         .buttonStyle(RowPress())
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.xxs / 2)
@@ -598,13 +870,7 @@ struct SessionListView: View {
             SectionHeader(title: title, count: total ?? sessions.count, expanded: open)
                 .padding(.horizontal, Theme.Spacing.md)
             if open.wrappedValue {
-                ForEach(sessions) { session in
-                    Button { path.append(session.id) } label: { AgentRow(session: session) }
-                        .buttonStyle(RowPress())
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .contextMenu { SessionQuickActions(session: session) }
-                        .sessionSwipeActions(session)
-                }
+                ForEach(sessions) { session in sessionRow(session) }
             }
         }
     }
@@ -775,6 +1041,10 @@ struct ConnectionLine: View {
                             Text("Last updated \(updated.formatted(date: .omitted, time: .shortened)) · not connected")
                                 .foregroundStyle(Theme.textTertiary)
                         }
+                        Text(client.writingWaits
+                             ? String(localized: "No new messages or updates come in, and what you send waits until your Mac is back.")
+                             : String(localized: "No new messages or updates come in until your Mac is connected."))
+                            .foregroundStyle(Theme.textTertiary)
                         if let hint = client.awayHint { Text(hint).foregroundStyle(Theme.textTertiary) }
                     }
                     Spacer(minLength: Theme.Spacing.md)
@@ -839,12 +1109,15 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, laid out as a card row, in Nook's colors: the agent's
+/// A session in a list, laid out as a card row in Nook's colors: the agent's
 /// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
 /// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
 /// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
-struct AgentRow: View {
+struct AgentRow: View, Equatable {
     let session: SessionDigest
+    /// The minute it was drawn in: with `.equatable()` a row is drawn again only when its session changed or its
+    /// "12 min" moved on, not each time the list redraws while an agent streams.
+    var minute = Int(Date().timeIntervalSince1970 / 60)
 
     /// Only what needs you is set in full strength; work in progress and the rest read quieter.
     private var receded: Bool { !SessionListView.needsYou(session) }
@@ -974,7 +1247,8 @@ struct SessionNotice: View {
         if let open {
             Button(action: open, label: label).buttonStyle(PressFade())
         } else {
-            NavigationLink(value: session.id, label: label).buttonStyle(PressFade())
+            let content = label()
+            OpenLink(value: session.id) { content }.buttonStyle(PressFade())
         }
     }
 

@@ -66,6 +66,14 @@ enum CommandRisk {
     // MARK: Assessment
 
     static func assess(_ command: String) -> CommandAssessment {
+        assess(command, depth: 0)
+    }
+
+    /// How deep a command inside a command (`sh -c '…'`, `xargs …`, `find -exec …`) is looked into. Deeper nesting is
+    /// reviewed as it is, never judged safe.
+    private static let maxDepth = 3
+
+    private static func assess(_ command: String, depth: Int) -> CommandAssessment {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return review("Runs a command on your Mac · please review") }
         let lower = trimmed.lowercased()
@@ -94,6 +102,14 @@ enum CommandRisk {
             }
             if let reason = dangerousUse(program, arguments, lowerArguments) {
                 return danger(reason)
+            }
+            // What a shell's `-c`, `xargs` or `find -exec` runs is a command of its own: judged the same way, so wrapping
+            // `rm -rf ~` in `bash -lc '…'` (the way Codex runs every command) does not hide it.
+            if depth < maxDepth {
+                for inner in innerCommands(program, arguments) {
+                    let assessment = assess(inner, depth: depth + 1)
+                    if assessment.level == .danger { return assessment }
+                }
             }
             if fileReaders.contains(program), touchesSecrets(lowerArguments) {
                 return danger("Reads or copies passwords, keys or login data")
@@ -214,13 +230,63 @@ enum CommandRisk {
             return arguments.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.contains("C") } || has(["--compile"])
         case "uniq":
             // `uniq input output`: a second name is a file it writes.
-            return arguments.filter { !$0.hasPrefix("-") }.count > 1
+            return arguments.count(where: { !$0.hasPrefix("-") }) > 1
         case "git":
             // `--output` writes the diff to a file; an external diff or text conversion runs a program from git's config.
             return has(["--output", "--ext-diff", "--textconv"]) || lower.contains { $0.hasPrefix("--output") }
         default:
             return false
         }
+    }
+
+    /// The commands a program runs on your behalf: the script of `sh -c` (also `-lc`, `-ec` …), and the program and
+    /// arguments `xargs`, `find -exec` / `-execdir` / `-ok` run (`{}` stands for the file names they pass).
+    static func innerCommands(_ program: String, _ arguments: [String]) -> [String] {
+        switch program {
+        case "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh":
+            // The script is the first word after the flags, when one of them holds `c`.
+            var index = arguments.startIndex
+            var runsScript = false
+            while index < arguments.endIndex, arguments[index].hasPrefix("-"), arguments[index] != "--" {
+                if !arguments[index].hasPrefix("--"), arguments[index].dropFirst().contains("c") { runsScript = true }
+                index += 1
+            }
+            if index < arguments.endIndex, arguments[index] == "--" { index += 1 }
+            return runsScript && index < arguments.endIndex ? [arguments[index]] : []
+        case "xargs":
+            // Flags that take a value as the next word; the program starts after the flags.
+            let valued: Set<String> = ["-I", "-J", "-L", "-n", "-P", "-s", "-E", "-d", "-a", "-R", "-S", "--max-args", "--max-procs",
+                                       "--delimiter", "--arg-file", "--replace", "--max-lines", "--eof", "--max-chars"]
+            var index = arguments.startIndex
+            while index < arguments.endIndex, arguments[index].hasPrefix("-") {
+                if valued.contains(arguments[index]) { index += 1 }
+                index += 1
+            }
+            guard index < arguments.endIndex else { return [] }
+            return [quoted(Array(arguments[index...]))]
+        case "find":
+            var commands: [String] = []
+            var index = arguments.startIndex
+            while index < arguments.endIndex {
+                defer { index += 1 }
+                guard ["-exec", "-execdir", "-ok", "-okdir"].contains(arguments[index].lowercased()) else { continue }
+                var words: [String] = []
+                index += 1
+                while index < arguments.endIndex, ![";", "+", "\\;"].contains(arguments[index]) {
+                    words.append(arguments[index])
+                    index += 1
+                }
+                if !words.isEmpty { commands.append(quoted(words)) }
+            }
+            return commands
+        default:
+            return []
+        }
+    }
+
+    /// Words back into one command line, each quoted so `split` gives the same words again.
+    private static func quoted(_ words: [String]) -> String {
+        words.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
     }
 
     private static func isSimpleReadOnly(_ segment: Segment) -> Bool {

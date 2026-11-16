@@ -61,9 +61,8 @@ struct PromptStash: Codable, Equatable, Sendable {
         var text: String
         var title: String { Self.title(of: text) }
         static func title(of text: String) -> String {
-            let first = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .newlines).first ?? ""
-            return String(first.trimmingCharacters(in: .whitespaces).prefix(40))
+            // The first line, cut after a whole word (`TextClip.title`).
+            TextClip.title(TextClip.firstLine(text, .max), 40)
         }
         enum CodingKeys: String, CodingKey { case text }
     }
@@ -115,9 +114,9 @@ enum StashAction: Equatable, Sendable {
     }
 }
 
-/// The new-session box keeps one draft per place a session can start: a folder on this Mac, or a machine over SSH. Like a
-/// draft thread, what you typed for one project waits there while you start something in another, and the list
-/// shows it as an unsent draft. The drafts live in `ComposerDrafts` under these keys, beside the running sessions' drafts.
+/// The new-session box keeps one draft per place a session can start: a folder on this Mac, or a machine over SSH. As a
+/// draft thread, what you typed for one project waits there while you start something in another, and the list shows
+/// it as an unsent draft. The drafts live in `ComposerDrafts` under these keys, beside the running sessions' drafts.
 enum NewSessionDraftKey {
     /// The one shared draft of Nook before drafts were kept per folder; read once and moved to the folder it opens on.
     static let legacy = "new-session"

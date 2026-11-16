@@ -2,7 +2,8 @@ import Foundation
 
 /// What Slack's Web API answers, turned into chats for the Chats tab: your direct messages and group messages with their
 /// newest messages. Foundation only, so it can be tested anywhere; `SlackBridge` makes the calls.
-/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history; and to write, after
+/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history, client.counts, and
+/// rtm.connect for the real-time line (`SlackLiveStream`); and to write, after
 /// your own click: chat.postMessage, chat.update, chat.delete, reactions.add, reactions.remove, conversations.mark,
 /// files.getUploadURLExternal and files.completeUploadExternal.
 enum SlackData {
@@ -112,7 +113,8 @@ enum SlackData {
             person.phone = ChatProfile.text(profile["phone"] as? String)
             if let name = ChatProfile.text(member["name"] as? String) { person.username = "@" + name }
             person.timeZone = ChatProfile.text(member["tz_label"] as? String) ?? ChatProfile.text(member["tz"] as? String)
-            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true { person.bot = true }
+            // Slackbot itself (USLACKBOT) is no `is_bot` user in the list, but it is a bot all the same.
+            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true || id == "USLACKBOT" { person.bot = true }
             people[id] = person
         }
         return people
@@ -140,11 +142,11 @@ enum SlackData {
             let isGroup = channel["is_mpim"] as? Bool == true
             guard isIM || isGroup else { return nil }
             // `updated` is in milliseconds; `created` in seconds.
-            let updated = (channel["updated"] as? Double).map { $0 > 10_000_000_000 ? $0 / 1000 : $0 }
-                ?? (channel["created"] as? Double) ?? 0
+            let updated = ChatJSON.number(channel["updated"]).map { $0 > 10_000_000_000 ? $0 / 1000 : $0 }
+                ?? ChatJSON.number(channel["created"]) ?? 0
             let about = ChatProfile.text((channel["topic"] as? [String: Any])?["value"] as? String)
                 ?? ChatProfile.text((channel["purpose"] as? [String: Any])?["value"] as? String)
-            let created = (channel["created"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
+            let created = ChatJSON.epoch(seconds: channel["created"])
             return Conversation(id: id, user: channel["user"] as? String, name: (channel["name"] as? String) ?? "",
                                 isGroup: isGroup, updated: updated, about: isGroup ? about : nil, created: isGroup ? created : nil,
                                 creator: isGroup ? (channel["creator"] as? String).flatMap { $0.isEmpty ? nil : $0 } : nil)
@@ -176,17 +178,14 @@ enum SlackData {
             if let subtype = message["subtype"] as? String, subtype == "channel_topic" || subtype == "channel_purpose" {
                 // A new topic or purpose: a line, with what it says now.
                 let user = (message["user"] as? String) ?? ""
-                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
-                                        date: Date(timeIntervalSince1970: seconds), fromMe: me != nil && user == me)
-                line.groupChange = ChatGroupChange(.described, by: user == me ? ChatMembership.me : users[user] ?? user,
-                                                   text: message[subtype == "channel_topic" ? "topic" : "purpose"] as? String)
-                return line
+                let change = ChatGroupChange(.described, by: user == me ? ChatMembership.me : users[user] ?? user,
+                                             text: message[subtype == "channel_topic" ? "topic" : "purpose"] as? String)
+                return .notice(id: messageID(conversation: conversation.id, ts: ts), date: Date(timeIntervalSince1970: seconds),
+                               groupChange: change, fromMe: me != nil && user == me)
             }
             if let change = membership(message, users: users, me: me) {
-                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
-                                        date: Date(timeIntervalSince1970: seconds), fromMe: change.by == ChatMembership.me)
-                line.membership = change
-                return line
+                return .notice(id: messageID(conversation: conversation.id, ts: ts), date: Date(timeIntervalSince1970: seconds),
+                               membership: change)
             }
             // What stays of a deleted message that had answers ("This message was deleted."): it shows as deleted.
             if message["subtype"] as? String == "tombstone" {
@@ -210,6 +209,11 @@ enum SlackData {
             // Who wrote it in a group, by their Slack id: their face beside the bubble goes by it.
             if !mine, conversation.isGroup, !user.isEmpty { inbox.senderID = user }
             if message["edited"] != nil { inbox.edited = true }
+            // Someone tagged you ("<@U1>" in the text as Slack sends it, before `clean` names it): a quiet group still
+            // tells you, as WhatsApp's groups do.
+            if !mine, conversation.isGroup {
+                inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs((message["text"] as? String) ?? ""), me: me)
+            }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
             inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
@@ -258,6 +262,35 @@ enum SlackData {
         return marks
     }
 
+    /// The newest message in each direct conversation as `client.counts` lists it (`latest`, a `ts` in seconds), by the
+    /// conversation's id: a conversation whose newest message is newer than the one Nook read last has news, and is read
+    /// before the others, however quiet it was before. Empty for an answer without it.
+    static func latest(_ json: [String: Any]) -> [String: Double] {
+        var latest: [String: Double] = [:]
+        for key in ["ims", "mpims"] {
+            for conversation in json[key] as? [[String: Any]] ?? [] {
+                guard let id = conversation["id"] as? String, let ts = ChatJSON.number(conversation["latest"]), ts > 0 else { continue }
+                latest[id] = ts
+            }
+        }
+        return latest
+    }
+
+    /// A time in whole microseconds, as Slack's `ts` counts: a message's time and a `ts` read back from it compare equal.
+    static func micros(_ seconds: Double) -> Int64 { Int64((seconds * 1_000_000).rounded()) }
+
+    /// The `ts` of messages of others read before (`known`: `ts`, whether yours) inside the stretch a page of the newest
+    /// messages covers (from its oldest message on) that the page lacks: deleted in Slack, which leaves a deleted message
+    /// out. A page that holds the conversation's whole stretch only; your own are never taken for deleted.
+    static func missing(_ known: [(ts: Double, mine: Bool)], listed: [[String: Any]]) -> [String] {
+        let page = listed.compactMap { ($0["ts"] as? String).flatMap(Double.init) }
+        guard let low = page.min(), let high = page.max() else { return [] }
+        return known.filter { message in
+            !message.mine && message.ts > low + 0.000_000_5 && message.ts < high - 0.000_000_5
+                && !page.contains { abs($0 - message.ts) < 0.000_000_5 }
+        }.map { String(format: "%.6f", $0.ts) }
+    }
+
     /// The newest message you read in one conversation (`last_read`), from `conversations.info`; nil without it.
     static func readMark(info json: [String: Any]) -> String? {
         guard let read = (json["channel"] as? [String: Any])?["last_read"] as? String, Double(read) != nil else { return nil }
@@ -268,7 +301,7 @@ enum SlackData {
     static func unread(_ messages: [(ts: Double, mine: Bool)], lastRead: String) -> Int {
         // Half a microsecond of slack: a `ts` that went through `Date` comes back a hair off.
         let read = (Double(lastRead) ?? 0) + 0.000_000_5
-        return messages.filter { !$0.mine && $0.ts > read }.count
+        return messages.count(where: { !$0.mine && $0.ts > read })
     }
 
     /// A message's id in Nook: its conversation and Slack's `ts` of it ("slack-D1-1700000010.000100").
@@ -342,12 +375,12 @@ enum SlackData {
     /// recorded in Slack is a voice message.
     static func file(_ file: [String: Any]) -> ChatMedia? {
         let name = (file["name"] as? String) ?? (file["title"] as? String)
-        let size = (file["size"] as? Int) ?? 0
+        let size = Int(ChatJSON.int64(file["size"]) ?? 0)
         // A file too large to fetch for a chat opens in Slack instead.
         let source = size > ChatMedia.maxBytes ? nil : (file["url_private_download"] as? String) ?? (file["url_private"] as? String)
         guard name != nil || source != nil else { return nil }
         let voice = (file["subtype"] as? String) == "slack_audio"
-        let milliseconds = (file["duration_ms"] as? Double) ?? (file["duration_ms"] as? Int).map(Double.init)
+        let milliseconds = ChatJSON.number(file["duration_ms"])
         return ChatMedia(kind: ChatMedia.kind(mimeType: file["mimetype"] as? String, name: name, voice: voice), name: name,
                          seconds: milliseconds.map { $0 / 1000 }, source: source)
     }
@@ -360,6 +393,21 @@ enum SlackData {
 
     /// Slack's markup as plain text: `<@U1>` → "@Anna", `<#C1|general>` → "#general", `<https://x|label>` → "label",
     /// `<https://x>` → the link, and the three escaped characters back.
+    /// The user ids a message's text tags, as Slack writes a tag: "<@U123>" or "<@U123|name>". "<!here>" and
+    /// "<!channel>" tag nobody in particular and are left out.
+    static func mentionedIDs(_ text: String) -> [String] {
+        var ids: [String] = []
+        var rest = Substring(text)
+        while let open = rest.range(of: "<@") {
+            guard let close = rest[open.upperBound...].firstIndex(of: ">") else { break }
+            let inner = rest[open.upperBound..<close]
+            let id = inner.prefix { $0 != "|" }
+            if !id.isEmpty { ids.append(String(id)) }
+            rest = rest[rest.index(after: close)...]
+        }
+        return ids
+    }
+
     static func clean(_ text: String, users: [String: String]) -> String {
         var result = ""
         var rest = Substring(text)
@@ -642,4 +690,89 @@ enum SlackData {
     🐶 dog
     🐱 cat
     """
+}
+
+// MARK: The live line
+
+extension SlackData {
+    /// What one frame of Slack's real-time line (the socket `rtm.connect` hands out, as Slack's own clients hold) says,
+    /// for the direct and group conversations Nook reads. What changed is read the usual way (`conversations.history`),
+    /// so only which conversation and which message are taken from it.
+    enum LiveEvent: Equatable {
+        /// The line is up.
+        case hello
+        /// Something new or changed in a conversation: a message (`user` wrote it), an edit, an answer in a thread or an
+        /// emoji on the message at `ts` (nil for a new message, which a read of the newer messages brings).
+        case changed(conversation: String, ts: String?, user: String?)
+        /// The message at `ts` was deleted for everyone, by whoever wrote it.
+        case deleted(conversation: String, ts: String)
+        /// `user` is typing in the conversation.
+        case typing(conversation: String, user: String)
+        /// The conversation was read up to `ts` (in Slack, on the phone, or from Nook).
+        case read(conversation: String, ts: String)
+        /// A conversation was opened, made or closed: the list of conversations is read again.
+        case listChanged
+        /// Slack is about to close the line (a server move): it is opened again.
+        case goodbye
+        case other
+    }
+
+    static func liveEvent(_ json: [String: Any]) -> LiveEvent {
+        let channel = (json["channel"] as? String) ?? ""
+        switch json["type"] as? String {
+        case "hello":
+            return .hello
+        case "goodbye":
+            return .goodbye
+        case "message":
+            guard !channel.isEmpty else { return .other }
+            switch json["subtype"] as? String {
+            case "message_deleted":
+                guard let ts = (json["deleted_ts"] as? String) ?? ((json["previous_message"] as? [String: Any])?["ts"] as? String)
+                else { return .other }
+                return .deleted(conversation: channel, ts: ts)
+            case "message_changed":
+                let message = json["message"] as? [String: Any] ?? [:]
+                // What stays of a deleted message with answers comes as a change to a tombstone.
+                if message["subtype"] as? String == "tombstone", let ts = message["ts"] as? String {
+                    return .deleted(conversation: channel, ts: ts)
+                }
+                return .changed(conversation: channel, ts: message["ts"] as? String, user: nil)
+            case "message_replied":
+                // A new answer in a thread: its first message (with its count of answers) changed.
+                let message = json["message"] as? [String: Any] ?? [:]
+                return .changed(conversation: channel, ts: (message["thread_ts"] as? String) ?? (message["ts"] as? String),
+                                user: nil)
+            default:
+                return .changed(conversation: channel, ts: nil, user: json["user"] as? String)
+            }
+        case "reaction_added", "reaction_removed":
+            let item = json["item"] as? [String: Any] ?? [:]
+            guard item["type"] as? String == "message", let conversation = item["channel"] as? String,
+                  let ts = item["ts"] as? String else { return .other }
+            return .changed(conversation: conversation, ts: ts, user: nil)
+        case "user_typing":
+            guard !channel.isEmpty, let user = json["user"] as? String, !user.isEmpty else { return .other }
+            return .typing(conversation: channel, user: user)
+        case "im_marked", "mpim_marked", "group_marked", "channel_marked":
+            guard !channel.isEmpty, let ts = json["ts"] as? String, Double(ts) != nil else { return .other }
+            return .read(conversation: channel, ts: ts)
+        case "im_created", "im_open", "im_close", "mpim_open", "mpim_close", "mpim_joined", "group_joined", "group_left":
+            return .listChanged
+        default:
+            return .other
+        }
+    }
+
+    /// The address of the real-time line in `rtm.connect`'s answer; nil when Slack does not hand one out (a pasted
+    /// token of a newer Slack app, which only reads through the Web API).
+    static func liveURL(_ json: [String: Any]) -> URL? {
+        guard (json["ok"] as? Bool) == true, let address = json["url"] as? String,
+              let url = URL(string: address), url.scheme == "wss" else { return nil }
+        return url
+    }
+
+    /// How long a typing word from Slack lasts: Slack repeats `user_typing` every few seconds while someone types and
+    /// says nothing when they stop.
+    static let typingHold: TimeInterval = 6
 }

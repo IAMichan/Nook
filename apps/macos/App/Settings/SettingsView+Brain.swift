@@ -56,32 +56,26 @@ extension SettingsView {
 
     var brainSection: some View {
         Group {
-            // What Nook thinks with right now, and the one way to check it works, said once at the top.
+            // What Nook thinks with right now, said once at the top; checking it works sits with the model below.
             Section {
                 StatusRow(title: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain"),
                           // Local or external is the choice right below; the row only explains itself while not ready.
                           detail: settings.brainReady ? "" : tr("settings.checklist.brain.notReady"),
                           state: settings.brainReady ? .done : .todo) {
-                    if testing { ProgressView().controlSize(.small) }
-                    Button(tr("button.testConnection")) { Task { await testConnection() } }
-                        .disabled(!settings.brainReady || testing)
-                }
-                if let result = testResult {
-                    SettingNote(result.message, tone: result.ok ? .success : .error)
-                        .textSelection(.enabled)
+                    EmptyView()
                 }
             }
 
-            // Step 1: on this Mac, or an online service. Each step below follows from the one before it.
+            // On this Mac, or an online service. Each section below follows from the one before it.
             Section {
                 Picker(tr("settings.brain.where"), selection: brainKind) {
                     Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
                     Text(tr("settings.brain.externalChoice")).tag(BrainKind.external)
                 }
                 .pickerStyle(.segmented)
-                .help(tr("settings.brain.localDefault"))
+                .nookTip(tr("settings.brain.localDefault"))
             } header: {
-                stepTitle(1, tr("brain.step.where"))
+                SettingsSectionTitle(tr("brain.step.where"))
             } footer: {
                 // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
                 if !settings.isLocalBrain {
@@ -90,11 +84,13 @@ extension SettingsView {
             }
 
             if settings.isLocalBrain {
-                // Step 2: the models Nook advises for this Mac; every other model and runtime is folded away.
+                // The models Nook advises for this Mac, and checking the one in use; every other model and runtime is
+                // folded away.
                 Section {
                     adviceRows
+                    connectionRow
                 } header: {
-                    stepTitle(2, tr("brain.step.model"))
+                    SettingsSectionTitle(tr("brain.step.model"))
                 }
                 // Every other model and runtime: a folded group under the advice, with the runtime in use beside it.
                 SettingsFold(tr("brain.local.all"), summary: settings.useLocal ? tr("settings.brain.builtIn") : settings.provider.title,
@@ -113,7 +109,7 @@ extension SettingsView {
                     }
                 }
             } else {
-                // Step 2: which service, step 3: signing in to it, step 4: its model.
+                // Which service, signing in to it, and its model.
                 Section {
                     Picker(selection: externalProvider) {
                         // Signing in with your own account comes first: your subscription needs no key at all.
@@ -132,19 +128,27 @@ extension SettingsView {
                     } label: {
                         SettingText("settings.brain.provider")
                     }
-                    .help(brainExplanation)
+                    .nookTip(brainExplanation)
                 } header: {
-                    stepTitle(2, tr("brain.step.service"))
+                    SettingsSectionTitle(tr("brain.step.service"))
                 }
                 Section {
                     providerSignIn
                 } header: {
-                    stepTitle(3, tr("brain.step.signIn"))
+                    SettingsSectionTitle(tr("brain.step.signIn"))
+                }
+                // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
+                if settings.provider == .openrouter {
+                    SettingsFold(tr("brain.fold.key", settings.provider.title),
+                                 summary: settings.hasKey(for: .openrouter) ? tr("settings.brain.keyInKeychain") : nil) {
+                        keyFields
+                    }
                 }
                 Section {
                     providerModel
+                    connectionRow
                 } header: {
-                    stepTitle(4, tr("brain.step.model"))
+                    SettingsSectionTitle(tr("brain.step.model"))
                 }
                 ScreenBrainSection(settings: settings)
             }
@@ -211,21 +215,17 @@ extension SettingsView {
     }
 
     var brainExplanation: String {
-        if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isSubscription {
+        // Claude's API and the subscriptions (Claude Code's among them) share the recommended explanation.
+        if settings.provider.textWire == .anthropicMessages || settings.provider.isSubscription {
             return tr("settings.brain.claudeExplanation")
         }
         return tr("settings.brain.otherExplanation")
     }
 
-    /// A section header with its step number: "2  Service".
-    func stepTitle(_ number: Int, _ title: String) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Text("\(number)")
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(NookTheme.onIris)
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(NookTheme.iris))
-            Text(title)
+    /// Checking that the model in use answers, with the model it checks.
+    var connectionRow: some View {
+        ConnectionTestRow(testing: testing, result: testResult, disabled: !settings.brainReady) {
+            Task { await testConnection() }
         }
     }
 
@@ -235,11 +235,8 @@ extension SettingsView {
             if settings.provider.isSubscription {
                 subscriptionStatus
             } else if settings.provider == .openrouter {
-                // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
+                // Pasting a key instead is its own fold on the page, below this section.
                 openRouterSignIn
-                DisclosureGroup(tr("settings.fold.keyInstead")) {
-                    keyFields.padding(.top, NookTheme.Spacing.xs)
-                }
             } else if settings.provider.needsKey {
                 keyFields
             } else if let url = settings.provider.keyURL {
@@ -258,21 +255,20 @@ extension SettingsView {
         let hasKey = settings.hasKey(for: .openrouter)
         HStack {
             if hasKey {
-                Label(tr("brain.openrouter.signedIn"), systemImage: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
+                Label(tr("brain.openrouter.signedIn"), icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
                 Spacer()
             }
             switch openRouter.phase {
             case .waiting:
-                ProgressView().controlSize(.small)
-                Text(tr("connect.waiting", "OpenRouter")).font(NookTheme.TextStyle.detail)
+                BusyLine(tr("connect.waiting", "OpenRouter"), tone: .inherited, font: NookTheme.TextStyle.detail)
                 Button(tr("button.cancel")) { openRouter.cancel() }
             default:
                 Button {
                     openRouter.signIn(settings: settings)
                 } label: {
-                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
+                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), icon: "person.badge.key.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(hasKey ? .regular : .large)
             }
         }
@@ -294,7 +290,7 @@ extension SettingsView {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
                 } label: {
-                    Label(tr("brain.key.get", settings.provider.title), systemImage: "arrow.up.forward.app")
+                    Label(tr("brain.key.get", settings.provider.title), icon: "arrow.up.forward.app")
                 }
                 .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
@@ -310,13 +306,13 @@ extension SettingsView {
             }
             HStack {
                 if settings.hasKey(for: settings.provider) {
-                    Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
+                    Label(settings.maskedKey(for: settings.provider).map { "\(tr("settings.brain.keyInKeychain")): \($0)" } ?? tr("settings.brain.keyInKeychain"), icon: "key.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", settings.provider.title), detail: tr("confirm.keychain.detail")) {
                         saveKey("")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                     .font(NookTheme.TextStyle.detail)
                 } else {
                     SettingNote(tr("settings.brain.keyStaysInKeychain"))
@@ -345,8 +341,8 @@ extension SettingsView {
                 if fetchingModels { ProgressView().controlSize(.small) }
                 if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
-            if settings.provider == .claude {
-                SettingNote(tr("settings.brain.haikuHint"))
+            if let hint = settings.provider.modelHintKey {
+                SettingNote(tr(hint))
             }
         }
     }
@@ -389,15 +385,12 @@ extension SettingsView {
             let path = SubscriptionBrain.executable(settings.provider)
             let account = app.history.profileAccounts[profile.id]
             if let progress, progress.isBusy {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(progress.text, font: NookTheme.TextStyle.detail)
             } else if path == nil {
                 StatusRow(title: tr("brain.sub.notInstalled", kind.name), detail: tr("brain.sub.notInstalledDetail", kind.name),
                           state: .warning) {
                     Button(tr("agents.installAndLogin")) { app.connect(profile) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                 }
                 HStack {
                     Button(tr("button.searchAgain")) {
@@ -418,7 +411,7 @@ extension SettingsView {
                     Button(tr("hub.signIn.button", accountBrand(settings.provider))) {
                         if !app.signInInBrowser(profile) { app.connect(profile) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
             }
         } else if let command = settings.provider.cliCommand {
@@ -442,7 +435,7 @@ extension SettingsView {
                     Button(signedIn ? tr("connect.reauthorize") : tr("hub.signIn.button", accountBrand(settings.provider))) {
                         signInWithCommand(settings.provider)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
             }
         }
@@ -463,7 +456,7 @@ extension SettingsView {
         fetchingModels = true
         defer { fetchingModels = false }
         do {
-            let key = settings.provider == .claude ? settings.apiKey : settings.providerKey
+            let key = settings.providerKey
             fetchedModels = try await settings.provider.listModels(key: key)
             if fetchedModels.isEmpty {
                 ToastCenter.shared.warning(tr("settings.brain.noModelsFound"))
@@ -549,32 +542,26 @@ extension SettingsView {
     /// Saves `keyDraft` for the chosen service, or removes its key when it is empty.
     func saveKey(_ keyDraft: String) {
         let provider = settings.provider
-        if provider == .claude {
-            if !keyDraft.isEmpty {
-                let saved = settings.saveAPIKey(keyDraft)
-                if !saved.looksValid {
-                    testResult = (false, tr("brain.key.invalid"))
-                }
-                if let keychainError = saved.keychainError {
-                    ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: keychainError)
-                } else {
-                    ToastCenter.shared.success(tr("settings.brain.keySaved"))
-                }
-            } else {
-                settings.saveAPIKey("")
-                testResult = nil
-                ToastCenter.shared.success(tr("settings.brain.keyRemoved"))
-                return
-            }
-        } else {
-            let error = settings.saveProviderKey(keyDraft, for: provider)
-            let removed = keyDraft.isEmpty
-            if let error {
+        // Every provider's key goes the same way (`ProviderKeys`); one that does not start like the provider's own keys
+        // gets a warning, and is still saved and tested.
+        let error = settings.saveProviderKey(keyDraft, for: provider)
+        let removed = ProviderKeys.clean(keyDraft).isEmpty
+        if let error {
+            // A key the Keychain refused still works until Nook quits (`AppSettings.saveProviderKey`).
+            if removed {
                 ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
             } else {
-                ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+                ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: error)
             }
-            if removed { return }
+        } else {
+            ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+        }
+        if removed {
+            testResult = nil
+            return
+        }
+        if let prefix = provider.keyPrefix, !ProviderKeys.looksValid(keyDraft, prefix: prefix) {
+            testResult = (false, tr("brain.key.invalid", provider.title, prefix))
         }
         Task { await testConnection() }
     }
@@ -591,7 +578,30 @@ extension SettingsView {
     }
 }
 
-/// The maker's mark of a model in a settings row, or a plain chip when we don't know the maker.
+/// "Connection": checking that a model answers, the button on the right and the outcome under it. The same row wherever
+/// Settings checks a model (Brain, Text generation).
+struct ConnectionTestRow: View {
+    let testing: Bool
+    let result: (ok: Bool, message: String)?
+    var disabled = false
+    let test: () -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            SettingLabel(tr("brain.connection.title"), hint: tr("brain.connection.hint"))
+            Spacer(minLength: NookTheme.Spacing.md)
+            if testing { ProgressView().controlSize(.small) }
+            Button(tr("button.testConnection"), action: test)
+                .controlSize(.small)
+                .disabled(disabled || testing)
+        }
+        if let result {
+            SettingNote(result.message, tone: result.ok ? .success : .error)
+                .textSelection(.enabled)
+        }
+    }
+}
+
 /// The key being typed, in a view of its own: a keystroke then redraws this row, not the whole of Settings.
 private struct KeyDraftField: View {
     var placeholder: String
@@ -613,6 +623,7 @@ private struct KeyDraftField: View {
     }
 }
 
+/// The maker's mark of a model in a settings row, or a plain chip when we don't know the maker.
 private struct ModelLogo: View {
     let name: String
 
@@ -634,7 +645,7 @@ struct NoImagesBadge: View {
         Image(icon: "eye.slash")
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
-            .help(tr("brain.noImages.help"))
+            .nookTip(tr("brain.noImages.help"))
             .accessibilityLabel(tr("brain.noImages.help"))
     }
 }
@@ -667,7 +678,7 @@ struct BrainModelChooser: View {
             .frame(height: min(CGFloat(max(shown.count, 1)) * 48, 320))
             NookDivider()
             Button(tr("button.fetchModels"), action: fetch)
-                .buttonStyle(.link)
+                .buttonStyle(.nookLink)
         }
         .padding(NookTheme.Spacing.lg)
         .frame(width: 340)

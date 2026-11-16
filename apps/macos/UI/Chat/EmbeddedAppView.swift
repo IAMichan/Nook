@@ -1,0 +1,569 @@
+import SwiftUI
+import WebKit
+
+/// The app open next to Nook's chat ("@open whatsapp"). Each web app keeps its own sign-in across launches in a store of
+/// its own; a Mac app is shown live by `MacAppMirror`. Nook only reads what it shows when you ask (a read tool), and
+/// types in it only to send a WhatsApp message you approved (`whatsAppWebTools`).
+@MainActor
+final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
+    static let shared = EmbeddedAppStore()
+
+    @Published private(set) var current: EmbeddedApp?
+    @Published private(set) var loading = false
+    /// Why the app did not load, if it did not.
+    @Published private(set) var lastError: String?
+    /// A web view per recently opened app: switching back is instant and WhatsApp stays connected meanwhile. Each one is a
+    /// WebContent process of a few hundred MB, so at most `maxViews` are kept, and hidden ones go after `hiddenSeconds` or
+    /// when macOS runs low on memory. Their sign-in stays in the app's data store, so opening one again only reloads it.
+    private var views: [String: WKWebView] = [:]
+    /// The apps in `views`, least recently opened first.
+    private var recent: [String] = []
+    private static let maxViews = 2
+    private static let hiddenSeconds: UInt64 = 10 * 60
+    private var releaseTask: Task<Void, Never>?
+
+    var webView: WKWebView? { current.flatMap { views[$0.id] } }
+    /// Per app, a page it made that shows in a side panel beside it (a Claude artifact). It shares the app's sign-in.
+    @Published private var sides: [String: WKWebView] = [:]
+    @Published private(set) var sideLoading = false
+    @Published private(set) var sideTitle = ""
+
+    /// The artifact open in an agent session's side panel: its own web view on the owning app's sign-in, so it needs
+    /// no app beside the chat.
+    @Published private(set) var artifactView: WKWebView?
+    @Published private(set) var artifactLoading = false
+    @Published private(set) var artifactTitle = ""
+    /// The window a page in the artifact tab opened (the "Continue with Google" sign-in): it must stay in Nook with the
+    /// page's own configuration, since the page that opened it waits for its answer.
+    @Published private(set) var artifactPopup: WKWebView?
+
+    /// The side panel of the open app, if it has one.
+    var side: WKWebView? { current.flatMap { sides[$0.id] } }
+
+    func open(_ app: EmbeddedApp) {
+        lastError = nil
+        if app.isMacApp {
+            current = app
+            loading = false
+            MacAppMirror.shared.open(app)
+            return
+        }
+        if current?.isMacApp == true { MacAppMirror.shared.close() }
+        releaseTask?.cancel()
+        watchMemoryPressure()
+        if views[app.id] == nil {
+            let view = makeWebView(for: app)
+            views[app.id] = view
+            view.load(URLRequest(url: app.url))
+        }
+        recent.removeAll { $0 == app.id }
+        recent.append(app.id)
+        while recent.count > Self.maxViews { release(recent[0]) }
+        current = app
+        loading = views[app.id]?.isLoading ?? false
+        if let side = sides[app.id] { refresh(side, loading: side.isLoading) }
+    }
+
+    /// Opens `url` (an artifact of the open web app) in the side panel beside it, signed in with the app.
+    func openBeside(_ url: URL) {
+        guard let app = current, !app.isMacApp, let main = views[app.id] else { return }
+        let view = sides[app.id] ?? makeSideView(configuration: main.configuration)
+        sides[app.id] = view
+        view.load(URLRequest(url: url))
+    }
+
+    /// Loads `url` (an artifact of `owner`) in the session's side panel, signed in with that app.
+    func openArtifact(_ url: URL, of owner: EmbeddedApp) {
+        let view: WKWebView
+        if let existing = artifactView {
+            view = existing
+        } else {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = Self.dataStore(for: owner)
+            configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+            // Without Apple's browser entitlement Google's sign-in would wait for a passkey on a phone nearby and stop
+            // there; hidden, it offers a password or a code. The sign-in window it opens shares this script.
+            if !BrowserStore.hasPasskeyEntitlement {
+                configuration.userContentController.addUserScript(
+                    WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            }
+            view = makeSideView(configuration: configuration)
+            artifactView = view
+        }
+        artifactTitle = ""
+        view.load(URLRequest(url: url))
+    }
+
+    /// Closes the window the artifact's page opened, for instance a sign-in you gave up on.
+    func closeArtifactPopup() {
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
+    }
+
+    /// Puts the session's artifact away.
+    func closeArtifact() {
+        artifactView?.stopLoading()
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
+        artifactView = nil
+        artifactLoading = false
+        artifactTitle = ""
+    }
+
+    /// The session's artifact in the user's own browser.
+    func openArtifactInDefaultBrowser() {
+        guard let url = artifactView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        DefaultBrowser.openOutside(url)
+    }
+
+    /// Puts the side panel away; the app stays open.
+    func closeSide() {
+        guard let app = current, let view = sides[app.id] else { return }
+        view.stopLoading()
+        sides[app.id] = nil
+        sideLoading = false
+        sideTitle = ""
+    }
+
+    /// The side panel's page in the user's own browser.
+    func openSideInDefaultBrowser() {
+        guard let url = side?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        DefaultBrowser.openOutside(url)
+    }
+
+    /// Hides the app; it stays signed in and keeps running for `hiddenSeconds`, so opening it again soon is instant.
+    func close() {
+        if current?.isMacApp == true { MacAppMirror.shared.close() }
+        current = nil
+        loading = false
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hiddenSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.releaseHidden()
+        }
+    }
+
+    /// Lets go of the web views of every app not open right now (and their side panels); their sign-in stays.
+    private func releaseHidden() {
+        for id in Array(views.keys) where id != current?.id { release(id) }
+    }
+
+    private func release(_ id: String) {
+        recent.removeAll { $0 == id }
+        views[id]?.stopLoading()
+        views[id]?.removeFromSuperview()
+        views[id] = nil
+        sides[id]?.stopLoading()
+        sides[id]?.removeFromSuperview()
+        sides[id] = nil
+    }
+
+    private func watchMemoryPressure() {
+        MemoryPressure.shared.register("embeddedApps") { [weak self] _ in MainActor.assumeIsolated { self?.releaseHidden() } }
+    }
+
+    func reload() {
+        if current?.isMacApp == true { return MacAppMirror.shared.restart() }
+        guard let webView = webView else { return }
+        if webView.url == nil, let app = current { webView.load(URLRequest(url: app.url)) } else { webView.reload() }
+    }
+
+    /// Signs out of the open app on this Mac: its web view and everything it stored (cookies, the WhatsApp link) go.
+    func forget() async {
+        guard let app = current else { return }
+        close()
+        guard !app.isMacApp else { return }
+        // The store can only go once no web view uses it any more.
+        release(app.id)
+        Self.stores[app.id] = nil
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        try? await WKWebsiteDataStore.remove(forIdentifier: app.storeID)
+    }
+
+    /// Every web app's own cookies and storage, one store per app for all its web views beside the chat.
+    private static var stores: [String: WKWebsiteDataStore] = [:]
+
+    static func dataStore(for app: EmbeddedApp) -> WKWebsiteDataStore {
+        if let store = stores[app.id] { return store }
+        let store = WKWebsiteDataStore(forIdentifier: app.storeID)
+        stores[app.id] = store
+        return store
+    }
+
+    /// The open app in the user's own browser.
+    func openInDefaultBrowser() {
+        if current?.isMacApp == true { return MacAppMirror.shared.bringToFront() }
+        guard let url = webView?.url ?? current?.url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// What the open app shows now, as text: for Nook to read when the user asks about it.
+    func pageText() async throws -> (title: String, url: String, text: String) {
+        if current?.isMacApp == true { return try await MacAppMirror.shared.text() }
+        guard let app = current, let webView = webView else { throw NookError(tr("embedded.nothingOpen")) }
+        let result = try await webView.evaluateJavaScript("document.body ? document.body.innerText : ''")
+        var text = ((result as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // The artifact beside it is part of what you look at, so "what does this page do?" can be about it.
+        if let side, let shown = try? await side.evaluateJavaScript("document.body ? document.body.innerText : ''") as? String {
+            let title = (side.title?.isEmpty == false ? side.title : side.url?.absoluteString) ?? ""
+            text = String(text.prefix(9_000)) + "\n\n## Beside it: \(title)\n\n" + shown.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return (app.title, webView.url?.absoluteString ?? app.url.absoluteString, String(text.prefix(14_000)))
+    }
+
+    private func makeWebView(for app: EmbeddedApp) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = Self.dataStore(for: app)
+        // Present as Safari: WhatsApp Web and others refuse browsers they do not know.
+        configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 700), configuration: configuration)
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+        return view
+    }
+
+    /// A web view for the side panel, on the app's own configuration: the same sign-in and storage as the app.
+    private func makeSideView(configuration: WKWebViewConfiguration) -> WKWebView {
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 700), configuration: configuration)
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+        return view
+    }
+
+    // MARK: Tools
+
+    /// Reading the app beside the chat, and sending through WhatsApp Web there. Static, so offering it to the model does
+    /// not start WebKit.
+    static var tools: [ToolSpec] {
+        whatsAppWebTools + [
+            ToolSpec(
+                name: "read_open_app",
+                description: "Reads what the app open next to the chat shows right now (opened with @open, for example WhatsApp Web or a Mac app such as WhatsApp): its visible text. Use it when the user asks about what is in that app (\"what did Arjan write?\", \"summarize this chat\").",
+                schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
+                kind: .read,
+                summarize: { _ in "Read the open app" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    let page = try await EmbeddedAppStore.shared.pageText()
+                    return "## \(page.title) (open next to the chat)\n\n\(page.text)\n\n" + ReferenceParser.line(title: page.title, url: page.url, detail: "Nook")
+                }
+            )
+        ]
+    }
+
+    // MARK: WKNavigationDelegate, WKUIDelegate
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { refresh(webView, loading: true) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { refresh(webView, loading: false) }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { refresh(webView, loading: true) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if webView === self.webView { lastError = error.localizedDescription }
+        refresh(webView, loading: false)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if webView === self.webView { lastError = error.localizedDescription }
+        refresh(webView, loading: false)
+    }
+
+    /// Web pages open inside; mail, phone and app links go to the system, other schemes are refused.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        guard let url = navigationAction.request.url else { return .cancel }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
+        if ["mailto", "tel", "whatsapp"].contains(scheme) { NSWorkspace.shared.open(url) }
+        return .cancel
+    }
+
+    /// A link in the app that wants a new window: an artifact the app made, or another page of its own site, opens in
+    /// the side panel beside it (replacing what was there); a shared link to another site opens in the user's own browser,
+    /// and so does one from the side panel itself.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        let url = navigationAction.request.url
+        if let id = views.first(where: { $0.value === webView })?.key, let app = current, app.id == id,
+           EmbeddedArtifact.opensBeside(url, from: app) {
+            sides[id]?.stopLoading()
+            sides[id]?.removeFromSuperview()
+            // WebKit loads the request in the view returned, which must use the configuration it hands over.
+            let view = makeSideView(configuration: configuration)
+            sides[id] = view
+            sideTitle = ""
+            return view
+        }
+        if webView === artifactView || webView === artifactPopup {
+            artifactPopup?.stopLoading()
+            // WebKit loads the request in the view returned, which must use the configuration it hands over.
+            let view = makeSideView(configuration: configuration)
+            artifactPopup = view
+            return view
+        }
+        if let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            NSWorkspace.shared.open(url)
+        }
+        return nil
+    }
+
+    /// The page in the side panel closed itself (`window.close()`).
+    func webViewDidClose(_ webView: WKWebView) {
+        if webView === artifactPopup {
+            artifactPopup = nil
+            return
+        }
+        guard let id = sides.first(where: { $0.value === webView })?.key else { return }
+        sides[id] = nil
+        if current?.id == id {
+            sideLoading = false
+            sideTitle = ""
+        }
+    }
+
+    private func refresh(_ webView: WKWebView, loading: Bool) {
+        if webView === artifactView {
+            artifactLoading = loading
+            artifactTitle = webView.title ?? ""
+        }
+        if webView === side {
+            sideLoading = loading
+            sideTitle = webView.title ?? ""
+        }
+        guard webView === self.webView else { return }
+        self.loading = loading
+    }
+}
+
+/// The pane beside the chat: the app's name and a few buttons on top, the app itself below.
+struct EmbeddedAppPane: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var store = EmbeddedAppStore.shared
+    @State private var asking = false
+    /// The site whose sign-in waits for a yes before Nook forgets it.
+    @State private var forgetting: EmbeddedApp?
+    /// How wide an artifact's side panel is beside the app: drag the line between them, double-click to reset. Remembered.
+    @AppStorage("nook.embeddedApp.artifactWidth") private var artifactWidth = PanelLayout.artifact
+    @State private var paneWidth: Double = 0
+
+    var body: some View {
+        if let current = store.current, current.isMacApp || store.webView != nil {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(icon: current.symbol)
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Text(current.title)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    if store.loading { ProgressView().controlSize(.small) }
+                    modeMenu(current)
+                    Spacer(minLength: 8)
+                    NookIconButton(systemName: "sparkles", label: tr("embedded.ask"), size: 28) { askAboutApp() }
+                        .disabled(asking)
+                    NookIconButton(systemName: "arrow.clockwise", label: tr("embedded.reload"), size: 28) { store.reload() }
+                    let external = current.isMacApp ? tr("embedded.mac.bringToFront") : tr("browser.openExternal")
+                    NookIconButton(systemName: "arrow.up.forward.app", label: external, size: 28) { store.openInDefaultBrowser() }
+                    // A Mac app keeps its own sign-in; there is nothing of it in Nook to forget.
+                    if !current.isMacApp {
+                        Menu {
+                            Button(tr("embedded.forget", current.title), role: .destructive) { forgetting = current }
+                        } label: {
+                            Image(icon: "ellipsis")
+                                .font(NookTheme.font(12, .semibold))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .composerMenu()
+                        .nookTip(tr("a11y.more"))
+                        .accessibilityLabel(tr("a11y.more"))
+                        .confirmDelete($forgetting, question: { tr("confirm.logout", $0.title) }, detail: tr("confirm.forgetSite.detail"),
+                                       confirmTitle: tr("accounts.logout")) { confirmed in
+                            // Only the app that was asked about: another may have opened while the dialog was up.
+                            guard store.current?.id == confirmed.id else { return }
+                            Task { await app.closeEmbeddedApp(forget: true) }
+                        }
+                    }
+                    NookIconButton(systemName: "xmark", label: tr("embedded.close"), size: 28) { Task { await app.closeEmbeddedApp() } }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 38)
+                NookDivider()
+                if current.isMacApp {
+                    MacAppMirrorPane(app: current)
+                } else if let webView = store.webView {
+                    HStack(spacing: 0) {
+                        ZStack {
+                            WebViewHost(webView: webView)
+                            if let error = store.lastError, !store.loading {
+                                WSEmptyState(symbol: "wifi.exclamationmark", title: tr("embedded.failed", current.title), message: error,
+                                             action: (tr("embedded.reload"), { store.reload() }))
+                                    .background(NookTheme.field)
+                            }
+                        }
+                        if let side = store.side {
+                            EmbeddedArtifactPanel(webView: side)
+                                .sidePanel(.trailing, width: $artifactWidth, defaultWidth: PanelLayout.artifact,
+                                           available: paneWidth, rest: PanelLayout.minimumPanel + PanelSplit.handle)
+                        }
+                    }
+                    .sidePanelsOpenAtOnce(store.side != nil)
+                    .onLayoutWidthChange { paneWidth = $0 }
+                }
+            }
+            .background(NookTheme.field)
+            .roundedClip(NookTheme.Radius.sheet)
+        }
+    }
+
+    /// How the app is open, and the other ways it can open (the web version, its own window), for an app that has more
+    /// than one. The choice is remembered for next time.
+    @ViewBuilder
+    private func modeMenu(_ current: EmbeddedApp) -> some View {
+        let ways = EmbeddedAppCatalog.modes(for: current)
+        if ways.count > 1 {
+            let now: EmbeddedAppMode = current.isMacApp ? .mirror : .web
+            Menu {
+                ForEach(ways, id: \.self) { way in
+                    Button((way == now ? "✓ " : "") + tr("embedded.mode." + way.rawValue)) { app.switchEmbeddedApp(to: way) }
+                        .disabled(way == now)
+                }
+            } label: {
+                ComposerPill(text: tr("embedded.mode.short." + now.rawValue))
+            }
+            .composerMenu()
+            .nookTip(tr("embedded.mode.help"))
+        }
+    }
+
+    /// Hands what the app shows to the chat as an attachment, like dropping a file, so the next question is about it.
+    private func askAboutApp() {
+        asking = true
+        Task {
+            defer { asking = false }
+            do {
+                let page = try await store.pageText()
+                app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
+            } catch {
+                app.viewModel.present(app.errorCard(error.localizedDescription))
+            }
+        }
+    }
+}
+
+/// An artifact the open app made (a Claude artifact, a ChatGPT canvas), beside the app: its title and a few buttons on
+/// top, the page below. It shares the app's sign-in, so a private artifact opens too.
+private struct EmbeddedArtifactPanel: View {
+    let webView: WKWebView
+    @ObservedObject private var store = EmbeddedAppStore.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // The same header as every side panel: what it shows, then open it in the browser and the cross.
+            SidePanelHeader(closeHelp: tr("embedded.artifact.close"), close: { store.closeSide() }) {
+                SidePanelTitle(symbol: "square.on.square", title: store.sideTitle.isEmpty ? tr("embedded.artifact") : store.sideTitle)
+                if store.sideLoading { ProgressView().controlSize(.small) }
+            } actions: {
+                ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal")) { store.openSideInDefaultBrowser() }
+            }
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            NookDivider()
+            WebViewHost(webView: webView)
+        }
+        .background(NookTheme.field)
+    }
+}
+
+/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the bar every tab starts with
+/// (`SidePanelToolbar`) says which artifact it is, shows while it loads, and opens it in the user's own browser; under it
+/// the page fills the tab with no frame of its own, so it reads as part of Nook. A sign-in window the page opens covers
+/// the page the same way. It shares the sign-in of the app that made it.
+struct SessionArtifactPanel: View {
+    @ObservedObject private var store = EmbeddedAppStore.shared
+
+    var body: some View {
+        if let webView = store.artifactView {
+            VStack(spacing: 0) {
+                SidePanelToolbar {
+                    Image(icon: SessionTool.artifact.symbol)
+                        .font(NookTheme.font(10, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    let title = store.artifactTitle.isEmpty ? tr("embedded.artifact") : store.artifactTitle
+                    Text(title)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .nookTip(title)
+                    if store.artifactLoading { ProgressView().controlSize(.small) }
+                    Spacer(minLength: NookTheme.Spacing.md)
+                    ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }
+                }
+                ZStack(alignment: .topTrailing) {
+                    WebViewHost(webView: webView)
+                    if let popup = store.artifactPopup {
+                        WebViewHost(webView: popup)
+                        cornerButton("xmark", help: tr("embedded.artifact.close")) { store.closeArtifactPopup() }
+                    }
+                }
+                .background(NookTheme.field)
+            }
+        } else {
+            WSEmptyState(symbol: "square.on.square", title: tr("agents.tool.artifact.emptyTitle"),
+                         message: tr("agents.tool.artifact.emptyMessage"))
+        }
+    }
+
+    private func cornerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        NookIconButton(systemName: symbol, label: help, size: 26, action: action)
+            .padding(NookTheme.Spacing.xs)
+    }
+}
+
+/// The line between the chat and the app, or beside any panel that can be resized: drag it to give one side more room
+/// than the other, double-click to reset. With `divider` it stands in for a thin dividing line and only shows its grip
+/// while you point at it.
+struct EmbeddedSplitHandle: View {
+    var divider = false
+    var help = "embedded.resize"
+    /// The horizontal distance dragged since the drag began.
+    let onDrag: (Double) -> Void
+    let onEnd: () -> Void
+    let onReset: () -> Void
+    @State private var hovering = false
+    @State private var dragging = false
+    @Environment(\.lineBleed) private var bleed
+
+    var body: some View {
+        ZStack {
+            // A column's line runs from the window's top to its bottom, past the window's margins.
+            if divider { NookDivider(vertical: true).bleedsVertically(bleed) }
+            Capsule()
+                .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
+                .frame(width: 4, height: 36)
+                .opacity(!divider || hovering || dragging ? 1 : 0)
+        }
+        .frame(width: EmbeddedSplit.handle)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        // The system's split cursor: pushing NSCursor by hand gets reset by the panel's cursor rects, so the arrow won.
+        .pointerStyle(.columnResize)
+        .onHover { hovering = $0 }
+        .gesture(
+            // Global coordinates: the line itself moves while you drag it.
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    if !dragging { dragging = true }
+                    onDrag(Double(value.translation.width))
+                }
+                .onEnded { _ in
+                    dragging = false
+                    onEnd()
+                }
+        )
+        .onTapGesture(count: 2) { onReset() }
+        .nookTip(tr(help))
+        .accessibilityLabel(tr(help))
+    }
+}

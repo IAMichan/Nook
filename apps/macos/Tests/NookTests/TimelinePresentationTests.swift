@@ -73,6 +73,30 @@ final class TimelinePresentationTests: XCTestCase {
     }
 
     /// Files the agent handed you (SendUserFile) stay in sight next to the answer instead of folding into the work.
+    /// News about a watched pull request after a finished turn starts a turn of its own: the answer to your message stays
+    /// in sight next to the reply to the news, instead of folding under the work of one long turn.
+    func testPullRequestNewsAfterAFinishedTurnStartsATurnOfItsOwn() throws {
+        let news = event(.system, "Nieuws over de pull request:\nCodeRabbit commented", tool: "prwatch", at: 300)
+        let events = finishedTurn() + [
+            news,
+            event(.tool, "Bash · gh pr view", tool: "Bash", state: .done, at: 305),
+            event(.tool, "Bash · gh pr checks", tool: "Bash", state: .done, at: 310),
+            event(.assistant, "Er hoeft niets aangepast te worden.", state: .done, at: 320),
+            event(.result, "20s", state: .done, at: 321)
+        ]
+        XCTAssertEqual(TimelinePresentation.split(events).count, 2)
+        XCTAssertEqual(TimelinePresentation.lastTurn(events).first?.id, news.id)
+        let shown = TimelinePresentation.blocks(events, active: false).compactMap { block -> String? in
+            if case .event(let event) = block, event.kind == .assistant { return event.text }
+            return nil
+        }
+        XCTAssertEqual(shown, ["Opgelost.", "Er hoeft niets aangepast te worden."])
+
+        // News that comes while the turn still runs stays in it.
+        let running = Array(finishedTurn().dropLast(2)) + [news]
+        XCTAssertEqual(TimelinePresentation.split(running).count, 1)
+    }
+
     func testSharedFilesStayOutOfTheFold() throws {
         var turn = finishedTurn()
         let shared = event(.tool, "SendUserFile", tool: "SendUserFile",
@@ -175,6 +199,35 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(live.thought, "Kijken")
     }
 
+    /// A subagent in the background keeps its row while the agent runs commands next to it: hiding it whenever nothing
+    /// else ran made the row come and go with every command, and the timeline jump up and down.
+    func testBackgroundWorkKeepsItsRowAndStaysOutOfTheLiveLine() {
+        let launch = event(.tool, "Agent · Audit", tool: "Agent",
+                           detail: #"{"description":"Audit","prompt":"Look","run_in_background":true}"#, state: .running, at: 140)
+        let server = event(.tool, "Bash · npm run dev", tool: "Bash",
+                           detail: #"{"command":"npm run dev","run_in_background":true}"#, state: .running, at: 141)
+        var events = Array(finishedTurn().dropLast(2)) + [launch, server]
+        func rows() -> [String] { TimelinePresentation.visible(events, active: true).map(\.text) }
+        XCTAssertTrue(rows().contains(launch.text), "nothing else runs")
+        XCTAssertTrue(rows().contains(server.text))
+        XCTAssertNotEqual(TimelinePresentation.live(events).tool, launch.text)
+        XCTAssertNotEqual(AgentActivity.current(events), AgentActivity.of(launch))
+
+        events.append(event(.tool, "Bash · ls", tool: "Bash", state: .running, at: 150))
+        XCTAssertTrue(rows().contains(launch.text), "a command runs")
+        XCTAssertFalse(rows().contains("Bash · ls"), "the command that runs is the live line")
+        XCTAssertEqual(TimelinePresentation.live(events).tool, "Bash · ls")
+        events[events.count - 1].state = .done
+        XCTAssertTrue(rows().contains(launch.text), "the command is done")
+
+        // A subagent the turn waits on keeps its row too: its own steps run next to it.
+        var foreground = launch
+        foreground.detail = #"{"description":"Audit","prompt":"Look"}"#
+        let waiting = Array(finishedTurn().dropLast(2)) + [foreground]
+        XCTAssertTrue(TimelinePresentation.visible(waiting, active: true).contains { $0.id == foreground.id })
+        XCTAssertEqual(TimelinePresentation.live(waiting).tool, foreground.text)
+    }
+
     func testOneLinePerCommand() {
         let command = "Bash · cd apps/macos && xcodegen generate"
         let running = finishedTurn().dropLast(2) + [
@@ -200,7 +253,7 @@ final class TimelinePresentationTests: XCTestCase {
             event(.tool, command, tool: "Bash", state: .failed, at: 140),
             event(.approval, command, tool: "Bash", state: .denied, at: 141)
         ]
-        XCTAssertEqual(TimelinePresentation.visible(Array(denied), active: false).filter { $0.text == command }.count, 2,
+        XCTAssertEqual(TimelinePresentation.visible(Array(denied), active: false).count(where: { $0.text == command }), 2,
                        "a refusal says why the command failed")
     }
 

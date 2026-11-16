@@ -1,12 +1,13 @@
 <script lang="ts">
   // De categorieën onder het zoekveld van Accounts & koppelingen: Alles, en dan één per soort dienst.
   import { categories } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
 
   let { selected = $bindable(null) }: { selected: string | null } = $props();
 </script>
 
-<div class="chips" role="group" aria-label="Categorie">
-  <button class:on={selected === null} aria-pressed={selected === null} onclick={() => (selected = null)}>Alles</button>
+<div class="chips" role="group" aria-label={tr("Categorie", "Category")}>
+  <button class:on={selected === null} aria-pressed={selected === null} onclick={() => (selected = null)}>{tr("Alles", "All")}</button>
   {#each categories as cat (cat.id)}
     <button class:on={selected === cat.id} aria-pressed={selected === cat.id} onclick={() => (selected = cat.id)}>{cat.title}</button>
   {/each}

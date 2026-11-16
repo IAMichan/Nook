@@ -137,7 +137,7 @@ export const barCommands: BarCommand[] = [
     id: "language",
     title: ["Taal wisselen", "Switch language"],
     how: ["De NL/EN-knop in de kop", "The NL / EN button in the header"],
-    description: ["Wisselt de taal van de interface en van Nooks antwoorden tussen Nederlands en Engels.", "Flips the interface and the language Nook answers in between Dutch and English."],
+    description: ["Zet de interface en Nooks antwoorden op de volgende taal: Engels, Nederlands, Duits, Frans of Spaans.", "Moves the interface and Nook's answers to the next language: English, Dutch, German, French, or Spanish."],
   },
   {
     id: "move",

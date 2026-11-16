@@ -61,7 +61,13 @@ if [ "$NOTARIZED" = "true" ]; then
   echo "2. **Open Nook** from Applications. It lives in your notch and the menu bar (no Dock icon)."
 else
   cat <<'EOF'
-2. **Allow the first launch.** This build is not notarized by Apple yet, so macOS stops it once with "Apple could not verify…". Click **Done**, then go to **System Settings › Privacy & Security** and click **Open Anyway** next to Nook. Or run this once in Terminal:
+2. **Allow the first launch.** This build is not notarized by Apple yet, so macOS blocks it the first time ("Apple could not verify Nook is free of malware…"). That is expected, and you only do this once:
+   1. Open **Nook** from Applications. When macOS warns you, click **Done** (not "Move to Trash").
+   2. Open **System Settings › Privacy & Security** and scroll down to the **Security** section.
+   3. Next to *"Nook" was blocked to protect your Mac*, click **Open Anyway**.
+   4. Confirm with your password or Touch ID, then click **Open Anyway** once more.
+
+   Prefer Terminal? Run this once instead:
    ```sh
    xattr -dr com.apple.quarantine /Applications/Nook.app
    ```

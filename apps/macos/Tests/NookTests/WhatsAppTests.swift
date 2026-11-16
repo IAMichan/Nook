@@ -29,6 +29,23 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(inbox.behind([moved], asked: [:], now: now).isEmpty, "caught up once the message is in")
     }
 
+    func testAQuietChatThatMovedWhileListeningIsFetched() {
+        // A group nobody wrote in for days: Nook holds nothing of it. You write there from the phone and the webhook and
+        // poll miss it: the chat list moving it on is the only word, and the message is fetched instead of waiting until
+        // someone else writes.
+        let inbox = WAInbox()
+        let now = Date(timeIntervalSince1970: 1_800_000_000 + 3600)
+        let linked = Date(timeIntervalSince1970: 1_800_000_000)
+        let group = WAChatInfo(jid: "120363000000000009@g.us", name: "Media team", last: linked.addingTimeInterval(1800))
+        let before = WAChatInfo(jid: "120363000000000010@g.us", name: "Old", last: linked.addingTimeInterval(-60))
+        let status = WAChatInfo(jid: "status@broadcast", name: "Status", last: group.last)
+        XCTAssertEqual(inbox.behind([group, before, status], asked: [:], liveSince: linked, now: now).map(\.jid), [group.jid],
+                       "only a chat that moved after the link began listening")
+        XCTAssertTrue(inbox.behind([group], asked: [:], now: now).isEmpty, "without a listening start nothing unknown is fetched")
+        XCTAssertTrue(inbox.behind([group], asked: [group.jid: group.last], liveSince: linked, now: now).isEmpty,
+                      "the same move is asked for once")
+    }
+
     func testAMessageWithNothingToShowIsNoBubble() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"
@@ -259,6 +276,17 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.add(message("g2", chat: "1@g.us", from: "316@s.whatsapp.net", at: 2), filters: filters), .quiet)
     }
 
+    func testAChatMutedOnThePhoneStaysQuietWhileAutomatic() {
+        var inbox = WAInbox()
+        var filters = WAFilters()
+        filters.mutedInApp = ["31600000002@s.whatsapp.net"]
+        XCTAssertEqual(inbox.add(message("p1", chat: "31600000002@s.whatsapp.net"), filters: filters), .quiet)
+        XCTAssertTrue(inbox.visible(filters: filters).isEmpty, "the shared rules decide WhatsApp's own list too")
+        filters.setMode(.loud, for: "31600000002@s.whatsapp.net")
+        XCTAssertEqual(inbox.add(message("p2", chat: "31600000002@s.whatsapp.net", at: 1), filters: filters), .notify)
+        XCTAssertEqual(filters.rules.mode(for: "31600000002@s.whatsapp.net"), .loud, "kept in the shared rules")
+    }
+
     func testGroupsStayQuietUnlessTheyMentionYou() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"
@@ -324,6 +352,37 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAJID.isPlaceholderName("+31 6 12345678, +31 6 87654321", for: old), "only the members' numbers")
         XCTAssertFalse(WAJID.isPlaceholderName("2024", for: old), "a short number is a name")
         XCTAssertFalse(WAJID.isPlaceholderName("🎉", for: old))
+    }
+
+    func testAReloadedChatListKeepsTheGroupNamesItLearned() {
+        let group = "120363413281278207@g.us"
+        let other = "31683192007-1552852894@g.us"
+        let person = "31612345678@s.whatsapp.net"
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let previous = [WAChatInfo(jid: group, name: "Hongarije 2027", last: at),
+                        WAChatInfo(jid: other, name: "Group 31683192007-1552852894", last: at),
+                        WAChatInfo(jid: person, name: "Anna", last: at)]
+        // GOWA lists every group as "Group <id>" again on each reload.
+        let reloaded = [WAChatInfo(jid: group, name: "Group 120363413281278207", last: at.addingTimeInterval(60), muted: true),
+                        WAChatInfo(jid: other, name: "Group 31683192007-1552852894", last: at),
+                        WAChatInfo(jid: person, name: "Anna B.", last: at),
+                        WAChatInfo(jid: "120363000000000009@g.us", name: "Nieuw", last: at)]
+        let kept = WAChatInfo.keepingNames(reloaded, from: previous)
+        XCTAssertEqual(kept.map(\.name), ["Hongarije 2027", "Group 31683192007-1552852894", "Anna B.", "Nieuw"],
+                       "a learned name stays, a new real name wins, an unnamed group stays unnamed")
+        XCTAssertEqual(kept[0].last, at.addingTimeInterval(60), "only the name is carried over")
+        XCTAssertEqual(kept[0].muted, true)
+    }
+
+    func testAnUnnamedGroupKeepsTheNameTheInboxShows() {
+        let group = "120363402647779979@g.us"
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: "JV reis"), "JV reis")
+        XCTAssertEqual(WAJID.keepingGroupName("JV reis 2026", for: group, shown: "JV reis"), "JV reis 2026", "a renamed group")
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: "Group 120363402647779979"),
+                       "Group 120363402647779979")
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: nil), "Group 120363402647779979")
+        XCTAssertEqual(WAJID.keepingGroupName("+31612345678", for: "31612345678@s.whatsapp.net", shown: "Anna"), "+31612345678",
+                       "only groups: a person's number is the gateway's own word")
     }
 
     func testOpeningAGroupKeepsItsRealName() {
@@ -670,6 +729,12 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: paused),
                        .typing(chat: "31611111111@s.whatsapp.net", people: [
                            WATyping(from: "31611111111@s.whatsapp.net", active: false)]))
+        // A private chat as WhatsApp sends it now: the chat by the person's @lid, `from` by their number, which is how
+        // every other event (and Nook) names that chat.
+        let lid = Data(#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","from_lid":"98765432109876@lid","chat_id":"98765432109876@lid","state":"composing","media":"","is_group":false}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: lid),
+                       .typing(chat: "31611111111@s.whatsapp.net", people: [
+                           WATyping(from: "31611111111@s.whatsapp.net", active: true)]))
     }
 
     func testOpenWASaysWhoIsTypingAndWhoReadIt() {
@@ -693,6 +758,27 @@ final class WhatsAppTests: XCTestCase {
         let message = inbox.conversations[chat]?.messages.first
         XCTAssertEqual(message?.receipt, .read)
         XCTAssertEqual(message?.readers[chat]?.date, read)
+    }
+
+    /// A read receipt that names only your newest message reads the ones you sent before it too, in a private chat,
+    /// as WhatsApp shows it; a group's receipt is per message, and a message still going out stays as it is.
+    func testReadingYourNewestMessageReadsTheEarlierOnes() {
+        var inbox = WAInbox()
+        let chat = "31611111111@s.whatsapp.net"
+        let read = Date(timeIntervalSince1970: 1_000)
+        for (id, second) in [("M1", 900.0), ("M2", 910.0), ("M3", 920.0)] {
+            inbox.add(WAMessage(id: id, chat: chat, sender: "me", senderName: "", text: id, date: Date(timeIntervalSince1970: second),
+                                fromMe: true), filters: WAFilters())
+        }
+        inbox.add(WAMessage(id: "T1", chat: chat, sender: chat, senderName: "Anna", text: "hi", date: Date(timeIntervalSince1970: 905)),
+                  filters: WAFilters())
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["M2"], chat: chat, at: read), chat)
+        let messages = inbox.conversations[chat]?.messages ?? []
+        XCTAssertEqual(messages.first { $0.id == "M1" }?.receipt, .read, "sent before the one they read")
+        XCTAssertEqual(messages.first { $0.id == "M1" }?.readers[chat]?.date, read)
+        XCTAssertEqual(messages.first { $0.id == "M2" }?.receipt, .read)
+        XCTAssertNotEqual(messages.first { $0.id == "M3" }?.receipt, .read, "sent after it: not read yet")
+        XCTAssertNil(messages.first { $0.id == "T1" }?.receipt, "theirs gets no ticks")
     }
 
     func testAnEditedPollIsNoNewPoll() {
@@ -736,6 +822,21 @@ final class WhatsAppTests: XCTestCase {
         // A message written now still reaches you.
         XCTAssertEqual(inbox.add(message("new", chat: chat, at: 200), filters: WAFilters(), quietBefore: woke), .notify)
         XCTAssertEqual(inbox.conversations[chat]?.unread, 1)
+    }
+
+    func testABlankFirstCopyOfAGroupMessageLeavesItNew() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        // WhatsApp hands a group's sender key over under the message's own id, before the text: GOWA passes it on as a
+        // blank message.
+        XCTAssertEqual(inbox.add(message("M1", chat: group, from: "31611111111@s.whatsapp.net", text: ""), filters: WAFilters()),
+                       .ignored)
+        XCTAssertNil(inbox.conversations[group])
+        // The message itself, under the same id, is new.
+        XCTAssertNotEqual(inbox.add(message("M1", chat: group, from: "31611111111@s.whatsapp.net"), filters: WAFilters()),
+                          .duplicate)
+        XCTAssertEqual(inbox.conversations[group]?.unread, 1)
+        XCTAssertEqual(inbox.conversations[group]?.messages.map(\.id), ["M1"])
     }
 
     // MARK: Webhook
@@ -807,6 +908,13 @@ final class WhatsAppTests: XCTestCase {
         var voice = message("3", chat: "c", text: "")
         voice.media = .voice(seconds: 12)
         XCTAssertTrue(WhatsAppRecipients.lines([voice], chatName: "Lisa", calendar: calendar).hasSuffix("Lisa: [voice message]"))
+        // Every file is named as every app's (`ChatMedia.placeholder`); what is no file keeps WhatsApp's own word.
+        XCTAssertEqual(WhatsAppRecipients.label(.document(name: "plan.pdf")), ChatMedia(kind: .file, name: "plan.pdf").placeholder)
+        XCTAssertEqual(WhatsAppRecipients.label(.audio(seconds: nil)), "[audio]")
+        XCTAssertEqual(WhatsAppRecipients.label(.location), "[location]")
+        XCTAssertNil(WhatsAppRecipients.label(.none))
+        XCTAssertEqual(WAMedia.voice(seconds: 3).chatMedia(path: "/x.ogg"), ChatMedia(kind: .voice, path: "/x.ogg", seconds: 3))
+        XCTAssertNil(WAMedia.contact.chatMedia())
     }
 
     func testAChatReadsTheGatewayHistoryTogetherWithWhatCameInLive() {
@@ -1143,5 +1251,38 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAGOWA.device(data, id: "nook-new456")?.status.link, .needsQR)
         XCTAssertNil(WAGOWA.device(data, id: "nook-gone00"), "an account's device that is missing is made, not borrowed")
         XCTAssertNil(WAGOWA.device(data, excluding: ["nook", "nook-biz123", "nook-new456"]))
+    }
+
+    func testOldGOWAFilesGoAndRecentOnesStay() throws {
+        let fm = FileManager.default
+        let statics = fm.temporaryDirectory.appendingPathComponent("gowa-statics-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: statics) }
+        let old = statics.appendingPathComponent("media/31612345678/2026-10-20/offerte.pdf")
+        let recent = statics.appendingPathComponent("media/31612345678/2026-11-11/foto.jpg")
+        let sending = statics.appendingPathComponent("senditems/upload.jpg")
+        for file in [old, recent, sending] {
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: file)
+        }
+        let now = Date()
+        try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: old.path)
+        try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: sending.path)
+
+        XCTAssertEqual(WAGOWA.pruneStatics(statics, olderThan: 86_400, now: now), 2)
+        XCTAssertFalse(fm.fileExists(atPath: old.path))
+        XCTAssertFalse(fm.fileExists(atPath: old.deletingLastPathComponent().path), "the emptied date folder goes too")
+        XCTAssertFalse(fm.fileExists(atPath: sending.path))
+        XCTAssertTrue(fm.fileExists(atPath: recent.path))
+    }
+
+    /// The webhook asks the gateway by name for what the parser reads: a message edited or deleted for everyone comes in
+    /// live, also from a GOWA or OpenWA version that only sends those when asked; an older one gets what it always had.
+    func testTheWebhookAsksForEditsAndDeletions() {
+        let gowa = Set(WAGOWA.webhookEvents.split(separator: ",").map(String.init))
+        XCTAssertTrue(gowa.isSuperset(of: ["message.edited", "message.revoked", "message.deleted", "group.participants"]))
+        XCTAssertTrue(gowa.isSuperset(of: WAGOWA.webhookEventsBefore.split(separator: ",").map(String.init)),
+                      "nothing that was asked before is left out")
+        XCTAssertTrue(Set(WAOpenWA.webhookEvents).isSuperset(of: ["message.edited", "message.revoked", "message.failed"]))
+        XCTAssertTrue(Set(WAOpenWA.webhookEvents).isSuperset(of: WAOpenWA.webhookEventsBefore))
     }
 }

@@ -33,8 +33,7 @@ struct AutocompletePlaygroundSection: View {
                     .roundedStrokeBorder(.quaternary, radius: NookTheme.Radius.control)
                 HStack(spacing: NookTheme.Spacing.md) {
                     if playground.thinking {
-                        ProgressView().controlSize(.small)
-                        Text(tr("autocomplete.playground.thinking")).foregroundStyle(NookTheme.textSecondary)
+                        BusyLine(tr("autocomplete.playground.thinking"))
                     } else if playground.suggestion != nil {
                         Text(tr("autocomplete.playground.keys", store.prefs.acceptWord.label, store.prefs.acceptAll.label))
                             .foregroundStyle(NookTheme.textSecondary)
@@ -180,7 +179,8 @@ final class CompletionPlayground: ObservableObject {
         requested = before
         thinking = wasThinking
         let token = self.token
-        let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 120)) * 1_000_000
+        // Long enough to skip the keys of a word typed quickly, short enough to feel like the real thing.
+        let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 30)) * 1_000_000
         task = Task { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             guard let self, !Task.isCancelled, token == self.token else { return }

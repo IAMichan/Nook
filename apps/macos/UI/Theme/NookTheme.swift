@@ -1,0 +1,763 @@
+import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
+
+// One theme for both apps: Nook on the Mac and Nook Companion on the iPhone (apps/ios/project.yml compiles this file
+// too, as `Theme` there). The only differences are where a platform asks for one: the phone's type follows Dynamic Type
+// (`TextStyle`), and the Mac's own window transitions stay on the Mac.
+
+extension Color {
+    /// Creates a color from a hex integer, e.g. `Color(hex: 0x8B7BFF)`.
+    init(hex: UInt32, opacity: Double = 1) {
+        let r = Double((hex >> 16) & 0xFF) / 255
+        let g = Double((hex >> 8) & 0xFF) / 255
+        let b = Double(hex & 0xFF) / 255
+        self.init(.sRGB, red: r, green: g, blue: b, opacity: opacity)
+    }
+
+    /// A color written as six hex digits, with or without "#" ("d73a4a", as GitHub gives a label's color); nil when the
+    /// text is not one. For colors that come with the data, never for Nook's own palette.
+    init?(hexString text: String?) {
+        guard var text = text?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
+        self.init(hex: value)
+    }
+}
+
+/// Nook design system: a true black canvas, 8 % white lines, neutral text, a white main action and
+/// Lucide icons (`NookIcon`). Color consistently represents state:
+/// iris = Nook itself and the main action, mint = listening or done, amber = waiting on you, coral = error.
+///
+/// Calm by design: every surface sits on one neutral grey ramp, a step apart, so regions read by their fill and need
+/// almost no strokes; strokes are only a shade lighter than what they edge; state colors are a little softened so a
+/// badge informs without shouting. Change a token here and every panel, card and setting follows.
+///
+/// The ramp is pure grey (no blue cast): a true black canvas (#000000), raised
+/// surfaces about 4–8 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
+/// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
+///
+/// Clear before calm: every text color reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`, so even the
+/// quietest metadata (`textTertiary`) is legible at a glance, and a selected row stands a full step above a hovered one,
+/// so where you are never depends on a shade you can barely see.
+enum NookTheme {
+    // The palettes in effect: the chosen theme's for dark and for light (`NookThemeChoice`, kept in sync by
+    // `AppSettings`). Every named color below reads them when it is drawn, in the appearance of the window it is drawn
+    // in, so a view that takes its colors from here follows System / Light / Dark and the theme without knowing either.
+    nonisolated(unsafe) static var darkPalette = NookPalette.nookDark
+    nonisolated(unsafe) static var lightPalette = NookPalette.nookLight
+    /// Goes up whenever a palette changes, so caches of drawn text (`SelectableProse`) and the roots that rebuild on a
+    /// change (`.id`) can key on it.
+    nonisolated(unsafe) static var revision = 0
+
+    /// The density in effect (kept in sync by `AppSettings.density`).
+    nonisolated(unsafe) static var density = NookDensity.comfortable
+
+    /// Sets the density; true when it changed. Bumps `revision`, so the roots that rebuild on a palette change rebuild
+    /// for the new text size too.
+    @discardableResult
+    static func apply(density next: NookDensity) -> Bool {
+        guard next != density else { return false }
+        density = next
+        revision += 1
+        return true
+    }
+
+    static func palette(dark: Bool) -> NookPalette { dark ? darkPalette : lightPalette }
+
+    /// The colors of added and removed lines (`NookDiffColors`, Settings › Appearance).
+    nonisolated(unsafe) static var diffColors = NookDiffColors.redGreen
+
+    /// Sets the diff colors; true when they changed. Bumps `revision`, so every root draws them anew.
+    @discardableResult
+    static func apply(diffColors next: NookDiffColors) -> Bool {
+        guard next != diffColors else { return false }
+        diffColors = next
+        revision += 1
+        return true
+    }
+
+    /// Sets the palettes; true when something changed.
+    @discardableResult
+    static func apply(dark: NookPalette, light: NookPalette) -> Bool {
+        guard dark != darkPalette || light != lightPalette else { return false }
+        darkPalette = dark
+        lightPalette = light
+        revision += 1
+        return true
+    }
+
+    /// A color of the palette in effect, resolved for the appearance it is drawn in.
+    static func themed(_ token: KeyPath<NookPalette, UInt32>) -> Color {
+        adaptive { palette(dark: $0)[keyPath: token] }
+    }
+
+    /// A color that is worked out per appearance (dark true or false) each time it is drawn.
+    static func adaptive(_ hex: @escaping (Bool) -> UInt32) -> Color {
+        #if os(macOS)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            platformColor(hex(appearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua))
+        })
+        #else
+        Color(uiColor: UIColor { traits in platformColor(hex(traits.userInterfaceStyle != .light)) })
+        #endif
+    }
+
+    #if os(macOS)
+    static func platformColor(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+    }
+    #else
+    static func platformColor(_ hex: UInt32, alpha: CGFloat = 1) -> UIColor {
+        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+    }
+    #endif
+
+    // Colors: the surface ramp, darkest to lightest.
+    /// The notch itself: always black, in every theme, as the hardware it grows out of. Also the color of shadows.
+    static let notch = Color.black
+    static let graphite = themed(\.graphite)
+    static let smoke = themed(\.smoke)
+    static let field = themed(\.field)
+    static let line = themed(\.line)
+    static let line2 = themed(\.line2)
+
+    /// The strongest text: near white on dark, near black on light.
+    static let paper = themed(\.paper)
+    /// Dark ink, in every appearance: text on a light fill (a light accent) and the scrim over pictures and video.
+    static let ink = Color(hex: 0x0B0B0D)
+    static let eyeInk = Color(hex: 0x050507)
+    static let textSecondary = themed(\.textSecondary)
+    static let textTertiary = themed(\.textTertiary)
+    /// A `paper` fill (Nook's main button) and the text on it: `onPaper` is dark on dark windows, white on light ones.
+    static let onPaper = adaptive { $0 ? 0x0B0B0D : 0xFFFFFF }
+    /// `paper` under the pointer: a step brighter on dark, a step deeper on light.
+    static let paperHover = adaptive { $0 ? 0xFFFFFF : 0x000000 }
+    /// The color of a faint wash over a surface (`wash.opacity(0.06)`): white on dark, black on light, so a hover or a
+    /// hairline made of it shows in both.
+    static let wash = adaptive { $0 ? 0xFFFFFF : 0x000000 }
+
+    /// Nook's own color. The theme's accent by default (soft white in Nook's theme, near black in light); the user can pick another in
+    /// Settings › Appearance. The value is a marker for "the theme's own", stored as it always was.
+    static let defaultAccentHex: UInt32 = 0xF4F3F7
+    /// Current accent (kept in sync by `AppSettings.accentHex`).
+    nonisolated(unsafe) static var accentHex: UInt32 = defaultAccentHex
+    /// The accent as drawn: the user's color, or the theme's own when they kept the default.
+    static func accent(dark: Bool) -> UInt32 {
+        accentHex == defaultAccentHex ? palette(dark: dark).accent : accentHex
+    }
+    static let iris = adaptive { accent(dark: $0) }
+    /// Text and symbols on an iris fill: dark on a light accent (the default soft white), white on a deep one.
+    static let onIris = adaptive { relativeLuminance(accent(dark: $0)) > 0.45 ? 0x0B0B0D : 0xFFFFFF }
+
+    /// The theme's own accent, whatever the user picked (the first swatch in Settings › Appearance).
+    static let themeAccent = adaptive { palette(dark: $0).accent }
+
+    /// The main action of a card, a notice or a sheet: a filled accent button (Nook's soft white by
+    /// default) with `onPrimary` text, a shade deeper under the pointer. Secondary actions stay quiet (ghost or outline).
+    static let primary = iris
+    static let primaryHover = adaptive { NookColor.mix(accent(dark: $0), palette(dark: $0).canvas, 0.12) }
+    static let onPrimary = onIris
+    /// The outline button's fill and edge (the `outline` variant): a faint fill a step off the surface it is on.
+    static let outlineFill = themed(\.field)
+    static let outlineStroke = themed(\.fieldStroke)
+
+    /// WCAG relative luminance of a 0xRRGGBB color, 0 (black) to 1 (white).
+    static func relativeLuminance(_ hex: UInt32) -> Double { NookColor.luminance(hex) }
+    static let mint = themed(\.mint)
+    static let amber = themed(\.amber)
+    static let coral = themed(\.coral)
+    static let coralSoft = themed(\.coralSoft)
+    /// A merged pull request, as forges show it.
+    static let violet = themed(\.violet)
+    static let mintSoft = themed(\.mintSoft)
+    /// Added and removed lines, files and counts in diffs, green and red or blue and orange (`NookDiffColors`). Use these,
+    /// not `mint` and `coral`, wherever a color says "added" or "removed".
+    static let diffAdded = adaptive { diffColors.added(palette(dark: $0)) }
+    static let diffRemoved = adaptive { diffColors.removed(palette(dark: $0)) }
+    /// A changed file beside added and removed ones.
+    static let diffModified = adaptive { diffColors.modified(palette(dark: $0)) }
+    static let music = themed(\.music)
+
+    /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black in Nook's dark
+    /// theme, as the notch, so cards and borders carry the structure.
+    static let canvas = themed(\.canvas)
+    /// A sunken well inside a card: code, logs, and the composer tray.
+    static let well = themed(\.well)
+    /// A lifted surface: sidebars, cards and panels.
+    static let surface = themed(\.surface)
+    /// The composer under a conversation; `surface` by default, a color of its own in Settings › Appearance › Colors.
+    static let composer = themed(\.composer)
+    /// The trays above and below the composer, the bars above it (background commands, tasks, subagents, side chats),
+    /// and a chat's field while you are not typing in it.
+    static let composerTray = themed(\.composerTray)
+    /// Menus, popovers, hover cards and tooltips: a dark card in every appearance, as their text is drawn for dark.
+    static let menu = themed(\.menu)
+    /// The faintest divider between regions of a panel.
+    static let hairline = themed(\.hairline)
+    /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a hairline that
+    /// is there when you look for it and gone when you don't, so regions read by their layout rather than their frames.
+    static let border = themed(\.border)
+    /// The line between the items of a list (a chat in the Chats tab): a step brighter than `border`, so
+    /// each item reads as its own.
+    static let separator = themed(\.separator)
+    /// The stroke of a text field or tray at rest.
+    static let fieldStroke = themed(\.fieldStroke)
+    /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
+    static let textStrong = themed(\.textStrong)
+    /// Muted text that shimmers or sits in a disabled control.
+    static let textMuted = themed(\.textMuted)
+    /// Links, renamed files, and diff hunk headers.
+    static let blue = themed(\.blue)
+
+    /// Your own message in a conversation: a soft fill a step off the canvas, no edge (the agent's answer has no bubble
+    /// at all).
+    static let bubble = themed(\.bubble)
+    /// A chat app's message bubbles in the Chats tab and chat cards: yours a deep green of Nook's mint, theirs a grey a
+    /// step above the canvas. Solid, so who said what reads at a glance, as in the chat apps themselves.
+    static let chatMine = themed(\.chatMine)
+    static let chatTheirs = themed(\.chatTheirs)
+    /// The time and grey ticks inside those bubbles: soft, yet readable on both fills.
+    static let chatStamp = themed(\.chatStamp)
+
+    /// Syntax colors for code in diffs (`SyntaxToken.Kind`). Muted on purpose: the diff's own + and − tints stay the
+    /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value, picked by the appearance of the
+    /// window they are drawn in, and come from the palette, so a theme and Settings › Appearance › Colors set them.
+    enum Syntax {
+        static let keyword = themed(\.syntaxKeyword)
+        static let string = themed(\.syntaxString)
+        static let comment = themed(\.syntaxComment)
+        static let number = themed(\.syntaxNumber)
+        static let type = themed(\.syntaxType)
+        static let property = themed(\.syntaxProperty)
+        static let tag = themed(\.syntaxTag)
+        static let attribute = themed(\.syntaxAttribute)
+    }
+
+    // List rows and cards: at rest, under the pointer, and selected.
+    static let rowRest = themed(\.rowRest)
+    static let rowHover = themed(\.rowHover)
+    static let rowSelected = themed(\.rowSelected)
+
+    /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
+    static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
+        selected ? rowSelected : (hovering ? rowHover : rest)
+    }
+
+    /// Corner radii. Pick the token that names the element, not the number: a chip inside a card is always rounder
+    /// than a hairline and flatter than the card.
+    enum Radius {
+        /// Tags, keycaps, and inline code.
+        static let chip: CGFloat = 6
+        /// Buttons, text fields, and toolbar items.
+        static let control: CGFloat = 8
+        /// Cards, rows, and notices.
+        static let card: CGFloat = 10
+        /// Panels, popovers, and menus.
+        static let panel: CGFloat = 12
+        /// Sheets and the composer tray.
+        static let sheet: CGFloat = 14
+        /// Your own message's bubble in a conversation.
+        static let bubble: CGFloat = 16
+        /// A chat app's message bubble: tighter than Nook's own, so long runs of messages stay compact.
+        static let chatBubble: CGFloat = 10
+        /// Where two bubbles of one run meet, on the writer's side: a small rounding, so the run stacks as one column.
+        static let chatJoin: CGFloat = 4
+        /// A card in a conversation: a plan, a question, a task list, a subagent.
+        static let conversationCard: CGFloat = 16
+        /// The notch's own corners. Not for chips or buttons: those use `chip` or `control`.
+        static let pill: CGFloat = 20
+        /// The composer box, and the tray that runs on from it. With the 32 pt send button 8 pt from the edge, its corner
+        /// runs parallel to the button's.
+        static let composer: CGFloat = 16
+    }
+
+    /// Spacing on a 4 pt grid. Use these for padding and stack spacing so the panels line up.
+    enum Spacing {
+        static let xxs: CGFloat = 2
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 12
+        static let xl: CGFloat = 16
+        static let xxl: CGFloat = 24
+        /// Between the sections of a page (home, a settings page): room that groups without a line.
+        static let xxxl: CGFloat = 32
+        /// Between the big regions of a page (a hero, an empty state): 48.
+        static let huge: CGFloat = 48
+
+        /// A padding that follows the density (Settings › Appearance): tighter when compact, roomier when spacious,
+        /// snapped to an even number of points. For the padding of rows and cards, never for a hit target or an icon.
+        static func scaled(_ value: CGFloat) -> CGFloat {
+            max(2, (value * CGFloat(NookTheme.density.spacingScale) / 2).rounded() * 2)
+        }
+    }
+
+    /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
+    /// different sizes. Running text is a `TextStyle`; use `font(_:_:)` only for a symbol's size or a numeral the scale
+    /// does not cover. The sizes: what you read is 14 pt, the dense UI around it 12 pt,
+    /// badges 11.5 and the smallest metadata 10.5, so reading text stands a clear step above the chrome.
+    ///
+    /// Picking one: a timestamp or a count is `caption`; the line under a title (a hint, a setting's explanation, a
+    /// row's second line) is `detail`; a badge, a chip or metadata is `label`; what you read is `body`; a row's title
+    /// or a button is `strong`; a panel's or card's title is `title`; a sheet's or a step's heading is `heading`; the one
+    /// big line on a page (home's greeting, a settings page) is `display`.
+    enum TextStyle {
+        /// Timestamps, counts, and the smallest metadata.
+        static var caption: Font { NookTheme.textFont(10.5, .medium) }
+        /// The line under a title: a setting's explanation, a hint, a row's second line, or an error message.
+        static var detail: Font { NookTheme.textFont(12) }
+        /// Secondary labels, badges, chips, and metadata.
+        static var label: Font { NookTheme.textFont(11.5, .medium) }
+        /// Body text in rows, cards, chat, and the composer.
+        static var body: Font { NookTheme.textFont(14) }
+        /// A composer's choices (model, mode, access): a step under `strong`, so they fit a narrow box.
+        static var control: Font { NookTheme.textFont(13, .medium) }
+        /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
+        static var strong: Font { NookTheme.textFont(14, .medium) }
+        /// The title of a panel, a list, or a card.
+        static var title: Font { NookTheme.textFont(15, .semibold) }
+        /// The heading of a sheet or a setup step.
+        static var heading: Font { NookTheme.textFont(18, .semibold) }
+        /// The one large line of a page: home's greeting, a settings page's title.
+        static var display: Font { NookTheme.textFont(22, .semibold) }
+        /// Inline code and paths at body size.
+        static var code: Font { NookTheme.textFont(13, design: .monospaced) }
+    }
+
+    /// How much larger text is on the phone than on the Mac at the same place in the scale: the Mac's 14 pt body is the
+    /// phone's 16 pt (`.callout`), held further from the eye.
+    static let phoneTextScale: CGFloat = 16.0 / 14.0
+
+    /// A size of the type scale: as written on the Mac; on the phone a step larger and following the text size you chose
+    /// (Dynamic Type), so the two apps keep the same proportions.
+    ///
+    /// On the phone running text is DM Sans (bundled with the app, apps/ios/Fonts); code stays
+    /// SF Mono, and a target without the font files (an extension) falls back to SF Pro by itself.
+    static func textFont(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        let scaled = (size * density.textScale * 2).rounded() / 2
+        #if os(macOS)
+        return .system(size: scaled, weight: weight, design: design)
+        #else
+        let phoneSize = UIFontMetrics.default.scaledValue(for: scaled * phoneTextScale)
+        guard design == .default else { return .system(size: phoneSize, weight: weight, design: design) }
+        return .custom(phoneFontName(weight), fixedSize: phoneSize)
+        #endif
+    }
+
+    #if !os(macOS)
+    /// The DM Sans face for a weight: the four the app bundles (Regular, Medium, SemiBold, Bold).
+    static func phoneFontName(_ weight: Font.Weight) -> String {
+        switch weight {
+        case .medium: return "DMSans-Medium"
+        case .semibold: return "DMSans-SemiBold"
+        case .bold, .heavy, .black: return "DMSans-Bold"
+        default: return "DMSans-Regular"
+        }
+    }
+    #endif
+
+    /// Line spacing for running text, as a share of its size: reading text sits at a 1.5 line height, the dense UI
+    /// around it tighter. `SelectableProse` and Markdown use `reading`; a row's second line `ui`.
+    enum LineHeight {
+        static let ui: CGFloat = 1.3
+        static let reading: CGFloat = 1.55
+        /// The extra space SwiftUI's `.lineSpacing` needs for `multiple` at a font of `size` (a font is already 1.2 or so).
+        static func spacing(for size: CGFloat, multiple: CGFloat = reading) -> CGFloat {
+            max(0, size * (multiple - 1.2))
+        }
+    }
+
+    /// The longest line of reading text, in characters: about 70, so a wide window never stretches a paragraph.
+    static let readingMeasure = 70
+
+    // Typography: SF Pro for text, SF Mono for code and paths.
+    static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+
+    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    /// SF Rounded: only for a numeral in a badge or a step counter, never for running text.
+    static func rounded(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .rounded)
+    }
+
+    // Animation. Every curve is a spring: a spring keeps its velocity when it is interrupted (hover off before the
+    // hover in finished, a tab picked while the last one still slides), where a timing curve restarts from rest and
+    // visibly jerks. Opening has a subtle overshoot; closing is smooth without bounce.
+    static let open = Animation.spring(duration: 0.36, bounce: 0.06)
+    static let close = Animation.spring(duration: 0.3, bounce: 0)
+    /// Tab switching within the same panel: tighter, and without overshoot so the content does not wobble.
+    static let swap = Animation.spring(duration: 0.28, bounce: 0)
+    /// The new tab's content fading in once you switch: short, so the tab is there almost at once.
+    static let tabFade = Animation.easeOut(duration: 0.14)
+    /// How long a tab waits before work that redraws the whole app (a refresh on opening it), so the switch is over first.
+    static let tabSettle: Duration = .milliseconds(320)
+    /// Hover feedback on buttons and chips: quick and settled.
+    static let hover = Animation.spring(duration: 0.2, bounce: 0)
+    /// A tooltip (`.nookTip`) fading in once the pointer rests: brief, so the tip reads as instant.
+    static let tipFade = Animation.easeOut(duration: 0.1)
+    /// The widest a tooltip (`.nookTip`, `.nookTipCard`) grows before its text wraps.
+    static let tooltipMaxWidth: CGFloat = 320
+    /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
+    static let reveal = Animation.spring(duration: 0.24, bounce: 0)
+    /// Scrolling a list to a message or a line.
+    static let scroll = Animation.spring(duration: 0.3, bounce: 0)
+    static let spring = open
+
+    /// One motion language. Durations are 150 to 250 ms, eases settle without overshoot, panels use a spring with no
+    /// bounce, and with Reduce Motion nothing moves: a change is a short fade (`Motion.resolved`). The older names above
+    /// stay (they are springs on the same scale); new work names the kind of change here.
+    enum Motion {
+        /// A press, a toggle, a checkmark: 150 ms.
+        static let quick = Animation.easeOut(duration: 0.15)
+        /// A color, a fade, a small move: 200 ms.
+        static let standard = Animation.easeInOut(duration: 0.2)
+        /// A larger fade or a cross-fade of a whole surface (a theme change): 250 ms.
+        static let slow = Animation.easeInOut(duration: 0.25)
+        /// A panel, sheet or sidebar opening or closing: a spring that settles without overshoot.
+        static let panel = Animation.spring(duration: 0.3, bounce: 0)
+        /// A list item inserted, removed or moved.
+        static let list = Animation.spring(duration: 0.24, bounce: 0)
+        /// What Reduce Motion leaves of any of the above: a brief fade, no movement.
+        static let reduced = Animation.easeOut(duration: 0.12)
+
+        /// `animation`, or the plain fade when the user asked for less motion.
+        static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation {
+            reduceMotion ? reduced : animation
+        }
+    }
+}
+
+/// Animates a value with a curve of `NookTheme.Motion`, as a fade alone when Reduce Motion is on.
+private struct MotionAnimation<Value: Equatable>: ViewModifier {
+    var animation: Animation
+    var value: Value
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(NookTheme.Motion.resolved(animation, reduceMotion: reduceMotion), value: value)
+    }
+}
+
+/// Runs `body` with `animation`, or the plain fade when Reduce Motion is on (outside a view, where no environment is at hand).
+@MainActor
+func withNookAnimation<Result>(_ animation: Animation = NookTheme.Motion.standard, _ body: () throws -> Result) rethrows -> Result {
+    #if os(macOS)
+    let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    #else
+    let reduce = UIAccessibility.isReduceMotionEnabled
+    #endif
+    return try withAnimation(NookTheme.Motion.resolved(animation, reduceMotion: reduce), body)
+}
+
+extension View {
+    /// `.animation(_:value:)` on Nook's motion language that respects Reduce Motion.
+    func nookAnimation<Value: Equatable>(_ animation: Animation = NookTheme.Motion.standard, value: Value) -> some View {
+        modifier(MotionAnimation(animation: animation, value: value))
+    }
+
+    /// A focus ring that looks intentional: two points of the accent just outside the control's edge, only for keyboard
+    /// focus. Add it to a custom control that takes focus; system controls draw their own.
+    func nookFocusRing(_ focused: Bool, radius: CGFloat = NookTheme.Radius.control) -> some View {
+        overlay(
+            NookTheme.shape(radius + 2).strokeBorder(NookTheme.iris.opacity(0.7), lineWidth: 2)
+                .padding(-2)
+                .opacity(focused ? 1 : 0)
+                .animation(NookTheme.Motion.quick, value: focused)
+                .allowsHitTesting(false)
+        )
+    }
+}
+
+extension View {
+    /// The pointing hand while `enabled`. macOS only: the iPhone companion compiles this file too and has no pointer
+    /// cursor to set, so there it leaves the view as it is.
+    @ViewBuilder
+    func nookPointingHand(_ enabled: Bool) -> some View {
+        #if os(macOS)
+        pointerStyle(enabled ? .link : nil)
+        #else
+        self
+        #endif
+    }
+}
+
+/// The press state of Nook's own buttons: a hair smaller and dimmer while the button is down, then back with the quick
+/// curve. Reduce Motion keeps the dim and drops the scale.
+struct NookPressStyle: ButtonStyle {
+    var scale: CGFloat = 0.97
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(NookTheme.Motion.quick, value: configuration.isPressed)
+            .nookPointingHand(isEnabled)
+    }
+}
+
+extension ButtonStyle where Self == NookPressStyle {
+    /// Nook's press feedback: `.buttonStyle(.nookPress)`.
+    static var nookPress: NookPressStyle { NookPressStyle() }
+}
+
+/// A system button style that also shows the pointing hand while the pointer is on an enabled button, so every button
+/// in Nook reads as clickable. macOS keeps the arrow over a plain or borderless button, which made Nook's icon buttons,
+/// rows and chips look like static text. Use `.nookPlain`, `.nookBorderless`, `.nookProminent` or `.nookLink` instead
+/// of the system `.plain`, `.borderless`, `.borderedProminent` or `.link` (`UIConsistencyTests` enforces it).
+struct NookPointerButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle {
+    var base: Base
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration)
+            .buttonStyle(base)
+            .nookPointingHand(isEnabled)
+    }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<PlainButtonStyle> {
+    /// `.plain` with the pointing hand.
+    static var nookPlain: Self { NookPointerButtonStyle(base: .plain) }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderlessButtonStyle> {
+    /// `.borderless` with the pointing hand.
+    static var nookBorderless: Self { NookPointerButtonStyle(base: .borderless) }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderedProminentButtonStyle> {
+    /// `.borderedProminent` with the pointing hand.
+    static var nookProminent: Self { NookPointerButtonStyle(base: .borderedProminent) }
+}
+
+#if os(macOS)
+/// `.link` exists on macOS only; the iPhone companion compiles this file too.
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<LinkButtonStyle> {
+    /// `.link` with the pointing hand.
+    static var nookLink: Self { NookPointerButtonStyle(base: .link) }
+}
+#endif
+
+/// A system menu style that also shows the pointing hand over an enabled menu button, like `NookPointerButtonStyle`.
+/// Use `.nookBorderlessButton` / `.nookButton` instead of `.borderlessButton` / `.button`.
+///
+/// `.nookButton` draws its label without chrome. A `.button` menu takes its look from the button style around it, but
+/// it only recognizes the system styles: under a Nook pointer style (`.nookPlain`) it falls back to a bordered,
+/// padded button, so the menu sets the system plain style on itself.
+struct NookPointerMenuStyle<Base: MenuStyle>: MenuStyle {
+    var base: Base
+    var plainLabel = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    @ViewBuilder
+    func makeBody(configuration: Configuration) -> some View {
+        if plainLabel {
+            Menu(configuration)
+                .menuStyle(base)
+                .buttonStyle(PlainButtonStyle())
+                .nookPointingHand(isEnabled)
+        } else {
+            Menu(configuration)
+                .menuStyle(base)
+                .nookPointingHand(isEnabled)
+        }
+    }
+}
+
+extension MenuStyle where Self == NookPointerMenuStyle<BorderlessButtonMenuStyle> {
+    /// `.borderlessButton` with the pointing hand.
+    static var nookBorderlessButton: Self { NookPointerMenuStyle(base: .borderlessButton) }
+}
+
+extension MenuStyle where Self == NookPointerMenuStyle<ButtonMenuStyle> {
+    /// `.button` with the pointing hand and a plain label (no button chrome).
+    static var nookButton: Self { NookPointerMenuStyle(base: .button, plainLabel: true) }
+}
+
+extension View {
+    /// The pointing hand over a view that acts on a click without being a `Button` (a row or tab with
+    /// `.onTapGesture`), so it reads as clickable like every button. `enabled: false` keeps the arrow.
+    func nookClickable(_ enabled: Bool = true) -> some View {
+        nookPointingHand(enabled)
+    }
+}
+
+/// Lifts a control a hair while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the
+/// color change alone says that it is live.
+private struct HoverLift: ViewModifier {
+    var hovering: Bool
+    var scale: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering && !reduceMotion ? scale : 1)
+            .animation(NookTheme.hover, value: hovering)
+    }
+}
+
+extension View {
+    /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
+    func hoverLift(_ hovering: Bool, scale: CGFloat = 1.01) -> some View {
+        modifier(HoverLift(hovering: hovering, scale: scale))
+    }
+}
+
+extension NookTheme {
+    /// Nook's rounded shape: a continuous corner on a radius from `NookTheme.Radius`. Every rounded fill, stroke, clip
+    /// and hit area goes through the helpers below, so a view names only the radius instead of building the shape again.
+    static func shape(_ radius: CGFloat) -> RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+    }
+}
+
+extension View {
+    /// Fills the area behind the content with `fill` on a rounded shape (`NookTheme.Radius`).
+    func roundedBackground<Fill: ShapeStyle>(_ fill: Fill, radius: CGFloat) -> some View {
+        background(NookTheme.shape(radius).fill(fill))
+    }
+
+    /// Draws a centered line of `stroke` along a rounded edge over the content, as `Shape.stroke` does.
+    func roundedStroke<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).stroke(stroke, lineWidth: lineWidth))
+    }
+
+    /// Draws a line of `stroke` just inside a rounded edge over the content, as `InsettableShape.strokeBorder` does.
+    func roundedStrokeBorder<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).strokeBorder(stroke, lineWidth: lineWidth))
+    }
+
+    /// Clips the content to a rounded shape. Clip before drawing a rounded border, not after: clipping a border at the same
+    /// radius trims its anti-aliased outer edge in the curves, so the corners look dimmer than the straight sides.
+    func roundedClip(_ radius: CGFloat) -> some View {
+        clipShape(NookTheme.shape(radius))
+    }
+
+    /// Makes the whole rounded shape respond to the pointer and clicks, including its transparent parts.
+    func roundedHitShape(_ radius: CGFloat) -> some View {
+        contentShape(NookTheme.shape(radius))
+    }
+}
+
+/// Notch content: appears slightly after the shape (snappy fade-in) and dismisses quickly.
+/// Opacity and scale only: both are composited as they are, where a blur renders the whole panel offscreen again on
+/// every frame of the opening, which is where it stuttered.
+private struct NotchContentFade: ViewModifier {
+    var amount: CGFloat   // 1 = gone, 0 = visible
+    func body(content: Content) -> some View {
+        content
+            .opacity(1 - Double(amount))
+            .scaleEffect(1 - amount * 0.03, anchor: .top)
+            .offset(y: -amount * 4)
+    }
+}
+
+#if os(macOS)
+extension AnyTransition {
+    static var notchContent: AnyTransition {
+        // Reduce Motion: a plain fade, without the blur and the scale.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return .asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.09)),
+                               removal: .opacity.animation(.easeIn(duration: 0.12)))
+        }
+        return .asymmetric(
+            insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
+                .animation(.spring(duration: 0.28, bounce: 0).delay(0.04)),
+            removal: .opacity.animation(.spring(duration: 0.14, bounce: 0))
+        )
+    }
+}
+#endif
+
+#if os(macOS)
+/// Nook's windows and Settings › Appearance: the appearance they take (System / Light / Dark) and the theme's palettes.
+/// The notch is not one of them: it grows out of the black hardware notch, so it stays dark in every theme.
+@MainActor
+enum NookWindowLook {
+    /// The mode in effect (kept in sync by `AppSettings.appearanceMode`).
+    static var mode: NookAppearanceMode = .dark
+
+    /// The appearance a window of Nook takes: nil follows macOS.
+    static var appearance: NSAppearance? {
+        switch mode {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// The canvas as an AppKit color, for a window's own background behind its content.
+    static let canvas = NSColor(name: nil) { appearance in
+        NookTheme.platformColor(NookTheme.palette(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua).canvas)
+    }
+
+    private static let adopted = NSHashTable<NSWindow>.weakObjects()
+
+    /// Gives a window Nook's appearance and canvas, now and whenever they change. Sheets and popovers presented from it
+    /// inherit the appearance, so they follow too.
+    static func adopt(_ window: NSWindow, background: Bool = true) {
+        window.appearance = appearance
+        if background { window.backgroundColor = canvas }
+        adopted.add(window)
+    }
+
+    /// After a change of mode: every adopted window takes the new appearance, and every window draws the palette anew.
+    static func refresh() {
+        for window in adopted.allObjects { window.appearance = appearance }
+        repaint()
+    }
+
+    private static var pendingRepaint: DispatchWorkItem?
+
+    /// After a change of palette: every window of Nook draws its colors anew. A repaint costs a full pass over every
+    /// window (about 150 ms for Settings alone), so it waits until the colors rest for `settle` seconds: a color picker
+    /// sends a change per pointer move, and repainting on each one made dragging stutter. Nothing is rebuilt, so scroll
+    /// positions, open folds, text being typed and the color picker's link to its panel all stay.
+    static func repaintSoon(settle: TimeInterval = 0) {
+        pendingRepaint?.cancel()
+        let work = DispatchWorkItem {
+            pendingRepaint = nil
+            repaint()
+        }
+        pendingRepaint = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle, execute: work)
+    }
+
+    /// SwiftUI resolves a dynamic color once per color scheme and keeps it: setting the same appearance again, a new
+    /// value in the environment or a redraw leaves the old color on screen. Only a real change of scheme resolves every
+    /// color again. So each window takes the other scheme, lays out once in it (which resolves its colors), and gets its
+    /// own appearance back in the same pass of the run loop, before anything reaches the screen: one frame in the
+    /// right colors, no flash, no rebuilt views. AppKit views redraw their dynamic colors on the same change.
+    static func repaint() {
+        let dark = NSAppearance(named: .darkAqua), light = NSAppearance(named: .aqua)
+        for window in NSApp.windows where !(window is NSColorPanel) && !(window is NSFontPanel) {
+            guard let content = window.contentView else { continue }
+            let own = window.appearance
+            let isDark = window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua
+            window.appearance = isDark ? light : dark
+            content.layoutSubtreeIfNeeded()
+            window.appearance = own
+            content.needsDisplay = true
+            window.invalidateShadow()
+        }
+    }
+
+    /// Whether macOS itself is dark right now (for the preview of System).
+    static var systemIsDark: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+}
+#endif

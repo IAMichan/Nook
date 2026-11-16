@@ -135,19 +135,22 @@ final class WebTools {
         return parseResults(html)
     }
 
+    // Constant patterns, compiled once. A regular expression is immutable and safe to share between threads.
+    nonisolated(unsafe) private static let resultLink = try? NSRegularExpression(
+        pattern: #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
+    nonisolated(unsafe) private static let resultSnippet = try? NSRegularExpression(
+        pattern: #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
+
     /// DuckDuckGo's HTML page: each result contains a link with class "result__a" and snippet text with class "result__snippet".
     nonisolated static func parseResults(_ html: String) -> [SearchResult] {
-        let linkPattern = #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#
-        let snippetPattern = #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#
-        guard let linkRegex = try? NSRegularExpression(pattern: linkPattern, options: [.dotMatchesLineSeparators]),
-              let snippetRegex = try? NSRegularExpression(pattern: snippetPattern, options: [.dotMatchesLineSeparators]) else { return [] }
+        guard let linkRegex = resultLink, let snippetRegex = resultSnippet else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         let links = linkRegex.matches(in: html, range: range)
         let snippets = snippetRegex.matches(in: html, range: range)
         var results: [SearchResult] = []
         for (index, match) in links.enumerated() {
             guard let hrefRange = Range(match.range(at: 1), in: html), let titleRange = Range(match.range(at: 2), in: html) else { continue }
-            var href = decodeEntities(String(html[hrefRange]))
+            var href = HTMLEntities.decode(String(html[hrefRange]))
             if href.hasPrefix("//") { href = "https:" + href }
             // DuckDuckGo redirect: the actual target URL is in uddg.
             if let redirect = URLComponents(string: href), redirect.host?.contains("duckduckgo.com") == true,
@@ -194,24 +197,7 @@ final class WebTools {
     }
 
     nonisolated static func plain(_ html: String) -> String {
-        decodeEntities(html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
+        HTMLEntities.decode(html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
-
-    nonisolated static func decodeEntities(_ text: String) -> String {
-        var result = text
-        let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#x27;": "'", "&nbsp;": " ", "&apos;": "'"]
-        for (entity, value) in entities { result = result.replacingOccurrences(of: entity, with: value) }
-        // Numeric entities, e.g. &#233;
-        if let regex = try? NSRegularExpression(pattern: "&#(\\d{2,6});") {
-            let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed()
-            for match in matches {
-                guard let whole = Range(match.range, in: result), let digits = Range(match.range(at: 1), in: result),
-                      let code = UInt32(result[digits]), let scalar = Unicode.Scalar(code) else { continue }
-                result.replaceSubrange(whole, with: String(Character(scalar)))
-            }
-        }
-        return result
-    }
-
 }

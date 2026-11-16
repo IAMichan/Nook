@@ -44,15 +44,19 @@ targets:
       # The agents' and models' real marks, drawn in code, shared with the Mac app so both show the same logos.
       # Everything from the Mac stays in one group without intermediate groups: XcodeGen would also list these files
       # under an "apps" group, and Xcode refuses to open a project with a member in two groups.
-      - path: ../macos/NotchUI/Components/BrandLogo.swift
+      - path: ../macos/UI/Components/BrandLogo.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       # The one theme: colors, the type scale (Dynamic Type on the phone), radii, spacing and motion.
-      - path: ../macos/NotchUI/Theme/NookTheme.swift
+      - path: ../macos/UI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       # The Mac's Markdown parser (Foundation only), so an agent's answer reads as blocks on both (`MarkdownBlocksView`).
       - path: ../macos/Brain/MarkdownBlock.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      # Replying to an answer and the quote a message of yours starts with (`AnswerReply`), as on the Mac.
+      - path: ../macos/Services/Workspace/ComposerQuotes.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       - path: ../macos/Brain/ChatChart.swift
@@ -61,11 +65,11 @@ targets:
       - path: ../macos/Brain/ChartRescue.swift
         group: Shared from the Mac
         createIntermediateGroups: false
-      - path: ../macos/NotchUI/Theme/NookPalette.swift
+      - path: ../macos/UI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       # The icons: Lucide as custom symbols, and the table that names them (`Image(icon:)`).
-      - path: ../macos/NotchUI/Theme/NookIcon.swift
+      - path: ../macos/UI/Theme/NookIcon.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       - path: ../macos/Resources/Lucide.xcassets
@@ -73,7 +77,7 @@ targets:
         createIntermediateGroups: false
       # The components both apps share: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
       # messages and the time under them.
-      - path: ../macos/NotchUI/Shared
+      - path: ../macos/UI/Shared
         group: Shared from the Mac
         createIntermediateGroups: false
     dependencies:
@@ -91,6 +95,10 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # The iPad turns every way and shares the screen (Split View, Slide Over, Stage Manager): a regular width gets the
+        # split layout (`CompanionSplitView`), a compact one the phone's tabs.
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown,
+                                                UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
         NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
         # Dictation in the composers (`Dictation`): recognized on the iPhone itself where it can be; never sent to the Mac.
@@ -116,7 +124,8 @@ targets:
         # The same icon as the Mac app, drawn by scripts/generate_app_icon.swift.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        # iPhone and iPad (docs/COMPANION.md › iPad).
+        TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
       path: NookCompanion/NookCompanion.entitlements
       properties:
@@ -134,10 +143,10 @@ targets:
     sources:
       - path: NookActivity
       - path: Shared
-      - path: ../macos/NotchUI/Theme/NookTheme.swift
+      - path: ../macos/UI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
-      - path: ../macos/NotchUI/Theme/NookPalette.swift
+      - path: ../macos/UI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
@@ -168,7 +177,7 @@ targets:
         PRODUCT_NAME: NookActivity
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.activity
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     # The usage widget reads the limits the app keeps in the app group (`UsageSnapshot`). Needs the App Group
     # group.nl.imdigital.nook.companion on the app id nl.imdigital.nook.companion.activity too.
@@ -204,7 +213,7 @@ targets:
         PRODUCT_NAME: NookNotifications
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.notifications
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     entitlements:
       path: NookNotifications/NookNotifications.entitlements
@@ -220,10 +229,10 @@ targets:
       - path: NookShare
       - path: Shared/AppGroup.swift
       - path: ../../packages/protocol/Sources
-      - path: ../macos/NotchUI/Theme/NookTheme.swift
+      - path: ../macos/UI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
-      - path: ../macos/NotchUI/Theme/NookPalette.swift
+      - path: ../macos/UI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
@@ -252,7 +261,7 @@ targets:
         PRODUCT_NAME: NookShare
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.share
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     entitlements:
       path: NookShare/NookShare.entitlements

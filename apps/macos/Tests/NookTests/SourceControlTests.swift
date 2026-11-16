@@ -30,6 +30,22 @@ final class SourceControlRuleTests: XCTestCase {
         XCTAssertNil(AutoPull.parseCounts("fatal"))
     }
 
+    /// The half-minute tick looks at no path (no symlink resolving) unless some folder can resolve to auto-pull on.
+    func testAutoPullEnabledAnywhereMatchesTheResolver() {
+        var overrides = ProjectOverrides()
+        XCTAssertFalse(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        XCTAssertTrue(AutoPull.enabledAnywhere(global: true, overrides: overrides))
+        overrides.set(.autoPull, .string("off"), for: "/tmp/a")
+        overrides.set(.worktreeCleanup, .string("on"), for: "/tmp/b")
+        XCTAssertFalse(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        overrides.set(.autoPull, .string("on"), for: "/tmp/c")
+        XCTAssertTrue(AutoPull.enabledAnywhere(global: false, overrides: overrides))
+        let global = SessionDefaults(provider: .claude, models: [:], permission: .acceptEdits, isolation: .worktree,
+                                     branchPrefix: "nook")
+        XCTAssertFalse(global.autoPull)
+        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/tmp/c").autoPull)
+    }
+
     func testCloneAddressParsing() {
         XCTAssertEqual(CloneLayout.parse("git@github.com:IAMichan/nook.git"), .init(host: "github.com", owner: "IAMichan", name: "nook"))
         XCTAssertEqual(CloneLayout.parse("https://GitHub.com/IAMichan/nook"), .init(host: "github.com", owner: "IAMichan", name: "nook"))
@@ -278,7 +294,10 @@ final class SourceControlGitTests: XCTestCase {
         let oldest = git.commits(repo, count: 10).last!
         XCTAssertEqual(oldest.subject, "change 0")
         XCTAssertNil(oldest.parent)
-        let found = git.commit(repo, named: String(oldest.id.prefix(10)))
+        // A short hash Nook takes for one: at least one digit and one letter (a 10-character prefix of only digits,
+        // about 1 in 100 hashes, is read as a number and made this test fail now and then).
+        let short = (10...40).lazy.map { String(oldest.id.prefix($0)) }.first(where: CommitReference.isHash) ?? oldest.id
+        let found = git.commit(repo, named: short)
         XCTAssertEqual(found?.id, oldest.id)
         XCTAssertNil(git.commit(repo, named: "abc1234def"))
         XCTAssertNil(git.commit(repo, named: "--all"))
@@ -327,6 +346,9 @@ final class SourceControlGitTests: XCTestCase {
     }
 
     func testFastWorktreeEqualsAPlainOne() throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("APFS clones (clonefile) are the Mac's")
+        #endif
         let repo = root.appendingPathComponent("repo").path
         try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
         try git.run(["init", "-q", "-b", "main"], in: repo)

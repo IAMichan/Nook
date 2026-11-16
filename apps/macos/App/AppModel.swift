@@ -6,12 +6,15 @@ import PDFKit
 import UniformTypeIdentifiers
 import NaturalLanguage
 
-/// Orchestrates services, brain, and notch UI. The UI interacts solely with this object.
+/// Orchestrates services, brain, and the panel every surface shows. The UI interacts solely with this object.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
-    let notch = NotchController()
+    /// The panel the main window, the notch and sheets all show. Owned here, not by the notch: the notch is optional.
+    let viewModel: PanelViewModel
+    /// The notch's window, showing `viewModel` while the notch is on.
+    let notch: NotchController
     let settings = AppSettings.shared
     let store = NookStore()
     let calendar = CalendarService()
@@ -21,6 +24,11 @@ final class AppModel: ObservableObject {
     var sessionListsCache: SessionListsCache?
     /// `agentSessions` and the lists it was made from (see there).
     var agentSessionsCache: (runs: [WorkspaceRun], sessions: [AgentSession], detected: [AgentSession], value: [AgentSession])?
+    /// The Agents list's rows, kept until what they are made from changes (`AppModel+AgentList`).
+    var agentListMemo: AgentListMemo?
+    /// Counts up whenever an object the list's rows read without a key of their own changes (history, accounts,
+    /// settled marks, project names), so `agentListMemo` is made again after it.
+    var agentListGeneration = 0
     /// For each session Nook runs, when its transcript was last written outside Nook as last followed (see
     /// `followTerminalContinuations`): each change is read once.
     var followedTranscripts: [UUID: Date] = [:]
@@ -36,6 +44,8 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Antigravity's quota windows, read from Google.
     let antigravityUsage = AntigravityUsage()
+    /// The CLIProxyAPI hubs added in Settings, and what each reports about its accounts.
+    let cliProxy = CLIProxyUsage()
     /// Claude's subscription limits, asked of the `claude` CLI for every signed-in Claude account.
     private(set) lazy var claudeUsage = ClaudeUsage(
         hub: hub,
@@ -52,14 +62,17 @@ final class AppModel: ObservableObject {
         claudeUsage.refreshNow()
         codex.refreshNow(maxAge: maxAge)
         antigravityUsage.refreshNow()
+        cliProxy.refreshNow()
     }
 
     /// The refresh button of a usage view: reads every account now and returns when Claude's and Codex's readings are in.
     func refreshQuotasManually() async {
         antigravityUsage.refreshNow(force: true)
         async let codexDone: Void = codex.refreshManually()
+        async let hubsDone: Void = cliProxy.refreshManually()
         await claudeUsage.refreshManually()
         await codexDone
+        await hubsDone
     }
 
     /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy
@@ -88,7 +101,7 @@ final class AppModel: ObservableObject {
     /// One notification per session and state: a turn that reports its end twice tells you once.
     var attentionLedger = AttentionLedger()
     /// Keeps the notices Nook gives by himself apart, so a busy hour does not become a stream of pop-ups.
-    var noticePacer = NoticePacer()
+    var noticePacer = NoticePacer(budget: InterruptionBudget(stored: UserDefaults.standard.data(forKey: InterruptionBudget.storageKey)))
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared) { [weak self] tool, args, result in
         self?.store.audit(tool: tool, args: args, result: result)
@@ -97,6 +110,8 @@ final class AppModel: ObservableObject {
     var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .start
+    /// A project Settings › Projects should show next (`openProjectSettings`); Settings takes it and clears it.
+    @Published var settingsProjectScope: String?
 
     private(set) lazy var tools: NookTools = {
         let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
@@ -141,6 +156,8 @@ final class AppModel: ObservableObject {
     private(set) lazy var memoryTools: [ToolSpec] = makeMemoryTools()
     /// get_settings, change_setting and open_settings (see `AppModel+SettingsTools`).
     private(set) lazy var settingsTools: [ToolSpec] = makeSettingsTools()
+    /// schedule_task and list_scheduled_tasks: automations Nook Chat runs by itself (see `AppModel+ScheduleTools`).
+    private(set) lazy var scheduleTools: [ToolSpec] = makeScheduleTools()
 
     /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
@@ -150,6 +167,7 @@ final class AppModel: ObservableObject {
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools + musicTools + agentSessionTools
         if settings.useMemory { all += memoryTools }
         all += settingsTools
+        all += scheduleTools
         all += webSpecs
         all += BrowserStore.tools
         all += EmbeddedAppStore.tools
@@ -162,7 +180,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools + musicTools + agentSessionTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools + scheduleTools + musicTools + agentSessionTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.tools
@@ -241,8 +259,6 @@ final class AppModel: ObservableObject {
     @Published var loops: [OpenLoop] = []
     @Published var upcoming: [CalEvent] = []
 
-    var viewModel: NotchViewModel { notch.viewModel }
-
     var bag = Set<AnyCancellable>()
     var hotKeys: [HotKey] = []
     var watchTimer: Timer?
@@ -274,6 +290,9 @@ final class AppModel: ObservableObject {
     @Published var attachmentError: String?
 
     private init() {
+        let viewModel = PanelViewModel()
+        self.viewModel = viewModel
+        notch = NotchController(viewModel: viewModel)
         // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
         // connector, history, usage, the first screen read), and a running agent changes the hub with every step it
         // takes, so they are combined: the first change redraws at once, a burst at most four times a second. At one
@@ -294,6 +313,18 @@ final class AppModel: ObservableObject {
         Publishers.MergeMany(children)
             .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
+        // The Agents list's rows read these besides the sessions themselves (your visits are applied after,
+        // `AgentListEntries.seen`): any change makes them again (unthrottled,
+        // so the list is never drawn from what they said before).
+        let listInputs: [AnyPublisher<Void, Never>] = [
+            history.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            profiles.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            FinishedSessions.shared.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            workspace.settings.objectWillChange.map { _ in () }.eraseToAnyPublisher()
+        ]
+        Publishers.MergeMany(listInputs)
+            .sink { [weak self] _ in self?.agentListGeneration &+= 1 }
             .store(in: &bag)
         // Nook's task ring reads the sessions Nook runs itself. The workspace changes with every streamed token, so only a
         // change in what a session asks of you (its status, an approval, a question) redraws the app.
@@ -350,6 +381,8 @@ final class AppModel: ObservableObject {
         notch.start(app: self)
 
         reloadLoops()
+        // A database that could not be opened as it was: said once, where you see it (`SQLiteRecovery`).
+        watchStorageIncidents()
 
         // Always install newest hook script version so existing integrations stay up to date.
         _ = try? HookScript.install()
@@ -491,6 +524,8 @@ final class AppModel: ObservableObject {
             NotesConnector(),
             MailConnector(),
             BrowserConnector(),
+            // The user's own browser through Nook's extension (Settings › Browser › Nook in your browser).
+            BrowserExtensionConnector(),
             FilesConnector(),
             ClipboardConnector(),
             ChatInboxConnector(),
@@ -515,6 +550,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        BrowserExtensionService.shared.start(app: self)
         startWhatsApp()
         startChats()
         startFlow()
@@ -536,6 +572,10 @@ final class AppModel: ObservableObject {
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › Maintenance › Energy.
         EnergyMonitor.shared.start(settings: settings)
+        // How much room the coding agents may take: background when memory is tight, the youngest agents' commands wait
+        // when the Mac swaps hard (`AgentGovernor`). It also resumes what an earlier Nook left paused.
+        AgentGovernor.shared.start()
+        AgentProcess.beforeStop = { AgentGovernor.shared.release(agent: $0) }
         // The pull request list stays current with its panel closed: a quiet read now and then, slower when saving energy.
         PullRequestStore.shared.followInBackground { [weak self] in !(self?.demoMode ?? true) }
 
@@ -566,11 +606,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self?.refreshUpcoming() }
         }
 
-        // ThinkAlong: evaluates dwell time periodically. Zero cost; model is only
-        // invoked when ThinkAlong determines assistance is genuinely helpful.
-        watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
-            Task { @MainActor in self?.thinkAlongTick() }
-        }
+        // ThinkAlong: evaluates dwell time periodically, only while it is on (`startThinkAlongWatch`).
+        startThinkAlongWatch()
 
         startBuddy()
         startQuietWatch()
@@ -586,6 +623,8 @@ final class AppModel: ObservableObject {
     /// The usage modal (limits, cost, tokens) is open over the panel: from the footer's usage button, the command palette,
     /// search and the composer's limits.
     @Published var usageModalOpen = false
+    /// The shortcut cheat sheet (`?`) is open (see `ShortcutCheatSheetView`).
+    @Published var cheatSheetOpen = false
 
     /// Opens the usage modal; with `tab`, on that part (the limits, from "All limits").
     func openUsageModal(_ tab: UsageModalTab? = nil) {

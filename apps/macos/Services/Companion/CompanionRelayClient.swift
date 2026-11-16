@@ -422,8 +422,8 @@ final class RelayRoom {
         }
     }
 
-    fileprivate func send(_ data: Data, to connection: UInt32) {
-        send(RelayMux.encode(.data, connection: connection, payload: data))
+    fileprivate func send(_ data: Data, to connection: UInt32, done: @escaping @Sendable () -> Void = {}) {
+        send(RelayMux.encode(.data, connection: connection, payload: data), done: done)
     }
 
     /// The Mac ends a phone connection: the relay closes the phone's socket.
@@ -432,8 +432,9 @@ final class RelayRoom {
         if let peer = peers.removeValue(forKey: connection) { CompanionServer.shared.relayClosed(peer) }
     }
 
-    private func send(_ message: Data) {
-        task?.send(.data(message)) { _ in }
+    private func send(_ message: Data, done: @escaping @Sendable () -> Void = {}) {
+        guard let task else { return done() }
+        task.send(.data(message)) { _ in done() }
     }
 
     private func dropPeers() {
@@ -449,6 +450,7 @@ final class RelayTransport: CompanionTransport {
     private weak var room: RelayRoom?
     private let connection: UInt32
     private var cancelled = false
+    private(set) var pending = 0
 
     init(room: RelayRoom, connection: UInt32) {
         self.room = room
@@ -456,8 +458,12 @@ final class RelayTransport: CompanionTransport {
     }
 
     func send(_ data: Data) {
-        guard !cancelled else { return }
-        room?.send(data, to: connection)
+        guard !cancelled, let room else { return }
+        let size = data.count
+        pending += size
+        room.send(data, to: connection) { [weak self] in
+            Task { @MainActor in self?.pending -= size }
+        }
     }
 
     func cancel() {

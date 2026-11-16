@@ -13,7 +13,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.quote.remove": "Citaat weghalen",
         "compose.quote.full": "Er gaan al vijf citaten mee; haal er een weg om een ander toe te voegen.",
         "timeline.newSince": "Nieuw sinds je laatste bezoek",
-        "compose.context.nearlyFull": "Het contextvenster raakt vol: /compact vat het gesprek samen.",
+        "compose.context.nearlyFull": "Dit gesprek wordt lang: /compact vat het samen voordat het vanzelf gebeurt.",
     ],
     .en: [
         "compose.limits.shortHours": "%ldh",
@@ -24,7 +24,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.quote.remove": "Remove quote",
         "compose.quote.full": "Five quotes already go with this message; remove one to add another.",
         "timeline.newSince": "New since your last visit",
-        "compose.context.nearlyFull": "The context window is filling up: /compact summarizes the conversation.",
+        "compose.context.nearlyFull": "This conversation is getting long: /compact summarizes it before it happens by itself.",
     ],
     .de: [
         "compose.limits.shortHours": "%ldh",
@@ -35,7 +35,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.quote.remove": "Zitat entfernen",
         "compose.quote.full": "Es gehen schon fünf Zitate mit; entferne eins, um ein anderes hinzuzufügen.",
         "timeline.newSince": "Neu seit deinem letzten Besuch",
-        "compose.context.nearlyFull": "Das Kontextfenster wird voll: /compact fasst das Gespräch zusammen.",
+        "compose.context.nearlyFull": "Dieses Gespräch wird lang: /compact fasst es zusammen, bevor es von selbst passiert.",
     ],
     .fr: [
         "compose.limits.shortHours": "%ldh",
@@ -46,7 +46,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.quote.remove": "Retirer la citation",
         "compose.quote.full": "Cinq citations accompagnent déjà ce message ; retires-en une pour en ajouter une autre.",
         "timeline.newSince": "Nouveau depuis ta dernière visite",
-        "compose.context.nearlyFull": "La fenêtre de contexte se remplit : /compact résume la conversation.",
+        "compose.context.nearlyFull": "Cette conversation devient longue : /compact la résume avant que cela se fasse tout seul.",
     ],
     .es: [
         "compose.limits.shortHours": "%ldh",
@@ -57,6 +57,6 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.quote.remove": "Quitar cita",
         "compose.quote.full": "Ya van cinco citas con este mensaje; quita una para añadir otra.",
         "timeline.newSince": "Nuevo desde tu última visita",
-        "compose.context.nearlyFull": "La ventana de contexto se está llenando: /compact resume la conversación.",
+        "compose.context.nearlyFull": "Esta conversación se está alargando: /compact la resume antes de que ocurra solo.",
     ],
 ]

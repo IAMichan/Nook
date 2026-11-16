@@ -93,3 +93,76 @@ struct ComposerQuotes: Equatable, Sendable {
         return String(words.prefix(titleLength - 1)).trimmingCharacters(in: .whitespaces) + "…"
     }
 }
+
+// MARK: Replying to an answer
+
+/// "Reply" under an agent's answer: the answer (or the part of it you selected) as a Markdown quote at the top of the
+/// session's composer, with the caret under it for what you say about it. A long answer is quoted only so far, enough
+/// for the agent to know which answer you mean; it has the whole of it already.
+enum AnswerReply {
+    /// The most of an answer a reply quotes, in characters, before it is cut with an ellipsis.
+    static let characterLimit = 400
+
+    /// What goes to the composer: `selection` when it is a part of `answer`, else the answer itself.
+    static func source(answer: String, selection: String?) -> String {
+        guard let selection = selection.map(ComposerQuotes.normalize), !selection.isEmpty else { return answer }
+        let needle = String(ComposerQuotes.comparable(selection).prefix(120))
+        guard needle.count >= 3, ComposerQuotes.comparable(answer).contains(needle) else { return answer }
+        return selection
+    }
+
+    /// `text` as a Markdown quote: every line behind "> " (an empty one a bare ">"), runs of empty lines kept to one,
+    /// cut at `limit` characters on a word with "…". Empty when there is nothing to quote.
+    static func quote(_ text: String, limit: Int = characterLimit) -> String {
+        var clean = ComposerQuotes.normalize(text)
+        guard !clean.isEmpty else { return "" }
+        if clean.count > limit {
+            var cut = String(clean.prefix(limit))
+            // On a word: back to the last space or line break, when that does not lose too much.
+            if let space = cut.lastIndex(where: { $0 == " " || $0 == "\n" }), cut.distance(from: space, to: cut.endIndex) <= 40 {
+                cut = String(cut[..<space])
+            }
+            clean = cut.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        }
+        var lines: [String] = []
+        for line in clean.components(separatedBy: "\n") {
+            var line = line
+            while line.last == " " || line.last == "\t" { line.removeLast() }
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if lines.last != ">" { lines.append(">") }
+            } else {
+                lines.append("> " + line)
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The draft with `quote` at its top and an empty line under it, and where the caret goes (UTF-16): right after
+    /// that line, before what you had written already.
+    static func inserting(_ quote: String, into draft: String) -> (text: String, caret: Int) {
+        guard !quote.isEmpty else { return (draft, 0) }
+        let head = quote + "\n\n"
+        let rest = String(draft.drop { $0.isWhitespace })
+        return (head + rest, head.utf16.count)
+    }
+
+    /// The quote a sent message of yours starts with (its leading "> " lines, markers taken off) and the words after
+    /// it, so the message shows the quote as a card above them; nil when it does not start with a quote.
+    static func leadingQuote(_ message: String) -> (quote: String, rest: String)? {
+        let lines = message.components(separatedBy: "\n")
+        var quoted: [String] = []
+        var index = 0
+        while index < lines.count {
+            let line = lines[index].drop { $0 == " " }
+            guard line.hasPrefix(">") else { break }
+            var body = line.dropFirst()
+            if body.first == " " { body = body.dropFirst() }
+            quoted.append(String(body))
+            index += 1
+        }
+        let quote = quoted.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !quote.isEmpty else { return nil }
+        let rest = lines[index...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (quote, rest)
+    }
+}

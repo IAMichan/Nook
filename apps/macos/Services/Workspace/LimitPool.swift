@@ -1,7 +1,7 @@
 import Foundation
 
-/// Every subscription account of one agent read as one pool, as the Usage limits sheet shows it (the same model as
-/// limit pools): per window (5 hours, week) how much of the pool is left and whether it is spent ahead of the
+/// Every subscription account of one agent read as one pool, as the Usage limits sheet shows it (a limit
+/// pool): per window (5 hours, week) how much of the pool is left and whether it is spent ahead of the
 /// clock, with a column per account that stays in the same place across windows, and which reset comes next and how
 /// much of the pool it hands back. Everything reads as room left, not as what was used. One account is a pool of one.
 struct LimitPool: Equatable, Sendable {
@@ -29,12 +29,29 @@ struct LimitPool: Equatable, Sendable {
         var resetsAt: Date?
         /// How long the window lasts, when known; with `resetsAt` it places the window's start and so its pace.
         var duration: TimeInterval? = nil
+
+        /// The model group of a label like "Gemini 4 Argon · Week" ("Gemini 4 Argon"), or nil for a plain window ("Week").
+        var group: String? {
+            label.range(of: " · ", options: .backwards).map { String(label[..<$0.lowerBound]) }
+        }
     }
 
     struct Account: Equatable, Sendable {
         var id: String
         var name: String
         var limits: [Limit]
+        /// How large the account's plan is next to the agent's smallest paid plan, per window kind (`weights(agent:plan:)`);
+        /// nil when unknown. A pool weighs its accounts by it, so a Max 20x account counts twenty times a Pro one.
+        var sessionWeight: Double? = nil
+        var weeklyWeight: Double? = nil
+
+        func weight(_ kind: Kind) -> Double? {
+            switch kind {
+            case .session: return sessionWeight
+            case .weekly: return weeklyWeight
+            case .other: return nil
+            }
+        }
     }
 
     /// One account in one window.
@@ -63,7 +80,7 @@ struct LimitPool: Equatable, Sendable {
     struct Window: Equatable, Identifiable, Sendable {
         var label: String
         var kind: Kind
-        /// Left of the whole pool, 0...100: the mean over the accounts that report the window.
+        /// Left of the whole pool, 0...100: the mean over the accounts that report the window, weighed by plan size.
         var left: Int
         var pace: Pace?
         /// One per account of the pool, in the pool's account order; a member without a limit is a gap.
@@ -107,22 +124,32 @@ struct LimitPool: Equatable, Sendable {
                 }
                 return member(account, limit, now: now)
             }
-            let members = columns.filter { $0.limit != nil }
-            let used = members.map { $0.limit!.used }.reduce(0, +) / Double(max(members.count, 1))
-            // Pace counts only windows with a clock; the others add spending without elapsed time.
-            let timed = members.compactMap { member -> (used: Double, elapsed: Double)? in
-                guard let limit = member.limit, let elapsed = elapsedShare(limit, now: now) else { return nil }
-                return (limit.used, elapsed)
-            }
-            let pace = timed.isEmpty ? nil : paceOf(used: timed.map(\.used).reduce(0, +) / Double(timed.count),
-                                                     elapsed: timed.map(\.elapsed).reduce(0, +) / Double(timed.count))
-            let resets = members.compactMap { member -> Reset? in
-                guard let at = member.limit?.resetsAt, at > now else { return nil }
-                return Reset(accountID: member.accountID, at: at, restores: Int((member.refill / Double(members.count)).rounded()))
-            }
-            .sorted { $0.at < $1.at }
             // From the window as reported: a spent session window loses its clock, not its kind.
             let kind = Kind(duration: order.lazy.compactMap { $0.limits.first { $0.label == label } }.first?.duration)
+            let members = columns.filter { $0.limit != nil }
+            // Each account counts by the size of its plan; one account of unknown size makes the plans incomparable,
+            // and then every account counts once.
+            let byID = Dictionary(order.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let sizes = members.map { byID[$0.accountID]?.weight(kind) }
+            let weights = sizes.allSatisfy { ($0 ?? 0) > 0 } ? sizes.map { $0 ?? 1 } : members.map { _ in 1.0 }
+            let totalWeight = max(weights.reduce(0, +), 1)
+            let weightOf = Dictionary(zip(members.map(\.accountID), weights), uniquingKeysWith: { first, _ in first })
+            let used = zip(members, weights).map { $0.limit!.used * $1 }.reduce(0, +) / totalWeight
+            // Pace counts only windows with a clock; the others add spending without elapsed time.
+            let timed = zip(members, weights).compactMap { member, weight -> (used: Double, elapsed: Double, weight: Double)? in
+                guard let limit = member.limit, let elapsed = elapsedShare(limit, now: now) else { return nil }
+                return (limit.used, elapsed, weight)
+            }
+            let timedWeight = timed.map(\.weight).reduce(0, +)
+            let pace = timed.isEmpty || timedWeight <= 0 ? nil
+                : paceOf(used: timed.map { $0.used * $0.weight }.reduce(0, +) / timedWeight,
+                         elapsed: timed.map { $0.elapsed * $0.weight }.reduce(0, +) / timedWeight)
+            let resets = members.compactMap { member -> Reset? in
+                guard let at = member.limit?.resetsAt, at > now else { return nil }
+                let weight = weightOf[member.accountID] ?? 1
+                return Reset(accountID: member.accountID, at: at, restores: Int((member.refill * weight / totalWeight).rounded()))
+            }
+            .sorted { $0.at < $1.at }
             return Window(label: label, kind: kind, left: left(used), pace: pace, columns: columns, resets: resets)
         }
         // Stable: windows of one kind keep the order the agent gives them.
@@ -130,12 +157,13 @@ struct LimitPool: Equatable, Sendable {
         return LimitPool(accounts: order, windows: sorted.map(\.element))
     }
 
-    /// An account's window as the pool counts it. While the account's week is spent, its session window is spent too: it
-    /// reads as empty, without a pace, and comes back with whichever of the two resets frees it.
+    /// An account's window as the pool counts it. While the account's week of the same model group is spent, its session
+    /// window is spent too: it reads as empty, without a pace, and comes back with whichever of the two resets frees it.
+    /// A spent week of another group ("Gemini 4 Argon · Week") leaves the session window ("Gemini · 5 hours") alone.
     static func member(_ account: Account, _ limit: Limit, now: Date) -> Member {
         let plain = Member(accountID: account.id, name: account.name, limit: limit, refill: limit.used)
         guard Kind(duration: limit.duration) == .session,
-              let week = account.limits.first(where: { Kind(duration: $0.duration) == .weekly && $0.used >= 100 }) else { return plain }
+              let week = account.limits.first(where: { Kind(duration: $0.duration) == .weekly && $0.group == limit.group && $0.used >= 100 }) else { return plain }
         var spent = limit
         spent.used = 100
         spent.duration = nil
@@ -155,6 +183,27 @@ struct LimitPool: Equatable, Sendable {
             }
         }
         return Member(accountID: account.id, name: account.name, limit: spent, refill: refill)
+    }
+
+    /// How large a plan is next to the agent's smallest paid plan, per window kind, as the agents publish it: Claude's
+    /// plans multiply the session allowance only (Pro 1, Max 5x 5, Max 20x 20), ChatGPT's the session and the week alike
+    /// (Plus 1, Pro 20, its smaller Pro tier 5). Nil for a plan without a published size (Team, Enterprise, an API key).
+    static func weights(agent: String, plan: String) -> (session: Double?, weekly: Double?) {
+        let plan = plan.lowercased()
+        guard !plan.isEmpty else { return (nil, nil) }
+        switch agent {
+        case "claude":
+            let size: Double? = plan.contains("20x") || plan.contains("ultra") ? 20
+                : plan.contains("5x") || plan.contains("max") ? 5
+                : plan.contains("pro") ? 1 : nil
+            return (size, nil)
+        case "codex":
+            let size: Double? = plan.contains("plus") ? 1
+                : plan.contains("pro") ? (plan.contains("100") || plan.contains("lite") ? 5 : 20) : nil
+            return (size, size)
+        default:
+            return (nil, nil)
+        }
     }
 
     /// What is left of a window, rounded: 100 minus what was used.

@@ -92,4 +92,68 @@ final class MailIndexTests: XCTestCase {
     func testAFileWithoutLengthIsNoMessage() {
         XCTAssertNil(MailIndex.message(emlx: Data("no length here".utf8)))
     }
+
+    // MARK: Recent mail per account
+
+    func testInboxAndSentBoxesAreFoundByNameInEveryLanguage() {
+        let raw: [[String: Any]] = [
+            ["id": NSNumber(value: 2), "url": "imap://ICLOUD/INBOX"],
+            ["id": NSNumber(value: 3), "url": "imap://ICLOUD/Sent%20Messages"],
+            ["id": NSNumber(value: 8), "url": "imap://GMAIL/%5BGmail%5D/Alle%20e-mail"],
+            ["id": NSNumber(value: 18), "url": "imap://GMAIL/%5BGmail%5D/Verzonden%20berichten"],
+            ["id": NSNumber(value: 29), "url": "ews://WORK/Postvak%20IN"],
+            ["id": NSNumber(value: 50), "url": "ews://WORK/"],
+            ["id": NSNumber(value: 60), "url": "imap://GMAIL/Archive/INBOX"],
+        ]
+        let boxes = MailIndex.boxes(raw, sentNames: MailChatData.sentNames)
+        XCTAssertEqual(boxes, [
+            .init(id: 2, account: "ICLOUD", path: "INBOX", kind: .inbox),
+            .init(id: 3, account: "ICLOUD", path: "Sent Messages", kind: .sent),
+            .init(id: 18, account: "GMAIL", path: "[Gmail]/Verzonden berichten", kind: .sent),
+            .init(id: 29, account: "WORK", path: "Postvak IN", kind: .inbox),
+        ], "All Mail and a nested folder named INBOX are no inbox; Gmail's Sent is reached by its whole path")
+    }
+
+    func testRecentSQLTakesGmailLabelsAndLeavesDeletedMailOut() {
+        let sql = MailIndex.recentSQL(box: 9, limit: 60)
+        XCTAssertTrue(sql.contains("SELECT message_id FROM labels WHERE mailbox_id = 9"), sql)
+        XCTAssertTrue(sql.contains("m.deleted = 0"), sql)
+        XCTAssertTrue(sql.hasSuffix("LIMIT 60"), sql)
+    }
+
+    func testRecentRowsNameSenderAndRecipient() {
+        let raw: [[String: Any]] = [[
+            "id": NSNumber(value: 57_293), "subject": "Re: Plan", "address": "lisa@example.com", "name": "Lisa de Vries",
+            "date": NSNumber(value: 1_794_450_335), "read": NSNumber(value: 0), "replied": NSNumber(value: 1),
+            "summary": "Hoi", "mailbox": "imap://GMAIL/%5BGmail%5D/Alle%20e-mail", "to_address": "me@example.com", "to_name": NSNull(),
+        ], ["id": NSNull(), "date": NSNumber(value: 1)]]
+        let rows = MailIndex.recent(raw)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.sender, "Lisa de Vries <lisa@example.com>")
+        XCTAssertEqual(rows.first?.recipient, "me@example.com")
+        XCTAssertEqual(rows.first?.read, false)
+        XCTAssertEqual(rows.first?.replied, true)
+        XCTAssertEqual(rows.first?.date, Date(timeIntervalSince1970: 1_794_450_335))
+    }
+
+    func testTrashBoxesAreFoundWhenAsked() {
+        let raw: [[String: Any]] = [
+            ["id": NSNumber(value: 21), "url": "imap://GMAIL/%5BGmail%5D/Prullenbak"],
+            ["id": NSNumber(value: 43), "url": "ews://WORK/Verwijderde%20items"],
+        ]
+        XCTAssertEqual(MailIndex.boxes(raw, sentNames: MailChatData.sentNames), [])
+        XCTAssertEqual(MailIndex.boxes(raw, sentNames: MailChatData.sentNames, trashNames: MailChatData.trashNames), [
+            .init(id: 21, account: "GMAIL", path: "[Gmail]/Prullenbak", kind: .trash),
+            .init(id: 43, account: "WORK", path: "Verwijderde items", kind: .trash),
+        ])
+    }
+
+    func testHistorySQLMatchesThePersonAsSenderOrRecipientWithinTheStretch() {
+        let sql = MailIndex.historySQL(boxes: [9, 18], address: "O'Brien@Example.com", from: Date(timeIntervalSince1970: 100),
+                                       to: Date(timeIntervalSince1970: 200), limit: 500)
+        XCTAssertTrue(sql.contains("a.address = 'o''brien@example.com' COLLATE NOCASE"), sql)
+        XCTAssertTrue(sql.contains("x.address = 'o''brien@example.com' COLLATE NOCASE"), sql)
+        XCTAssertTrue(sql.contains("mailbox_id = 9") && sql.contains("mailbox_id = 18"), sql)
+        XCTAssertTrue(sql.contains("m.date_received >= 100 AND m.date_received < 200"), sql)
+    }
 }

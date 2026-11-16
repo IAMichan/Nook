@@ -96,6 +96,23 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertEqual(found.map(\.kind), [.xcodeBuild])
     }
 
+    /// A settled session's worktree loses its build after an hour; one still in use keeps it for two days.
+    func testASettledWorktreeLosesItsBuildAfterAnHour() throws {
+        let settled = base.appendingPathComponent("worktrees/merged")
+        let open = base.appendingPathComponent("worktrees/open")
+        roots.worktrees = [settled, open]
+        roots.settledWorktrees = [settled]
+        let twoHours: TimeInterval = 2 * 60 * 60
+        try make(settled.appendingPathComponent(".build/xcode"), workspace: settled.path + "/apps/macos/Nook.xcodeproj", age: twoHours)
+        try make(settled.appendingPathComponent(".build/fresh"), workspace: settled.path + "/apps/macos/Nook.xcodeproj", age: 60)
+        try make(open.appendingPathComponent(".build/xcode"), workspace: open.path + "/apps/macos/Nook.xcodeproj", age: twoHours)
+
+        let found = BuildLeftovers.find(in: roots, now: now)
+
+        XCTAssertEqual(found.map { $0.url.resolvingSymlinksInPath().path },
+                       [settled.appendingPathComponent(".build/xcode").resolvingSymlinksInPath().path])
+    }
+
     func testRemovesDependenciesOnlyFromIdleWorktrees() throws {
         let idle = base.appendingPathComponent("worktrees/idle")
         let busy = base.appendingPathComponent("worktrees/busy")
@@ -124,6 +141,17 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertFalse(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature/apps/web"], mainCheckouts: []))
         XCTAssertFalse(BuildLeftovers.isIdle(worktree, busy: [], mainCheckouts: ["/w/nook/feature"]))
         XCTAssertTrue(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature-2"], mainCheckouts: []))
+    }
+
+    /// The busy folders are resolved once for a whole sweep and give every worktree the same answer.
+    func testHeldFoldersAnswerForEveryWorktreeAtOnce() {
+        let held = BuildLeftovers.heldFolders(["/w/nook/a/apps/web", "/w/nook/a/apps/web", "/w/other/b", "/Users/me"])
+        XCTAssertFalse(BuildLeftovers.isIdle("/w/nook/a", held: held, mainCheckouts: []))
+        XCTAssertFalse(BuildLeftovers.isIdle("/w/other/b", held: held, mainCheckouts: []))
+        XCTAssertTrue(BuildLeftovers.isIdle("/w/nook/c", held: held, mainCheckouts: []))
+        XCTAssertTrue(BuildLeftovers.isIdle("/w/nook/a-2", held: held, mainCheckouts: []))
+        // A folder above a worktree (your home folder) says nothing about it.
+        XCTAssertTrue(BuildLeftovers.isIdle("/Users/me/project", held: held, mainCheckouts: []))
     }
 
     func testLowDiskSpaceWarnsOnceUntilItRecovered() {

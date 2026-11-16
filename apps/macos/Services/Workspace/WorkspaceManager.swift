@@ -11,9 +11,11 @@ struct PendingPermission: Identifiable, Equatable {
     let suggestions: JSONBox?
     let eventID: UUID
     let created: Date
+    /// Why the agent asks, in its own words, and what it says about the request (`PermissionAsk`).
+    var ask = PermissionAsk()
 
     var canAlways: Bool {
-        guard let list = suggestions?.object as? [Any] else { return false }
+        guard !ask.noAlways, let list = suggestions?.object as? [Any] else { return false }
         return !list.isEmpty
     }
 }
@@ -25,8 +27,13 @@ struct PendingQuestion: Identifiable, Equatable {
         case claude(requestID: String, input: JSONBox)
         /// A Pi extension's dialog (select, input, editor): answered with `extension_ui_response`.
         case pi(requestID: String)
+        /// A form OpenCode's server asked (its `question` tool): answered with the form's reply.
+        case openCode(OpenCodeForm)
         /// A question the agent asked without waiting for it (Codex's async message): the answer goes as a message.
         case message
+        /// Asked before Nook restarted (`RestartRequests`): the process that waited for it is gone, so the answer goes as
+        /// a message of yours and resumes the conversation.
+        case restored
     }
 
     let id: String
@@ -36,7 +43,24 @@ struct PendingQuestion: Identifiable, Equatable {
     let created: Date
 
     /// Nothing waits for this answer: the agent goes on, and the answer reaches it as a message of yours.
-    var answersAsMessage: Bool { origin == .message }
+    var answersAsMessage: Bool { origin == .message || origin == .restored }
+    var isRestored: Bool { origin == .restored }
+
+    /// As it is saved with its session, to show again after a restart.
+    var saved: SavedQuestion? { RestartRequests.saved(id: id, questions: questions, created: created) }
+
+    /// A question saved before a restart, back in the session it was asked in.
+    init(restoring saved: SavedQuestion, runID: UUID) {
+        self.init(id: saved.id, runID: runID, questions: saved.questions, origin: .restored, created: saved.created)
+    }
+
+    init(id: String, runID: UUID, questions: [RunQuestion], origin: Origin, created: Date) {
+        self.id = id
+        self.runID = runID
+        self.questions = questions
+        self.origin = origin
+        self.created = created
+    }
 }
 
 /// Latest Git snapshot observed by Nook for a session.
@@ -95,12 +119,18 @@ struct ProjectInfo: Equatable {
 final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the stop and handoff extensions settle open work and add forked sessions.
     @Published var runs: [WorkspaceRun] = [] {
-        didSet { runPositions = nil }
+        didSet {
+            runPositions = nil
+            subThreadCounts = nil
+        }
     }
     /// Where each session is in `runs`, made again on the first lookup after `runs` changed. Rows, panels and the
     /// handlers of every streamed line look a session up by id, many times per redraw: walking a few hundred sessions
     /// (and copying the one found) each time was a visible share of drawing the Agents list.
     private var runPositions: [UUID: Int]?
+    /// How many delegated sub-threads still work under each session (`workingSubThreads(of:)`), made again on the first
+    /// read after `runs` changed. `attention` asks it for every finished row on every redraw.
+    var subThreadCounts: [UUID: Int]?
 
     /// The index of session `id` in `runs`; the first one when an id appears twice.
     func runIndex(_ id: UUID) -> Int? {
@@ -116,18 +146,22 @@ final class WorkspaceManager: ObservableObject {
     /// here, and the views that draw a timeline hear about it through `timelines`, at most every `eventsPublishInterval`
     /// (see `eventsDidChange`).
     var events: [UUID: [RunEvent]] = [:] {
-        didSet { eventsDidChange(changingTimeline) }
+        didSet {
+            // A change that does not keep the byte counts right itself: which timeline it touched is not known here.
+            if !timelineStore.countingBytes { timelineStore.bytes.forgetAll() }
+            eventsDidChange(timelineStore.changing)
+        }
     }
-    /// The session whose timeline `append` or `mutateEvent` is changing, so only views of that session hear about it.
-    /// Any other change to `events` (a load, a rollback, a fork) is announced to every session.
-    private var changingTimeline: UUID?
+    /// What Nook keeps about the timelines besides their events: what is in memory and how big, what was released,
+    /// what waits for a read, and the saves still to come (`WorkspaceManager+TimelineStore`).
+    var timelineStore = TimelineStore()
     /// Announces a changed timeline. Apart from this manager's own change: a streaming answer changes a timeline up to 20
     /// times a second, and announcing that on the manager redrew every view that observes it (the session's frame, its
     /// side panels, git buttons, usage badges), which only read the sessions and not what they say.
     let timelines = TimelineChanges()
     /// The same per session: a view that draws one session's timeline observes only its own (`timelineChanges(for:)`), so
     /// five agents streaming elsewhere do not redraw the session you are reading twenty times a second each.
-    private var sessionTimelines: [UUID: TimelineChanges] = [:]
+    var sessionTimelines: [UUID: TimelineChanges] = [:]
 
     /// What tells the views of session `id` that its timeline changed.
     func timelineChanges(for id: UUID) -> TimelineChanges {
@@ -137,14 +171,21 @@ final class WorkspaceManager: ObservableObject {
         return made
     }
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
-    @Published var approvals: [UUID: [PendingPermission]] = [:]
+    @Published var approvals: [UUID: [PendingPermission]] = [:] {
+        didSet { waitingChanged(approvals.keys, oldValue.keys) }
+    }
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
-    @Published private(set) var queued: [UUID: MessageQueue] = [:]
+    @Published private(set) var queued: [UUID: MessageQueue] = [:] {
+        // Saved with the session list, so a restart keeps it (`RestartRequests`).
+        didSet { if runsLoaded { scheduleSave() } }
+    }
     /// Sessions whose next message of yours starts a new conversation (`/clear`, see `FreshConversation`). In memory only,
     /// as a draft is: "Keep this conversation" takes it back.
     @Published var freshArmed: Set<UUID> = []
     /// Questions an agent asked in a session and that wait for your answer.
-    @Published var questions: [UUID: [PendingQuestion]] = [:]
+    @Published var questions: [UUID: [PendingQuestion]] = [:] {
+        didSet { waitingChanged(questions.keys, oldValue.keys) }
+    }
     /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
     @Published var connectorSignIns: [UUID: [ConnectorSignIn]] = [:]
     /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
@@ -177,6 +218,15 @@ final class WorkspaceManager: ObservableObject {
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption], call: AcpToolCall)] = [:]
     var acpFallback: Set<String> = []
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// OpenCode over its own server (`WorkspaceManager+OpenCodeServer`): the servers by account, each session's place on
+    /// one, its idle close, the permission requests waiting for you, servers stopping for lack of sessions, and OpenCode
+    /// executables that run over ACP (no server Nook speaks, or it did not start).
+    var openCodeHosts: [String: OpenCodeServerHost] = [:]
+    var openCodeLinks: [UUID: OpenCodeLink] = [:]
+    var openCodeIdleClose: [UUID: Task<Void, Never>] = [:]
+    var openCodeRequests: [String: (runID: UUID, permission: OpenCodePermission)] = [:]
+    var openCodeHostStops: [String: Task<Void, Never>] = [:]
+    var openCodeFallback: Set<String> = []
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
     /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
@@ -185,6 +235,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Kept agents whose output is read again after a crash of Nook (`KeptRuns.Replay`): events already in the timeline
+    /// are not shown twice.
+    var keptReplays: [UUID: KeptRuns.Replay] = [:]
     /// Sessions whose latest wake turn ended while a monitor still runs: its completion waits for the monitor
     /// (`WakeCompletion`), so you are told once instead of for every line the monitor printed.
     var heldWakeCompletions: Set<UUID> = []
@@ -210,16 +263,12 @@ final class WorkspaceManager: ObservableObject {
     var limitResetHint: ((WorkspaceRun) -> Date?)?
     /// Claude Code reported how full a subscription window is, for the account (`AgentProfile.id`) the session runs with.
     var onPlanWindow: ((UsageLimits.PlanReading, String) -> Void)?
-    @Published private(set) var git: [UUID: GitSnapshot] = [:]
-    @Published private(set) var worktreeRows: [WorktreeRow] = []
-    @Published private(set) var worktreesLoading = false
-    /// Another refresh was asked for while one ran; it runs once that one is done (`refreshWorktrees`).
-    private var worktreesRefreshPending = false
-    /// The pending refresh measures every worktree's size again (the list's refresh button), not from the cache.
-    private var worktreesRefreshForced = false
+    @Published var git: [UUID: GitSnapshot] = [:]
+    @Published var worktreeRows: [WorktreeRow] = []
+    @Published var worktreesLoading = false
     /// Whether a Worktrees list is on screen (`worktreesShown(_:)`). Its rows are refreshed only then: a removal or a
     /// cleanup with nobody looking walked every worktree and its build (minutes of a core with a hundred of them).
-    private(set) var worktreesListShown = 0
+    var worktreesListShown = 0
     /// Read off the main thread by a running refresh, which stops once the list is closed.
     nonisolated let worktreesListOpen = WorktreeListFlag()
     @Published private(set) var gitAvailable: Bool?
@@ -232,6 +281,15 @@ final class WorkspaceManager: ObservableObject {
     @Published var agentEfforts: [String: [AgentModel]] = [:]
     /// The `/` commands each ACP session announced (`available_commands_update`).
     @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
+    /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
+    /// context size at that moment: an answer from before a later turn is not shown.
+    @Published var contextUsages: [UUID: (usage: ContextUsage, contextTokens: Int?)] = [:]
+    /// Sessions whose agent could not be asked what fills its window (no process runs, or it answered with an error), with
+    /// the session's context size then: for that context the breakdown shows the estimate instead of a skeleton that never
+    /// fills. A later turn changes the size, so the agent is waited for again.
+    @Published var contextBreakdownMissing: [UUID: Int?] = [:]
+    /// Sessions whose agent is being asked what fills its window now (`refreshContextUsage`): one question at a time.
+    var contextUsageAsking: Set<UUID> = []
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -252,13 +310,9 @@ final class WorkspaceManager: ObservableObject {
     /// The host's change feed of a watched pull request (GitHub's event stream): emits when it may have changed and once
     /// per (re)connect; nil where the host offers none. Set by AppModel.
     var pullRequestEvents: ((URL) -> AsyncStream<Void>?)?
-    var watchesInFlight: Set<String> = []
-    /// Watches whose host reported a change while they were being read: read once more when that read is done.
-    var watchRechecks: Set<String> = []
-    /// One change feed per watched pull request (by its link), shared by every session watching it.
-    var pullRequestFeeds: [String: Task<Void, Never>] = [:]
-    /// When a feed ended by itself (GitHub refused it, or it kept failing): it starts again a sweep later at the earliest.
-    var pullRequestFeedEnded: [String: Date] = [:]
+    /// The pull request watches being read, their change feeds, and the link each session's last turn ended with
+    /// (`WorkspaceManager+PullRequestWatch`).
+    var pullRequestWatcher = PullRequestWatcher()
     /// Sessions whose queue waits for a fresh look at a pull request before its next message goes out.
     var queueLooks: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
@@ -288,6 +342,8 @@ final class WorkspaceManager: ObservableObject {
     var limitedTurns: [UUID: Date?] = [:]
     /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
     var claudeThinkingDisplay: [String: Bool] = [:]
+    /// Whether a Claude Code knows `--prompt-suggestions` (from the same probe).
+    var claudePromptSuggestionFlag: [String: Bool] = [:]
     /// The summary Nook sends a long idle session before its prompt cache expires, per session (`IdleCompaction`).
     var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
@@ -320,11 +376,19 @@ final class WorkspaceManager: ObservableObject {
     var turnPrompts: [UUID: String] = [:]
     /// Sessions whose running turn is that second try: when it fails too, it fails as it is.
     var recoveringConversation: Set<UUID> = []
+    /// The worktree an agent made with `git worktree add` during its turn, which the session may follow at the turn's end
+    /// (`followAddedWorktree`).
+    var addedWorktrees: [UUID: String] = [:]
     /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
     /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
     var remoteHomes: [String: String] = [:]
     var remoteBridgeInstalling: Set<String> = []
     var bridgeTokens: [UUID: String] = [:]
+    /// Where each local session's token file goes (`BridgeTokenFiles`); tests point it at a folder of their own.
+    var bridgeTokenDirectory: URL = NookPaths.bridgeTokenDirectory
+    /// Receipts of session commands that may come more than once (`SessionCommandReceipts`), kept across a restart.
+    lazy var commandReceipts = SessionCommandReceipts.load(from: commandReceiptsURL)
+    var commandReceiptsURL: URL = NookPaths.supportDirectory.appendingPathComponent("command-receipts.json")
     var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
     var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
@@ -341,7 +405,7 @@ final class WorkspaceManager: ObservableObject {
     var antigravityLogins: [String: (client: AcpClient, done: (String?) -> Void)] = [:]
 
     let settings = WorkspaceSettings.shared
-    private let store: RunStore
+    let store: RunStore
     private(set) var gitService: GitService?
 
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
@@ -383,65 +447,23 @@ final class WorkspaceManager: ObservableObject {
     /// The week recap: sessions Nook runs itself count too, not only the ones in a terminal.
     var recap: RecapStore?
 
-    /// Turns waiting for a free place (`SessionCapacity`), with what they start with; `capacityOrder` keeps who came first.
-    var capacityWaiting: [UUID: (prompt: String, executable: String)] = [:]
-    var capacityOrder: [UUID] = []
+    /// Turns waiting for a free place (`SessionCapacity`), first come first served (`WorkspaceManager+Capacity`).
+    var capacity = CapacityScheduler()
     var processes: [UUID: AgentProcess] = [:]
     var turns: [UUID: TurnState] = [:]
-    private var saveTask: Task<Void, Never>?
-    private var eventSaves: [UUID: Task<Void, Never>] = [:]
-    /// A pending save of the session list that streaming asked for (see `scheduleRunsCatchUp`).
-    private var runsCatchUp: Task<Void, Never>?
-    /// The session list as it was last handed to the store: a timeline save only rewrites `runs.json` when it changed.
-    private var savedRuns: [WorkspaceRun]?
-    /// A change to `events` was announced less than `eventsPublishInterval` ago; `eventsDirty` says another one followed.
-    private var eventsThrottled = false
-    private var eventsDirty = false
-    /// The sessions whose timeline changed since the last announcement; nil when it could be any of them.
-    private var dirtyTimelines: Set<UUID>? = []
-    /// At most this often a view redraws for a changing timeline: about 20 times a second, smooth for streaming text.
-    private static let eventsPublishInterval: UInt64 = 50_000_000
-    /// When each timeline in memory was last used. Every timeline ever opened used to stay in memory until Nook quit;
-    /// beyond `timelineLimit` the longest unused ones of idle sessions are released (`evictTimelines`) and read back from
-    /// disk when anything asks for them again (`evictedTimelines`).
-    private var timelineUse: [UUID: Date] = [:]
-    private var evictedTimelines: Set<UUID> = []
-    /// The timelines on screen, with how many views show each. `timelineUse` moves only on a redraw, so a session you sit
-    /// and read looks unused; it must not disappear under you.
-    private var shownTimelines: [UUID: Int] = [:]
-    /// The last answer of each released timeline, so a summary (the phone's session list) can show it without reading
-    /// the whole timeline back from disk and keeping it in memory again.
-    private var evictedAnswers: [UUID: String] = [:]
-    private static let timelineLimit = 16
-    /// What the timelines in memory may hold together: measured on 2026-11-06, a session was 2 MB and the longest 6.5 MB.
-    private static let timelineByteBudget = 64 * 1024 * 1024
-    private static let timelineIdleSeconds: TimeInterval = 300
-    /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
-    private var quietEvents = false
-    /// Timelines being read off the main thread by `prefetchTimeline`.
-    private var prefetching: Set<UUID> = []
-    /// Of those, the ones a view waits for (`requestTimeline`): their arrival redraws it.
-    private var awaitedTimelines: Set<UUID> = []
-    private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
-    /// Sessions whose `git status` is being read: a refresh asked for meanwhile runs once after it, not alongside it.
-    private var gitReading: Set<UUID> = []
-    /// Of those, the ones asked again while reading, and whether that ask showed the spinner.
-    private var gitAgain: [UUID: Bool] = [:]
-    /// Where each session's branch is counted from (`GitService.branchComparison`), kept while its branch, upstream and
-    /// commits stay the same (for at most `branchPointMaxAge`), so a refresh as the agent writes adds two diffs, not ten
-    /// git processes.
-    private var branchPoints: [UUID: BranchPoint] = [:]
-    struct BranchPoint: Sendable {
-        var key: String
-        var point: String?
-        var at: Date
-    }
-    private static let branchPointMaxAge: TimeInterval = 60
+    /// Git reads in flight and what they keep between reads (`WorkspaceManager+Git`).
+    var gitRefresh = GitRefreshState()
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
     /// Sessions whose running turn is an independent copy (`forkNext` at launch): the id the agent reports is a new
     /// conversation, not a continuation, so the source's id is not an earlier id of it.
     var forkLaunched: Set<UUID> = []
+    /// Whether an ACP agent copies its own sessions (`AcpSessionCapabilities.fork`), as its last `initialize` said, by
+    /// `acpAgentKey`: Fork and side chats then keep the conversation (`forksNatively`).
+    var acpForks: [String: Bool] = [:]
+    /// The terminal sign-in of an agent you added whose session needed you to sign in (by `profileID`): its failed turn
+    /// offers "Sign in again", which runs it (`signInAcpInTerminal`).
+    @Published var acpTerminalSignIns: [String: AcpAuthMethod] = [:]
     /// Sessions whose settings changed during a turn: their Claude Code process is not reused afterwards, so the next turn
     /// surely starts with the new flags, even when this Claude Code could not take them over live.
     var claudeChangedDuringTurn: Set<UUID> = []
@@ -452,12 +474,19 @@ final class WorkspaceManager: ObservableObject {
     var stopCoordinators: [UUID: StopCoordinator] = [:]
     /// Worktree or remote preparation still running before the first turn starts; cancelled if you press Stop.
     var prepareTasks: [UUID: Task<Void, Never>] = [:]
+    /// A new worktree's steps (fetch, check out, setup script, agent) while it is being set up, shown as a checklist in
+    /// the conversation; gone once the agent answers (see WorkspaceManager+WorktreeSetup).
+    @Published var worktreeSetups: [UUID: WorktreeSetupProgress] = [:]
     /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
     var reopeningWorktrees: Set<UUID> = []
+    /// Folders a restore is putting back (`revertFiles`, `restoreHolds`), normalized, and the sessions whose message
+    /// waits for one to end.
+    var restoringFolders: Set<String> = []
+    var restoreWaiting: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
     var projectCache: [String: ProjectInfo] = [:]
     /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
-    private var remoteBaseRefreshed: [String: Date] = [:]
+    var remoteBaseRefreshed: [String: Date] = [:]
     /// Next checkpoint index per session, claimed before async git work so concurrent checkpoints never share an index.
     var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
@@ -475,6 +504,8 @@ final class WorkspaceManager: ObservableObject {
     /// The startup disk runs low: free bytes after Nook freed what it could, the bytes it freed, and what Nook's
     /// worktrees take; configured by AppModel.
     var onLowDiskSpace: ((Int64, Int64, Int64?) -> Void)?
+    /// Opens a terminal in Nook's own window (set by the app). Used when the built-in terminal is chosen.
+    var openBuiltInTerminal: ((_ folder: String) -> Void)?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
     var onAudit: ((String, String, String) -> Void)?
     var sessionApprovals: [UUID: SessionApprovals] = [:]
@@ -490,9 +521,14 @@ final class WorkspaceManager: ObservableObject {
         var stopping = false
         var lastError: String?
         var started = Date()
+        /// Which turn this is, as the phone sees it (`SessionDigest.turn`): a command meant for this turn leaves a later
+        /// one alone (`SessionTurnCheck`).
+        var identity = UUID().uuidString.lowercased()
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
+        /// Claude Code: Nook asked for the window during the turn (`askContextWindowIfUnknown`).
+        var windowAsked = false
         /// Pi: tokens and cost of the turn so far, and when its older end-of-run event came (see `handlePi`).
         var piUsage = TurnUsage()
         var piEndedAt: Date?
@@ -534,10 +570,11 @@ final class WorkspaceManager: ObservableObject {
             let loaded = store.loadRuns()
             await self?.finishLoadingRuns(loaded)
         }
-        // Watched pull requests are looked at every half minute (each at most every two minutes).
+        // Watched pull requests are looked at every half minute (each at most every two minutes). Away from the Mac or
+        // saving power the tick comes less often, as `PullRequestSync`'s.
         Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(for: .seconds(30) * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
@@ -572,12 +609,15 @@ final class WorkspaceManager: ObservableObject {
         let started = runs
         let known = Set(started.map(\.id))
         loaded.removeAll { known.contains($0.id) }
+        // What waited on you (questions, approvals, queued messages) comes back once the sessions are in place.
+        let waiting = RestartRequests.take(&loaded)
         runs = started + loaded
         runsLoaded = true
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
         reattachKeptRuns()
+        restoreWaiting(waiting)
         // Guest links that still work connect again (within their 24 hours).
         GuestShares.shared.start(workspace: self)
         if !started.isEmpty { scheduleSave() }
@@ -590,624 +630,14 @@ final class WorkspaceManager: ObservableObject {
         return runs[index]
     }
 
-    func timeline(_ id: UUID) -> [RunEvent] {
-        if let loaded = events[id] {
-            timelineUse[id] = Date()
-            return loaded
-        }
-        // Released while unused: back from disk, off the main thread, so a view drawing it does not stall on the read;
-        // it redraws once the timeline is here.
-        if evictedTimelines.contains(id) { requestTimeline(id) }
-        return []
-    }
-
-    /// A view shows this timeline from now on: it stays in memory until `timelineHidden`.
-    func timelineShown(_ id: UUID) { shownTimelines[id, default: 0] += 1 }
-
-    func timelineHidden(_ id: UUID) {
-        guard let count = shownTimelines[id] else { return }
-        shownTimelines[id] = count > 1 ? count - 1 : nil
-        timelineUse[id] = Date()
-    }
-
-    /// Whether the session's timeline is in memory; false while it is still being read from disk.
-    func isTimelineLoaded(_ id: UUID) -> Bool { events[id] != nil }
-
-    /// The session's timeline for Search everything: from memory when it is loaded, else read from disk off the main
-    /// thread without keeping it, so a search does not hold every timeline in memory.
-    /// The sessions that may mention `query`, from the search index; nil when the index cannot answer. Timelines in
-    /// memory are always included: what they streamed since their last save is not in the index yet.
-    func sessionsMentioning(_ query: String) async -> [UUID]? {
-        let store = store
-        guard let indexed = await Task.detached(priority: .userInitiated, operation: { store.sessions(mentioning: query) }).value else {
-            return nil
-        }
-        return indexed + events.keys.filter { !indexed.contains($0) }
-    }
-
-    func timelineForSearch(_ id: UUID) async -> [RunEvent] {
-        if let loaded = events[id] { return loaded }
-        let store = store
-        return await Task.detached(priority: .utility) { store.peekEvents(id) }.value
-    }
-
-    /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
-    /// does not count as using the timeline (so polling summaries do not keep every timeline in memory).
-    func lastAnswer(_ id: UUID) -> String {
-        if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
-        return evictedAnswers[id] ?? ""
-    }
-
-    /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
-    /// pointer, the session the list is about to show) draws it at once instead of replaying its whole log
-    /// on the main thread first. Opening before this is done waits for the same read (`requestTimeline`).
-    func prefetchTimeline(_ id: UUID) {
-        guard events[id] == nil, !prefetching.contains(id), runIndex(id) != nil else { return }
-        prefetching.insert(id)
-        let store = store
-        Task { [weak self] in
-            let loaded = await Task.detached(priority: .userInitiated) { store.loadEvents(id) }.value
-            guard let self else { return }
-            self.prefetching.remove(id)
-            let awaited = self.awaitedTimelines.remove(id) != nil
-            // Opened (or written to) meanwhile: what is in memory is newer than what was read.
-            guard self.events[id] == nil else { return }
-            self.evictedTimelines.remove(id)
-            self.evictedAnswers[id] = nil
-            self.timelineUse[id] = Date()
-            // News only for a view that is waiting for it; a prefetch nobody shows yet redraws nothing.
-            self.quietEvents = !awaited
-            self.events[id] = loaded
-            self.quietEvents = false
-            self.evictTimelines()
-        }
-    }
-
-    /// For a view that shows the timeline: reads it off the main thread when it is not in memory and redraws the view
-    /// once it is here, so opening an older session never waits for its log on the main thread. Actions that need the
-    /// events right away (send, handoff, rollback) use `loadTimeline`.
-    func requestTimeline(_ id: UUID) {
-        timelineUse[id] = Date()
-        guard events[id] == nil else { return }
-        prefetchTimeline(id)
-        if prefetching.contains(id) { awaitedTimelines.insert(id) }
-    }
-
-    /// Loads timeline from disk if not yet in memory.
-    func loadTimeline(_ id: UUID) {
-        timelineUse[id] = Date()
-        guard events[id] == nil else { return }
-        evictedTimelines.remove(id)
-        evictedAnswers[id] = nil
-        events[id] = store.loadEvents(id)
-        evictTimelines()
-    }
-
-    /// Releases the longest unused timelines of idle sessions, beyond `timelineLimit` or `timelineByteBudget`.
-    private func evictTimelines() {
-        // Unused for minutes: a save scheduled for it has long been written, so reading it back gets everything.
-        let unusedSince = Date().addingTimeInterval(-Self.timelineIdleSeconds)
-        let candidates = events.map { id, list in
-            let used = timelineUse[id] ?? .distantPast
-            let idle = used < unusedSince && shownTimelines[id] == nil
-                && eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
-                && claudeIdle[id] == nil && acpClients[id] == nil && !(run(id)?.status.isActive ?? false)
-            return TimelineEviction.Candidate(id: id, lastUsed: used, bytes: list.reduce(0) { $0 + $1.approximateBytes }, idle: idle)
-        }
-        for id in TimelineEviction.pick(candidates, limit: Self.timelineLimit, budget: Self.timelineByteBudget) {
-            // Only the start: a summary shows a short excerpt of it, and a long answer need not stay in memory whole.
-            evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant }).map { String($0.text.prefix(2_000)) }
-            events[id] = nil
-            timelineUse[id] = nil
-            evictedTimelines.insert(id)
-        }
-    }
-
     var activeRuns: [WorkspaceRun] { runs.filter { $0.status.isActive } }
-    var attentionCount: Int { runs.filter { ($0.status == .waitingApproval || $0.status == .failed) && !$0.archived }.count }
+    var attentionCount: Int { runs.count(where: { ($0.status == .waitingApproval || $0.status == .failed) && !$0.archived }) }
     func isRunning(_ id: UUID) -> Bool { processes[id] != nil }
 
     /// Other active sessions working in the same directory: concurrent edits could collide.
     func activeRuns(sharing directory: String, except id: UUID? = nil) -> [WorkspaceRun] {
         let target = WorkspacePathPolicy.normalize(directory)
         return runs.filter { $0.id != id && $0.status.isActive && WorkspacePathPolicy.normalize($0.workingDirectory) == target }
-    }
-
-    // MARK: Inspecting Project
-
-    /// Last inspected metadata for `path`, if already known in this launch.
-    func cachedProject(_ path: String) -> ProjectInfo? {
-        projectCache[WorkspacePathPolicy.normalize(path)]
-    }
-
-    /// Whether `base` in `root` needs a fresh `git fetch` (at most once every two minutes per repository and base branch).
-    func shouldRefreshRemoteBase(root: String, base: String, now: Date = Date()) -> Bool {
-        let key = WorkspacePathPolicy.normalize(root) + "\n" + base
-        if let last = remoteBaseRefreshed[key], now.timeIntervalSince(last) < 120 { return false }
-        remoteBaseRefreshed[key] = now
-        return true
-    }
-
-    private func warmRemoteBase(_ base: String, in root: String) {
-        guard base.contains("/"), let git = gitService, shouldRefreshRemoteBase(root: root, base: base) else { return }
-        Task.detached(priority: .utility) { git.refreshRemoteBase(base, in: root) }
-    }
-
-    /// Information required by "New Session" for a directory. Evaluated off the main thread.
-    func inspectProject(_ path: String) async -> ProjectInfo {
-        let git = gitService
-        let info = await Task.detached(priority: .userInitiated) {
-            let normalized = WorkspacePathPolicy.normalize(path)
-            var info = ProjectInfo(path: normalized, name: (normalized as NSString).lastPathComponent,
-                                   verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
-                                   branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
-            guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
-            info.repoRoot = root
-            let current = git.currentBranch(root)
-            info.currentBranch = current
-            info.hasCommits = git.hasCommits(root)
-            let branchLists = try? git.branches(root)
-            if let branchLists { info.branches = branchLists.local + branchLists.remote }
-            info.defaultBase = git.worktreeBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
-            info.dirtyFiles = git.changedFileCount(root) ?? 0
-            if let common = git.commonDirectory(for: root) {
-                info.isWorktree = WorkspacePathPolicy.normalize(URL(fileURLWithPath: common).deletingLastPathComponent().path)
-                    != WorkspacePathPolicy.normalize(root)
-            }
-            return info
-        }.value
-        projectCache[info.path] = info
-        if let root = info.repoRoot {
-            projectCache[WorkspacePathPolicy.normalize(root)] = info
-            if let base = info.defaultBase { warmRemoteBase(base, in: root) }
-        }
-        return info
-    }
-
-    // MARK: New Session
-
-    enum StartError: LocalizedError {
-        case config(ConfigProblem)
-        case workspace(WorkspacePathPolicy.Verdict)
-        case noExecutable(RunProvider)
-        case noGit
-        case notRepository
-        case shared(String)
-        case git(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .config(let problem): return tr("ws.error.config." + problem.rawValue)
-            case .workspace(let verdict): return tr("ws.error.path." + String(describing: verdict))
-            case .noExecutable(let provider): return tr("ws.error.noExecutable", provider.displayName)
-            case .noGit: return tr("ws.error.noGit")
-            case .notRepository: return tr("ws.error.notRepository")
-            case .shared(let title): return tr("ws.error.shared", title)
-            case .git(let message): return message
-            }
-        }
-    }
-
-    /// Validates configuration, opens the session immediately in the workspace, and prepares its folder or worktree
-    /// while launching the agent. If worktree or agent startup fails, the session is marked "failed" and can be retried
-    /// with "Retry" without duplicating the session.
-    @discardableResult
-    func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
-        // "Auto": the agent and account that fit the task and limits best (see `autoTarget`).
-        var config = config.model == AutoModel.id ? autoTarget(config) : config
-        if let problem = config.problem { throw StartError.config(problem) }
-        // A main thread knows it from its first message (`MainThread`); an idle start learns it with your first message.
-        if let note = MainThread.pending(on: config.mainThread, told: nil),
-           !config.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            config.task = MainThread.attach(note, to: config.task)
-        }
-        // On another machine: no folder, git or worktree to prepare here.
-        if let remote = config.remote { return try await startRemote(config, on: remote) }
-        let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
-        let verdict = WorkspacePathPolicy.verdict(for: projectPath)
-        guard verdict == .ok else { throw StartError.workspace(verdict) }
-        guard let executable = executable(config.provider, profileID: config.profileID) else { throw StartError.noExecutable(config.provider) }
-
-        let id = UUID()
-        var workingDirectory = projectPath
-        let cached = projectCache[projectPath]
-        var repoRoot = cached?.repoRoot
-        var branch = cached?.currentBranch
-        var worktreePath: String?
-        let git = gitService
-
-        if config.isolation == .worktree {
-            guard let git else { throw StartError.noGit }
-            if repoRoot == nil {
-                repoRoot = await Task.detached(priority: .userInitiated) { git.repositoryRoot(for: projectPath) }.value
-            }
-            guard let root = repoRoot else { throw StartError.notRepository }
-            // The project's own branch prefix (Settings › Workspace, per project) wins over the global one.
-            let prefix = settings.sessionDefaults(for: root).branchPrefix
-            let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
-            let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
-            let repoName = (root as NSString).lastPathComponent
-            let reserved = Set(runs.compactMap(\.worktreePath))
-            let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
-                                                   slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
-                                                   exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
-            workingDirectory = path
-            worktreePath = path
-            branch = name
-        } else {
-            if !allowSharedFolder, let other = activeRuns(sharing: projectPath).first {
-                throw StartError.shared(other.title)
-            }
-        }
-
-        let now = Date()
-        let title = config.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let visibleTask = ContextRefs.visible(config.task)
-        var run = WorkspaceRun(
-            id: id,
-            title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
-            task: visibleTask,
-            provider: config.provider,
-            profileID: config.profileID,
-            model: config.model,
-            mode: config.mode,
-            permission: config.permission,
-            isolation: config.isolation,
-            projectPath: repoRoot ?? projectPath,
-            workingDirectory: workingDirectory,
-            repoRoot: repoRoot,
-            branch: branch,
-            baseBranch: config.isolation == .worktree ? config.baseBranch : nil,
-            worktreePath: worktreePath,
-            instructions: config.instructions,
-            status: .preparing,
-            statusDetail: nil,
-            providerSessionID: nil,
-            createdAt: now,
-            updatedAt: now,
-            archived: false,
-            usage: RunUsage(),
-            turnStartedAt: now,
-            reviewedAt: nil,
-            lastChangeAt: nil,
-            changedFiles: nil,
-            delegation: config.delegation
-        )
-        run.effort = config.effort
-        run.speedTier = config.speedTier
-        run.ultracode = config.ultracode
-        run.mainThread = config.mainThread
-        run.mainThreadTold = MainThread.toldAtStart(config)
-        run.lineage = config.lineage
-        // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
-        if config.model == AutoModel.id {
-            run.autoModel = true
-            run.model = ""
-        }
-        // Ready and waiting for your first message: nothing to launch yet (a worktree is still made first).
-        let idle = config.startsIdle && config.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if idle, worktreePath == nil {
-            run.status = .completed
-            run.turnStartedAt = nil
-        }
-        runs.insert(run, at: 0)
-        events[id] = []
-        settings.rememberProject(repoRoot ?? projectPath)
-        selectedRunID = id
-        if let startedBy = config.startedBy, !startedBy.isEmpty { append(id, RunEvent(kind: .system, text: startedBy, tool: "origin")) }
-        let shownTask = ContextRefs.timeline(config.task, folder: workingDirectory)
-        if shownTask != config.task { displayPrompt[id] = shownTask }
-        if let worktreePath, let root = repoRoot {
-            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
-            if !idle { append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task))) }
-            prepareWorktreeAndLaunch(id, root: root, path: worktreePath, branch: branch ?? "", base: config.baseBranch,
-                                     prompt: idle ? "" : config.task, executable: executable)
-        } else {
-            if !idle { launchTurn(id, prompt: config.task, executable: executable) }
-            prepareFolderSession(id, directory: workingDirectory, knownRoot: repoRoot, knownBranch: branch)
-        }
-        if title.isEmpty { generateTitle(id) }
-        return id
-    }
-
-    /// Creates the session's worktree off the main thread (serialized per repository via `FolderLease`), launches the
-    /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background.
-    func prepareWorktreeAndLaunch(_ id: UUID, root: String, path: String, branch: String, base: String,
-                                  prompt: String, executable: String) {
-        guard let git = gitService else { return }
-        let refreshBase = shouldRefreshRemoteBase(root: root, base: base)
-        let repoKey = FolderLease.key(root)
-        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
-        let checkout = worktreeCheckout(git, root: root)
-        prepareTasks[id]?.cancel()
-        prepareTasks[id] = Task { [weak self] in
-            let submoduleProblem: String?
-            do {
-                submoduleProblem = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
-                    let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase,
-                                                     checkoutCache: checkout.cache)
-                    return Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned)
-                }
-            } catch {
-                guard let self, !Task.isCancelled, self.run(id) != nil else { return }
-                self.prepareTasks[id] = nil
-                self.update(id) {
-                    $0.worktreePath = nil
-                    $0.workingDirectory = root
-                    $0.move(to: .failed, detail: error.localizedDescription)
-                }
-                self.append(id, RunEvent(kind: .error, text: error.localizedDescription))
-                return
-            }
-            guard let self, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
-            self.update(id) {
-                $0.workingDirectory = path
-                $0.worktreePath = path
-                $0.branch = branch
-            }
-            if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
-            // The project's setup (nook.json `runOnWorktreeCreate`). One with `"async": false` holds the first turn until
-            // it ended; meanwhile the session stays preparing, and stopping it stops the wait.
-            let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
-            guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }
-            let holds = setup.holdsAgent && !prompt.isEmpty
-            if !holds {
-                self.prepareTasks[id] = nil
-                self.startFirstTurn(id, prompt: prompt, executable: executable)
-            }
-            // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
-            let worktreeKey = FolderLease.key(path)
-            let made = (try? await FolderLease.shared.run(worktreeKey, priority: .userInitiated) {
-                try git.checkpointHead(path, ref: ref)
-            }) != nil
-            if made {
-                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
-            }
-            guard !Task.isCancelled, self.run(id) != nil else { return }
-            let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
-            guard holds, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
-            self.prepareTasks[id] = nil
-            if let failure {
-                self.update(id) { $0.move(to: .failed, detail: failure) }
-                self.append(id, RunEvent(kind: .error, text: failure))
-                return
-            }
-            self.startFirstTurn(id, prompt: prompt, executable: executable)
-        }
-    }
-
-    /// The first turn of a session in a new worktree; without a first message, the session waits for yours.
-    private func startFirstTurn(_ id: UUID, prompt: String, executable: String) {
-        if prompt.isEmpty {
-            update(id) {
-                $0.status = .completed
-                $0.turnStartedAt = nil
-            }
-        } else {
-            launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
-        }
-    }
-
-    /// Starts the project's setup scripts in terminals next to the session, and returns once the ones with
-    /// `"async": false` ended: nil when they succeeded (or none waits), else what went wrong. While it waits it reads
-    /// the script's exit-code file twice a second; nothing runs when no script holds the agent.
-    func startSetupScripts(_ id: UUID, path: String, scripts: [ProjectScript]) async -> String? {
-        var waiting: [(name: String, status: String, open: @MainActor () -> Bool)] = []
-        for script in scripts {
-            if script.async {
-                _ = runScript?(path, script.command, script.name)
-                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
-                continue
-            }
-            let status = FileManager.default.temporaryDirectory.appendingPathComponent("nook-setup-\(UUID().uuidString)").path
-            guard let open = runScript?(path, ProjectScripts.blockingCommand(script.command, statusFile: status), script.name) else { continue }
-            append(id, RunEvent(kind: .system, text: tr("ws.event.setupScriptWaiting", script.name)))
-            waiting.append((script.name, status, open))
-        }
-        var failure: String?
-        for item in waiting {
-            defer { try? FileManager.default.removeItem(atPath: item.status) }
-            while !Task.isCancelled {
-                let wasOpen = item.open()
-                if let code = ProjectScripts.exitStatus(FileManager.default.contents(atPath: item.status)) {
-                    if code != 0, failure == nil { failure = tr("ws.event.setupScriptFailed", item.name, String(code)) }
-                    break
-                }
-                if !wasOpen {
-                    failure = failure ?? tr("ws.event.setupScriptClosed", item.name)
-                    break
-                }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-        }
-        return failure
-    }
-
-    /// Resolves git metadata and captures the initial folder snapshot in the background without delaying the first turn.
-    func prepareFolderSession(_ id: UUID, directory: String, knownRoot: String?, knownBranch: String?,
-                              includeComparisonBase: Bool = false) {
-        guard let git = gitService else { return }
-        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
-        let key = FolderLease.key(directory)
-        Task { [weak self] in
-            let resolved = await Task.detached(priority: .userInitiated) { () -> (root: String?, branch: String?, base: String?) in
-                guard let root = knownRoot ?? git.repositoryRoot(for: directory) else { return (nil, nil, nil) }
-                let branch = knownBranch ?? git.currentBranch(directory)
-                var base: String?
-                if includeComparisonBase, let current = branch {
-                    let remotes = git.remotes(directory)
-                    let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-                    if let main = git.defaultBranch(directory, remote: remote), main != current {
-                        base = git.comparisonBase(directory, base: main, remote: remote)
-                    }
-                }
-                return (root, branch, base)
-            }.value
-            guard let self, self.run(id) != nil, let root = resolved.root else { return }
-            self.update(id) {
-                if $0.repoRoot == nil { $0.repoRoot = root }
-                if $0.branch == nil, let branch = resolved.branch { $0.branch = branch }
-                if $0.baseBranch == nil, let base = resolved.base { $0.baseBranch = base }
-            }
-            let made = (try? await FolderLease.shared.run(key, priority: .userInitiated) {
-                try git.checkpoint(directory, ref: ref)
-            }) != nil
-            if made {
-                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
-            }
-        }
-    }
-
-    func claimCheckpointIndex(_ id: UUID) -> Int {
-        let next = max(checkpointIndices[id] ?? 0, run(id)?.checkpoints?.count ?? 0)
-        checkpointIndices[id] = next + 1
-        return next
-    }
-
-    func recordInitialCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint) {
-        update(id) {
-            let existing = ($0.checkpoints ?? []).filter { $0.ref != checkpoint.ref }
-            $0.checkpoints = [checkpoint] + existing
-        }
-    }
-
-    /// Takes over an existing agent conversation (running in a terminal, or an earlier session) as a Nook session.
-    /// Nothing starts yet: the first message resumes the conversation (`--resume`, `exec resume`). `fork` makes that
-    /// first turn a copy (Claude Code only), so a conversation that is still running elsewhere is never written to twice.
-    /// Already taken over? Returns that session instead of adding a second one.
-    @discardableResult
-    func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
-               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
-               continuesConversation: Bool = true) async throws -> UUID {
-        let taken = runs.first { $0.provider == provider && (fork ? $0.copiedFrom == sessionID : $0.isConversation(sessionID)) }
-        if let existing = taken {
-            if existing.archived { setArchived(existing.id, false) }
-            selectedRunID = existing.id
-            return existing.id
-        }
-        let projectPath = WorkspacePathPolicy.normalize(directory)
-        let verdict = WorkspacePathPolicy.verdict(for: projectPath)
-        guard verdict == .ok else { throw StartError.workspace(verdict) }
-        guard executable(provider) != nil else { throw StartError.noExecutable(provider) }
-
-        let cached = projectCache[projectPath]
-        let repoRoot = cached?.repoRoot
-        let branch = cached?.currentBranch
-        let id = UUID()
-        let now = Date()
-        let clean = InjectedPrompt.title(title)
-        // A conversation without a title of its own is named after its first question until an agent writes a better one.
-        let opening = history.first { $0.kind == .user }.map { InjectedPrompt.title($0.text) } ?? ""
-        let task = clean.isEmpty ? opening : clean
-        let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
-        let run = WorkspaceRun(
-            id: id,
-            title: task.isEmpty ? (projectPath as NSString).lastPathComponent : WorktreeNaming.title(from: task),
-            task: task,
-            provider: provider,
-            profileID: profileID,
-            model: "",
-            mode: .agent,
-            permission: permission,
-            isolation: .folder,
-            projectPath: projectPath,
-            workingDirectory: projectPath,
-            repoRoot: repoRoot,
-            branch: branch,
-            baseBranch: nil,
-            worktreePath: nil,
-            instructions: "",
-            status: .completed,
-            statusDetail: nil,
-            // An agent that cannot load this conversation itself starts a new one from it (see carryOverConversation).
-            providerSessionID: continuesConversation ? sessionID : nil,
-            createdAt: now,
-            updatedAt: now,
-            archived: false,
-            usage: RunUsage(),
-            turnStartedAt: nil,
-            reviewedAt: nil,
-            lastChangeAt: nil,
-            changedFiles: nil
-        )
-        var adopted = run
-        if !continuesConversation { adopted.carriedOverFrom = sessionID }
-        if fork { adopted.copiedFrom = sessionID }
-        runs.insert(adopted, at: 0)
-        events[id] = []
-        if fork { forkNext.insert(id) }
-        settings.rememberProject(repoRoot ?? projectPath)
-        selectedRunID = id
-        for entry in history where !entry.text.isEmpty {
-            append(id, RunEvent(kind: entry.kind, text: entry.text, state: entry.kind == .assistant ? .done : nil))
-        }
-        append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
-        scheduleSave()
-        // Resolve repository metadata and take the starting snapshot in the background without blocking an immediate reply.
-        prepareFolderSession(id, directory: projectPath, knownRoot: repoRoot, knownBranch: branch, includeComparisonBase: true)
-        if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
-        if !continuesConversation { carryOverConversation(id, prompt: nil) }
-        return id
-    }
-
-    /// Changes how the next turn runs: mode, permissions, and model. Also while a turn runs (a session Nook took over as
-    /// much as one it started): an agent with `liveSettings` takes them over at once (see `applyLive`), Codex and
-    /// Antigravity from their next turn. Rights count right away either way: Nook answers what they now cover itself (see `LiveRights`),
-    /// the requests already waiting included.
-    func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
-        guard let run = run(id) else { return }
-        let before = model == nil ? nil : switchEndpoint(run)
-        update(id) {
-            if let mode { $0.mode = mode }
-            if let permission, run.provider.capabilities.policies.contains(permission) {
-                $0.permission = permission
-                if permission != run.permission { sessionApprovals[id]?.modeChanged(to: permission) }
-            }
-            if let model {
-                let clean = model.trimmingCharacters(in: .whitespacesAndNewlines)
-                // "Auto" keeps the model in use until the next turn picks one.
-                $0.autoModel = clean == AutoModel.id ? true : nil
-                if clean != AutoModel.id { $0.model = clean }
-            }
-        }
-        if let before { noteModelSwitch(id, from: before) }
-        if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
-        if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
-        if !run.status.isActive { refreshWarmSession(id) }
-    }
-
-    /// Keeps an idle session's warm connection in step when you change its model, mode, rights or effort before sending.
-    func refreshWarmSession(_ id: UUID) {
-        guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
-        switch run.provider {
-        case .claude:
-            guard let idle = claudeIdle[id], idle.key != claudeKey(run) else { return }
-            closeClaudeProcess(id)
-            prewarm(id)
-        case .codex:
-            break
-        case .pi:
-            break
-        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
-            guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
-            applyAcpSettings(id, client) {}
-        }
-    }
-
-    /// Allows the waiting requests the session's current rights cover, as if you had pressed Allow on each.
-    func allowCovered(_ id: UUID) {
-        guard let run = run(id) else { return }
-        for pending in approvals[id] ?? [] where coveredByRights(pending, run) { decide(id, requestID: pending.id, .allow) }
-    }
-
-    private func coveredByRights(_ pending: PendingPermission, _ run: WorkspaceRun) -> Bool {
-        if let request = codexRequests[pending.id] {
-            return LiveRights.coversCodex(request.kind, permission: run.permission, mode: run.mode)
-        }
-        if let request = acpRequests[pending.id] {
-            return AcpRPC.autoAllows(request.call, permission: run.permission, mode: run.mode)
-        }
-        return run.provider == .claude && LiveRights.coversClaude(tool: pending.tool, permission: run.permission, mode: run.mode)
     }
 
     // MARK: Turns
@@ -1255,6 +685,7 @@ final class WorkspaceManager: ObservableObject {
         let continuing = continuingTurns.remove(id) != nil || continuing
         let start = TurnTimer.start(continuing: continuing, previous: workStartedAt[id])
         workStartedAt[id] = start
+        if NookTelemetry.shared.isExporting, let usage = run(id)?.usage { NookTelemetry.shared.turnStarted(id, usage: usage) }
         return start
     }
 
@@ -1289,6 +720,19 @@ final class WorkspaceManager: ObservableObject {
             enqueue(id, text: clean, origin: origin)
             return true
         }
+        // Its folder's files are being put back (`revertFiles`): the turn starts once they are, never under the restore.
+        if restoreHolds(run) {
+            enqueue(id, text: clean, origin: origin)
+            restoreWaiting.insert(id)
+            return true
+        }
+        // Its timeline is read back for a message of yours whose turn starts right after: yours waits behind it, and a
+        // hidden one is refused as it is while a turn runs (`processes` below), so its caller cleans up.
+        if timelineStore.readingToSend.contains(id) {
+            guard !shown else { return false }
+            enqueue(id, text: clean, origin: origin)
+            return true
+        }
         if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
             enqueue(id, text: clean, origin: origin)
             return true
@@ -1315,6 +759,32 @@ final class WorkspaceManager: ObservableObject {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
         }
+        // Its timeline was released while the session sat idle: it is read back off the main thread (a long one took the
+        // main thread with it), and the turn starts once it is here. A message meanwhile waits in the queue behind it.
+        // Only for a message you see: a hidden one (Nook's summary, a recovery, a notice) reads it here as before, so its
+        // caller still hears false when it cannot go out and cleans up after it.
+        if events[id] == nil, !shown {
+            timelineStore.readingToSend.insert(id)
+            let continues = QueuedMessage.Origin.continuesWork(origin)
+            whenTimelineLoaded(id) { [weak self] in
+                guard let self, self.timelineStore.readingToSend.remove(id) != nil, let run = self.run(id) else { return }
+                // A turn started meanwhile: the message goes after it, as it would have had it come a moment later.
+                guard self.processes[id] == nil else {
+                    self.enqueue(id, text: clean, origin: origin)
+                    return
+                }
+                if continues { self.continuingTurns.insert(id) }
+                defer { self.continuingTurns.remove(id) }
+                self.startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+            }
+            return true
+        }
+        return startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+    }
+
+    /// The end of `send`, once the timeline is in memory: the turn for the message `clean` starts.
+    @discardableResult
+    private func startTurn(_ id: UUID, sending clean: String, shown: Bool, run: WorkspaceRun, executable: String) -> Bool {
         // The previous turn's snapshot is still being made (a moment): your message shows at once, the session enters
         // its working state immediately, and the turn goes out right after the snapshot so its edits stay out of it.
         if checkpointing.contains(id) {
@@ -1352,8 +822,10 @@ final class WorkspaceManager: ObservableObject {
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
     func turnDidFinish(_ id: UUID) {
+        keptTurnEnded(id)
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        NookTelemetry.shared.turnFinished(run)
         // Before open work is settled: what still runs is what keeps the session open.
         if BackgroundWork.pending(after: timeline(id), before: backgroundWork.contains(id)) {
             backgroundWork.insert(id)
@@ -1419,16 +891,24 @@ final class WorkspaceManager: ObservableObject {
         let mark = conversationMark(run)
         let key = folderKey(run)
         checkpointing.insert(id)
+        // Marked missed until it is made: a capture that fails, or that Nook quits during, leaves a gap no restore crosses.
+        update(id) { $0.missedCheckpoints = Array((($0.missedCheckpoints ?? []) + [date]).suffix(RevertPlan.missedLimit)) }
         Task { [weak self] in
             // Never while a restore or removal of the same folder runs (FolderLease).
             let made = (try? await FolderLease.shared.run(key) { try git.checkpoint(directory, ref: ref) }) != nil
-            self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil)
+            self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil, at: date)
         }
     }
 
-    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
+    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?, at date: Date) {
         checkpointing.remove(id)
-        if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
+        if let checkpoint {
+            update(id) {
+                $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint]
+                $0.missedCheckpoints?.removeAll { $0 == date }
+                if $0.missedCheckpoints?.isEmpty == true { $0.missedCheckpoints = nil }
+            }
+        }
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
             // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
             if !send(id, text: waiting, shown: true) {
@@ -1441,21 +921,56 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
+    /// Files can go back to how they were before a message: a worktree session that is idle, with a snapshot for every
+    /// turn since then, and no other session's work in the folder (or a folder inside or around it) to lose (`RevertPlan`).
     func canRevert(_ id: UUID, before date: Date = .distantFuture) -> Bool {
         guard let run = run(id), run.isolation == .worktree, !run.status.isActive,
-              (run.checkpoints ?? []).contains(where: { $0.date <= date }) else { return false }
-        return activeRuns(sharing: run.workingDirectory, except: id).isEmpty
+              let index = RevertPlan.checkpointIndex(run.checkpoints ?? [], missed: run.missedCheckpoints ?? [], before: date),
+              let since = run.checkpoints?[index].date else { return false }
+        return !revertBlocked(run, since: since)
+    }
+
+    /// Another session's work that a restore of `run`'s folder to the snapshot of `since` would undo or run under.
+    private func revertBlocked(_ run: WorkspaceRun, since: Date) -> Bool {
+        let folder = WorkspacePathPolicy.normalize(run.workingDirectory)
+        return runs.contains { other in
+            other.id != run.id && other.remote?.machineID == run.remote?.machineID && RevertPlan.blocks(other, since: since)
+                && RevertPlan.overlaps(folder, WorkspacePathPolicy.normalize(other.workingDirectory))
+        }
+    }
+
+    /// Folders whose files a restore is putting back right now: no turn starts in them (or in a folder inside or around
+    /// them) until it is done; a message meanwhile waits in its session's queue (`send`).
+    func restoreHolds(_ run: WorkspaceRun) -> Bool {
+        guard !restoringFolders.isEmpty else { return false }
+        let folder = WorkspacePathPolicy.normalize(run.workingDirectory)
+        return restoringFolders.contains { RevertPlan.overlaps($0, folder) }
+    }
+
+    /// A restore ended (done or failed): the messages that waited for it go out, each as its session's next turn.
+    private func releaseRestore(_ folder: String) {
+        restoringFolders.remove(folder)
+        for id in restoreWaiting {
+            guard let run = run(id) else { restoreWaiting.remove(id); continue }
+            guard !restoreHolds(run) else { continue }
+            restoreWaiting.remove(id)
+            guard !run.status.isActive, let first = queued[id]?.messages.first else { continue }
+            if run.status == .completed { sendQueued(id) } else { sendQueuedNow(id, message: first.id) }
+        }
     }
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). Where the agent can, its
     /// conversation goes back with them (see `rollBackConversation`); otherwise the conversation stays.
     func revertFiles(_ id: UUID, before date: Date) async throws {
         guard canRevert(id, before: date), let run = run(id), let git = sessionGit(for: run),
-              let index = run.checkpoints?.lastIndex(where: { $0.date <= date }), let checkpoint = run.checkpoints?[index] else {
+              let index = RevertPlan.checkpointIndex(run.checkpoints ?? [], missed: run.missedCheckpoints ?? [], before: date),
+              let checkpoint = run.checkpoints?[index] else {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
         let directory = run.workingDirectory
+        let held = WorkspacePathPolicy.normalize(directory)
+        restoringFolders.insert(held)
+        defer { releaseRestore(held) }
         try await FolderLease.shared.run(folderKey(run), priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }
         let conversation = rollBackConversation(id, to: checkpoint, index: index)
         append(id, RunEvent(kind: .system, text: tr(conversation ? "ws.revert.doneConversation" : "ws.revert.done")))
@@ -1493,8 +1008,9 @@ final class WorkspaceManager: ObservableObject {
 
     enum Delivery: String, Sendable { case sent, queued, steered, restarted }
 
-    /// A message another agent sends (`session_send`), the way it asks for it (`thread_send`): `auto` steers a
-    /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
+    /// A message another agent sends (`session_send`), the way it asks for it: `auto` steers a
+    /// running turn the agent takes messages into natively and otherwise goes as `submit` (it never interrupts a turn:
+    /// only `restart` may); `steer` only into the running turn (nil when it
     /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
     /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
     /// `origin`: who sends it when that is not you (`DelegatedTask.origin`).
@@ -1505,7 +1021,7 @@ final class WorkspaceManager: ObservableObject {
         case .queue:
             return submit(id, text: text, origin: origin) ? .sent : .queued
         case .auto:
-            if active, canSteer(id), steer(id, text: text) { return .steered }
+            if active, steerRoute(id) == .native, steer(id, text: text) { return .steered }
             return submit(id, text: text, origin: origin) ? .sent : .queued
         case .steer:
             guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
@@ -1528,6 +1044,11 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    /// Puts back a session's queue as it was saved (`restoreWaiting`).
+    func setQueue(_ id: UUID, _ queue: MessageQueue) {
+        queued[id] = queue.isEmpty ? nil : queue
+    }
+
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false,
                  origin: QueuedMessage.Origin? = nil) {
@@ -1537,7 +1058,7 @@ final class WorkspaceManager: ObservableObject {
         queued[id] = queue.isEmpty ? nil : queue
     }
 
-    private func store(_ queue: MessageQueue, for id: UUID) {
+    func setQueue(_ queue: MessageQueue, for id: UUID) {
         queued[id] = queue.isEmpty && !queue.isHeld ? nil : queue
     }
 
@@ -1557,14 +1078,14 @@ final class WorkspaceManager: ObservableObject {
             // A new conversation is never taken into the running turn: the turn ends and it goes next.
             if canSteer(id), !fresh {
                 guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
-                store(queue, for: id)
+                setQueue(queue, for: id)
                 if steer(id, text: text, promoted: true) { return }
                 queue.requeueFirst(text)
-                store(queue, for: id)
+                setQueue(queue, for: id)
             }
             guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
             queue.resume()
-            store(queue, for: id)
+            setQueue(queue, for: id)
             pendingSendNow[id] = text
             pendingSendNowSteer[id] = fresh ? nil : .promoted
             pendingSendNowOrigin[id] = nil
@@ -1574,7 +1095,7 @@ final class WorkspaceManager: ObservableObject {
         }
         guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         queue.resume()
-        store(queue, for: id)
+        setQueue(queue, for: id)
         if fresh, !clearConversation(id, quietly: true) {
             queued[id, default: MessageQueue()].requeueFirst(text, fresh: true)
             return
@@ -1594,18 +1115,18 @@ final class WorkspaceManager: ObservableObject {
             return false
         }
         // After `/clear` it starts a new conversation: right away when the agent is free, otherwise first in line, after
-        // the running turn (as does, a new conversation never cuts a turn off).
+        // the running turn (a new conversation never cuts a turn off).
         let fresh = takeFreshArm(id)
         if fresh, run.status.isActive {
             var queue = queued[id] ?? MessageQueue()
             queue.requeueFirst(clean, fresh: true)
-            store(queue, for: id)
+            setQueue(queue, for: id)
             return false
         }
         if !fresh, canSteer(id), steer(id, text: clean) { return true }
         var queue = queued[id] ?? MessageQueue()
         queue.requeueFirst(clean, fresh: fresh)
-        store(queue, for: id)
+        setQueue(queue, for: id)
         guard let first = queued[id]?.messages.first, canSendQueuedNow(id) else { return false }
         sendQueuedNow(id, message: first.id)
         return true
@@ -1614,7 +1135,7 @@ final class WorkspaceManager: ObservableObject {
     func removeQueued(_ id: UUID, message: UUID) {
         guard var queue = queued[id] else { return }
         queue.remove(message)
-        store(queue, for: id)
+        setQueue(queue, for: id)
         // A finished task whose result waited for this message reports now.
         deliverDelegatedResult(id)
     }
@@ -1622,14 +1143,14 @@ final class WorkspaceManager: ObservableObject {
     func moveQueued(_ id: UUID, message: UUID, toIndex index: Int) {
         guard var queue = queued[id] else { return }
         queue.move(message, toIndex: index)
-        store(queue, for: id)
+        setQueue(queue, for: id)
     }
 
     /// Takes a queued message into the running turn now. It stays queued when the turn cannot
     /// take it.
     func steerQueued(_ id: UUID, message: UUID) {
         guard var queue = queued[id], !queue.isFresh(message), let text = queue.promoteToSteer(message) else { return }
-        store(queue, for: id)
+        setQueue(queue, for: id)
         if !steer(id, text: text, promoted: true) { enqueue(id, text: text) }
     }
 
@@ -1645,7 +1166,7 @@ final class WorkspaceManager: ObservableObject {
     func endEditQueued(_ id: UUID, save: Bool, text: String = "") -> String? {
         guard var queue = queued[id] else { return nil }
         let draft = queue.endEdit(save: save, text: text)
-        store(queue, for: id)
+        setQueue(queue, for: id)
         return draft
     }
 
@@ -1685,7 +1206,7 @@ final class WorkspaceManager: ObservableObject {
             }
             return
         }
-        store(queue, for: id)
+        setQueue(queue, for: id)
         // A message after `/clear`: the conversation so far ends here (sendQueued only runs between turns).
         if next.fresh { clearConversation(id, quietly: true) }
         send(id, text: next.text, origin: next.origin)
@@ -1737,9 +1258,9 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         beginStop(id)
-        if stopCodexServerTurn(id) { return }
-        if stopAcpTurn(id) { return }
-        guard let process = processes[id] else {
+        // Codex's app-server or an ACP agent stops its turn through its client; otherwise the turn's process is stopped.
+        if connectedTurnDrivers.contains(where: { $0.stop(id) }) { return }
+        guard processes[id] != nil else {
             // No running process: update state only.
             let wasWaitingCheckpoint = awaitingCheckpoint.removeValue(forKey: id) != nil
             update(id) { $0.move(to: .stopped) }
@@ -1750,35 +1271,12 @@ final class WorkspaceManager: ObservableObject {
             sendPendingNow(id)
             return
         }
-        // Pressing Stop again changes nothing: the first one is still on its way.
-        if turns[id]?.stopping == true { return }
-        turns[id]?.stopping = true
-        if run(id)?.provider == .pi {
-            // Pi stops its run on `abort`; if it never answers, its input closes and then the process ends.
-            process.send(PiRPC.abort())
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                guard let self, self.processes[id] === process else { return }
-                process.closeInput()
-                process.stop()
-            }
-        } else if run(id)?.provider == .claude {
-            process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                guard let self, self.processes[id] === process else { return }
-                process.closeInput()
-                process.stop()
-            }
-        } else {
-            process.stop()
-        }
-        expireApprovals(id)
-        append(id, RunEvent(kind: .system, text: tr("ws.event.stopping")))
+        _ = processTurnDriver(id).stop(id)
     }
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
         guard !quitting else { return }
+        dropFinishedSetup(id)
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
         if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
@@ -1789,94 +1287,10 @@ final class WorkspaceManager: ObservableObject {
         // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         applyAutoModel(id, prompt: prompt)
-        guard var run = run(id) else { return }
-        // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
-        if usesCodexServer(run, executable) {
-            launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
-            return
-        }
-        // Gemini CLI, OpenCode, Cursor and Grok speak ACP; Gemini falls back to its headless mode.
-        if run.provider.usesACP, !acpFallback.contains(executable) {
-            launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
-            return
-        }
-        // Codex over `codex exec`: Nook cannot count this turn, and a waiting rollback cannot go out.
-        if run.provider == .codex {
-            dropUnusableRollback(id)
-            markConversationInexact(id)
-        }
-        // A rollback of Claude Code's conversation: this turn resumes a copy at the last message that stays.
-        let rollback = run.provider == .claude ? takeClaudeRollback(id) : nil
-        if run.provider == .claude { noteConversationTurn(id) }
-        // The lines above changed the stored session; carry on with that.
-        if let latest = self.run(id) { run = latest }
-        // Claude Code still running from the previous turn, with the same settings: continue in it.
-        if run.provider == .claude, rollback == nil, continueClaudeProcess(id, prompt: prompt, showPrompt: showPrompt) { return }
-        if rollback != nil { closeClaudeProcess(id) }
-        let input = AgentCommand.Input(
-            provider: run.provider,
-            executable: executable,
-            prompt: prompt,
-            model: run.model,
-            mode: run.mode,
-            permission: run.permission,
-            instructions: launchInstructions(run),
-            workingDirectory: run.workingDirectory,
-            resumeSessionID: rollback?.resumeSession ?? run.providerSessionID,
-            forkSession: forkNext.contains(id) || rollback != nil,
-            resumeAt: rollback?.resumeAt,
-            accountEnvironment: accountEnvironment(run.profileID),
-            runID: id,
-            bridge: bridge(for: id),
-            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
-            toolSearch: claudeToolSearch(run),
-            tuning: appliedTuning(run),
-            effort: run.provider == .claude || run.provider == .pi ? run.effort : nil,
-            speedTier: speedTier(run),
-            ultracode: ultracode(run)
-        )
-        // The flag probe runs Claude Code on this Mac: not for a session on another machine.
-        if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-        let spec = placed(AgentCommand.spec(input), for: run)
-        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
-        let process = AgentProcess(spec: spec)
-        turns[id] = TurnState()
-        bindTurn(process, id, provider: run.provider)
-        if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
-        do {
-            try process.start()
-        } catch {
-            turns[id] = nil
-            replace(run)
-            update(id) { $0.move(to: .failed, detail: tr("ws.error.launch", error.localizedDescription)) }
-            append(id, RunEvent(kind: .error, text: tr("ws.error.launch", error.localizedDescription)))
-            return
-        }
-        processes[id] = process
-        if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
-        if rollback != nil { run.pendingRollback = nil }
-        run.move(to: .running)
-        run.turnStartedAt = turnStart(id)
-        replace(run)
-        recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
-        append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
-    }
-
-    /// A turn's process tells this session what it writes and when it ends.
-    func bindTurn(_ process: AgentProcess, _ id: UUID, provider: RunProvider) {
-        process.onLines = { [weak self, weak process] lines in
-            let end = process?.consumed ?? 0
-            // Parsed here, on the process's own queue: the main thread only applies the events.
-            let parsed = ParsedStreamLine.parse(lines, provider: provider)
-            Task { @MainActor in
-                guard let self else { return }
-                for line in parsed { self.handle(parsed: line, for: id) }
-                process?.markHandled(end)
-            }
-        }
-        process.onExit = { [weak self, weak process] status, stderr in
-            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
-        }
+        guard let run = run(id) else { return }
+        // Codex speaks app-server when it can: approvals, questions, steering and live reasoning. Gemini CLI, OpenCode,
+        // Cursor and Grok speak ACP; Gemini falls back to its headless mode. Every other turn is a process of its own.
+        turnDriver(for: run, executable: executable).launch(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
     }
 
     /// Opens the agent's connection when you open an idle session (an existing conversation), so your first message goes
@@ -1886,369 +1300,11 @@ final class WorkspaceManager: ObservableObject {
         guard !quitting, let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
               (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
               let executable = launchExecutable(run),
-              run.provider != .claude || run.pendingRollback == nil,
+              run.provider.capabilities.rollback != .resumeAt || run.pendingRollback == nil,
               run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
-        switch run.provider {
-        case .claude:
-            guard claudeIdle[id] == nil else { return }
-            if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-            var spec = placed(AgentCommand.spec(AgentCommand.Input(
-                provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
-                instructions: launchInstructions(run), workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
-                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true,
-                toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
-                effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
-            spec.initialInput = []
-            let process = AgentProcess(spec: spec)
-            process.onLines = { [weak self, weak process] lines in
-                let parsed = ParsedStreamLine.parse(lines, provider: .claude)
-                Task { @MainActor in
-                    // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
-                    // from the answers to Nook's own requests (a connector's sign-in page).
-                    guard let self, let process else { return }
-                    guard self.processes[id] === process else { return self.handleClaudeReplies(lines, for: id) }
-                    for line in parsed { self.handle(parsed: line, for: id) }
-                }
-            }
-            process.onExit = { [weak self, weak process] status, stderr in
-                Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
-            }
-            guard (try? process.start()) != nil else { return }
-            parkWarmClaude(id, process, key: claudeKey(run))
-        case .codex:
-            guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
-            connectCodexServer(id, executable: executable, prompt: nil)
-        case .pi:
-            return
-        case .gemini, .opencode, .cursor, .grok, .acp:
-            guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
-            connectAcp(id, executable: executable, prompt: nil)
-        case .antigravity:
-            // Not ahead of time: signing in could open Google's page just because you looked at the session.
-            return
-        }
-    }
-
-    // MARK: Agent Output
-
-    /// Applies one parsed line of a session's output (parsed off the main thread, `ParsedStreamLine`).
-    private func handle(parsed: ParsedStreamLine, for id: UUID) {
-        guard run(id) != nil else { return }
-        switch parsed {
-        case .claude(let events):
-            if processes[id] == nil, claudeIdle[id] != nil, events.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
-            for event in events { handleClaude(event, id: id) }
-        case .codex(let events):
-            for event in events { handleCodex(event, id: id) }
-        case .gemini(let events):
-            for event in events { handleGemini(event, id: id) }
-        case .pi(let events):
-            for event in events { handlePi(event, id: id) }
-        case .none:
-            break // ACP sessions read their own messages (WorkspaceManager+Acp).
-        }
-    }
-
-    private func handleGemini(_ event: GeminiStreamEvent, id: UUID) {
-        switch event {
-        case .initialized(let session, let model):
-            update(id) {
-                $0.providerSessionID = session
-                if let model, !model.isEmpty { $0.resolvedModel = model }
-            }
-        case .text(let text, let delta):
-            feed(id, delta ? .textDelta(text) : .text(text))
-        case .toolUse(let callID, let name, let input):
-            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
-                                                detail: ToolSummary.json(input.object), input: input)))
-        case .toolResult(let callID, let output, let isError):
-            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
-        case .warning(let message):
-            append(id, RunEvent(kind: .system, text: message))
-        case .failed(let message):
-            turns[id]?.lastError = message
-            append(id, RunEvent(kind: .error, text: message))
-        case .result(let isError, let message, var usage):
-            pauseLive(id)
-            if usage.durationSeconds == nil, let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
-            turns[id]?.finished = true
-            let stopping = turns[id]?.stopping ?? false
-            update(id) { run in
-                run.usage.add(usage)
-                if stopping {
-                    run.move(to: .stopped)
-                } else if isError {
-                    run.move(to: .failed, detail: message)
-                } else {
-                    run.move(to: .completed)
-                }
-            }
-            if isError && !stopping { append(id, RunEvent(kind: .error, text: message ?? tr("ws.event.failed", "error"))) }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: isError && !stopping ? .failed : .done))
-            turnDidFinish(id)
-            scheduleGitRefresh(id, delay: 0.5)
-        }
-    }
-
-    private func handleClaude(_ event: ClaudeStreamEvent, id: UUID) {
-        switch event {
-        case .initialized(let session, let model):
-            if forkLaunched.remove(id) == nil { rememberEarlierSession(id, replacedBy: session) }
-            update(id) {
-                $0.providerSessionID = session
-                if let model, !model.isEmpty { $0.resolvedModel = model }
-            }
-            noteConversationSession(id, session, keepsHistory: true)
-        case .chainEntry(let uuid):
-            noteConversationHead(id, uuid)
-        case .connectorsNeedingSignIn(let names):
-            noteConnectorsNeedingSignIn(id, names)
-        case .controlReply(let requestID, let response, let error):
-            claudeControlReplies.removeValue(forKey: requestID)?(response, error)
-        case .textDelta(let text):
-            feed(id, .textDelta(text))
-        case .text(let text):
-            feed(id, .text(text))
-        case .thinkingDelta(let text, let starts):
-            if starts { feed(id, .thinkingStarted) }
-            feed(id, .thinkingDelta(text))
-        case .blockStopped:
-            feed(id, .thinkingEnded)
-        case .requestStarted(let ttl):
-            turns[id]?.lastRequestAt = Date()
-            if let ttl { turns[id]?.cacheTTL = ttl }
-        case .thinking(let text):
-            feed(id, .thinking(text))
-        case .toolUse(let callID, let name, let input, let nested):
-            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
-                                                detail: ToolSummary.json(input.object), input: input, nested: nested)))
-            // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
-            if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
-        case .toolResult(let callID, let output, let isError):
-            // A subagent started in the background answers at once that it started: it runs on until its notification.
-            let call = timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })
-            let background = !isError && Subagents.isLaunchNote(output) && call.map(Subagents.isBackground) == true
-            // So does a command started in the background (or one Claude Code already said it moved there), unless its
-            // end came in first.
-            let command = !isError && call.map { BackgroundCommands.asksBackground($0) || $0.background == true } == true
-            let ended = call.map { $0.background == true && $0.state != .running } == true
-            let state: RunEvent.State = isError ? .failed : (background || command ? .running : .done)
-            feed(id, .toolUpdated(id: callID, output: output, state: ended ? (call?.state ?? .done) : state))
-            if command, let call, call.background != true { mutateEvent(id, call.id) { $0.background = true } }
-        case .backgroundTask(let update):
-            noteBackgroundTask(id, update)
-        case .goal(let update):
-            noteGoal(id, update)
-        case .subagentStep(let parent, let step):
-            noteSubagentStep(id, parent: parent, step)
-        case .usage(let messageID, let tokens, let model):
-            if let ttl = tokens.cacheTTL { turns[id]?.cacheTTL = ttl }
-            turns[id]?.messageUsage[messageID] = tokens
-            turns[id]?.lastContext = tokens.context + tokens.output
-            if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
-        case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
-            pauseLive(id)
-            // A question is answered, not approved: the answers go back as the tool's input.
-            if tool == "AskUserQuestion" {
-                let items = ClaudeStreamParser.questions(from: input)
-                if !items.isEmpty {
-                    let pending = PendingQuestion(id: requestID, runID: id, questions: items,
-                                                  origin: .claude(requestID: requestID, input: input), created: Date())
-                    questions[id, default: []].append(pending)
-                    update(id) { $0.move(to: .waitingApproval) }
-                    asked(id, pending)
-                    return
-                }
-            }
-            // In Plan mode the plan becomes a card with "Carry out"; Claude Code waits for your word instead of leaving plan mode.
-            if tool == "ExitPlanMode", run(id)?.mode == .plan {
-                let plan = ((input.dictionary["plan"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !plan.isEmpty { append(id, RunEvent(kind: .assistant, text: plan, tool: "plan", state: .done)) }
-                processes[id]?.send(ClaudeStreamParser.permissionResponse(
-                    requestID: requestID, allow: false, input: input,
-                    message: "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn."))
-                return
-            }
-            // Rights you raised after Claude Code started (or that it could not take over live) still count.
-            if let run = run(id), LiveRights.coversClaude(tool: tool, permission: run.permission, mode: run.mode) {
-                processes[id]?.send(ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: input))
-                return
-            }
-            let summary = ToolSummary.describe(tool: tool, input: input.dictionary)
-            let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID,
-                                 detail: ToolSummary.json(input.object), state: .pending)
-            append(id, event)
-            let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: input,
-                                            suggestions: suggestions, eventID: event.id, created: Date())
-            approvals[id, default: []].append(pending)
-            update(id) { $0.move(to: .waitingApproval) }
-            if let run = run(id) { onApproval?(run, pending) }
-        case .result(let result):
-            pauseLive(id)
-            // A steering message cut this segment short: the turn goes on with the new message.
-            if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
-                turns[id]?.steeredUsage.append(result.usage)
-                // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
-                turns[id]?.timeline.forgetPendingCopies()
-                return
-            }
-            turns[id]?.steered = false
-            // Stopped by a usage limit: remember when it resets, for "Resume at reset".
-            if turns[id]?.stopping != true {
-                let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
-                                               isError: result.isError, rateLimitRejected: !(turns[id]?.limitWindows.isEmpty ?? true),
-                                               rateLimitResets: turns[id]?.limitWindows ?? [:], messageText: result.text)
-                if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence), result.isError { limitedTurns[id] = .some(resetAt) }
-            }
-            var usage = result.usage
-            let state = turns[id]
-            // If turn completion reported no tokens, sum up individual message counts.
-            if (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) == 0, let messages = state?.messageUsage, !messages.isEmpty {
-                usage.inputTokens = messages.values.reduce(0) { $0 + $1.input }
-                usage.outputTokens = messages.values.reduce(0) { $0 + $1.output }
-                usage.cacheReadTokens = messages.values.reduce(0) { $0 + $1.cacheRead }
-                usage.cacheWriteTokens = messages.values.reduce(0) { $0 + $1.cacheWrite }
-            }
-            usage.contextTokens = state?.lastContext
-            if usage.durationSeconds == nil, let started = state?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
-            turns[id]?.finished = true
-            let stopping = state?.stopping ?? false
-            update(id) { run in
-                for segment in state?.steeredUsage ?? [] { run.usage.add(segment) }
-                run.usage.add(usage)
-                if let cache = Self.promptCache(after: state, previous: run.promptCache) { run.promptCache = cache }
-                if let session = result.sessionID { run.providerSessionID = session }
-                if stopping {
-                    run.move(to: .stopped)
-                } else if result.isError {
-                    run.move(to: .failed, detail: result.text.isEmpty ? result.subtype : result.text)
-                } else {
-                    run.move(to: .completed)
-                }
-            }
-            if let session = result.sessionID { noteConversationSession(id, session, keepsHistory: true) }
-            if result.isError && !stopping {
-                // Claude Code writes an API error as an answer first, then again as the result: show it once, as the error.
-                let failure = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !failure.isEmpty, let echoed = state?.timeline.lastTextID,
-                   events[id]?.last(where: { $0.id == echoed })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == failure {
-                    mutateEvent(id, echoed) { $0.kind = .error; $0.text = result.text; $0.state = nil }
-                } else {
-                    append(id, RunEvent(kind: .error, text: result.text.isEmpty ? tr("ws.event.failed", result.subtype) : result.text))
-                }
-            }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials),
-                                state: result.isError && !stopping ? .failed : .done))
-            expireApprovals(id)
-            questions[id] = nil
-            turnDidFinish(id)
-            scheduleGitRefresh(id, delay: 0.5)
-            // Turn finished: keep Claude Code waiting for the next message instead of closing it.
-            parkClaudeProcess(id, stopping: stopping)
-        case .notice(let text):
-            if text == "compact" { compactionFinished(id) }
-        case .compaction(let phase):
-            // Claude Code reports a compaction it gave up for your Stop as failed: that is stopped, not an error.
-            if case .failed = phase, turns[id]?.stopping == true {
-                compactionFailed(id, message: nil)
-            } else {
-                noteCompaction(id, phase)
-            }
-        case .rateLimits(let event):
-            onRateLimits?()
-            if let event { noteClaudeLimit(id, event) }
-        case .planWindow(let reading):
-            if let run = run(id) { onPlanWindow?(reading, run.profileID) }
-        }
-    }
-
-    func handleCodex(_ event: CodexStreamEvent, id: UUID) {
-        switch event {
-        case .threadStarted(let thread):
-            update(id) { $0.providerSessionID = thread }
-        case .message(let text):
-            feed(id, .text(text))
-        case .reasoning(let text):
-            feed(id, .thinking(text))
-        case .commandStarted(let callID, let command):
-            feed(id, .toolStarted(Self.codexCommand(callID, command)))
-        case .commandFinished(let callID, let command, let output, let exitCode):
-            var call = Self.codexCommand(callID, command)
-            call.output = output
-            call.state = (exitCode ?? 0) != 0 ? .failed : .done
-            feed(id, .toolFinished(call))
-        case .fileChanges(_, let changes):
-            for change in changes { recordFileChange(id, path: change.path, kind: change.kind) }
-        case .toolCall(let callID, let name, let detail, let finished, let failed, let input, let output):
-            let call = AgentToolCall(id: callID, name: name, title: detail.isEmpty ? name : "\(name) · \(detail)",
-                                     detail: input.map { ToolSummary.json($0.object) }, input: input, output: output,
-                                     state: finished ? (failed ? .failed : .done) : .running)
-            feed(id, finished ? .toolFinished(call) : .toolStarted(call))
-        case .turnCompleted(var usage):
-            pauseLive(id)
-            if let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
-            turns[id]?.finished = true
-            let stopping = turns[id]?.stopping ?? false
-            update(id) { run in
-                run.usage.add(usage)
-                run.move(to: stopping ? .stopped : .completed)
-            }
-            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: .done))
-            turnDidFinish(id)
-            scheduleGitRefresh(id, delay: 0.5)
-        case .failed(let message):
-            turns[id]?.lastError = message
-            append(id, RunEvent(kind: .error, text: message))
-        case .usageLimited:
-            limitedTurns[id] = .some(nil)
-        default:
-            // Events only `codex app-server` sends: live text, reasoning, output, usage, the end of a turn.
-            handleCodexServerEvent(event, id: id)
-        }
-    }
-
-    private func processExited(_ id: UUID, status: Int32, stderr: String, process: AgentProcess? = nil) {
-        // Quitting: `shutdown()` already settled every session; an exit now must not send queued messages or start a turn.
-        guard !quitting else { return }
-        // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
-        if let process, claudeIdle[id]?.process === process {
-            claudeIdle[id] = nil
-            // Subagents it ran in the background ended with it.
-            settleOpenWork(id, reason: .processExited)
-            noteSubagentsWorking(id)
-            return
-        }
-        if let process, let current = processes[id], current !== process { return }
-        processes[id] = nil
-        // A question can no longer be answered once the process is gone.
-        questions[id] = nil
-        pauseLive(id)
-        let state = turns[id]
-        turns[id] = nil
-        expireApprovals(id)
-        // Whatever was still running is settled: nothing may stay open after the process is gone.
-        settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
-        noteSubagentsWorking(id)
-        guard let state, !state.finished else {
-            scheduleGitRefresh(id, delay: 0.2)
-            sendQueued(id)
-            return
-        }
-        if state.stopping {
-            update(id) { $0.move(to: .stopped) }
-            append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
-            scheduleGitRefresh(id, delay: 0.2)
-            sendPendingNow(id)
-            return
-        } else {
-            let detail = Self.cleanError(state.lastError ?? stderr, status: status)
-            update(id) { $0.move(to: .failed, detail: detail) }
-            append(id, RunEvent(kind: .error, text: detail))
-            noteFailure(id, text: state.lastError ?? stderr)
-            turnDidFinish(id)
-        }
-        scheduleGitRefresh(id, delay: 0.2)
+        // What stays open between turns (`ProviderCapabilities.idleConnection`): Claude Code waits on stdin, Codex has its
+        // thread open, an ACP agent its session. Pi runs a process per turn; Antigravity is not opened ahead of time.
+        turnDriver(for: run, executable: executable).prewarm(id, run: run, executable: executable)
     }
 
     private static let ansiEscapeRegex = try? NSRegularExpression(pattern: "\u{1B}\\[[0-9;]*[A-Za-z]")
@@ -2274,12 +1330,18 @@ final class WorkspaceManager: ObservableObject {
         return String(tail.prefix(800))
     }
 
-    func resultLine(_ usage: TurnUsage, denials: Int) -> String {
+    /// The line under a finished turn. Its cost is the one every agent's turn gets (`PriceTable.cost`): yours, the
+    /// agent's own, or an estimate from its tokens for agents that report none (Codex, Gemini CLI), marked as such.
+    func resultLine(_ usage: TurnUsage, denials: Int, for id: UUID? = nil) -> String {
         var parts: [String] = []
         if let seconds = usage.durationSeconds { parts.append(AgentPathFormat.duration(seconds)) }
         let tokens = usage.ownTokens
         if tokens > 0 { parts.append(TokenTally.format(tokens) + " tokens") }
-        if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
+        if settings.showCost {
+            let cost = run(id).map { $0.cost(of: usage, prices: UsagePrices.current()) }
+                ?? PriceTable().cost(for: usage, provider: "", model: "")
+            if let label = CostFormat.label(cost) { parts.append(label) }
+        }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }
         return parts.joined(separator: " · ")
     }
@@ -2293,78 +1355,14 @@ final class WorkspaceManager: ObservableObject {
         let base = run(id)?.workingDirectory ?? ""
         let shown = path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
         append(id, RunEvent(kind: .fileChange, text: shown, tool: kind, detail: path))
-        update(id) { $0.lastChangeAt = Date() }
+        update(id) { run in
+            run.lastChangeAt = Date()
+            // A file in another project than the session's own: the list names both (`SessionProjects`).
+            if !run.isRemote, let projects = SessionProjects.adding(file: path, own: run.workingDirectory, to: run.otherProjects ?? []) {
+                run.otherProjects = projects
+            }
+        }
         scheduleGitRefresh(id, delay: 1.5)
-    }
-
-    // MARK: Approvals
-
-    enum Decision { case allow, always, deny }
-
-    /// `reason`: what you told the agent with a denial. It reaches the agent the way its app takes it
-    /// (`ProviderCapabilities.denyReason`); with an allow it is ignored.
-    func decide(_ runID: UUID, requestID: String, _ decision: Decision, reason: String = "") {
-        let reason = decision == .deny ? reason.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        if decideCodex(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
-        if decideAcp(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
-        guard let pending = approvals[runID]?.first(where: { $0.id == requestID }), let process = processes[runID] else {
-            expireApproval(runID, requestID: requestID)
-            return
-        }
-        let line: String
-        if run(runID)?.provider == .pi {
-            // Pi's `confirm` dialog has no "always"; Nook remembers nothing for it.
-            process.send(PiRPC.confirmResponse(requestID: requestID, confirmed: decision != .deny))
-            approvals[runID]?.removeAll { $0.id == requestID }
-            recap?.decision(allowed: decision != .deny)
-            mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-            if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
-            onApprovalGone?(requestID)
-            return
-        }
-        switch decision {
-        case .allow:
-            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input)
-        case .always:
-            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input,
-                                                         rules: pending.canAlways ? pending.suggestions : nil)
-        case .deny:
-            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: false, input: pending.input, message: reason)
-        }
-        process.send(line)
-        approvals[runID]?.removeAll { $0.id == requestID }
-        recap?.decision(allowed: decision != .deny)
-        mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-        if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
-        onApprovalGone?(requestID)
-        if !reason.isEmpty { append(runID, RunEvent(kind: .system, text: tr("ws.approval.deniedBecause", reason))) }
-    }
-
-    /// The reason for a denial, for an agent whose answer to a request carries no text: steered into the running turn
-    /// (Codex `turn/steer`; an ACP agent is interrupted and gets it as the next prompt). While more requests wait on you
-    /// the turn cannot be steered, so it waits in the queue for the end of the turn.
-    func deliverDenyReason(_ id: UUID, _ reason: String) {
-        guard !reason.isEmpty, let run = run(id) else { return }
-        switch run.provider.capabilities.denyReason {
-        case .inResponse:
-            return
-        case .followUpMessage:
-            let message = tr("ws.approval.denyMessage", reason)
-            if (approvals[id]?.isEmpty ?? true), steer(id, text: message) { return }
-            enqueue(id, text: message)
-        }
-    }
-
-    func expireApproval(_ runID: UUID, requestID: String) {
-        guard let pending = approvals[runID]?.first(where: { $0.id == requestID }) else { return }
-        approvals[runID]?.removeAll { $0.id == requestID }
-        mutateEvent(runID, pending.eventID) { $0.state = .expired }
-        onApprovalGone?(requestID)
-    }
-
-    func expireApprovals(_ runID: UUID) {
-        for pending in approvals[runID] ?? [] { expireApproval(runID, requestID: pending.id) }
-        approvals[runID] = nil
     }
 
     // MARK: Management
@@ -2378,7 +1376,16 @@ final class WorkspaceManager: ObservableObject {
     func setArchived(_ id: UUID, _ archived: Bool) {
         guard let run = run(id), !(archived && run.status.isActive) else { return }
         update(id) { $0.archived = archived }
-        if archived { WorkspaceBridge.shared.forgetSecrets(run: id) }
+        if archived {
+            WorkspaceBridge.shared.forgetSecrets(run: id)
+            store.compactSettled(id)
+        }
+    }
+
+    /// A session was settled: its log keeps only what its timeline needs (`RunStore.compactSettled`).
+    func settled(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive else { return }
+        store.compactSettled(id)
     }
 
     func markReviewed(_ id: UUID) {
@@ -2408,176 +1415,6 @@ final class WorkspaceManager: ObservableObject {
         if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
     }
 
-    // MARK: Watching pull requests
-
-    /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
-    /// what the agent can act on goes to it as a message.
-    /// A session watches any number of them; nil ends every watch of the session.
-    func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
-        guard let url else {
-            update(id) {
-                $0.prWatch = nil
-                $0.extraPRWatches = nil
-            }
-            followPullRequestFeeds()
-            return
-        }
-        guard !isWatching(id, url: url) else { return }
-        update(id) { run in
-            let watch = PullRequestWatch(url: url.absoluteString, wakeAgent: wakeAgent)
-            if run.prWatch == nil { run.prWatch = watch } else { run.extraPRWatches = (run.extraPRWatches ?? []) + [watch] }
-        }
-        checkPullRequestWatches(force: true)
-    }
-
-    func isWatching(_ id: UUID, url: URL) -> Bool {
-        run(id)?.prWatches.contains { $0.url == url.absoluteString } ?? false
-    }
-
-    /// A watch on a pull request that merged or closed moves to the newer open one the session opened from the same branch
-    /// (see `PullRequestWatch.carried`), keeping whether news wakes the agent.
-    func carryFinishedWatch(_ id: UUID, links: [PullRequestLink]) {
-        guard let run = run(id), let carry = PullRequestWatch.carried(run.prWatches, links: links),
-              let old = URL(string: carry.from.url) else { return }
-        stopWatchingPullRequest(id, url: old)
-        watchPullRequest(id, url: carry.to, wakeAgent: carry.from.wakeAgent)
-    }
-
-    /// Ends the watch on one pull request; the next one takes the tray's place.
-    func stopWatchingPullRequest(_ id: UUID, url: URL) {
-        update(id) { run in
-            var rest = run.prWatches.filter { $0.url != url.absoluteString }
-            run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
-            run.extraPRWatches = rest.isEmpty ? nil : rest
-        }
-        // Its host change feed ends with the last watch on it; the subscription is deleted.
-        followPullRequestFeeds()
-    }
-
-    /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
-    /// agent keeps going while nobody is at the Mac (the agent answers a review or a failed check by itself), only slower;
-    /// one that only updates a badge waits until someone is back. Host change feeds start and stop here too.
-    func checkPullRequestWatches(force: Bool = false) {
-        guard pullRequestSnapshot != nil else { return }
-        let now = Date()
-        let energy = EnergyMonitor.shared
-        let gap = 120 * energy.plan.slowdown
-        for run in runs {
-            guard !run.archived else { continue }
-            for watch in run.prWatches {
-                guard force || watch.wakeAgent || !energy.signals.idle,
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true else { continue }
-                checkPullRequestWatch(run.id, url: watch.url, recheck: false)
-            }
-        }
-        followPullRequestFeeds()
-    }
-
-    /// Reads every watch on the pull request at `url` now: its host just said it changed.
-    func checkPullRequestWatches(url: String) {
-        for run in runs where !run.archived && run.prWatches.contains(where: { $0.url == url }) {
-            checkPullRequestWatch(run.id, url: url, recheck: true)
-        }
-    }
-
-    /// Reads one watched pull request and turns what changed into news. With `recheck` (the host reported a change), a
-    /// read already under way is followed by one more, so the change is not missed; the sweep just skips it.
-    private func checkPullRequestWatch(_ id: UUID, url link: String, recheck: Bool) {
-        guard let fetch = pullRequestSnapshot, let watch = run(id)?.prWatches.first(where: { $0.url == link }),
-              watch.state == "open", let url = URL(string: link) else { return }
-        let key = id.uuidString + " " + link
-        guard !watchesInFlight.contains(key) else {
-            if recheck { watchRechecks.insert(key) }
-            return
-        }
-        watchesInFlight.insert(key)
-        Task { [weak self] in
-            let snapshot = await fetch(url)
-            guard let self else { return }
-            self.watchesInFlight.remove(key)
-            if let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == link }) {
-                self.pullRequestChanged(id, old: current, new: snapshot)
-            }
-            if self.watchRechecks.remove(key) != nil { self.checkPullRequestWatch(id, url: link, recheck: false) }
-        }
-    }
-
-    /// Keeps one host change feed per open watched pull request that the sweep would read now: none while the energy plan
-    /// pauses background work, and none for a watch that only updates a badge while nobody is at the Mac. A feed that
-    /// ended by itself waits a sweep (two minutes) before it is asked for again.
-    private func followPullRequestFeeds() {
-        guard let events = pullRequestEvents else { return }
-        let now = Date()
-        let energy = EnergyMonitor.shared
-        var wanted = Set<String>()
-        if energy.plan.pace != .paused {
-            for run in runs where !run.archived {
-                for watch in run.prWatches where watch.state == "open" && (watch.wakeAgent || !energy.signals.idle) {
-                    wanted.insert(watch.url)
-                }
-            }
-        }
-        for (url, feed) in pullRequestFeeds where !wanted.contains(url) {
-            feed.cancel()
-            pullRequestFeeds[url] = nil
-        }
-        pullRequestFeedEnded = pullRequestFeedEnded.filter { wanted.contains($0.key) && now.timeIntervalSince($0.value) < 120 }
-        for url in wanted where pullRequestFeeds[url] == nil && pullRequestFeedEnded[url] == nil {
-            // No feed for this host or account: asked again a sweep later, not every half minute.
-            guard let link = URL(string: url), let changes = events(link) else {
-                pullRequestFeedEnded[url] = now
-                continue
-            }
-            pullRequestFeeds[url] = Task { [weak self] in
-                for await _ in changes {
-                    guard !Task.isCancelled else { break }
-                    self?.checkPullRequestWatches(url: url)
-                }
-                guard !Task.isCancelled, let self else { return }
-                self.pullRequestFeeds[url] = nil
-                self.pullRequestFeedEnded[url] = Date()
-            }
-        }
-    }
-
-    private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
-        let now = Date()
-        if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
-        // The first look only sets what counts as seen, but for a conflict that is already there.
-        let first = old.checkedAt == nil
-        let news = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
-        let lines = news.map(\.text)
-        let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
-        update(id) { run in
-            let updated = PullRequestNews.updated(old, with: new, at: now)
-            if run.prWatch?.url == old.url {
-                run.prWatch = updated
-            } else {
-                run.extraPRWatches = run.extraPRWatches?.map { $0.url == old.url ? updated : $0 }
-            }
-        }
-        settleQueuedNews(id, url: old.url, with: new)
-        // A merged or closed pull request has nothing more to report: its change feed ends.
-        if new.state != "open" { followPullRequestFeeds() }
-        guard !lines.isEmpty else { return }
-        append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
-        guard wake, let run = run(id) else { return }
-        let message = PullRequestNews.message(url: old.url, lines: lines)
-        // The news line above already shows it: the agent gets it without a bubble of yours.
-        if run.canContinue && processes[id] == nil {
-            sendHidden(id, text: message)
-        } else {
-            enqueue(id, text: message, pullRequest: PullRequestNotice(url: old.url, lines: news))
-        }
-    }
-
-    /// Waiting news about this pull request that is out of date leaves the queue.
-    private func settleQueuedNews(_ id: UUID, url: String, with snapshot: PullRequestSnapshot) {
-        guard var queue = queued[id] else { return }
-        queue.settleNews(url: url, with: snapshot)
-        if queue != queued[id] { store(queue, for: id) }
-    }
-
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     /// `cleanUpWorktree`: with "Remove the worktree when its last session is deleted" on, the worktree this leaves unused
     /// goes too (`cleanUpWorktreeAfterDelete`); **Delete with worktree** removes it itself.
@@ -2591,56 +1428,12 @@ final class WorkspaceManager: ObservableObject {
         SessionBrowsers.shared.discard(run: id)
         WorkspaceBridge.shared.forgetSecrets(run: id)
         forgetSessionState(id)
-        store.deleteEvents(id)
+        store.deleteEventsAsync(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
         scheduleSave()
         if let leftWorktree {
             cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
         }
-    }
-
-    // MARK: Sessions working at once
-
-    /// Sessions working now, apart from `id` and from the turns that wait for a free place themselves.
-    private func othersWorking(than id: UUID) -> Int {
-        runs.filter { $0.id != id && $0.status.isActive && capacityWaiting[$0.id] == nil }.count
-    }
-
-    /// A new turn past the limit waits for a free place: your message shows at once and the session says why it waits.
-    /// True when it waits. A turn of a session that already works (a fallback to another transport) never waits.
-    private func waitForCapacity(_ id: UUID, prompt: String, executable: String, showPrompt: Bool) -> Bool {
-        let limit = settings.maxWorkingSessions
-        guard capacityWaiting[id] == nil, let run = run(id), !(run.status.isActive && run.status != .preparing),
-              SessionCapacity.mustWait(limit: limit, othersWorking: othersWorking(than: id)) else { return false }
-        loadTimeline(id)
-        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
-        capacityWaiting[id] = (prompt, executable)
-        capacityOrder.append(id)
-        update(id) { $0.move(to: .preparing, detail: tr("ws.capacity.waiting", limit)) }
-        append(id, RunEvent(kind: .system, text: tr("ws.capacity.waiting", limit)))
-        return true
-    }
-
-    /// Starts the turns that waited, oldest first, as far as there is room now. Called when a turn ends, when a waiting
-    /// one is stopped, and when the limit changes.
-    func startWaitingTurns() {
-        capacityOrder.removeAll { capacityWaiting[$0] == nil || run($0) == nil }
-        let working = runs.filter { $0.status.isActive && capacityWaiting[$0.id] == nil }.count
-        let count = SessionCapacity.startable(limit: settings.maxWorkingSessions, working: working, waiting: capacityOrder.count)
-        for id in capacityOrder.prefix(count) {
-            guard let waiting = capacityWaiting.removeValue(forKey: id) else { continue }
-            capacityOrder.removeAll { $0 == id }
-            launchTurn(id, prompt: waiting.prompt, executable: waiting.executable, showPrompt: false)
-        }
-    }
-
-    /// Stop on a turn that still waits for a free place: it never starts.
-    func cancelWaitingTurn(_ id: UUID) -> Bool {
-        guard capacityWaiting.removeValue(forKey: id) != nil else { return false }
-        capacityOrder.removeAll { $0 == id }
-        update(id) { $0.move(to: .stopped) }
-        append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
-        return true
     }
 
     /// What the agent is told at launch: the project's instructions for every agent, then the session's own. Read at every
@@ -2656,25 +1449,26 @@ final class WorkspaceManager: ObservableObject {
     /// behind; `SessionStateCleanupTests` fails when a per-session property is added without being forgotten here.
     func forgetSessionState(_ id: UUID) {
         events[id] = nil
-        timelineUse[id] = nil
-        evictedTimelines.remove(id)
-        evictedAnswers[id] = nil
+        timelineStore.forget(id)
+        pullRequestWatcher.forget(id)
         // Per-session state that would otherwise stay for every session ever made, until Nook quits.
-        gitRefreshes.removeValue(forKey: id)?.cancel()
+        gitRefresh.forget(id)
         sessionTimelines[id] = nil
-        gitReading.remove(id)
-        gitAgain[id] = nil
-        branchPoints[id] = nil
         codexTotals[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
+        contextUsages[id] = nil
+        contextBreakdownMissing[id] = nil
+        contextUsageAsking.remove(id)
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
+        worktreeSetups[id] = nil
         forgetConnectorSignIns(id)
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         limitResumes.removeValue(forKey: id)?.cancel()
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
@@ -2686,6 +1480,7 @@ final class WorkspaceManager: ObservableObject {
         continuingTurns.remove(id)
         freshArmed.remove(id)
         turnPrompts[id] = nil
+        addedWorktrees[id] = nil
         recoveringConversation.remove(id)
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
@@ -2721,21 +1516,19 @@ final class WorkspaceManager: ObservableObject {
         idleCompacting.remove(id)
         sizeCompacting.remove(id)
         bridgeTokens[id] = nil
+        BridgeTokenFiles.remove(id, in: bridgeTokenDirectory)
         codexGoalStarting[id] = nil
         codexGoalWaiting[id] = nil
         antigravitySignIns.remove(id)
-        eventSaves.removeValue(forKey: id)?.cancel()
-        dirtyTimelines?.remove(id)
-        shownTimelines[id] = nil
-        prefetching.remove(id)
-        awaitedTimelines.remove(id)
         forkNext.remove(id)
         forkLaunched.remove(id)
         displayPrompt[id] = nil
         reopeningWorktrees.remove(id)
-        capacityWaiting[id] = nil
-        capacityOrder.removeAll { $0 == id }
+        restoreWaiting.remove(id)
+        keptReplays[id] = nil
+        capacity.forget(id)
         runPositions = nil
+        subThreadCounts = nil
     }
 
     private func applyAutoArchive() {
@@ -2745,429 +1538,10 @@ final class WorkspaceManager: ObservableObject {
         var changed = false
         for index in runs.indices where !runs[index].archived && !runs[index].status.isActive && runs[index].updatedAt < cutoff {
             runs[index].archived = true
+            store.compactSettled(runs[index].id)
             changed = true
         }
         if changed { scheduleSave() }
-    }
-
-    // MARK: Git
-
-    /// Reads the session's git status off the main thread. `quiet` (the refreshes Nook schedules itself as an agent
-    /// writes): no spinner, and a result equal to the last one publishes nothing, so a busy session in one window does
-    /// not redraw every other window, nor make the panels look up the branch again, while its files stay the same.
-    /// One read per session at a time: an ask while it runs is folded into a single read after it.
-    func refreshGit(_ id: UUID, quiet: Bool = false) {
-        guard let run = run(id), let git = sessionGit(for: run), run.repoRoot != nil else { return }
-        if gitReading.contains(id) {
-            gitAgain[id] = (gitAgain[id] ?? true) && quiet
-            if !quiet { showGitLoading(id) }
-            return
-        }
-        gitReading.insert(id)
-        if !quiet || self.git[id] == nil { showGitLoading(id) }
-        let directory = run.workingDirectory
-        let base = run.baseBranch
-        let cachedPoint = branchPoints[id].flatMap { Date().timeIntervalSince($0.at) < Self.branchPointMaxAge ? $0 : nil }
-        let knownBranch = run.branch
-        Task.detached(priority: .utility) {
-            var status: GitStatus?
-            var passed: [String] = []
-            var problem: String?
-            var divergence: (ahead: Int, behind: Int)?
-            var branch: (changes: [GitFileChange], point: BranchPoint)?
-            if git.remote != nil || FileManager.default.fileExists(atPath: directory) {
-                do { status = try git.status(directory) } catch let failure { problem = failure.localizedDescription }
-                if let base { divergence = git.divergence(directory, base: base) }
-                // What the row counts is what its hover card and the Changes panel show: the branch since it left its
-                // base, committed work included (`FolderGitModel`). A session on another machine counts what is not
-                // committed, as its review there does.
-                if git.remote == nil, let status { branch = Self.branchChanges(git, directory: directory, status: status, cached: cachedPoint) }
-                // The session is on another branch than at the last read: the branches it went through in between
-                // (an agent that opens several pull requests in one turn) are its earlier branches too.
-                if let status, !status.detached, let now = status.branch, let knownBranch, now != knownBranch,
-                   let reflog = try? git.run(["log", "-g", "--format=%gs", "-n", "200", "HEAD"], in: directory) {
-                    passed = SessionBranches.passed(reflog: reflog.components(separatedBy: "\n"), from: knownBranch, to: now)
-                }
-            } else {
-                problem = tr("ws.error.folderGone", directory)
-            }
-            let result = (status: status, divergence: divergence, problem: problem)
-            let branchResult = branch
-            let passedBranches = passed
-            await MainActor.run { [weak self] in
-                // A session deleted while git was read leaves nothing behind.
-                guard let self, self.run(id) != nil else { return }
-                self.gitReading.remove(id)
-                let again = self.gitAgain.removeValue(forKey: id)
-                let previous = self.git[id]
-                // Still loading when a refresh with the spinner follows straight away.
-                var next = GitSnapshot(status: result.status, divergence: result.divergence, error: result.problem,
-                                       updated: Date(), loading: again == false)
-                // Nothing changed: a quiet read keeps the snapshot's `updated`, so nothing looks at the branch again.
-                if quiet, let previous, previous.sameContent(as: next) { next.updated = previous.updated }
-                if next != previous { self.git[id] = next }
-                if let status = result.status {
-                    if let branchResult { self.branchPoints[id] = branchResult.point }
-                    let counted = branchResult?.changes ?? status.files
-                    let added = counted.reduce(0) { $0 + ($1.added ?? 0) }
-                    let removed = counted.reduce(0) { $0 + ($1.removed ?? 0) }
-                    self.update(id, save: false) {
-                        $0.changedFiles = counted.count
-                        $0.changedLinesAdded = added
-                        $0.changedLinesRemoved = removed
-                    }
-                    // A branch the agent (or you) switched to becomes the session's own.
-                    if !status.detached, let branch = status.branch { self.followBranch(id, to: branch, passing: passedBranches) }
-                }
-                if let again { self.refreshGit(id, quiet: again) }
-            }
-        }
-    }
-
-    /// The branch's changes since where it left its base, else (no base, or git cannot tell) what is not committed.
-    nonisolated private static func branchChanges(_ git: GitService, directory: String, status: GitStatus,
-                                                  cached: BranchPoint?) -> (changes: [GitFileChange], point: BranchPoint) {
-        let commits = git.headCommits(directory).joined(separator: ",")
-        let key = "\(status.branch ?? "")|\(status.upstream ?? "")|\(status.ahead)|\(status.behind)|\(status.detached)|\(commits)"
-        let point: BranchPoint
-        if let cached, cached.key == key {
-            point = cached
-        } else {
-            let comparison = git.branchComparison(directory, status: status, remotes: git.remotes(directory))
-            point = BranchPoint(key: key, point: comparison.point, at: Date())
-        }
-        let changes = point.point.flatMap { try? git.changes(directory, since: $0, status: status) } ?? status.files
-        return (changes, point)
-    }
-
-    private func showGitLoading(_ id: UUID) {
-        var snapshot = self.git[id] ?? GitSnapshot(status: nil, divergence: nil, error: nil, updated: Date(), loading: false)
-        guard !snapshot.loading else { return }
-        snapshot.loading = true
-        self.git[id] = snapshot
-    }
-
-    func scheduleGitRefresh(_ id: UUID, delay: TimeInterval) {
-        gitRefreshes[id]?.cancel()
-        gitRefreshes[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.refreshGit(id, quiet: true)
-        }
-    }
-
-    func diff(_ id: UUID, file: GitFileChange, options: DiffReadOptions = .standard) async throws -> String {
-        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
-        let directory = run.workingDirectory
-        return try await Task.detached(priority: .userInitiated) {
-            try git.diff(directory, file: file, ignoreWhitespace: options.ignoreWhitespace)
-        }.value
-    }
-
-    /// What one turn (from `start` to `end`) did to a file: between the snapshots around it when the session has them,
-    /// otherwise the file against its last commit.
-    func turnDiff(_ id: UUID, path: String, start: Date, end: Date, options: DiffReadOptions = .standard) async throws -> String {
-        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
-        let directory = run.workingDirectory
-        let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
-        let from = around?.before.ref ?? "HEAD"
-        let to = around?.after?.ref
-        return try await Task.detached(priority: .userInitiated) {
-            try git.diff(directory, path: path, from: from, to: to, ignoreWhitespace: options.ignoreWhitespace)
-        }.value
-    }
-
-    /// The lines one turn added and removed per file (between the same snapshots as `turnDiff`), keyed by the path
-    /// relative to the session's folder. Binary files count as nothing. With a snapshot on both sides of the turn these
-    /// are all the files it changed, also by a command or script (`sed`, a formatter) that no edit of the agent shows;
-    /// otherwise only `paths`, against the last commit or the files as they are now. When the turn pulled, merged or
-    /// rebased, the files Git brought in are left out unless the turn edited, committed or fixed a conflict in them
-    /// (`GitService.authoredPaths`); restoring a snapshot still brings back everything.
-    func turnLines(_ id: UUID, paths: [String], start: Date, end: Date) async throws -> TurnLines {
-        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
-        let directory = run.workingDirectory
-        let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
-        let from = around?.before.ref ?? "HEAD"
-        let to = around?.after?.ref
-        let since = around?.before.date ?? start
-        let complete = to != nil
-        // A file outside the folder (the agent's own settings, say) would make git refuse the whole list.
-        let root = directory.hasSuffix("/") ? directory : directory + "/"
-        let inside = complete ? nil : paths.filter { !$0.hasPrefix("/") || $0.hasPrefix(root) }
-        let counts = try await Task.detached(priority: .utility) {
-            let authored = to.flatMap { git.authoredPaths(directory, from: from, to: $0, since: since) }
-            return try git.lineCounts(directory, paths: inside, from: from, to: to, authored: authored)
-        }.value
-        return TurnLines(counts: counts.mapValues { EditLines(added: $0.added ?? 0, removed: $0.removed ?? 0) }, complete: complete)
-    }
-
-    func commit(_ id: UUID, message: String, paths: [String]) async throws -> String {
-        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
-        guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
-        let directory = run.workingDirectory
-        let sha = try await Task.detached(priority: .userInitiated) { try git.commit(directory, message: message, paths: paths) }.value
-        append(id, RunEvent(kind: .system, text: tr("ws.event.committed", sha, ToolSummary.oneLine(message, 80))))
-        markReviewed(id)
-        refreshGit(id)
-        return sha
-    }
-
-    func push(_ id: UUID) async throws {
-        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
-        let directory = run.workingDirectory
-        guard let branch = await Task.detached(operation: { git.currentBranch(directory) }).value else {
-            throw StartError.git(tr("ws.error.detached"))
-        }
-        let remote = await Task.detached(operation: { git.remotes(directory).contains("origin") ? "origin" : (git.remotes(directory).first ?? "origin") }).value
-        try await Task.detached(priority: .userInitiated) { try git.push(directory, remote: remote, branch: branch) }.value
-        append(id, RunEvent(kind: .system, text: tr("ws.event.pushed", branch, remote)))
-        refreshGit(id)
-    }
-
-    /// owner/repo from remote URL if it is a GitHub repository.
-    func githubRepository(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
-        let directory = run.workingDirectory
-        let url = await Task.detached(operation: { git.remoteURL(directory) }).value
-        return url.flatMap(GitHubRemote.repository(from:))
-    }
-
-    /// The forge of the session's folder (GitHub, GitLab, Bitbucket…), from its remote; nil without a recognisable remote.
-    func remoteRepository(_ id: UUID) async -> RemoteRepository? {
-        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
-        let directory = run.workingDirectory
-        let url = await Task.detached(operation: { git.remoteURL(directory) }).value
-        return SourceForge.repository(remoteURL: url)
-    }
-
-    func currentBranch(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
-        let directory = run.workingDirectory
-        return await Task.detached(operation: { git.currentBranch(directory) }).value
-    }
-
-    /// Deletes a session's worktree. Never while the session is running; uncommitted changes require `force`.
-    func removeWorktree(_ id: UUID, force: Bool) async throws {
-        guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = sessionGit(for: run) else { return }
-        guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
-        let others = runs.filter { $0.id != id && $0.status.isActive && $0.workingDirectory == worktree }
-        guard others.isEmpty else { throw StartError.git(tr("ws.error.busy")) }
-        let local = !run.isRemote
-        try await FolderLease.shared.run(FolderLease.key(worktree, machine: run.remote?.machineID), priority: .userInitiated) {
-            if local { WorktreeArchive.save(worktree: worktree) }
-            try git.removeWorktree(repo: repo, path: worktree, force: force)
-        }
-        append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeRemoved", AgentPathFormat.tilde(worktree))))
-        update(id) { $0.statusDetail = "worktreeRemoved" }
-        self.git[id] = nil
-        refreshWorktrees()
-    }
-
-    /// The session's files are there to snapshot: its worktree, or its folder.
-    func canSnapshot(_ run: WorkspaceRun) -> Bool {
-        // On another machine git there answers for itself (a folder that is gone fails the snapshot, nothing more).
-        if run.isRemote { return true }
-        return run.isolation == .worktree ? worktreeExists(run) : FileManager.default.fileExists(atPath: run.workingDirectory)
-    }
-
-    func worktreeExists(_ run: WorkspaceRun) -> Bool {
-        guard let path = run.worktreePath else { return false }
-        if run.isRemote { return true }
-        return FileManager.default.fileExists(atPath: path)
-    }
-
-    /// All worktrees across repositories containing sessions, with linked sessions and change statuses.
-    /// One refresh at a time: it reads every worktree (Git and its size on disk), which takes minutes with a hundred of
-    /// them, and the list asks again each time it appears. A request during a refresh runs once after it, not alongside.
-    /// Sizes come from `DiskUsage.cachedAllocatedSize` unless `force` (the list's refresh button) measures them again.
-    func refreshWorktrees(force: Bool = false) {
-        guard let git = gitService else { return }
-        // Nobody looks at the rows: the list refreshes when it opens.
-        guard worktreesListShown > 0 else { return }
-        guard !worktreesLoading else {
-            worktreesRefreshPending = true
-            if force { worktreesRefreshForced = true }
-            return
-        }
-        let sizeAge = force ? 0 : DiskUsage.cachedSizeAge
-        let roots = Set(runs.compactMap(\.repoRoot))
-        let snapshot = runs
-        let listOpen = worktreesListOpen
-        worktreesLoading = true
-        Task.detached(priority: .utility) {
-            // Resolving each root to its main checkout runs Git once per root: off the main thread, or every refresh
-            // froze the app for seconds with many sessions.
-            let repos = Array(Set(roots.map { git.mainCheckout(of: $0) ?? $0 })).sorted()
-            var rows: [WorktreeRow] = []
-            var seenPaths = Set<String>()
-            // Closed meanwhile: the rest is for no one. The list keeps the rows it had; opening it again refreshes in full.
-            var stopped = false
-            repositories: for repo in repos where FileManager.default.fileExists(atPath: repo) {
-                guard listOpen.isOpen else { stopped = true; break }
-                guard let list = try? git.worktrees(repo) else { continue }
-                for worktree in list {
-                    guard listOpen.isOpen else { stopped = true; break repositories }
-                    autoreleasepool {
-                        let path = WorkspacePathPolicy.normalize(worktree.path)
-                        guard seenPaths.insert(path).inserted else { return }
-                        let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
-                        // Only show root workspace if a session is actively using it.
-                        if worktree.isMain && linked.isEmpty { return }
-                        var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
-                        if FileManager.default.fileExists(atPath: worktree.path) {
-                            row.changedFiles = git.changedFileCount(worktree.path)
-                            if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) { listOpen.isOpen } }
-                            let base = linked.compactMap(\.baseBranch).first
-                            row.baseBranch = base
-                            if let base, let divergence = git.divergence(worktree.path, base: base) {
-                                row.ahead = divergence.ahead
-                                row.behind = divergence.behind
-                            }
-                        }
-                        rows.append(row)
-                    }
-                }
-            }
-            await MainActor.run { [weak self, rows, stopped] in
-                guard let self else { return }
-                if !stopped { self.worktreeRows = rows }
-                self.worktreesLoading = false
-                if self.worktreesRefreshPending {
-                    let forced = self.worktreesRefreshForced
-                    self.worktreesRefreshPending = false
-                    self.worktreesRefreshForced = false
-                    self.refreshWorktrees(force: forced)
-                }
-            }
-        }
-    }
-
-    /// A Worktrees list opened (`true`) or closed. Opening refreshes its rows; with every list closed, a refresh under way
-    /// stops at the next worktree and later changes wait for the next opening.
-    func worktreesShown(_ shown: Bool) {
-        worktreesListShown = max(0, worktreesListShown + (shown ? 1 : -1))
-        worktreesListOpen.isOpen = worktreesListShown > 0
-        if shown { refreshWorktrees() }
-    }
-
-    /// The worktree deleting this session would leave unused (`WorktreeCleanup`), offered to remove along with it.
-    func orphanedWorktree(_ id: UUID) -> (repo: String, path: String)? {
-        guard let run = run(id), !run.isRemote, let repo = run.repoRoot else { return nil }
-        let others = runs.filter { $0.id != id }.flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
-        guard let path = WorktreeCleanup.orphaned(worktree: run.worktreePath, otherFolders: others),
-              WorkspacePathPolicy.normalize(path) != WorkspacePathPolicy.normalize(repo) else { return nil }
-        return (repo, path)
-    }
-
-    /// Deletes a session and then its worktree. Git refuses a worktree with changes that were never committed; that is
-    /// reported and the worktree stays, so nothing you did not commit is lost.
-    func deleteWithWorktree(_ id: UUID) {
-        guard let worktree = orphanedWorktree(id) else { delete(id); return }
-        guard run(id)?.status.isActive == false else { return }
-        delete(id, cleanUpWorktree: false)
-        // `delete` leaves a session whose process is still there; its worktree stays with it.
-        guard run(id) == nil else { return }
-        Task {
-            do {
-                try await removeWorktree(repo: worktree.repo, path: worktree.path, force: false)
-                ToastCenter.shared.success(tr("ws.worktree.removed"))
-            } catch {
-                ToastCenter.shared.error(error, title: tr("ws.worktree.removeFailed"))
-            }
-        }
-    }
-
-    /// Removes a worktree that is not linked to any active session (from the overview).
-    func removeWorktree(repo: String, path: String, force: Bool) async throws {
-        guard let git = gitService else { throw StartError.noGit }
-        let target = WorkspacePathPolicy.normalize(path)
-        guard !runs.contains(where: { $0.status.isActive && WorkspacePathPolicy.normalize($0.workingDirectory) == target }) else {
-            throw StartError.git(tr("ws.error.busy"))
-        }
-        try await FolderLease.shared.run(FolderLease.key(path), priority: .userInitiated) {
-            WorktreeArchive.save(worktree: path)
-            try git.removeWorktree(repo: repo, path: path, force: force)
-        }
-        for run in runs where WorkspacePathPolicy.normalize(run.workingDirectory) == target {
-            append(run.id, RunEvent(kind: .system, text: tr("ws.event.worktreeRemoved", AgentPathFormat.tilde(path))))
-            update(run.id) { $0.statusDetail = "worktreeRemoved" }
-        }
-        refreshWorktrees()
-    }
-
-    // MARK: Opening
-
-    func openInEditor(_ path: String) {
-        let url = URL(fileURLWithPath: path, isDirectory: true)
-        if !settings.editorBundleID.isEmpty,
-           let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: settings.editorBundleID) {
-            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-        } else {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
-    }
-
-    /// Opens a file in your editor with the cursor on its line (`EditorLaunch`): the editor from Settings › Workspace, else
-    /// the first known editor on this Mac, else the file is shown in Finder. A file is never handed to its default app,
-    /// since an agent's link could point at something that runs.
-    func openFile(_ target: FileTarget) {
-        let url = URL(fileURLWithPath: target.path)
-        guard FileManager.default.fileExists(atPath: target.path) else {
-            Task {
-                guard let found = await recoverFile(target.path) else {
-                    ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
-                    return
-                }
-                var copy = target
-                copy.path = found
-                openFile(copy)
-            }
-            return
-        }
-        let chosen = settings.editorBundleID.isEmpty ? nil : settings.editorBundleID
-        let bundleID = chosen ?? WorkspaceSettings.installed(WorkspaceSettings.editorCandidates).first?.bundleID
-        guard !target.path.hasSuffix(".app"), let bundleID, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            revealInFinder(target.path)
-            return
-        }
-        let executable = Bundle(url: app)?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
-        if case .process(let tool, let arguments) = EditorLaunch.plan(bundleID: bundleID, appPath: app.path, executable: executable, target: target),
-           FileManager.default.isExecutableFile(atPath: tool) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: tool)
-            process.arguments = arguments
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            if (try? process.run()) != nil { return }
-        }
-        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-    }
-
-    /// A changed file of a session, by its path in the repository, at an absolute path (nil for a remote session).
-    func absolutePath(_ id: UUID, repositoryPath: String) -> String? {
-        guard let run = run(id), !run.isRemote else { return nil }
-        let root = run.worktreePath ?? run.repoRoot ?? run.workingDirectory
-        return ((root as NSString).appendingPathComponent(repositoryPath) as NSString).standardizingPath
-    }
-
-    /// Opens a terminal in Nook's own window (set by the app). Used when the built-in terminal is chosen.
-    var openBuiltInTerminal: ((_ folder: String) -> Void)?
-
-    func openTerminal(_ path: String) {
-        if settings.terminalBundleID == WorkspaceSettings.builtInTerminal, let openBuiltInTerminal {
-            openBuiltInTerminal(path)
-            return
-        }
-        let url = URL(fileURLWithPath: path, isDirectory: true)
-        let bundle = settings.terminalBundleID.isEmpty || settings.terminalBundleID == WorkspaceSettings.builtInTerminal
-            ? "com.apple.Terminal" : settings.terminalBundleID
-        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
-                ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else { return }
-        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-    }
-
-    func revealInFinder(_ path: String) {
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
@@ -3185,12 +1559,16 @@ final class WorkspaceManager: ObservableObject {
             let id = runs[index].id
             guard backgroundWork.contains(id) || subagentsWorking.contains(id) else { continue }
             let labels = RestartContinuation.waitedOn(events[id] ?? [])
-            if !labels.isEmpty { runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now) }
+            if !labels.isEmpty {
+                runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now)
+                runs[index].stoppedByQuit = true
+            }
         }
         GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
         for id in Array(acpClients.keys) { closeAcpClient(id) }
+        closeOpenCodeServers()
         for (id, process) in processes {
             turns[id]?.stopping = true
             process.closeInput()
@@ -3201,6 +1579,7 @@ final class WorkspaceManager: ObservableObject {
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
+            runs[index].stoppedByQuit = true
         }
         saveForQuit()
     }
@@ -3208,7 +1587,7 @@ final class WorkspaceManager: ObservableObject {
     private func saveForQuit() {
         // Saves still queued go first: one that ran after these would write an older timeline over the newer one.
         store.flush()
-        if runsLoaded { try? store.saveRuns(runs) }
+        if runsLoaded { try? store.saveRuns(durableRuns(runs)) }
         for (id, list) in events { try? store.saveEvents(id, list) }
     }
 
@@ -3238,195 +1617,9 @@ final class WorkspaceManager: ObservableObject {
         runs[index] = run
         if save { scheduleSave() }
         // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.
-        if freedPlace, !capacityOrder.isEmpty {
+        if freedPlace, !capacity.isEmpty {
             Task { @MainActor [weak self] in self?.startWaitingTurns() }
         }
-    }
-
-    func append(_ id: UUID, _ event: RunEvent) {
-        changingTimeline = id
-        defer { changingTimeline = nil }
-        timelineUse[id] = Date()
-        if events[id] == nil {
-            evictedTimelines.remove(id)
-            evictedAnswers[id] = nil
-            events[id] = store.loadEvents(id)
-        }
-        events[id]?.append(event)
-        store.appendEventAsync(id, event)
-        if event.countsAsActivity(runActive: runIndex(id).map { runs[$0].status.isActive } ?? false) {
-            // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
-            // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.
-            let boundary = event.kind == .user || event.kind == .result || event.kind == .error || event.kind == .approval
-            let now = Date()
-            if boundary || runIndex(id).map({ now.timeIntervalSince(runs[$0].updatedAt) >= 2 }) ?? false {
-                update(id, save: false) { $0.updatedAt = now }
-            }
-        }
-        scheduleEventSave(id)
-        if event.kind == .result { noticeCreatedPullRequest(id) }
-        // A pull request you name in your message ("#12", a link) is one this session works on. "#12" may be an issue,
-        // so it is linked only once the forge says it is a pull request.
-        if event.kind == .user { noticePullRequests(id, PullRequestMentions.inMessage(event.text), mustExist: true) }
-    }
-
-    /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
-    /// the agent just made, also when it used its own `gh` instead of pull_request_create.
-    private func noticeCreatedPullRequest(_ id: UUID) {
-        guard let all = events[id], let start = all.lastIndex(where: { $0.kind == .user }) else { return }
-        guard let made = RunPullRequestLinks.last(in: Array(all[start...])),
-              made != RunPullRequestLinks.last(in: Array(all[..<start])) else { return }
-        pullRequestCreated?(id, made)
-        watchCreatedPullRequest(id, url: made)
-    }
-
-    /// A pull request the session just opened is watched from the start, unless Settings says you follow them yourself
-    /// (`WorkspaceSettings.watchNewPullRequests`). Covers the git button's and the agent's own (pull_request_create, `gh`).
-    func watchCreatedPullRequest(_ id: UUID, url: URL) {
-        guard settings.watchNewPullRequests, PullRequestWatch.canWatch(url), !isWatching(id, url: url) else { return }
-        watchPullRequest(id, url: url)
-    }
-
-    func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
-        // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
-        guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else { return }
-        changingTimeline = id
-        change(&events[id]![index])
-        changingTimeline = nil
-        scheduleEventSave(id)
-    }
-
-    /// Announces a changed timeline: the first change at once, later ones within the same short window together.
-    /// `id` is the session that changed, nil when it could be any.
-    private func eventsDidChange(_ id: UUID? = nil) {
-        guard !quietEvents else { return }
-        if let id { dirtyTimelines?.insert(id) } else { dirtyTimelines = nil }
-        if eventsThrottled {
-            eventsDirty = true
-            return
-        }
-        publishTimelineChanges()
-    }
-
-    private func publishTimelineChanges() {
-        timelines.objectWillChange.send()
-        if let dirty = dirtyTimelines {
-            for id in dirty { sessionTimelines[id]?.objectWillChange.send() }
-        } else {
-            for changes in sessionTimelines.values { changes.objectWillChange.send() }
-        }
-        dirtyTimelines = []
-        eventsThrottled = true
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.eventsPublishInterval)
-            guard let self else { return }
-            self.eventsThrottled = false
-            if self.eventsDirty {
-                self.eventsDirty = false
-                self.publishTimelineChanges()
-            }
-        }
-    }
-
-    private static let eventSaveInterval: UInt64 = 5_000_000_000
-    private static let runsCatchUpInterval: UInt64 = 30_000_000_000
-
-    func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard let self, !Task.isCancelled, self.runsLoaded else { return }
-            let runsSnapshot = self.runs
-            self.writeRuns(runsSnapshot)
-        }
-    }
-
-    func scheduleEventSave(_ id: UUID) {
-        guard eventSaves[id] == nil else { return }
-        eventSaves[id] = Task { [weak self] in
-            // Each save compares the whole timeline with the log and writes every changed event in full, so a long answer
-            // is written again each time (new events are written at once by `append`). While an answer streams, every five
-            // seconds is plenty: a crash loses at most the last five seconds of text.
-            try? await Task.sleep(nanoseconds: Self.eventSaveInterval)
-            guard let self else { return }
-            self.eventSaves[id] = nil
-            if let list = self.events[id] { self.store.saveEventsAsync(id, list) }
-            self.scheduleRunsCatchUp()
-        }
-    }
-
-    /// What streaming changes in the session list is only the time of the last event: a real change saves on its own
-    /// (`scheduleSave`), and quitting saves everything. The list holds every session, so it is written now and then, once,
-    /// however many sessions stream.
-    private func scheduleRunsCatchUp() {
-        guard runsCatchUp == nil else { return }
-        runsCatchUp = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.runsCatchUpInterval)
-            guard let self else { return }
-            self.runsCatchUp = nil
-            guard self.runsLoaded, self.savedRuns != self.runs else { return }
-            self.writeRuns(self.runs)
-        }
-    }
-
-    private func writeRuns(_ snapshot: [WorkspaceRun]) {
-        savedRuns = snapshot
-        // A write that failed tries again: without a change to the list nothing else would.
-        store.saveRunsAsync(snapshot) { [weak self] in
-            Task { @MainActor in
-                self?.savedRuns = nil
-                self?.scheduleRunsCatchUp()
-            }
-        }
-    }
-}
-
-/// owner/repo from a GitHub remote (https or ssh).
-enum GitHubRemote {
-    static func repository(from url: String) -> String? {
-        var rest: Substring
-        if let range = url.range(of: "github.com/") {
-            rest = url[range.upperBound...]
-        } else if let range = url.range(of: "github.com:") {
-            rest = url[range.upperBound...]
-        } else {
-            return nil
-        }
-        if rest.hasSuffix(".git") { rest = rest.dropLast(4) }
-        while rest.hasSuffix("/") { rest = rest.dropLast() }
-        let parts = rest.split(separator: "/")
-        guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || "-_.".contains($0) } }) else {
-            return nil
-        }
-        return parts.joined(separator: "/")
-    }
-
-    /// GitHub comparison page to open a pull request, pre-filled with the branch.
-    static func compareURL(repo: String, base: String, head: String) -> URL? {
-        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "?#"))
-        guard let base = base.addingPercentEncoding(withAllowedCharacters: allowed),
-              let head = head.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
-        return URL(string: "https://github.com/\(repo)/compare/\(base)...\(head)?expand=1")
-    }
-}
-
-/// Workspace formatting helpers.
-enum AgentPathFormat {
-    static func tilde(_ path: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
-    }
-
-    static func duration(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        if total < 60 { return "\(total)s" }
-        let minutes = total / 60
-        if minutes < 60 { return "\(minutes)m \(total % 60)s" }
-        return "\(minutes / 60)h \(minutes % 60)m"
-    }
-
-    static func cost(_ usd: Double) -> String {
-        usd < 0.01 && usd > 0 ? "< $0.01" : String(format: "$%.2f", usd)
     }
 }
 

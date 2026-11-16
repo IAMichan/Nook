@@ -58,11 +58,18 @@ extension WorkspaceManager {
             guard let kept = run.kept else { continue }
             let folder = NookPaths.keeperDirectory.appendingPathComponent(kept.folder)
             let spool = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("out").path))?[.size] as? UInt64
+            // After a crash no offset was saved at quit: the progress written while it ran says how far Nook got.
+            let progress = kept.offset == nil ? KeptRuns.readProgress(folder: folder) : nil
             let plan = KeptRuns.onLaunch(status: run.status, hasKeeper: true, keeperAlive: KeptTransport.isAlive(folder: folder),
-                                         savedOffset: kept.offset, spoolSize: spool)
+                                         savedOffset: kept.offset, progress: progress?.offset, spoolSize: spool)
             guard case .attach(let offset) = plan else {
                 keptAgentGone(run)
                 continue
+            }
+            if let progress, let spool, offset < spool {
+                // What the crashed Nook may already have shown is read again: it takes the place of what is there.
+                if events[run.id] == nil { installTimeline(run.id, store.loadEvents(run.id)) }
+                keptReplays[run.id] = KeptRuns.Replay(timeline: events[run.id] ?? [], since: progress.savedAt, until: spool)
             }
             let placement = KeeperPlacement(folder: folder.path, script: "", offset: offset)
             let spec = LaunchSpec(executable: "", arguments: [], extraEnvironment: [:], workingDirectory: NSHomeDirectory(),
@@ -76,12 +83,45 @@ extension WorkspaceManager {
             }
             guard attached else {
                 turns[run.id] = nil
+                keptReplays[run.id] = nil
                 keptAgentGone(run)
                 continue
             }
             update(run.id) { $0.kept?.offset = nil }
             append(run.id, RunEvent(kind: .system, text: tr("ws.event.kept")))
         }
+    }
+
+    /// A kept agent's progress is not written past a request that waits for you (`AgentProcess.holdForRequest`): after a
+    /// crash its output is read again from there, the agent (which still waits too) asks again, and you can answer it.
+    func syncKeptHold(_ id: UUID) {
+        guard let process = keptProcess(id) else { return }
+        if !(approvals[id] ?? []).isEmpty || waitsOnQuestion(id) {
+            process.holdForRequest()
+        } else {
+            process.releaseHold()
+        }
+    }
+
+    /// The turn ended: the next progress write of a kept agent goes in at once.
+    func keptTurnEnded(_ id: UUID) {
+        keptProcess(id)?.writeProgressSoon()
+        keptReplays[id] = nil
+    }
+
+    /// An event read again after a crash (`KeptRuns.Replay`) takes the place of the one already in the timeline. True when
+    /// it did, and the caller appends nothing.
+    func replaceReplayed(_ id: UUID, _ event: RunEvent) -> Bool {
+        guard keptReplays[id] != nil else { return false }
+        if let process = keptProcess(id), process.handledOffset >= keptReplays[id]!.until { return false }
+        guard let existing = keptReplays[id]!.match(event) else { return false }
+        mutateEvent(id, existing) { old in
+            let kept = (old.id, old.date)
+            old = event
+            old.id = kept.0
+            old.date = kept.1
+        }
+        return true
     }
 
     /// Keepers that still answer, by folder name: what Settings shows.
@@ -122,8 +162,10 @@ extension WorkspaceManager {
         let id = run.id
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleCodexServer(id, client, message, events)
                 client.process.markHandled(end)
             }
@@ -144,8 +186,10 @@ extension WorkspaceManager {
         let id = run.id
         let client = AcpClient(spec: spec)
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleAcp(id, client, message, events)
                 client.process.markHandled(end)
             }

@@ -18,6 +18,11 @@ struct LaunchSpec: Equatable, Sendable {
     var initialInput: [String]
     /// Does stdin stay open (for approvals and interruption)? Otherwise the agent gets /dev/null.
     var keepsInputOpen: Bool
+    /// A line sent before `initialInput` and never written to the traffic log: a secret that must stay off every command
+    /// line (a session's bridge token for an agent on another machine, `RemoteLaunch.wrap`).
+    var secretInput: String? = nil
+    /// Closes stdin once `secretInput` and `initialInput` went: open only to carry them.
+    var closesInputAfterStart = false
     /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
     var removedEnvironment: [String] = []
     /// Runs through a keeper, so it outlives Nook (`SessionKeeper`).
@@ -58,11 +63,14 @@ enum AgentCommand {
         var bridge: BridgeLaunch? = nil
         /// Claude Code knows `--thinking-display`: ask for summarized thinking, so newer models show it.
         var thinkingDisplay = false
+        /// Claude Code predicts your next message after each turn (`--prompt-suggestions`, `PromptSuggestionSource`).
+        var promptSuggestions = false
         /// Claude Code's `ENABLE_TOOL_SEARCH` as Nook sets it (`ClaudeToolSearch`); nil leaves yours.
         var toolSearch: String? = nil
         /// The token suggestions you applied to Nook's sessions (Settings › Sessions › Tokens).
         var tuning = AgentTuning.Applied()
-        /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
+        /// The reasoning effort, sent the way the agent takes it at launch (`ProviderCapabilities.effort`,
+        /// `effortArguments`); nil leaves the agent's own default.
         var effort: String? = nil
         /// The speed tier (`SpeedTiers`): Claude Code's fast mode in its settings, Codex's `service_tier`; nil is standard.
         var speedTier: String? = nil
@@ -98,8 +106,9 @@ enum AgentCommand {
                                                               .merging(Ultracode.claudeSettings(input.ultracode)) { $1 })
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
+            if input.promptSuggestions { arguments += ["--prompt-suggestions", "true"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
-            if let effort = input.effort, !effort.isEmpty { arguments += ["--effort", effort] }
+            arguments += effortArguments(input.provider, effort: input.effort)
             if let resume = input.resumeSessionID, !resume.isEmpty {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }
@@ -120,6 +129,7 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             // Detailed reasoning summaries: the timeline shows how Codex thinks, not only what it did.
             arguments += ["-c", "model_reasoning_summary=\"detailed\""]
+            arguments += effortArguments(input.provider, effort: input.effort)
             arguments += SpeedTiers.codexExecArguments(tier: input.speedTier)
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
@@ -171,7 +181,7 @@ enum AgentCommand {
                 arguments += ["--model", input.model]
             }
         }
-        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += ["--thinking", effort] }
+        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += effortArguments(input.provider, effort: effort) }
         let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note, omit: input.omitAgentCredits)
         if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
         arguments += ["--extension", PiExtension.fileURL.path]
@@ -183,6 +193,22 @@ enum AgentCommand {
         return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                           workingDirectory: input.workingDirectory, initialInput: PiRPC.turnInput(for: input.prompt),
                           keepsInputOpen: true)
+    }
+
+    /// The launch arguments that carry a session's reasoning effort, the way its agent takes it (`EffortDelivery`). Empty
+    /// without a level, for an agent that takes it over its session (ACP), and for a level that is not a plain word: a
+    /// config override is parsed as TOML by Codex, so nothing else may reach it.
+    static func effortArguments(_ provider: RunProvider, effort: String?) -> [String] {
+        guard let effort, !effort.isEmpty else { return [] }
+        switch provider.capabilities.effort {
+        case .launchFlag(let flag):
+            return [flag, effort]
+        case .launchConfig(let key):
+            let plain = effort.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" }
+            return plain && effort.allSatisfy(\.isASCII) ? ["-c", "\(key)=\"\(effort)\""] : []
+        case .sessionOption:
+            return []
+        }
     }
 
     /// The ACP server command of an agent that only runs over ACP (see AcpAgent).
@@ -240,9 +266,23 @@ enum AgentCommand {
         env["PATH"] = (paths + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
         // Nook's internal thinking via Claude Code sets this; a workspace session is a real agent session.
         env["NOOK_INTERNAL"] = nil
+        for key in inheritedSessionVariables { env[key] = nil }
         for (key, value) in extra { env[key] = value }
         return env
     }
+
+    /// What a Nook started from inside an agent session (a terminal in Claude Code, a build an agent ran) inherits from
+    /// that session, and must not hand to its own agents: with them a Claude Code that Nook starts acts as part of the
+    /// other session (its id, messaging socket and token, effort), an Electron app an agent starts (VS Code) runs as Node
+    /// and exits, and Nook's MCP server would speak for the other session or reach another Nook's socket. For every agent
+    /// and helper Nook starts; what Nook sets itself (`NOOK_RUN_ID`, the bridge's variables) goes back in after this.
+    static let inheritedSessionVariables = [
+        "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_DESKTOP_APP_VERSION", "CLAUDE_EFFORT", "CLAUDE_PID", "CLAUDE_AGENT_SDK_VERSION",
+        "ELECTRON_RUN_AS_NODE",
+        "NOOK_RUN_ID", "NOOK_BRIDGE_TOKEN", BridgeTokenFiles.variable, "NOOK_BRIDGE_SOCK"
+    ]
 }
 
 /// A single running agent process. Delivers stdout lines one by one on a dedicated queue.
@@ -283,15 +323,74 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Stdout bytes taken as complete lines so far; on the output queue. Inside `onLines` it says where that batch ends.
     private(set) var consumed: UInt64 = 0
+    /// Where the batch of lines handed to `onLines` (or `onLine`) starts; on the output queue, as `consumed`.
+    private(set) var batchStart: UInt64 = 0
     private var handled: UInt64 = 0
+    /// Where the output being handled now starts (`beginHandling`): a request it raises is read again from here.
+    private var handlingFrom: UInt64 = 0
+    /// Set while a request raised by the output waits for you (`holdForRequest`): progress is not written past it.
+    private var hold: UInt64?
+    private var progressWritten: Date?
+    private var progressSoon = false
     /// The output Nook has really handled: where another Nook goes on.
     var handledOffset: UInt64 { lock.withLock { handled } }
-    func markHandled(_ offset: UInt64) { lock.withLock { handled = max(handled, offset) } }
+    /// How far a Nook that crashed now could say the output was handled (`KeptRuns.durableOffset`).
+    var durableOffset: UInt64 { lock.withLock { KeptRuns.durableOffset(handled: handled, hold: hold) } }
     var isKept: Bool { process is KeptTransport }
+
+    /// Says where the output about to be handled starts; call on the main thread right before handling it.
+    func beginHandling(from start: UInt64) { lock.withLock { handlingFrom = start } }
+
+    /// The output up to `offset` is handled. A kept agent's progress is written into its keeper's folder now and then
+    /// (`KeptRuns.Progress`), so a crash of Nook loses none of it.
+    func markHandled(_ offset: UInt64) {
+        let progress: KeptRuns.Progress? = lock.withLock {
+            handled = max(handled, offset)
+            return dueProgress(force: false)
+        }
+        if let progress { writeProgress(progress) }
+    }
+
+    /// The output being handled raised a request (an approval, a question) that now waits for you.
+    func holdForRequest() {
+        lock.withLock { if hold == nil { hold = min(handlingFrom, handled) } }
+    }
+
+    /// No request waits any more: the progress moves on at once.
+    func releaseHold() {
+        let progress: KeptRuns.Progress? = lock.withLock {
+            guard hold != nil else { return nil }
+            hold = nil
+            return dueProgress(force: true)
+        }
+        if let progress { writeProgress(progress) }
+    }
+
+    /// The progress is written with the next handled output, whenever the last write was (the end of a turn).
+    func writeProgressSoon() { lock.withLock { progressSoon = true } }
+
+    /// Call with the lock held.
+    private func dueProgress(force: Bool) -> KeptRuns.Progress? {
+        guard spec.keeper != nil, isKept else { return nil }
+        let now = Date()
+        guard KeptRuns.shouldWriteProgress(now: now, lastWritten: progressWritten, force: force || progressSoon) else { return nil }
+        progressWritten = now
+        progressSoon = false
+        return KeptRuns.Progress(offset: KeptRuns.durableOffset(handled: handled, hold: hold), savedAt: now)
+    }
+
+    /// One queue for every kept agent: the writes are tiny, and in order.
+    private static let progressQueue = DispatchQueue(label: "nook.kept-progress", qos: .utility)
+
+    private func writeProgress(_ progress: KeptRuns.Progress) {
+        guard let folder = spec.keeper?.folder else { return }
+        Self.progressQueue.async { KeptRuns.writeProgress(progress, folder: URL(fileURLWithPath: folder)) }
+    }
 
     /// Nook goes and the agent stays: only for an agent with a keeper. It reports no exit after this.
     func detach() {
         onExit = nil
+        LiveAgentProcesses.shared.untrack(self)
         (process as? KeptTransport)?.detach()
     }
 
@@ -303,6 +402,8 @@ final class AgentProcess: @unchecked Sendable {
         guard !LiveAgentProcesses.shared.quitting else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(ECANCELED)) }
         var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
         for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
+        // At Nook's own priority: an agent the user waits on must not lose the processor to anything else. Heavy builds
+        // lower their own priority (scripts/build-slot.sh), and `AgentGovernor` steps in when memory runs out.
         let options = SpawnedProcess.Options(executable: spec.executable, arguments: spec.arguments, environment: environment,
                                              workingDirectory: spec.workingDirectory, keepsInputOpen: spec.keepsInputOpen)
         // SIGPIPE would terminate Nook if the agent exits while writing.
@@ -330,6 +431,7 @@ final class AgentProcess: @unchecked Sendable {
                     self.trafficLog?.exit(status)
                     let tail = String(decoding: self.stderrTail, as: UTF8.self)
                     LiveAgentProcesses.shared.remove(self)
+                    LiveAgentProcesses.shared.untrack(self)
                     self.markFinished()
                     self.onExit?(status, tail)
                 }
@@ -337,16 +439,19 @@ final class AgentProcess: @unchecked Sendable {
         })
         // A kept agent outlives Nook on purpose; every other one is stopped and waited for when Nook quits.
         if !isKept { LiveAgentProcesses.shared.add(self) }
+        LiveAgentProcesses.shared.track(self)
+        if let secret = spec.secretInput { send(secret + "\n", logged: false) }
         for line in spec.initialInput { send(line) }
+        if spec.closesInputAfterStart { closeInput() }
     }
 
     /// Writes a line to stdin (a message, an answer to a permission prompt).
-    func send(_ line: String) {
+    func send(_ line: String, logged: Bool = true) {
         lock.lock()
         let done = finished
         lock.unlock()
         guard !done, let data = line.data(using: .utf8) else { return }
-        trafficLog?.outbound(line)
+        if logged { trafficLog?.outbound(line) }
         do {
             try process.write(data)
         } catch {
@@ -362,12 +467,17 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Graceful stop of the agent and everything in its group: SIGINT, SIGTERM after `grace` seconds, SIGKILL four
     /// seconds later. The group is signalled even when the agent itself already exited, so what it started goes too.
+    /// Called with the agent's pid right before it is stopped: the app lets the commands it paused go on first
+    /// (`AgentGovernor`), so they hear the stop instead of holding still.
+    nonisolated(unsafe) static var beforeStop: (@Sendable (Int32) -> Void)?
+
     func stop(grace: TimeInterval = 4) {
         lock.lock()
         let first = !stopping
         stopping = true
         lock.unlock()
         guard first, process.isRunning else { return }
+        Self.beforeStop?(pid)
         // The keeper sees it through, also when Nook quits right after this.
         if let kept = process as? KeptTransport {
             trafficLog?.signal(SIGINT)
@@ -441,6 +551,7 @@ final class AgentProcess: @unchecked Sendable {
             start = newline + 1
             from = start
         }
+        batchStart = consumed
         consumed += UInt64(buffer.distance(from: buffer.startIndex, to: start))
         if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }

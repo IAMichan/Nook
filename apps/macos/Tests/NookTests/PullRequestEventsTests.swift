@@ -57,13 +57,13 @@ final class PullRequestEventsTests: XCTestCase {
     }
 
     func testOnlyPullRequestsOnGitHubDotComHaveAFeed() {
-        XCTAssertEqual(GitHubPullRequestEvents.Target.parse(URL(string: "")!), target)
-        XCTAssertEqual(target.resourceURL, "")
+        XCTAssertEqual(GitHubPullRequestEvents.Target.parse(URL(string: "https://github.com/octocat/hello-world/pull/15")!), target)
+        XCTAssertEqual(target.resourceURL, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://ghe.example.com/a/b/pull/1")!), "GitHub Enterprise polls")
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://gitlab.com/a/b/-/merge_requests/1")!))
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://github.com/a/b/issues/1")!))
         let body = GitHubPullRequestEvents.subscribeBody(target)
-        XCTAssertEqual(body["resource_url"] as? String, "")
+        XCTAssertEqual(body["resource_url"] as? String, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertEqual(body["event_types"] as? [String], [
             "com.github.pull_request.review.submitted.v1", "com.github.pull_request.head.changed.v1",
             "com.github.pull_request.state.changed.v1", "com.github.pull_request.merge_conflict.v1",
@@ -123,7 +123,7 @@ final class PullRequestEventsTests: XCTestCase {
             "https://api.github.com/event-subscriptions/2/events b",
         ])
         XCTAssertEqual(transport.posts.count, 2)
-        XCTAssertEqual(transport.posts.first?["resource_url"] as? String, "")
+        XCTAssertEqual(transport.posts.first?["resource_url"] as? String, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertEqual(transport.deletes, ["1 a", "2 a"], "each subscription is deleted with the account that made it")
     }
 

@@ -55,8 +55,14 @@ extension WorkspaceManager {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         let previous = run.provider
         let accountOnly = previous == provider
+        // No model given (the usage limit banner's "Switch to"): another account keeps the model in use, another agent
+        // starts on the model you set for it in Settings, as the agent menu does. Only without either the agent picks.
+        let given = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = !given.isEmpty ? given
+            : accountOnly ? run.model : settings.sessionDefaults(for: run.projectPath).model(for: provider)
         update(id) {
             $0.provider = provider
             // A goal lives in the agent's own conversation.
@@ -77,7 +83,7 @@ extension WorkspaceManager {
         forkNext.remove(id)
         if let now = self.run(id) {
             // "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5": a divider with both agents and their models; to
-            // another account of the same agent, each logo carries its account's badge (as).
+            // another account of the same agent, each logo carries its account's badge.
             var change = ModelSwitch(from: before, to: switchEndpoint(now))
             if accountOnly { change.accountHandoff = true }
             var event = RunEvent(kind: .system, text: accountOnly ? ModelSwitchText.plain(change)
@@ -91,7 +97,9 @@ extension WorkspaceManager {
         let limited = run.limitedAt != nil
         clearUsageLimit(id)
         if limited && resumeIfLimited {
-            append(id, RunEvent(kind: .system, text: tr("ws.limit.resumingSwitched")))
+            append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.limit.resumingSwitched")
+                                                                 : tr("ws.limit.resumingSwitchedAgent", provider.displayName),
+                                tool: "resume"))
             send(id, text: UsageLimits.resumeMessage)
         }
         return true
@@ -149,6 +157,7 @@ extension WorkspaceManager {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         forkNext.remove(id)
         append(id, RunEvent(kind: .system, text: tr("ws.event.cleared"), tool: "clear"))
         // What came before the divider is no agent's to pick up: a switch to another agent later hands over only what
@@ -174,8 +183,8 @@ extension WorkspaceManager {
 
     // MARK: Fork
 
-    /// A new session that starts from this one: Claude Code forks its own conversation; any other agent starts from a
-    /// summary. It works in the same folder (a fork never owns a worktree, so removing it cannot take the original's).
+    /// A new session that starts from this one: Claude Code, and an ACP agent that offers `session/fork`, copy their own
+    /// conversation; any other agent starts from a summary. It works in the same folder (a fork never owns a worktree, so removing it cannot take the original's).
     @discardableResult
     func fork(_ id: UUID, keepingEvents keep: Int? = nil) -> UUID? {
         guard canTransfer(id), let source = run(id) else { return nil }
@@ -185,7 +194,7 @@ extension WorkspaceManager {
         // conversation, so such a fork always starts from a summary.
         let partial = keep.map { $0 < all.count } ?? false
         let events = keep.map { Array(all.prefix(max(0, $0))) } ?? all
-        let nativeFork = source.provider.capabilities.nativeFork && !partial
+        let nativeFork = forksNatively(source) && !partial
         let strategy = ContextTransfer.forFork(nativeFork: nativeFork, hasNativeSession: source.providerSessionID != nil)
 
         let newID = UUID()

@@ -17,7 +17,10 @@ failed only after you sent the task.
   request, Codex `model/list`, the ACP agents' `initialize` or a session opened and removed for it,
   `WorkspaceManager.refreshAgentModels`), so a new model shows up as soon as the installed agent offers it, before the
   manifest is edited. An agent cannot name models released after its build, so the manifest adds exactly those.
-- `status: current | legacy` classifies models, `aliases` map short names, `badge: "new"` marks new ones.
+- `status: current | legacy` classifies models, `aliases` map short names, `badge: "new"` marks new ones. A badge
+  needs a `released` date (ISO 8601) and the New label goes away by itself two weeks after it
+  (`ModelManifest.Model.isNew(at:)`), so it never sticks to an older model. Older builds read only `badge`: remove it
+  once the two weeks are over.
 - Tests use **synthetic model names**, so adding a model is a JSON edit that never needs a test change.
 
 **In Nook:**

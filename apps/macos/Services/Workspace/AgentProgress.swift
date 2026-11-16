@@ -202,7 +202,7 @@ enum AgentActivity: Equatable, Sendable {
         if SessionOutputs.taskTools.contains(tool) || SessionOutputs.taskTools.contains(tool.components(separatedBy: "__").last ?? "") {
             return .planning
         }
-        if Subagents.tools.contains(tool) {
+        if Subagents.isTool(tool) {
             return .delegating((input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback)
         }
         if ["websearch", "webfetch", "web_search", "web_fetch", "google_web_search"].contains(name) {
@@ -258,11 +258,14 @@ enum AgentActivity: Equatable, Sendable {
 
     /// The live line of a session's last turn: the tool that runs, else what the agent did last.
     static func current(_ events: [RunEvent]) -> AgentActivity {
-        let turn = TimelinePresentation.split(events).last ?? []
+        let turn = TimelinePresentation.runningTurn(events)
         // While it compacts, the agent does nothing else.
         if CompactionProgress.running(in: turn) != nil { return .compacting }
-        if let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) { return of(running) }
-        guard let last = turn.last(where: { [.assistant, .thinking, .tool, .fileChange, .error, .user].contains($0.kind) }) else {
+        if let running = turn.last(where: TimelinePresentation.isLive) { return of(running) }
+        // A message you steered in says nothing about what the agent does: it reads it only between steps.
+        guard let last = turn.last(where: {
+            [.assistant, .thinking, .tool, .fileChange, .error].contains($0.kind) || $0.kind == .user && $0.steer == nil
+        }) else {
             return .starting
         }
         switch last.kind {
@@ -295,6 +298,18 @@ enum TaskChecklist {
     static func showsInline(_ steps: [RunTaskStep]?, active: Bool) -> Bool {
         guard active, let steps, !steps.isEmpty else { return false }
         return true
+    }
+
+    /// The Tasks strip above the composer: the step (phase) the agent works on now while it works, so it stays in sight
+    /// while you scroll or type, and the list it left behind once it stops.
+    static func showsAboveComposer(_ steps: [RunTaskStep]?) -> Bool {
+        guard let steps, !steps.isEmpty else { return false }
+        return true
+    }
+
+    /// The strip shows the step as running (with the live light) only while the agent works on it.
+    static func isRunning(_ steps: [RunTaskStep], active: Bool) -> Bool {
+        active && activeStep(steps) != nil
     }
 
     /// The text of the step that runs, else nil: a list where nothing runs yet (or any more) has no current step.

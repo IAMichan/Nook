@@ -5,6 +5,7 @@ import Foundation
 
 let polishComposersTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "compose.plus.screenshot": "Screenshot van het voorste venster (⌥⌘5)",
         "compose.dictate.start": "Inspreken (⌘⇧D)",
         "compose.dictate.finish": "Klaar met inspreken",
         "compose.dictate.discard": "Opname weggooien (Esc)",
@@ -20,8 +21,10 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Geplakte tekst",
         "compose.chip.model": "Model",
         "compose.chip.secret": "Geheim",
+        "compose.chip.element": "Element van een pagina",
     ],
     .en: [
+        "compose.plus.screenshot": "Screenshot of the front window (⌥⌘5)",
         "compose.dictate.start": "Dictate (⌘⇧D)",
         "compose.dictate.finish": "Finish dictating",
         "compose.dictate.discard": "Discard the recording (Esc)",
@@ -37,8 +40,10 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Pasted text",
         "compose.chip.model": "Model",
         "compose.chip.secret": "Secret",
+        "compose.chip.element": "Page element",
     ],
     .de: [
+        "compose.plus.screenshot": "Screenshot des vordersten Fensters (⌥⌘5)",
         "compose.dictate.start": "Diktieren (⌘⇧D)",
         "compose.dictate.finish": "Diktat beenden",
         "compose.dictate.discard": "Aufnahme verwerfen (Esc)",
@@ -54,8 +59,10 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Eingefügter Text",
         "compose.chip.model": "Modell",
         "compose.chip.secret": "Geheimnis",
+        "compose.chip.element": "Element einer Seite",
     ],
     .fr: [
+        "compose.plus.screenshot": "Capture de la fenêtre au premier plan (⌥⌘5)",
         "compose.dictate.start": "Dicter (⌘⇧D)",
         "compose.dictate.finish": "Terminer la dictée",
         "compose.dictate.discard": "Jeter l’enregistrement (Échap)",
@@ -71,8 +78,10 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Texte collé",
         "compose.chip.model": "Modèle",
         "compose.chip.secret": "Secret",
+        "compose.chip.element": "Élément de la page",
     ],
     .es: [
+        "compose.plus.screenshot": "Captura de la ventana en primer plano (⌥⌘5)",
         "compose.dictate.start": "Dictar (⌘⇧D)",
         "compose.dictate.finish": "Terminar el dictado",
         "compose.dictate.discard": "Descartar la grabación (Esc)",
@@ -88,5 +97,6 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.paste": "Texto pegado",
         "compose.chip.model": "Modelo",
         "compose.chip.secret": "Secreto",
+        "compose.chip.element": "Elemento de la página",
     ],
 ]

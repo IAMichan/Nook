@@ -62,6 +62,8 @@ extension CompanionServer {
         guard let reader = PullReader(app: app, address: request.item) else { return .failure(request.id, .unknownItem) }
         do {
             let detail = try await reader.read()
+            var marks = PullRequestViewedFiles.load()
+            PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
             return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
@@ -79,8 +81,8 @@ extension CompanionServer {
                 let detail = try await reader.read()
                 guard let file = detail.files.first(where: { $0.path == action.path }) else { return .failure(request.id, .unknownItem) }
                 var marks = PullRequestViewedFiles.load()
-                marks.setViewed(action.kind == .viewed, file: file, in: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number))
-                marks.save()
+                PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
+                PullRequestViewedSync.toggle(action.kind == .viewed, file: file, detail: detail, accountID: reader.account, marks: &marks)
                 return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
             case .approve, .requestChanges, .comment:
                 let detail = try await reader.read()
@@ -119,6 +121,11 @@ extension CompanionServer {
     func pullWork(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let work = request.pullWork, let provider = RunProvider(rawValue: work.agent),
               launchableProviders(app).contains(provider) else { return .failure(request.id, .badRequest) }
+        // Started before (a retry after a restart of Nook): the same session, not a second worktree and session.
+        let command = SessionCommand.phone(request.id)
+        if let earlier = app.workspace.commandReceipt(command), let created = earlier.created {
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: created)
+        }
         guard let reader = PullReader(app: app, address: work.url) else { return .failure(request.id, .unknownItem) }
         do {
             let detail = try await reader.read()
@@ -135,6 +142,7 @@ extension CompanionServer {
             if let model = work.model, app.models(for: provider).contains(model) { config.model = model }
             config.permission = phonePermission(provider, preferred: config.permission, plan: false)
             let id = try await app.workspace.start(config, allowSharedFolder: false)
+            app.workspace.recordCommand(command, .started, created: id.uuidString)
             audit("pr_work", "\(detail.repo)#\(detail.number) · \(provider.displayName)")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: id.uuidString)
         } catch {
@@ -211,7 +219,7 @@ struct PullReader {
         let token = try token()
         let forge = forge, repo = item.repo, number = item.number
         async let activity = Task.detached(priority: .userInitiated) { () -> PullRequestActivity in
-            if let forge { return await forge.activity(number: number) }
+            if let forge { return await forge.activityWithViewed(number: number) }
             return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
         }.value
         var detail = try await Task.detached(priority: .userInitiated) { () -> PullRequestDetail in

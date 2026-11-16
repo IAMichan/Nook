@@ -45,6 +45,24 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertEqual(decide(row(ageDays: 50), off), .keep(.recentActivity))
     }
 
+    func testReopenedSessionStaysUntilItHasNewActivity() {
+        // Brought back from Settled after it went quiet: the rules leave it alone, also a merged pull request.
+        let reopened = row(ageDays: 30) { $0.unsettledAt = self.now.addingTimeInterval(-86_400) }
+        XCTAssertEqual(decide(reopened), .keep(.unsettledByYou))
+        XCTAssertEqual(decide(reopened, merged: true), .keep(.unsettledByYou))
+        // Something new happened in it after that: the usual rules apply again.
+        let resumed = row(ageDays: 5) { $0.unsettledAt = self.now.addingTimeInterval(-10 * 86_400) }
+        XCTAssertEqual(decide(resumed), .settle(.inactivity))
+    }
+
+    func testQuietTimeCountsFromWhenASnoozeRanOut() {
+        // Quiet for 10 days, but a snooze woke it a day ago: not quiet long enough yet.
+        let woke = row(ageDays: 10) { $0.snoozedUntil = self.now.addingTimeInterval(-86_400) }
+        XCTAssertEqual(decide(woke), .keep(.recentActivity))
+        let wokeLongAgo = row(ageDays: 10) { $0.snoozedUntil = self.now.addingTimeInterval(-5 * 86_400) }
+        XCTAssertEqual(decide(wokeLongAgo), .settle(.inactivity))
+    }
+
     func testMergedPullRequest() {
         XCTAssertEqual(decide(row(ageDays: 0), merged: true), .settle(.mergedPullRequest))
         var s = on; s.settleOnMergedPullRequest = false
@@ -75,8 +93,9 @@ final class AutoSettlePolicyTests: XCTestCase {
     func testSnoozeBlocksUntilItEndsOrWakes() {
         let snoozed = row { $0.snoozedUntil = self.now.addingTimeInterval(3600); $0.snoozedAt = self.now.addingTimeInterval(-86_400 * 6) }
         XCTAssertEqual(decide(snoozed), .keep(.snoozed))
-        // Expired snooze no longer blocks.
-        let expired = row { $0.snoozedUntil = self.now.addingTimeInterval(-1) }
+        // An expired snooze no longer blocks (its quiet time counts from when it ran out, see
+        // testQuietTimeCountsFromWhenASnoozeRanOut).
+        let expired = row { $0.snoozedUntil = self.now.addingTimeInterval(-4 * 86_400) }
         XCTAssertEqual(decide(expired), .settle(.inactivity))
         // Woken early by a failure: not hidden any more, so not protected.
         let failed = row { $0.snoozedUntil = self.now.addingTimeInterval(3600); $0.attention = .failed }
@@ -88,5 +107,69 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertTrue(s.enabled)
         XCTAssertEqual(s.inactivityDays, 3)
         XCTAssertTrue(s.perThreadOptOut.isEmpty)
+    }
+
+    func testOldUntouchedDefaultGetsNewInstallRulesOnce() {
+        let old = AutoSettlePolicy.Settings(perThreadOptOut: ["run:a"])
+        let up = AutoSettlePolicy.upgradingOldDefault(old)
+        XCTAssertTrue(up.enabled)
+        XCTAssertEqual(up.inactivityDays, 7)
+        XCTAssertTrue(up.settleOnMergedPullRequest)
+        XCTAssertTrue(up.settleOnClosedPullRequest)
+        XCTAssertEqual(up.perThreadOptOut, ["run:a"])
+    }
+
+    func testChangedSettingsAreNotUpgraded() {
+        let chosen = AutoSettlePolicy.Settings(enabled: false, inactivityDays: 14)
+        XCTAssertEqual(AutoSettlePolicy.upgradingOldDefault(chosen), chosen)
+        let on = AutoSettlePolicy.Settings(enabled: true, inactivityDays: 3)
+        XCTAssertEqual(AutoSettlePolicy.upgradingOldDefault(on), on)
+    }
+
+    // MARK: Rules per machine
+
+    func testMachineFollowsAllUnlessItHasItsOwnRules() {
+        var all = on
+        all.perThreadOptOut = ["kept"]
+        let own = AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)
+        let perMachine = ["buildbox": own]
+        // No rules of its own: the ones for all machines, also for this Mac.
+        XCTAssertEqual(AutoSettlePolicy.settings(for: "other", all: all, perMachine: perMachine), all)
+        XCTAssertEqual(AutoSettlePolicy.settings(for: nil, all: all, perMachine: perMachine), all)
+        // Its own rules, with the sessions you kept out still kept out.
+        let resolved = AutoSettlePolicy.settings(for: "buildbox", all: all, perMachine: perMachine)
+        XCTAssertEqual(resolved.inactivityDays, 30)
+        XCTAssertEqual(resolved.perThreadOptOut, ["kept"])
+        // This Mac goes by its own key.
+        let mac = AutoSettlePolicy.settings(for: nil, all: all, perMachine: [AutoSettlePolicy.thisMac: own])
+        XCTAssertEqual(mac.inactivityDays, 30)
+    }
+
+    func testChangeForAllMachinesReachesMachinesWithOwnRules() {
+        var all = on
+        var perMachine = ["buildbox": AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)]
+        AutoSettlePolicy.settingAll(\.settleOnClosedPullRequest, to: true, all: &all, perMachine: &perMachine)
+        XCTAssertTrue(all.settleOnClosedPullRequest)
+        XCTAssertEqual(perMachine["buildbox"]?.settleOnClosedPullRequest, true)
+        // The rule that was not touched keeps the machine's own value.
+        XCTAssertEqual(perMachine["buildbox"]?.inactivityDays, 30)
+    }
+
+    func testInactivityRuleOfTheSessionsMachine() {
+        // Quiet for five days: settles under three-day rules, stays under thirty-day rules on its machine.
+        let local = row(ageDays: 5)
+        let remote = row(ageDays: 5) { $0.machine = "buildbox" }
+        let perMachine = ["buildbox": AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)]
+        let localRules = AutoSettlePolicy.settings(for: local.machine, all: on, perMachine: perMachine)
+        let remoteRules = AutoSettlePolicy.settings(for: remote.machine, all: on, perMachine: perMachine)
+        XCTAssertEqual(decide(local, localRules), .settle(.inactivity))
+        XCTAssertEqual(decide(remote, remoteRules), .keep(.recentActivity))
+        // Switched off for all machines, still on for the one with its own rules.
+        let off = AutoSettlePolicy.Settings(enabled: false)
+        XCTAssertEqual(decide(local, AutoSettlePolicy.settings(for: nil, all: off, perMachine: perMachine)), .keep(.disabled))
+    }
+
+    func testQueuedMessagesKeepASessionOut() {
+        XCTAssertEqual(decide(row { $0.hasQueued = true }), .keep(.queuedMessages))
     }
 }

@@ -150,7 +150,7 @@ final class DelegationTests: XCTestCase {
     }
 
     func testATaskWithWorkInItsQueueIsNotDoneYet() {
-        //: a follow-up waits for a run its child queued on its own thread.
+        // A follow-up waits for a run its child queued on its own thread.
         XCTAssertEqual(DelegatedTask.state(.completed, hasQueuedWork: true), .running)
         XCTAssertEqual(DelegatedTask.state(.stopped, hasQueuedWork: true), .running, "a restart goes out right after its stop")
         XCTAssertEqual(DelegatedTask.state(.running, hasPendingQuestion: true, hasQueuedWork: true), .waiting)
@@ -346,5 +346,51 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(object["branch"] as? String, "nook/fix")
         XCTAssertEqual(object["worktree"] as? String, "/Users/x/.nook/worktrees/app/fix")
         XCTAssertTrue((object["merge"] as? String)?.contains("git merge nook/fix") == true)
+    }
+
+    // MARK: Busy through sub-threads
+
+    func testWorkingSubThreadsCountEveryLevelAndNothingElse() {
+        let parent = UUID(), child = UUID(), grandchild = UUID(), done = UUID(), stranger = UUID(), other = UUID()
+        let parents = [child: parent, grandchild: child, done: parent, stranger: other]
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: [child, grandchild, stranger]), 2)
+        // A sub-thread that finished still counts its own working sub-thread.
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: [grandchild]), 1)
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: []), 0)
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: child, parents: parents, active: [child, grandchild]), 1)
+    }
+
+    func testWorkingSubThreadsSurviveALoop() {
+        let a = UUID(), b = UUID()
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: a, parents: [a: b, b: a], active: [a, b]), 1)
+    }
+
+    /// The table made once for every session gives each the same count as asking for it alone, also with loops and
+    /// self links.
+    func testWorkingSubThreadCountsMatchAskingOneByOne() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<50 {
+            let ids = (0..<30).map { _ in UUID() }
+            var parents: [UUID: UUID] = [:]
+            for id in ids where Bool.random(using: &generator) { parents[id] = ids.randomElement(using: &generator) }
+            let active = Set(ids.filter { _ in Bool.random(using: &generator) })
+            let counts = DelegatedTask.workingSubThreadCounts(parents: parents, active: active)
+            for id in ids {
+                XCTAssertEqual(counts[id] ?? 0, DelegatedTask.workingSubThreads(of: id, parents: parents, active: active))
+            }
+        }
+    }
+
+    func testIdleParentWithAWorkingSubThreadIsBusyAndQuietOnceTheyAreDone() {
+        var input = AgentAttention.Input(status: .completed, unseen: true, subThreadsWorking: 2)
+        XCTAssertEqual(AgentAttention.resolve(input), .working)
+        input.subThreadsWorking = 0
+        XCTAssertEqual(AgentAttention.resolve(input), .ready)
+        input.unseen = false
+        XCTAssertEqual(AgentAttention.resolve(input), .idle)
+        // What waits for you, a failure and your own settle still win.
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .completed, pendingApprovals: 1, subThreadsWorking: 1)), .approval)
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .failed, subThreadsWorking: 1)), .failed)
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .completed, settled: true, subThreadsWorking: 1)), .finished)
     }
 }

@@ -5,230 +5,489 @@
 <title>Nook README Clip: the main window</title>
 <link rel="stylesheet" href="../kit/nook-video.css">
 <style>
-  /* A landscape README clip: the words on the left, Nook's main window on the right. */
+  /* A landscape README clip: the words on the left, Nook's main window on the right, drawn after a render of the real
+     WorkspaceView (true black, the segmented tab bar on top, a sidebar list beside each tab, the composer card) at 1.2x. */
   html, body { width:1600px; height:900px; }
-  #glow { background: radial-gradient(820px 600px at 66% 46%, rgba(244,243,247,.07) 0%, rgba(244,243,247,0) 70%); }
+  #glow { background: radial-gradient(760px 560px at 30% 50%, rgba(244,243,247,.06) 0%, rgba(244,243,247,0) 70%); }
 
-  .left { left:72px; width:600px; }
-  .h1 { font-size:76px; letter-spacing:-2.4px; line-height:1.05; }
-  .h2 { font-size:30px; margin-top:22px; line-height:1.3; }
-  .scene { top:330px; }
+  .left { left:64px; width:520px; }
+  .h1 { font-size:68px; letter-spacing:-2.2px; line-height:1.06; }
+  .h2 { font-size:27px; margin-top:22px; line-height:1.3; color:var(--secondary); }
+  .scene { top:360px; }
+  #logo { left:64px; top:250px; }
 
   /* The main window */
-  #win { left:690px; top:70px; width:850px; height:760px; background:var(--notch); border-radius:var(--r-panel);
-         box-shadow:0 30px 90px rgba(0,0,0,.7), 0 0 0 1px var(--line2); overflow:hidden; transform-origin:50% 50%; }
-  .bar { position:absolute; left:0; right:0; top:0; height:72px; display:flex; align-items:center; padding:0 24px; gap:10px; }
-  .lights { display:flex; gap:9px; margin-right:16px; }
-  .lights i { width:13px; height:13px; border-radius:50%; background:var(--separator); }
-  #tabs { position:relative; display:flex; align-items:center; gap:4px; font-size:21px; color:var(--secondary); }
-  #tabs .tab { position:relative; z-index:1; padding:9px 20px; white-space:nowrap; }
-  #tabs .tab.on { color:var(--paper); font-weight:500; }
-  #pill { position:absolute; top:50%; height:42px; margin-top:-21px; background:var(--smoke); border-radius:var(--r-pill); z-index:0; }
-  #winOrb { margin-left:auto; }
+  #win { left:600px; top:50px; width:960px; height:800px; background:var(--canvas); border-radius:16px;
+         box-shadow:0 30px 100px rgba(0,0,0,.9), 0 0 0 1px var(--line2); overflow:hidden; transform-origin:50% 50%; }
+  .lights { position:absolute; left:22px; top:22px; display:flex; gap:9px; }
+  .lights i { width:13px; height:13px; border-radius:50%; background:var(--smoke); }
 
-  .view { position:absolute; left:0; right:0; top:72px; bottom:0; padding:12px 28px 26px; }
+  /* The segmented tab bar (NookTabBar, segmented) */
+  #tabs { position:absolute; top:62px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:2px;
+          padding:5px; background:var(--surface); border:1px solid var(--line); border-radius:12px; font-size:15px; font-weight:500; }
+  #tabs .tab { position:relative; z-index:1; padding:8px 14px; color:var(--tertiary); white-space:nowrap; display:flex; align-items:center; gap:7px; }
+  #tabs .tab.on { color:var(--paper); }
+  #tabs .badge { font-size:12px; font-weight:600; color:var(--amber); background:color-mix(in srgb, var(--amber) 18%, transparent);
+                 border-radius:5px; padding:1px 6px; }
+  #pill { position:absolute; top:5px; bottom:5px; background:var(--smoke); border-radius:9px; z-index:0; }
 
-  /* Small-scale rows, chips and composer for the window */
-  .r { background:var(--graphite); border-radius:18px; padding:15px 20px; display:flex; align-items:center; gap:16px; }
-  .r + .r { margin-top:10px; }
-  .r .dot { width:13px; height:13px; }
-  .r .t { font-size:21px; font-weight:600; white-space:nowrap; }
-  .r .d { font-size:18px; color:var(--secondary); margin-top:3px; white-space:nowrap; }
-  .r .when { margin-left:auto; font-size:17px; color:var(--tertiary); white-space:nowrap; }
-  .chip { font-size:17px; padding:5px 13px; border-radius:10px; }
-  .r .when + .chip { margin-left:0; }
-  .comp { position:absolute; left:28px; right:28px; bottom:26px; background:var(--surface); border:1px solid var(--field-stroke);
-          border-radius:30px; padding:14px 24px; font-size:19px; color:var(--tertiary); white-space:nowrap; overflow:hidden; }
-  .comp .typed { color:var(--paper); }
-  .caret { height:22px; width:2px; vertical-align:-4px; }
-  .sect { font-size:16px; color:var(--tertiary); font-weight:500; margin:18px 4px 10px; letter-spacing:.3px; }
+  .view { position:absolute; left:0; right:0; top:120px; bottom:0; }
+  .side { position:absolute; left:0; top:0; bottom:0; width:262px; border-right:1px solid var(--line); padding:20px 22px 0 22px; }
+  .main { position:absolute; left:263px; right:0; top:0; bottom:0; padding:20px 30px 0 30px; }
+  .stitle { font-size:18px; font-weight:600; padding:0 12px; display:flex; align-items:center; }
+  .stitle .new { margin-left:auto; width:28px; height:28px; border-radius:8px; background:var(--smoke); }
+  .search { margin-top:16px; height:36px; border-radius:9px; background:var(--surface); color:var(--tertiary); font-size:16px;
+            padding:0 14px; display:flex; align-items:center; }
+  .list { margin-top:12px; }
 
-  /* Home */
-  .greet { font-size:40px; font-weight:700; letter-spacing:-1px; margin-top:12px; }
-  .glance { font-size:20px; color:var(--secondary); margin-top:8px; }
+  /* Sidebar rows (agent sessions, chats, Nooks) */
+  .sr { border-radius:10px; padding:10px 12px; margin-top:4px; }
+  .sr.sel { background:var(--row-selected); }
+  .sr .l1 { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--tertiary); white-space:nowrap; }
+  .sr .l2 { display:flex; align-items:center; gap:8px; margin-top:5px; font-size:16px; font-weight:600; color:var(--paper); white-space:nowrap; }
+  .sr .st { margin-left:auto; font-size:14px; font-weight:600; color:var(--state); display:flex; align-items:center; gap:6px; }
+  .sr .st .d { width:7px; height:7px; border-radius:50%; background:var(--state); }
+  .sr .pv { margin-left:0; font-weight:400; font-size:15px; color:var(--secondary); overflow:hidden; text-overflow:ellipsis; }
+  .tile { width:20px; height:20px; border-radius:5px; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
+          color:var(--c); background:color-mix(in srgb, var(--c) 22%, transparent); flex:none; }
+  .logo { margin-left:auto; width:17px; height:17px; flex:none; color:var(--secondary); }
+  .sect2 { margin:20px 12px 6px; font-size:14px; font-weight:600; color:var(--secondary); display:flex; }
+  .sect2 span { margin-left:auto; color:var(--tertiary); font-weight:500; }
 
-  /* Agents */
-  .cols { position:absolute; inset:12px 28px 26px; display:flex; gap:18px; }
-  .side { width:250px; flex:none; }
-  .side .r { padding:12px 14px; gap:12px; }
-  .side .t { font-size:18px; } .side .d { font-size:15px; }
-  .side .r.sel { background:var(--smoke); }
-  .main { flex:1; position:relative; }
-  .sh { font-size:23px; font-weight:600; } .sh span { color:var(--tertiary); font-weight:400; }
-  .steps { margin-top:14px; }
-  .stp { display:flex; align-items:center; gap:12px; font-size:18px; color:var(--strong); padding:7px 0; }
-  .stp .dot { width:10px; height:10px; }
+  /* Composer card (SessionComposer) */
+  .comp { position:absolute; left:30px; right:30px; bottom:22px; background:var(--surface); border:1px solid var(--field-stroke);
+          border-radius:19px; padding:16px 18px 14px; }
+  .comp .ph { font-size:17px; color:var(--tertiary); white-space:nowrap; height:24px; }
+  .comp .ph .typed { color:var(--paper); }
+  .comp .foot { display:flex; align-items:center; gap:22px; margin-top:16px; font-size:15px; font-weight:500; color:var(--secondary); }
+  .comp .send { margin-left:auto; width:34px; height:34px; border-radius:50%; background:var(--smoke); }
+  .comp .send.on { background:var(--paper); }
+  .caret { height:21px; width:2px; vertical-align:-4px; }
+
+  /* Home: the greeting and the cards (NookTab) */
+  .date { font-size:15px; color:var(--secondary); font-weight:500; }
+  .greet { font-size:28px; font-weight:700; letter-spacing:-.5px; margin-top:6px; }
+  .lab { font-size:14px; color:var(--secondary); font-weight:500; margin:20px 2px 9px; }
+  .card { background:var(--row); border-radius:12px; overflow:hidden; }
+  .hr { display:flex; align-items:center; gap:14px; padding:11px 16px; }
+  .hr + .hr { border-top:1px solid var(--line); }
+  .ico { width:38px; height:38px; border-radius:9px; background:var(--graphite); position:relative; flex:none; display:flex;
+         align-items:center; justify-content:center; color:var(--strong); }
+  .ico .d { position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:50%; background:var(--state);
+            box-shadow:0 0 0 2.5px var(--row); }
+  .hr .t { font-size:17px; font-weight:600; white-space:nowrap; }
+  .hr .s { font-size:14.5px; color:var(--secondary); margin-top:3px; white-space:nowrap; }
+  .hr .act { margin-left:auto; font-size:14.5px; font-weight:500; color:var(--secondary); }
+  .stand { width:400px; padding:11px 16px; }
+  .stand .hd { display:flex; font-size:15px; color:var(--strong); font-weight:500; }
+  .stand .hd span { margin-left:auto; font-size:13.5px; font-weight:600; color:var(--amber); }
+  .stand .ln { display:flex; align-items:center; gap:10px; margin-top:9px; font-size:16px; color:var(--strong); }
+  .stand .ln .d { margin-left:auto; width:8px; height:8px; border-radius:50%; background:var(--state); }
+
+  /* Agents: a session's timeline */
+  .crumb { font-size:17px; color:var(--secondary); white-space:nowrap; }
+  .crumb b { color:var(--paper); font-weight:600; } .crumb i { font-style:normal; color:var(--quiet); margin:0 8px; }
+  .steps { margin-top:16px; }
+  .stp { display:flex; align-items:center; gap:12px; font-size:16.5px; color:var(--strong); padding:5px 0; white-space:nowrap; }
+  .stp .ck { width:16px; color:var(--mint); font-size:17px; text-align:center; }
+  .stp .wd { width:16px; display:flex; justify-content:center; } .stp .wd i { width:10px; height:10px; border-radius:50%; background:var(--amber); }
   .stp em { font-style:normal; color:var(--tertiary); }
-  .files { margin-top:12px; background:var(--graphite); border-radius:16px; padding:12px 16px; font-family:var(--mono); font-size:16px; color:var(--strong); }
-  .files div { display:flex; gap:10px; padding:3px 0; }
-  .files .add { color:var(--mint); margin-left:auto; } .files .del { color:var(--coral); }
-  .card { position:absolute; left:0; right:0; top:250px; background:var(--graphite); border-radius:20px; padding:18px 20px; }
-  .card .k { display:flex; align-items:center; gap:12px; font-size:16px; color:var(--secondary); font-weight:500; }
-  .card .ttl { font-size:22px; font-weight:600; margin-top:10px; letter-spacing:0; }
-  .card .cmd { font-family:var(--mono); font-size:15px; color:var(--secondary); margin-top:8px; white-space:nowrap; overflow:hidden; }
-  .btns { display:flex; gap:10px; margin-top:14px; }
-  .btn { font-size:17px; padding:8px 18px; border-radius:12px; background:var(--smoke); color:var(--strong); }
+  .box { margin-top:16px; background:var(--row); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .box .k { display:flex; align-items:center; gap:10px; font-size:14px; color:var(--secondary); font-weight:500; }
+  .box .k .d { width:8px; height:8px; border-radius:50%; background:var(--state); }
+  .box .ttl { font-size:18px; font-weight:600; margin-top:8px; }
+  .box .cmd { font-family:var(--mono); font-size:14.5px; color:var(--strong); margin-top:10px; background:var(--well);
+              border-radius:8px; padding:9px 12px; white-space:nowrap; overflow:hidden; }
+  .btns { display:flex; gap:8px; margin-top:14px; }
+  .btn { font-size:15px; font-weight:500; padding:8px 16px; border-radius:9px; background:var(--smoke); color:var(--strong); }
   .btn.primary { background:var(--paper); color:var(--ink); font-weight:600; }
-  .prc .chips { display:flex; gap:8px; margin-top:12px; }
-  .prc .chip { margin-left:0; }
+  .prr { display:flex; align-items:center; gap:12px; }
+  .prr .num { font-size:16px; color:var(--secondary); font-weight:500; }
+  .prr .ttl { margin-top:0; font-size:17px; }
+  .chip { font-size:13.5px; font-weight:600; padding:4px 10px; border-radius:7px; }
+  .prr .chip { margin-left:auto; }
+  .checks { display:flex; align-items:center; gap:9px; margin-top:10px; font-size:14.5px; color:var(--secondary); }
+  .checks .d { width:8px; height:8px; border-radius:50%; background:var(--state); }
+  .diff { font-family:var(--mono); font-size:14px; margin-left:10px; } .diff .a { color:var(--mint); } .diff .r { color:var(--coral); }
 
   /* Chats */
-  .chatcol { display:flex; flex-direction:column; }
-  .msgs { position:absolute; left:0; right:0; top:52px; }
-  .b { max-width:78%; font-size:19px; padding:11px 17px; border-radius:20px; margin-top:10px; line-height:1.3; }
-  .b.them { background:var(--graphite); }
-  .b.me { background:var(--smoke); margin-left:auto; }
-  .meta { font-size:14px; color:var(--tertiary); text-align:right; margin-top:4px; }
-  .meta b { color:var(--blue); font-weight:500; }
-  .ccomp { position:absolute; left:0; right:0; bottom:0; background:var(--surface); border:1px solid var(--field-stroke);
-           border-radius:26px; padding:12px 20px; font-size:18px; color:var(--tertiary); white-space:nowrap; overflow:hidden; }
-  .ccomp .typed { color:var(--paper); }
+  .ava { width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+         font-size:13px; font-weight:700; color:var(--c); background:color-mix(in srgb, var(--c) 24%, transparent); position:relative; }
+  .ava .app { position:absolute; right:-3px; bottom:-3px; width:15px; height:15px; border-radius:50%; background:var(--a);
+              box-shadow:0 0 0 2px var(--canvas); }
+  .cr { display:flex; align-items:center; gap:12px; border-radius:10px; padding:10px 12px; margin-top:4px; }
+  .cr.sel { background:var(--row-selected); }
+  .cr .tx { flex:1; min-width:0; }
+  .cr .n { display:flex; font-size:16px; font-weight:600; white-space:nowrap; }
+  .cr .n span { margin-left:auto; font-size:13px; font-weight:500; color:var(--tertiary); }
+  .cr .p { display:flex; align-items:center; font-size:14.5px; color:var(--secondary); margin-top:3px; white-space:nowrap; overflow:hidden; }
+  .cr .p .u { margin-left:auto; min-width:20px; height:20px; border-radius:10px; background:var(--amber); color:var(--ink);
+              font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 6px; }
+  .chead { display:flex; align-items:center; gap:12px; }
+  .chead .n { font-size:18px; font-weight:600; } .chead .a { font-size:14.5px; color:var(--secondary); margin-top:2px; }
+  .msgs { position:absolute; left:30px; right:30px; top:84px; }
+  .day { text-align:center; font-size:13px; color:var(--tertiary); margin:4px 0 8px; }
+  .b { width:fit-content; max-width:74%; font-size:16.5px; padding:9px 14px; border-radius:16px; margin-top:6px; line-height:1.32; }
+  .b.them { background:var(--bubble); }
+  .b.me { background:var(--chat-mine); margin-left:auto; }
+  .b .tm { font-size:12px; color:#A3B0AB; margin-left:10px; }
+  .b.them .tm { color:var(--tertiary); }
+  .b .tick { color:var(--tertiary); margin-left:4px; font-size:12px; } .b .tick.read { color:var(--blue); }
 
   /* Music */
-  .np { display:flex; gap:34px; align-items:center; margin-top:60px; }
-  .art { width:300px; height:300px; border-radius:22px; flex:none;
-         background: radial-gradient(circle at 30% 30%, #3a3a3a 0%, #1c1c1c 55%, #0f0f0f 100%); position:relative; overflow:hidden; }
-  .art::after { content:""; position:absolute; left:30px; right:30px; bottom:40px; height:2px; background:var(--separator); }
-  .mtitle { font-size:34px; font-weight:700; letter-spacing:-.8px; }
-  .martist { font-size:20px; color:var(--secondary); margin-top:6px; }
-  .lyric { font-size:22px; color:var(--strong); margin-top:26px; font-style:italic; }
-  .prog { margin-top:26px; height:6px; background:var(--smoke); border-radius:3px; position:relative; }
+  .np { display:flex; gap:34px; align-items:center; margin-top:70px; }
+  .art { width:290px; height:290px; border-radius:14px; flex:none; position:relative; overflow:hidden;
+         background: radial-gradient(circle at 32% 30%, #3b3b3b 0%, #1d1d1d 55%, #0d0d0d 100%); }
+  .mtitle { font-size:28px; font-weight:700; letter-spacing:-.5px; }
+  .martist { font-size:17px; color:var(--secondary); margin-top:5px; }
+  .lyric { font-size:19px; color:var(--strong); margin-top:22px; }
+  .lyric.next { color:var(--quiet); margin-top:8px; font-size:17px; }
+  .prog { margin-top:24px; height:5px; background:var(--smoke); border-radius:3px; position:relative; }
   .prog i { position:absolute; left:0; top:0; bottom:0; background:var(--music); border-radius:3px; }
-  .times { display:flex; justify-content:space-between; font-size:15px; color:var(--tertiary); margin-top:8px; }
-  .eq { display:flex; gap:5px; align-items:flex-end; height:36px; margin-top:22px; }
-  .eq i { width:7px; background:var(--music); border-radius:3px; }
-  .ctl { display:flex; gap:28px; font-size:26px; color:var(--strong); margin-top:18px; }
-  .pl { display:flex; gap:12px; margin-top:60px; }
-  .pl .r { flex:1; padding:13px 16px; }
-  .pl .r + .r { margin-top:0; }
-  .pl .t { font-size:18px; } .pl .d { font-size:15px; }
+  .times { display:flex; justify-content:space-between; font-size:13px; color:var(--tertiary); margin-top:7px; }
+  .eq { display:flex; gap:4px; align-items:flex-end; height:28px; margin-top:16px; }
+  .eq i { width:5px; background:var(--music); border-radius:2px; }
+  .pl { display:flex; gap:12px; margin-top:56px; }
+  .pl .card { flex:1; padding:12px 14px; }
+  .pl .t { font-size:16px; font-weight:600; } .pl .s { font-size:14px; color:var(--secondary); margin-top:3px; }
 
   /* Scene 5 */
-  #s5 { top:300px; }
+  #s5 { top:290px; }
   #tags { display:flex; flex-wrap:wrap; gap:12px; margin-top:34px; }
-  #tags .tag { font-size:24px; padding:10px 22px; }
-  #bigOrb { left:1050px; top:300px; }
-  #burst2 { left:1150px; top:450px; width:0; height:0; }
+  #tags .tag { font-size:22px; padding:10px 20px; }
+  #bigOrb { left:1060px; top:310px; }
+  #burst2 { left:1160px; top:450px; width:0; height:0; }
   #burst { width:0; height:0; z-index:5; }
 
   /* End card */
   .cta { padding-bottom:30px; }
   .brand { display:flex; align-items:center; gap:34px; }
   .brand .name { font-size:150px; font-weight:700; letter-spacing:-5px; }
-  #ctaLine { margin-top:36px; font-size:38px; color:var(--secondary); }
+  #ctaLine { margin-top:36px; font-size:36px; color:var(--secondary); }
   .cta .url { margin-top:44px; font-size:34px; padding:22px 44px; }
-  #ctaFoot { margin-top:36px; font-size:26px; color:var(--tertiary); }
+  #ctaFoot { margin-top:36px; font-size:24px; color:var(--tertiary); }
+
+  /* From the source (NookTabBar, AgentListRow, ApprovalView, SessionPullRequestRow, ChatsRow, Now playing) */
+  #tabs .div { width:1px; height:22px; background:var(--line2); margin:0 8px 0 6px; }
+  #tabs .ib { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--tertiary); }
+  .sr { border-radius:7px; }
+  .sr .l3 { display:flex; align-items:center; gap:8px; margin-top:4px; font-size:14px; color:var(--tertiary); white-space:nowrap; }
+  .sr .l3 .a { font-family:var(--mono); font-size:12.5px; color:#00D492; } .sr .l3 .r { font-family:var(--mono); font-size:12.5px; color:var(--coral); }
+  .sr .st { font-size:14px; font-weight:500; }
+  .sr .st.quiet { color:var(--tertiary); font-weight:400; }
+  .ap .k { display:flex; align-items:center; gap:12px; }
+  .ap .k .g { color:var(--amber); font-family:var(--mono); font-weight:700; font-size:15px; width:18px; text-align:center; }
+  .ap .k .tt { font-size:17px; font-weight:500; color:var(--paper); }
+  .ap .cmd2 { margin:12px 0 0 30px; background:var(--well); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:9px 12px;
+              font-family:var(--mono); font-size:14px; color:var(--paper); white-space:nowrap; overflow:hidden; }
+  .ap .cmd2 b { color:var(--amber); margin-right:10px; }
+  .ap .ft { display:flex; align-items:center; gap:10px; margin:14px 0 0 30px; }
+  .ap .wt { font-size:14.5px; color:var(--state); display:flex; align-items:center; gap:7px; }
+  .split { margin-left:auto; display:flex; align-items:center; background:var(--smoke); border-radius:10px; padding:4px; height:46px; }
+  .split .al { background:var(--iris); color:var(--ink); font-size:17px; font-weight:600; padding:0 22px; height:100%; display:flex; align-items:center; border-radius:7px; }
+  .split .dn { font-size:17px; font-weight:600; color:var(--secondary); padding:0 18px; }
+  .ghost { font-size:17px; font-weight:600; color:var(--secondary); padding:0 10px; }
+  .pr2 { display:flex; gap:12px; padding:12px 12px; }
+  .pr2 .gl { width:22px; color:var(--state); padding-top:2px; }
+  .pr2 .tt { font-size:17px; color:var(--paper); }
+  .pr2 .mt { display:flex; align-items:center; gap:8px; margin-top:5px; font-size:14px; color:var(--tertiary); }
+  .pr2 .mt .n { font-family:var(--mono); font-size:13.5px; }
+  .pr2 .mt .ck { color:var(--state); font-size:14px; }
+  .pr2 .act { margin-left:auto; align-self:center; height:28px; padding:0 12px; border:1px solid var(--line2); border-radius:9px; font-size:13px;
+              color:var(--secondary); display:flex; align-items:center; }
+  .pr2 .act.press { background:var(--smoke); color:var(--paper); }
+  /* Chats: the list beside the conversation */
+  .cl { position:absolute; left:0; top:0; bottom:0; width:330px; border-right:1px solid var(--line); padding:20px 18px 0 18px; }
+  .cmain { position:absolute; left:331px; right:0; top:0; bottom:0; padding:20px 30px 0; }
+  .ava { width:48px; height:48px; font-family:var(--rounded); font-size:17px; font-weight:600; background:color-mix(in srgb, var(--c) 16%, transparent); }
+  .ava .app { width:20px; height:20px; right:-5px; bottom:-2px; background:var(--canvas); display:flex; align-items:center; justify-content:center; box-shadow:none; }
+  .ava .app i { width:14px; height:14px; border-radius:50%; background:var(--a); }
+  .ava.sm { width:43px; height:43px; font-size:15px; }
+  .cr { border-radius:12px; padding:10px 14px; margin-top:0; gap:10px; }
+  .cr + .cr { margin-top:2px; }
+  .cr .n { font-size:17px; font-weight:500; color:var(--strong); } .cr.unread .n { color:var(--paper); }
+  .cr .n span { font-size:12.5px; color:var(--tertiary); font-variant-numeric:tabular-nums; } .cr.unread .n span { color:var(--amber); }
+  .cr .p { font-size:14.5px; } .cr.unread .p { color:var(--strong); }
+  .cr .p .u { background:color-mix(in srgb, var(--amber) 14%, transparent); color:var(--amber); font-family:var(--rounded); font-size:12px; font-weight:600;
+              min-width:19px; height:19px; border-radius:7px; padding:0 5px; margin-left:8px; }
+  .cr .p .rt { color:var(--mint); font-size:11.5px; font-weight:700; margin-right:5px; letter-spacing:-4px; padding-right:4px; }
+  .chead .n { font-size:18px; } .chead .a { font-size:14.5px; color:var(--tertiary); }
+  .day { width:fit-content; margin:6px auto 10px; background:var(--bubble); border-radius:10px; padding:3px 12px; font-size:12.5px; font-weight:600; color:var(--secondary); }
+  .b { font-size:17px; padding:7px 12px; border-radius:12px; margin-top:5px; }
+  .b.them.first { border-top-left-radius:4px; } .b.me { border-top-right-radius:4px; }
+  .b .tm, .b.them .tm { font-size:12.5px; color:#A3B0AB; }
+  .b .tick { color:#A3B0AB; }
+  /* Music: now playing */
+  .mleft { width:330px; flex:none; }
+  .cover { width:330px; height:330px; border-radius:17px; box-shadow:0 17px 29px rgba(0,0,0,.45);
+           background: radial-gradient(circle at 32% 30%, #6a4a35 0%, #3a2a22 45%, #161210 100%); }
+  .pin { display:flex; align-items:center; gap:10px; margin-top:16px; font-size:14px; font-weight:500; color:var(--secondary); }
+  .pin .eq { margin:0; height:16px; gap:2px; } .pin .eq i { width:3px; }
+  .mtitle { font-size:26px; font-weight:600; margin-top:8px; }
+  .martist { font-size:17px; color:var(--strong); margin-top:3px; }
+  .transport { display:flex; justify-content:center; align-items:center; gap:34px; margin-top:14px; color:var(--strong); font-size:18px; }
+  .transport .pp { width:46px; height:46px; border-radius:50%; background:var(--paper); color:var(--ink); display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .lycard { flex:1; align-self:stretch; background:color-mix(in srgb, var(--surface) 78%, transparent); border:1px solid var(--line); border-radius:17px; padding:14px 22px; position:relative; overflow:hidden; }
+  .seg { display:flex; gap:2px; width:fit-content; margin:0 auto; background:var(--graphite); border:1px solid var(--line2); border-radius:10px; padding:3px; font-size:14.5px; font-weight:500; color:var(--tertiary); }
+  .seg span { padding:5px 12px; border-radius:7px; } .seg .on { background:rgba(245,245,245,.14); color:var(--paper); }
+  .lwrap { position:absolute; left:22px; right:22px; top:64px; bottom:16px; overflow:hidden;
+           -webkit-mask-image:linear-gradient(transparent 0, #000 18%, #000 82%, transparent 100%); }
+  .lines { position:absolute; left:0; right:0; top:0; text-align:center; }
+  .lines div { font-size:21.5px; font-weight:600; line-height:1.25; height:62px; color:var(--paper); transform-origin:50% 50%; }
+  #mbg { position:absolute; inset:0; background:radial-gradient(520px 420px at 22% 38%, rgba(140,95,60,.22) 0%, rgba(0,0,0,0) 70%); }
+
+  /* Another app's window, for Autocomplete and Double Tap (a plain dark mail window, no brand look) */
+  #desk { left:600px; top:50px; width:960px; height:800px; background:#161616; border-radius:16px;
+          box-shadow:0 30px 100px rgba(0,0,0,.9), 0 0 0 1px var(--line2); overflow:hidden; }
+  #desk .tb { height:54px; display:flex; align-items:center; justify-content:center; border-bottom:1px solid #222; font-size:15px; font-weight:600; color:var(--secondary); }
+  .dv { position:absolute; left:0; right:0; top:55px; bottom:0; padding:22px 40px; }
+  .hdr { font-size:16px; color:var(--tertiary); padding:9px 0; border-bottom:1px solid #222; white-space:nowrap; }
+  .hdr b { color:var(--strong); font-weight:500; margin-left:8px; }
+  .body { margin-top:24px; font-size:20px; line-height:1.55; color:#E8E8E8; }
+  .body .ghost2 { color:rgba(232,232,232,.38); }
+  .body .caret { background:#E8E8E8; height:24px; width:2px; vertical-align:-5px; margin:0 1px; }
+  .quote { margin-top:30px; padding-left:16px; border-left:3px solid #2E2E2E; color:#8A8A8A; font-size:17px; line-height:1.5; }
+  .mark { border-radius:4px; transition:none; }
+  .from { display:flex; align-items:center; gap:14px; }
+  .from .av { width:44px; height:44px; border-radius:50%; background:#2A2A2A; color:#CFCFCF; font-weight:600; display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .from .nm { font-size:18px; font-weight:600; color:#EDEDED; } .from .sb { font-size:15px; color:#8A8A8A; margin-top:2px; }
+  .subj { font-size:26px; font-weight:700; color:#F0F0F0; margin:6px 0 22px; letter-spacing:-.3px; }
+
+  /* Key caps */
+  .keys { display:flex; gap:14px; margin-top:30px; align-items:center; }
+  .kc { display:flex; align-items:center; gap:12px; font-size:20px; color:var(--secondary); }
+  .key { min-width:62px; height:56px; padding:0 16px; border-radius:12px; background:var(--graphite); border:1px solid var(--line2);
+         box-shadow:0 3px 0 #0c0c0c; font-size:22px; font-weight:600; color:var(--paper); display:flex; align-items:center; justify-content:center; }
+
+  /* Double Tap: the field at the top of the screen, its suggestions, and the card that comes back */
+  #dt { left:760px; top:26px; width:640px; z-index:6; }
+  #dt .fld { background:var(--surface); border:1px solid var(--field-stroke); border-radius:19px; padding:16px 18px 14px;
+             box-shadow:0 24px 70px rgba(0,0,0,.75); }
+  #dt .ph { font-size:18px; color:var(--tertiary); height:25px; white-space:nowrap; }
+  #dt .ph .typed { color:var(--paper); }
+  #dt .foot { display:flex; gap:20px; margin-top:12px; font-size:14.5px; font-weight:500; color:var(--secondary); align-items:center; }
+  #dt .foot .send { margin-left:auto; width:30px; height:30px; border-radius:50%; background:var(--smoke); }
+  #dt .sug { margin-top:8px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:6px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  #dt .sg { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:9px; font-size:17px; color:var(--strong); }
+  #dt .sg.on { background:var(--row-selected); color:var(--paper); }
+  #dt .sg svg { color:var(--secondary); }
+  #dt .stepl { margin-top:8px; font-size:15px; color:var(--secondary); display:flex; align-items:center; gap:10px; padding:11px 16px;
+              background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  #dt .stepl .sp { width:12px; height:12px; border-radius:50%; border:2px solid var(--line2); border-top-color:var(--iris); }
+  #dtCard { margin-top:10px; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:16px 18px; box-shadow:0 24px 70px rgba(0,0,0,.7); }
+  #dtCard .k { display:flex; align-items:center; gap:10px; font-size:14px; color:var(--secondary); font-weight:500; }
+  #dtCard .ttl { font-size:18px; font-weight:600; margin-top:10px; }
+  #dtCard .ev { display:flex; align-items:center; gap:14px; margin-top:12px; background:var(--row); border-radius:12px; padding:10px 12px; }
+  #dtCard .dtile { width:52px; height:56px; border-radius:10px; background:var(--graphite); display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #dtCard .dtile small { font-size:11px; font-weight:700; color:var(--coral); letter-spacing:.5px; } #dtCard .dtile b { font-size:22px; line-height:1.1; }
+  #dtCard .ev .t { font-size:17px; font-weight:600; } #dtCard .ev .s { font-size:14.5px; color:var(--secondary); margin-top:3px; }
+  #dtCard .btns { margin-top:14px; } #dtCard .done { font-size:15px; font-weight:600; color:var(--mint); display:flex; align-items:center; gap:8px; margin-top:14px; }
+
+  /* And a lot more */
+  #more { left:640px; top:290px; width:900px; display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .ft { background:var(--row); border:1px solid var(--line); border-radius:14px; padding:18px 20px; display:flex; gap:16px; align-items:center; }
+  .ft .ico { width:44px; height:44px; border-radius:11px; }
+  .ft .t { font-size:19px; font-weight:600; } .ft .s { font-size:15.5px; color:var(--secondary); margin-top:4px; }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute">
+  <!-- Small neutral glyphs for agents and sources, in the app's grey; no brand marks. -->
+  <symbol id="g-agent" viewBox="0 0 16 16"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="g-hex" viewBox="0 0 16 16"><path d="M8 1.5l5.6 3.2v6.6L8 14.5l-5.6-3.2V4.7z" stroke="currentColor" stroke-width="1.5" fill="none"/></symbol>
+  <symbol id="g-spark" viewBox="0 0 16 16"><path d="M8 1c.6 3.6 3.4 6.4 7 7-3.6.6-6.4 3.4-7 7-.6-3.6-3.4-6.4-7-7 3.6-.6 6.4-3.4 7-7z" fill="currentColor"/></symbol>
+  <symbol id="g-cal" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="g-pr" viewBox="0 0 16 16"><circle cx="4" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="4" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="12" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M4 5.3v5.4M12 10.7V6.5a2 2 0 0 0-2-2H7.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></symbol>
+  <symbol id="g-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M10.5 10.5l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="g-mic" viewBox="0 0 16 16"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3 8a5 5 0 0 0 10 0M8 13v2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></symbol>
+  <symbol id="g-shield" viewBox="0 0 16 16"><path d="M8 1.5l5 2v4c0 3.2-2.1 5.6-5 7-2.9-1.4-5-3.8-5-7v-4z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="g-mic2" viewBox="0 0 16 16"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" fill="currentColor"/><path d="M3 8a5 5 0 0 0 10 0M8 13v2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></symbol>
+  <symbol id="g-phone" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M7 12.3h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="g-eye" viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="8" cy="8" r="2" fill="currentColor"/></symbol>
+  <symbol id="g-plug" viewBox="0 0 16 16"><path d="M5.5 1.5v4M10.5 1.5v4M3.5 5.5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12.5v2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></symbol>
+  <symbol id="g-term" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M4.5 6.5l2 1.5-2 1.5M8.5 10h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></symbol>
+  <symbol id="g-branch" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="4.5" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="11.5" cy="5.5" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M4.5 5.3v5.4M11.5 7.3c0 3-7 1.5-7 3.4" stroke="currentColor" stroke-width="1.4" fill="none"/></symbol>
+  <symbol id="g-chip" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+  <symbol id="g-notes" viewBox="0 0 16 16"><rect x="2.5" y="1.5" width="11" height="13" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="g-chat" viewBox="0 0 16 16"><path d="M2.5 7.5a5.5 5 0 1 1 3 4.5L2.5 13.5l.8-3a5 5 0 0 1-.8-3z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></symbol>
+</svg>
 <div id="stage">
   <div id="glow"></div>
 
   <!-- Nook's main window -->
   <div id="win" class="abs">
-    <div class="bar">
-      <div class="lights"><i></i><i></i><i></i></div>
-      <div id="tabs"><div id="pill"></div><span class="tab">Nook</span><span class="tab">Agents</span><span class="tab">Chats</span><span class="tab">Music</span></div>
-      <div class="orb" id="winOrb" style="--d:50px"><i></i><i></i></div>
-    </div>
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div id="tabs"><div id="pill"></div><span class="tab">Nook</span><span class="tab">Agents <span class="badge" id="agBadge">1</span></span><span class="tab">Chats</span><span class="tab">Music</span><span class="div"></span><span class="ib"><svg width="16" height="16"><use href="#g-search"/></svg></span><span class="ib"><svg width="16" height="16"><use href="#g-mic"/></svg></span></div>
 
     <!-- Nook: everything that needs you -->
     <div class="view" id="vHome">
-      <div class="greet">Good morning</div>
-      <div class="glance" id="glance"></div>
-      <div class="sect">WAITING ON YOU</div>
-      <div class="r" id="h1"><div class="dot" id="hd1"></div><div><div class="t">Codex · api</div><div class="d">Wants to push and open a pull request</div></div><div class="when">now</div><div class="chip" id="hc1"></div></div>
-      <div class="r" id="h2"><div class="dot" id="hd2"></div><div><div class="t">Sam · WhatsApp</div><div class="d">Are we still on for tonight?</div></div><div class="when">2m</div><div class="chip" id="hc2"></div></div>
-      <div class="sect">TODAY</div>
-      <div class="r" id="h3"><div class="dot" id="hd3"></div><div><div class="t">PR #642</div><div class="d">Load older WhatsApp messages</div></div><div class="when">now</div><div class="chip" id="hc3"></div></div>
-      <div class="r" id="h4"><div class="dot" id="hd4"></div><div><div class="t">Design review</div><div class="d">Calendar · with Lotte</div></div><div class="when">in 10 min</div></div>
-      <div class="comp"><span>Ask Nook anything…</span></div>
+      <div class="side">
+        <div class="stitle">Nook<span class="new"></span></div>
+        <div class="search">Search Nooks</div>
+        <div class="list">
+          <div class="sr"><div class="l2" style="margin-top:0">Plan my Friday</div><div class="l1" style="margin-top:4px">Yesterday</div></div>
+          <div class="sr"><div class="l2" style="margin-top:0">What did Lena send?</div><div class="l1" style="margin-top:4px">Thursday</div></div>
+          <div class="sr"><div class="l2" style="margin-top:0">Release notes draft</div><div class="l1" style="margin-top:4px">Tuesday</div></div>
+        </div>
+      </div>
+      <div class="main">
+        <div class="date">Saturday 14 November</div>
+        <div class="greet">Good morning. Three things for you.</div>
+        <div class="lab">For you</div>
+        <div class="card">
+          <div class="hr" id="h1"><div class="ico"><svg width="18" height="18"><use href="#g-hex"/></svg><i class="d" id="hd1"></i></div><div><div class="t">Codex wants to push</div><div class="s">website · Dark mode toggle</div></div><div class="act">Review</div></div>
+          <div class="hr" id="h2"><div class="ico"><svg width="18" height="18"><use href="#g-chat"/></svg><i class="d" id="hd2"></i></div><div><div class="t">Sam asked about tonight</div><div class="s">WhatsApp · 2 min ago</div></div><div class="act">Reply</div></div>
+          <div class="hr" id="h3"><div class="ico"><svg width="18" height="18"><use href="#g-cal"/></svg><i class="d" id="hd3"></i></div><div><div class="t">Design review in 10 min</div><div class="s">Calendar · with Lotte</div></div><div class="act">Join</div></div>
+        </div>
+        <div class="lab">Where things stand</div>
+        <div class="card stand" id="stand">
+          <div class="hd">Agents <span id="standSum"></span></div>
+          <div class="ln"><svg width="16" height="16"><use href="#g-hex"/></svg>website<i class="d" id="sd1"></i></div>
+          <div class="ln"><svg width="16" height="16"><use href="#g-agent"/></svg>api<i class="d" id="sd2"></i></div>
+        </div>
+        <div class="comp"><div class="ph">Ask Nook anything…</div><div class="foot"><span>On this Mac</span><span>Ask first</span><span>All sources</span><span class="send"></span></div></div>
+      </div>
     </div>
 
     <!-- Agents -->
-    <div class="view" id="vAgents" style="padding:0">
-      <div class="cols">
-        <div class="side">
-          <div class="r sel"><div class="dot" id="ad1"></div><div><div class="t">Dark mode toggle</div><div class="d">Codex · website</div></div></div>
-          <div class="r"><div class="dot" id="ad2"></div><div><div class="t">Refactor the shelf</div><div class="d">Claude Code · nook</div></div></div>
-          <div class="r"><div class="dot" id="ad3"></div><div><div class="t">Write the changelog</div><div class="d">Gemini CLI · docs</div></div></div>
+    <div class="view" id="vAgents">
+      <div class="side">
+        <div class="stitle">Agents</div>
+        <div class="search">Search sessions</div>
+        <div class="list">
+          <div class="sr sel"><div class="l1"><span class="tile" style="--c:var(--mint)">WE</span>website<span class="st" id="as1"></span></div><div class="l2">Dark mode toggle</div><div class="l3">dark-mode <span class="a">+82</span><span class="r">−12</span><span id="as1pr"></span><svg class="logo"><use href="#g-hex"/></svg></div></div>
+          <div class="sr"><div class="l1"><span class="tile" style="--c:var(--amber)">AP</span>api<span class="st quiet">55m</span></div><div class="l2">Fix token refresh</div><div class="l3">token-refresh <span class="a">+31</span><span class="r">−9</span><svg class="logo"><use href="#g-agent"/></svg></div></div>
+          <div class="sr"><div class="l1"><span class="tile" style="--c:var(--violet)">DO</span>docs<span class="st" id="as3"></span></div><div class="l2">Write the changelog</div><div class="l3">changelog <span class="a">+140</span><svg class="logo"><use href="#g-spark"/></svg></div></div>
         </div>
-        <div class="main">
-          <div class="sh">Dark mode toggle <span>· feature/dark-mode</span></div>
-          <div class="steps">
-            <div class="stp" id="st1"><div class="dot" style="--state:var(--mint)"></div>Ran npm run dev <em>· in Nook's terminal</em></div>
-            <div class="stp" id="st2"><div class="dot" style="--state:var(--mint)"></div>Opened localhost:5173/settings <em>· no console errors</em></div>
-            <div class="stp" id="st3"><div class="dot" style="--state:var(--mint)"></div>Ran the tests <em>· 6 passed</em></div>
-          </div>
-          <div class="files" id="files">
-            <div><span>src/settings/Appearance.tsx</span><span class="add">+64</span><span class="del">−3</span></div>
-            <div><span>src/theme.ts</span><span class="add">+18</span><span class="del">−9</span></div>
-          </div>
-          <div class="card" id="ask">
-            <div class="k"><div class="dot" id="askDot"></div><span id="askState">Needs your yes</span></div>
-            <div class="ttl">Push and open a pull request</div>
-            <div class="cmd">git push origin feature/dark-mode && gh pr create</div>
-            <div class="btns"><div class="btn" id="bAllow">Allow</div><div class="btn">Always</div><div class="btn">Deny</div></div>
-          </div>
-          <div class="card prc" id="pr">
-            <div class="k"><span>Pull request</span></div>
-            <div class="ttl">#651 · Add a dark mode toggle</div>
-            <div class="chips"><div class="chip" id="prState"></div><div class="chip" id="prChecks"></div></div>
-          </div>
-          <div class="ccomp"><span>Message Codex…</span></div>
+      </div>
+      <div class="main">
+        <div class="crumb">website<i>/</i><b>Dark mode toggle</b></div>
+        <div class="steps">
+          <div class="stp" id="st1"><span class="ck">✓</span>Ran npm run dev <em>· no console errors</em></div>
+          <div class="stp" id="st2"><span class="ck">✓</span>Edited src/theme.ts <span class="diff"><span class="a">+64</span> <span class="r">−3</span></span></div>
+          <div class="stp" id="st3"><span class="ck">✓</span>Ran the tests <em>· 6 passed</em></div>
+          <div class="stp" id="st4"><span class="ck" id="st4ck">✓</span>Push and open a pull request</div>
         </div>
+        <div class="box ap" id="ask">
+          <div class="k"><span class="g">&gt;_</span><span class="tt">Run a command</span></div>
+          <div class="cmd2"><b>$</b>git push -u origin dark-mode && gh pr create</div>
+          <div class="ft"><span class="wt" id="askWait"><svg width="14" height="14"><use href="#g-shield"/></svg><span id="askState">Waiting for approval</span></span>
+            <div class="split"><span class="al" id="bAllow">Allow</span><span class="dn">Deny</span></div><span class="ghost">Always</span></div>
+        </div>
+        <div class="box" id="pr" style="padding:4px 6px">
+          <div class="pr2"><svg class="gl" id="prGlyph" width="20" height="20"><use href="#g-pr"/></svg>
+            <div><div class="tt">Add a dark mode toggle</div><div class="mt"><span class="n">#651</span><span class="ck" id="prCk"></span><span id="prChecks"></span></div></div>
+            <span class="act" id="prAct">Merge</span></div>
+        </div>
+        <div class="comp"><div class="ph">Ask Codex for a change</div><div class="foot"><span style="display:flex;align-items:center;gap:8px"><svg width="16" height="16"><use href="#g-hex"/></svg>Codex</span><span class="send"></span></div></div>
       </div>
     </div>
 
     <!-- Chats -->
-    <div class="view" id="vChats" style="padding:0">
-      <div class="cols">
-        <div class="side">
-          <div class="r sel"><div class="dot" id="cd1"></div><div><div class="t">Sam</div><div class="d">WhatsApp</div></div></div>
-          <div class="r"><div class="dot" id="cd2"></div><div><div class="t">Lena</div><div class="d">Telegram</div></div></div>
-          <div class="r"><div class="dot" id="cd3"></div><div><div class="t">Design team</div><div class="d">Slack</div></div></div>
-          <div class="r"><div class="dot" id="cd4"></div><div><div class="t">Jules</div><div class="d">Mail</div></div></div>
+    <div class="view" id="vChats">
+      <div class="cl">
+        <div class="stitle">Chats</div>
+        <div class="search">Search chats</div>
+        <div class="list">
+          <div class="cr sel" id="cr1"><div class="ava" style="--c:var(--mint);--a:#3E8E6A">S<span class="app"><i></i></span></div><div class="tx"><div class="n">Sam<span id="ct1">19:01</span></div><div class="p"><span id="cp1">Are we still on for tonight?</span><span class="u" id="cu1">1</span></div></div></div>
+          <div class="cr unread"><div class="ava" style="--c:var(--blue);--a:#3C86B8">L<span class="app"><i></i></span></div><div class="tx"><div class="n">Lena<span>18:40</span></div><div class="p">Sent you the slides<span class="u">2</span></div></div></div>
+          <div class="cr"><div class="ava" style="--c:var(--violet);--a:#7A6FB0">DT<span class="app"><i></i></span></div><div class="tx"><div class="n">Design team<span>17:12</span></div><div class="p">Jules: looks great</div></div></div>
+          <div class="cr"><div class="ava" style="--c:var(--music);--a:#3E8E6A">M<span class="app"><i></i></span></div><div class="tx"><div class="n">Mom<span>Yesterday</span></div><div class="p"><span class="rt">✓✓</span>See you Sunday</div></div></div>
         </div>
-        <div class="main">
-          <div class="sh">Sam <span>· WhatsApp</span></div>
-          <div class="msgs">
-            <div class="b them">I booked Luca's at 19:30</div>
-            <div class="b them">Are we still on for tonight?</div>
-            <div id="mine"><div class="b me" id="mineText">Yes! See you at 19:30</div><div class="meta" id="mineMeta">19:02 · <b>Read</b></div></div>
-          </div>
-          <div class="ccomp"><span class="typed" id="ctyped"></span><span class="caret" id="ccaret"></span><span id="chint">Message Sam…</span></div>
+      </div>
+      <div class="cmain">
+        <div class="chead"><div class="ava sm" style="--c:var(--mint);--a:#3E8E6A">S<span class="app"><i></i></span></div><div><div class="n">Sam</div><div class="a">WhatsApp</div></div></div>
+        <div class="msgs">
+          <div class="day">Today</div>
+          <div class="b them first">I booked Luca's at 19:30<span class="tm">18:58</span></div>
+          <div class="b them">Are we still on for tonight?<span class="tm">19:01</span></div>
+          <div class="b me" id="mine">Yes! See you at 19:30<span class="tm">19:02</span><span class="tick" id="tick">✓✓</span></div>
         </div>
+        <div class="comp" style="border-radius:19px"><div class="ph"><span class="typed" id="ctyped"></span><span class="caret" id="ccaret"></span><span id="chint">Message Sam · @nook helps you write</span></div><div class="foot"><span class="send" id="csend"></span></div></div>
       </div>
     </div>
 
     <!-- Music -->
     <div class="view" id="vMusic">
-      <div class="np">
-        <div class="art"></div>
-        <div style="flex:1">
+      <div id="mbg"></div>
+      <div class="main" style="left:0;padding:16px 36px 0;display:flex;gap:30px;align-items:flex-start;bottom:30px">
+        <div class="mleft">
+          <div class="cover"></div>
+          <div class="pin"><span class="eq" id="eq"><i></i><i></i><i></i><i></i></span>Playing in Spotify</div>
           <div class="mtitle">Slow Motion Summer</div>
           <div class="martist">The Harbour Lights · Second Coast</div>
-          <div class="lyric">“We drove until the streetlights ran out”</div>
           <div class="prog"><i id="mprog"></i></div>
           <div class="times"><span id="mnow">1:12</span><span>3:48</span></div>
-          <div class="eq" id="eq"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="transport"><span>⇄</span><span>⏮</span><span class="pp">❚❚</span><span>⏭</span><span>↻</span></div>
         </div>
-      </div>
-      <div class="pl">
-        <div class="r"><div><div class="t">Morning Coffee</div><div class="d">Playlist</div></div></div>
-        <div class="r"><div><div class="t">Deep Focus</div><div class="d">Playlist</div></div></div>
-        <div class="r"><div><div class="t">This week</div><div class="d">2 h 56 min listened</div></div></div>
+        <div class="lycard">
+          <div class="seg"><span class="on">Lyrics</span><span>Up next</span><span>About</span></div>
+          <div class="lwrap"><div class="lines" id="lines"></div></div>
+        </div>
       </div>
     </div>
   </div>
   <div id="burst" class="abs"></div>
 
+  <!-- Another app: a mail window where Nook completes your sentence, then where Double Tap reads the dates -->
+  <div id="desk" class="abs">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="tb" id="deskTitle">Re: Slides for Thursday</div>
+    <div class="dv" id="dCompose">
+      <div class="hdr">To:<b>Lotte</b></div>
+      <div class="hdr">Subject:<b>Re: Slides for Thursday</b></div>
+      <div class="body">Hi Lotte,<br><br><span id="acTyped"></span><span class="caret" id="acCaret"></span><span class="ghost2" id="acGhost"></span></div>
+      <div class="quote">Lotte wrote:<br>Love the deck! Could you send me the new version tonight, so I can read it before Thursday?</div>
+    </div>
+    <div class="dv" id="dMail">
+      <div class="from"><div class="av">L</div><div><div class="nm">Lotte</div><div class="sb">to me · 09:12</div></div></div>
+      <div class="subj" style="margin-top:22px">Design review</div>
+      <div class="body" style="margin-top:0">Hi! Could we do the design review on <span class="mark" id="mk">Thursday 19 November, 15:00–16:00</span>? I'll book the room upstairs.<br><br>Lotte</div>
+    </div>
+  </div>
+  <div id="dt" class="abs">
+    <div class="fld"><div class="ph"><span class="typed" id="dtTyped"></span><span class="caret" id="dtCaret" style="height:22px;width:2px;vertical-align:-4px"></span><span id="dtHint">Ask Nook anything…</span></div>
+      <div class="foot"><span>On this Mac</span><span>Ask first</span><span class="send"></span></div></div>
+    <div class="sug" id="dtSug">
+      <div class="sg" id="sg1"><svg width="17" height="17"><use href="#g-cal"/></svg>Put this in my calendar</div>
+      <div class="sg" id="sg2"><svg width="17" height="17"><use href="#g-chat"/></svg>Write a reply</div>
+    </div>
+    <div class="stepl" id="dtStep"><span class="sp" id="dtSpin"></span><span id="dtStepText">Reading Mail…</span></div>
+    <div id="dtCard">
+      <div class="k"><div class="orb" id="dtOrb" style="--d:22px"><i></i><i></i></div><span>Plan · 1 step</span></div>
+      <div class="ttl">Add it to your calendar</div>
+      <div class="ev"><div class="dtile"><small>THU</small><b>19</b></div><div><div class="t">Design review</div><div class="s">15:00 – 16:00 · with Lotte</div></div></div>
+      <div class="btns" id="dtBtns"><div class="btn primary" id="dtRun">Run</div><div class="btn">View</div></div>
+      <div class="done" id="dtDone">✓ Added to your calendar</div>
+    </div>
+  </div>
+
+  <!-- And a lot more -->
+  <div id="more" class="abs">
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-mic2"/></svg></div><div><div class="t">Flow dictation</div><div class="s">Hold a key, speak, and it types.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-notes"/></svg></div><div><div class="t">Call notes</div><div class="s">Notes from your calls, on this Mac.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-eye"/></svg></div><div><div class="t">Knows your screen</div><div class="s">Answers with what you look at.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-plug"/></svg></div><div><div class="t">Connectors and MCP</div><div class="s">GitHub, Linear, Notion, Stripe…</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-term"/></svg></div><div><div class="t">Terminal and browser</div><div class="s">Built in, beside your agents.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-branch"/></svg></div><div><div class="t">Worktrees, PRs and CI</div><div class="s">Every agent on its own branch.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-chip"/></svg></div><div><div class="t">Your choice of model</div><div class="s">Local by default, cloud if you want.</div></div></div>
+    <div class="ft"><div class="ico"><svg width="20" height="20"><use href="#g-phone"/></svg></div><div><div class="t">iPhone companion</div><div class="s">Steer it all from your phone.</div></div></div>
+  </div>
+
+  <!-- Nook, the orb, beside the words -->
+  <div class="orb abs" id="logo" style="--d:64px"><i></i><i></i></div>
+
   <!-- Scene 1, on screen from the very first frame -->
   <div id="s1" class="abs left scene"><div class="h1">Everything<br>that needs you.</div><div class="h2" id="s1b">In one calm place.</div></div>
+  <div id="sA" class="abs left scene"><div class="h1" id="sAa">Autocomplete,<br><span class="muted">in every app.</span></div>
+    <div class="keys"><div class="kc" id="kTab"><span class="key">Tab</span>a word</div><div class="kc" id="kAll"><span class="key">⇧ Tab</span>all of it</div></div></div>
+  <div id="sD" class="abs left scene"><div class="h1" id="sDa">Tap ⌘ twice.<br><span class="muted">Nook does it.</span></div>
+    <div class="keys"><span class="key" id="k1">⌘</span><span class="key" id="k2">⌘</span><span class="kc" id="kR">right ⌘</span></div></div>
+  <div id="sM" class="abs left scene"><div class="h1" id="sMa">And a lot<br><span class="muted">more.</span></div></div>
   <div id="s2" class="abs left scene"><div class="h1" id="s2a">Your agents,<br><span class="muted">steered.</span></div><div class="h2" id="s2b">Follow them, review, say yes.</div></div>
-  <div id="s3" class="abs left scene"><div class="h1" id="s3a">Every chat.<br><span class="muted">One inbox.</span></div></div>
+  <div id="s3" class="abs left scene"><div class="h1" id="s3a">Every chat.<br><span class="muted">One inbox.</span></div><div class="h2" id="s3b">Answer without switching apps.</div></div>
   <div id="s4" class="abs left scene"><div class="h1" id="s4a">And your music,<br><span class="muted">right there.</span></div></div>
-  <div id="s5" class="abs left"><div class="h1" id="s5a">Local-first.<br><span class="muted">Open source.</span></div>
+  <div id="s5" class="abs left" style="width:560px"><div class="h1" id="s5a">Local-first.<br><span class="muted">Open source.</span></div>
     <div id="tags"><span class="tag">macOS 15 or newer</span><span class="tag">iPhone companion</span><span class="tag">Windows · Linux · Android</span><span class="tag">Notch optional</span></div></div>
   <div class="orb abs" id="bigOrb" style="--d:280px"><i></i><i></i></div>
   <div id="burst2" class="abs"></div>
@@ -250,21 +509,38 @@ const T = NV.tempo(80), B = n => T.at(n), BAR = n => T.bar(n);
 const SNAP = { dur: 0.6 };
 
 // Scenes: home (the hook), agents, chats, music, local-first, the end card.
-const S2 = B(6), S3 = B(14), S4 = B(20), S5 = B(25), S6 = B(30);
-const HOOK_MERGE = B(3);
+const SA = B(6), SD = B(14), S2 = B(24), S3 = B(32), S4 = B(38), SM = B(43), S5 = B(49), S6 = B(54);
+const HOOK_DONE = B(3);
 const ALLOW = S2 + B(2.5), PR_IN = S2 + B(3.5), CHECKS_OK = S2 + B(5), MERGED = S2 + B(6.5);
 const REPLY = "Yes! See you at 19:30", R_AT = S3 + B(1.5), SENT = S3 + B(3.5), READ = S3 + B(4.5);
 const VIEWS = ['vHome', 'vAgents', 'vChats', 'vMusic'];
 const TAB = t => t < S2 ? 0 : t < S3 ? 1 : t < S4 ? 2 : 3;
-const CHANGES = [S2, S3, S4];
+const CHANGES = [S3, S4];
+// Autocomplete: you type, the ghost text comes, Tab takes a word, ⇧Tab the rest.
+const AC_TYPED = "Thanks! I'll ", AC_GHOST = "send you the new slides tonight.", AC_WORD = "send ";
+const AC_TYPE = SA + B(0.5), AC_SHOW = SA + B(2.5), AC_TAB = SA + B(4), AC_ALL = SA + B(5.5);
+// Double Tap: right ⌘ twice, the field, a suggestion, Nook reads the mail, a plan card, Run.
+const DT_K1 = SD + B(1), DT_K2 = SD + B(1.4), DT_IN = SD + B(2), DT_PICK = SD + B(4), DT_READ = SD + B(4.5),
+      DT_CARD = SD + B(6), DT_RUN = SD + B(8);
 
-function chip(id, s, word) { const c = $(id); c.style.display = word ? '' : 'none'; if (word) state(c, s, word); }
+function chip(id, s, word) {
+  const c = $(id); c.style.display = word ? '' : 'none';
+  if (!word) return;
+  state(c, s, word);
+  c.style.color = 'var(--state)'; c.style.background = 'color-mix(in srgb, var(--state) 15%, transparent)';
+}
+function status(id, s, word, dot) {
+  const el = $(id); el.style.setProperty('--state', NV.color(s));
+  el.innerHTML = (dot ? '<i class="d"></i>' : '') + word;
+}
 function pulse(id, t, times) {
   $(id).style.transform = '';
   times.forEach(at => { const p = prog(t, at, 0.4); if (p > 0 && p < 1) $(id).style.transform = `scale(${1 + 0.12 * Math.sin(p * Math.PI)})`; });
 }
 
 function tabs(t) {
+  // The badges count what waits on you: the push until you allow it, Sam until you answer.
+  $('agBadge').style.display = t < ALLOW ? '' : 'none';
   const spans = Array.from(document.querySelectorAll('#tabs .tab'));
   const k = TAB(t);
   const at = CHANGES.find(c => t >= c && t < c + 0.6);
@@ -284,84 +560,194 @@ function tabs(t) {
 }
 
 function home(t) {
-  // Things land on the first beats; the pull request merges on beat 3.
-  const merged = t >= HOOK_MERGE;
-  state($('hd1'), 'waiting'); chip('hc1', 'waiting', 'Waiting');
-  state($('hd2'), 'waiting'); chip('hc2', 'waiting', 'Waiting');
-  state($('hd3'), merged ? 'merged' : 'open'); chip('hc3', merged ? 'merged' : 'open', merged ? 'Merged' : 'Open');
-  state($('hd4'), 'info');
-  [['h1', 0.05], ['h2', B(1)], ['h3', B(2)], ['h4', B(2.5)]].forEach(([id, at]) => fade($(id), t, at, null, { rise: 20, dur: 0.45 }));
-  $('glance').textContent = '2 need you · 2 agents working · Design review in 10 min';
-  pulse('hc3', t, [HOOK_MERGE]);
+  // The three things land on the first beats; an agent finishes on beat 3.
+  state($('hd1'), 'waiting'); state($('hd2'), 'waiting'); state($('hd3'), 'info');
+  [['h1', 0.05], ['h2', B(1)], ['h3', B(2)]].forEach(([id, at]) => fade($(id), t, at, null, { rise: 16, dur: 0.45 }));
+  fade($('stand'), t, B(2.5), null, { rise: 16, dur: 0.45 });
+  const done = t >= HOOK_DONE;
+  state($('sd1'), 'waiting'); state($('sd2'), done ? 'done' : 'running'); 
+  $('standSum').textContent = done ? '1 needs you · 1 done' : '1 needs you · 1 working';
+  pulse('sd2', t, [HOOK_DONE]);
 }
 
 function agents(t) {
   const allowed = t >= ALLOW, merged = t >= MERGED;
-  state($('ad1'), merged ? 'done' : allowed ? 'running' : 'waiting');
-  state($('ad2'), 'done'); state($('ad3'), 'running');
-  ['st1', 'st2', 'st3'].forEach((id, i) => fade($(id), t, S2 + 0.1 + i * 0.25, null, { rise: 14, dur: 0.45 }));
-  fade($('files'), t, S2 + B(1), null, { rise: 14, dur: 0.45 });
-  // The approval card: Allow lights up, then the card gives way to the pull request.
-  fade($('ask'), t, S2 + B(1.5), PR_IN - 0.35, { rise: 18, dur: 0.45, outDur: 0.3 });
-  state($('askDot'), allowed ? 'allowed' : 'waiting');
-  $('askState').textContent = allowed ? 'Allowed' : 'Needs your yes';
-  $('bAllow').classList.toggle('primary', t >= ALLOW - 0.25);
-  fade($('pr'), t, PR_IN, null, { rise: 18, dur: 0.45 });
-  chip('prState', merged ? 'merged' : 'open', merged ? 'Merged' : 'Open');
+  status('as1', allowed ? (merged ? 'done' : 'link') : 'waiting', merged ? 'Ready' : allowed ? 'Working 1m' : 'Approval', allowed && !merged);
+  status('as3', 'link', 'Working 3m', true);
+  $('as1pr').textContent = t >= PR_IN ? '#651' : '';
+  ['st1', 'st2', 'st3'].forEach((id, i) => fade($(id), t, S2 + 0.1 + i * 0.25, null, { rise: 12, dur: 0.45 }));
+  // The last step waits on you (an amber dot) until you allow it.
+  fade($('st4'), t, S2 + B(1.5), null, { rise: 12, dur: 0.45 });
+  $('st4ck').innerHTML = allowed ? '✓' : '<span class="wd"><i></i></span>';
+  // The approval: Allow is pressed, then the card gives way to the pull request.
+  fade($('ask'), t, S2 + B(1.5), PR_IN - 0.35, { rise: 16, dur: 0.45, outDur: 0.3 });
+  state($('askWait'), allowed ? 'allowed' : 'waiting');
+  $('askState').textContent = allowed ? 'Allowed' : 'Waiting for approval';
+  $('bAllow').style.transform = `scale(${1 - 0.06 * Math.sin(Math.PI * clamp(prog(t, ALLOW - 0.2, 0.3)))})`;
+  const pr = $('pr'); pr.style.position = 'absolute'; pr.style.left = '30px'; pr.style.right = '30px';
+  pr.style.top = $('ask').offsetTop + 'px'; pr.style.marginTop = '0';
+  fade(pr, t, PR_IN, null, { rise: 16, dur: 0.45 });
+  // The pull request: its glyph is its state (open mint, merged violet); the checks follow; Merge, then merged.
+  state($('prGlyph'), merged ? 'merged' : 'open');
   const ok = t >= CHECKS_OK;
-  chip('prChecks', ok ? 'passing' : 'checksRunning', merged ? null : ok ? 'All 6 checks passed' : 'Checks running');
-  pulse('prChecks', t, [CHECKS_OK]); pulse('prState', t, [MERGED]);
+  state($('prCk'), ok ? 'passing' : 'checksRunning'); $('prCk').textContent = ok ? '✓' : '◌';
+  $('prChecks').textContent = merged ? 'Merged' : ok ? '6 checks passed' : 'Checks running';
+  $('prAct').style.display = merged ? 'none' : '';
+  $('prAct').classList.toggle('press', t >= MERGED - 0.35);
+  pulse('prCk', t, [CHECKS_OK]); pulse('prGlyph', t, [MERGED]);
 }
 
 function chats(t) {
   const sent = t >= SENT;
-  state($('cd1'), sent ? 'skipped' : 'waiting'); state($('cd2'), 'waiting'); state($('cd3'), 'skipped'); state($('cd4'), 'skipped');
   $('ctyped').textContent = ''; $('chint').style.display = ''; $('ccaret').style.display = 'none';
   if (t >= R_AT - 0.1 && t < SENT) {
     $('chint').style.display = 'none';
     NV.type($('ctyped'), REPLY, t, R_AT, 18);
     $('ccaret').style.display = Math.floor(t * 2.6) % 2 === 0 ? '' : 'none';
   }
-  fade($('mine'), t, SENT, null, { rise: 16, dur: 0.45 });
-  $('mineMeta').innerHTML = t >= READ ? '19:02 · <b>Read</b>' : '19:02 · Delivered';
+  $('csend').classList.toggle('on', t >= R_AT + 0.5 && t < SENT);
+  fade($('mine'), t, SENT, null, { rise: 14, dur: 0.45 });
+  $('tick').classList.toggle('read', t >= READ);
+  $('cu1').style.display = sent ? 'none' : '';
+  $('cr1').classList.toggle('unread', !sent);
+  $('ct1').textContent = sent ? '19:02' : '19:01';
+  $('cp1').innerHTML = sent ? `<span class="rt" style="color:${t >= READ ? 'var(--mint)' : 'var(--tertiary)'}">✓✓</span>Yes! See you at 19:30` : 'Are we still on for tonight?';
+  pulse('tick', t, [READ]);
 }
 
+const LYRICS = ['The ferry left without us', 'so we stayed another night', 'We drove until the streetlights ran out',
+  'and the radio played it twice', 'Slow motion summer', 'nothing left to chase'];
 function music(t) {
   const p = 0.32 + Math.max(0, t - S4) / 228;
   $('mprog').style.width = (p * 100) + '%';
   const secs = Math.floor(228 * p); $('mnow').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   document.querySelectorAll('#eq i').forEach((b, i) => {
     const h = 0.35 + 0.65 * Math.abs(Math.sin(t * (2.1 + i * 0.37) + i * 1.3)) * (0.6 + 0.4 * Math.exp(-((t % T.beat) / 0.25)));
-    b.style.height = (h * 36) + 'px';
+    b.style.height = (h * 16) + 'px';
+  });
+  // Lyrics: the current line in paper and a little larger, past lines at 24 %, upcoming at 42 %; one line per two beats.
+  const host = $('lines');
+  if (!host.children.length) LYRICS.forEach(l => { const d = document.createElement('div'); d.textContent = l; host.appendChild(d); });
+  const f = 2 + Math.max(0, t - S4 - B(1)) / B(2);
+  const cur = Math.floor(f), mv = settle(clamp((f - cur) / 0.4));
+  host.style.transform = `translateY(${210 - (cur - 1 + mv) * 62}px)`;
+  Array.from(host.children).forEach((d, i) => {
+    d.style.opacity = i < cur ? 0.24 : i === cur ? lerp(0.42, 1, mv) : i === cur + 1 ? 0.42 : 0.42;
+    if (i === cur - 1) d.style.opacity = lerp(1, 0.24, mv);
+    d.style.transform = `scale(${i === cur ? lerp(1, 1.08, mv) : i === cur - 1 ? lerp(1.08, 1, mv) : 1})`;
+  });
+}
+
+function desk(t) {
+  // The mail window stands in for any app; it is there for the Autocomplete and Double Tap scenes.
+  const dk = $('desk');
+  const o = ease(prog(t, SA - 0.3, 0.4)) * (1 - ease(prog(t, S2 - 0.35, 0.35)));
+  dk.style.opacity = o; dk.style.transform = `scale(${lerp(0.97, 1, ease(prog(t, SA - 0.3, 0.5)))})`;
+  const mail = t >= SD - 0.2;
+  const sw = ease(prog(t, SD - 0.35, 0.35));
+  $('dCompose').style.opacity = 1 - sw; $('dMail').style.opacity = sw;
+  $('deskTitle').textContent = mail ? 'Design review' : 'Re: Slides for Thursday';
+
+  // Autocomplete
+  const typed = t < AC_TYPE ? '' : AC_TYPED.slice(0, Math.max(0, Math.floor((t - AC_TYPE) * 16)));
+  let shown = typed, ghost = '';
+  if (t >= AC_SHOW) {
+    const taken = t >= AC_ALL ? AC_GHOST : t >= AC_TAB ? AC_WORD : '';
+    shown = AC_TYPED + taken; ghost = AC_GHOST.slice(taken.length);
+    if (t < AC_SHOW + 0.25) ghost = '';
+  }
+  $('acTyped').textContent = shown;
+  $('acGhost').textContent = ghost;
+  $('acGhost').style.opacity = clamp(prog(t, AC_SHOW + 0.2, 0.25));
+  $('acCaret').style.display = (t < AC_TYPE || Math.floor(t * 2.6) % 2 === 0 || (t > AC_TYPE && t < AC_TYPE + AC_TYPED.length / 16)) ? '' : 'none';
+  [['kTab', AC_TAB - 0.25], ['kAll', AC_ALL - 0.25]].forEach(([id, at]) => {
+    const p = pop(prog(t, at, 0.45)); const el = $(id);
+    el.style.opacity = clamp(p) * (1 - ease(prog(t, SD - 0.3, 0.3))); el.style.transform = `translateY(${(1 - p) * 14}px)`;
+    const press = Math.sin(Math.PI * clamp(prog(t, at + 0.2, 0.25)));
+    el.querySelector('.key').style.transform = `translateY(${press * 3}px)`;
+    el.querySelector('.key').style.background = press > 0.3 ? 'var(--smoke)' : '';
+  });
+
+  // Double Tap
+  [['k1', DT_K1], ['k2', DT_K2]].forEach(([id, at]) => {
+    const p = pop(prog(t, at - 0.15, 0.4)); const el = $(id);
+    el.style.opacity = clamp(p) * (1 - ease(prog(t, S2 - 0.3, 0.3)));
+    const press = Math.sin(Math.PI * clamp(prog(t, at, 0.22)));
+    el.style.transform = `translateY(${(1 - p) * 14 + press * 4}px)`;
+    el.style.background = press > 0.3 ? 'var(--smoke)' : '';
+  });
+  $('kR').style.opacity = clamp(prog(t, DT_K2, 0.4)) * (1 - ease(prog(t, S2 - 0.3, 0.3)));
+  const dt = $('dt');
+  const din = pop(prog(t, DT_IN, 0.5)), dout = ease(prog(t, S2 - 0.35, 0.35));
+  dt.style.opacity = clamp(din) * (1 - dout);
+  dt.style.transform = `translateY(${(1 - din) * -24}px) scale(${lerp(0.96, 1, din)})`;
+  fade($('sg1'), t, DT_IN + B(0.5), null, { rise: 10, dur: 0.4 });
+  fade($('sg2'), t, DT_IN + B(1), null, { rise: 10, dur: 0.4 });
+  $('sg1').classList.toggle('on', t >= DT_PICK - 0.3);
+  $('dtSug').style.display = t < DT_READ ? '' : 'none';
+  const picked = t >= DT_PICK;
+  $('dtTyped').textContent = picked ? 'Put this in my calendar' : '';
+  $('dtHint').style.display = picked ? 'none' : '';
+  $('dtCaret').style.display = !picked && Math.floor(t * 2.6) % 2 === 0 ? 'inline-block' : 'none';
+  $('dtStep').style.display = t >= DT_READ && t < DT_CARD ? '' : 'none';
+  $('dtStepText').textContent = t < DT_READ + B(0.8) ? 'Reading Mail…' : 'Thinking: one event on Thursday';
+  $('dtSpin').style.transform = `rotate(${t * 400}deg)`;
+  // Nook reads the window: the dates light up softly while it reads.
+  const mk = clamp(prog(t, DT_READ, 0.4)) * (1 - clamp(prog(t, DT_RUN + 0.6, 0.6)));
+  $('mk').style.background = `rgba(244,243,247,${0.14 * mk})`;
+  const card = $('dtCard');
+  card.style.display = t >= DT_CARD - 0.05 ? '' : 'none';
+  fade(card, t, DT_CARD, null, { rise: 14, dur: 0.45 });
+  const ran = t >= DT_RUN;
+  $('dtBtns').style.display = ran ? 'none' : '';
+  $('dtDone').style.display = ran ? '' : 'none';
+  $('dtRun').style.transform = `scale(${1 - 0.06 * Math.sin(Math.PI * clamp(prog(t, DT_RUN - 0.25, 0.3)))})`;
+  orb($('dtOrb'), t, { mood: ran ? 'done' : 'rest', blinkOffset: 1.1 });
+
+  // And a lot more: one tile every half beat.
+  document.querySelectorAll('#more .ft').forEach((el, i) => {
+    const p = pop(prog(t, SM + B(0.5) + i * B(0.5), 0.5));
+    el.style.opacity = clamp(p) * (1 - ease(prog(t, S5 - 0.3, 0.3)));
+    el.style.transform = `translateY(${(1 - p) * 18}px) scale(${lerp(0.94, 1, p)})`;
   });
 }
 
 function render(t) {
-  tabs(t); home(t); agents(t); chats(t); music(t);
+  tabs(t); home(t); agents(t); chats(t); music(t); desk(t);
 
   // The window: there on frame one, steps back for the last two scenes.
   const win = $('win');
-  const inP = pop(prog(t, 0, 0.5)), gone = ease(prog(t, S5 - 0.3, 0.45));
-  win.style.opacity = lerp(0.5, 1, clamp(prog(t, 0, 0.2))) * (1 - gone);
-  win.style.transform = `scale(${lerp(0.97, 1, inP) * lerp(1, 0.95, gone)})`;
+  // It makes way for the other app during Autocomplete and Double Tap, and steps back before "And a lot more".
+  const inP = pop(prog(t, 0, 0.5)), gone = ease(prog(t, SM - 0.3, 0.45));
+  const away = ease(prog(t, SA - 0.35, 0.35)) * (1 - ease(prog(t, S2 - 0.1, 0.4)));
+  win.style.opacity = lerp(0.5, 1, clamp(prog(t, 0, 0.2))) * (1 - gone) * (1 - away);
+  win.style.transform = `scale(${lerp(0.97, 1, inP) * lerp(1, 0.95, gone) * lerp(1, 0.97, away)})`;
 
-  const celebrating = (t >= HOOK_MERGE && t < HOOK_MERGE + 1.2) || (t >= MERGED && t < MERGED + 1.2);
-  const waiting = t >= S2 + B(1.5) && t < ALLOW;
-  orb($('winOrb'), t, { mood: celebrating ? 'celebrate' : waiting ? 'waiting' : 'rest', blinkOffset: 2.6 });
-  const o = $('winOrb').getBoundingClientRect();
+  // Nook beside the words: happy when something is done, amber while something waits on you, a burst on the merge.
+  const celebrating = (t >= HOOK_DONE && t < HOOK_DONE + 1.2) || (t >= MERGED && t < MERGED + 1.2) || (t >= DT_RUN && t < DT_RUN + 1.2);
+  const waiting = (t >= S2 + B(1.5) && t < ALLOW) || (t >= S3 && t < SENT);
+  const happy = (t >= AC_ALL && t < AC_ALL + 1.2) || (t >= SENT && t < SENT + 1.2);
+  const lg = $('logo');
+  orb(lg, t, { mood: celebrating ? 'celebrate' : waiting ? 'waiting' : happy ? 'done' : 'rest', blinkOffset: 2.6 });
+  lg.style.opacity = 1 - ease(prog(t, S5 - 0.3, 0.3));
+  const o = lg.getBoundingClientRect();
   $('burst').style.left = (o.left + o.width / 2) + 'px'; $('burst').style.top = (o.top + o.height / 2) + 'px';
-  sparks($('burst'), t, t < S2 ? HOOK_MERGE : MERGED, { reach: 110, life: 1.1 });
+  sparks($('burst'), t, t < SD ? HOOK_DONE : t < S2 ? DT_RUN : MERGED, { reach: 110, life: 1.1 });
 
   // Scene 1: the headline is there on the first frame.
   const s1 = $('s1');
-  s1.style.opacity = 1 - ease(prog(t, S2 - 0.3, 0.3));
+  s1.style.opacity = 1 - ease(prog(t, SA - 0.3, 0.3));
   s1.style.transform = `scale(${lerp(1.04, 1, settle(prog(t, 0, 0.6)))})`; s1.style.transformOrigin = '0 50%';
-  words($('s1b'), t, B(1), 0.15, S2 - 0.3, SNAP);
+  words($('s1b'), t, B(1), 0.15, SA - 0.3, SNAP);
+  words($('sAa'), t, SA + 0.05, 0.15, SD - 0.3, SNAP);
+  words($('sDa'), t, SD + 0.05, 0.15, S2 - 0.3, SNAP);
+  words($('sMa'), t, SM + 0.05, 0.15, S5 - 0.3, SNAP);
 
   words($('s2a'), t, S2 + 0.05, 0.15, S3 - 0.3, SNAP);
   words($('s2b'), t, S2 + B(1), 0.12, S3 - 0.3, SNAP);
   words($('s3a'), t, S3 + 0.05, 0.15, S4 - 0.3, SNAP);
-  words($('s4a'), t, S4 + 0.05, 0.15, S5 - 0.3, SNAP);
+  words($('s3b'), t, S3 + B(1), 0.12, S4 - 0.3, SNAP);
+  words($('s4a'), t, S4 + 0.05, 0.15, SM - 0.3, SNAP);
 
   // Scene 5: Nook steps forward.
   words($('s5a'), t, S5 + 0.05, 0.15, S6 - 0.3, SNAP);
@@ -399,12 +785,21 @@ NV.boot({
     { t: 0, sound: 'chime' },
     { t: B(1), sound: 'tick', gain: 1.5 },
     { t: B(2), sound: 'tick', gain: 1.5 },
-    { t: HOOK_MERGE, sound: 'merge', gain: 0.8 },
+    { t: HOOK_DONE, sound: 'done', gain: 0.8 },
+    { t: AC_SHOW + 0.2, sound: 'chime', gain: 0.6 },
+    { t: AC_TAB, sound: 'tick', gain: 1.5 },
+    { t: AC_ALL, sound: 'done', gain: 0.7 },
+    { t: DT_K1, sound: 'tick', gain: 1.3 },
+    { t: DT_K2, sound: 'tick', gain: 1.3 },
+    { t: DT_IN, sound: 'open', gain: 0.7 },
+    { t: DT_CARD, sound: 'chime', gain: 0.7 },
+    { t: DT_RUN, sound: 'done', gain: 0.8 },
     { t: S2 + B(1.5), sound: 'chime', gain: 0.7 },
     { t: ALLOW, sound: 'done', gain: 0.8 },
     { t: CHECKS_OK, sound: 'tick', gain: 1.4 },
     { t: MERGED, sound: 'merge', gain: 0.8 },
     { t: SENT, sound: 'tick', gain: 1.4 },
+    { t: SM + B(0.5), sound: 'tick', gain: 1.2 },
     { t: S5 + B(2.5), sound: 'done', gain: 0.6 },
     { t: S6 + BAR(1), sound: 'end' },
   ],

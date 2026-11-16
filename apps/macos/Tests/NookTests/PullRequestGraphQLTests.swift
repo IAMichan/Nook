@@ -6,13 +6,13 @@ final class PullRequestGraphQLTests: XCTestCase {
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.body()) as? [String: Any])
         let query = try XCTUnwrap(body["query"] as? String)
         XCTAssertTrue(query.contains("viewer { login }"), "no separate /user request")
-        XCTAssertTrue(query.contains("statusCheckRollup { state }"), "CI comes with the row, not per pull request")
+        XCTAssertTrue(query.contains("statusCheckRollup { state "), "CI comes with the row, not per pull request")
         let variables = try XCTUnwrap(body["variables"] as? [String: String])
         XCTAssertEqual(variables["mine"], "is:pr is:open archived:false author:@me sort:updated-desc")
         XCTAssertTrue(variables["reviews"]?.contains("review-requested:@me") == true)
         XCTAssertEqual(variables["mineClosed"], "is:pr is:closed archived:false author:@me sort:updated-desc")
         XCTAssertTrue(variables["reviewsClosed"]?.contains("reviewed-by:@me") == true)
-        XCTAssertTrue(query.contains("isDraft updatedAt state"), "open, closed or merged comes with the row")
+        XCTAssertTrue(query.contains("isDraft createdAt updatedAt state"), "open, closed or merged comes with the row")
         XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
     }
 
@@ -100,7 +100,7 @@ final class PullRequestGraphQLTests: XCTestCase {
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.nodesBody(["PR_1", "PR_2"])) as? [String: Any])
         let query = try XCTUnwrap(body["query"] as? String)
         XCTAssertTrue(query.contains("nodes(ids: $ids) { ...row }"), "no search, the rows by id")
-        XCTAssertTrue(query.contains("fragment row on PullRequest") && query.contains("statusCheckRollup { state }"))
+        XCTAssertTrue(query.contains("fragment row on PullRequest") && query.contains("statusCheckRollup { state "))
         XCTAssertEqual((body["variables"] as? [String: Any])?["ids"] as? [String], ["PR_1", "PR_2"])
 
         let answer = #"""

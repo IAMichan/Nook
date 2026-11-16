@@ -60,7 +60,6 @@ final class BuddyService {
 
     /// Seconds since the last keyboard, mouse or trackpad input anywhere on the Mac. Reading it needs no permission.
     static func systemIdleSeconds() -> TimeInterval {
-        let types: [CGEventType] = [.mouseMoved, .keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel, .flagsChanged]
-        return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
+        SystemLoad.idleSeconds
     }
 }

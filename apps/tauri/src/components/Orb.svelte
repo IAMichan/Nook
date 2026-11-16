@@ -328,11 +328,11 @@
     border-radius: 50%;
     /* Belicht als een bal: hoogtepunt linksboven dat tegen de blik in schuift, schaduw naar de rand, wat teruggekaatst licht onderin. */
     background:
-      radial-gradient(circle at calc(34% + var(--lx)) calc(30% + var(--ly)), #fff 0%, var(--iris) 38%, color-mix(in srgb, var(--iris) 55%, #000) 100%),
-      var(--iris);
+      radial-gradient(circle at calc(34% + var(--lx)) calc(30% + var(--ly)), #fff 0%, #f6f6f8 45%, #d9d9df 100%),
+      #f6f6f8;
     box-shadow:
-      inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.18) color-mix(in srgb, var(--iris) 40%, #fff 10%),
-      0 0 calc(var(--s) * (0.5 + var(--level) * 0.6)) color-mix(in srgb, var(--iris) 25%, transparent);
+      inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.18) rgba(0, 0, 0, 0.12),
+      0 0 calc(var(--s) * (0.5 + var(--level) * 0.6)) rgba(255, 255, 255, 0.12);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -353,7 +353,7 @@
   .hold.movable .orb { cursor: inherit; }
   .hold.held { cursor: grabbing; z-index: 10; }
   /* Held: wide awake, and a soft lift that the glow follows. */
-  .held .orb { box-shadow: 0 calc(var(--s) * 0.18) calc(var(--s) * 0.6) color-mix(in srgb, var(--iris) 40%, transparent); }
+  .held .orb { box-shadow: 0 calc(var(--s) * 0.18) calc(var(--s) * 0.6) rgba(255, 255, 255, 0.25); }
   .held .eye { height: calc(var(--s) * 0.26); }
   .eye.blink { height: calc(var(--s) * 0.03); }
   .drowsy .eye { height: calc(var(--s) * 0.08); }

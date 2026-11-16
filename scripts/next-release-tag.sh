@@ -2,12 +2,14 @@
 # Prints the tag of the next Nook beta release, from the release tags in this repository.
 # Used by .github/workflows/release.yml; run it locally to see what the next release would be called.
 #
-#   scripts/next-release-tag.sh [beta|patch|minor|major]
+#   scripts/next-release-tag.sh [beta|patch|minor|major|stable]
 #
 #   beta   next beta of the current version: v0.1.0-beta.1 → v0.1.0-beta.2 (the default)
 #   patch  first beta of the next patch version: v0.1.0-beta.4 → v0.1.1-beta.1
 #   minor  first beta of the next minor version: v0.1.3-beta.2 → v0.2.0-beta.1
 #   major  first beta of the next major version: v0.4.0-beta.1 → v1.0.0-beta.1
+#   stable the current version without a suffix: v0.4.0-beta.3 → v0.4.0 (release.yml builds it from that newest beta).
+#          Fails when that version was already released, or has no beta to promote.
 #
 # Without release tags, the current version is MARKETING_VERSION in apps/macos/project.yml. When the current version
 # was already released without a beta suffix, `beta` moves on to the next patch version.
@@ -27,13 +29,24 @@ REST="${BASE#*.}"
 MINOR="${REST%%.*}"
 PATCH="${REST#*.}"
 
+if [ "$BUMP" = stable ]; then
+  if git rev-parse -q --verify "refs/tags/v$BASE" >/dev/null; then
+    echo "next-release-tag: v$BASE is already released; release a beta of the next version first" >&2; exit 1
+  fi
+  if [ -z "$(git tag -l "v$BASE-beta.*")" ]; then
+    echo "next-release-tag: v$BASE has no beta to promote" >&2; exit 1
+  fi
+  echo "v$BASE"
+  exit 0
+fi
+
 case "$BUMP" in
   beta)
     if git rev-parse -q --verify "refs/tags/v$BASE" >/dev/null; then PATCH=$((PATCH + 1)); fi ;;
   patch) PATCH=$((PATCH + 1)) ;;
   minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
   major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-  *) echo "next-release-tag: unknown bump '$BUMP' (beta, patch, minor or major)" >&2; exit 1 ;;
+  *) echo "next-release-tag: unknown bump '$BUMP' (beta, patch, minor, major or stable)" >&2; exit 1 ;;
 esac
 VERSION="$MAJOR.$MINOR.$PATCH"
 

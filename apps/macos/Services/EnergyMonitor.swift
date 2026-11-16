@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import IOKit.ps
+import os
 
 /// Keeps the one answer to "how much may Nook do by himself right now" (`EnergyPlan`) for every background worker, so
 /// none of them reads the battery, the thermal state or the load average on its own. The plan follows your choice in
@@ -24,6 +25,8 @@ final class EnergyMonitor: ObservableObject {
     private var bag = Set<AnyCancellable>()
     /// Your choice in Settings, mirrored here so a tick does not read the settings.
     private var mode: EnergyMode = .automatic
+    /// The last swap-in count and when it was read, for the rate in the next reading.
+    private var lastSwapins: (count: UInt64, at: Date)?
 
     private init() {}
 
@@ -80,11 +83,31 @@ final class EnergyMonitor: ObservableObject {
     /// Reads the Mac again and publishes the plan when it changed.
     /// `screenLocked` is what a lock or unlock notification just said, which wins over the session dictionary for this read.
     func refresh(screenLocked: Bool? = nil) {
-        var now = SystemLoad.signals(wasLowBattery: signals.lowBattery)
+        var now = SystemLoad.signals(wasLowBattery: signals.lowBattery, swapinsPerSecond: swapinRate())
         if let screenLocked { now.screenLocked = screenLocked }
+        // Memory just ran short: let go of what can be rebuilt (a loaded model, caches) now, also when macOS itself still says
+        // "normal" and so never sends its own warning (`MemoryPressure`).
+        if now.memoryTight, !signals.memoryTight {
+            Log.resources.notice("memory tight: optional work pauses, caches and models are let go")
+            MemoryPressure.shared.purge(.warning)
+        } else if !now.memoryTight, signals.memoryTight {
+            Log.resources.notice("memory has room again")
+        }
         if now != signals { signals = now }
         let next = EnergyPolicy.plan(for: now, mode: mode)
         if next != plan { plan = next }
+    }
+
+    /// Pages per second read back from swap since the last reading; nil on the first, or right after one (a burst of
+    /// notifications) that is too close to say anything.
+    private func swapinRate() -> Double? {
+        guard let count = SystemLoad.swapins else { return nil }
+        let now = Date()
+        defer { if lastSwapins.map({ now.timeIntervalSince($0.at) >= 1 }) ?? true { lastSwapins = (count, now) } }
+        guard let last = lastSwapins, count >= last.count else { return nil }
+        let seconds = now.timeIntervalSince(last.at)
+        guard seconds >= 1 else { return signals.memoryTight ? EnergySignals.swapinsPerSecondTight : 0 }
+        return Double(count - last.count) / seconds
     }
 
     /// The status line: "Full speed", or what Nook holds back for and why.

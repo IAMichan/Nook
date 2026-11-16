@@ -2,8 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Maintenance: keeping Nook up to date, how much it does on its own, and what helps track down a problem.
-/// Settings › About Nook: which Nook this is, where its source lives, and its license. Both close the sidebar, as
-/// Maintenance and About do.
+/// Settings › About Nook: which Nook this is, where its source lives, and its license. Both close the sidebar.
 extension SettingsView {
     // MARK: Maintenance
 
@@ -15,10 +14,36 @@ extension SettingsView {
                 SettingToggle(tr("settings.ws.trafficLog"), detail: tr("settings.ws.trafficLog.footer"),
                               isOn: $workspace.providerTrafficLog)
                 Toggle(isOn: $app.demoMode) { SettingText("settings.notch.demoData") }
+                LabeledContent {
+                    Button(tr("diagnostics.copy")) { copyRedactedDiagnostics() }
+                        .controlSize(.small)
+                } label: {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        Text(tr("diagnostics.export"))
+                        Text(tr("diagnostics.export.detail"))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textSecondary)
+                    }
+                }
             } header: {
                 SettingText("settings.maintenance.diagnostics")
             }
+            TelemetrySettingsSection()
         }
+    }
+
+    /// Puts a redacted report on the clipboard: versions and set-up facts, with mail addresses, tokens, phone numbers and
+    /// the user's name in paths taken out (`DiagnosticsRedactor`). Nothing is sent anywhere.
+    private func copyRedactedDiagnostics() {
+        let info = Bundle.main.infoDictionary
+        let header: [(String, String)] = [
+            ("Version", info?["CFBundleShortVersionString"] as? String ?? "-"),
+            ("Build", info?["CFBundleVersion"] as? String ?? "-"),
+            ("macOS", ProcessInfo.processInfo.operatingSystemVersionString),
+            ("Language", I18n.shared.currentLanguage.rawValue),
+            ("Demo mode", app.demoMode ? "on" : "off"),
+        ]
+        Pasteboard.copy(DiagnosticsRedactor.report(header: header, log: []))
     }
 
     // MARK: About
@@ -43,7 +68,7 @@ extension SettingsView {
                     Button(tr("settings.about.licenseValue")) {
                         NSWorkspace.shared.open(Self.repository.appendingPathComponent("blob/main/LICENSE"))
                     }
-                    .buttonStyle(.link)
+                    .buttonStyle(.nookLink)
                 } label: {
                     SettingText("settings.about.license")
                 }
@@ -70,7 +95,7 @@ extension SettingsView {
         LabeledContent(title) {
             Button(tr("settings.about.open")) { NSWorkspace.shared.open(url) }
                 .controlSize(.small)
-                .help(url.absoluteString)
+                .nookTip(url.absoluteString)
         }
     }
 }

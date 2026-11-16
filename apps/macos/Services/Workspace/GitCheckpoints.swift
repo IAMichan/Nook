@@ -9,6 +9,41 @@ struct RunCheckpoint: Codable, Equatable, Sendable {
     var conversation: ConversationMark? = nil
 }
 
+/// Whether and to which snapshot a session's files may go back. Restoring rewrites every file in the folder, so it is
+/// refused whenever it would undo more than the turns you chose, or work that is not this session's.
+enum RevertPlan {
+    /// The most missed snapshots a session remembers: enough to refuse a wrong restore, never a growing list.
+    static let missedLimit = 32
+
+    /// The last snapshot at or before `date`, unless a turn that ended in between has no snapshot (`missed`): restoring
+    /// the earlier one would also undo that turn, without saying so.
+    static func checkpointIndex(_ checkpoints: [RunCheckpoint], missed: [Date], before date: Date) -> Int? {
+        guard let index = checkpoints.lastIndex(where: { $0.date <= date }) else { return nil }
+        let from = checkpoints[index].date
+        return missed.contains { $0 > from && $0 <= date } ? nil : index
+    }
+
+    /// Two folders (normalized) where restoring one changes files of the other: the same folder, or one inside the other.
+    static func overlaps(_ first: String, _ second: String) -> Bool {
+        guard !first.isEmpty, !second.isEmpty else { return false }
+        if first == second { return true }
+        let a = first.hasSuffix("/") ? first : first + "/"
+        let b = second.hasSuffix("/") ? second : second + "/"
+        return a.hasPrefix(b) || b.hasPrefix(a)
+    }
+
+    /// Whether another session in an overlapping folder (`overlapping`, already checked) keeps a restore to the snapshot
+    /// of `since` from running: it is at work there (files would change under it), or it finished a turn there after
+    /// that snapshot (a fork, a side chat, a delegated task: the restore would throw its work away). An archived one
+    /// is done with.
+    static func blocks(_ other: WorkspaceRun, since: Date) -> Bool {
+        guard !other.archived else { return false }
+        if other.status.isActive { return true }
+        let turnEnds = (other.checkpoints ?? []).map(\.date) + (other.missedCheckpoints ?? [])
+        return turnEnds.contains { $0 > since }
+    }
+}
+
 /// Checkpoints are made with a temporary index (`read-tree HEAD`, `add -A`, `write-tree`, `commit-tree`, `update-ref`):
 /// tracked and untracked files, not ignored ones. Restoring writes the snapshot's files back and removes files that
 /// were added since. Synchronous, like the rest of GitService: call off the main thread.
@@ -24,6 +59,7 @@ extension GitService {
             let head = try? git(["rev-parse", "--verify", "-q", "HEAD"], in: directory, env: env).trimmed
             let seeded = env["GIT_INDEX_FILE"].map { FileManager.default.fileExists(atPath: $0) } ?? false
             if !seeded, let head, !head.isEmpty { try git(["read-tree", head], in: directory, env: env) }
+            if seeded { try? revealFlaggedEntries(directory, env: env) }
             do {
                 try git(["add", "-A", "--", "."], in: directory, env: env)
             } catch {
@@ -39,6 +75,50 @@ extension GitService {
             let commit = try git(arguments, in: directory, env: env).trimmed
             try git(["update-ref", ref, commit], in: directory, env: env)
             return commit
+        }
+    }
+
+    /// Entries the checkout's index marks assume-unchanged (`update-index --assume-unchanged`, `core.ignorestat`) or
+    /// skip-worktree (a local config file kept out of commits) are skipped by `git add -A`, so a snapshot seeded from that
+    /// index would miss what the agent wrote to them, and going back would put the committed version over the local one.
+    /// They are entered again in the temporary index only, as plain entries without a stat cache (`--cacheinfo`), so
+    /// `add -A` reads them; the checkout's own index keeps its flags. A skip-worktree file that is not on disk (outside a
+    /// sparse checkout's cone) stays as it is, or the snapshot would record it as deleted; so do submodules.
+    func revealFlaggedEntries(_ directory: String, env: [String: String]) throws {
+        let listing = try git(["ls-files", "--stage", "-v", "-z"], in: directory, env: env)
+        let root = URL(fileURLWithPath: directory, isDirectory: true)
+        let entries = Self.flaggedEntries(listing) { path in
+            FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
+        }
+        for start in stride(from: 0, to: entries.count, by: 200) {
+            let batch = entries[start..<min(start + 200, entries.count)]
+            let arguments = batch.flatMap { ["--cacheinfo", "\($0.mode),\($0.object),\($0.path)"] }
+            try git(["-c", "core.ignorestat=false", "update-index"] + arguments, in: directory, env: env)
+        }
+    }
+
+    struct FlaggedEntry: Equatable, Sendable {
+        var mode: String
+        var object: String
+        var path: String
+    }
+
+    /// The entries of `git ls-files --stage -v -z` that `revealFlaggedEntries` enters again: a lowercase tag is
+    /// assume-unchanged, `S` (or `s`) skip-worktree, which counts only for a file that `exists`. Each record reads
+    /// "<tag> <mode> <object> <stage>\t<path>"; unmerged entries (stage other than 0) and submodules (160000) are left out.
+    static func flaggedEntries(_ listing: String, exists: (String) -> Bool) -> [FlaggedEntry] {
+        listing.split(separator: "\0").compactMap { record -> FlaggedEntry? in
+            guard let tab = record.firstIndex(of: "\t"), let tag = record.first else { return nil }
+            let fields = record[..<tab].split(separator: " ")
+            guard fields.count == 4, fields[3] == "0", fields[1] != "160000" else { return nil }
+            let path = String(record[record.index(after: tab)...])
+            guard !path.isEmpty else { return nil }
+            let assumed = tag.isLowercase
+            let skipped = tag == "S" || tag == "s"
+            guard assumed || skipped else { return nil }
+            // A skip-worktree file that is not there is outside the sparse cone (or kept away on purpose): leave it.
+            if skipped && !exists(path) { return nil }
+            return FlaggedEntry(mode: String(fields[1]), object: String(fields[2]), path: path)
         }
     }
 

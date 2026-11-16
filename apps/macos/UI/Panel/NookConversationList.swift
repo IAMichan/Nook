@@ -1,0 +1,593 @@
+import SwiftUI
+import AppKit
+
+/// All your Nooks, listed the way the Agents tab lists sessions: a header whose title is the two parts of the list as
+/// tabs (conversations, and the work Nook does on its own: `NookListPart`) with the new-Nook button, a search, then
+/// "For you": a card with what asks something of you (a new answer, a run waiting for your yes, one still working),
+/// each with the agents' badge and the line that says what it did. Below it the pinned ones and the rest by age, one
+/// line each (title and how long ago; the last answer is on the hover card), and the archive docked at the foot of the
+/// list, opening upwards, as the settled sessions are. A scheduled task's run shows here only while it asks something
+/// of you (or when pinned, or found by a search); otherwise its task's row in the Scheduled tab opens it. Pin and
+/// archive appear on hover, in the badge's place, so nothing shifts; right-click for the rest.
+struct NookList: View {
+    @ObservedObject var chat: NookChat
+    @EnvironmentObject private var app: AppModel
+    /// The search is kept while Nook runs, so a visit to another tab and back finds it as it was left.
+    @State private var query = NookList.keptQuery
+    @State private var showArchived = false
+    @State private var renaming: UUID?
+    @State private var nameDraft = ""
+    @State private var selection = ListSelection<UUID>()
+    /// The Nook whose delete waits for a yes: a context menu cannot hold the dialog itself.
+    @State private var deleting: Conversation?
+    /// Conversations or scheduled tasks, kept while Nook runs as the search is.
+    @State private var part = NookList.keptPart
+    @ObservedObject private var tasks = ScheduledTaskStore.shared
+
+    /// The search you left in the list (not kept across a restart).
+    static var keptQuery = ""
+    static var keptPart = NookListPart.conversations
+
+    var body: some View {
+        // The archive (up to 500) is sorted only while its shelf is open; closed, it shows a count.
+        let archived = showArchived ? chat.list(query: query, showArchived: true) : []
+        let archivedCount = showArchived ? archived.count : chat.count(query: query, showArchived: true)
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
+        let items = attention + pinned + rest
+        // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
+        let shown = (attention + pinned + rest + (showArchived ? archived : [])).map(\.id)
+        VStack(alignment: .leading, spacing: 8) {
+            header
+                .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
+                               confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
+            // Selecting several Nooks starts with a ⌘- or ⇧-click on a row, so it needs no button here.
+            searchField
+            if part == .scheduled {
+                NookScheduledList(chat: chat, query: query)
+            } else {
+                TimelineView(.nookTicks(every: 30)) { context in
+                    VStack(alignment: .leading, spacing: 2) {
+                        // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
+                        // Archived ones still wait in the shelf below.
+                        if query.isEmpty && items.isEmpty && !showArchived {
+                            WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
+                                         message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
+                        } else {
+                            ScrollView(showsIndicators: false) {
+                                // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
+                                LazyVStack(alignment: .leading, spacing: 2) {
+                                    if items.isEmpty && (archivedCount == 0 || !showArchived) {
+                                        ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
+                                    }
+                                    // What asks something of you (a new answer, a run waiting for your yes, one still
+                                    // working) on a card of its own on top, so it never hides between the read ones.
+                                    if !attention.isEmpty {
+                                        attentionCard(attention, now: context.date, shown: shown)
+                                            .padding(.bottom, NookTheme.Spacing.sm)
+                                    }
+                                    if !pinned.isEmpty {
+                                        sectionLabel(tr("nooks.section.pinned"))
+                                        rows(pinned, now: context.date, shown: shown)
+                                    }
+                                    // The rest by age, as the Claude app groups it: Today, Yesterday, Previous 7 days, Older.
+                                    let groups = DayBucket.group(rest, date: \.updated, now: context.date)
+                                    ForEach(groups, id: \.bucket) { group in
+                                        sectionLabel(tr(group.bucket.titleKey))
+                                            .padding(.top, pinned.isEmpty && group.bucket == groups.first?.bucket ? 0 : NookTheme.Spacing.md)
+                                        rows(group.items, now: context.date, shown: shown)
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: .infinity, alignment: .top)
+                        }
+                        // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
+                        if archivedCount > 0 {
+                            archiveShelf(archived, count: archivedCount, now: context.date, shown: shown)
+                        }
+                    }
+                }
+                if selection.isActive {
+                    selectionBar(shown: shown)
+                }
+            }
+        }
+        .onChange(of: shown) { _, current in selection.keep(only: current) }
+        .onChange(of: query) { _, value in NookList.keptQuery = value }
+        .onChange(of: part) { _, value in
+            NookList.keptPart = value
+            selection.clear()
+        }
+        // ⌘⇧[ and ⌘⇧] go to the Nook above or below in the list, as they go through sessions on Agents.
+        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: part == .conversations && !shown.isEmpty)
+    }
+
+    /// Opens the Nook `offset` rows from the open one in the list (the first or last when none is open). False at either end.
+    private func step(_ offset: Int) -> Bool {
+        let ids = shownNow()
+        guard !ids.isEmpty else { return false }
+        let next = chat.activeID.flatMap { ids.firstIndex(of: $0) }.map { $0 + offset } ?? (offset > 0 ? 0 : ids.count - 1)
+        guard ids.indices.contains(next) else { return false }
+        app.openConversation(ids[next])
+        return true
+    }
+
+    /// Keeps the new name and ends renaming; a second call (the field's Return, then it losing focus) does nothing.
+    private func commitRename(_ id: UUID) {
+        guard renaming == id else { return }
+        renaming = nil
+        chat.rename(id, to: nameDraft)
+    }
+
+    // MARK: Selecting several
+
+    /// The rows as `body` shows them, top to bottom, as they are right now.
+    private func shownNow() -> [UUID] {
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
+        let archived = showArchived ? chat.list(query: query, showArchived: true) : []
+        return (attention + pinned + rest + archived).map(\.id)
+    }
+
+    /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
+    private func click(_ conversation: Conversation, shown: [UUID]) {
+        let keys = SelectionClick.modifiers()
+        withAnimation(NookTheme.reveal) {
+            switch selection.click(command: keys.command, shift: keys.shift) {
+            case .open: app.openConversation(conversation.id)
+            case .toggle: selection.toggle(conversation.id)
+            case .extend: selection.extend(to: conversation.id, in: shown)
+            }
+        }
+    }
+
+    private func selectionBar(shown: [UUID]) -> some View {
+        let picked = chat.conversations.filter { selection.contains($0.id) }
+        let ids = Set(picked.map(\.id))
+        let allPinned = !picked.isEmpty && picked.allSatisfy(\.pinned)
+        let allArchived = !picked.isEmpty && picked.allSatisfy(\.archived)
+        let anyUnread = picked.contains(where: \.unread)
+        let idle = picked.filter { !$0.busy }
+        var actions: [SelectionAction] = [
+            anyUnread
+                ? SelectionAction(symbol: "envelope.open", label: tr("select.markRead")) { chat.setUnread(false, ids) }
+                : SelectionAction(symbol: "envelope.badge", label: tr("select.markUnread")) { chat.setUnread(true, ids) },
+        ]
+        if !allArchived {
+            actions.append(allPinned
+                ? SelectionAction(symbol: "pin.slash", label: tr("select.unpin")) { chat.setPinned(false, ids) }
+                : SelectionAction(symbol: "pin", label: tr("select.pin")) { chat.setPinned(true, ids) })
+        }
+        actions.append(allArchived
+            ? SelectionAction(symbol: "tray.and.arrow.up", label: tr("select.unarchive"), enabled: !idle.isEmpty) { chat.setArchived(false, ids) }
+            : SelectionAction(symbol: "archivebox", label: tr("select.archive"), enabled: !idle.isEmpty) { chat.setArchived(true, ids) })
+        actions.append(SelectionAction(symbol: "trash", label: tr("select.delete"), destructive: true, enabled: !idle.isEmpty,
+                                       confirm: tr("select.deleteConfirm", idle.count)) { chat.delete(ids) })
+        return SelectionBar(count: selection.count, allSelected: !shown.isEmpty && Set(shown).isSubset(of: ids),
+                            actions: actions,
+                            toggleAll: { selection.toggleAll(shown) },
+                            done: { withAnimation(NookTheme.reveal) { selection.clear() } })
+    }
+
+    // MARK: Header and search
+
+    /// The two parts of the list as the title, with the button that starts a new Nook on the right, as "Agents" has.
+    private var header: some View {
+        PanelTabHeader(items: partItems, selected: part, onSelect: { value in
+            withAnimation(NookTheme.swap) { part = value }
+        }) {
+            PanelNewButton(label: tr("nooks.newHelp"), active: chat.isEmpty) { app.newChat() }
+                .keyCommand("session.new") { app.newChat() }
+        }
+    }
+
+    private var searchField: some View {
+        NookSearchField(prompt: tr(part == .scheduled ? "nookTask.search" : "nooks.search"), text: $query)
+    }
+
+    /// Conversations and scheduled tasks as two tabs, so they never mix. The Scheduled tab carries an amber count of the
+    /// runs that wait for your approval, or a dot while a run left an answer you have not read.
+    private var partItems: [NookTabBar<NookListPart>.Item] {
+        let nookTasks = tasks.tasks.filter { $0.target.isNook }
+        let runs = nookTasks.compactMap { chat.conversation(forTask: $0.id)?.status }
+        return [
+            .init(value: .conversations, title: tr("nooks.tab.conversations")),
+            .init(value: .scheduled, title: tr("nookTask.section"), fresh: runs.contains(.unread),
+                  count: runs.filter { $0 == .waiting }.count,
+                  help: nookTasks.isEmpty ? nil : tr("nookTask.tab.help", nookTasks.count)),
+        ]
+    }
+
+    // MARK: Sections
+
+    private func sectionLabel(_ title: String) -> some View {
+        NookSectionLabel(title).padding(.bottom, NookTheme.Spacing.xxs)
+    }
+
+    /// "For you": the Nooks that ask something of you, on a card above the rest, each with its badge (new answer, needs
+    /// you, working) and the line that says what it did. The rest of the list keeps to one line a Nook.
+    private func attentionCard(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                NookSectionLabel(tr("nooks.section.forYou"), inset: 0)
+                NookCountBadge(count: conversations.count)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.top, NookTheme.Spacing.xs)
+            .padding(.bottom, NookTheme.Spacing.xxs)
+            rows(conversations, now: now, shown: shown)
+        }
+        .padding(NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line, radius: NookTheme.Radius.panel + NookTheme.Spacing.xxs)
+    }
+
+    /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
+    /// with a click. Its header stays put and its rows open above it, scrolling on their own once they no longer fit.
+    private func archiveShelf(_ archived: [Conversation], count: Int, now: Date, shown: [UUID]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if showArchived {
+                ViewThatFits(in: .vertical) {
+                    archivedRows(archived, now: now, shown: shown)
+                    ScrollView(showsIndicators: false) { archivedRows(archived, now: now, shown: shown) }
+                }
+                .frame(maxHeight: 280)
+            }
+            Button {
+                withAnimation(NookTheme.reveal) { showArchived.toggle() }
+            } label: {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(tr("nooks.section.archived", count))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                    NookDivider()
+                    // The shelf opens upwards: its chevron points up while closed, down while open.
+                    DisclosureChevron(open: showArchived, size: 8.5, style: .upward)
+                }
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .frame(height: 30)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.nookPlain)
+            .accessibilityValue(showArchived ? tr("compose.queue.expanded") : "")
+        }
+    }
+
+    private func archivedRows(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
+        VStack(alignment: .leading, spacing: 2) { rows(archived, now: now, shown: shown) }
+    }
+
+    @ViewBuilder
+    private func rows(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
+        ForEach(conversations) { conversation in
+            if renaming == conversation.id {
+                NookRenameField(text: $nameDraft, commit: { commitRename(conversation.id) }, cancel: { renaming = nil })
+            } else {
+                NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
+                        onPin: { withAnimation(NookTheme.reveal) { chat.togglePin(conversation.id) } },
+                        onArchive: { withAnimation(NookTheme.reveal) { chat.setArchived(!conversation.archived, conversation.id) } }) {
+                    // Worked out at the click: the row is kept while it does not change (`.equatable()`), also when
+                    // the order around it does.
+                    click(conversation, shown: shownNow())
+                }
+                // The list redraws with every streamed word of an answer: only the row of that conversation changes.
+                .equatable()
+                .selectable(active: selection.isActive, selected: selection.contains(conversation.id)) {
+                    withAnimation(NookTheme.reveal) { selection.toggle(conversation.id) }
+                }
+                .contextMenu { contextMenu(conversation) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contextMenu(_ conversation: Conversation) -> some View {
+        Button(tr("nooks.rename")) {
+            nameDraft = conversation.title
+            renaming = conversation.id
+        }
+        if !conversation.archived {
+            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) {
+                withAnimation(NookTheme.reveal) { chat.togglePin(conversation.id) }
+            }
+        }
+        Button(tr("ws.export.copy")) {
+            Pasteboard.copy(ChatExport.markdown(conversation))
+        }
+        Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
+            withAnimation(NookTheme.reveal) { chat.setArchived(!conversation.archived, conversation.id) }
+        }
+        .disabled(conversation.busy)
+        Divider()
+        Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
+            .disabled(conversation.busy)
+    }
+}
+
+/// The title of a Nook being renamed, in its row: it has the keyboard at once, Return or clicking away keeps the new name,
+/// Escape drops it.
+private struct NookRenameField: View {
+    @Binding var text: String
+    let commit: () -> Void
+    let cancel: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(NookTheme.TextStyle.strong)
+            .foregroundStyle(NookTheme.paper)
+            .focused($focused)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .frame(height: 40)
+            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel)
+            .onAppear { focused = true }
+            .onSubmit(commit)
+            .onChange(of: focused) { _, now in
+                if !now { commit() }
+            }
+            .onExitCommand(perform: cancel)
+    }
+}
+
+/// One Nook in the list, built like a session row in the Agents tab: a soft card, the title with the status on the
+/// right, the last answer underneath. A conversation that asks nothing of you recedes, so what needs you stands out.
+private struct NookRow: View, Equatable {
+    let conversation: Conversation
+    let selected: Bool
+    let now: Date
+    let onPin: () -> Void
+    let onArchive: () -> Void
+    let action: () -> Void
+    @State private var hovering = false
+    /// The pointer is on the hover buttons.
+    @State private var onActions = false
+
+    /// What the row shows of its conversation; the actions do the same for the same one. A message's `revision` goes up
+    /// with each change to it, the streamed words of the answer too.
+    static func == (a: NookRow, b: NookRow) -> Bool {
+        let x = a.conversation, y = b.conversation
+        return a.selected == b.selected && a.now == b.now && x.id == y.id && x.title == y.title && x.updated == y.updated
+            && x.pinned == y.pinned && x.archived == y.archived && x.scheduledTaskID == y.scheduledTaskID && x.busy == y.busy && x.unread == y.unread
+            && x.messages.count == y.messages.count && x.messages.last?.id == y.messages.last?.id
+            && x.messages.last?.revision == y.messages.last?.revision && x.status == y.status
+    }
+
+    /// No fill at rest, as in every list: only the row under the pointer or the selected one lifts.
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
+    private var receded: Bool { conversation.status == .idle && !selected }
+    /// Settled (nothing new, nothing waiting, not working): one line, title and how long ago.
+    private var compact: Bool { conversation.status == .idle }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: action) { content }
+                .buttonStyle(.nookPlain)
+            hoverActions
+                // Only the buttons themselves hold the card back, not the backdrop's fade or the padding around them.
+                .onHover { onActions = $0 }
+                .rowActionsBackdrop(background)
+                .padding(.top, compact ? NookTheme.Spacing.xs + NookTheme.Spacing.xxs : NookTheme.Spacing.md)
+                .padding(.trailing, NookTheme.Spacing.md)
+                .revealOnHover(hovering)
+        }
+        .onHover { hovering = $0 }
+        // Closed over the buttons, so their first click is not spent closing the card. Warm, as in the Agents list.
+        .hoverCard(suppressed: onActions, warm: true) { NookHoverCard(conversation: conversation) }
+        .animation(NookTheme.hover, value: hovering)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(conversation.title), \(statusText)")
+    }
+
+    private var content: some View {
+        // Read once: it searches the last answer for citations. Not at all for a one-line row.
+        let preview = compact ? "" : conversation.preview
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(conversation.title)
+                    .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
+                    .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
+                    .lineLimit(1)
+                if conversation.pinned {
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                // The conversation of a scheduled task: Nook answers here on its own.
+                if conversation.scheduledTaskID != nil {
+                    Image(icon: "clock").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityLabel(tr("nookTask.bar.title"))
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                slot.opacity(hovering ? 0 : 1)
+            }
+            // A settled Nook keeps to one line: its last answer is on the hover card. What asks something of you says
+            // what it did underneath.
+            if !compact {
+                Text(preview.isEmpty ? statusText : preview)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, compact ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .roundedBackground(background, radius: NookTheme.Radius.card)
+        .contentShape(Rectangle())
+    }
+
+    /// The status as the agents show it, otherwise how long ago.
+    @ViewBuilder
+    private var slot: some View {
+        switch conversation.status {
+        case .working:
+            AgentStatusBadge(state: .working, detail: conversation.turnStarted.map { AgentFormat.short(now.timeIntervalSince($0)) })
+        case .waiting:
+            AgentStatusBadge(state: .approval)
+        case .unread:
+            AgentStatusBadge(state: .ready)
+        case .idle:
+            Text(AgentFormat.short(now.timeIntervalSince(conversation.updated)))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize()
+        }
+    }
+
+    private var hoverActions: some View {
+        HStack(spacing: 2) {
+            if !conversation.archived {
+                rowButton(conversation.pinned ? "pin.slash" : "pin", tr(conversation.pinned ? "nooks.unpin" : "nooks.pin"), onPin)
+            }
+            if !conversation.busy {
+                rowButton(conversation.archived ? "tray.and.arrow.up" : "archivebox",
+                          tr(conversation.archived ? "nooks.unarchive" : "nooks.archive"), onArchive)
+            }
+        }
+    }
+
+    private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+            .pointerStyle(.link)
+    }
+
+    private var statusText: String {
+        switch conversation.status {
+        case .working: return tr("nooks.working")
+        case .waiting: return tr("nooks.waiting")
+        case .unread: return tr("nooks.doneAt", NookDates.ago(conversation.updated))
+        case .idle: return NookDates.ago(conversation.updated)
+        }
+    }
+}
+
+/// What a Nook shows on hover: its title, what it did (tasks completed, actions taken, sources searched),
+/// a summary/preview of what was answered, and when it started and was last active.
+private struct NookHoverCard: View {
+    let conversation: Conversation
+
+    private var latestTasks: [RunTaskStep] {
+        conversation.messages.last(where: { !$0.tasks.isEmpty })?.tasks ?? []
+    }
+
+    private var planSummary: String? {
+        guard !latestTasks.isEmpty else { return nil }
+        let done = latestTasks.count(where: { $0.status == .done })
+        return tr("nooks.card.tasks", done, latestTasks.count)
+    }
+
+    private var activeTask: (symbol: String, text: String)? {
+        guard !latestTasks.isEmpty else { return nil }
+        if let current = latestTasks.first(where: { $0.status == .active }) {
+            return ("hourglass", current.text)
+        }
+        if let lastDone = latestTasks.last(where: { $0.status == .done }) {
+            return ("checkmark", lastDone.text)
+        }
+        return nil
+    }
+
+    private var lastMailDraft: MailDraft? {
+        conversation.messages.flatMap(\.mails).last
+    }
+
+    private var lastChart: ChatChart? {
+        conversation.messages.flatMap(\.charts).last
+    }
+
+    private var consultedSources: String? {
+        var seen = Set<String>()
+        var list: [String] = []
+        for step in conversation.messages.flatMap(\.retrieval) {
+            let title = step.sourceTitle
+            if !title.isEmpty, seen.insert(title).inserted {
+                list.append(title)
+            }
+        }
+        guard !list.isEmpty else { return nil }
+        return list.prefix(3).joined(separator: ", ")
+    }
+
+    private var promptText: String? {
+        guard let prompt = conversation.messages.first(where: { $0.role == .user })?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+              !prompt.isEmpty, prompt != conversation.title else { return nil }
+        let clean = prompt.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return clean.count > 120 ? String(clean.prefix(119)) + "…" : clean
+    }
+
+    private var summaryText: String {
+        guard let last = conversation.messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
+        let raw = last.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = raw.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        let sample = lines.joined(separator: " ")
+        let cleaned = String(sample.unicodeScalars.filter { !CharacterSet(charactersIn: "#*_`>|").contains($0) })
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.count > 200 ? String(cleaned.prefix(199)) + "…" : cleaned
+    }
+
+    var body: some View {
+        HoverCard(title: conversation.title) {
+            if let tasks = planSummary {
+                HoverCardRow(symbol: "checklist", text: tasks)
+            }
+            if let task = activeTask {
+                HoverCardRow(symbol: task.symbol, text: task.text)
+            }
+            if let mail = lastMailDraft {
+                let to = mail.to.trimmingCharacters(in: .whitespaces)
+                HoverCardRow(symbol: "envelope", text: to.isEmpty ? tr("nooks.card.mailDrafted") : tr("nooks.card.mailTo", to))
+            }
+            if let chart = lastChart {
+                HoverCardRow(symbol: "chart.bar", text: chart.title.isEmpty ? tr("nooks.card.chartCreated") : chart.title)
+            }
+            if let sources = consultedSources {
+                HoverCardRow(symbol: "magnifyingglass", text: tr("nooks.card.sources", sources))
+            }
+            if let prompt = promptText {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("nooks.card.request"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(prompt)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper.opacity(0.85))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !summaryText.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("nooks.card.summary"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(summaryText)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HoverCardRow(symbol: "clock", text: tr("nooks.card.started", NookDates.ago(conversation.created)))
+            if conversation.updated > conversation.created {
+                HoverCardRow(symbol: "arrow.clockwise", text: tr("nooks.card.updated", NookDates.ago(conversation.updated)))
+            }
+            HoverCardRow(symbol: "bubble.left.and.bubble.right", text: messageCount)
+            if conversation.scope.isRestricted {
+                HoverCardRow(symbol: "line.3.horizontal.decrease", text: conversation.scope.label())
+            }
+        }
+    }
+
+    private var messageCount: String {
+        let count = conversation.messages.count
+        return count == 1 ? tr("nooks.card.message") : tr("nooks.card.messages", count)
+    }
+}
+
+/// The two tabs of the Nook list: the conversations, and the tasks Nook runs on its own.
+enum NookListPart: Hashable {
+    case conversations, scheduled
+}

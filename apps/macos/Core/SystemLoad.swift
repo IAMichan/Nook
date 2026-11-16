@@ -26,11 +26,39 @@ enum SystemLoad {
         }
     }
 
+    /// The one-minute load average, as `uptime` reports it (0 when it cannot be read).
+    static var loadAverage: Double {
+        var load = [Double](repeating: 0, count: 1)
+        return getloadavg(&load, 1) == 1 ? load[0] : 0
+    }
+
     /// The run queue is longer than the cores can serve (`getloadavg`, as `uptime` reports it).
     static var isBusy: Bool {
         var load = [Double](repeating: 0, count: 1)
         guard getloadavg(&load, 1) == 1 else { return false }
         return load[0] / Double(max(1, ProcessInfo.processInfo.activeProcessorCount)) > busyPerCore
+    }
+
+    /// macOS's memory pressure level: 1 normal, 2 warning, 4 critical (`kern.memorystatus_vm_pressure_level`); 1 when it
+    /// cannot be read.
+    static var memoryPressureLevel: Int32 {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return 1 }
+        return level
+    }
+
+    /// Pages read back from swap since the Mac started (`vm_stat`'s "Swapins"); nil when it cannot be read. Two readings
+    /// apart give the rate `EnergySignals.isMemoryTight` looks at.
+    static var swapins: UInt64? {
+        var info = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? info.swapins : nil
     }
 
     /// Running on the battery (false on a desktop Mac and on a MacBook on the charger).
@@ -71,9 +99,13 @@ enum SystemLoad {
 
     /// Every reading at once, for `EnergyPolicy`. `wasLowBattery` is the last reading's, so a low battery has to charge a
     /// little before it counts as fine again (`EnergySignals.isLowBattery`).
-    static func signals(wasLowBattery: Bool = false) -> EnergySignals {
+    /// `swapinsPerSecond` is the swap-in rate since the last reading (nil on the first).
+    static func signals(wasLowBattery: Bool = false, swapinsPerSecond: Double? = nil) -> EnergySignals {
         let power = battery()
-        return EnergySignals(lowPowerMode: isLowPowerMode, hot: isHot, busy: isBusy, onBattery: power.onBattery,
+        return EnergySignals(lowPowerMode: isLowPowerMode, hot: isHot, busy: isBusy,
+                             memoryTight: EnergySignals.isMemoryTight(pressureLevel: memoryPressureLevel,
+                                                                      swapinsPerSecond: swapinsPerSecond),
+                             onBattery: power.onBattery,
                              lowBattery: EnergySignals.isLowBattery(level: power.level, onBattery: power.onBattery,
                                                                     wasLow: wasLowBattery),
                              away: idleSeconds >= EnergySignals.awayAfter, displayAsleep: isDisplayAsleep,

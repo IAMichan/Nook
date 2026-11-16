@@ -31,13 +31,18 @@ struct ModelPrice: Codable, Equatable, Sendable {
     }
 }
 
-enum CostSource: String, Equatable, Sendable { case reported, custom }
+/// Where a cost came from: a price you set, the agent's own report, or Nook's estimate from its tokens at the model's
+/// list price (`ModelRates`) for an agent that reports tokens but no cost.
+enum CostSource: String, Equatable, Sendable { case reported, custom, estimated }
 
 enum CostResult: Equatable, Sendable {
     case priced(Double, source: CostSource)
     case unpriced
 
     var amount: Double? { if case .priced(let v, _) = self { return v }; return nil }
+
+    /// Nook worked it out from the tokens: the view says "estimated".
+    var isEstimate: Bool { if case .priced(_, .estimated) = self { return true }; return false }
 }
 
 /// A cell of the price editor across several environments.
@@ -85,24 +90,40 @@ struct PriceTable: Codable, Equatable, Sendable {
         return providerDefaults[provider.lowercased()]
     }
 
-    /// Token counts that are nil were not reported and count as nothing; they are never estimated. No tokens at all and
-    /// no reported cost is "unpriced", not zero.
-    func cost(for usage: RunUsage, provider: String, model: String) -> CostResult {
-        if let price = price(provider: provider, model: model) {
-            if let custom = Self.compute(price, usage) { return .priced(custom, source: .custom) }
-            // An unusable custom price falls through to what the agent reported.
+    /// The one cost of a turn or a session, for every agent: a price you set for the model, else the cost the agent
+    /// reported (Claude Code, OpenCode, Pi, ACP agents that send it), else an estimate from its tokens at the model's
+    /// list price (`ModelRates`, marked `.estimated`) for agents that report tokens but no cost (Codex, Gemini CLI,
+    /// ACP agents that send none). Token counts that are nil were not reported and count as nothing; no tokens at all
+    /// and no reported cost is "unpriced", not zero.
+    func cost(tokens: UsageTokens?, reported: Double?, provider: String, model: String,
+              manifest: [(prefix: String, price: ModelPrice)]? = nil) -> CostResult {
+        if let tokens, let price = price(provider: provider, model: model), let custom = UsageCost.of(tokens, at: price) {
+            return .priced(custom.total, source: .custom)
         }
-        if let reported = usage.reportedCostUSD, reported.isFinite { return .priced(reported, source: .reported) }
-        return .unpriced
+        // An unusable custom price falls through to what the agent reported.
+        if let reported, reported.isFinite { return .priced(reported, source: .reported) }
+        guard let tokens, tokens.total > 0,
+              let list = ModelRates.price(agent: provider, model: model, custom: PriceTable(), manifest: manifest),
+              let estimate = UsageCost.of(tokens, at: list) else { return .unpriced }
+        return .priced(estimate.total, source: .estimated)
     }
 
-    private static func compute(_ price: ModelPrice, _ usage: RunUsage) -> Double? {
-        guard price.isUsable, usage.totalTokens != nil, let input = price.inputPerMillion, let output = price.outputPerMillion else { return nil }
-        let read = price.cacheReadPerMillion ?? input
-        let write = price.cacheWritePerMillion ?? input
-        let sum = Double(usage.inputTokens ?? 0) * input + Double(usage.outputTokens ?? 0) * output
-            + Double(usage.cacheReadTokens ?? 0) * read + Double(usage.cacheWriteTokens ?? 0) * write
-        return sum / 1_000_000
+    func cost(for usage: RunUsage, provider: String, model: String,
+              manifest: [(prefix: String, price: ModelPrice)]? = nil) -> CostResult {
+        cost(tokens: Self.tokens(usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens),
+             reported: usage.reportedCostUSD, provider: provider, model: model, manifest: manifest)
+    }
+
+    func cost(for turn: TurnUsage, provider: String, model: String,
+              manifest: [(prefix: String, price: ModelPrice)]? = nil) -> CostResult {
+        cost(tokens: Self.tokens(turn.inputTokens, turn.outputTokens, turn.cacheReadTokens, turn.cacheWriteTokens),
+             reported: turn.reportedCostUSD, provider: provider, model: model, manifest: manifest)
+    }
+
+    /// The counts a usage reported; nil when it reported none.
+    private static func tokens(_ input: Int?, _ output: Int?, _ read: Int?, _ write: Int?) -> UsageTokens? {
+        guard input != nil || output != nil || read != nil || write != nil else { return nil }
+        return UsageTokens(input: input ?? 0, output: output ?? 0, cacheRead: read ?? 0, cacheWrite: write ?? 0)
     }
 
     /// Same model in several environments: cells where they disagree are "Mixed".
@@ -157,4 +178,32 @@ enum CostFormat {
 
     /// Nil for unpriced: the view shows its own "Unpriced" label.
     static func usd(_ result: CostResult) -> String? { result.amount.map { usd($0) } }
+
+    /// A cost on a line of its own: cents, or "< $0.01" for less (`AgentPathFormat.cost`).
+    static func short(_ usd: Double) -> String {
+        usd < 0.01 && usd > 0 ? "< $0.01" : String(format: "$%.2f", usd)
+    }
+
+    /// A turn's or session's cost as the timeline and the inspector show it ("$0.42", "$0.42 (estimated)"); nil when
+    /// unpriced.
+    static func label(_ result: CostResult) -> String? {
+        guard let amount = result.amount else { return nil }
+        let text = short(amount)
+        return result.isEstimate ? tr("ws.cost.estimated", text) : text
+    }
+}
+
+extension WorkspaceRun {
+    /// The model a session's tokens are priced at: the one the agent said it ran, else the one you chose.
+    var pricedModel: String { resolvedModel.flatMap { $0.isEmpty ? nil : $0 } ?? model }
+
+    /// The session's cost so far, for every agent (`PriceTable.cost`).
+    func cost(of usage: RunUsage, prices: PriceTable) -> CostResult {
+        prices.cost(for: usage, provider: provider.rawValue, model: pricedModel)
+    }
+
+    /// One turn's cost, for every agent (`PriceTable.cost`).
+    func cost(of turn: TurnUsage, prices: PriceTable) -> CostResult {
+        prices.cost(for: turn, provider: provider.rawValue, model: pricedModel)
+    }
 }

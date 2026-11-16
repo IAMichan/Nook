@@ -1,0 +1,75 @@
+name: PR limits
+
+# Two rules for pull requests from authors who are not vouched (.github/scripts/pr-limits.cjs, CONTRIBUTING.md):
+#  - a new pull request is closed when its author already has 3 or more older ones open;
+#  - a pull request that conflicts with its base is asked once to update (label `needs rebase`), and closed when it
+#    still conflicts after 7 days without activity.
+# Collaborators, bots, VOUCHED.td and `keep open` are exempt. Nothing is labeled, commented on or closed until the
+# repository variable NOOK_PR_LIMITS_ENFORCE is `true`; until then every run only logs what it would do.
+#
+# pull_request_target has a write token, so the script is loaded from the default branch and no pull request code is
+# checked out or run.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs only the trusted script from main, never PR code
+    types: [opened, reopened]
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only log what the sweep would do
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  open-limit:
+    name: Open pull request limit
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      # Cone mode also checks out the files beside .github/scripts, which is where VOUCHED.td lives.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DRY_RUN: ${{ vars.NOOK_PR_LIMITS_ENFORCE != 'true' }}
+        with:
+          script: |
+            const limits = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pr-limits.cjs`);
+            await limits.enforceOpenLimit({ github, context, core, dryRun: process.env.DRY_RUN === "true" });
+
+  sweep:
+    name: Conflict window
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: pr-limits-sweep
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DRY_RUN: ${{ vars.NOOK_PR_LIMITS_ENFORCE != 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        with:
+          script: |
+            const limits = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pr-limits.cjs`);
+            await limits.sweep({ github, context, core, dryRun: process.env.DRY_RUN === "true" });

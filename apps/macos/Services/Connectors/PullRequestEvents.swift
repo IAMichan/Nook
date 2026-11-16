@@ -1,11 +1,11 @@
 import Foundation
 
-/// GitHub's event feed of one pull request (as follows it): a subscription to the pull request's reviews, head,
+/// GitHub's event feed of one pull request: a subscription to the pull request's reviews, head,
 /// state and merge conflicts, and a server-sent event stream that says *that* something changed, never what. A watch
 /// reads the pull request again on each event and when a stream (re)connects, so it hears of a change in seconds; the
 /// two-minute sweep stays as the fallback for when GitHub refuses the feed or the stream drops.
 ///
-/// Only github.com: GitHub Enterprise has no event subscriptions. Foundation only; the
+/// Only github.com: GitHub Enterprise has no event subscriptions (it is left to polling). Foundation only; the
 /// HTTP comes in through `PullRequestEventTransport`, so the tests drive it with canned answers.
 enum GitHubPullRequestEvents {
     /// Events only say that something changed; the watch reads the pull request for what.
@@ -175,7 +175,7 @@ struct SSEParser: Sendable {
 }
 
 /// Feeds GitHub will not give for a while: per account host after a refusal (403) or the subscription limit (422), per
-/// pull request when no account can see it (404). The durations are.
+/// pull request when no account can see it (404).
 struct PullRequestEventPauses: Sendable {
     private var until: [String: Date] = [:]
 

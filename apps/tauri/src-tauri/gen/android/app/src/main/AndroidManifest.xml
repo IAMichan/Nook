@@ -3,6 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- De companion: een Mac of pc als naam.local vinden (mDNS) terwijl Nook voor staat. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Dictation in the companion's composers: Android's speech recognizer, on the device where it can. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Push notifications from the paired computers (Firebase Cloud Messaging, sealed). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -22,11 +31,19 @@
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- nook:// links: a pairing code scanned with the camera, or a prompt link that opens New session. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nook" />
             </intent-filter>
             <!-- Delen met Nook: tekst uit een andere app wordt een nieuwe vraag. -->
             <intent-filter android:label="@string/share_label">
@@ -35,6 +52,24 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- Home screen widgets (NookWidgets.kt): agents that work or wait on you, and plan limits. -->
+        <receiver android:name=".AgentsWidget" android:exported="false" android:label="@string/widget_agents_title">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_agents" />
+        </receiver>
+        <receiver android:name=".LimitsWidget" android:exported="false" android:label="@string/widget_limits_title">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_limits" />
+        </receiver>
+
+        <service
+            android:name=".NookMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <provider
           android:name="androidx.core.content.FileProvider"

@@ -38,11 +38,12 @@ enum GitHubPullRequestDetail {
             throw NookError("GitHub returned an unexpected response.")
         }
         detail.activityLoaded = false
+        detail = await applyBranchRules(detail, get: get)
         let sha = detail.headSHA
         if !sha.isEmpty {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
             async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
-            detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+            detail.checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(((await runs)?["check_runs"] as? [[String: Any]]) ?? []),
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
         return detail
@@ -82,11 +83,13 @@ enum GitHubPullRequestDetail {
         async let threads = reviewThreads(repo: repo, number: number, token: token)
         async let issues = linkedIssues(repo: repo, number: number, token: token)
         async let issue = (try? await get("/issues/\(number)")) as? [String: Any]
+        async let viewed = viewedFiles(repo: repo, number: number, token: token)
         let commits = PullRequestDetailParser.commits(await commitList)
         let events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
                                                     timeline: await timeline, commits: commits)
         return PullRequestActivity(events: PullRequestDetailParser.applying(await threads, to: events), commits: commits,
-                                   files: PullRequestDetailParser.files(await fileList), issues: await issues)
+                                   files: PullRequestDetailParser.files(await fileList), issues: await issues,
+                                   viewedOnForge: await viewed)
             .withReactions(PullRequestDetailParser.reactions((await issue)?["reactions"]))
     }
 
@@ -106,10 +109,66 @@ enum GitHubPullRequestDetail {
         return PullRequestDetailParser.linkedIssues(answer)
     }
 
+    /// The "Viewed" checkbox of every file for this account, from GraphQL, page by page. Best effort: nil when GitHub
+    /// could not be asked, and the marks on this Mac stay as they are.
+    static func viewedFiles(repo: String, number: Int, token: String) async -> [String: PullRequestFileViewedState]? {
+        guard let url = URL(string: "https://api.github.com/graphql") else { return nil }
+        var states: [String: PullRequestFileViewedState] = [:]
+        var after: String?
+        for _ in 0..<PullRequestViewedGraphQL.pageLimit {
+            guard let body = PullRequestViewedGraphQL.filesBody(repo: repo, number: number, after: after),
+                  let answer = try? await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body),
+                  let page = PullRequestViewedGraphQL.parse(answer) else { return states.isEmpty ? nil : states }
+            states.merge(page.states) { _, new in new }
+            guard let next = page.next else { break }
+            after = next
+        }
+        return states
+    }
+
+    /// Ticks or clears a file's "Viewed" checkbox on GitHub, after your click. Throws GitHub's refusal in words.
+    static func setFileViewed(_ viewed: Bool, path: String, nodeID: String, token: String) async throws {
+        guard let body = PullRequestViewedGraphQL.setViewedBody(nodeID: nodeID, path: path, viewed: viewed),
+              let url = URL(string: "https://api.github.com/graphql") else { throw NookError("Nothing to send.") }
+        let answer = try await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body)
+        if let object = answer as? [String: Any], let message = PullRequestAction.graphQLError(object) { throw NookError(message) }
+    }
+
     /// One page of a list, handed from the task that read it. Parsed JSON is only read after the group is done.
     private struct JSONPage: @unchecked Sendable {
         let number: Int
         let items: [[String: Any]]
+    }
+
+    /// The rules GitHub applies to the base branch of an open pull request: a ruleset can allow fewer merge methods than
+    /// the repository's own settings (GitHub then refuses the others with 405, "Merge commits are not allowed"), and it
+    /// decides whether this admin may really merge past them. Rules that cannot be read leave both as they were.
+    static func applyBranchRules(_ detail: PullRequestDetail, get: @escaping @Sendable (String) async throws -> Any) async -> PullRequestDetail {
+        guard detail.state == .open,
+              let branch = detail.baseBranch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), !branch.isEmpty else {
+            return detail
+        }
+        var detail = detail
+        let rules = ((try? await get("/rules/branches/\(branch)")) as? [[String: Any]]) ?? []
+        detail.methods = PullRequestDetailParser.methods(detail.methods, rules: rules)
+        if detail.canBypass {
+            detail.canBypass = await adminCanBypass(branch: branch, rules: rules, get: get)
+        }
+        return detail
+    }
+
+    /// Whether this admin may really merge past the rules of the (percent-encoded) `branch`: the rulesets behind its
+    /// `rules`, and its branch protection (404 when there is none). A ruleset that cannot be read leaves the choice to GitHub.
+    static func adminCanBypass(branch: String, rules: [[String: Any]], get: @escaping @Sendable (String) async throws -> Any) async -> Bool {
+        async let protection = (try? await get("/branches/\(branch)/protection")) as? [String: Any]
+        let ids = Set(rules.compactMap { $0["ruleset_id"] as? Int })
+        let rulesets = await withTaskGroup(of: [String: Any]?.self) { group in
+            for id in ids { group.addTask { (try? await get("/rulesets/\(id)")) as? [String: Any] } }
+            var found: [[String: Any]] = []
+            for await ruleset in group { if let ruleset { found.append(ruleset) } }
+            return found
+        }
+        return PullRequestDetailParser.adminCanBypass(rulesets: rulesets, protection: await protection)
     }
 
     /// A GET on the repository's REST address, asked again when it failed on something passing.
@@ -146,11 +205,12 @@ enum GitHubPullRequestDetail {
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: repository) else {
             throw NookError("GitHub returned an unexpected response.")
         }
+        detail = await applyBranchRules(detail, get: get)
         let sha = detail.headSHA
         if !sha.isEmpty, detail.state == .open {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
             async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
-            detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+            detail.checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(((await runs)?["check_runs"] as? [[String: Any]]) ?? []),
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
         return detail

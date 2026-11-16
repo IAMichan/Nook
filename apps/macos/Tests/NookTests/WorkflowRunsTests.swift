@@ -35,6 +35,34 @@ final class WorkflowRunsTests: XCTestCase {
         XCTAssertTrue(WorkflowRunParser.runs(nil).isEmpty)
     }
 
+    func testAFirstReadAsksTheSameRunsInPagesAtOnce() {
+        let count = WorkflowRunParser.firstReadPages
+        XCTAssertEqual(WorkflowRunParser.pageSize % count, 0, "the pages hold exactly the runs of one read")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil, page: 1), "/actions/runs?per_page=10&page=1&exclude_pull_requests=true")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7, page: 4), "/actions/workflows/7/runs?per_page=10&page=4&exclude_pull_requests=true")
+        let pages = [[1, 2, 3], [3, 4], [5]].map { ids in
+            WorkflowRunParser.runs(["workflow_runs": ids.map { runJSON($0, status: "completed", conclusion: "success") }])
+        }
+        XCTAssertEqual(WorkflowRunParser.merged(pages).map(\.id), [1, 2, 3, 4, 5],
+                       "a run pushed onto the next page while the pages were read shows once, in its place")
+    }
+
+    func testTheListsKeptOnDiskComeBackAsTheyWere() throws {
+        let runs = WorkflowRunParser.runs(["workflow_runs": [
+            runJSON(1, status: "completed", conclusion: "failure", extra: ["path": ".github/workflows/ci.yml"]),
+            runJSON(2, status: "in_progress"),
+        ]])
+        let lists = ["o/r|": ActionsSnapshot(read: Date(timeIntervalSince1970: 1_800_000_000),
+                                            workflows: [Workflow(id: 7, name: "CI", path: ".github/workflows/ci.yml")], runs: runs)]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("actions-runs-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(ActionsSnapshot.load(from: url).isEmpty, "no file yet: nothing kept")
+        ActionsSnapshot.save(lists, to: url)
+        XCTAssertEqual(ActionsSnapshot.load(from: url), lists)
+        try Data("not json".utf8).write(to: url)
+        XCTAssertTrue(ActionsSnapshot.load(from: url).isEmpty, "an unreadable file is no list")
+    }
+
     func testTitleFallsBackToTheCommitThenTheWorkflow() {
         let commit = runJSON(1, status: "completed", conclusion: "success",
                          extra: ["display_title": "", "head_commit": ["message": "Promote to production\n\nDetails"]])
@@ -74,8 +102,8 @@ final class WorkflowRunsTests: XCTestCase {
         XCTAssertEqual(runs.filter(WorkflowRunFilter.active.matches).map(\.id), [3])
         XCTAssertEqual(runs.filter(WorkflowRunFilter.failed.matches).map(\.id), [2])
         XCTAssertTrue(runs[2].waitsForApproval)
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil), "/actions/runs?per_page=40")
-        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7), "/actions/workflows/7/runs?per_page=40")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: nil), "/actions/runs?per_page=40&exclude_pull_requests=true")
+        XCTAssertEqual(WorkflowRunParser.runsPath(workflowID: 7), "/actions/workflows/7/runs?per_page=40&exclude_pull_requests=true")
     }
 
     func testWorkflowsSkipDisabledOnesAndSortByName() {
@@ -203,6 +231,6 @@ final class WorkflowRunsTests: XCTestCase {
                        URL(string: "https://github.com/o/r/blob/abc/.github/workflows/ci.yml"))
         XCTAssertNil(WorkflowRunParser.workflowFile(repo: "o/r", sha: "abc", path: "dynamic/pages/pages-build-deployment"))
         XCTAssertEqual(WorkflowRunParser.branchRunsPath(workflowID: 7, branch: "fix/a&b"),
-                       "/actions/workflows/7/runs?branch=fix/a%26b&per_page=30")
+                       "/actions/workflows/7/runs?branch=fix/a%26b&per_page=30&exclude_pull_requests=true")
     }
 }

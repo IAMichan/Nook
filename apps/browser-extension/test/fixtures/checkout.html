@@ -1,0 +1,16 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><title>Testwinkel · Afrekenen</title>
+<style>body{font:15px system-ui;margin:0;background:#f6f5fb;color:#222}main{max-width:720px;margin:40px auto;padding:24px;background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+label{display:block;margin:14px 0 4px}input,select{font:inherit;padding:9px;border:1px solid #ccc;border-radius:8px;width:300px}button{font:inherit;padding:10px 18px;border-radius:9px;border:0;background:#2b6cff;color:#fff;margin-top:16px}
+#banner{position:fixed;left:0;right:0;bottom:0;background:#222;color:#fff;padding:22px;display:flex;gap:16px;align-items:center}#banner button{margin:0;background:#4c4}
+.spacer{height:1400px;background:linear-gradient(#fff,#eef)}</style></head><body><main>
+<h1>Afrekenen</h1><p>Vul je gegevens in om de bestelling af te ronden.</p>
+<label for="name">Naam</label><input id="name" placeholder="Je volledige naam">
+<label for="city">Plaats</label><input id="city" placeholder="Woonplaats">
+<label for="ship">Verzending</label><select id="ship"><option>Standaard</option><option>Express</option><option>Ophalen</option></select>
+<div><button id="pay" onclick="document.getElementById('out').textContent='Betaald!'">Betalen</button> <span id="out"></span></div>
+<my-widget></my-widget>
+<div class="spacer"></div><button id="bottom">Helemaal onderaan</button>
+</main>
+<div id="banner"><span>Wij gebruiken cookies.</span><button id="ok" onclick="this.parentNode.remove()">Accepteren</button></div>
+<script>customElements.define('my-widget',class extends HTMLElement{constructor(){super();this.attachShadow({mode:'open'}).innerHTML='<button style="font:inherit;padding:10px 18px;margin-top:16px;border-radius:9px;border:0;background:#7a4" onclick="this.textContent=\'Nieuwsbrief: aan\'">Nieuwsbrief</button>'}})</script>
+</body></html>

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// The companion's design is Nook's own: `NookTheme` (apps/macos/NotchUI/Theme/NookTheme.swift) is compiled into this app
+// The companion's design is Nook's own: `NookTheme` (apps/macos/UI/Theme/NookTheme.swift) is compiled into this app
 // and its Live Activity, and is called `Theme` here. Its radii, spacing and motion are the Mac's; its type scale is the
 // Mac's a step larger, on Dynamic Type and in DM Sans (`NookTheme.textFont`). What is only the phone's is here: its
 // palette (iPhone app, `NookPalette.companionDark`), how a session's state reads in words and color, its

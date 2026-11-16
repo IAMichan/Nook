@@ -123,13 +123,21 @@ struct NotificationRetries: Codable, Equatable, Sendable {
 }
 
 /// The last the phone saw of a Mac, kept for the next launch (`companion-cache-<id>.json` on the phone): the session
-/// list with when the Mac answered it, what a new session can start with, and the conversations of the last sessions
-/// that were open, so the app shows them at once, marked as not live, and an open session asks only for what came after
-/// (`CompanionFeature.resume`).
+/// list with when the Mac answered it, what a new session can start with, the conversations of the last sessions that
+/// were open, Nook's chats and the Chats tab's chats with the messages of the last ones that were open. So the app shows
+/// them at once, marked as not live, also while the Mac cannot be reached at all, and an open session asks only for what
+/// came after (`CompanionFeature.resume`).
 struct CompanionCache: Codable, Equatable, Sendable {
     struct Timeline: Codable, Equatable, Sendable {
         var session: String
         var entries: [TimelineEntry]
+        var saved: Double
+    }
+
+    /// The messages of one chat (a Nook chat or one of the Chats tab), as the phone saw them last.
+    struct Lines<Line: Codable & Equatable & Sendable>: Codable, Equatable, Sendable {
+        var chat: String
+        var lines: [Line]
         var saved: Double
     }
 
@@ -139,12 +147,37 @@ struct CompanionCache: Codable, Equatable, Sendable {
     var launch: LaunchOptions?
     /// The most recently saved first.
     private(set) var timelines: [Timeline] = []
+    /// Nook's own chats (the Nook tab), as settled: nothing kept reads as still being written.
+    private(set) var conversations: [ChatDigest] = []
+    /// The messages of the last Nook chats that were open, the most recently saved first.
+    private(set) var chatLines: [Lines<ChatLine>] = []
+    /// The Chats tab's chats, without who was typing.
+    private(set) var inbox: [InboxChatDigest] = []
+    /// The messages of the last chats of the Chats tab that were open, the most recently saved first.
+    private(set) var inboxLines: [Lines<InboxLine>] = []
 
     static let maxTimelines = 5
     /// The newest entries of a conversation kept: enough to read on, and to resume from.
     static let maxEntries = 200
+    /// How many chats keep their messages (each kind), and how many of the newest messages each.
+    static let maxChats = 8
+    static let maxLines = 200
 
     init() {}
+
+    /// A cache written before chats were kept (or with a field this build does not know) still opens: what is
+    /// missing starts empty, so an update never throws away the sessions the phone kept.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        saved = try c.decodeIfPresent(Double.self, forKey: .saved) ?? 0
+        sessions = try c.decodeIfPresent([SessionDigest].self, forKey: .sessions) ?? []
+        launch = try? c.decodeIfPresent(LaunchOptions.self, forKey: .launch)
+        timelines = try c.decodeIfPresent([Timeline].self, forKey: .timelines) ?? []
+        conversations = (try? c.decodeIfPresent([ChatDigest].self, forKey: .conversations)) ?? []
+        chatLines = (try? c.decodeIfPresent([Lines<ChatLine>].self, forKey: .chatLines)) ?? []
+        inbox = (try? c.decodeIfPresent([InboxChatDigest].self, forKey: .inbox)) ?? []
+        inboxLines = (try? c.decodeIfPresent([Lines<InboxLine>].self, forKey: .inboxLines)) ?? []
+    }
 
     var savedAt: Date? { saved > 0 ? Date(timeIntervalSince1970: saved) : nil }
 
@@ -175,6 +208,77 @@ struct CompanionCache: Codable, Equatable, Sendable {
     var allTimelines: [String: [TimelineEntry]] {
         Dictionary(timelines.map { ($0.session, $0.entries) }, uniquingKeysWith: { first, _ in first })
     }
+
+    // MARK: Chats
+
+    /// Keeps Nook's chats. What was being written when the phone saw it last is kept as settled: read later, while the
+    /// Mac cannot be reached, a spinner would claim Nook is still at it.
+    /// Returns false when nothing changed.
+    @discardableResult
+    mutating func record(conversations list: [ChatDigest]) -> Bool {
+        let settled = list.map { chat -> ChatDigest in
+            var chat = chat
+            chat.busy = false
+            return chat
+        }
+        guard settled != conversations else { return false }
+        conversations = settled
+        return true
+    }
+
+    /// Keeps the newest messages of a Nook chat, as the most recent; an answer that was still streaming is kept as it
+    /// was, settled. The least recent chat goes past the limit.
+    @discardableResult
+    mutating func record(chatLines lines: [ChatLine], chat: String, at: Date) -> Bool {
+        let settled = lines.map { line -> ChatLine in
+            var line = line
+            line.streaming = false
+            line.status = ""
+            return line
+        }
+        return Self.keep(settled, chat: chat, at: at, in: &chatLines)
+    }
+
+    /// Keeps the Chats tab's chats, without who was typing (that is never true later).
+    @discardableResult
+    mutating func record(inbox list: [InboxChatDigest]) -> Bool {
+        let settled = list.map { chat -> InboxChatDigest in
+            var chat = chat
+            chat.typing = nil
+            return chat
+        }
+        guard settled != inbox else { return false }
+        inbox = settled
+        return true
+    }
+
+    /// Keeps the newest messages of a chat of the Chats tab, as the most recent.
+    @discardableResult
+    mutating func record(inboxLines lines: [InboxLine], chat: String, at: Date) -> Bool {
+        Self.keep(lines, chat: chat, at: at, in: &inboxLines)
+    }
+
+    /// Every kept Nook chat's messages by chat.
+    var allChatLines: [String: [ChatLine]] {
+        Dictionary(chatLines.map { ($0.chat, $0.lines) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Every kept chat's messages of the Chats tab by chat.
+    var allInboxLines: [String: [InboxLine]] {
+        Dictionary(inboxLines.map { ($0.chat, $0.lines) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private static func keep<Line>(_ lines: [Line], chat: String, at: Date, in kept: inout [Lines<Line>]) -> Bool {
+        if let old = kept.first(where: { $0.chat == chat }) {
+            if old.saved > at.timeIntervalSince1970 { return false }
+            if old.lines == Array(lines.suffix(maxLines)) { return false }
+        }
+        kept.removeAll { $0.chat == chat }
+        guard !lines.isEmpty else { return true }
+        kept.insert(Lines(chat: chat, lines: Array(lines.suffix(maxLines)), saved: at.timeIntervalSince1970), at: 0)
+        if kept.count > maxChats { kept.removeLast(kept.count - maxChats) }
+        return true
+    }
 }
 
 extension TimelineDelta {
@@ -196,5 +300,36 @@ enum ForegroundPolicy {
 
     static func skipsPush(live: Bool, foreground: Bool?, lastHeard: Date, now: Date) -> Bool {
         live && foreground == true && now.timeIntervalSince(lastHeard) <= heardWithin
+    }
+}
+
+/// Approvals and questions answered on the phone, hidden from its lists at the tap, before the Mac confirms: the next
+/// one, or the session back at work, shows at once. For `window` seconds a list from the Mac that still holds one (an
+/// update made just before the Mac took the answer) does not bring it back; the phone unsettles it when the Mac could
+/// not take the answer.
+struct SettledItems: Sendable {
+    static let window: TimeInterval = 15
+    private(set) var answered: [String: Date] = [:]
+
+    mutating func settle(_ item: String, at now: Date) { answered[item] = now }
+
+    /// False when the item was not settled (or the window had already passed).
+    @discardableResult
+    mutating func unsettle(_ item: String) -> Bool { answered.removeValue(forKey: item) != nil }
+
+    /// `list` without the items answered in the last `window` seconds. A session left with nothing to ask reads as
+    /// working again, as on the Mac once the answer is in.
+    mutating func hiding(_ list: [SessionDigest], now: Date) -> [SessionDigest] {
+        guard !answered.isEmpty else { return list }
+        answered = answered.filter { now.timeIntervalSince($0.value) < Self.window }
+        guard !answered.isEmpty else { return list }
+        let answered = answered
+        return list.map { session in
+            guard session.items.contains(where: { answered[$0.id] != nil }) else { return session }
+            var copy = session
+            copy.items.removeAll { answered[$0.id] != nil }
+            if copy.items.isEmpty, ["approval", "input"].contains(copy.attention) { copy.attention = "working" }
+            return copy
+        }
     }
 }

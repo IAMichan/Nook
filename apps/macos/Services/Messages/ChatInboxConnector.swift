@@ -106,7 +106,11 @@ final class ChatInboxConnector: ContextSource {
                         let threads = shown.filter { appID == nil || $0.app == appID }
                         return threads.isEmpty ? "No chats collected yet." : "Recent chats (newest first):\n" + ChatInbox.overview(threads, limit: 20)
                     }
-                    guard let thread = inbox.thread(named: chat, app: appID, among: capture.isShown) else {
+                    let thread: InboxThread
+                    switch inbox.pick(chat, app: appID, among: capture.isShown) {
+                    case .one(let found): thread = found
+                    case .several(let threads): return ChatInbox.which(chat, among: threads)
+                    case .none:
                         let names = shown.prefix(12).map(\.name).joined(separator: ", ")
                         return "No collected chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names)."
                     }
@@ -139,7 +143,12 @@ final class ChatInboxConnector: ContextSource {
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let chat = AppData.string(input["to"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     let text = AppData.string(input["message"])
-                    guard let thread = capture.loadedInbox.thread(named: chat, app: appID, among: capture.isShown) else {
+                    // A name that fits two chats is never sent to a guess: Nook asks which one.
+                    let thread: InboxThread
+                    switch capture.loadedInbox.pick(chat, app: appID, among: capture.isShown) {
+                    case .one(let found): thread = found
+                    case .several(let threads): throw NookError(ChatInbox.which(chat, among: threads))
+                    case .none:
                         let names = capture.loadedInbox.sorted.filter(capture.isShown).prefix(12).map(\.name).joined(separator: ", ")
                         throw NookError("No chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names).")
                     }

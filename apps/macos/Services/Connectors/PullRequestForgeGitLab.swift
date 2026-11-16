@@ -7,6 +7,8 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
     static let forgeFeatures: PullRequestForgeFeatures = {
         var features = PullRequestForgeFeatures()
         features.reactions = false
+        // GitLab keeps a file's "Viewed" tick in the browser (local storage), with no API to read or write it.
+        features.viewedFiles = false
         return features
     }()
 
@@ -184,7 +186,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         return Self.mergedSHA(answer as? [String: Any] ?? [:])
     }
 
-    /// What GitLab's own Revert button does (as): the merged commit reverted onto a new branch off the target, and a
+    /// What GitLab's own Revert button does: the merged commit reverted onto a new branch off the target, and a
     /// merge request of that branch. Returns its link. The branch goes again when a later step fails, or a retry would
     /// fail on making it.
     private func revert(_ number: Int) async throws -> String? {
@@ -534,8 +536,8 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
             let status = (item["new_file"] as? Bool) == true ? "added" : removed ? "removed" : renamed ? "renamed" : "modified"
             let patch = ((item["diff"] as? String) ?? "").trimmingCharacters(in: .newlines)
             let lines = patch.components(separatedBy: "\n")
-            return PullRequestFile(path: path, status: status, additions: lines.filter { $0.hasPrefix("+") }.count,
-                                   deletions: lines.filter { $0.hasPrefix("-") }.count, patch: patch.isEmpty ? nil : patch,
+            return PullRequestFile(path: path, status: status, additions: lines.count(where: { $0.hasPrefix("+") }),
+                                   deletions: lines.count(where: { $0.hasPrefix("-") }), patch: patch.isEmpty ? nil : patch,
                                    previousPath: renamed ? item["old_path"] as? String : nil, revision: removed ? "" : nil)
         }
     }

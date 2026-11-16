@@ -32,6 +32,35 @@ struct PushEvent: Equatable, Sendable {
     var canAllow = false
 }
 
+/// Quiet hours as hours of the day (0...23), the same for the Mac's own notices and the pushes to the phone: from `from`
+/// until `to`, across midnight when `from` is later. What waits on you (an approval, a question) still comes through when
+/// `allowsUrgent`.
+struct QuietHours: Codable, Equatable, Sendable {
+    var from: Int
+    var to: Int
+    var allowsUrgent = true
+
+    init(from: Int, to: Int, allowsUrgent: Bool = true) {
+        self.from = min(max(from, 0), 23)
+        self.to = min(max(to, 0), 23)
+        self.allowsUrgent = allowsUrgent
+    }
+
+    /// The evening default when you switch them on: ten at night to seven in the morning.
+    static let evening = QuietHours(from: 22, to: 7)
+
+    func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+        guard from != to else { return false }
+        let hour = calendar.component(.hour, from: date)
+        return from < to ? (hour >= from && hour < to) : (hour >= from || hour < to)
+    }
+
+    /// Whether a notice keeps quiet at `date`: inside the hours, unless it is urgent and urgent may come through.
+    func silences(urgent: Bool, at date: Date, calendar: Calendar = .current) -> Bool {
+        contains(date, calendar: calendar) && !(urgent && allowsUrgent)
+    }
+}
+
 struct PushSettings: Codable, Equatable, Sendable {
     var enabled = false
     var kinds: Set<PushEvent.Kind> = [.approval, .question, .failed, .finished]
@@ -71,10 +100,22 @@ struct PushSettings: Codable, Equatable, Sendable {
         try c.encode(quietAllowsUrgent, forKey: .quietAllowsUrgent)
     }
 
+    /// The quiet hours as the shared type; nil when there are none. On the Mac they live in `NoticeRules.quietHours`
+    /// (Settings › Notifications), which these fields only fill the first time (`NoticeRules.adoptingQuietHours`).
+    var quietHours: QuietHours? {
+        get {
+            guard let from = quietFrom, let to = quietTo else { return nil }
+            return QuietHours(from: from, to: to, allowsUrgent: quietAllowsUrgent)
+        }
+        set {
+            quietFrom = newValue?.from
+            quietTo = newValue?.to
+            if let newValue { quietAllowsUrgent = newValue.allowsUrgent }
+        }
+    }
+
     func inQuietHours(_ date: Date, calendar: Calendar = .current) -> Bool {
-        guard let from = quietFrom, let to = quietTo, from != to else { return false }
-        let hour = calendar.component(.hour, from: date)
-        return from < to ? (hour >= from && hour < to) : (hour >= from || hour < to)
+        quietHours?.contains(date, calendar: calendar) ?? false
     }
 }
 
@@ -83,12 +124,14 @@ enum PushSkip: String, Equatable, Sendable { case disabled, kindOff, atTheMac, q
 enum PushPolicy {
     static func isUrgent(_ kind: PushEvent.Kind) -> Bool { kind == .approval || kind == .question }
 
-    /// nil = send.
-    static func skipReason(_ event: PushEvent, settings: PushSettings, away: Bool, now: Date, calendar: Calendar = .current) -> PushSkip? {
+    /// nil = send. `quietHours`: the hours the Mac keeps (shared with its own notices); the settings' own when left out.
+    static func skipReason(_ event: PushEvent, settings: PushSettings, away: Bool, now: Date, calendar: Calendar = .current,
+                           quietHours: QuietHours?? = .none) -> PushSkip? {
         guard settings.enabled else { return .disabled }
         guard settings.kinds.contains(event.kind) else { return .kindOff }
         if settings.onlyWhenAway, !away { return .atTheMac }
-        if settings.inQuietHours(now, calendar: calendar), !(settings.quietAllowsUrgent && isUrgent(event.kind)) { return .quietHours }
+        let hours = quietHours ?? settings.quietHours
+        if hours?.silences(urgent: isUrgent(event.kind), at: now, calendar: calendar) == true { return .quietHours }
         return nil
     }
 

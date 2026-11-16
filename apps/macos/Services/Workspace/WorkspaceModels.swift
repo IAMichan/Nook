@@ -41,32 +41,41 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
-                                        canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
+                                        rollback: .resumeAt, canForkFromTurn: true, liveSettings: true,
                                         reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
-                                        ultracode: true)
+                                        ultracode: true, stopsOneSubagent: true, effort: .launchFlag("--effort"),
+                                        processChannel: .claudeStreamJSON, idleConnection: .parkedProcess, probesLaunchFlags: true,
+                                        promptSuggestions: .agentStream, reportsContextBreakdown: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
-                                        speedTiers: true, echoesSteers: true)
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, rollback: .threadRollback,
+                                        speedTiers: true, echoesSteers: true,
+                                        // `effort` on app-server's `turn/start`; `codex exec` takes it as a config override.
+                                        effort: .launchConfig("model_reasoning_effort"), idleConnection: .appServer,
+                                        promptSuggestions: .threadSample)
         case .gemini:
-            // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
+            // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there). Its effort
+            // is the session's `thought_level` option over ACP; the headless fallback has no flag for it.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         case .antigravity:
             // ACP, with its conversations on disk in ~/.gemini/antigravity. It restarts its agent session to switch models,
-            // which ends a running prompt, so its settings wait for the next message.
+            // which ends a running prompt, so its settings wait for the next message. Its connection is not opened ahead
+            // of time: signing in could open Google's page just because you looked at the session.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass])
+                                        policies: [.ask, .acceptEdits, .bypass], effort: .sessionOption, idleConnection: .none)
         case .cursor:
             // ACP, with its conversations on disk in ~/.cursor (its ACP server has no session/list).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         case .pi:
             // Pi's RPC mode (`PiRPC`): streamed text and thoughts, `abort`, a prompt sent mid-turn steers it, usage with cost
             // per message. Approvals come from the extension Nook loads into Pi (`PiExtension`), through Pi's blocking
@@ -74,8 +83,19 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // sessions are files it resumes with `--session`.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true)
-        case .opencode, .grok, .acp:
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true,
+                                        effort: .launchFlag("--thinking"), processChannel: .piRPC, idleConnection: .none)
+        case .opencode:
+            // OpenCode 2.0.18 and newer over its own server (`opencode serve`, `OpenCodeServe`): a denial carries your
+            // reason in its answer, questions come as forms, and the model's variants are its effort levels. An older
+            // OpenCode, a session on another machine, or a server that does not start runs over ACP like Grok below
+            // (there the reason goes as a message of its own: `AcpTurnDriver`). No "auto": OpenCode has no reviewer.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true,
+                                        denyReason: .inResponse, effort: .sessionOption, idleConnection: .acpSession,
+                                        serverTransport: .openCodeServe)
+        case .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
             // agent/plan/ask, OpenCode's build/plan, and Grok only has --always-approve; Nook does not guess what is risky.
@@ -83,7 +103,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // earlier sessions come from the agent itself (`session/list`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         }
     }
 
@@ -114,13 +135,17 @@ struct ProviderCapabilities: Equatable, Sendable {
     var steering = false
     /// The agent can fork its own conversation (Claude Code's `--fork-session`); otherwise a fork starts from a summary.
     var nativeFork = false
-    /// Going back to before a message also rolls back the agent's own conversation (Codex `thread/rollback` over
-    /// app-server, Claude Code `--resume-session-at`); otherwise only the files go back and the agent keeps remembering.
-    var canRollbackConversation = false
+    /// Going back to before a message also rolls back the agent's own conversation, and how (`ConversationRollbackRoute`);
+    /// otherwise only the files go back and the agent keeps remembering.
+    var rollback: ConversationRollbackRoute = .none
+    var canRollbackConversation: Bool { rollback != .none }
     /// The agent can fork its conversation at an earlier turn, not only at its end.
     var canForkFromTurn = false
-    /// An approval or question the agent asked survives a restart of Nook (or of the agent). No agent Nook runs keeps
-    /// them: the process that asked is gone, so a session cut off while waiting on you stays yours to pick up.
+    /// An approval or question the agent asked survives a restart of Nook (or of the agent) as the agent's own request.
+    /// No agent Nook runs keeps them: the process that asked is gone, so a session cut off while waiting on you stays
+    /// yours to pick up. Nook itself keeps what it can for every agent alike (`RestartRequests`): a question shows again
+    /// and is answered as a message, an approval leaves a note that it expired. A kept agent (`SessionKeeper`) is still
+    /// waiting after a crash, and asks again (`KeptRuns.durableOffset`).
     var pendingRequestsSurviveRestart = false
     /// How reliably the agent says a turn is over (see `TurnEndSignal`).
     var turnEndSignal: TurnEndSignal = .strong
@@ -153,6 +178,98 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// does not: Nook runs it without `--replay-user-messages`, whose replay only acknowledges receipt. The ACP agents
     /// are steered by interrupting them, so the steer is the next prompt and is read at once.
     var echoesSteers = false
+    /// One subagent at work in the background can be stopped on its own, the turn and the other subagents going on
+    /// (Claude Code's `stop_task`, `WorkspaceManager.stopSubagent`). Codex's subagents end within the turn that waits for
+    /// them, so Stop on the turn ends them; Pi and the ACP agents report no subagents.
+    var stopsOneSubagent = false
+    /// How the reasoning effort picked for a session reaches the agent (`EffortDelivery`, `AgentCommand.effortArguments`).
+    /// Every agent Nook runs takes one; an ACP agent only when its session offers the option.
+    var effort: EffortDelivery
+    /// What the process Nook launches for a turn listens to on stdin while it runs (`ProcessChannel`): how Stop, an
+    /// approval and a steer reach it.
+    var processChannel: ProcessChannel = .none
+    /// What stays open between turns, and is opened when you open an idle session so your first message goes straight in
+    /// (`IdleConnection`, `WorkspaceManager.prewarm`).
+    var idleConnection: IdleConnection
+    /// Nook asks the agent's CLI once which optional launch flags it knows (Claude Code's `--thinking-display`), so an
+    /// older version is never started with a flag it rejects.
+    var probesLaunchFlags = false
+    /// A server of the agent's own that Nook drives instead of its ACP server when the installed version has it
+    /// (`ServerTransport`, `WorkspaceManager.usesOpenCodeServer`).
+    var serverTransport: ServerTransport = .none
+    /// Who writes the suggested next prompt in the empty composer (`PromptSuggestionSource`, `NextPromptSuggestion`).
+    var promptSuggestions: PromptSuggestionSource = .generator
+    /// The agent says what fills its context window, part by part (Claude Code's `get_context_usage`, its `/context`).
+    /// Codex, Pi and the ACP agents report only how large the conversation is (`ContextUsage.estimate`).
+    var reportsContextBreakdown = false
+}
+
+/// See `ProviderCapabilities.promptSuggestions`. The agent's own prediction reads the whole conversation from its prompt
+/// cache, so it is cheaper and better than Nook asking a second model; where the agent has none, Nook's text generator
+/// writes it from the timeline (Settings › Sessions › Text generation).
+enum PromptSuggestionSource: String, Sendable {
+    /// The agent sends one on its own after each turn: Claude Code's `--prompt-suggestions` (`prompt_suggestion` on
+    /// stream-json), on your subscription.
+    case agentStream
+    /// Nook asks the agent's own thread for one: Codex app-server's `thread/sample`. A Codex without it, or `codex exec`,
+    /// falls back to the generator.
+    case threadSample
+    /// Nook's text generator (`WorkspaceManager.generateText`): Gemini CLI, Antigravity, OpenCode, Cursor, Grok, Pi and
+    /// the ACP agents you add, none of which predicts a next prompt itself.
+    case generator
+}
+
+/// See `ProviderCapabilities.serverTransport`.
+enum ServerTransport: String, Sendable {
+    /// OpenCode 2's `opencode serve` (HTTP and an event stream, `OpenCodeServe`), from 2.0.18 on.
+    case openCodeServe
+    case none
+}
+
+/// See `ProviderCapabilities.rollback`.
+enum ConversationRollbackRoute: String, Sendable {
+    /// The next launch resumes a copy of the conversation at the last message that stays (Claude Code's
+    /// `--resume-session-at` with `--fork-session`).
+    case resumeAt
+    /// The agent drops later turns itself before the next turn (Codex app-server's `thread/rollback`); not over
+    /// `codex exec`, which cannot.
+    case threadRollback
+    case none
+}
+
+/// See `ProviderCapabilities.effort`.
+enum EffortDelivery: Equatable, Sendable {
+    /// A launch flag with the level as its value: Claude Code's `--effort`, Pi's `--thinking`.
+    case launchFlag(String)
+    /// A config override at launch, `-c key="level"`: `codex exec`'s `model_reasoning_effort`. (Codex's app-server takes
+    /// it on `turn/start` instead.)
+    case launchConfig(String)
+    /// The ACP session's effort option (`session/set_config_option`, `AcpSessionSettings`), when the session offers one.
+    /// Gemini CLI's headless fallback has no flag for it, so there the level is not sent.
+    case sessionOption
+}
+
+/// See `ProviderCapabilities.processChannel`.
+enum ProcessChannel: String, Sendable {
+    /// Claude Code's stream-json: control requests (interrupt, permission answers) and priority messages.
+    case claudeStreamJSON
+    /// Pi's RPC mode (`PiRPC`): `abort`, answers to its confirm dialog, and steering prompts.
+    case piRPC
+    /// None: `codex exec` and Gemini CLI's headless mode take the prompt as an argument and stop on a signal; Codex's
+    /// app-server and the ACP agents talk through their own clients.
+    case none
+}
+
+/// See `ProviderCapabilities.idleConnection`.
+enum IdleConnection: String, Sendable {
+    /// Claude Code waits on stdin with the conversation resumed, and the next turn goes into that same process.
+    case parkedProcess
+    /// Codex's app-server, with its thread open.
+    case appServer
+    /// An ACP agent, with its session loaded.
+    case acpSession
+    /// Nothing ahead of time: Pi runs one process per turn; Antigravity could open Google's sign-in page.
+    case none
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -335,6 +452,15 @@ struct KeptSession: Codable, Equatable, Sendable {
     var turnID: String? = nil
 }
 
+/// A question an agent asked, as it is saved with its session (`WorkspaceRun.waitingQuestions`): enough to show it again
+/// after a restart and answer it as a message of yours (`RestartRequests`). How the asking process waited for the answer
+/// (a request id, an RPC id) is not kept: that process is gone.
+struct SavedQuestion: Codable, Equatable, Sendable {
+    var id: String
+    var questions: [RunQuestion]
+    var created: Date
+}
+
 struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
@@ -385,6 +511,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var changedLinesRemoved: Int? = nil
     /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
+    /// When a turn ended whose snapshot is not there: written before the snapshot is made and cleared once it is, so a
+    /// failed one and one Nook quit during both stay. Going back across one is refused (`RevertPlan`).
+    var missedCheckpoints: [Date]? = nil
     /// The agent's own conversation as Nook follows it (turns, Claude Code's last message), and a rollback of it that
     /// goes out with the next turn (see `ConversationRollback`).
     var conversation: ConversationLog? = nil
@@ -412,6 +541,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// Nook quit after this session's turn ended while it waited on work in the background (a subagent): that work
     /// stopped with it and will not report back (see `RestartContinuation`).
     var cutBackgroundWork: CutBackgroundWork? = nil
+    /// Nook's last quit stopped this session (in the middle of a turn, or while it waited on background work): the next
+    /// launch goes on with it however long Nook stayed closed, then clears this (see `RestartContinuation`).
+    var stoppedByQuit: Bool? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
@@ -449,6 +581,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var prWatch: PullRequestWatch? = nil
     /// The pull requests watched besides `prWatch`, which stays the one the composer's tray shows.
     var extraPRWatches: [PullRequestWatch]? = nil
+    /// The other projects it changed files in, by their main checkout's folder (`SessionProjects`): "Nook + monorepo".
+    var otherProjects: [String]? = nil
     /// Every pull request this session watches.
     var prWatches: [PullRequestWatch] { (prWatch.map { [$0] } ?? []) + (extraPRWatches ?? []) }
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
@@ -457,6 +591,13 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var promptCache: PromptCacheWindow? = nil
     /// How much of the work this session's timeline shows; nil follows Settings (`WorkspaceSettings.timelineDetail`).
     var timelineDetail: TimelineDetail? = nil
+    /// What waited on you when the list was saved, so it survives a restart (`RestartRequests`): the questions the
+    /// agent asked, the approvals it waited for (their summaries), and the messages you queued. Written only into
+    /// `runs.json` (`RestartRequests.merged`); in memory they live in `WorkspaceManager.questions`, `approvals` and
+    /// `queued`, and these stay nil.
+    var waitingQuestions: [SavedQuestion]? = nil
+    var waitingApprovals: [String]? = nil
+    var queue: MessageQueue? = nil
 
     var projectName: String {
         let name = (projectPath as NSString).lastPathComponent
@@ -564,7 +705,7 @@ enum RunTasks {
     static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
         let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending }
             ?? steps.last { $0.status != .cancelled } ?? steps.last
-        return (steps.filter { $0.status == .done }.count, steps.filter { $0.status != .cancelled }.count, current?.text ?? "")
+        return (steps.count(where: { $0.status == .done }), steps.count(where: { $0.status != .cancelled }), current?.text ?? "")
     }
 
     static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
@@ -575,7 +716,7 @@ enum RunTasks {
 
 /// Where the "working for …" timer of a turn starts (`WorkspaceRun.turnStartedAt`). A new prompt starts it again; the
 /// agent carrying on by itself (background work it waited for ended, a task it delegated reported back) keeps the start
-/// of the work it continues, so the timer does not jump back to zero mid-work.
+/// of the work it continues, so the timer does not jump back to zero mid-work (continuations keep the start).
 enum TurnTimer {
     static func start(continuing: Bool, previous: Date?, now: Date = Date()) -> Date {
         continuing ? (previous ?? now) : now
@@ -587,7 +728,7 @@ struct PullRequestWatch: Codable, Equatable, Sendable {
     /// A GitHub pull request, a GitLab merge request, or a pull request on a forge with a token.
     static func canWatch(_ url: URL) -> Bool {
         let parts = url.path.split(separator: "/")
-        let github = url.host?.hasSuffix("github.com") == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
+        let github = url.host.map { $0 == "github.com" || $0.hasSuffix(".github.com") } == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
         if github || url.absoluteString.contains("/-/merge_requests/") { return true }
         // Every other forge once it has a token.
         return PullRequestRef.parse(url.absoluteString)?.forgeRepository.flatMap(PullRequestForges.client) != nil
@@ -649,6 +790,8 @@ struct PullRequestSnapshot: Equatable, Sendable {
     /// Whether `checks` is the forge's answer. Empty `checks` then means there are none on this commit (yet, right after a
     /// push); without an answer they may as well still be failing.
     var checksKnown = true
+    /// Its title, so a row that only knows the link can still say what it is; nil when this read does not say.
+    var title: String? = nil
 }
 
 /// News about a pull request that waits in the queue for the agent, line by line, so that what is no longer true can go
@@ -743,24 +886,23 @@ enum PullRequestNews {
     /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
     /// words. The agent can read the whole comment on GitHub; the line says what it is about.
     static func plain(_ text: String, limit: Int = 300) -> String {
-        var result = text
-        let patterns: [(String, String)] = [
-            (#"<!--[\s\S]*?(-->|$)"#, " "),                // HTML comments, also one cut off
-            (#"<details>[\s\S]*?</details>"#, " "),        // folded sections
-            (#"!\[[^\]]*\]\([^)]*\)"#, " "),             // images and badges
-            (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),           // links: their words
-            (#"<[^>]*>"#, " "),                             // other tags
-            (#"(?m)^\s*(#+|>+|[-*_]{3,})\s*"#, " ")         // headings, quotes, rules
-        ]
-        for (pattern, template) in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            result = regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: template)
+        let stripped = plainRules.reduce(text) { result, rule in
+            rule.regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: rule.template)
         }
-        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
-            result = result.replacingOccurrences(of: entity, with: character)
-        }
-        let words = result.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let words = HTMLEntities.decode(stripped).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return ToolSummary.oneLine(words, limit)
+    }
+
+    /// The rewrites `plain` applies, in order. Compiled once: every pull request comment goes through them.
+    private static let plainRules: [(regex: NSRegularExpression, template: String)] = [
+        (#"<!--[\s\S]*?(-->|$)"#, " "),                // HTML comments, also one cut off
+        (#"<details>[\s\S]*?</details>"#, " "),        // folded sections
+        (#"!\[[^\]]*\]\([^)]*\)"#, " "),             // images and badges
+        (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),           // links: their words
+        (#"<[^>]*>"#, " "),                             // other tags
+        (#"(?m)^\s*(#+|>+|[-*_]{3,})\s*"#, " ")         // headings, quotes, rules
+    ].compactMap { pattern, template in
+        (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
     }
 
     /// Worth waking the agent for: something it can act on (failed CI, a merge conflict, reviews, comments), not a merge
@@ -839,6 +981,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// For a switch of agent, model or effort (a `.system` event with tool "switch"): what the session ran before and
     /// after it. Nil for every other event.
     var change: ModelSwitch? = nil
+    /// For a tool call Nook saw run: when it settled (`noteEnd`), so the same work next time shows how far it is
+    /// (`WorkProgress`). Nil while it runs, for every other event, and in timelines saved before this existed.
+    var ended: Date? = nil
 
     /// How a message of yours reached a turn that was running.
     enum SteerKind: String, Codable, Sendable {
@@ -980,7 +1125,7 @@ struct NewRunConfig: Equatable, Sendable {
     /// Set for a session of a model comparison after its first one (see `ModelComparison`).
     var lineage: RunLineage? = nil
     /// Who started it when it was not you in the composer ("Started by Claude Code in the session …"): the first line of
-    /// its timeline. Set by `session_start`, `nook start` and Nook Chat marks a thread an agent created.
+    /// its timeline. Set by `session_start`, `nook start` and Nook Chat, marking a session an agent created.
     var startedBy: String? = nil
     /// Starts without a first message (`session_start` with a title only): the session waits, ready, for yours.
     var startsIdle = false
@@ -1034,13 +1179,9 @@ enum WorktreeNaming {
     static func title(from task: String, limit: Int = 60) -> String {
         // The first line of your own words: an agent's tags (`<task-notification>` …) are no title.
         let clean = InjectedPrompt.title(task.split(whereSeparator: \.isNewline).filter { !isPathLine($0) }.joined(separator: "\n"))
-        guard !clean.isEmpty else { return "Nieuwe sessie" }
-        if clean.count <= limit { return clean }
-        let cut = clean.prefix(limit)
-        if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) > limit / 2 {
-            return String(cut[..<space]) + "…"
-        }
-        return String(cut) + "…"
+        guard !clean.isEmpty else { return tr("agents.newSession") }
+        // Cut after a whole word, as every session title is (`TextClip.title`).
+        return TextClip.title(clean, limit)
     }
 
     /// The prefix Nook puts before the branches it creates, unless Settings › Workspace names another.
@@ -1303,53 +1444,22 @@ enum ToolSummary {
             let detail = McpToolName.argumentLines(input).prefix(2).joined(separator: ", ")
             return detail.isEmpty ? mcp.label : "\(mcp.label) · \(oneLine(detail, 100))"
         }
-        if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
-        if let path = path(input) { return "\(tool) · \((path as NSString).lastPathComponent)" }
-        for key in ["pattern", "query", "url", "description", "prompt"] {
-            if let value = input[key] as? String, !value.isEmpty { return "\(tool) · \(oneLine(value, 100))" }
-        }
-        if tool == "TodoWrite", let todos = input["todos"] as? [Any] { return "\(tool) · \(todos.count)" }
-        return tool
+        if CanonicalTool.kind(tool) == .tasks, let todos = input["todos"] as? [Any] { return "\(tool) · \(todos.count)" }
+        // What it is about, as every view says it (`ToolInput.subject`): the command, file, pattern or address.
+        let subject = ToolInput.subject(tool: tool, input: input)
+        return subject.isEmpty ? tool : "\(tool) · \(oneLine(subject, 120))"
     }
 
-    static func command(_ input: [String: Any]) -> String? {
-        if let text = input["command"] as? String { return text }
-        if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
-               parts[1].hasPrefix("-") {
-                return parts[2...].joined(separator: " ")
-            }
-            return parts.joined(separator: " ")
-        }
-        return nil
-    }
+    static func command(_ input: [String: Any]) -> String? { ToolInput.command(input) }
 
-    static func path(_ input: [String: Any]) -> String? {
-        for key in ["file_path", "notebook_path", "absolute_path", "path"] {
-            if let value = input[key] as? String, !value.isEmpty { return value }
-        }
-        return nil
-    }
+    static func path(_ input: [String: Any]) -> String? { ToolInput.path(input) }
 
-    /// Files modified by this tool, along with the type of change.
+    /// Files modified by this tool, along with the type of change, for every agent (`SessionProjects.changedFiles`).
     static func fileChanges(tool: String, input: [String: Any]) -> [(path: String, kind: String)] {
-        switch tool {
-        case "Edit", "MultiEdit", "NotebookEdit":
-            return path(input).map { [($0, "modified")] } ?? []
-        case "Write", "write_file":
-            return path(input).map { [($0, "written")] } ?? []
-        case "replace":
-            // Gemini CLI's edit tool.
-            return path(input).map { [($0, "modified")] } ?? []
-        default:
-            return []
-        }
+        SessionProjects.changedFiles(tool: tool, input: input)
     }
 
-    static func oneLine(_ text: String, _ limit: Int) -> String {
-        let single = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
-        return single.count > limit ? String(single.prefix(limit)) + "…" : single
-    }
+    static func oneLine(_ text: String, _ limit: Int) -> String { TextClip.oneLine(text, limit) }
 
     /// Formatted, sorted JSON for timeline display.
     static func json(_ object: Any) -> String {

@@ -50,6 +50,11 @@ extension CompanionServer {
     func launch(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         let workspace = app.workspace
         let settings = workspace.settings
+        // Started before (from the phone's outbox, after a restart of Nook): the same session, not a second one.
+        let command = SessionCommand.phone(request.id)
+        if let earlier = workspace.commandReceipt(command), let created = earlier.created {
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: created)
+        }
         guard let launch = request.launch, let provider = RunProvider(rawValue: launch.agent),
               launchableProviders(app).contains(provider),
               let words = CompanionPolicy.cleanMessage(launch.task) else {
@@ -103,6 +108,7 @@ extension CompanionServer {
         do {
             // A folder another session works in is refused, as in the composer; the phone can pick a worktree instead.
             let id = try await workspace.start(config, allowSharedFolder: false)
+            workspace.recordCommand(command, .started, created: id.uuidString)
             audit("start", "\(provider.displayName) · \(workspace.run(id)?.title ?? "")")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: id.uuidString)
         } catch {
@@ -445,6 +451,31 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, messages: lines(conversation))
     }
 
+    /// The Nook conversation the phone has open (`CompanionOp.watchConversation`): read as `chat` reads it, and from now
+    /// on its messages follow over the live connection (`pushConversations`). Nil `conversation` closes it.
+    func watchConversation(_ request: CompanionRequest, deviceID: String, app: AppModel) -> CompanionResponse {
+        let peer = streams.first { $0.deviceID == deviceID }
+        guard request.conversation?.isEmpty == false else {
+            peer?.watchConversation = nil
+            peer?.sentMessages = nil
+            return CompanionResponse(id: request.id, ok: true)
+        }
+        var response = chat(request, app: app)
+        guard response.ok, let id = request.conversation, let messages = response.messages else { return response }
+        if let peer {
+            peer.watchConversation = id
+            peer.sentMessages = messages
+        }
+        response.messagesConversation = id
+        // The phone still has the conversation up to its last finished message (`item`, after a reconnect): only what
+        // came after goes, which on a slow connection is the difference between a moment and a long wait.
+        if let resumed = ConversationDelta.resume(messages, from: request.item) {
+            response.messages = resumed.lines
+            response.messagesAfter = resumed.after
+        }
+        return response
+    }
+
     /// A question to Nook, answered by the same brain pipeline as on the Mac. Plans and drafts in the answer still wait
     /// for approval on the Mac. The notch stays as it is.
     func ask(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
@@ -473,7 +504,7 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, messages: app.chat.conversation(id).map(lines))
     }
 
-    private func lines(_ conversation: Conversation) -> [ChatLine] {
+    func lines(_ conversation: Conversation) -> [ChatLine] {
         let lines = conversation.messages.suffix(60).map { message in
             ChatLine(id: message.id.uuidString, fromNook: message.role == .nook, text: CompanionPolicy.clip(message.text),
                      date: message.date.timeIntervalSince1970, streaming: message.streaming,

@@ -335,6 +335,10 @@ final class PullRequestStore: ObservableObject {
     /// When each pull request's page was last read (see `update(with:)`). A list read that began before then must not put
     /// back what it saw: the page read is newer, and the row would show a state the page no longer does.
     private var pageReadAt: [String: Date] = [:]
+    /// The reads after a merge from Nook (see `followMerge`): the repositories merged into, and reads since the last merge.
+    private var follow: Task<Void, Never>?
+    private var followedRepos: Set<String> = []
+    private var followReads = 0
     private let file = NookPaths.supportDirectory.appendingPathComponent("pull-requests.json")
 
     private init() {
@@ -377,7 +381,11 @@ final class PullRequestStore: ObservableObject {
             return
         }
         if loading {
-            if force { again = true }
+            if force {
+                again = true
+                // A click while a quiet read runs: it goes again right after, and the button turns until that is done.
+                if !quiet, !showsProgress { showsProgress = true }
+            }
             return
         }
         // The panel asks every half minute; a slow pass it is waiting for should not wait for a quiet read's gate.
@@ -423,7 +431,8 @@ final class PullRequestStore: ObservableObject {
         // Most answers repeat what is shown: only a change redraws the list and is written to disk.
         let changed = updated != accounts
         if changed { accounts = updated }
-        if showsProgress { showsProgress = false }
+        // A refresh asked for meanwhile runs next: the arrows keep turning through it instead of stopping in between.
+        if showsProgress, !again { showsProgress = false }
         // The pages you are most likely to open next are read ahead now, so they show at once.
         PullRequestDetailModel.warm(accounts: accounts)
         refreshInBackground(force: force, after: slowAfter)
@@ -527,18 +536,30 @@ final class PullRequestStore: ObservableObject {
         func refreshed(_ items: [PullRequestItem]) -> [PullRequestItem] {
             items.map { item in
                 guard item.id == detail.id else { return item }
-                return PullRequestItem(repo: item.repo, number: item.number, title: detail.title, url: detail.url ?? item.url,
-                                       draft: detail.state == .draft, updated: detail.updated ?? item.updated, author: item.author,
-                                       ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
-                                       state: mergedHere[item.id] != nil && state == .open ? .merged : state,
-                                       additions: detail.additions, deletions: detail.deletions,
-                                       review: item.review,
-                                       // While GitHub works mergeability out again, the row keeps the conflict it knew.
-                                       conflict: detail.conflicted || (detail.mergeable == nil && item.conflict),
-                                       labels: detail.labels,
-                                       labelColors: detail.labelColors, labelDescriptions: detail.labelDescriptions, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
-                                       baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
-                                       nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)
+                // A copy of the row, so what the page does not carry (opened, comments, the author's role) stays.
+                var row = item
+                row.title = detail.title
+                row.draft = detail.state == .draft
+                row.ci = detail.checks.isEmpty ? item.ci : detail.checkSummary
+                row.state = mergedHere[item.id] != nil && state == .open ? .merged : state
+                row.additions = detail.additions
+                row.deletions = detail.deletions
+                // While GitHub works mergeability out again, the row keeps the conflict it knew.
+                row.conflict = detail.conflicted || (detail.mergeable == nil && item.conflict)
+                row.conflictKnown = true
+                row.labels = detail.labels
+                row.labelColors = detail.labelColors
+                row.labelDescriptions = detail.labelDescriptions
+                if !detail.headBranch.isEmpty { row.headBranch = detail.headBranch }
+                if !detail.baseBranch.isEmpty { row.baseBranch = detail.baseBranch }
+                if !detail.nodeID.isEmpty { row.nodeID = detail.nodeID }
+                if !detail.checks.isEmpty {
+                    row.checksPassed = detail.checks.count(where: { $0.outcome == .passing || $0.outcome == .skipped })
+                    row.checksTotal = detail.checks.count
+                }
+                row.url = detail.url ?? item.url
+                row.updated = detail.updated ?? item.updated
+                return row
             }
         }
         let updated = accounts.map { account -> AccountPullRequests in
@@ -597,6 +618,29 @@ final class PullRequestStore: ObservableObject {
         mergedHere[id] = Date()
         accounts = accounts.map(settled)
         fetchedAt = .distantPast
+        if let repo = id.split(separator: "#").first { followMerge(in: String(repo)) }
+    }
+
+    /// Reads the list again a few times after a merge into `repo`, until GitHub has worked out again whether the other
+    /// open pull requests there still merge (see `PullRequestMergeFollowUp`). A merge while it runs starts the count over.
+    func followMerge(in repo: String) {
+        followedRepos.insert(repo)
+        followReads = 0
+        guard follow == nil else { return }
+        follow = Task { [weak self] in
+            while let self {
+                try? await Task.sleep(for: .seconds(PullRequestMergeFollowUp.wait(before: self.followReads)))
+                // Only the quick read of the open rows: the slow closed and watched searches keep their own pace.
+                self.markStale()
+                if self.loading { self.again = true }
+                await self.refresh(quiet: true)
+                self.followReads += 1
+                let pending = PullRequestMergeFollowUp.pending(self.accounts, repos: self.followedRepos)
+                guard PullRequestMergeFollowUp.goesOn(reads: self.followReads, pending: pending) else { break }
+            }
+            self?.follow = nil
+            self?.followedRepos = []
+        }
     }
 
     private func settled(_ account: AccountPullRequests) -> AccountPullRequests {

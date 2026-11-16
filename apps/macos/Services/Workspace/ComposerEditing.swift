@@ -122,7 +122,7 @@ enum ComposerClipboard {
                 return label
             }
             return "[\(label)](\(ref.id))"
-        case .skill, .excerpt, .paste, .model, .secret:
+        case .skill, .excerpt, .paste, .model, .secret, .element:
             return ContextRefs.plainText(ref)
         }
     }

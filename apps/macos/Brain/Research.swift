@@ -90,13 +90,15 @@ enum Research {
         nachricht nachrichten bildschirm quelle quellen ungelesen gelesen beantwortet antwort offen offene unbeantwortet unbeantwortete \
         heute morgen gestern woche monat jahr montag dienstag mittwoch donnerstag freitag samstag sonntag letzte neueste neu vorige nächste
         """
-        return Set((dutch + " " + english + " " + german).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
+        // The shared base (`TextKit.stopwords`) plus research's own: verbs of asking, source names and dates.
+        return TextKit.stopwords.union((dutch + " " + english + " " + german).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
     }()
 
     static func terms(in text: String, history: [ChatTurn] = []) -> Terms {
         var terms = extract(text)
         // A short follow-up ("en het budget?", "what else does it say?") is about the same thing as the question before.
-        if let previous = history.last(where: \.fromUser)?.text, terms.words.count < 2, terms.phrases.isEmpty, isFollowUp(text) {
+        // The recap of a long conversation (`ConversationWindow`) is not the question before.
+        if let previous = ConversationWindow.withoutRecap(history).last(where: \.fromUser)?.text, terms.words.count < 2, terms.phrases.isEmpty, isFollowUp(text) {
             let before = extract(previous)
             if !before.isEmpty {
                 terms.words += before.words.filter { !terms.words.contains($0) }
@@ -109,10 +111,13 @@ enum Research {
         return terms
     }
 
+    private static let quotedPhrase = try? NSRegularExpression(pattern: #"["“„‘]([^"“”„‘’]{2,60})["”’]"#)
+    private static let idField = try? NSRegularExpression(pattern: #"(?i)\b(?:id|key)\s*[:=]?\s*["'`]?([A-Za-z0-9][A-Za-z0-9_\-:./]{1,80})"#)
+
     private static func extract(_ text: String) -> Terms {
         var terms = Terms()
         // "…", „…", “…” or ‘…’: a phrase to keep whole (not the apostrophe of "m'n" or "Jan's").
-        if let regex = try? NSRegularExpression(pattern: #"["“„‘]([^"“”„‘’]{2,60})["”’]"#) {
+        if let regex = quotedPhrase {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range(at: 1), in: text) else { continue }
                 let phrase = text[range].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -475,9 +480,8 @@ enum Research {
             }
             return hits
         }
-        let pattern = try? NSRegularExpression(pattern: #"(?i)\b(?:id|key)\s*[:=]?\s*["'`]?([A-Za-z0-9][A-Za-z0-9_\-:./]{1,80})"#)
         for line in output.components(separatedBy: "\n") where !line.hasPrefix("Sources in this result") && !line.hasPrefix("[") {
-            guard let pattern, let match = pattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+            guard let pattern = idField, let match = pattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
                   let range = Range(match.range(at: 1), in: line) else { continue }
             let id = String(line[range]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'`.,;)"))
             hits.append(Hit(tool: tool, title: line.trimmingCharacters(in: CharacterSet(charactersIn: "-*• ")), text: line,
@@ -651,7 +655,5 @@ enum Research {
     }
 
     /// Lowercase without accents, so "café" matches "cafe" and "Überweisung" matches "uberweisung".
-    static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    static func fold(_ text: String) -> String { TextKit.fold(text) }
 }

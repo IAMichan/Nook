@@ -90,6 +90,24 @@ final class LiveAgentProcesses: @unchecked Sendable {
 
     var all: [AgentProcess] { lock.withLock { Array(processes.values) } }
 
+    /// Every agent this Nook runs, kept ones included (those outlive a quit, so they are not in `all`): what
+    /// `AgentGovernor` watches.
+    private var running: [ObjectIdentifier: AgentProcess] = [:]
+
+    /// Called after an agent is tracked, outside the lock: `AgentGovernor` wakes its readings up again.
+    nonisolated(unsafe) static var onTrack: (@Sendable () -> Void)?
+
+    func track(_ process: AgentProcess) {
+        lock.withLock { running[ObjectIdentifier(process)] = process }
+        Self.onTrack?()
+    }
+
+    func untrack(_ process: AgentProcess) {
+        lock.withLock { _ = running.removeValue(forKey: ObjectIdentifier(process)) }
+    }
+
+    var everyRunning: [AgentProcess] { lock.withLock { Array(running.values) } }
+
     /// Once Nook is quitting, no agent process starts any more.
     var quitting: Bool { lock.withLock { isQuitting } }
 

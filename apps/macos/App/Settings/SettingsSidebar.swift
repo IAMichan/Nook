@@ -9,6 +9,15 @@ enum SettingsLayout {
     static let pageWidth: CGFloat = 860
     /// Room above the sidebar's search for the window's traffic lights.
     static let trafficLightInset: CGFloat = 40
+    /// The size Settings opens at: the sidebar beside a full page column, tall enough for the tallest fixed card
+    /// (Coding agents' list and detail) with its page title, tabs and section header above it, so nothing is cut off.
+    static let defaultSize = CGSize(width: sidebarWidth + 1 + pageWidth, height: 840)
+
+    /// `defaultSize`, shrunk to fit the visible part of the screen the window opens on.
+    static func openingSize(on screen: NSScreen?) -> NSSize {
+        guard let visible = screen?.visibleFrame.size else { return defaultSize }
+        return NSSize(width: min(defaultSize.width, visible.width), height: min(defaultSize.height, visible.height))
+    }
 }
 
 /// The sidebar of Settings: a search row on top (⌘F or / puts the keyboard in it), then the pages in their
@@ -61,7 +70,7 @@ struct SettingsSidebar: View {
         NookSearchField(prompt: tr("settings.search.prompt"), text: $query, focus: $searchFocused,
                         onSubmit: { open(hits) }, onEscape: { searchFocused = false })
             .overlay(alignment: .trailing) {
-                // The key that finds a setting it, until you type.
+                // The key that finds a setting, shown until you type.
                 if query.isEmpty {
                     NookKeyHint(text: "/").padding(.trailing, NookTheme.Spacing.sm)
                 }
@@ -118,7 +127,7 @@ struct SettingsSidebar: View {
                     .padding(.vertical, NookTheme.Spacing.xl)
             }
             ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
-                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.title,
+                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.trail,
                                    selected: index == active) {
                     active = index
                     open(hits)
@@ -141,8 +150,9 @@ struct SettingsSidebar: View {
                             .padding(.bottom, NookTheme.Spacing.xxs)
                     }
                     ForEach(group.sections) { section in
-                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.title,
-                                           selected: app.settingsSection == section, badge: badges[section] ?? 0) {
+                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.pageTitle,
+                                           selected: app.settingsSection.host == section,
+                                           badge: badges[section] ?? 0) {
                             guard app.settingsSection != section else { return }
                             app.settingsSection = section
                         }
@@ -164,7 +174,6 @@ struct SettingsSidebarRow: View {
     let selected: Bool
     var badge = 0
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -190,45 +199,41 @@ struct SettingsSidebarRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(minHeight: detail == nil ? 30 : 40)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+            .hoverRowFill(selected: selected)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(.nookPlain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// The bar over a page: where you are (Settings › group › page), the ⓘ that explains the page, and on the
-/// right Restore defaults. Adding sits in the header of the list it adds to ("+ Add machine"), not here.
+/// The bar over a page: where you are (Settings › page) and on the right Restore defaults. What the page holds is
+/// written at the top of the page itself (`SettingsPageIntro`), not hidden here. Adding sits in the header of the list
+/// it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var colorEdits = NookColorEdits.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(QuitHoldMonitor.enabledKey) private var holdToQuit = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Text(tr("settings.crumb.root")).foregroundStyle(NookTheme.textTertiary)
             crumbChevron
-            if let group = section.group.title {
-                Text(group).foregroundStyle(NookTheme.textTertiary)
-                crumbChevron
-            }
-            Text(section.title)
+            Text(section.pageTitle)
                 .foregroundStyle(NookTheme.paper)
-                .help(section.subtitle)
-            if let info = section.info { SettingsInfoButton(text: info) }
             Spacer(minLength: NookTheme.Spacing.lg)
             if let restore = SettingsRestore(section) {
-                //: put this page's own settings back to how Nook ships, after asking.
-                ConfirmedButton(question: tr("settings.restore.question", section.title), confirmTitle: tr("settings.general.restore"),
+                // Put this page's own settings back to how Nook ships, after asking.
+                ConfirmedButton(question: tr("settings.restore.question", section.pageTitle), confirmTitle: tr("settings.general.restore"),
                                 action: {
                                     restore.run()
                                     ToastCenter.shared.success(tr("settings.general.restored"))
                                 }) {
-                    Label(tr("settings.general.restore"), systemImage: "arrow.counterclockwise")
+                    Label(tr("settings.general.restore"), icon: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
                 .disabled(!restore.changed)
@@ -247,6 +252,71 @@ struct SettingsPageBar: View {
             .font(NookTheme.font(9, .semibold))
             .foregroundStyle(NookTheme.textMuted)
             .accessibilityHidden(true)
+    }
+}
+
+/// The top of every Settings page: its name in large type and one line on what it holds. A page of several subjects
+/// adds a bar with one button per subject; the one shown is lit, and under the bar one line says what that subject is
+/// for. So a page shows one subject at a time and stays short, and you see what is there before reading a row.
+struct SettingsPageIntro: View {
+    let section: SettingsSection
+    /// The subject shown.
+    let part: SettingsSection
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Text(section.pageTitle)
+                    .font(NookTheme.TextStyle.display)
+                    .foregroundStyle(NookTheme.paper)
+                    .accessibilityAddTraits(.isHeader)
+                Text(section.pageSubtitle)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if section.parts.count > 1 {
+                    SettingsPartTabs(parts: section.parts, selected: part)
+                        .padding(.top, NookTheme.Spacing.sm)
+                    if part != section {
+                        Text(part.subtitle)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let info = part.info {
+                    Text(info)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .settingsBareSection()
+    }
+}
+
+/// The subjects of a page in the bar at its top: one segmented control (`NookTabBar`, `segmented`), each with its
+/// symbol and name, the shown one on a pill that slides to the next. It scrolls sideways when the window is too narrow
+/// for every subject, so a long page such as Typing never wraps onto a second row.
+struct SettingsPartTabs: View {
+    let parts: [SettingsSection]
+    /// The subject shown.
+    let selected: SettingsSection
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            NookTabBar(
+                items: parts.map { .init(value: $0, title: $0.title, symbol: $0.sidebarSymbol, help: $0.subtitle) },
+                selected: selected,
+                onSelect: { part in
+                    guard part != selected else { return }
+                    app.settingsSection = part
+                },
+                segmented: true)
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 }
 
@@ -283,6 +353,7 @@ enum SettingsRestore {
             AppSettings.shared.appearanceMode = .dark
             AppSettings.shared.darkThemeID = NookColorTheme.nook.id
             AppSettings.shared.lightThemeID = NookColorTheme.nook.id
+            AppSettings.shared.colorOverrides = NookColorOverrides()
         }
     }
 }

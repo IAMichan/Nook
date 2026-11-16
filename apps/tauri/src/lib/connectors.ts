@@ -2,6 +2,7 @@
 // src-tauri/src/commands/connectors.rs. Geheimen komen nooit terug, alleen of ze er zijn.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { tr } from "./i18n.svelte";
 
 export type Tone = "good" | "attention" | "bad" | "neutral";
 export type ErrorKind = "auth" | "network" | "rateLimited" | "config" | "other";
@@ -388,39 +389,44 @@ export function health(info: ConnectorInfo | undefined): Health {
   return s.errorKind === "auth" || s.errorKind === "config" ? "needsYou" : "broken";
 }
 
+/// Getters, so each read is in the current interface language.
 export const healthLabel: Record<Health, string> = {
-  working: "Werkt",
-  busy: "Bezig…",
-  off: "Uit",
-  needsYou: "Heeft je nodig",
-  broken: "Er gaat iets mis",
-  notLinked: "Niet gekoppeld",
+  get working() { return tr("Werkt", "Working"); },
+  get busy() { return tr("Bezig…", "Busy…"); },
+  get off() { return tr("Uit", "Off"); },
+  get needsYou() { return tr("Heeft je nodig", "Needs you"); },
+  get broken() { return tr("Er gaat iets mis", "Something's wrong"); },
+  get notLinked() { return tr("Niet gekoppeld", "Not connected"); },
 };
 
 /// De ene regel onder een naam: wat Nook ziet, of wat er misging.
 export function summary(info: ConnectorInfo | undefined, tagline: string): string {
   const h = health(info);
   if (!info || h === "notLinked") return tagline;
-  if (h === "off") return "Uitgeschakeld via de schakelaar";
-  if (h === "busy") return info.status.headline || "Gegevens ophalen…";
+  if (h === "off") return tr("Uitgeschakeld via de schakelaar", "Turned off with the switch");
+  if (h === "busy") return info.status.headline || tr("Gegevens ophalen…", "Fetching data…");
   if (info.status.state.kind === "error") {
-    return h === "needsYou" ? `${info.status.state.message} Log opnieuw in of vernieuw je sleutel.` : info.status.state.message;
+    return h === "needsYou" ? tr("{message} Log opnieuw in of vernieuw je sleutel.", "{message} Sign in again or renew your key.", { message: info.status.state.message }) : info.status.state.message;
   }
-  return info.status.headline || "Verbonden";
+  return info.status.headline || tr("Verbonden", "Connected");
 }
 
 export const categories: { id: string; title: string }[] = [
-  { id: "development", title: "Ontwikkeling" },
-  { id: "work", title: "Werk en notities" },
-  { id: "business", title: "Zakelijk" },
-  { id: "automation", title: "Automatisering" },
-  { id: "local", title: "Op dit apparaat" },
+  { id: "development", get title() { return tr("Ontwikkeling", "Development"); } },
+  { id: "work", get title() { return tr("Werk en notities", "Work and notes"); } },
+  { id: "business", get title() { return tr("Zakelijk", "Business"); } },
+  { id: "automation", get title() { return tr("Automatisering", "Automation"); } },
+  { id: "local", get title() { return tr("Op dit apparaat", "On this device"); } },
 ];
 
 /** How a service gets connected: the one word on every card of the catalogue, so a glance says what a click does. */
 export type ConnectMethod = "signIn" | "key" | "mcp";
 
-export const methodLabel: Record<ConnectMethod, string> = { signIn: "Inloggen", key: "Met sleutel", mcp: "MCP" };
+export const methodLabel: Record<ConnectMethod, string> = {
+  get signIn() { return tr("Inloggen", "Sign in"); },
+  get key() { return tr("Met sleutel", "With key"); },
+  mcp: "MCP",
+};
 
 /** Whether a card or row belongs to the chosen category chip (`null` = Alles). */
 export function inCategory(selected: string | null, category: string): boolean {
@@ -440,8 +446,8 @@ export function gitlabHealth(check: GitLabCheck | null): Health {
 }
 
 export function gitlabDetail(host: string, check: GitLabCheck | null): string {
-  if (!check) return `${host} · Merge requests op gitlab.com of je eigen host`;
+  if (!check) return tr("{host} · Merge requests op gitlab.com of je eigen host", "{host} · Merge requests on gitlab.com or your own host", { host });
   if (check.kind === "valid") return `${host} · @${check.username}`;
-  if (check.kind === "rejected") return "GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.";
-  return `Nook kon ${host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.`;
+  if (check.kind === "rejected") return tr("GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.", "GitLab rejects this token. Check that it has the api scope and hasn't expired.");
+  return tr("Nook kon {host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.", "Nook couldn't reach {host}. The token is saved; Nook tries again as soon as it's needed.", { host });
 }

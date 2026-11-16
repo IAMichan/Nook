@@ -132,4 +132,57 @@ final class SnapchatWebDataTests: XCTestCase {
         XCTAssertNil(SnapchatWebData.pictureData("data:text/html;base64,PGI+"), "only a picture")
         XCTAssertNil(SnapchatWebData.pictureData("https://example.com/a.jpg"))
     }
+
+    // MARK: Edits and deletions
+
+    private func kept(_ texts: [String], sender: String = "Anna") -> [SnapchatWebData.Kept] {
+        texts.enumerated().map { index, text in
+            SnapchatWebData.Kept(id: "k\(index)", line: .init(sender: sender, text: text),
+                                 date: Date(timeIntervalSince1970: 1_000 + Double(index)))
+        }
+    }
+
+    func testAMessageGoneBetweenTwoThatStayedWasDeletedAndTheOldestGoingSaysNothing() {
+        let before = kept(["een", "twee", "drie", "vier"])
+        let read = ["twee", "vier"].map { SnapchatWebData.Line(sender: "Anna", text: $0) }
+        let changes = SnapchatWebData.changes(before, read: read)
+        XCTAssertEqual(changes.deleted, ["k2"], "the oldest dropping off the top is Snapchat letting it go, not a deletion")
+        XCTAssertTrue(changes.edited.isEmpty)
+
+        let aligned = SnapchatWebData.align(before, with: read, chat: "c", now: Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(aligned.map(\.id), ["k0", "k1", "k2", "k3"], "nothing new, nothing doubled")
+        XCTAssertEqual(aligned.filter(\.deleted).map(\.id), ["k2"])
+        let chat = SnapchatWebData.chat(SnapchatWebData.Row(id: "c", name: "Anna", status: "", bold: false), kept: aligned, snapLabel: "Snap")
+        XCTAssertEqual(chat.messages.first { $0.id == "k2" }?.isDeleted, true)
+        XCTAssertEqual(chat.messages.first { $0.id == "k2" }?.text, "drie", "someone else's keeps what it said")
+    }
+
+    func testOtherWordsInAMessagesPlaceAreAnEditUnderItsOwnID() {
+        let before = kept(["een", "twee", "drie"])
+        let read = ["een", "twee!", "drie", "nieuw"].map { SnapchatWebData.Line(sender: "Anna", text: $0) }
+        let aligned = SnapchatWebData.align(before, with: read, chat: "c", now: Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(aligned.count, 4, "the edited one is not taken for a new message")
+        XCTAssertEqual(aligned[1].id, "k1")
+        XCTAssertEqual(aligned[1].line.text, "twee!")
+        XCTAssertTrue(aligned[1].edited)
+        XCTAssertEqual(aligned.last?.line.text, "nieuw")
+    }
+
+    func testTheListLineGivesYourNewestMessagesTheirTicks() {
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Opened · 2m", bold: false).receipt, .read)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Delivered · 5m", bold: false).receipt, .delivered)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Sent", bold: false).receipt, .sent)
+        XCTAssertEqual(SnapchatWebData.Row(id: "a", name: "A", status: "Geopend · 1u", bold: false).receipt, .read)
+        XCTAssertNil(SnapchatWebData.Row(id: "a", name: "A", status: "Received · 1h", bold: false).receipt)
+        XCTAssertNil(SnapchatWebData.Row(id: "a", name: "A", status: "New Chat", bold: false).receipt)
+
+        let kept = SnapchatWebData.align([], with: [line("ME", "early"), line("ANNA", "hi"), line("ME", "one"), line("ME", "two")],
+                                         chat: "c", now: now)
+        let opened = SnapchatWebData.chat(SnapchatWebData.Row(id: "c", name: "Anna", status: "Opened · 1m", bold: false),
+                                          kept: kept, snapLabel: "Snap")
+        XCTAssertEqual(opened.messages.map(\.receipt), [.sent, nil, .read, .read], "the line speaks of those after theirs")
+        let received = SnapchatWebData.chat(SnapchatWebData.Row(id: "c", name: "Anna", status: "Received", bold: false),
+                                            kept: kept, snapLabel: "Snap")
+        XCTAssertEqual(received.messages.map(\.receipt), [.sent, nil, .sent, .sent], "on Snapchat at least")
+    }
 }

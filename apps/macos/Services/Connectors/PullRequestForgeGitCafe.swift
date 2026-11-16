@@ -14,6 +14,8 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
         features.revert = false
         features.deleteBranch = false
         features.commitView = false
+        // GitCafe's API has no per-file viewed state.
+        features.viewedFiles = false
         return features
     }()
 
@@ -528,8 +530,8 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
             let origins = hunks.flatMap { ($0["lines"] as? [[String: Any]]) ?? [] }.map { ($0["origin"] as? String) ?? "" }
             let status = fileStatus(file["status"] as? String)
             return PullRequestFile(path: path, status: status,
-                                   additions: int(file["additions"]) ?? origins.filter { $0 == "+" }.count,
-                                   deletions: int(file["deletions"]) ?? origins.filter { $0 == "-" }.count,
+                                   additions: int(file["additions"]) ?? origins.count(where: { $0 == "+" }),
+                                   deletions: int(file["deletions"]) ?? origins.count(where: { $0 == "-" }),
                                    patch: patch(hunks), previousPath: (file["oldPath"] as? String).flatMap { $0 == path ? nil : $0 },
                                    revision: status == "removed" ? "" : file["newOid"] as? String)
         }

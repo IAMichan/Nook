@@ -77,7 +77,16 @@ impl RunProvider {
 
     /// Draait over ACP (Agent Client Protocol).
     pub fn uses_acp(self) -> bool {
-        matches!(self, Self::Gemini | Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity)
+        self.transport() == Transport::Acp
+    }
+
+    /// How Nook talks to the agent in a session (see `workspace::driver`).
+    pub fn transport(self) -> Transport {
+        match self {
+            Self::Claude => Transport::ClaudeStream,
+            Self::Codex => Transport::CodexAppServer,
+            Self::Gemini | Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => Transport::Acp,
+        }
     }
 
     /// Wat deze agent kan zonder terminal. De interface toont wat ontbreekt als niet beschikbaar.
@@ -105,7 +114,7 @@ impl RunProvider {
                 reports_context_window: true,
                 reports_cache_tokens: true,
                 policies: vec![Ask, AcceptEdits, Bypass],
-                steering: false,
+                steering: true,
                 native_fork: false,
             },
             Self::Gemini => ProviderCapabilities {
@@ -144,6 +153,16 @@ impl RunProvider {
             _ => vec![""],
         }
     }
+}
+
+/// The protocol of a session's process: Claude Code's `stream-json`, Codex's `app-server` (JSON-RPC; `codex exec` when
+/// that is missing), or ACP (JSON-RPC; Gemini CLI's headless mode when that is missing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Transport {
+    ClaudeStream,
+    CodexAppServer,
+    Acp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

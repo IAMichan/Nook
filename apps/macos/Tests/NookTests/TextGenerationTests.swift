@@ -17,6 +17,26 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(templated.contains("Repository change request template:\n## Summary"))
         XCTAssertTrue(templated.contains("write 'None'"), "a body without issues still keeps the issues section")
         XCTAssertTrue(templated.contains("'Not run yet'"), "testing says what ran instead of ticking boxes it cannot know")
+        XCTAssertFalse(templated.contains("Repository rules for change requests"), "no rules, no section")
+        let ruled = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "", stat: "", patch: "", template: "## Summary\n",
+                                                     guidelines: "No other headings than the template's.")
+        XCTAssertTrue(ruled.contains("Repository rules for change requests:\nNo other headings than the template's."))
+        XCTAssertTrue(ruled.contains("come first"), "the repository's rules win over Nook's defaults")
+    }
+
+    func testPullRequestBodyKeepsEveryTemplateSectionInOrder() {
+        let template = "## Summary\n\n## Related issues\n\n<!-- Closes #1 -->\n\n## Why\n\n## Testing\n\n- [ ] Build succeeds"
+        XCTAssertEqual(TextGeneration.pullRequestTemplateBody(template),
+                       "## Summary\n\n## Related issues\n\n## Why\n\n## Testing\n\n- [ ] Build succeeds")
+        let good = "## Summary\n- a\n\n## Related issues\nNone\n\n## Why\nb\n\n## Testing\n- [x] Build succeeds"
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(good, template: template), good, "a body that follows it stays as it is")
+        XCTAssertEqual(TextGeneration.missingTemplateHeadings(body: good, template: template), [])
+
+        let partial = "## Why\nb\n\n## Summary\n- a\n\n## Changes\n- c"
+        XCTAssertEqual(TextGeneration.missingTemplateHeadings(body: partial, template: template), ["## Related issues", "## Testing"])
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(partial, template: template),
+                       "## Summary\n\n- a\n\n## Related issues\n\nNone\n\n## Why\n\nb\n\n## Testing\n\nNone\n\n## Changes\n\n- c")
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(partial, template: nil), partial)
     }
 
     func testTitleRulesAndLaterMessages() {
@@ -35,6 +55,10 @@ final class TextGenerationTests: XCTestCase {
     func testCommands() {
         let claude = TextGeneration.claudeArguments(schema: TextGeneration.titleSchema)
         XCTAssertEqual(value(after: "--model", in: claude), "haiku")
+        XCTAssertEqual(value(after: "--system-prompt", in: claude), TextGeneration.system,
+                       "replaces the coding agent's 24k-token system prompt")
+        XCTAssertEqual(value(after: "--setting-sources", in: claude), "local",
+                       "does not load the user's CLAUDE.md or plugins")
         XCTAssertEqual(value(after: "--tools", in: claude), "", "no tools: it only answers")
         XCTAssertEqual(value(after: "--settings", in: claude), #"{"disableAllHooks":true}"#, "never shows up in the notch")
         XCTAssertTrue(value(after: "--json-schema", in: claude)?.contains("needsRefinement") == true)
@@ -44,6 +68,10 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9/"), "a trailing slash")
         let codex = TextGeneration.codexArguments(schemaPath: "/t/s.json", outputPath: "/t/a.txt")
         XCTAssertEqual(codex.first, "exec")
+        XCTAssertTrue(codex.contains("--ignore-user-config"))
+        XCTAssertTrue(codex.contains("--ignore-rules"))
+        XCTAssertTrue(codex.contains("features.shell_tool=false"))
+        XCTAssertTrue(codex.contains(#"web_search="disabled""#))
         XCTAssertEqual(value(after: "-s", in: codex), "read-only")
         XCTAssertTrue(codex.contains("--ephemeral"))
         XCTAssertEqual(codex.last, "-", "the prompt goes on stdin")

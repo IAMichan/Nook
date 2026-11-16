@@ -199,6 +199,10 @@ enum OnePassword {
                 defer { lock.unlock() }
                 guard !finished else { return }
                 finished = true
+                try? out.fileHandleForReading.close()
+                try? out.fileHandleForWriting.close()
+                try? err.fileHandleForReading.close()
+                try? err.fileHandleForWriting.close()
                 continuation.resume(returning: result)
             }
             process.terminationHandler = { done in
@@ -208,6 +212,8 @@ enum OnePassword {
             }
             do {
                 try process.run()
+                try? out.fileHandleForWriting.close()
+                try? err.fileHandleForWriting.close()
             } catch {
                 return finish(nil)
             }

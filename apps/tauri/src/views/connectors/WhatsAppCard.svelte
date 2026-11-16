@@ -118,7 +118,7 @@
       {/if}
       {#if whatsapp.notice}<div class="notice faint">{whatsapp.notice}</div>{/if}
       <div class="reply">
-        <input placeholder={tr(`Antwoord ${conversation.name}…`, `Reply to ${conversation.name}…`)} bind:value={whatsapp.draft} onkeydown={keydown} disabled={whatsapp.sending} />
+        <input placeholder={tr("Antwoord {name}…", "Reply to {name}…", { name: conversation.name })} bind:value={whatsapp.draft} onkeydown={keydown} disabled={whatsapp.sending} />
         <!-- Altijd klikbaar: een leeg veld verstuurt niets. -->
         <button class="send" title={tr("Verstuur", "Send")} onclick={() => whatsapp.send()}>↑</button>
       </div>

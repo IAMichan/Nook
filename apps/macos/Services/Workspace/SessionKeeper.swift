@@ -146,7 +146,7 @@ enum SessionKeeper {
                 $stop_step = 0;
                 $stop_clean = 1;
             } elsif ($kind eq 'Q') {
-                unlink $sock_path, $spool_path;
+                unlink $sock_path, $spool_path, "$folder/handled";
                 rmdir $folder;
                 exit 0;
             }
@@ -205,7 +205,7 @@ enum SessionKeeper {
             $stop_at = time + 4;
         }
         # With Nook connected it hears the end as usual below; with nobody there is nothing left to tell.
-        if ($stop_clean && defined $status && !$client) { unlink $sock_path, $spool_path; rmdir $folder; exit 0; }
+        if ($stop_clean && defined $status && !$client) { unlink $sock_path, $spool_path, "$folder/handled"; rmdir $folder; exit 0; }
         # Ended, everything read from the agent and handed over: say so.
         if (defined $status && !$select->exists($out_read) && $client && $replay && eof($replay) && !length $to_client) {
             my $done = frame('X', $status);
@@ -213,7 +213,7 @@ enum SessionKeeper {
             undef $replay;
         }
         # Nobody came for a week: it is not worth keeping.
-        if (defined $status && !$client && time - $alone_since > 604800) { unlink $sock_path, $spool_path; rmdir $folder; exit 0; }
+        if (defined $status && !$client && time - $alone_since > 604800) { unlink $sock_path, $spool_path, "$folder/handled"; rmdir $folder; exit 0; }
     }
     """#
 

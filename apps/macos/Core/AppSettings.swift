@@ -134,6 +134,11 @@ enum SecretStore {
 
     // MARK: - Keychain items
 
+    /// Only Nook itself uses the Keychain. Render harnesses and other tools that link Nook's code are unsigned programs
+    /// of their own, rebuilt often, and macOS asks for the login password for every build of them (the prompt names
+    /// the executable, such as "r"). They keep secrets in memory only: reads find nothing and writes go to the caches.
+    static let usesKeychain = Bundle.main.bundleURL.pathExtension == "app"
+
     private static func base(_ account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
@@ -143,6 +148,7 @@ enum SecretStore {
     }
 
     private static func item(_ account: String) -> (Data?, OSStatus) {
+        guard usesKeychain else { return (nil, errSecItemNotFound) }
         var query = base(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -153,6 +159,7 @@ enum SecretStore {
 
     /// Account names of every item under `service`. Only attributes are read, which never asks for access.
     private static func legacyAccounts() -> [String] {
+        guard usesKeychain else { return [] }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -166,6 +173,7 @@ enum SecretStore {
     }
 
     private static func store(_ data: Data, account: String) -> OSStatus {
+        guard usesKeychain else { return errSecSuccess }
         let status = SecItemUpdate(base(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
             var add = base(account)
@@ -176,6 +184,7 @@ enum SecretStore {
     }
 
     private static func delete(_ account: String) -> OSStatus {
+        guard usesKeychain else { return errSecSuccess }
         let status = SecItemDelete(base(account) as CFDictionary)
         return status == errSecItemNotFound ? errSecSuccess : status
     }
@@ -188,7 +197,6 @@ typealias Keychain = SecretStore
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    private static let keyAccount = "anthropic-api-key"
 
     /// Language of the app interface (Nederlands, English, Deutsch).
     @Published var appLanguage: AppLanguage {
@@ -270,7 +278,6 @@ final class AppSettings: ObservableObject {
     @Published var localModel: String {
         didSet { UserDefaults.standard.set(localModel, forKey: "localModel") }
     }
-    @Published private(set) var hasAPIKey: Bool
 
     /// Which display Nook is shown on: "auto" (display with notch, otherwise main display), "main", "mouse"
     /// (follows mouse) or display name.
@@ -329,15 +336,53 @@ final class AppSettings: ObservableObject {
             applyTheme()
         }
     }
+    /// How much room text and rows get: compact, comfortable or spacious (Settings › Appearance).
+    @Published var density: NookDensity {
+        didSet {
+            UserDefaults.standard.set(density.rawValue, forKey: "density")
+            if NookTheme.apply(density: density) { themeRevision = NookTheme.revision }
+        }
+    }
+    /// The colors of added and removed lines: green and red, or blue and orange for red-green color blindness.
+    @Published var diffColors: NookDiffColors {
+        didSet {
+            UserDefaults.standard.set(diffColors.rawValue, forKey: "diffColors")
+            if NookTheme.apply(diffColors: diffColors) { NookWindowLook.repaintSoon() }
+        }
+    }
     /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
     @Published var customThemes: [NookCustomTheme] {
         didSet {
-            UserDefaults.standard.set(try? JSONEncoder().encode(customThemes), forKey: "customThemes")
+            UserDefaults.standard.setEncoded(customThemes, forKey: "customThemes")
             customThemeCache = customThemes.compactMap(\.theme)
             applyTheme()
         }
     }
     private var customThemeCache: [NookColorTheme] = []
+    /// Colors set one by one (Settings › Appearance › Colors), over the chosen themes, per appearance. Not published
+    /// here: a color picker changes it on every pointer move, and every view that watches the settings would redraw for
+    /// it. Only what shows the colors themselves watches `NookColorEdits`; the rest of Nook just repaints.
+    var colorOverrides: NookColorOverrides {
+        didSet {
+            guard colorOverrides != oldValue else { return }
+            NookColorEdits.shared.changed()
+            saveColorOverridesSoon()
+            // The Colors section previews the edit at once; the windows follow once the picker rests.
+            applyTheme(settle: 0.25)
+        }
+    }
+    private var colorOverridesSave: DispatchWorkItem?
+
+    /// Written once the colors rest for a moment, not on every step of a drag.
+    private func saveColorOverridesSoon() {
+        colorOverridesSave?.cancel()
+        let save = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            UserDefaults.standard.setEncoded(self.colorOverrides, forKey: "colorOverrides")
+        }
+        colorOverridesSave = save
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: save)
+    }
 
     /// Typeset TeX in answers and Markdown previews (`MathView`); off shows the TeX as written.
     @Published var renderMath: Bool {
@@ -351,27 +396,35 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(richComposer, forKey: "richComposer") }
     }
 
+    /// Opening a chat whose newest message is someone else's shows a fitting answer as grey text in its empty field
+    /// (`ChatReplySuggestion`), as an agent's composer shows the next prompt after its turn.
+    @Published var suggestChatReply: Bool {
+        didSet { UserDefaults.standard.set(suggestChatReply, forKey: "suggestChatReply") }
+    }
+
     /// The built-in themes, then the imported ones.
     var themes: [NookColorTheme] { NookColorTheme.builtIn + customThemeCache }
 
     var themeChoice: NookThemeChoice {
-        NookThemeChoice(mode: appearanceMode, darkTheme: darkThemeID, lightTheme: lightThemeID)
+        NookThemeChoice(mode: appearanceMode, darkTheme: darkThemeID, lightTheme: lightThemeID, overrides: colorOverrides)
     }
 
     /// Hands the chosen palettes to `NookTheme` and the mode to the windows; a change redraws them.
-    func applyTheme() {
+    func applyTheme(settle: TimeInterval = 0) {
         let choice = themeChoice
         let changed = NookTheme.apply(dark: choice.palette(dark: true, themes: themes),
                                       light: choice.palette(dark: false, themes: themes))
         let modeChanged = NookWindowLook.mode != appearanceMode
         NookWindowLook.mode = appearanceMode
-        if changed || modeChanged {
+        if modeChanged {
             NookWindowLook.refresh()
-            themeRevision = NookTheme.revision
+        } else if changed {
+            NookWindowLook.repaintSoon(settle: settle)
         }
     }
 
-    /// `NookTheme.revision` as published: roots key their `.id` on it, so a new palette draws everywhere at once.
+    /// Goes up when the density changes: roots key their `.id` on it, as new text sizes need every view built anew.
+    /// A new palette does not rebuild anything; the windows repaint (`NookWindowLook.repaintSoon`).
     @Published private(set) var themeRevision = 0
 
     /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Appearance).
@@ -572,12 +625,23 @@ final class AppSettings: ObservableObject {
     /// The model on this Mac that does screen work right now (see `ScreenBrain`): only while the chosen brain is external
     /// and the screen is kept on this Mac, by hand or by the privacy level.
     var screenWorker: BrainSelection? {
-        let screenPrivate = localOnlySources.union(privacyLevel.localOnlySources).contains(SourceCatalog.screen)
+        let screenPrivate = keptOnMac.contains(SourceCatalog.screen)
         return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: screenPrivate, stored: screenBrain)
     }
 
     /// The screen brain, when it hands a note to the chosen brain instead of answering itself.
     var relayWorker: BrainSelection? { screenBrainRelays ? screenWorker : nil }
+
+    /// The model on this Mac that reads the page in the browser's side panel while the browser extension is kept on this
+    /// Mac (by hand or by the privacy level) and an external brain answers: the same screen brain, for the page. Nil when
+    /// the chosen brain may read the browser, no screen brain is picked, or the brain is on this Mac already.
+    var pageWorker: BrainSelection? {
+        let browserPrivate = keptOnMac.contains(SourceCatalog.browserExtension)
+        return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: browserPrivate, stored: screenBrain)
+    }
+
+    /// The page brain, when it hands a note to the chosen brain instead of answering itself.
+    var pageRelayWorker: BrainSelection? { screenBrainRelays ? pageWorker : nil }
 
     /// Whether Nook may do screen work at all: the active brain may read the screen, or a screen brain does it on this Mac.
     var screenWorkAllowed: Bool {
@@ -590,7 +654,17 @@ final class AppSettings: ObservableObject {
     /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
     /// when the brain runs on this Mac.
     /// The privacy level adds its own (the screen and clipboard when strict).
-    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources.union(privacyLevel.localOnlySources) }
+    var privateSources: Set<String> { isLocalBrain ? [] : keptOnMac }
+
+    /// The sources the user keeps on this Mac, whatever brain answers: chosen by hand, by the privacy level, and the
+    /// page in their browser (Nook's extension) whenever the screen is kept here, because that page is part of the
+    /// screen. Nook Chat, the screen brain and coding agents all read this one set.
+    var keptOnMac: Set<String> { privacyLevel.keptOnMac(byHand: localOnlySources) }
+
+    /// Kept on this Mac by a rule (the privacy level, or with the screen) rather than by the user's own switch.
+    func keptByRule(_ source: String) -> Bool {
+        !localOnlySources.contains(source) && keptOnMac.contains(source)
+    }
 
     /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged on this Mac,
     /// filtered by the privacy level when it goes to an external brain.
@@ -629,7 +703,7 @@ final class AppSettings: ObservableObject {
         if let routed = ScreenBrain.routed { return !routed.model.isEmpty }
         if useLocal { return !localModel.isEmpty }
         switch provider {
-        case .claude: return hasAPIKey
+        case .claude: return hasKey(for: .claude)
         case .claudeCode: return ClaudeCodeBrain.executable != nil
         // Your subscription through the agent: ready once it is installed and signed in.
         case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
@@ -676,31 +750,40 @@ final class AppSettings: ObservableObject {
     /// Key for the selected provider.
     var providerKey: String? { key(for: provider) }
 
+    /// Every provider's API key, Claude's too, through one store (`ProviderKeys`) in the Keychain.
+    private static let keys = ProviderKeys(read: { Keychain.read($0) }, write: { Keychain.write($0, account: $1) })
+
+    /// Keys the Keychain refused this session: they still work until Nook quits.
+    private var unsavedKeys: [AIProvider: String] = [:]
+
     /// Key for a provider, active or not.
     func key(for provider: AIProvider) -> String? {
-        provider == .claude ? apiKey : Keychain.read(provider.keyAccount)
+        unsavedKeys[provider] ?? Self.keys.key(provider: provider.rawValue)
     }
 
     private func refreshProviderKey() {
-        hasProviderKey = provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+        hasProviderKey = hasKey(for: provider)
     }
 
-    /// Saves the key for a provider other than Claude.
+    /// Saves the key for a provider; an empty one removes it. Returns the Keychain's error, nil when it was saved.
     @discardableResult
     func saveProviderKey(_ key: String, for provider: AIProvider) -> String? {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
-        let status = Keychain.write(trimmed, account: provider.keyAccount)
+        let status = Self.keys.save(key, provider: provider.rawValue)
+        let clean = ProviderKeys.clean(key)
+        unsavedKeys[provider] = status == errSecSuccess || clean.isEmpty ? nil : clean
         refreshProviderKey()
         objectWillChange.send()
         return status == errSecSuccess ? nil : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
     }
 
     func hasKey(for provider: AIProvider) -> Bool {
-        provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+        key(for: provider) != nil
     }
 
-    private var cachedKey: String?
-    var apiKey: String? { cachedKey }
+    /// Only the ends of a provider's saved key, to see which key it is.
+    func maskedKey(for provider: AIProvider) -> String? {
+        ProviderKeys.masked(key(for: provider))
+    }
 
     private init() {
         // Haiku is much faster than Sonnet and sufficient for Nook's tasks. One-time migration for users on the old default.
@@ -726,7 +809,7 @@ final class AppSettings: ObservableObject {
         let storedProvider = defaults.string(forKey: "provider")
         useLocal = BrainSelection.initialUseLocal(
             stored: storedUseLocal, storedProvider: storedProvider,
-            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
+            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && Self.keys.hasKey(provider: AIProvider.claude.rawValue))
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
@@ -734,14 +817,25 @@ final class AppSettings: ObservableObject {
         accentHex = storedAccent
         NookTheme.accentHex = storedAccent
         appearanceMode = NookAppearanceMode(rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .dark
+        let storedDensity = NookDensity(rawValue: defaults.string(forKey: "density") ?? "") ?? .comfortable
+        density = storedDensity
+        NookTheme.density = storedDensity
+        let storedDiffColors = NookDiffColors(rawValue: defaults.string(forKey: "diffColors") ?? "") ?? .redGreen
+        diffColors = storedDiffColors
+        NookTheme.diffColors = storedDiffColors
         darkThemeID = defaults.string(forKey: "darkThemeID") ?? NookColorTheme.nook.id
         lightThemeID = defaults.string(forKey: "lightThemeID") ?? NookColorTheme.nook.id
-        let storedThemes = (defaults.data(forKey: "customThemes")).flatMap { try? JSONDecoder().decode([NookCustomTheme].self, from: $0) } ?? []
+        // Theme by theme, the stored list kept aside first when one cannot be read (`SafeStorage`).
+        let storedThemes = SafeStorage.decode(LossyArray<NookCustomTheme>.self, defaults: defaults, key: "customThemes",
+                                              skipped: { $0.skipped }).value?.elements ?? []
         customThemes = storedThemes
         customThemeCache = storedThemes.compactMap(\.theme)
+        colorOverrides = (defaults.data(forKey: "colorOverrides")).flatMap { try? JSONDecoder().decode(NookColorOverrides.self, from: $0) }
+            ?? NookColorOverrides()
         renderMath = defaults.object(forKey: "renderMath") as? Bool ?? true
         MathText.renderingEnabled = defaults.object(forKey: "renderMath") as? Bool ?? true
         richComposer = defaults.object(forKey: "richComposer") as? Bool ?? true
+        suggestChatReply = defaults.object(forKey: "suggestChatReply") as? Bool ?? true
         let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
         nookLook = storedLook
         NookAppearance.shared.look = storedLook
@@ -790,34 +884,21 @@ final class AppSettings: ObservableObject {
         useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
         learnFromChats = defaults.object(forKey: "learnFromChats") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
-        let key = Keychain.read(Self.keyAccount)
-        cachedKey = key
-        hasAPIKey = !(key ?? "").isEmpty
+        let key = Self.keys.key(provider: AIProvider.claude.rawValue)
         // Local values: `self` cannot be read yet, as initialization is in progress.
         onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
             || !(defaults.string(forKey: "localModel") ?? "").isEmpty
         refreshProviderKey()
         applyTheme()
     }
+}
 
-    /// Saves the key. Active for at least this session; `keychainError` is set if Keychain failed.
-    @discardableResult
-    func saveAPIKey(_ key: String) -> (keychainError: String?, looksValid: Bool) {
-        // Pasting often includes whitespace, newlines, or quotes.
-        let trimmed = key
-            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
-        let status = Keychain.write(trimmed, account: Self.keyAccount)
-        cachedKey = trimmed.isEmpty ? nil : trimmed
-        hasAPIKey = !trimmed.isEmpty
-        refreshProviderKey()
-        let error: String? = status == errSecSuccess ? nil
-            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
-        return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))
-    }
+/// Goes up whenever a color under Settings › Appearance › Colors changes, so the views that show those colors (the
+/// Colors section, the page's "Restore defaults") redraw without every view that watches `AppSettings` redrawing too.
+@MainActor
+final class NookColorEdits: ObservableObject {
+    static let shared = NookColorEdits()
+    @Published private(set) var revision = 0
 
-    /// Only the tail of the key, to verify which key is saved.
-    var maskedKey: String? {
-        guard let key = cachedKey, key.count > 12 else { return nil }
-        return "\(key.prefix(7))…\(key.suffix(4))"
-    }
+    func changed() { revision += 1 }
 }

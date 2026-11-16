@@ -26,6 +26,23 @@ final class FinishedSessionsTests: XCTestCase {
                        "reopened after its last activity: stays open")
     }
 
+    /// An auto-settle keeps when it happened for the line at the end of the conversation; a reopen, new work or a
+    /// settle of yours does not say "automatically".
+    func testAutoSettleKeepsWhenUntilReopenedOrWorkedOn() {
+        let store = FinishedSessions.shared
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        store.mark(key, automatically: at)
+        XCTAssertEqual(store.autoSettledAt(key), at)
+        store.reopenByUser(key)
+        XCTAssertNil(store.autoSettledAt(key), "reopened: no longer settled")
+        store.mark(key)
+        XCTAssertNil(store.autoSettledAt(key), "settled by hand: nothing to say")
+        store.reopen(key)
+        store.mark(key, automatically: at)
+        store.reconcile(busy: [key])
+        XCTAssertNil(store.autoSettledAt(key), "working again: open, and the date goes with the mark")
+    }
+
     /// The Agents list settles only what you marked: a chat that went quiet stays until you handled it.
     func testQuietChatIsNotMarkedFinished() {
         let store = FinishedSessions.shared

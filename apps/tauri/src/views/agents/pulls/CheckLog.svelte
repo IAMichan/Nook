@@ -7,6 +7,7 @@
     ciClock, ciElapsed, ciLines, ciProblems, ciStatusLine, jobId, pullsApi,
     type CheckOutcome, type CiLog, type CiStep, type PullRequestCheck,
   } from "../../../lib/pulls";
+  import { tr } from "../../../lib/i18n.svelte";
 
   let { accountId, repo, check, onback }: { accountId: string; repo: string; check: PullRequestCheck; onback: () => void } = $props();
 
@@ -35,7 +36,7 @@
   const running = $derived(outcome === "pending" && (runningStep !== null || check.running));
   const doneSteps = $derived(log?.steps.filter((s) => s.outcome !== "pending").length ?? 0);
   const failedStep = $derived(log?.steps.find((s) => s.outcome === "failing") ?? null);
-  const progress = $derived(running && runningStep && log ? `stap ${log.steps.indexOf(runningStep) + 1} van ${log.steps.length}` : null);
+  const progress = $derived(running && runningStep && log ? tr("stap {n} van {total}", "step {n} of {total}", { n: log.steps.indexOf(runningStep) + 1, total: log.steps.length }) : null);
   const status = $derived(
     ciStatusLine(
       { ...check, outcome, running, started: log?.started ?? check.started, finished: log?.finished ?? check.finished },
@@ -116,21 +117,21 @@
 
 <div class="checklog">
   <div class="checkhead">
-    <button class="ghost icon" title="Terug" aria-label="Terug" onclick={onback}>‹</button>
+    <button class="ghost icon" title={tr("Terug", "Back")} aria-label={tr("Terug", "Back")} onclick={onback}>‹</button>
     {@render mark(outcome, running)}
     <div class="title">
       <strong class="name">{check.name}</strong>
       <span class="small status" class:bad={outcome === "failing"}>{status}</span>
     </div>
     <span class="spacer"></span>
-    {#if log?.text}<button class="ghost" onclick={copy}>{copied ? "Gekopieerd" : "Kopieer log"}</button>{/if}
-    {#if check.url}<button class="ghost" title="Open de pagina van de check" onclick={open}>Open op GitHub ↗</button>{/if}
+    {#if log?.text}<button class="ghost" onclick={copy}>{copied ? tr("Gekopieerd", "Copied") : tr("Kopieer log", "Copy log")}</button>{/if}
+    {#if check.url}<button class="ghost" title={tr("Open de pagina van de check", "Open the check's page")} onclick={open}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
   </div>
   {#if running && log?.steps.length}
     <div class="bar"><span style:width="{Math.max(2, (doneSteps / log.steps.length) * 100)}%"></span></div>
   {/if}
   {#if job === null}
-    <span class="faint small">Deze check komt van een andere app; de details staan op zijn eigen pagina.</span>
+    <span class="faint small">{tr("Deze check komt van een andere app; de details staan op zijn eigen pagina.", "This check comes from another app; its details are on its own page.")}</span>
   {:else if error}
     <span class="err">{error}</span>
   {:else if log}
@@ -141,17 +142,17 @@
       <div class="live">
         <span class="dot working live-dot"></span>
         <div class="live-text">
-          <strong class="small">Live gevolgd</strong>
-          <span class="faint small">GitHub geeft het log pas vrij als de job klaar is; dan staat het hier meteen.</span>
+          <strong class="small">{tr("Live gevolgd", "Following live")}</strong>
+          <span class="faint small">{tr("GitHub geeft het log pas vrij als de job klaar is; dan staat het hier meteen.", "GitHub only releases the log once the job is done; it shows up here right away then.")}</span>
         </div>
-        {#if check.url}<button class="ghost" onclick={open}>Volg op GitHub</button>{/if}
+        {#if check.url}<button class="ghost" onclick={open}>{tr("Volg op GitHub", "Follow on GitHub")}</button>{/if}
       </div>
     {:else}
       {#if log.steps.length}
         <button class="fold" onclick={() => (showSteps = !showSteps)}>
           <span class="chev" class:open={showSteps}>›</span>
-          {log.steps.length} stappen
-          {#if failedStep}<span>·</span><span class="bad ellipsis">mislukt bij {failedStep.name}</span>{/if}
+          {tr("{n} stappen", "{n} steps", { n: log.steps.length })}
+          {#if failedStep}<span>·</span><span class="bad ellipsis">{tr("mislukt bij {step}", "failed at {step}", { step: failedStep.name })}</span>{/if}
         </button>
         {#if showSteps}
           <div class="steps folded">
@@ -161,15 +162,15 @@
       {/if}
       {#if problemCount > 0}
         <div class="chips">
-          <button class="chip" class:on={onlyProblems} onclick={() => (fullLog = false)}>Fouten en waarschuwingen <span class="faint">{problemCount}</span></button>
-          <button class="chip" class:on={!onlyProblems} onclick={() => (fullLog = true)}>Volledig log</button>
+          <button class="chip" class:on={onlyProblems} onclick={() => (fullLog = false)}>{tr("Fouten en waarschuwingen", "Errors and warnings")} <span class="faint">{problemCount}</span></button>
+          <button class="chip" class:on={!onlyProblems} onclick={() => (fullLog = true)}>{tr("Volledig log", "Full log")}</button>
         </div>
       {/if}
-      {#if log.omittedLines > 0 && !onlyProblems}<span class="faint small">{log.omittedLines} eerdere regels weggelaten</span>{/if}
+      {#if log.omittedLines > 0 && !onlyProblems}<span class="faint small">{tr("{n} eerdere regels weggelaten", "{n} earlier lines left out", { n: log.omittedLines })}</span>{/if}
       <pre class="log" bind:this={pre}>{#each shown as line, i (i)}<span class={line.kind}>{line.kind === "group" ? "▸ " : ""}{line.text}</span>{"\n"}{/each}</pre>
     {/if}
   {:else}
-    <span class="faint small">Log laden…</span>
+    <span class="faint small">{tr("Log laden…", "Loading log…")}</span>
   {/if}
 </div>
 

@@ -64,6 +64,17 @@ final class UsageLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.replies.values.first, 2)
     }
 
+    func testHiddenAgentsAreLeftOut() {
+        var ledger = UsageLedger()
+        ledger.add(agent: "claude", model: "claude-sonnet-4-5", date: now.addingTimeInterval(-3_600), tokens: tokens(1_000, 0), calendar: calendar)
+        ledger.add(agent: "codex", model: "gpt-5-codex", date: now.addingTimeInterval(-3_600), tokens: tokens(500, 0), calendar: calendar)
+        let insights = UsageInsights.make(ledger, window: .week, now: now, calendar: calendar, sessions: ["claude": 2, "codex": 1],
+                                          hidden: ["codex"])
+        XCTAssertEqual(insights.tokens.total, 1_000)
+        XCTAssertEqual(insights.agents.map(\.agent), ["claude"])
+        XCTAssertEqual(insights.sessions, 2)
+    }
+
     func testInsightsForAWeek() {
         var ledger = UsageLedger()
         let day = 86_400.0

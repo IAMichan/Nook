@@ -3,7 +3,8 @@ description: >-
   Fingerprints the inputs of an expensive job (the git trees of the paths it builds from) and looks for the marker that
   verified-mark uploads when a run of this repository passed on exactly those inputs. When one exists the job can be
   skipped. Typical hits: the push to main after merging a pull request whose checks passed against an up-to-date base,
-  and a pull request that only merged in unrelated changes from main. workflow_dispatch always builds.
+  and a pull request that only merged in unrelated changes from main. workflow_dispatch and the weekly scheduled run
+  always build: they exist to catch what changed outside the repository (runner image, Xcode, toolchains).
 inputs:
   name:
     description: Short name of the check, part of the marker name (for example macos or ios).
@@ -37,8 +38,8 @@ runs:
         echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
         verified=false
-        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-          echo "Started by hand: always build."
+        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$GITHUB_EVENT_NAME" = schedule ]; then
+          echo "Started by hand or by the weekly schedule: always build."
         # Only markers from runs on this repository's own branches count: a fork's pull request runs its own copy of
         # the workflow and could upload any marker.
         elif run="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=verified-$NAME-$fingerprint&per_page=100" --jq \

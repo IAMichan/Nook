@@ -5,7 +5,7 @@
   // stays as it was. The notice card groups its actions in one bar next to a white OK with the countdown.
   import { agentApi, type QuestionRequest } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
-  import { tr, english } from "../../lib/i18n.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import { compactNotice, noticeTone } from "../../lib/notice";
   import NoticeMark from "../../components/NoticeMark.svelte";
   import NoticeOk from "../../components/NoticeOk.svelte";
@@ -44,7 +44,7 @@
       await agentApi.activateTerminal(card.host);
       agents.attention = null;
     } catch {
-      agents.error = tr(`Ik vind de terminal van ${card.name} niet. Staat hij nog open?`, `I can't find the terminal of ${card.name}. Is it still open?`);
+      agents.error = tr("Ik vind de terminal van {name} niet. Staat hij nog open?", "I can't find the terminal of {name}. Is it still open?", { name: card.name });
     }
   }
 
@@ -75,7 +75,7 @@
       <div class="qtext">
         <div class="qtitle" title={question.items[0]?.question ?? ""}>{question.items[0]?.question ?? ""}</div>
         <div class="faint qsub">
-          {question.agentName} {tr("vraagt", "asks")} · {question.project}{#if agents.questions.length > 1} · {tr("nog", "another")} {agents.questions.length - 1}{/if}
+          {tr("{agent} vraagt", "{agent} asks", { agent: question.agentName })} · {question.project}{#if agents.questions.length > 1} · {tr("nog {n}", "{n} more", { n: agents.questions.length - 1 })}{/if}
         </div>
       </div>
       {#if !question.sessionKey.startsWith("run:")}<button class="ghost" onclick={() => answerInTerminal(question)}>{tr("In terminal", "In terminal")}</button>{/if}
@@ -86,7 +86,7 @@
   <div class="alert">
     <div class="qbar">
       <NoticeMark tone={noticeTone(card.status)} />
-      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status, english())}</div></div>
+      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status)}</div></div>
       <button class="ghost" onclick={view}>{tr("Bekijk", "View")}</button>
       <NoticeOk compact {left} onclick={ondismiss} />
     </div>
@@ -102,7 +102,7 @@
       <div class="buttons">
         <div class="actions">
           <button class="action bright" onclick={view}>{tr("Bekijk", "View")}</button>
-          {#if card.host}<span class="divider"></span><button class="action" onclick={openTerminal}>Open {terminalName}</button>{/if}
+          {#if card.host}<span class="divider"></span><button class="action" onclick={openTerminal}>{tr("Open {app}", "Open {app}", { app: terminalName })}</button>{/if}
         </div>
         <NoticeOk {left} onclick={ondismiss} />
       </div>

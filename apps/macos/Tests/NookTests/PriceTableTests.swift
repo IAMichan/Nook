@@ -111,4 +111,41 @@ final class PriceTableTests: XCTestCase {
         XCTAssertEqual(CostFormat.usd(.nan), "$0.00")
         XCTAssertEqual(CostFormat.usd(.priced(2, source: .custom)), "$2.00")
     }
+
+    // MARK: One cost for every agent
+
+    private let list: [(prefix: String, price: ModelPrice)] = [("gpt-5", ModelPrice(input: 1, output: 10, cacheRead: 0.1))]
+
+    func testTokensWithoutAReportedCostAreEstimated() {
+        // Codex and Gemini CLI report tokens but no cost: the model's list price, marked as an estimate.
+        let result = PriceTable().cost(for: usage(1_000_000, 100_000, read: 2_000_000), provider: "codex", model: "gpt-5",
+                                       manifest: list)
+        XCTAssertEqual(result, .priced(1 + 1 + 0.2, source: .estimated))
+        XCTAssertTrue(result.isEstimate)
+        XCTAssertEqual(CostFormat.label(result), tr("ws.cost.estimated", "$2.20"))
+    }
+
+    func testReportedCostWinsOverTheEstimate() {
+        let result = PriceTable().cost(for: usage(1_000_000, 0, cost: 0.5), provider: "codex", model: "gpt-5", manifest: list)
+        XCTAssertEqual(result, .priced(0.5, source: .reported))
+        XCTAssertEqual(CostFormat.label(result), "$0.50")
+    }
+
+    func testYourPriceWinsOverBoth() {
+        var table = PriceTable()
+        table.setPrice(ModelPrice(input: 2, output: 2), provider: "codex", model: "gpt-5")
+        XCTAssertEqual(table.cost(for: usage(1_000_000, 0, cost: 9), provider: "codex", model: "gpt-5", manifest: list),
+                       .priced(2, source: .custom))
+    }
+
+    func testAModelWithoutAPriceStaysUnpriced() {
+        XCTAssertEqual(PriceTable().cost(for: usage(10, 10), provider: "gemini", model: "unknown", manifest: list), .unpriced)
+        XCTAssertNil(CostFormat.label(.unpriced))
+    }
+
+    func testATurnIsPricedTheSameWay() {
+        let turn = TurnUsage(inputTokens: 1_000_000, outputTokens: 0)
+        XCTAssertEqual(PriceTable().cost(for: turn, provider: "gemini", model: "gpt-5-mini", manifest: list),
+                       .priced(1, source: .estimated))
+    }
 }

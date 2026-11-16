@@ -7,6 +7,18 @@ enum ChatRoute: Hashable {
     case open(String)
 }
 
+/// The screen a chat route opens: pushed on the phone, beside the list on the iPad (`CompanionSplitView`).
+struct ChatDestination: View {
+    let route: ChatRoute
+
+    var body: some View {
+        switch route {
+        case .new(_, let prompt): ChatView(conversationID: nil, prompt: prompt)
+        case .open(let id): ChatView(conversationID: id)
+        }
+    }
+}
+
 /// A few first questions, so an empty chat is never a blank page.
 enum ChatSuggestions {
     static var all: [String] {
@@ -65,7 +77,7 @@ struct ChatListView: View {
                         .padding(.horizontal, Theme.Spacing.md)
                     VStack(spacing: 0) {
                         ForEach(client.conversations) { conversation in
-                            NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
+                            OpenLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
                                 .buttonStyle(RowPress(radius: PhoneRadius.row))
                             if conversation.id != client.conversations.last?.id {
                                 NookDivider(inset: Theme.Spacing.lg, tint: Theme.separator)
@@ -92,12 +104,7 @@ struct ChatListView: View {
         }
         .refreshable { await client.loadChats() }
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(for: ChatRoute.self) { route in
-            switch route {
-            case .new(_, let prompt): ChatView(conversationID: nil, prompt: prompt)
-            case .open(let id): ChatView(conversationID: id)
-            }
-        }
+        .navigationDestination(for: ChatRoute.self) { route in ChatDestination(route: route) }
         .screen()
         .task {
             // A Mac that sends Nook's conversations by itself (`liveChats`) needs one look; otherwise every few seconds.
@@ -192,6 +199,8 @@ struct ChatView: View {
     @State private var promptSent = false
     /// The question that started this chat waits in the outbox: its request id, until the Mac took it.
     @State private var waitingFor: String?
+    /// This screen's own watch of the conversation (`CompanionClient.watchConversation`).
+    @State private var watchOwner = UUID()
 
     init(conversationID: String?, prompt: String = "") {
         _id = State(initialValue: conversationID)
@@ -205,42 +214,51 @@ struct ChatView: View {
         guard let id else { return client.outbox.entries.filter { $0.id == waitingFor } }
         return client.outbox.questions(in: id)
     }
+    /// Changes when something new comes in at the end: a line, Nook's answer streaming in, a question waiting.
+    private var followKey: [String] {
+        [lines.last?.id ?? "", String(lines.last?.text.count ?? 0), String(lines.count), String(waiting.count), sending ? "1" : "0"]
+    }
     private var title: String {
         id.flatMap { id in client.conversations.first { $0.id == id }?.title } ?? String(localized: "New chat")
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-                    if lines.isEmpty, !sending, waiting.isEmpty {
+        ConversationScroll(followKey: followKey) { _ in
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
+                if lines.isEmpty, !sending, waiting.isEmpty {
+                    if id != nil, client.isOffline {
+                        // An earlier chat the phone did not keep: it opens once the Mac answers.
+                        OfflineNote(text: String(localized: "This chat is not kept on this iPhone yet. It opens once your Mac is connected."))
+                            .appearsAfterDelay()
+                    } else {
                         AskNook { send($0) }
                     }
-                    ForEach(lines) { ChatLineView(line: $0) }
-                    if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
-                    // What waits for the Mac, dimmed, until it takes it.
-                    ForEach(waiting) { entry in
-                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottom)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.lg)
+                ForEach(lines) { ChatLineView(line: $0) }
+                if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
+                // What waits for the Mac, dimmed, until it takes it.
+                ForEach(waiting) { entry in
+                    TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: lines.last?.text) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            .onChange(of: lines.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-        }
-        .safeAreaInset(edge: .bottom) {
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
+            .readingColumn()
+        } floating: {
+            EmptyView()
+        } dock: { scroll in
             ComposerDock {
                 SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, busy: busy, onStop: stop) {
                     let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     text = ""
+                    scroll.scrollToEnd()
                     send(question)
                 }
             }
+            .readingColumn()
         }
+        // Nook's chat takes words only: a dropped link or text lands in the box.
+        .composerDrop(text: $text)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: title, subtitle: "Nook") } }
         .screen()
@@ -255,18 +273,28 @@ struct ChatView: View {
             id = created
             waitingFor = nil
         }
-        // Quick while Nook writes, slow while it waits for you; a new chat starts the loop once it has an id.
+        // Live from a Mac that sends the open conversation by itself (`liveConversation`): Nook's words show as it writes
+        // them. Otherwise, or while the connection is down, asked for: quick while Nook writes, slow while it waits for
+        // you. A new chat starts the loop once it has an id.
         .task(id: id) {
             guard let id else { return }
             while !Task.isCancelled {
+                if client.conversationIsLive, await client.watchConversation(id, owner: watchOwner) {
+                    while !Task.isCancelled, client.conversationIsLive {
+                        try? await Task.sleep(for: .seconds(2))
+                        // An answer that went quiet on a shaky connection: asked again from where the phone is.
+                        if client.conversationStalled(id) { break }
+                    }
+                    continue
+                }
                 await client.loadChat(id)
                 let writing = client.chatLines[id]?.last?.streaming == true
                 try? await Task.sleep(for: .seconds(writing ? 1.5 : 6))
             }
         }
+        .onDisappear { if let id { Task { await client.unwatchConversation(id, owner: watchOwner) } } }
     }
 
-    private static let bottom = "bottom"
 
     private func send(_ question: String) {
         sending = true

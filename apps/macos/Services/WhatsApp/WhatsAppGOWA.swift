@@ -35,6 +35,22 @@ final class WhatsAppGOWAProcess {
         return base.appendingPathComponent("Nook/GOWA", isDirectory: true)
     }
 
+    /// How long a file GOWA wrote under `statics/` stays: Nook copies a fetched file into `ChatMedia` at once (which keeps
+    /// its own limit), and a file being sent is gone from GOWA's hands within seconds.
+    nonisolated static let staticsMaxAge: TimeInterval = 24 * 60 * 60
+    private var staticsPrunedAt: Date = .distantPast
+
+    /// At most hourly, off the main thread: GOWA never removes what it saved under `statics/`, which reached 2.3 GB.
+    private func pruneStaticsIfDue(now: Date = Date()) {
+        guard now.timeIntervalSince(staticsPrunedAt) > 60 * 60 else { return }
+        staticsPrunedAt = now
+        let statics = Self.workingDirectory.appendingPathComponent("statics", isDirectory: true)
+        Task.detached(priority: .background) {
+            let removed = WAGOWA.pruneStatics(statics, olderThan: Self.staticsMaxAge, now: now)
+            if removed > 0 { Log.connectors.info("WhatsApp: removed \(removed) old GOWA files") }
+        }
+    }
+
     /// What the running GOWA was started with: changed, it is restarted; same, left alone.
     private var launchedWith: String?
 
@@ -44,6 +60,7 @@ final class WhatsAppGOWAProcess {
     /// a minute at most. Returns false when it can't run.
     @discardableResult
     func sync() -> Bool {
+        pruneStaticsIfDue()
         guard Self.autoStart, WhatsAppSettings.gateway == .gowa else { stopNow(); return false }
         let path = (Self.binaryPath as NSString).expandingTildeInPath
         guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path),

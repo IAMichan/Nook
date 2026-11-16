@@ -5,11 +5,20 @@ import SwiftUI
 /// Teams, Messages, Snapchat, the chat helper's networks, and what other apps' notifications bring. A chat Nook writes in
 /// is answered right there, in the Chats tab and on its card; any other chat's answer is copied for its own app.
 extension AppModel {
+    /// Whether an app's own link (`OwnLink`) is connected right now.
+    static func isLinked(_ link: OwnLink) -> Bool {
+        switch link {
+        case .whatsAppGateway: return WhatsAppAccounts.shared.isConnected
+        }
+    }
+
     func startChats() {
         let capture = ChatCaptureService.shared
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
-        capture.skips = { notice in notice.app == "whatsapp" && WhatsAppAccounts.shared.isConnected }
+        capture.skips = { notice in MessagingApps.known(notice.app)?.ownLink.map(Self.isLinked) == true }
         capture.onFresh = { [weak self] ids in ids.forEach { self?.presentChat($0) } }
+        // Automations that wait for a message (every chat app, Mail included) start from the same news.
+        capture.onArrived = { messages in ScheduledTaskStore.shared.messagesArrived(messages) }
         // Read in its own app (on the phone, in the app on this Mac): a card still waiting in line goes, and so does its
         // macOS notification; the card on screen stays (you may be typing) and follows its chat.
         capture.onReadElsewhere = { [weak self] ids in
@@ -134,9 +143,19 @@ extension AppModel {
         }
         // Nothing new from them (your own answer, new ticks): nothing to tell.
         guard !line.isEmpty else { return }
+        // A chat you snoozed (Follow up › Later) keeps quiet until its time; the history has the message already.
+        guard !ChatFollowUpStore.shared.follow.isSnoozed(id, now: Date()) else { return }
+        // A question in a private chat, or a mention in a group that is otherwise quiet, may pass a burst of other
+        // pop-ups (`ChatNoticePriority`); never the gaps or the rules.
+        let rules = ChatNoticeRulesStore.shared.rules
+        let newest = thread.messages.last(where: { !$0.isMine })
+        let priority = ChatNoticePriority.raises(kind: thread.noticeKind, mentionsMe: newest?.mentionsMe == true,
+                                                 asksQuestion: TextKit.asksQuestion(newest?.text ?? ""),
+                                                 quietByKind: rules.kindIsQuiet(thread.noticeKind, app: thread.app),
+                                                 mode: rules.mode(for: id))
         let open: () -> Void = { [weak self] in self?.presentChat(id, asked: true) }
-        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, title: thread.name, subtitle: context,
-                      body: line,
+        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, priority: priority, title: thread.name,
+                      subtitle: context, body: line,
                       card: { [weak self] in self?.showChatCard(id, opened: false) },
                       strip: { [weak self] in
                           self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)
@@ -184,14 +203,17 @@ extension AppModel {
         viewModel.register("\(token)#nook") { [weak self] in self?.letNookAnswer(id) }
         viewModel.register("\(token)#open") { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
         viewModel.register("\(token)#app") { [weak self] in self?.openChatApp(thread.app) }
-        viewModel.register("\(token)#quiet") { ChatNoticeRulesStore.shared.setMode(.muted, for: id) }
+        viewModel.register("\(token)#quiet") {
+            ChatNoticeRulesStore.shared.setMode(.muted, for: id)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.chats.rawValue, app: thread.app, subject: id)
+        }
         viewModel.register("\(token)#hide") { [weak self] in
             ChatNoticeRulesStore.shared.setHidden(true, chat: id)
+            AttentionFeedbackStore.shared.record(.muted, source: NoticeSource.chats.rawValue, app: thread.app, subject: id)
             self?.viewModel.dismissCard(id: token)
         }
-        let time = Self.chatBubbleTime
         // The newest a bridged chat keeps (a chat only notifications bring keeps every message: its newest that many).
-        let bubbles = ChatBubble.bubbles(thread, last: ChatInbox.keep) { time.string(from: $0) }
+        let bubbles = ChatBubble.bubbles(thread, last: ChatInbox.keep) { NookDates.clock($0) }
         let unread = thread.unread > 1 ? " · \(tr("whatsapp.card.unread", thread.unread))" : ""
         let card = NookCard(
             id: token,
@@ -234,13 +256,6 @@ extension AppModel {
         // follows the chat as that comes in.
         if fresh || opened { Task { await openedChat(entry) } }
     }
-
-    /// "14:05" under each bubble: one formatter for every redraw, not a new one each time.
-    static let chatBubbleTime: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
 
     /// Read on a chat's card, by your own click: read in Nook, and in its app too where answering does so for that app
     /// (Settings › Chats) and something was new.
@@ -493,6 +508,24 @@ extension AppModel {
             }
     }
 
+    /// The answer a chat's empty field suggests (`ChatReplySuggestion`): what "@nook" alone would write, without lookups
+    /// or actions, by the chosen brain. Nil when there is no brain or it wrote nothing.
+    func suggestChatReply(app appName: String, chat name: String, transcript: String) async -> String? {
+        guard settings.brainReady else { return nil }
+        let prompt = ChatDraft.prompt(app: appName, chat: name, transcript: transcript, instruction: "")
+        return await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 60)
+    }
+
+    /// The same for a card's field: the chat the card shows, as `draftCardReply` reads it. A card that is no chat has
+    /// nothing to answer.
+    func suggestCardReply(_ card: NookCard) async -> String? {
+        guard card.chatReply, case .chat(let bubbles) = card.detail else { return nil }
+        let thread = Self.chatCardThread(card).flatMap { ChatCaptureService.shared.loadedInbox.threads[$0] }
+        let app = thread.map { MessagingApps.app(id: $0.app)?.name ?? $0.app } ?? card.replyCopiesTo ?? card.context
+        let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
+        return await suggestChatReply(app: app, chat: card.title, transcript: transcript)
+    }
+
     /// Runs what Nook proposed under a chat's "@nook …", after your click, as a plan in Nook Chat runs: one step after
     /// another, stopping at the first that fails.
     func runDraftActions(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
@@ -513,6 +546,47 @@ extension AppModel {
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction,
                                           onLookup: onLookup)
+    }
+}
+
+/// The suggested answers of every chat (`ChatReplySuggestion`), one per chat for its newest message, shared by the
+/// Chats tab and the chat cards so a chat open in both asks once and shows the same.
+@MainActor
+final class ChatReplySuggestions: ObservableObject {
+    static let shared = ChatReplySuggestions()
+
+    @Published private(set) var states: [String: ChatReplySuggestionState] = [:]
+    private var tasks: [String: Task<Void, Never>] = [:]
+
+    /// The suggestion to show for `turn` now, if any.
+    func shown(_ turn: ChatReplySuggestion.Turn?) -> String? {
+        turn.flatMap { states[$0.chat]?.shown(for: $0) }
+    }
+
+    /// A chat's field is on screen: writes a suggestion for its newest message through `write` when the gate allows it.
+    func request(_ turn: ChatReplySuggestion.Turn?, fieldEmpty: Bool, busy: Bool, write: @escaping () async -> String?) {
+        guard let turn else { return }
+        let settings = AppSettings.shared
+        let gate = ChatReplySuggestion.Gate(
+            enabled: settings.suggestChatReply, brainReady: settings.brainReady, fieldEmpty: fieldEmpty, busy: busy,
+            alreadyTried: states[turn.chat]?.turn == turn, stale: ChatReplySuggestion.Gate.isStale(turn.date))
+        guard gate.allows else { return }
+        states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: .writing)
+        tasks[turn.chat]?.cancel()
+        tasks[turn.chat] = Task { [weak self] in
+            let text = ChatReplySuggestion.clean(await write())
+            guard let self, !Task.isCancelled, self.states[turn.chat]?.turn == turn,
+                  self.states[turn.chat]?.phase == .writing else { return }
+            self.tasks[turn.chat] = nil
+            self.states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: text.map { .ready($0) } ?? .done)
+        }
+    }
+
+    /// You took the suggestion or let it go: none for this message any more, and no request left running.
+    func dismiss(_ turn: ChatReplySuggestion.Turn?) {
+        guard let turn, let state = states[turn.chat], state.turn == turn, state.phase != .done else { return }
+        tasks.removeValue(forKey: turn.chat)?.cancel()
+        states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: .done)
     }
 }
 

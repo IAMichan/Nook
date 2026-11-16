@@ -1,0 +1,34 @@
+name: Welcome
+
+# Greets someone on their first issue or first pull request here: what happens next, where the rules are, and that
+# questions in review are normal (.github/scripts/welcome.cjs). Comments once per issue or pull request.
+# The script is loaded from the default branch and only calls the GitHub API; no pull request code runs, which is what
+# makes pull_request_target (needed to comment on pull requests from forks) safe here. Runs on ubuntu in seconds.
+on:
+  issues:
+    types: [opened]
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs only the trusted script from main, never PR code
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  welcome:
+    name: Welcome
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const welcome = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/welcome.cjs`);
+            await welcome.run({ github, context, core });

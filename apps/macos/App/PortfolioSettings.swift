@@ -31,7 +31,7 @@ struct PortfolioSettings: View {
                     .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let message = walletError {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(message, icon: "exclamationmark.triangle.fill")
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.coral)
             }
@@ -62,8 +62,8 @@ struct PortfolioSettings: View {
                     Image(icon: "minus.circle.fill")
                         .foregroundStyle(NookTheme.coral)
                 }
-                .buttonStyle(.borderless)
-                .help(tr("portfolio.removeAddress"))
+                .buttonStyle(.nookBorderless)
+                .nookTip(tr("portfolio.removeAddress"))
             }
             if let message = portfolio.error(for: wallet) {
                 Text(message)
@@ -120,7 +120,7 @@ private struct PortfolioExchangeFields: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
             if let message = saveError ?? portfolio.error(for: exchange) {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(message, icon: "exclamationmark.triangle.fill")
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.coral)
                     .textSelection(.enabled)
@@ -131,7 +131,7 @@ private struct PortfolioExchangeFields: View {
                 Text(exchange.name)
                 Spacer()
                 if portfolio.isConfigured(exchange) {
-                    Label(tr("portfolio.configured"), systemImage: "checkmark.circle.fill")
+                    Label(tr("portfolio.configured"), icon: "checkmark.circle.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.mint)
                 }

@@ -1,7 +1,8 @@
 // Gamer Mode: the list of games and the Valorant Coach. Same shapes as the Rust structs (serde, camelCase); the coach
-// in `nook_core::games` decides what to say, this file only words it (Dutch and English, like `tr`).
+// in `nook_core::games` decides what to say, this file only words it, in the interface language (like `tr`).
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { fill, translate, type AppLanguage, type Vars } from "./i18n.svelte";
 
 export interface GameInfo {
   id: string;
@@ -129,8 +130,10 @@ export const games = {
   onUpdated: (cb: (view: CoachView) => void): Promise<UnlistenFn> => listen<CoachView>("valorant-updated", (e) => cb(e.payload)),
 };
 
-type Lang = "nl" | "en";
-const t = (lang: Lang, nl: string, en: string) => (lang === "en" ? en : nl);
+/// The language to word coaching in: any interface language. German, French, and Spanish come from the catalog
+/// (`i18n/lib.ts`), keyed by the English text, the same way `tr` does it.
+type Lang = AppLanguage;
+const t = (lang: Lang, nl: string, en: string, vars?: Vars) => fill(translate(lang, nl, en), vars);
 
 /// Seconds into the round as the game shows time: 6 → "0:06".
 export function clock(seconds: number): string {
@@ -139,18 +142,18 @@ export function clock(seconds: number): string {
 
 export function listRounds(rounds: number[], lang: Lang): string {
   if (rounds.length <= 1) return rounds.join("");
-  return `${rounds.slice(0, -1).join(", ")} ${t(lang, "en", "and")} ${rounds[rounds.length - 1]}`;
+  return t(lang, "{list} en {last}", "{list} and {last}", { list: rounds.slice(0, -1).join(", "), last: rounds[rounds.length - 1] });
 }
 
 /// What to do about a setup of this kind, before entering `location`.
 function advice(kind: AbilityKind | null, location: string, time: number | null, lang: Lang): string {
   switch (kind) {
-    case "trap": return t(lang, `Check deze plek voordat je ${location} in loopt.`, `Check this location before entering ${location}.`);
+    case "trap": return t(lang, "Check deze plek voordat je {location} in loopt.", "Check this location before entering {location}.", { location });
     case "flash": return time !== null
-      ? t(lang, `Verwacht hem vroeg in de ronde, rond ${clock(time)}.`, `Expect it early in the round, around ${clock(time)}.`)
+      ? t(lang, "Verwacht hem vroeg in de ronde, rond {time}.", "Expect it early in the round, around {time}.", { time: clock(time) })
       : t(lang, "Verwacht hem en kijk weg of wacht hem af.", "Expect it and turn away or wait it out.");
-    case "recon": return t(lang, `Reken erop dat je bij ${location} gezien wordt; schiet hem kapot of blijf uit zicht.`, `Expect to be revealed at ${location}; shoot it or stay out of its line.`);
-    default: return t(lang, `Houd er rekening mee bij ${location}.`, `Plan around it at ${location}.`);
+    case "recon": return t(lang, "Reken erop dat je bij {location} gezien wordt; schiet hem kapot of blijf uit zicht.", "Expect to be revealed at {location}; shoot it or stay out of its line.", { location });
+    default: return t(lang, "Houd er rekening mee bij {location}.", "Plan around it at {location}.", { location });
   }
 }
 
@@ -158,50 +161,61 @@ export interface Coaching { title: string; body: string }
 
 export function habitText(habit: Habit, lang: Lang): Coaching {
   if (habit.type === "repeatTrigger") {
+    const vars = { count: habit.count, agent: habit.agentName, ability: habit.abilityName, location: habit.location };
     return {
       title: t(lang, "Dezelfde fout", "Same mistake again"),
       body: t(lang,
-        `Je liep ${habit.count} keer in dezelfde ${habit.abilityName} van ${habit.agentName} bij ${habit.location}. Check voortaan utility die al eerder gezien is voordat je een site in gaat.`,
-        `You have triggered the same ${habit.agentName} ${habit.abilityName} at ${habit.location} ${habit.count} times. You should start checking previously identified utility before entering sites.`),
+        "Je liep {count} keer in dezelfde {ability} van {agent} bij {location}. Check voortaan utility die al eerder gezien is voordat je een site in gaat.",
+        "You have triggered the same {agent} {ability} at {location} {count} times. You should start checking previously identified utility before entering sites.",
+        vars),
     };
   }
   return {
     title: t(lang, "Steeds dezelfde plek", "Same spot again"),
     body: t(lang,
-      `Je ging in ${habit.count} rondes dood bij ${habit.location} (rondes ${listRounds(habit.rounds, lang)}). Probeer een andere hoek of wacht op utility.`,
-      `You died at ${habit.location} in ${habit.count} rounds (rounds ${listRounds(habit.rounds, lang)}). Try a different angle or wait for utility.`),
+      "Je ging in {count} rondes dood bij {location} (rondes {rounds}). Probeer een andere hoek of wacht op utility.",
+      "You died at {location} in {count} rounds (rounds {rounds}). Try a different angle or wait for utility.",
+      { count: habit.count, location: habit.location, rounds: listRounds(habit.rounds, lang) }),
   };
 }
 
 /// One piece of advice in words.
 export function coachingText(insight: Insight, lang: Lang): Coaching {
+  if (insight.type === "habit") return habitText(insight.habit, lang);
+  const vars = { agent: insight.agentName, ability: insight.abilityName, location: insight.location, occurrences: insight.occurrences };
   switch (insight.type) {
     case "patternStrong": {
       const seen = insight.hits >= 2
-        ? t(lang, `Je liep er al ${insight.hits} keer in.`, `You've triggered it ${insight.hits} times.`)
+        ? t(lang, "Je liep er al {n} keer in.", "You've triggered it {n} times.", { n: insight.hits })
         : insight.streak >= 3
-          ? t(lang, `Je zag hem ${insight.streak} rondes op rij.`, `You've seen it ${insight.streak} rounds in a row.`)
-          : t(lang, `Al ${insight.occurrences} keer gebruikt.`, `Used ${insight.occurrences} times.`);
+          ? t(lang, "Je zag hem {n} rondes op rij.", "You've seen it {n} rounds in a row.", { n: insight.streak })
+          : t(lang, "Al {n} keer gebruikt.", "Used {n} times.", { n: insight.occurrences });
       return {
-        title: t(lang, `Patroon van ${insight.agentName}`, `${insight.agentName} pattern detected`),
-        body: `${t(lang, `${insight.agentName} gebruikt steeds ${insight.abilityName} bij ${insight.location}.`, `${insight.agentName} keeps reusing ${insight.abilityName} at ${insight.location}.`)} ${seen} ${advice(insight.kind, insight.location, insight.typicalTime, lang)}`,
+        title: t(lang, "Patroon van {agent}", "{agent} pattern detected", vars),
+        body: [
+          t(lang, "{agent} gebruikt steeds {ability} bij {location}.", "{agent} keeps reusing {ability} at {location}.", vars),
+          seen,
+          advice(insight.kind, insight.location, insight.typicalTime, lang),
+        ].join(" "),
       };
     }
     case "patternForming":
       return {
-        title: t(lang, `Mogelijk patroon van ${insight.agentName}`, `Possible ${insight.agentName} pattern`),
+        title: t(lang, "Mogelijk patroon van {agent}", "Possible {agent} pattern", vars),
         body: t(lang,
-          `${insight.abilityName} bij ${insight.location} in rondes ${listRounds(insight.rounds, lang)}. Nook let op of het terugkomt.`,
-          `${insight.abilityName} at ${insight.location} in rounds ${listRounds(insight.rounds, lang)}. Nook is watching whether it repeats.`),
+          "{ability} bij {location} in rondes {rounds}. Nook let op of het terugkomt.",
+          "{ability} at {location} in rounds {rounds}. Nook is watching whether it repeats.",
+          { ...vars, rounds: listRounds(insight.rounds, lang) }),
       };
     case "patternChanged":
       return {
-        title: t(lang, `${insight.agentName} veranderde de setup`, `${insight.agentName} changed the usual setup`),
+        title: t(lang, "{agent} veranderde de setup", "{agent} changed the usual setup", vars),
         body: [
           t(lang,
-            `De gewone ${insight.abilityName} bij ${insight.location} (${insight.occurrences} keer eerder) was er in ronde ${insight.round} niet.`,
-            `The usual ${insight.abilityName} at ${insight.location} (used ${insight.occurrences} times before) wasn't detected in round ${insight.round}.`),
-          insight.movedTo ? t(lang, `Hij lag nu bij ${insight.movedTo}.`, `It showed up at ${insight.movedTo} instead.`) : "",
+            "De gewone {ability} bij {location} ({occurrences} keer eerder) was er in ronde {round} niet.",
+            "The usual {ability} at {location} (used {occurrences} times before) wasn't detected in round {round}.",
+            { ...vars, round: insight.round }),
+          insight.movedTo ? t(lang, "Hij lag nu bij {place}.", "It showed up at {place} instead.", { place: insight.movedTo }) : "",
           t(lang, "Reken niet blind op de oude setup.", "Be careful relying on the old setup."),
         ].filter(Boolean).join(" "),
       };
@@ -209,20 +223,20 @@ export function coachingText(insight: Insight, lang: Lang): Coaching {
       return {
         title: t(lang, "Goed aangepast", "Good adaptation"),
         body: t(lang,
-          `Je ontweek de gewone ${insight.abilityName} van ${insight.agentName} bij ${insight.location}. Die is nu ${insight.occurrences} keer gebruikt.`,
-          `You avoided ${insight.agentName}'s usual ${insight.abilityName} at ${insight.location}. It has now been used ${insight.occurrences} times.`),
+          "Je ontweek de gewone {ability} van {agent} bij {location}. Die is nu {occurrences} keer gebruikt.",
+          "You avoided {agent}'s usual {ability} at {location}. It has now been used {occurrences} times.",
+          vars),
       };
-    case "habit":
-      return habitText(insight.habit, lang);
   }
 }
 
 /// General knowledge for an enemy agent, before Nook has seen anything of theirs.
 export function generalText(tip: GeneralTip, lang: Lang): string {
+  const vars = { agent: tip.agentName, ability: tip.abilityName };
   switch (tip.kind) {
-    case "trap": return t(lang, `${tip.agentName} zet ${tip.abilityName} vaak bij ingangen en chokes.`, `${tip.agentName} commonly places ${tip.abilityName} at choke points and entrances.`);
-    case "flash": return t(lang, `${tip.agentName} opent rondes vaak met ${tip.abilityName}.`, `${tip.agentName} often opens rounds with ${tip.abilityName}.`);
-    default: return t(lang, `${tip.agentName} zoekt informatie met ${tip.abilityName}.`, `${tip.agentName} gathers information with ${tip.abilityName}.`);
+    case "trap": return t(lang, "{agent} zet {ability} vaak bij ingangen en chokes.", "{agent} commonly places {ability} at choke points and entrances.", vars);
+    case "flash": return t(lang, "{agent} opent rondes vaak met {ability}.", "{agent} often opens rounds with {ability}.", vars);
+    default: return t(lang, "{agent} zoekt informatie met {ability}.", "{agent} gathers information with {ability}.", vars);
   }
 }
 
@@ -231,8 +245,8 @@ export function confidenceLabel(c: Confidence, lang: Lang): string {
 }
 
 export function statusLabel(s: PatternStatus, occurrences: number, lang: Lang): string {
-  if (s.state === "changed") return t(lang, `Veranderd in ronde ${s.round}`, `Changed in round ${s.round}`);
-  if (s.state === "stale") return t(lang, `Niet meer gezien sinds ronde ${s.since}`, `Not seen since round ${s.since}`);
+  if (s.state === "changed") return t(lang, "Veranderd in ronde {round}", "Changed in round {round}", { round: s.round });
+  if (s.state === "stale") return t(lang, "Niet meer gezien sinds ronde {round}", "Not seen since round {round}", { round: s.since });
   return occurrences >= 3 ? t(lang, "Sterk patroon", "Strong pattern") : occurrences === 2 ? t(lang, "Mogelijk patroon", "Possible pattern") : t(lang, "Eén keer gezien", "Seen once");
 }
 

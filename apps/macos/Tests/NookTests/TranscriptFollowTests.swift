@@ -105,7 +105,7 @@ final class TranscriptFollowTests: XCTestCase {
         let step = events.first { $0.callID == "t2" }
         XCTAssertEqual(step?.state, .done)
         XCTAssertEqual(step?.output, "Executed 3 tests, with 0 failures")
-        XCTAssertEqual(events.filter { $0.callID == "t2" }.count, 1)
+        XCTAssertEqual(events.count(where: { $0.callID == "t2" }), 1)
         XCTAssertEqual(events.last?.kind, .result)
         XCTAssertEqual(events.dropLast().last?.text, "All fixed.")
         // Nothing new: nothing changes, and the turn does not end twice.
@@ -150,5 +150,22 @@ final class TranscriptFollowTests: XCTestCase {
         XCTAssertNotNil(transcript(lines).last?.steps.first?.input)
         let long = AgentTranscript.inputJSON(["content": String(repeating: "x", count: 10_000)]) ?? ""
         XCTAssertLessThan(long.count, 5_000)
+    }
+
+    /// Cursor writes Claude Code's blocks under "role", without ids or times (`agent-transcripts/<id>/<id>.jsonl`, the
+    /// id of its ACP session): a turn in Cursor's own CLI is taken over the same way.
+    func testCursorTurnsWrittenOutsideNookAreTakenOver() {
+        let cursor = [
+            #"{"role":"user","message":{"content":[{"type":"text","text":"Look at the code"}]}}"#,
+            #"{"role":"assistant","message":{"content":[{"type":"text","text":"The code reads fine."}]}}"#,
+            #"{"role":"user","message":{"content":[{"type":"text","text":"Now fix it all"}]}}"#,
+            #"{"role":"assistant","message":{"content":[{"type":"tool_use","id":"c2","name":"Shell","input":{"command":"swift test"}}]}}"#,
+        ]
+        let own = [RunEvent(kind: .user, text: "Look at the code"), RunEvent(kind: .assistant, text: "The code reads fine.", state: .done)]
+        let added = appended(TranscriptFollow.changes(events: own, messages: transcript(cursor), finished: false))
+        XCTAssertEqual(added.map(\.kind), [.user, .tool])
+        XCTAssertEqual(added[0].text, "Now fix it all")
+        XCTAssertEqual(added[1].callID, "c2")
+        XCTAssertEqual(added[1].tool, "Shell")
     }
 }

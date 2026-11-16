@@ -5,13 +5,10 @@ extension SessionFocus {
     /// What is in front of you now; nil while the screen is locked or Nook itself is in front.
     @MainActor
     static func current() -> Front? {
-        if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-           (session["CGSSessionScreenIsLocked"] as? Bool) == true { return nil }
+        if SystemLoad.isScreenLocked { return nil }
         guard let app = NSWorkspace.shared.frontmostApplication, let bundleID = app.bundleIdentifier,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        let anyInput = CGEventType(rawValue: ~0) ?? .null
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
-        return Front(bundleID: bundleID, windowTitle: windowTitle(of: app.processIdentifier), idle: idle)
+        return Front(bundleID: bundleID, windowTitle: windowTitle(of: app.processIdentifier), idle: SystemLoad.idleSeconds)
     }
 
     /// The title of the app's front window. macOS only gives it with screen recording permission; otherwise nil.

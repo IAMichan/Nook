@@ -11,7 +11,7 @@ Thanks for your interest in contributing to Nook! Bug reports, feature ideas, tr
 | **A Linux machine** | The Tauri app (Rust core, Svelte 5 UI), Wayland support, packaging | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An Android phone** | Install the APK from CI on a real device and report what works | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An iPhone** | The Nook Companion app (SwiftUI) | [iPhone Companion](#iphone-companion) |
-| **A second language** | Review or improve the Dutch, German, French, or Spanish strings, or translate the Tauri app (Dutch-only today) | [Translations](#translations) |
+| **A second language** | Review or improve the Dutch, German, French, or Spanish strings, in the Mac or the Tauri app | [Translations](#translations) |
 | **An eye for clear writing** | Docs, the README, error messages, onboarding copy | [Docs](#docs) |
 | **Ten minutes** | Try Nook and open an issue about anything confusing or broken; give the repo a ⭐ | [Reporting Issues](#reporting-issues) |
 
@@ -24,12 +24,12 @@ Looking for something concrete? Check the issues labeled [`good first issue`](ht
 3. **Build and run** the part you're changing (see the platform sections below).
 4. **Make your change** and keep it focused on one topic.
 5. **Run the checks** for what you touched:
-   - macOS app or Swift core: `./scripts/core-tests.sh` (runs on Linux too), and `./scripts/ui-lint.sh` when you changed `apps/macos/NotchUI` or `apps/macos/App`.
+   - macOS app or Swift core: `./scripts/core-tests.sh` (runs on Linux too), and `./scripts/ui-lint.sh` when you changed `apps/macos/UI` or `apps/macos/App`.
    - Tauri app: the `npm` and `cargo` checks under [Windows, Linux & Android](#windows-linux--android-tauri).
 6. **Open a pull request** using the [PR template](.github/pull_request_template.md). Commits, branches, code, comments, and docs are written in English.
 7. **Link the issues it resolves.** Before opening the pull request, check the [open issues](https://github.com/IAMichan/nook/issues) for any your change resolves, and list them under *Related issues* as `Closes #123` so they close on merge. Use `Part of #123` when the issue stays open.
 
-CI runs on every pull request, and an automated reviewer (CodeRabbit) leaves comments. Don't worry if CI or a review asks for changes; that's normal, and maintainers are happy to help you get it green.
+CI runs on every pull request, and an automated reviewer (CodeRabbit) leaves comments. Don't worry if CI or a review asks for changes; that's normal, and maintainers are happy to help you get it green. The **Pull request overview** comment at the top of your pull request keeps itself up to date and lists exactly what is still needed before it can merge; the required check is called `Check`. Don't commit screenshots or logs as proof: drag them into the pull request description instead. To let others try a macOS change without building it, a maintainer can add the `preview` label, which attaches a downloadable app to the run.
 
 ## Building Locally
 
@@ -93,7 +93,7 @@ See [`apps/ios/README.md`](apps/ios/README.md) and [docs/COMPANION.md](docs/COMP
 ## Translations
 
 - **macOS app:** every user-facing string goes through `tr("key")` and lives in `apps/macos/Core/I18n*.swift` in five languages (`en`, `nl`, `de`, `fr`, `es`). English is the default. Native speakers reviewing the German, French, or Spanish strings are very welcome; a PR that only improves wording is a great first contribution. `I18nCoverageTests` (part of `./scripts/core-tests.sh`) checks that no key is missing and that placeholders such as `%@` and `%ld` match.
-- **Tauri app:** the interface is Dutch-only today. Bringing it to English and the other Mac languages is one of the most useful things you can do; check the [`help wanted`](https://github.com/IAMichan/nook/labels/help%20wanted) issues or open one to coordinate.
+- **Tauri app:** the same five languages, English by default. Write a visible string as `tr("Nederlands", "English")` with `{placeholders}` for values, and add German, French, and Spanish for its English text to a catalog in `apps/tauri/src/lib/i18n/`. `src/lib/i18n.test.ts` (`npm test`) checks that every text is translated and that placeholders match. Error messages from the Rust side are still partly Dutch; translating those is a welcome contribution.
 
 ## Docs
 
@@ -121,7 +121,7 @@ Core logic (source scoping, action validation, tool loop, session registry, work
 
 ## Releases
 
-A maintainer publishes a release from **Actions › Release (macOS) › Run workflow**, choosing what to bump: the next beta
+A maintainer publishes a release from **Actions › Release › Run workflow**, choosing what to bump: the next beta
 (`v0.1.0-beta.1` → `v0.1.0-beta.2`, the default), or the first beta of the next patch, minor, or major version
 (`scripts/next-release-tag.sh` picks the tag). A tag with a `-beta.N` suffix becomes a pre-release. The release page lists
 the merged pull requests grouped by label (`.github/release.yml`); before releasing, move the **Unreleased** section of
@@ -138,10 +138,11 @@ the merged pull requests grouped by label (`.github/release.yml`); before releas
 - Match the surrounding style and conventions (Swift, Rust, or Svelte).
 - **Explicit user approval:** Any action that mutates user data or executes on the system (calendar, mail, shell commands, webhooks, system settings) must go through an interactive confirmation card/plan approved by the user and write an entry to the `audit` table in `nook.sqlite`.
 - **Untrusted input:** Always treat external text (screen OCR, calendar events, emails, web pages, tool outputs, agent hooks) as untrusted data, never as instructions.
+- **Limits for new contributors** (until a maintainer adds you to [`.github/VOUCHED.td`](.github/VOUCHED.td)): at most 3 open pull requests at a time; a fourth is closed and can be reopened once one of the others is done. A pull request that conflicts with `main` gets the `needs rebase` label and is closed after 7 days without activity; push or comment to keep it going.
 - **Using a coding agent?** That's welcome. Agents working in this repo should follow [AGENTS.md](AGENTS.md); you remain responsible for reviewing what you submit.
 
 ## Reporting Issues
 
-Please use the GitHub issue templates for bug reports and feature requests. **Do not** report security vulnerabilities in public issues—see [SECURITY.md](SECURITY.md) for private disclosure instructions.
+Please use the GitHub issue templates for bug reports and platform test reports. Ideas and feature requests go to [Discussions → Ideas](https://github.com/IAMichan/nook/discussions/categories/ideas), questions to [Q&A](https://github.com/IAMichan/nook/discussions/categories/q-a). **Do not** report security vulnerabilities in public issues—see [SECURITY.md](SECURITY.md) for private disclosure instructions.
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).

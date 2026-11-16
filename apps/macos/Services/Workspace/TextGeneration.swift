@@ -97,7 +97,7 @@ enum TextGeneration {
     }
 
     static func pullRequestPrompt(base: String, head: String, commits: String, stat: String, patch: String, template: String?,
-                                  style: [String] = []) -> String {
+                                  guidelines: String? = nil, style: [String] = []) -> String {
         let template = template?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         let bodyRules = template == nil ? [
             "- body must be markdown and include headings '## Summary' and '## Testing'",
@@ -115,27 +115,110 @@ enum TextGeneration {
         var lines = ["You write source control change request content in English.", "Return a JSON object with keys: title, body.", "Rules:",
                      "- write title and body in English",
                      "- title should be concise and specific"] + bodyRules + style
+        if let guidelines = guidelines?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines += ["- the repository's own rules for change requests below come first: where they ask for something else "
+                        + "(headings, wording, issue links, checks), follow them"]
+            lines += ["", "Repository rules for change requests:", limit(guidelines, 6_000)]
+        }
         if let template { lines += ["", "Repository change request template:", limit(template, 8_000)] }
         lines += ["", "Base branch: \(base)", "Head branch: \(head)", "", "Commits:", limit(commits, 12_000), "",
                   "Diff stat:", limit(stat, 12_000), "", "Diff patch:", limit(patch, 40_000)]
         return lines.joined(separator: "\n")
     }
 
-    // MARK: Commands
-
-    /// `claude -p` that only answers: a small model, the schema, no tools, no slash commands, no MCP servers and no
-    /// hooks (so this call never shows up in the notch as a session), and no saved transcript (so it never shows up in the
-    /// session list either). The prompt goes on stdin.
-    static func claudeArguments(schema: [String: Any], model: String = "haiku") -> [String] {
-        ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model,
-         "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
-         "--permission-mode", "dontAsk", "--no-session-persistence"]
+    /// A pull request template without its HTML comments (the hints for whoever fills it in), as the body to start from.
+    static func pullRequestTemplateBody(_ template: String) -> String {
+        let stripped = template.replacingOccurrences(of: #"<!--[\s\S]*?-->"#, with: "", options: .regularExpression)
+        return stripped.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// `codex exec` that only answers: read-only, ephemeral, low effort, the schema and answer in files, prompt on stdin.
+    /// The headings (`#`…`######`) of a markdown text, in order, outside code blocks.
+    static func markdownHeadings(_ text: String) -> [String] {
+        var inFence = false
+        return text.components(separatedBy: .newlines).compactMap { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inFence.toggle() }
+            guard !inFence, line.hasPrefix("#") else { return nil }
+            let level = line.prefix { $0 == "#" }.count
+            guard level <= 6, line.dropFirst(level).first == " " else { return nil }
+            return line
+        }
+    }
+
+    /// The template's headings the body leaves out.
+    static func missingTemplateHeadings(body: String, template: String?) -> [String] {
+        guard let template else { return [] }
+        let present = Set(markdownHeadings(body).map { $0.lowercased() })
+        return markdownHeadings(template).filter { !present.contains($0.lowercased()) }
+    }
+
+    /// A generated body that keeps every heading of the template, in the template's order: a section the model left out
+    /// comes back with "None", and sections of its own follow the template's.
+    static func conformPullRequestBody(_ body: String, template: String?) -> String {
+        guard let template else { return body }
+        let wanted = markdownHeadings(template)
+        guard !wanted.isEmpty else { return body }
+        let found = markdownHeadings(body)
+        let wantedKeys = wanted.map { $0.lowercased() }
+        if found.map({ $0.lowercased() }).filter(wantedKeys.contains) == wantedKeys { return body }
+        // The body by section: what comes before the first heading, then each heading with the lines under it.
+        var preamble: [String] = []
+        var sections: [(heading: String, lines: [String])] = []
+        var inFence = false
+        for raw in body.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inFence.toggle() }
+            if !inFence, found.contains(line), line.hasPrefix("#") {
+                sections.append((line, []))
+            } else if sections.isEmpty {
+                preamble.append(raw)
+            } else {
+                sections[sections.count - 1].lines.append(raw)
+            }
+        }
+        func text(_ lines: [String]) -> String { lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) }
+        var out: [String] = []
+        if !text(preamble).isEmpty { out.append(text(preamble)) }
+        var used = Set<Int>()
+        for heading in wanted {
+            let index = sections.indices.first { !used.contains($0) && sections[$0].heading.lowercased() == heading.lowercased() }
+            if let index { used.insert(index) }
+            let content = index.map { text(sections[$0].lines) } ?? ""
+            out.append(heading + "\n\n" + (content.isEmpty ? "None" : content))
+        }
+        for index in sections.indices where !used.contains(index) {
+            out.append([sections[index].heading, text(sections[index].lines)].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+        }
+        return out.joined(separator: "\n\n")
+    }
+
+    // MARK: Commands
+
+    static let system = "You write short texts for a developer tool. Follow the requested format exactly and add nothing else."
+
+    /// `claude -p` that only answers: a small model, a one-line system prompt (instead of the coding agent's 24k-token
+    /// prompt), the schema, no user settings or CLAUDE.md (`--setting-sources local`), no tools, no slash commands, no MCP
+    /// servers, no hooks and no saved transcript. The prompt goes on stdin. `effort` caps how long a larger model thinks.
+    static func claudeArguments(schema: [String: Any], model: String = "haiku", effort: String? = nil) -> [String] {
+        ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model]
+            + (effort.map { ["--effort", $0] } ?? [])
+            + ["--system-prompt", system, "--setting-sources", "local",
+               "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
+               "--permission-mode", "dontAsk", "--no-session-persistence"]
+    }
+
+    /// `codex exec` that only answers: none of your config, rules, plugins, apps, MCP servers or built-in tools; read-only,
+    /// ephemeral, low effort, the schema and answer in files, prompt on stdin.
     static func codexArguments(schemaPath: String, outputPath: String) -> [String] {
-        ["exec", "--config", "features.plugins=false", "--config", "features.apps=false", "--ephemeral", "--skip-git-repo-check",
-         "-s", "read-only", "--config", #"model_reasoning_effort="low""#, "--output-schema", schemaPath,
+        ["exec", "--ignore-user-config", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
+         "-s", "read-only",
+         "--config", "features.plugins=false", "--config", "features.apps=false",
+         "--config", "features.shell_tool=false", "--config", "features.unified_exec=false",
+         "--config", "features.view_image=false", "--config", "features.multi_agent=false",
+         "--config", #"web_search="disabled""#,
+         "--config", "developer_instructions=" + AgentTelemetry.tomlString(system),
+         "--config", #"model_reasoning_effort="low""#, "--output-schema", schemaPath,
          "--output-last-message", outputPath, "-"]
     }
 
@@ -242,7 +325,8 @@ enum TextGenerationRunner {
     /// Waits for the call without holding a thread: a title or commit message can take up to `timeout` seconds, and a
     /// blocked thread of Swift's shared pool is one fewer for the rest of Nook meanwhile.
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
-                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) async -> [String: Any]? {
+                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil,
+                    effort: String? = nil) async -> [String: Any]? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -250,16 +334,15 @@ enum TextGenerationRunner {
         let arguments: [String]
         switch engine {
         case .claude:
-            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku")
+            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku", effort: effort)
         case .codex:
             let schemaFile = temp.appendingPathComponent("schema.json")
             guard (try? Data(TextGeneration.json(schema).utf8).write(to: schemaFile)) != nil else { return nil }
             arguments = TextGeneration.codexArguments(schemaPath: schemaFile.path, outputPath: answerFile.path)
         }
-        // Claude Code works in an empty folder, so the call leaves no trace in the project.
-        let folder = engine == .claude || !FileManager.default.fileExists(atPath: cwd) ? temp.path : cwd
+        // An empty folder of its own, so neither agent reads project instruction files or leaves a trace in the project.
         let process = AgentProcess(spec: LaunchSpec(executable: executable, arguments: arguments, extraEnvironment: environment,
-                                                    workingDirectory: folder, initialInput: [prompt], keepsInputOpen: true))
+                                                    workingDirectory: temp.path, initialInput: [prompt], keepsInputOpen: true))
         let output = Output()
         process.onLines = { output.add($0) }
         let once = Once()

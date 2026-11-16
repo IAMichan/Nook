@@ -53,6 +53,8 @@ pub struct CommandInput {
     /// `CLAUDE_CONFIG_DIR` of `CODEX_HOME` (en een API-sleutel) van het gekozen account.
     pub account_environment: BTreeMap<String, String>,
     pub run_id: String,
+    /// The Nook account (`AgentProfile.id`): Antigravity keeps a profile folder per account.
+    pub profile_id: String,
     /// De werkruimte-brug als MCP-server; `None` laat de agent zoals hij is.
     pub bridge: Option<BridgeLaunch>,
     /// Redeneerniveau ("low", "medium", "high"); alleen Codex kent het.
@@ -280,6 +282,7 @@ mod tests {
             fork_session: false,
             account_environment: [("CLAUDE_CONFIG_DIR".to_string(), "/home/x/.claude-werk".to_string())].into_iter().collect(),
             run_id: "run-1".into(),
+            profile_id: "default".into(),
             bridge: None,
             effort: None,
         }

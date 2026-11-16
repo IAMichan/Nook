@@ -6,11 +6,11 @@ import AppKit
 /// If Nook is not running or takes too long, it exits cleanly and the agent continues uninterrupted.
 enum HookScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 6
+    static let version = 7
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook hook (version 6): delivers an agent event to Nook locally via Unix domain socket.
+    # Nook hook (version 7): delivers an agent event to Nook locally via Unix domain socket.
     # If Nook is not running or times out, this script exits cleanly: the agent proceeds normally.
     #   --agent <name>   identifies sender (claude-code, codex, gemini, cursor, copilot, …)
     #                    Without --agent, "nook_agent" JSON field is used (a-z, 0-9, - and _, max 32 chars).
@@ -19,6 +19,24 @@ enum HookScript {
     #   --ask            answer an agent question in notch (AskUserQuestion)
     #   --statusline     report plan usage and render statusline
     # See docs/AGENTS.md for details on configuring agent hooks.
+
+    # An agent Nook runs itself (NOOK_RUN_ID) reports to Nook over its own connection, and Nook drops what its hooks send.
+    # Leave before loading any module: this runs before and after every tool call, and the agent waits for it.
+    BEGIN {
+        my $run = defined $ENV{NOOK_RUN_ID} ? $ENV{NOOK_RUN_ID} : '';
+        my ($statusline, $named) = (0, '');
+        for my $i (0 .. $#ARGV) {
+            $statusline = 1 if $ARGV[$i] eq '--statusline';
+            $named = $ARGV[$i + 1] if $ARGV[$i] eq '--agent' && defined $ARGV[$i + 1];
+        }
+        if ($run ne '' && !$statusline && $named ne '') {
+            { local $/; my $drain = <STDIN>; }
+            # These agents always require JSON output; an empty object means no intervention from Nook.
+            print "{}\n" if $named eq 'gemini' || $named eq 'antigravity' || $named eq 'copilot';
+            exit 0;
+        }
+    }
+
     use strict;
     use warnings;
     use IO::Socket::UNIX;

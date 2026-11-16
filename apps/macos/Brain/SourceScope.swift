@@ -36,6 +36,8 @@ enum SourceCatalog {
     static let loops = "loops"
     /// What Nook learned about the user (`MemoryBook`).
     static let memory = "memory"
+    /// The user's own browser through Nook's extension (`BrowserExtensionTools.sourceID`).
+    static let browserExtension = "browser_extension"
 
     /// Sources Nook knows out of the box. Connectors added later (MCP servers, new services) register themselves with
     /// `register(_:tools:aliases:intents:)`, so adding one does not mean editing the tables in this file.
@@ -55,6 +57,9 @@ enum SourceCatalog {
         SourceDescriptor(id: memory, title: "Geheugen", kind: .nook),
         SourceDescriptor(id: "mail", title: "Mail", kind: .builtIn),
         SourceDescriptor(id: "browser", title: "Browser", kind: .builtIn),
+        // The user's own browser through Nook's extension (BrowserExtensionConnector), known before it registers so it can
+        // be kept on this Mac like the other personal sources.
+        SourceDescriptor(id: "browser_extension", title: "Browser extension", kind: .builtIn),
         SourceDescriptor(id: "terminal", title: "Terminal", kind: .builtIn),
         SourceDescriptor(id: "agents", title: "Agents", kind: .nook),
         SourceDescriptor(id: "files", title: "Bestanden", kind: .builtIn),
@@ -123,7 +128,7 @@ enum SourceCatalog {
     /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
     static let personal: Set<String> = [
         "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail", "callnotes",
-        "browser", "files", "contacts", "clipboard", screen, memory
+        "browser", "browser_extension", "files", "contacts", "clipboard", screen, memory
     ]
 
     static func descriptor(_ id: String) -> SourceDescriptor? {
@@ -221,19 +226,10 @@ enum SourceCatalog {
         return found.sorted { $0.0.lowerBound < $1.0.lowerBound }
     }
 
-    /// Case-insensitive patterns, compiled once: every question runs all aliases (once per clause while parsing its
-    /// scope), and the aliases only change when a connector registers. NSCache is safe to share across threads.
-    private static let regexes: NSCache<NSString, NSRegularExpression> = {
-        let cache = NSCache<NSString, NSRegularExpression>()
-        cache.countLimit = 500
-        return cache
-    }()
-
+    /// A case-insensitive pattern, compiled once: every question runs all aliases (once per clause while parsing its
+    /// scope), and the aliases only change when a connector registers.
     static func compiled(_ pattern: String) -> NSRegularExpression? {
-        if let known = regexes.object(forKey: pattern as NSString) { return known }
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-        regexes.setObject(regex, forKey: pattern as NSString)
-        return regex
+        RegexCache.regex(pattern, options: .caseInsensitive)
     }
 }
 
@@ -494,7 +490,7 @@ enum SourceCapabilities {
         "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
         "chat_inbox": "chats van al je chatapps lezen", "chat_send": "chatbericht sturen",
         "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "mac_status": "processor, geheugen, batterij en schijf", "network_status": "IP-adressen van deze Mac", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
-        "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
+        "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)", "schedule_task": "automatisering maken (jij keurt goed)", "set_up_secretary": "persoonlijke secretaris instellen (jij keurt goed)", "list_scheduled_tasks": "automatiseringen bekijken",
         "trash_mail": "mail naar prullenmand", "mark_mail": "mail markeren (gelezen, vlag)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen", "read_open_app": "app naast de chat lezen",

@@ -115,7 +115,7 @@
         <span class="spacer"></span>
         {#if volume !== null}
           <button class="toggle" title={volume > 0 ? tr("Dempen", "Mute") : tr("Geluid aan", "Unmute")} aria-label={volume > 0 ? tr("Dempen", "Mute") : tr("Geluid aan", "Unmute")} onclick={mute}>{volume === 0 ? "🔇" : volume < 40 ? "🔈" : "🔊"}</button>
-          <input class="volume" type="range" min="0" max="100" value={volume} aria-label="Volume" oninput={setVolume} onchange={commitVolume} />
+          <input class="volume" type="range" min="0" max="100" value={volume} aria-label={tr("Volume", "Volume")} oninput={setVolume} onchange={commitVolume} />
         {/if}
       </div>
       {#if error}<div class="err">{error}</div>{/if}

@@ -1,6 +1,7 @@
 // De werkruimte: dezelfde vormen als de Rust-structs in nook_core::workspace, en de aanroepen naar de Rust-kant.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { tr } from "../i18n.svelte";
 
 export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity";
 export type ExecutionMode = "agent" | "plan";
@@ -321,46 +322,50 @@ export const workspaceEvents = {
   onTimeline: (cb: (runId: string) => void): Promise<UnlistenFn> => listen<string>("workspace-timeline", (e) => cb(e.payload)),
 };
 
+// The name tables read through getters, so each read is in the current interface language.
 export const statusLabels: Record<RunStatus, string> = {
-  preparing: "Voorbereiden",
-  running: "Bezig",
-  waitingApproval: "Wacht op goedkeuring",
-  completed: "Klaar",
-  failed: "Mislukt",
-  stopped: "Gestopt",
+  get preparing() { return tr("Voorbereiden", "Preparing"); },
+  get running() { return tr("Bezig", "Running"); },
+  get waitingApproval() { return tr("Wacht op goedkeuring", "Waiting for approval"); },
+  get completed() { return tr("Klaar", "Done"); },
+  get failed() { return tr("Mislukt", "Failed"); },
+  get stopped() { return tr("Gestopt", "Stopped"); },
 };
 
 export const isActive = (s: RunStatus) => s === "preparing" || s === "running" || s === "waitingApproval";
 
 export const permissionLabels: Record<PermissionPolicy, string> = {
-  ask: "Alles vragen",
-  acceptEdits: "Bewerkingen toestaan",
-  bypass: "Alles toestaan",
+  get ask() { return tr("Alles vragen", "Ask for everything"); },
+  get acceptEdits() { return tr("Bewerkingen toestaan", "Allow edits"); },
+  get bypass() { return tr("Alles toestaan", "Allow everything"); },
 };
 
 /// Wat een recht betekent bij deze agent (de teksten van de Mac, met "je computer" in plaats van "je Mac").
 export function permissionHelp(policy: PermissionPolicy, provider: RunProvider): string {
-  const claude: Record<PermissionPolicy, string> = {
-    ask: "Elke bewerking en elk commando vraagt eerst om je goedkeuring, hier of in de balk.",
-    acceptEdits: "Bestanden aanpassen mag; commando's en andere tools vragen eerst om goedkeuring.",
-    bypass: "Geen enkele vraag: de agent voert alles uit, ook commando's. Een worktree beschermt je code, niet je computer.",
-  };
-  const codex: Record<PermissionPolicy, string> = {
-    ask: "Elk commando en elke bewerking buiten de sandbox vraagt eerst om je goedkeuring, hier of in de balk.",
-    acceptEdits: "Codex werkt in zijn sandbox: schrijven alleen in de werkmap, geen netwerk.",
-    bypass: "Geen sandbox: Codex mag alles op je computer, ook buiten de werkmap.",
-  };
-  const other: Record<PermissionPolicy, string> = {
-    ask: "De agent vraagt Nook om toestemming voor bewerkingen en commando's; lezen mag altijd.",
-    acceptEdits: "Bewerkingen worden meteen toegestaan; commando's vragen eerst om je goedkeuring.",
-    bypass: "Alles wordt meteen toegestaan, ook commando's. Een worktree beschermt je code, niet je computer.",
-  };
-  return (provider === "claude" ? claude : provider === "codex" ? codex : other)[policy];
+  if (provider === "claude") {
+    switch (policy) {
+      case "ask": return tr("Elke bewerking en elk commando vraagt eerst om je goedkeuring, hier of in de balk.", "Every edit and every command asks for your approval first, here or in the bar.");
+      case "acceptEdits": return tr("Bestanden aanpassen mag; commando's en andere tools vragen eerst om goedkeuring.", "Editing files is allowed; commands and other tools ask for approval first.");
+      case "bypass": return tr("Geen enkele vraag: de agent voert alles uit, ook commando's. Een worktree beschermt je code, niet je computer.", "No questions at all: the agent runs everything, commands included. A worktree protects your code, not your computer.");
+    }
+  }
+  if (provider === "codex") {
+    switch (policy) {
+      case "ask": return tr("Elk commando en elke bewerking buiten de sandbox vraagt eerst om je goedkeuring, hier of in de balk.", "Every command and every edit outside the sandbox asks for your approval first, here or in the bar.");
+      case "acceptEdits": return tr("Codex werkt in zijn sandbox: schrijven alleen in de werkmap, geen netwerk.", "Codex works in its sandbox: writing only in the working folder, no network.");
+      case "bypass": return tr("Geen sandbox: Codex mag alles op je computer, ook buiten de werkmap.", "No sandbox: Codex may do anything on your computer, also outside the working folder.");
+    }
+  }
+  switch (policy) {
+    case "ask": return tr("De agent vraagt Nook om toestemming voor bewerkingen en commando's; lezen mag altijd.", "The agent asks Nook for permission for edits and commands; reading is always allowed.");
+    case "acceptEdits": return tr("Bewerkingen worden meteen toegestaan; commando's vragen eerst om je goedkeuring.", "Edits are allowed right away; commands ask for your approval first.");
+    case "bypass": return tr("Alles wordt meteen toegestaan, ook commando's. Een worktree beschermt je code, niet je computer.", "Everything is allowed right away, commands included. A worktree protects your code, not your computer.");
+  }
 }
 
 export const modeHelp: Record<ExecutionMode, string> = {
-  agent: "De agent mag werken in de map, binnen de rechten hieronder.",
-  plan: "Alleen lezen en een plan maken; er wordt niets aangepast.",
+  get agent() { return tr("De agent mag werken in de map, binnen de rechten hieronder.", "The agent may work in the folder, within the permissions below."); },
+  get plan() { return tr("Alleen lezen en een plan maken; er wordt niets aangepast.", "Only read and make a plan; nothing is changed."); },
 };
 
 /// Redeneerniveaus (EffortLevels op de Mac): Codex via `model_reasoning_effort`, Claude Code via `--effort`; low,
@@ -370,17 +375,17 @@ export function effortLevels(provider: RunProvider): string[] {
 }
 
 export const effortLabels: Record<string, string> = {
-  "": "Standaard",
-  minimal: "Minimaal",
-  low: "Laag",
-  medium: "Gemiddeld",
-  high: "Hoog",
-  xhigh: "Extra hoog",
+  get ""() { return tr("Standaard", "Default"); },
+  get minimal() { return tr("Minimaal", "Minimal"); },
+  get low() { return tr("Laag", "Low"); },
+  get medium() { return tr("Gemiddeld", "Medium"); },
+  get high() { return tr("Hoog", "High"); },
+  get xhigh() { return tr("Extra hoog", "Extra high"); },
 };
 
 export function projectName(path: string): string {
   const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
-  return name || "geen map";
+  return name || tr("geen map", "no folder");
 }
 
 // MARK: Gereedschap: terminals, browser, scripts en dev-servers

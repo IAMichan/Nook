@@ -3,7 +3,7 @@
 A scenario shows one behavior in the real app: Nook's own `WorkspaceManager`, `AgentProcess`, stream parsing and the
 main window's views (`WorkspaceView`, with the real `NookTheme`), with a replay agent standing in for the model. A run
 costs nothing and plays the same way every time. Use one as the proof of a fix: it fails on the base commit and passes
-on the fix. The idea and the shape come from scenarios (`docs/operations/scenarios.md` there).
+on the fix.
 
 Scenarios live in [`apps/macos/Scenarios`](../apps/macos/Scenarios):
 
@@ -120,7 +120,7 @@ The scenario and the harness always come from your checkout; only the app comes 
 `scripts/xcode.sh` and `scripts/scenarios.sh` laid over it and `include: [Scenarios/scenarios.yml]` added to its
 `project.yml`. It is built with its own copy of `./scripts/xcode.sh` and removed afterwards, build and all (several GB:
 check `df -h /` first). So a new scenario can prove a fix against a base that predates it, as long as the fixture's
-calls (`WorkspaceManager.start`, `send`, `NotchViewModel.windowTab`/`selectedAgentID`, `WorkspaceView`) exist there.
+calls (`WorkspaceManager.start`, `send`, `PanelViewModel.windowTab`/`selectedAgentID`, `WorkspaceView`) exist there.
 
 ## How it stays off your Mac
 

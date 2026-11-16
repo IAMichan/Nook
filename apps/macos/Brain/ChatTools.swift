@@ -53,7 +53,7 @@ enum ChatTools {
             ),
             ToolSpec(
                 name: "compose_mail",
-                description: "Composes a complete email and displays it as a draft in chat. The user can review/edit it there and send with one click or open in Mail. ALWAYS use this when the user asks to write, draft, reply to, or forward an email. Write the entire email in body, including greeting and sign-off, in appropriate tone and language for the recipient. Look up the address in context, on screen, or using search_mail; if unknown, leave to empty and mention it in your answer. When the user asks to change a draft, call compose_mail again with the whole new version: it replaces the open draft right away, without asking. Never use take_over for an email, and never propose another step to send it: the user sends it from the draft. Do not repeat the email body in your answer: summarize what you wrote in one sentence.",
+                description: "Composes a complete email and displays it as a draft in chat. The user can review/edit it there and send with one click or open in Mail. ALWAYS use this when the user asks to write, draft, reply to, or forward an email. Write the entire email in body, including greeting and sign-off, in appropriate tone and language for the recipient. To answer a received mail, set reply_to to its id (from inbox_mail, search_mail or read_mail): Mail then sends it as a reply in the same thread, from the account it came to. Match the user's own way of writing: if their sent mail to this person is in context (search_mail with mailbox sent), follow its greeting, tone, length and sign-off, and write in the language the other person wrote in. Look up the address in context, on screen, or using search_mail; if unknown, leave to empty and mention it in your answer. You may call compose_mail several times in one answer, once per mail, when several mails need an answer. When the user asks to change a draft, call compose_mail again with the whole new version: it replaces the open draft right away, without asking. Never use take_over for an email, and never propose another step to send it: the user sends it from the draft. Do not repeat the email body in your answer: summarize what you wrote in one sentence.",
                 schema: [
                     "type": "object",
                     "properties": [
@@ -61,7 +61,8 @@ enum ChatTools {
                         "cc": ["type": "string", "description": "CC email address(es), optional."],
                         "from": ["type": "string", "description": "The user's own address to send from, only when they name one (\"vanuit mijn gmail\", \"from work@x.nl\"). Empty: the default account."],
                         "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
-                        "body": ["type": "string", "description": "Full text of the email, excluding subject line."]
+                        "body": ["type": "string", "description": "Full text of the email, excluding subject line."],
+                        "reply_to": ["type": "string", "description": "For a reply: the id of the mail it answers (the part after \"id:\" in inbox_mail, search_mail or read_mail). Empty for a new mail."]
                     ],
                     "required": ["subject", "body"]
                 ],
@@ -73,13 +74,14 @@ enum ChatTools {
                     let body = ((input["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !body.isEmpty else { throw NookError("The email body is missing.") }
                     // A name becomes its address here on the Mac; the brain never hears it, so Contacts can stay on this Mac.
-                    let draft = MailDraft(
+                    var draft = MailDraft(
                         to: await ActionGate.addressed((input["to"] as? String) ?? "", lookup: mailAddress),
                         cc: await ActionGate.addressed((input["cc"] as? String) ?? "", lookup: mailAddress),
                         subject: subject,
                         body: body,
                         from: ((input["from"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     )
+                    draft.replyTo = MailActions.ids([(input["reply_to"] as? String) ?? ""]).first ?? ""
                     onMail(draft)
                     return "The email draft is displayed in chat. The user will review it and send it using the Send button."
                 }

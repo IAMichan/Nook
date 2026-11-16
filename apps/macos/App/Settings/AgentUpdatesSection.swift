@@ -7,12 +7,17 @@ struct AgentUpdatesSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var updater = AgentUpdater.shared
     @ObservedObject private var workspace: WorkspaceManager
+    /// Only this agent (Settings › Coding agents shows one agent at a time); nil lists every agent found.
+    private let only: RunProvider?
 
-    init(workspace: WorkspaceManager) { self.workspace = workspace }
+    init(workspace: WorkspaceManager, only: RunProvider? = nil) {
+        self.workspace = workspace
+        self.only = only
+    }
 
     var body: some View {
-        let shown = RunProvider.allCases.filter { updater.entries[$0] != nil }
-        let outdated = updater.outdated(installed: workspace.agentVersions)
+        let shown = RunProvider.allCases.filter { updater.entries[$0] != nil && (only == nil || only == $0) }
+        let outdated = updater.outdated(installed: workspace.agentVersions).filter { only == nil || only == $0 }
         Section {
             if shown.isEmpty {
                 ConnectionListEmpty(title: tr("agentUpdate.empty"), detail: tr("agentUpdate.emptyDetail"))
@@ -22,11 +27,13 @@ struct AgentUpdatesSection: View {
             }
         } header: {
             ConnectionListHeader(title: tr("agentUpdate.title"), info: tr("agentUpdate.info"),
-                                 add: outdated.isEmpty ? nil : (tr("agentUpdate.all", outdated.count), { app.requestAgentUpdate(outdated) }),
+                                 add: outdated.isEmpty || only != nil ? nil
+                                     : (tr("agentUpdate.all", outdated.count), { app.requestAgentUpdate(outdated) }),
                                  symbol: "arrow.down.circle")
         }
         .onAppear { app.refreshAgentUpdates() }
-        .confirmationDialog(question, isPresented: Binding(get: { updater.pending != nil }, set: { if !$0 { updater.pending = nil } })) {
+        .confirmationDialog(question, isPresented: Binding(get: { updater.pending != nil }, set: { if !$0 { updater.pending = nil } }),
+                            titleVisibility: .visible) {
             Button(tr("agentUpdate.confirm")) { app.confirmAgentUpdate() }
             Button(tr("button.cancel"), role: .cancel) { updater.pending = nil }
         } message: {

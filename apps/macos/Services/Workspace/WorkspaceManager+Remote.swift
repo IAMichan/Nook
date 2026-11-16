@@ -15,7 +15,7 @@ extension WorkspaceManager {
     func bridge(for id: UUID) -> BridgeLaunch? {
         guard var launch = bridgeLaunch(), let run = run(id) else { return nil }
         guard let remote = run.remote else {
-            launch.token = bridgeToken(id)
+            launch.tokenFile = bridgeTokenFile(id)
             return launch
         }
         guard let home = remoteHomes[remote.machineID] else {
@@ -23,7 +23,8 @@ extension WorkspaceManager {
             return nil
         }
         return BridgeLaunch(script: RemoteBridge.scriptPath(home: home),
-                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: bridgeToken(id)))
+                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: bridgeToken(id),
+                                          tokenFile: RemoteBridge.tokenPath(home: home, run: id)))
     }
 
     /// The token that proves the agent is this session's, for this run of Nook. Kept in memory only: after a restart of
@@ -33,6 +34,17 @@ extension WorkspaceManager {
         let token = UUID().uuidString + UUID().uuidString
         bridgeTokens[id] = token
         return token
+    }
+
+    /// The file that holds the session's token (`BridgeTokenFiles`), written now; nil when it cannot be written, and then
+    /// the session runs without its rights rather than with its token on the command line.
+    func bridgeTokenFile(_ id: UUID) -> String? {
+        do {
+            return try BridgeTokenFiles.write(bridgeToken(id), for: id, in: bridgeTokenDirectory).path
+        } catch {
+            Log.agents.error("Bridge token file: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     /// Whether `token` is the one made for the remote session `id`.
@@ -83,10 +95,16 @@ extension WorkspaceManager {
         // The arguments the account adds go on every launch of its agent, here or over ssh.
         var spec = spec
         spec.arguments += accountArguments(run.profileID)
-        guard let remote = run.remote else { return spec }
+        // The OpenTelemetry receiver from Settings › Maintenance, in each agent's own words. Not for another machine:
+        // an endpoint on this Mac is usually not reachable from there.
+        guard let remote = run.remote else {
+            return AgentTelemetry.apply(run.provider, config: NookTelemetry.shared.agentConfig, to: spec)
+        }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
-        let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
-        return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward)
+        let bridge = bridge(for: run.id)?.remote
+        let forward = bridge.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
+        return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward,
+                                 token: bridge.map { RemoteLaunch.Token(value: $0.token, file: $0.tokenFile) })
     }
 
     /// A new session on another machine: in the folder there, or in a new worktree there (~/.nook/worktrees), under that

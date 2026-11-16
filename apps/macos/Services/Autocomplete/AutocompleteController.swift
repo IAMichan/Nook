@@ -54,6 +54,8 @@ final class AutocompleteController: ObservableObject {
         var maxWords: Int
         /// From the user's own phrases (see `CompletionPhrases`), not the model: Escape makes it count less.
         var learned = false
+        /// Shown in a card under the cursor rather than as ghost text in the line.
+        var inCard = false
     }
 
     /// The suggestion after the one on screen, written while that one is on screen (see `writeAhead`).
@@ -143,9 +145,23 @@ final class AutocompleteController: ObservableObject {
     private var refreshWork: DispatchWorkItem?
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
-    private var pendingSample: (app: String, text: String)?
-    /// A suggestion was taken in the field `pendingSample` comes from: as in Cotypist, only such a field is learned from.
+    /// The field being written in, to learn from once the user leaves it or sends the message (see `record`).
+    private struct PendingSample {
+        var app: String
+        /// The field's text when it was first seen: what was there before the user typed.
+        var start: String
+        var text: String
+        /// The context the prompt was made with (the conversation, the page), for `CompletionSamples.Sample.context`.
+        var context: CompletionContext?
+        /// A lot of text came in at once (a paste, a template): not the user's own writing.
+        var pasted = false
+    }
+    private var pendingSample: PendingSample?
+    /// A suggestion was taken in the field `pendingSample` comes from: its whole text is learned from. Without one, only
+    /// what was typed there, and only with `learnWithoutSuggestion`.
     private var sampleTaken = false
+    /// More characters than this arriving between two keys is a paste, not typing.
+    private static let pasteJump = 40
     /// The phrases the user writes again and again, from their writing samples (see `applyPersonalization`).
     private var phrases = CompletionPhrases()
     /// The most frequent of them, for the prompt.
@@ -251,7 +267,7 @@ final class AutocompleteController: ObservableObject {
             let usual = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
             if case .gguf(let file) = usual { lighterModel = CompletionModelLocator.lighter(than: file, candidates: found) } else { lighterModel = nil }
             let model = power.lighterModel ? lighterModel.map(CompletionSource.gguf) ?? usual : usual
-            if model?.identity != activeModel?.identity || (completer != nil && loadedAdapter != prefs.loraAdapterPath) { unload() }
+            if model?.identity != activeModel?.identity || (completer != nil && loadedAdapter != adapterIdentity(for: model)) { unload() }
             activeModel = model
             guard prefs.enabled else { return }
             guard trusted, start() else {
@@ -419,7 +435,32 @@ final class AutocompleteController: ObservableObject {
 
     /// In Nook itself, only while a text view to write in has the focus (see `AutocompleteField.ownTextView`): every other key
     /// (a shortcut, a key recorder) stays Nook's.
-    private var ownFieldFocused: Bool { recordingKeys == 0 && AutocompleteField.ownTextView() != nil }
+    private var ownFieldFocused: Bool { recordingKeys == 0 && standAsideReasons.isEmpty && AutocompleteField.ownTextView() != nil }
+
+    /// Why autocomplete leaves Nook's focused field alone: a composer suggests in it itself (`ComposerCompleter`), or shows
+    /// grey text of its own there (`ComposerInlineGhost`). Then no suggestion of autocomplete's beside it, and Tab and Escape
+    /// stay with the composer.
+    private var standAsideReasons = Set<String>()
+
+    func standAside(_ on: Bool, for reason: String = "ghost") {
+        let before = standAsideReasons.isEmpty
+        if on { standAsideReasons.insert(reason) } else { standAsideReasons.remove(reason) }
+        guard before != standAsideReasons.isEmpty else { return }
+        // Off again: the next key asks for a suggestion as usual.
+        if on { dismiss() }
+        publishTapState()
+    }
+
+    /// Whether autocomplete itself suggests in Nook's own fields right now: on, allowed and with a model, not paused. A
+    /// composer that writes with autocomplete's model then leaves the rest of the sentence to it (`ComposerCompleter.handsOver`),
+    /// so it gets everything that makes autocomplete fast (suggestions remembered and written ahead, the first words at once,
+    /// the prompt read in before the first letter) and the two never wait on each other's model.
+    var suggestsInOwnFields: Bool {
+        guard prefs.enabled, activeModel != nil, !power.paused else { return false }
+        guard state == .ready || state == .loading else { return false }
+        let bundleID = Bundle.main.bundleIdentifier
+        return (prefs.isEnabled(inApp: bundleID) || prefs.onlyAgentPrompts(inApp: bundleID)) && !store.isPaused(app: bundleID)
+    }
 
     /// What the battery allows right now. The signals are read by `EnergyMonitor` for the whole app, so this is a cached
     /// value and not a trip to IOKit per keystroke.
@@ -1004,7 +1045,7 @@ final class AutocompleteController: ObservableObject {
               !(prefs.typos && prefs.holdOnTypo && AutocompleteTypos.suspectsWordBeingTyped(in: before, known: typoKnown)),
               // Shown from the memo or the user's own phrases, without the model.
               memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil,
-              learnedPhrase(before: before, app: bundleID, maxWords: prefs.maxWords) == nil else { return }
+              learnedPhrase(before: before, app: bundleID, maxWords: suggestionWords) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
         let field = fieldKey(for: next, in: app)
@@ -1036,12 +1077,22 @@ final class AutocompleteController: ObservableObject {
         CompletionFieldKey.make(app: app.bundleIdentifier, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
     }
 
+    /// The longest suggestion: the user's setting, shorter on battery when asked.
+    private var suggestionWords: Int {
+        guard let short = power.maxWords else { return prefs.maxWords }
+        return min(prefs.maxWords, short)
+    }
+
+    /// The model is asked for this many words first, and the suggestion shows as soon as they are written; the rest (up to
+    /// `suggestionWords`) is written right after and added to it in one go (see `extend`). The model spends about 15 ms per
+    /// token, so a whole suggestion took twice as long to appear, while most suggestions are taken a word or two at a time.
+    /// Measured on 16 messages (Gemma 4 E4B, M3 Max): first suggestion after 66 ms instead of 123 (median), same typing saved.
+    static let firstWords = 2
+
     private func completionOptions(before: String, continuing: Bool) -> CompletionOptions {
-        var maxWords = prefs.maxWords
-        if let short = power.maxWords { maxWords = min(maxWords, short) }
-        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        var options = CompletionOptions(maxWords: min(suggestionWords, Self.firstWords), eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         return options
     }
@@ -1130,9 +1181,16 @@ final class AutocompleteController: ObservableObject {
         let bundleID = app.bundleIdentifier
         let midLine = prefs.midLine(inApp: bundleID)
         let policy = CompletionPolicy(midLine: midLine)
-        guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
+        guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else {
+            // An empty field (a message just sent, the conversation on screen changed): read its prompt into the model now, so
+            // the first letter of the next message only adds that letter and the suggestion shows at once.
+            if power.warms, !snapshot.hasSelection, snapshot.before.allSatisfy(\.isWhitespace), let completer {
+                completer.warm(prompt: prompt(for: snapshot, in: app))
+            }
+            return
+        }
         let options = completionOptions(before: snapshot.before, continuing: continuing)
-        let maxWords = options.maxWords
+        let maxWords = suggestionWords
         let token = readToken
         // Without `midLine` only closing punctuation can follow (see `CompletionPolicy`); the suggestion stops before it.
         let after = snapshot.after
@@ -1179,8 +1237,9 @@ final class AutocompleteController: ObservableObject {
                 memo.remember(result, before: base, field: field)
                 guard token == readToken else { return }
                 if let rest = memo.recall(before: snapshot.before, field: field) {
+                    // Written for exactly this text: its rest can still be written after it.
                     present(rest.text, truncated: rest.truncated, unfinished: rest.unfinished, token: token, snapshot: snapshot,
-                            after: after, maxWords: maxWords, app: app)
+                            after: after, maxWords: maxWords, app: app, written: base == snapshot.before ? result : nil)
                     return
                 }
             }
@@ -1192,7 +1251,7 @@ final class AutocompleteController: ObservableObject {
             if let result {
                 memo.remember(result, before: snapshot.before, field: field)
                 present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
-                        after: after, maxWords: maxWords, app: app)
+                        after: after, maxWords: maxWords, app: app, written: result)
             }
         }
     }
@@ -1205,8 +1264,10 @@ final class AutocompleteController: ObservableObject {
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
     /// on screen.
+    /// - Parameter written: the model's result the text comes from, when it was written for exactly this text: one that
+    ///   stopped at `firstWords` is then written on (see `extend`).
     private func present(_ text: String, truncated: Bool, unfinished: Bool = false, token: Int, snapshot: AutocompleteFieldSnapshot,
-                         after: String, maxWords: Int, app: NSRunningApplication, learned: Bool = false) {
+                         after: String, maxWords: Int, app: NSRunningApplication, learned: Bool = false, written: CompletionResult? = nil) {
         guard token == readToken, alternatives == nil, proposal == nil,
               let suggestion = CompletionSuggestion.make(raw: spelled(text, before: snapshot.before, after: after), before: snapshot.before, after: after,
                                                          maxWords: maxWords, truncated: truncated, unfinished: unfinished) else { return }
@@ -1215,7 +1276,62 @@ final class AutocompleteController: ObservableObject {
         proposal = .completion(completion)
         show(suggestion, for: snapshot, in: app)
         store.recordShown()
-        writeAhead(for: completion)
+        if let written, written.reachedWordLimit, let sure = written.sequenceProbability,
+           suggestion.remaining.completionWordCount < maxWords, case .completion(let shown) = proposal,
+           shown.suggestion.remaining == suggestion.remaining {
+            extend(completion, after: sure)
+        } else {
+            writeAhead(for: completion)
+        }
+    }
+
+    /// Writes the rest of a suggestion that stopped at `firstWords` (with certainty `sure`), as if the model had gone on, and
+    /// adds it to the suggestion in one go while that is still on screen. Taken or typed through in part meanwhile, it is added
+    /// after what is left; taken whole, it is the next suggestion (it is `upcoming`, see `continueAtOnce`).
+    private func extend(_ completion: Completion, after sure: Float) {
+        guard let model = activeModel else { return }
+        var next = completion.snapshot
+        next.before = completion.anchor + completion.suggestion.remaining
+        let before = next.before
+        let prompt = self.prompt(for: next, in: completion.app)
+        let words = completion.suggestion.remaining.completionWordCount
+        var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness)
+            .extending(after: sure, maxWords: completion.maxWords - words)
+        options.heal = Self.heals(before)
+        let field = fieldKey(for: next, in: completion.app)
+        let task = Task { () -> CompletionResult? in
+            guard let completer = await loadedCompleter(for: model) else { return nil }
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+            if let result { memo.remember(result, before: before, field: field) }
+            if upcoming?.before == before {
+                upcoming?.done = true
+                upcoming?.result = result
+            }
+            if let result { added(result, after: before, maxWords: options.maxWords) }
+            return result
+        }
+        upcoming = Upcoming(app: completion.app.bundleIdentifier, before: before, task: task)
+    }
+
+    /// The rest written by `extend` for the text `before`: added to the suggestion on screen when that still leads up to it.
+    private func added(_ result: CompletionResult, after before: String, maxWords: Int) {
+        guard case .completion(var current) = proposal, current.anchor + current.suggestion.remaining == before,
+              let tail = CompletionSuggestion.make(raw: spelled(result.text, before: before, after: current.after), before: before,
+                                                   after: current.after, maxWords: maxWords, truncated: result.truncated,
+                                                   unfinished: result.unfinished) else { return }
+        let whole = CompletionSuggestion(current.suggestion.remaining + tail.remaining)
+        if let shown = overlay.redraw(whole.remaining) {
+            // Only what fits on the line is on screen, and only that can be taken (see `show`).
+            current.suggestion = CompletionSuggestion(shown)
+        } else if current.inCard, let anchor = current.snapshot.cardAnchor, current.anchor == current.snapshot.before {
+            current.suggestion = whole
+            overlay.showCard(card(whole.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
+        } else {
+            return
+        }
+        upcoming = nil
+        proposal = .completion(current)
+        writeAhead(for: current)
     }
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
@@ -1229,7 +1345,7 @@ final class AutocompleteController: ObservableObject {
         let before = next.before
         let prompt = self.prompt(for: next, in: completion.app)
         var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness).continuing()
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         let field = fieldKey(for: next, in: completion.app)
         let task = Task { () -> CompletionResult? in
@@ -1245,10 +1361,11 @@ final class AutocompleteController: ObservableObject {
         upcoming = Upcoming(app: completion.app.bundleIdentifier, before: before, task: task)
     }
 
-    /// The cursor stands right after a letter or digit: the model has to finish that word first (see `CompletionOptions.heal`).
-    private static func midWord(_ before: String) -> Bool {
+    /// The cursor stands right after a letter or digit, so the model has to finish that word first, or right after a space,
+    /// so it has to start with one (see `CompletionOptions.heal`).
+    private static func heals(_ before: String) -> Bool {
         guard let last = before.last else { return false }
-        return last.isLetter || last.isNumber
+        return last.isLetter || last.isNumber || last == " "
     }
 
     /// After the last word of a suggestion is taken: waits until the app shows it, then suggests again right away, without
@@ -1439,6 +1556,8 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func show(_ suggestion: CompletionSuggestion, for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
+        // A suggestion asked for before a composer drew a name of its own comes back too late: the name stays.
+        if !standAsideReasons.isEmpty, app.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
         let rule = prefs.app(app.bundleIdentifier)
         // Words or a period after the cursor: grey text drawn over them cannot be read, so the card shows it instead.
         let lineAfter = snapshot.after.prefix { !$0.isNewline }
@@ -1459,6 +1578,10 @@ final class AutocompleteController: ObservableObject {
         // No room in the line, no cursor position, or the card style chosen: a card under the cursor or the field.
         if let anchor = snapshot.cardAnchor {
             overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
+            if case .completion(var completion) = proposal {
+                completion.inCard = true
+                proposal = .completion(completion)
+            }
         } else {
             proposal = nil
             overlay.hide()
@@ -1607,7 +1730,16 @@ final class AutocompleteController: ObservableObject {
         let text = snapshot.before + snapshot.after
         // Much shorter text: the field was emptied (message sent) or another field has the focus. Keep what was written.
         if let pendingSample, pendingSample.app != bundleID || text.count < pendingSample.text.count / 2 { commitSample() }
-        pendingSample = (bundleID, text)
+        let key = CompletionFieldKey.make(app: bundleID, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
+        let context = fieldContext.flatMap { $0.key == key ? $0.context : nil }
+        if var pending = pendingSample {
+            if text.count - pending.text.count > Self.pasteJump { pending.pasted = true }
+            pending.text = text
+            if let context { pending.context = context }
+            pendingSample = pending
+        } else {
+            pendingSample = PendingSample(app: bundleID, start: text, text: text, context: context)
+        }
     }
 
     private func commitSample() {
@@ -1615,8 +1747,17 @@ final class AutocompleteController: ObservableObject {
         sampleTaken = false
         guard let sample = pendingSample else { return }
         pendingSample = nil
-        guard taken else { return }
-        if store.addSample(sample.text, app: sample.app) { applyPersonalization() }
+        let text: String
+        if taken {
+            text = sample.text
+        } else {
+            // As Cotypist with "Record text even when you accept no suggestion": what the user typed in a field where
+            // suggestions came, even when none was taken. Never a paste, nor the text the field held before.
+            guard prefs.learnWithoutSuggestion, !sample.pasted, let typed = CompletionSamples.typed(from: sample.start, to: sample.text) else { return }
+            text = typed
+        }
+        let context = sample.context.flatMap { CompletionSamples.contextWords($0.topic(before: "")) }
+        if store.addSample(text, app: sample.app, context: context) { applyPersonalization() }
     }
 
     /// Hands the words the user writes often to the model, and learns the phrases they write again and again.
@@ -1643,7 +1784,7 @@ final class AutocompleteController: ObservableObject {
         let prompt = builder.build(input)
         var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         guard let completer = await loadedCompleter(for: model) else { return nil }
         let start = Date()
@@ -1659,19 +1800,108 @@ final class AutocompleteController: ObservableObject {
     /// The Playground typed on: stop the running suggestion at its next token.
     func cancelPlaygroundCompletion() { completer?.cancel() }
 
+    // MARK: Nook's composers
+
+    /// A local model a composer writes with that is not autocomplete's loaded one (`ComposerCompletion.Choice.local`, or
+    /// autocomplete's choice while autocomplete is off): loaded on the first suggestion, let go after the same idle time.
+    private var composerEngine: (any CompletionEngine)?
+    private var composerLoading: (identity: String, task: Task<(any CompletionEngine)?, Never>)?
+    private var composerIdle: Task<Void, Never>?
+    private var composerEngineRunning: (any CompletionEngine)?
+
+    /// The models on this Mac, for the composer's model choice while autocomplete is off (it scans them itself when on).
+    func scanModels() async {
+        let folder = AutocompleteStore.modelsFolder
+        let found = await Task.detached(priority: .utility) {
+            CompletionModelLocator.foundModels() + CompletionModelLocator.nookModels(in: folder)
+        }.value
+        candidates = found.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        brainModels = EmbeddedModel.shared.autocompleteModels
+    }
+
+    /// The local model behind `identity` ("" for autocomplete's own choice); nil when there is none on this Mac.
+    func composerSource(_ identity: String) async -> CompletionSource? {
+        if identity.isEmpty, let activeModel { return activeModel }
+        if candidates.isEmpty, brainModels.isEmpty { await scanModels() }
+        return CompletionSource.resolve(stored: identity.isEmpty ? prefs.modelPath : identity, files: candidates,
+                                        brainModels: brainModels, preferredBrain: AppSettings.shared.localModel)
+    }
+
+    /// A suggestion for a composer's text with a local model: the same options, instructions and memory as in other apps,
+    /// with the composer's context (`ComposerCompletion.context`) for the window and the screen. Nil when there is no
+    /// model, on battery while autocomplete pauses there, or when the model is not sure.
+    func composerSuggestion(_ input: CompletionContext, identity: String) async -> CompletionSuggestion? {
+        guard !power.paused, let source = await composerSource(identity), let engine = await composerEngine(for: source) else { return nil }
+        var input = input
+        input.instructions = prefs.instructions(app: nil, site: nil)
+        if prefs.memoryContext { input.facts = facts(input.topic(before: input.before)) }
+        let prompt = builder.build(input)
+        var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
+        options.heal = Self.heals(input.before)
+        options.candidates = suggestionCandidates
+        composerEngineRunning = engine
+        defer { composerEngineRunning = nil }
+        let result = await engine.complete(prompt: prompt, options: options, partial: nil)
+        return result.flatMap {
+            CompletionSuggestion.make(raw: $0.text, before: input.before, after: input.after, maxWords: options.maxWords,
+                                      truncated: $0.truncated, unfinished: $0.unfinished)
+        }
+    }
+
+    /// A newer key in the composer: the running suggestion stops at its next token.
+    func cancelComposerSuggestion() { composerEngineRunning?.cancel() }
+
+    /// Autocomplete's own engine when it runs this model (loaded, or loading it when it is its active model), else one of
+    /// the composer's own.
+    private func composerEngine(for source: CompletionSource) async -> (any CompletionEngine)? {
+        let identity = source.identity
+        if let completer, completer.identity == identity { return completer }
+        if prefs.enabled, activeModel?.identity == identity { return await loadedCompleter(for: source) }
+        defer { scheduleComposerUnload() }
+        if let composerEngine, composerEngine.identity == identity { return composerEngine }
+        if let composerLoading, composerLoading.identity == identity { return await composerLoading.task.value }
+        composerEngine?.cancel()
+        composerEngine = nil
+        let task = Task { () -> (any CompletionEngine)? in
+            switch source {
+            case .gguf(let file): return try? await LlamaCompleter.load(path: file.url.path, adapter: nil)
+            case .brain(let id, _): return BrainCompleter(modelID: id)
+            }
+        }
+        composerLoading = (identity, task)
+        let loaded = await task.value
+        if composerLoading?.identity == identity { composerLoading = nil }
+        if let loaded { composerEngine = loaded }
+        return loaded
+    }
+
+    private func scheduleComposerUnload() {
+        composerIdle?.cancel()
+        composerIdle = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.composerEngine?.cancel()
+            self.composerEngine = nil
+        }
+    }
+
     // MARK: The model
 
     private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
         let identity = model.identity
         if let completer, completer.identity == identity { return completer }
-        let adapter = prefs.loraAdapterPath
+        let adapter = adapterIdentity(for: model)
         if let loading, loading.identity == identity { return await loading.task.value }
         state = .loading
         let task = Task { () -> (any CompletionEngine)? in
             do {
                 let loaded: any CompletionEngine
                 switch model {
-                case .gguf(let file): loaded = try await LlamaCompleter.load(path: file.url.path, adapter: adapter)
+                case .gguf(let file):
+                    // The personal adapter is sealed on disk: opened into a private file for llama.cpp to read, then deleted.
+                    let opened = adapter == Self.personalAdapterIdentity ? store.openedAdapter() : nil
+                    defer { opened.map { try? FileManager.default.removeItem(at: $0) } }
+                    loaded = try await LlamaCompleter.load(path: file.url.path, adapter: opened?.path ?? adapter)
                 // The brain's model is loaded by the brain itself, on the first suggestion; nothing to wait for here.
                 case .brain(let id, _): loaded = BrainCompleter(modelID: id)
                 }
@@ -1691,6 +1921,57 @@ final class AutocompleteController: ObservableObject {
         let result = await task.value
         if loading?.identity == identity { loading = nil }
         return result
+    }
+
+    /// Which adapter the model runs with: a LoRA file chosen in Settings, else the personal adapter trained on this Mac when it
+    /// was made for this very file (`CompletionAdapterInfo.fits`), else none.
+    private func adapterIdentity(for model: CompletionSource?) -> String {
+        if !prefs.loraAdapterPath.isEmpty { return prefs.loraAdapterPath }
+        guard prefs.personalAdapter, case .gguf(let file) = model, let info = store.adapter,
+              info.fits(file: file.url, size: Self.fileSize(file.url)) else { return "" }
+        return Self.personalAdapterIdentity
+    }
+
+    private static let personalAdapterIdentity = "personal-adapter"
+
+    static func fileSize(_ url: URL) -> Int64 {
+        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    // MARK: Personal adapter
+
+    /// Why a personal adapter cannot be trained for the model autocomplete runs now; nil when it can.
+    enum AdapterObstacle: Equatable {
+        case noGGUFModel
+        case unsupportedModel
+        case memory
+        case tooFewExamples(Int)
+    }
+
+    /// The GGUF model the adapter would be trained for, with the MLX model to train it on.
+    var adapterTarget: (file: URL, base: CompletionAdapterBase.Base)? {
+        guard case .gguf(let file) = activeModel, let base = CompletionAdapterBase.base(forModelFile: file.url.lastPathComponent) else { return nil }
+        return (file.url, base)
+    }
+
+    /// The examples a training would use now: the user's recorded writing, and their own chat messages when allowed.
+    func adapterExamples() -> [CompletionAdapter.Example] {
+        let threads = prefs.adapterFromChats ? Array(ChatCaptureService.shared.inbox.threads.values) : []
+        return CompletionAdapter.examples(threads: threads, samples: store.samples.samples)
+    }
+
+    func adapterObstacle(examples: Int) -> AdapterObstacle? {
+        guard case .gguf = activeModel else { return .noGGUFModel }
+        guard adapterTarget != nil else { return .unsupportedModel }
+        guard ProcessInfo.processInfo.physicalMemory >= CompletionAdapterBase.minimumMemory else { return .memory }
+        guard examples >= CompletionAdapter.minimumExamples else { return .tooFewExamples(examples) }
+        return nil
+    }
+
+    func trainAdapter() {
+        let examples = adapterExamples()
+        guard adapterObstacle(examples: examples.count) == nil, let target = adapterTarget else { return }
+        CompletionAdapterTraining.shared.start(model: target.file, size: Self.fileSize(target.file), base: target.base, examples: examples)
     }
 
     private func scheduleUnload() {

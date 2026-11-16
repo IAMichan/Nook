@@ -147,7 +147,7 @@ enum MailStats {
     /// The newest messages of one account's inbox, fetched in bulk: one Apple Event per property per mailbox instead of
     /// one per message, and never a `whose` filter over the messages (that took longer than any sensible limit on a big
     /// mailbox). One account per script, so a slow or syncing account never keeps the others from showing.
-    /// Lines: "TOTAL|||unread", then "ROW|||account|||mailbox|||index|||subject|||sender|||date|||read|||replied".
+    /// Lines: "TOTAL|||unread", then "ROW|||account|||mailbox|||index|||subject|||sender|||date|||read|||replied|||message id".
     static func recentScript(account: String, perMailbox: Int = 40) -> String {
         """
         tell application "Mail"
@@ -159,32 +159,58 @@ enum MailStats {
                 try
                     set unread to unread + (unread count of box)
                 end try
-                set total to count of messages of box
-                if total > 0 then
-                    set lo to 1
-                    set hi to total
-                    if total > \(perMailbox) then
-                        set hi to \(perMailbox)
-                        -- Mail usually lists the newest first; if not, take the other end.
-                        if (date received of message 1 of box) < (date received of message total of box) then
-                            set lo to total - \(perMailbox - 1)
-                            set hi to total
+                -- Each property is its own read: a mail that arrives between them shifts the positions, and one row
+                -- would get another mail's id. So the box is read again when its count changed meanwhile; if it keeps
+                -- changing, its rows go without ids rather than with wrong ones.
+                repeat with attempt from 1 to 2
+                    set total to count of messages of box
+                    if total > 0 then
+                        set lo to 1
+                        set hi to total
+                        if total > \(perMailbox) then
+                            set hi to \(perMailbox)
+                            -- Mail usually lists the newest first; if not, take the other end.
+                            if (date received of message 1 of box) < (date received of message total of box) then
+                                set lo to total - \(perMailbox - 1)
+                                set hi to total
+                            end if
                         end if
+                        set subs to subject of messages lo thru hi of box
+                        set snds to sender of messages lo thru hi of box
+                        set dts to date received of messages lo thru hi of box
+                        set rds to read status of messages lo thru hi of box
+                        set rps to was replied to of messages lo thru hi of box
+                        -- The id read_mail, mark_mail and a reply take: one more bulk event, never one per message.
+                        set mids to {}
+                        try
+                            set mids to message id of messages lo thru hi of box
+                        end try
                     end if
+                    if (count of messages of box) = total then exit repeat
+                    if attempt = 2 then set mids to {}
+                end repeat
+                if total > 0 then
                     set boxName to name of box
-                    set subs to subject of messages lo thru hi of box
-                    set snds to sender of messages lo thru hi of box
-                    set dts to date received of messages lo thru hi of box
-                    set rds to read status of messages lo thru hi of box
-                    set rps to was replied to of messages lo thru hi of box
                     repeat with i from 1 to (count of subs)
-                        set out to out & "ROW|||" & accName & "|||" & boxName & "|||" & (lo + i - 1) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & ((item i of dts) as «class isot» as string) & "|||" & (item i of rds) & "|||" & (item i of rps) & linefeed
+                        set mid to ""
+                        if (count of mids) >= i then set mid to (item i of mids)
+                        set out to out & "ROW|||" & accName & "|||" & boxName & "|||" & (lo + i - 1) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & ((item i of dts) as «class isot» as string) & "|||" & (item i of rds) & "|||" & (item i of rps) & "|||" & mid & linefeed
                     end repeat
                 end if
             end repeat
             return "TOTAL|||" & unread & linefeed & out
         end tell
         """
+    }
+
+    /// How many unread mails the mailboxes count beyond the ones Nook holds (`loaded`, the newest of each mailbox).
+    static func unreadBeyond(loaded: [InboxRow], unreadTotal: Int) -> Int {
+        max(0, unreadTotal - loaded.filter { !$0.read }.count)
+    }
+
+    /// For the brain: unread mail exists beyond what the list shows, and how to reach it.
+    static func unreadBeyondNote(_ count: Int) -> String {
+        "Note: the mailboxes count \(count) more unread mail\(count == 1 ? "" : "s") older than the newest ones listed here; search_mail finds them (by sender or subject). Do not say there is no other unread mail."
     }
 
     struct InboxRow: Equatable {
@@ -198,6 +224,14 @@ enum MailStats {
         var replied: Bool
         /// The start of the text, when it was read.
         var body: String = ""
+        /// The message's own id (the Message-ID header without its angle brackets), which read_mail, mark_mail and a
+        /// reply in compose_mail take. Empty until known: Mail's index gives only its own row, read from the file later.
+        var messageID: String = ""
+        /// Where Mail's index keeps it (its row and the url of the mailbox its file is in), to find its file; 0 without.
+        var indexID: Int64 = 0
+        var indexMailbox: String = ""
+        /// Everyone it went to (To), from Mail's index (empty when the row came from a script), for `read_mail`'s "To:".
+        var recipient: String = ""
 
         /// Stable enough to remember a body between refreshes (the index shifts when new mail arrives).
         var key: String { "\(account)|\(subject)|\(date.timeIntervalSince1970)" }
@@ -205,6 +239,8 @@ enum MailStats {
             guard let pattern = MailStats.automatedPattern else { return false }
             return pattern.firstMatch(in: sender, range: NSRange(sender.startIndex..., in: sender)) != nil
         }
+        /// Whether it looks like phishing or a scam (`MessageTrust`); a sender the user replied to counts as known.
+        var trust: MessageTrust.Verdict { MessageTrust.assess(sender: sender, subject: subject, body: body, known: replied) }
     }
 
     /// Senders that never need a reply (newsletters, notifications, no-reply addresses).
@@ -224,17 +260,24 @@ enum MailStats {
             if parts.count >= 2, parts[0] == "TOTAL" { unread = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0; continue }
             guard parts.count >= 9, parts[0] == "ROW", let index = Int(parts[3].trimmingCharacters(in: .whitespaces)),
                   let date = parser.date(from: String(parts[6].prefix(19))) else { continue }
-            rows.append(InboxRow(account: parts[1], mailbox: parts[2], index: index, subject: parts[4], sender: parts[5], date: date,
-                                 read: parts[7].trimmingCharacters(in: .whitespaces) == "true",
-                                 replied: parts[8].trimmingCharacters(in: .whitespaces) == "true"))
+            var row = InboxRow(account: parts[1], mailbox: parts[2], index: index, subject: parts[4], sender: parts[5], date: date,
+                               read: parts[7].trimmingCharacters(in: .whitespaces) == "true",
+                               replied: parts[8].trimmingCharacters(in: .whitespaces) == "true")
+            // Older output has no id; a row without one still shows.
+            if parts.count >= 10 { row.messageID = parts[9].trimmingCharacters(in: CharacterSet(charactersIn: "<> \t\r")) }
+            rows.append(row)
         }
         return (unread, rows.sorted { $0.date > $1.date })
     }
 
-    /// Within `days`, newest first; with `unansweredOnly` only mail from people that has no reply yet.
-    static func select(_ rows: [InboxRow], now: Date, days: Int, unansweredOnly: Bool, limit: Int = 15) -> [InboxRow] {
+    /// Within `days`, newest first; with `unansweredOnly` only mail from people that has no reply yet (no newsletters, no
+    /// phishing or scams), with `unreadOnly` only mail not read yet.
+    static func select(_ rows: [InboxRow], now: Date, days: Int, unansweredOnly: Bool, unreadOnly: Bool = false, limit: Int = 15) -> [InboxRow] {
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
-        let kept = rows.filter { $0.date >= cutoff && (!unansweredOnly || (!$0.replied && !$0.isAutomated)) }
+        let kept = rows.filter {
+            $0.date >= cutoff && (!unansweredOnly || (!$0.replied && !$0.isAutomated && !$0.trust.isSuspicious))
+                && (!unreadOnly || !$0.read)
+        }
         return Array(kept.sorted { $0.date > $1.date }.prefix(limit))
     }
 
@@ -242,12 +285,16 @@ enum MailStats {
         select(recent(raw, calendar: calendar).rows, now: now, days: days, unansweredOnly: unansweredOnly, limit: limit)
     }
 
-    /// One block per message for the model: subject, sender, date, state, account and the start of the text.
+    /// One block per message for the model: subject, sender, date, state, account, its id (for read_mail, mark_mail and
+    /// a reply) and the start of the text.
     static func describe(_ rows: [InboxRow], date: (Date) -> String) -> String {
         rows.map { row in
             let state = (row.read ? "gelezen" : "ongelezen") + (row.replied ? ", beantwoord" : "")
             let body = row.body.isEmpty ? "" : "\n" + row.body
-            return "### \(row.subject) | van \(row.sender) | \(date(row.date)) | \(state) | \(row.account)\(body)"
+            let id = row.messageID.isEmpty ? "" : " | id: \(row.messageID)"
+            let trust = row.trust
+            let warning = trust.isSuspicious ? "\n" + trust.marker : ""
+            return "### \(row.subject) | van \(row.sender) | \(date(row.date)) | \(state) | \(row.account)\(id)\(warning)\(body)"
         }.joined(separator: "\n\n")
     }
 

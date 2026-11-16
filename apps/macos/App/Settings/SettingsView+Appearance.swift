@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings › Appearance: how Nook looks and sounds. A large live Nook on top that shows each mood, the three styles as
-/// cards, then the color (the biggest change after the style), the windows' appearance and theme, the face and finish
-/// folded away, and Nook as a buddy.
+/// Settings › Appearance: how Nook looks and sounds, in a few groups instead of a long list. Nook first: a live Nook
+/// with a mood to preview, the three styles with the color under them, the face and finish folded away, and Nook as a
+/// buddy. Then the windows: System, Light or Dark and the theme, with text and layout and the custom colors each folded
+/// into one row.
 extension SettingsView {
     // MARK: Appearance
 
@@ -13,8 +14,7 @@ extension SettingsView {
             Section {
                 lookPreview
             }
-            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-            .listRowBackground(Color.clear)
+            .settingsBareSection()
 
             Section {
                 HStack(spacing: NookTheme.Spacing.md) {
@@ -23,6 +23,7 @@ extension SettingsView {
                     }
                 }
                 .padding(.vertical, NookTheme.Spacing.xxs)
+                accentRow
             } header: {
                 Text(tr("settings.appearance.style"))
             } footer: {
@@ -30,36 +31,6 @@ extension SettingsView {
                     SettingNote(tr("settings.appearance.styleCustom"))
                 }
             }
-
-            Section {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ForEach(Self.accentSwatches, id: \.hex) { swatch in
-                        let hex = swatch.hex
-                        Button { settings.accentHex = hex } label: {
-                            // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
-                            Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
-                                .frame(width: 22, height: 22)
-                                .padding(NookTheme.Spacing.xs)
-                                .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(tr(swatch.name))
-                        .accessibilityHint(tr("settings.display.accent"))
-                        .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
-                    }
-                    Spacer(minLength: 8)
-                    ColorPicker(tr("settings.display.accent"), selection: Binding(
-                        get: { Color(hex: settings.accentHex) },
-                        set: { settings.accentHex = NSColor($0).nookHex }
-                    ), supportsOpacity: false)
-                    .labelsHidden()
-                }
-            } header: {
-                Text(tr("settings.display.color"))
-            }
-
-            themeSection
 
             // The style above sets the face and the finish; changing them one by one is folded away.
             SettingsFold(tr("settings.appearance.fineTune"), summary: tr("settings.appearance.fineTuneSummary"),
@@ -90,6 +61,138 @@ extension SettingsView {
             // Putting the look back is "Restore defaults" in the bar over the page, as on General.
 
             buddySection
+
+            themeSection
+
+            readingFold
+
+            ColorTokensSettings()
+
+            shareLookSection
+        }
+    }
+
+    // MARK: Sharing the look
+
+    /// Saves the whole look (accent, appearance, themes, custom colors, diff colors, density and Nook's face) as one
+    /// `.nooklook` file to hand to someone, and reads such a file back in (`NookLookShare`).
+    private var shareLookSection: some View {
+        Section {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Button(tr("look.share.export")) { exportLook() }
+                Button(tr("look.share.import")) { importLook() }
+                Spacer()
+            }
+        } header: {
+            Text(tr("look.share.header"))
+        } footer: {
+            SettingNote(tr("look.share.footer"))
+        }
+    }
+
+    private static var lookFileType: UTType {
+        UTType(filenameExtension: NookLookShare.fileExtension, conformingTo: .json) ?? .json
+    }
+
+    private func exportLook() {
+        let share = NookLookShare(accent: settings.accentHex, choice: settings.themeChoice,
+                                  customThemes: settings.customThemes, diffColors: settings.diffColors,
+                                  density: settings.density, look: settings.nookLook)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = tr("look.share.fileName") + "." + NookLookShare.fileExtension
+        panel.allowedContentTypes = [Self.lookFileType]
+        panel.canCreateDirectories = true
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        do {
+            try share.encoded().write(to: url, options: .atomic)
+            ToastCenter.shared.success(tr("look.share.exported"), detail: url.lastPathComponent)
+        } catch {
+            ToastCenter.shared.warning(tr("look.share.exportFailed"), detail: error.localizedDescription)
+        }
+    }
+
+    /// Reads a look file and uses it at once; what the file does not say keeps the current setting.
+    private func importLook() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [Self.lookFileType, .json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url), let share = try? NookLookShare.decode(data) else {
+            ToastCenter.shared.warning(tr("look.share.importFailed"))
+            return
+        }
+        let themes = share.themes(mergedInto: settings.customThemes, darkTheme: settings.darkThemeID,
+                                  lightTheme: settings.lightThemeID)
+        withAnimation(NookTheme.reveal) {
+            if themes.customThemes != settings.customThemes { settings.customThemes = themes.customThemes }
+            settings.darkThemeID = themes.darkTheme
+            settings.lightThemeID = themes.lightTheme
+            settings.colorOverrides = share.overrides
+            if let accent = share.accent { settings.accentHex = accent }
+            if let mode = share.mode { settings.appearanceMode = mode }
+            if let diffColors = share.diffColors { settings.diffColors = diffColors }
+            if let density = share.density, density != settings.density { settings.density = density }
+            if let look = share.look { settings.nookLook = look }
+        }
+        ToastCenter.shared.success(tr("look.share.imported"))
+    }
+
+    /// Nook's color: the swatches, then any color of your own.
+    private var accentRow: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            SettingText("settings.display.color")
+            Spacer(minLength: NookTheme.Spacing.md)
+            ForEach(Self.accentSwatches, id: \.hex) { swatch in
+                let hex = swatch.hex
+                Button { settings.accentHex = hex } label: {
+                    // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
+                    Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
+                        .frame(width: 18, height: 18)
+                        .padding(NookTheme.Spacing.xxs)
+                        .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.nookPlain)
+                .accessibilityLabel(tr(swatch.name))
+                .accessibilityHint(tr("settings.display.accent"))
+                .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
+            }
+            ColorPicker(tr("settings.display.accent"), selection: Binding(
+                get: { Color(hex: settings.accentHex) },
+                set: { settings.accentHex = NSColor($0).nookHex }
+            ), supportsOpacity: false)
+            .labelsHidden()
+        }
+    }
+
+    /// How text and rows read in the windows: density, the colors of a diff, math and Markdown as you type. Each is set
+    /// once and rarely again, so they share one fold.
+    private var readingFold: some View {
+        SettingsFold(tr("settings.appearance.reading"), summary: tr("settings.appearance.readingSummary"),
+                     keys: ["theme.density", "theme.diffColors", "theme.renderMath", "theme.richComposer"]) {
+            Picker(selection: $settings.density) {
+                ForEach(NookDensity.allCases) { density in
+                    Text(tr("theme.density.\(density.rawValue)")).tag(density)
+                }
+            } label: {
+                SettingText("theme.density")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.densityNote"))
+            Picker(selection: $settings.diffColors) {
+                ForEach(NookDiffColors.allCases) { colors in
+                    Text(tr("theme.diffColors.\(colors.rawValue)")).tag(colors)
+                }
+            } label: {
+                SettingText("theme.diffColors")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.diffColorsNote"))
+            Toggle(isOn: $settings.renderMath) { SettingText("theme.renderMath") }
+            SettingNote(tr("theme.renderMathNote"))
+            Toggle(isOn: $settings.richComposer) { SettingText("theme.richComposer") }
+            SettingNote(tr("theme.richComposerNote"))
         }
     }
 
@@ -101,29 +204,24 @@ extension SettingsView {
         (0xEF7B73, "settings.accent.coral"), (0xFF7EB6, "settings.accent.pink"),
     ]
 
-    /// Nook large and alive, with the moods underneath to see how each one looks.
+    /// Nook large and alive, with a menu of moods underneath to see how each one looks.
     private var lookPreview: some View {
-        VStack(spacing: NookTheme.Spacing.lg) {
+        VStack(spacing: NookTheme.Spacing.md) {
             NookOrb(mood: lookPreviewMood, size: 88, glow: settings.nookLook.glow, look: settings.nookLook)
                 .frame(width: 150, height: 130)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: NookTheme.Spacing.sm)], spacing: NookTheme.Spacing.sm) {
-                ForEach(Self.previewMoods, id: \.key) { item in
-                    let selected = lookPreviewMood == item.mood
-                    Button { lookPreviewMood = item.mood } label: {
-                        Text(tr(item.key))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                            .font(selected ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
-                            .padding(.horizontal, NookTheme.Spacing.md)
-                            .padding(.vertical, NookTheme.Spacing.xs)
-                            .foregroundStyle(selected ? NookTheme.onIris : NookTheme.textStrong)
-                            .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
-                            .contentShape(NookTheme.shape(NookTheme.Radius.control))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
+            Picker(selection: Binding(
+                get: { Self.previewMoods.firstIndex { $0.mood == lookPreviewMood } ?? 0 },
+                set: { lookPreviewMood = Self.previewMoods[$0].mood }
+            )) {
+                ForEach(Self.previewMoods.indices, id: \.self) { index in
+                    Text(tr(Self.previewMoods[index].key)).tag(index)
                 }
+            } label: {
+                SettingText("settings.appearance.mood")
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, NookTheme.Spacing.xl)
@@ -171,7 +269,7 @@ extension SettingsView {
             .roundedStrokeBorder(selected ? NookTheme.iris : Color.clear, radius: NookTheme.Radius.panel)
             .roundedHitShape(NookTheme.Radius.panel)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -223,10 +321,6 @@ extension SettingsView {
                 Button(tr("theme.import")) { importVSCodeTheme() }
                 Spacer()
             }
-            Toggle(isOn: $settings.renderMath) { SettingText("theme.renderMath") }
-            SettingNote(tr("theme.renderMathNote"))
-            Toggle(isOn: $settings.richComposer) { SettingText("theme.richComposer") }
-            SettingNote(tr("theme.richComposerNote"))
         } header: {
             Text(tr("theme.header"))
         } footer: {
@@ -305,8 +399,8 @@ extension SettingsView {
             .roundedStrokeBorder(chosen ? NookTheme.iris : NookTheme.line2, radius: NookTheme.Radius.chip, lineWidth: chosen ? 2 : 1)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .help(label)
+        .buttonStyle(.nookPlain)
+        .nookTip(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
@@ -327,5 +421,198 @@ extension SettingsView {
         let custom = NookCustomTheme(id: "custom-" + UUID().uuidString.prefix(8).lowercased(), name: result.name, source: source)
         settings.customThemes.append(custom)
         if result.palette.isDark { settings.darkThemeID = custom.id } else { settings.lightThemeID = custom.id }
+    }
+}
+
+// MARK: Colors
+
+/// Settings › Appearance › Custom colors: every named color Nook draws with, folded into one row. Open, it edits one
+/// appearance (dark or light) and one group at a time (surfaces, lines, text, state, changes, chats, code), with a
+/// preview on top; each color has a picker and an ⓘ that says where it is used. A color set here lies over the chosen
+/// theme and changes every place that uses it at once (`NookWindowLook.repaintSoon`); "Reset" brings the theme's own
+/// color back. Nothing is set by default.
+struct ColorTokensSettings: View {
+    @ObservedObject private var settings = AppSettings.shared
+    /// The overrides are not published by `AppSettings` (a picker changes them on every pointer move); this is.
+    @ObservedObject private var edits = NookColorEdits.shared
+    @Environment(\.colorScheme) private var scheme
+    /// The appearance being edited; until one is picked, the one Nook shows now.
+    @State private var picked: Bool?
+    /// The group of colors shown.
+    @State private var group: NookColorToken.Group = .surfaces
+
+    private var dark: Bool { picked ?? (scheme == .dark) }
+    private var themePalette: NookPalette { settings.themeChoice.themePalette(dark: dark, themes: settings.themes) }
+    private var overrides: [String: UInt32] { settings.colorOverrides.values(dark: dark) }
+
+    var body: some View {
+        let changedTotal = settings.colorOverrides.values(dark: true).count + settings.colorOverrides.values(dark: false).count
+        SettingsFold(tr("colors.custom"),
+                     summary: changedTotal > 0 ? tr("colors.changed", changedTotal) : tr("colors.customSummary"),
+                     keys: ["colors.custom", "colors.editFor"]) {
+            SettingNote(tr("colors.info"))
+            Picker(selection: Binding(get: { dark }, set: { picked = $0 })) {
+                Text(tr("theme.mode.dark")).tag(true)
+                Text(tr("theme.mode.light")).tag(false)
+            } label: {
+                SettingText("colors.editFor")
+            }
+            .pickerStyle(.segmented)
+            if dark != (scheme == .dark) {
+                SettingNote(tr(dark ? "colors.notShown.dark" : "colors.notShown.light"))
+            }
+            // Follows every step of a drag; the rest of Nook follows once the picker rests.
+            ColorTokensPreview(palette: themePalette.applying(overrides))
+            if !overrides.isEmpty {
+                HStack {
+                    Text(tr("colors.changed", overrides.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Spacer()
+                    Button(tr("colors.resetAll")) {
+                        var all = settings.colorOverrides
+                        if dark { all.dark = [:] } else { all.light = [:] }
+                        settings.colorOverrides = all
+                    }
+                }
+            }
+            Picker(selection: $group) {
+                ForEach(NookColorToken.Group.allCases) { item in
+                    let changed = tokens(in: item).count(where: { overrides[$0.id] != nil })
+                    Text(changed > 0
+                         ? "\(tr("colors.group.\(item.rawValue)")) · \(tr("colors.changed", changed))"
+                         : tr("colors.group.\(item.rawValue)"))
+                        .tag(item)
+                }
+            } label: {
+                SettingText("colors.group")
+            }
+            .pickerStyle(.menu)
+            ForEach(tokens(in: group)) { token in row(token) }
+        }
+    }
+
+    private func tokens(in group: NookColorToken.Group) -> [NookColorToken] {
+        NookColorToken.all.filter { $0.group == group }
+    }
+
+    private func row(_ token: NookColorToken) -> some View {
+        let themeValue = themePalette[keyPath: token.keyPath]
+        // What Nook draws now: also a color that follows another one you set (the composer's trays follow the composer).
+        let value = themePalette.applying(overrides)[keyPath: token.keyPath]
+        let changed = overrides[token.id] != nil
+        return HStack(spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                SettingText("colors.token.\(token.id)")
+                SettingsInfoButton(text: tr("colors.info.\(token.id)"))
+            }
+            Spacer(minLength: NookTheme.Spacing.md)
+            if changed {
+                ToolbarIconButton("arrow.counterclockwise", tr("colors.reset"), height: 22, width: 22) {
+                    set(token, nil, themeValue: themeValue)
+                }
+            }
+            Text(NookColor.string(value))
+                .font(NookTheme.mono(11))
+                .foregroundStyle(changed ? NookTheme.textStrong : NookTheme.textTertiary)
+            ColorPicker(tr("colors.token.\(token.id)"), selection: Binding(
+                get: { Color(hex: value) },
+                set: { set(token, NSColor($0).nookHex, themeValue: themeValue) }
+            ), supportsOpacity: false)
+            .labelsHidden()
+        }
+    }
+
+    private func set(_ token: NookColorToken, _ hex: UInt32?, themeValue: UInt32) {
+        var all = settings.colorOverrides
+        all.set(token.id, to: hex, dark: dark, themeValue: themeValue)
+        guard all != settings.colorOverrides else { return }
+        settings.colorOverrides = all
+    }
+}
+
+/// A small piece of Nook drawn straight from the palette being edited: background, a card with a selected and a hovered
+/// row, the composer, state colors, a diff, chat bubbles and a line of code. Drawn from the hex values (not the live
+/// theme), so it follows a color picker on every step without the windows repainting.
+struct ColorTokensPreview: View {
+    let palette: NookPalette
+
+    private func c(_ token: KeyPath<NookPalette, UInt32>) -> Color { Color(hex: palette[keyPath: token]) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    row(tr("colors.preview.session"), detail: tr("colors.preview.working"), dot: \.blue, fill: \.rowSelected)
+                    row(tr("colors.preview.review"), detail: tr("colors.preview.needsYou"), dot: \.amber, fill: \.rowHover)
+                    row(tr("colors.preview.tests"), detail: tr("colors.preview.done"), dot: \.mint, fill: \.rowRest)
+                }
+                .padding(NookTheme.Spacing.sm)
+                .background(NookTheme.shape(NookTheme.Radius.card).fill(c(\.surface)))
+                .overlay(NookTheme.shape(NookTheme.Radius.card).strokeBorder(c(\.line), lineWidth: 1))
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(tr("colors.preview.ask")).foregroundStyle(c(\.textTertiary))
+                    Spacer(minLength: 0)
+                    Text("+12").foregroundStyle(c(\.added))
+                    Text("−3").foregroundStyle(c(\.removed))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .frame(height: 30)
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(c(\.composer)))
+                .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(c(\.fieldStroke), lineWidth: 1))
+            }
+            Rectangle().fill(c(\.border)).frame(width: 1)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                bubble(tr("colors.preview.theirs"), fill: \.chatTheirs, leading: true)
+                bubble(tr("colors.preview.mine"), fill: \.chatMine, leading: false)
+                (Text("func ").foregroundColor(c(\.syntaxKeyword))
+                    + Text("greet").foregroundColor(c(\.syntaxProperty))
+                    + Text("(").foregroundColor(c(\.textStrong))
+                    + Text("\"hi\"").foregroundColor(c(\.syntaxString))
+                    + Text(", ").foregroundColor(c(\.textStrong))
+                    + Text("42").foregroundColor(c(\.syntaxNumber))
+                    + Text(") ").foregroundColor(c(\.textStrong))
+                    + Text("// ok").foregroundColor(c(\.syntaxComment)))
+                    .font(NookTheme.mono(11))
+                    .lineLimit(1)
+                    .padding(NookTheme.Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(c(\.well)))
+            }
+        }
+        .padding(NookTheme.Spacing.md)
+        .background(NookTheme.shape(NookTheme.Radius.card).fill(c(\.canvas)))
+        .overlay(NookTheme.shape(NookTheme.Radius.card).strokeBorder(c(\.border), lineWidth: 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("colors.preview"))
+    }
+
+    private func row(_ title: String, detail: String, dot: KeyPath<NookPalette, UInt32>,
+                     fill: KeyPath<NookPalette, UInt32>) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Circle().fill(c(dot)).frame(width: 6, height: 6)
+            Text(title).foregroundStyle(c(\.paper))
+            Spacer(minLength: NookTheme.Spacing.sm)
+            Text(detail).foregroundStyle(c(\.textSecondary))
+        }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .frame(height: 24)
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(c(fill)))
+    }
+
+    private func bubble(_ text: String, fill: KeyPath<NookPalette, UInt32>, leading: Bool) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.xs) {
+            Text(text).foregroundStyle(c(\.paper))
+            Text("09:41").font(NookTheme.TextStyle.caption).foregroundStyle(c(\.chatStamp))
+        }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .background(NookTheme.shape(NookTheme.Radius.chatBubble).fill(c(fill)))
+        .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
     }
 }

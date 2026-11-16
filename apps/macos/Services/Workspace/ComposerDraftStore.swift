@@ -26,7 +26,8 @@ final class ComposerDraftStore: ObservableObject {
     init(url: URL = NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true)
             .appendingPathComponent("drafts.json")) {
         self.url = url
-        if let data = try? Data(contentsOf: url), let stored = try? JSONDecoder().decode(Stored.self, from: data) {
+        // What cannot be read is kept aside first (`SafeStorage`), so the next write never loses it for good.
+        if let stored = SafeStorage.load(Stored.self, from: url).value {
             drafts = stored.drafts ?? ComposerDrafts()
             stash = stored.stash ?? PromptStash()
         }
@@ -71,10 +72,22 @@ final class ComposerDraftStore: ObservableObject {
         pending = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self else { return }
-            let stored = Stored(drafts: drafts, stash: stash)
-            guard let data = try? JSONEncoder().encode(stored) else { return }
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: url, options: .atomic)
+            pending = nil
+            write()
         }
+    }
+
+    /// Writes a change that is still waiting for its moment right away (on quit), so the last keystrokes are kept.
+    func flush() {
+        guard let task = pending else { return }
+        task.cancel()
+        pending = nil
+        write()
+    }
+
+    private func write() {
+        let stored = Stored(drafts: drafts, stash: stash)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        try? SafeStorage.write(data, to: url)
     }
 }

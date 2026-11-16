@@ -35,6 +35,8 @@ enum AgentAttention: Int, Comparable, Sendable {
         var settled = false
         /// The turn ended, but subagents it started still work in the background.
         var subagentsWorking = false
+        /// The turn ended, but sub-threads it delegated (`DelegatedTask.workingSubThreads`) still work: it is busy through them.
+        var subThreadsWorking = 0
         /// The running turn is a summary Nook sends on its own (idle or size compaction): it asks nothing of you.
         var quietTurn = false
     }
@@ -56,7 +58,8 @@ enum AgentAttention: Int, Comparable, Sendable {
         case .preparing, .running: return .working
         case .waitingApproval: return .approval
         case .failed: return input.limitedAt != nil ? .limited : .failed
-        case .completed: return input.subagentsWorking ? .working : (input.unseen ? .ready : .idle)
+        case .completed:
+            return input.subagentsWorking || input.subThreadsWorking > 0 ? .working : (input.unseen ? .ready : .idle)
         case .stopped: return .finished
         }
     }
@@ -131,22 +134,25 @@ enum SnoozePolicy {
         }
     }
 
-    /// The snooze choices of the menu: an hour, this evening (18:00, or tomorrow when it is later), tomorrow morning (09:00).
+    /// The snooze choices an agent's tool names (the workspace bridge): an hour, this evening (18:00, or tomorrow when it
+    /// is later), tomorrow morning (09:00). Each is one of the snooze options (`SnoozeOption`), the same ones the menus of
+    /// sessions and chats offer.
     enum Choice: String, CaseIterable, Sendable {
         case hour, evening, tomorrow
 
-        func end(from now: Date, calendar: Calendar = .current) -> Date {
+        /// The option this choice is.
+        var option: SnoozeOption {
             switch self {
-            case .hour:
-                return now.addingTimeInterval(3600)
-            case .evening:
-                let today = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now) ?? now.addingTimeInterval(3600)
-                return today > now ? today : (calendar.date(byAdding: .day, value: 1, to: today) ?? today)
-            case .tomorrow:
-                let start = calendar.startOfDay(for: now)
-                let day = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
-                return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day
+            case .hour: return .duration(minutes: 60)
+            case .evening: return .time(.today, hour: 18)
+            case .tomorrow: return .time(.tomorrow, hour: 9)
             }
+        }
+
+        func end(from now: Date, calendar: Calendar = .current) -> Date {
+            if let end = option.end(from: now, calendar: calendar) { return end }
+            // This evening, asked later than that: tomorrow evening.
+            return SnoozeOption.time(.tomorrow, hour: 18).end(from: now, calendar: calendar) ?? now.addingTimeInterval(3600)
         }
     }
 }
@@ -159,7 +165,7 @@ struct CutBackgroundWork: Codable, Equatable, Sendable {
     var at: Date
 }
 
-/// One choice of the snooze menu, set in Settings › Sessions › Snooze options (as): a duration ("3 hours") or a
+/// One choice of the snooze menu, set in Settings › Sessions › Snooze options: a duration ("3 hours") or a
 /// time on a day ("21:00 tomorrow", "09:00 Monday"). A weekday means the next one after today; a today option hides once
 /// its time has passed. The menus list them soonest first.
 struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
@@ -262,10 +268,15 @@ struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
     static let limit = 3
-    static let message = "Continue where you left off."
+    /// What the agent reads. A restart can cut a turn off after a command ran but before its result reached the agent
+    /// (or Nook), so it is told to look before it repeats anything that changes state.
+    static let message = "Continue where you left off. Nook restarted while you were working, so check the current state "
+        + "first (files, git status, what is still running) and do not repeat a step that changes something unless you are "
+        + "sure it did not finish."
 
     /// Should this run get the continue message after Nook started?
-    /// Only a session cut off just now: one that sat interrupted for a day is yours to pick up.
+    /// A session your quit stopped (`stoppedByQuit`) goes on the next time you open Nook, however long that took. Any other
+    /// only when it was cut off just now: one that sat interrupted for a day is yours to pick up.
     static let maxAge: TimeInterval = 30 * 60
     /// Continuations count towards the cap only while they follow each other this closely.
     static let loopWindow: TimeInterval = 5 * 60
@@ -273,7 +284,7 @@ enum RestartContinuation {
     /// Never a session you archived, settled or snoozed, one that waits on you (a question, an approval that the restart
     /// cut off), or one stopped by a usage limit, which has its own resume.
     /// Also a session whose turn had ended while it waited on work in the background that the restart stopped
-    /// (`cutBackgroundWork`): it is woken with a note of what will not report back (as does).
+    /// (`cutBackgroundWork`): it is woken with a note of what will not report back.
     static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
                                now: Date = Date()) -> Bool {
         guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
@@ -284,7 +295,7 @@ enum RestartContinuation {
         guard interrupted || waiting else { return false }
         // A turn that ended long ago can still have waited until Nook quit: then the quit is what counts.
         let since = interrupted ? run.updatedAt : (run.cutBackgroundWork?.at ?? run.updatedAt)
-        guard now.timeIntervalSince(since) <= maxAge else { return false }
+        guard run.stoppedByQuit == true || now.timeIntervalSince(since) <= maxAge else { return false }
         guard run.limitedAt == nil else { return false }
         return chainLength(run, now: now) < limit
     }
@@ -310,6 +321,16 @@ enum RestartContinuation {
         let more = labels.count > noteLimit ? ["- and \(labels.count - noteLimit) more"] : []
         return (["Note: Nook restarted, and this background work was stopped before it finished. It will not report back on "
                  + "its own, so start again what you still need and wait for its result:"] + shown + more).joined(separator: "\n")
+    }
+
+    /// Whether the conversation's last turn had ended when Nook stopped: its result (every agent family writes one when
+    /// a turn ends, `RunEvent.Kind.result`) comes after your last message. The timeline's events are saved as they
+    /// come and the session's status a moment later, so a crash in between leaves a finished turn that reads as cut
+    /// off; continuing it would send the agent back to work it already finished.
+    static func turnEnded(_ events: [RunEvent]) -> Bool {
+        guard let result = events.lastIndex(where: { $0.kind == .result && $0.rolledBack != true }) else { return false }
+        guard let message = events.lastIndex(where: { $0.kind == .user && $0.rolledBack != true }) else { return true }
+        return result > message
     }
 
     /// Continuations in a row that still count: none once the last one is older than `loopWindow`.

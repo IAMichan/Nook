@@ -21,7 +21,6 @@ struct MemorySettingsSection: View {
     @State private var editText = ""
     /// Why the edited text cannot be kept; the field stays open until it can.
     @State private var editProblem: String?
-    @State private var confirmClear = false
     @State private var importable: [ImportFile] = []
     @State private var imported: Int?
 
@@ -33,7 +32,7 @@ struct MemorySettingsSection: View {
                 SettingToggle(tr("memory.settings.learn"), detail: tr("memory.settings.learnDetail"), isOn: $settings.learnFromChats)
                     .disabled(!settings.useMemory)
                 if settings.localOnlySources.contains(SourceCatalog.memory) {
-                    Label(tr("memory.settings.localOnlyAll"), systemImage: "lock.fill")
+                    Label(tr("memory.settings.localOnlyAll"), icon: "lock.fill")
                         .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -75,18 +74,12 @@ struct MemorySettingsSection: View {
                 LabeledContent(tr("memory.settings.sources")) {
                     Text(tr("memory.settings.sourcesValue", app.memory.learnedWords)).foregroundStyle(NookTheme.textSecondary)
                 }
-                Button(tr("memory.settings.clear"), role: .destructive) { confirmClear = true }
-                    .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
-            }
-            // On this one section: on the Group the dialog would be attached to every section in it.
-            .confirmationDialog(tr("memory.settings.clearConfirm"), isPresented: $confirmClear) {
-                Button(tr("memory.settings.clear"), role: .destructive) {
+                ConfirmedButton(tr("memory.settings.clear"), question: tr("memory.settings.clearConfirm"),
+                                detail: tr("memory.settings.clearDetail")) {
                     app.memory.clear()
                     app.store.audit(tool: "geheugen_gewist", args: "", result: "")
                 }
-                Button(tr("button.cancel"), role: .cancel) {}
-            } message: {
-                Text(tr("memory.settings.clearDetail"))
+                .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
             }
 
             // Bringing over the old MCP memory server is needed once, if ever: last.
@@ -155,7 +148,7 @@ struct MemorySettingsSection: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 if editing == item.id {
                     TextField("", text: $editText)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .onSubmit { commitEdit(item) }
                         .onExitCommand {
                             editing = nil
@@ -184,24 +177,24 @@ struct MemorySettingsSection: View {
             } label: {
                 Image(icon: editing == item.id ? "checkmark" : "pencil")
             }
-            .help(tr("memory.settings.edit"))
+            .nookTip(tr("memory.settings.edit"))
             .accessibilityLabel(tr("memory.settings.edit"))
             Button { app.memory.setPinned(item.id, !item.pinned) } label: {
                 Image(icon: item.pinned ? "pin.fill" : "pin")
             }
-            .help(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
+            .nookTip(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             .accessibilityLabel(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             Button { app.memory.setLocalOnly(item.id, !item.localOnly) } label: {
                 Image(icon: item.localOnly ? "lock.fill" : "lock.open")
             }
-            .help(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
+            .nookTip(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             .accessibilityLabel(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             ConfirmedButton(symbol: "trash", title: tr("memory.settings.delete"), question: tr("confirm.remove", Self.display(item))) {
                 app.memory.delete(item.id)
             }
             .labelled(tr("memory.settings.delete"))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.nookBorderless)
     }
 
     /// Keeps the edited text, or leaves the field open with the reason when Nook would not keep it.

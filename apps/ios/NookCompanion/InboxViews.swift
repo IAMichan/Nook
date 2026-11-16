@@ -11,6 +11,8 @@ struct InboxListView: View {
     @Binding var path: [String]
     @State private var query = ""
     @State private var filter = Filter.all
+    /// ⌘F asked for search: the field shows also while the list is short.
+    @Environment(\.searchFocusRequest) private var searchRequest
 
     /// All chats, or only the unread ones.
     enum Filter { case all, unread }
@@ -47,14 +49,19 @@ struct InboxListView: View {
                                     WSEmptyState(symbol: "bubble.left.and.bubble.right", title: String(localized: "No chats yet"),
                                                message: String(localized: "New messages from WhatsApp and your other chat apps on your Mac show up here."))
                                 }
+                            } else if client.isOffline {
+                                // Nothing kept yet (a first launch away from the Mac): say so instead of an empty tab.
+                                WSEmptyState(symbol: "wifi.slash", title: String(localized: "Your chats show up here"),
+                                           message: String(localized: "Nothing is kept on this iPhone yet. Your chats appear once your Mac is connected, and stay readable when it is not."))
+                                    .appearsAfterDelay()
                             }
                         } else {
                             // Finding one among many; only a very short list does without.
-                            if client.inbox.count > 3 {
+                            if client.inbox.count > 3 || searchRequest.asked {
                                 NookSearchField(prompt: "Search chats", text: $query)
                                 HStack(spacing: Theme.Spacing.xs) {
                                     NookFilterChip(title: String(localized: "All"), selected: filter == .all) { filter = .all }
-                                    NookFilterChip(title: String(localized: "Unread"), count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
+                                    NookFilterChip(title: String(localized: "Unread"), count: client.inbox.count(where: { $0.unread > 0 }), selected: filter == .unread) { filter = .unread }
                                 }
                             }
                             if shown.isEmpty {
@@ -76,7 +83,7 @@ struct InboxListView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
                         if index > 0 { NookRowSeparator() }
-                        NavigationLink(value: chat.id) { InboxRow(chat: chat) }
+                        OpenLink(value: chat.id) { InboxRow(chat: chat) }
                             .buttonStyle(RowPress(radius: PhoneRadius.row))
                             .contextMenu { markButton(chat) }
                     }
@@ -119,6 +126,14 @@ struct InboxRow: View {
     }
 
     var body: some View {
+        if WhatsAppLook.isWhatsApp(chat.app) {
+            WhatsAppRow(chat: chat)
+        } else {
+            nookRow
+        }
+    }
+
+    private var nookRow: some View {
         ChatListRowContent(name: chat.name, when: when, preview: chat.preview.isEmpty ? chat.appName : chat.preview,
                            unread: chat.unread > 0, ticks: MessageTicks(chat.ticks),
                            // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's list.
@@ -139,6 +154,8 @@ struct InboxAvatar: View {
     var size: CGFloat = 40
     /// The chat's own picture from the Mac (`ChatPictures`); the initials while there is none.
     var picture: UIImage? = nil
+    /// The app's mark on the corner; WhatsApp's own look has none.
+    var showsBadge = true
     @ObservedObject private var pictures = ChatPictures.shared
 
     private var initials: String { Self.initials(name) }
@@ -157,7 +174,9 @@ struct InboxAvatar: View {
             .overlay(alignment: .bottomTrailing) {
                 // The app's real icon from the Mac (the Mac's `SiteIcon` with `source`), else its mark in its color.
                 Group {
-                    if let icon = pictures.appIcon(app) {
+                    if !showsBadge {
+                        EmptyView()
+                    } else if let icon = pictures.appIcon(app) {
                         Image(uiImage: icon)
                             .resizable()
                             .interpolation(.high)
@@ -234,62 +253,91 @@ struct InboxChatView: View {
     private var lines: [InboxLine] { client.inboxLines[chatID] ?? [] }
     /// Who is typing here now, as the Mac says it.
     private var typing: String? { InboxTyping.text(client.inboxTyping[chatID] ?? []) }
+    /// A WhatsApp chat looks as WhatsApp does (`WhatsAppLook`); any other keeps Nook's look.
+    private var whatsApp: Bool { WhatsAppLook.isWhatsApp(chat?.app) }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    if lines.isEmpty {
+        ConversationScroll(followKey: followKey) { _ in
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                if lines.isEmpty {
+                    if client.isOffline {
+                        OfflineNote(text: String(localized: "This chat is not kept on this iPhone yet. It opens once your Mac is connected."))
+                            .padding(.vertical, Theme.Spacing.xxl)
+                            .appearsAfterDelay()
+                    } else {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
-                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                        let previous = index > 0 ? lines[index - 1] : nil
-                        let next = index + 1 < lines.count ? lines[index + 1] : nil
-                        if ChatRuns.newDay(line, after: previous) { ChatDayDivider(date: Date(timeIntervalSince1970: line.date)) }
-                        ChatBubbleView(line: line, first: !ChatRuns.sameRun(previous, line), last: !ChatRuns.sameRun(line, next),
-                                       onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
-                            .contextMenu {
-                                if chat?.canSend == true {
-                                    Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                                }
-                                Button { UIPasteboard.general.string = line.text.isEmpty ? (line.attachment ?? "") : line.text } label: {
-                                    Label("Copy", systemImage: "doc.on.doc")
-                                }
-                            }
-                    }
-                    if let typing {
-                        ChatTypingBubble(text: typing).transition(.opacity)
-                    }
-                    // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
-                    let waiting = client.outbox.chatMessages(to: chatID)
-                    ForEach(waiting) { entry in
-                        ChatBubbleView(line: InboxLine(id: entry.id, text: entry.request.text ?? "", date: entry.queued, sender: "",
-                                                       fromMe: true, reactions: []), pending: true)
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottom)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.lg)
+                ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                    let previous = index > 0 ? lines[index - 1] : nil
+                    let next = index + 1 < lines.count ? lines[index + 1] : nil
+                    if ChatRuns.newDay(line, after: previous) {
+                        let day = Date(timeIntervalSince1970: line.date)
+                        if whatsApp { WhatsAppDayPill(label: ChatDayDivider.label(day)) } else { ChatDayDivider(date: day) }
+                    }
+                    ChatBubbleView(line: line, first: !ChatRuns.sameRun(previous, line), last: !ChatRuns.sameRun(line, next),
+                                   whatsApp: whatsApp,
+                                   onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
+                        .contextMenu {
+                            if chat?.canSend == true {
+                                Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                            }
+                            Button { UIPasteboard.general.string = line.text.isEmpty ? (line.attachment ?? "") : line.text } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
+                }
+                // WhatsApp says it in the header instead.
+                if let typing, !whatsApp {
+                    HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                        // Their face beside it, as beside each of their messages in a group (`ChatBubbleView`).
+                        if let name = (client.inboxTyping[chatID] ?? []).first(where: { !$0.name.isEmpty })?.name {
+                            ChatInitialsFace(name: name, initials: InboxAvatar.initials(name), size: 28)
+                                .accessibilityHidden(true)
+                        }
+                        ChatTypingBubble(text: typing)
+                    }
+                    .transition(.opacity)
+                }
+                // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
+                let waiting = client.outbox.chatMessages(to: chatID)
+                ForEach(waiting) { entry in
+                    ChatBubbleView(line: InboxLine(id: entry.id, text: entry.request.text ?? "", date: entry.queued, sender: "",
+                                                   fromMe: true, reactions: []), pending: true, whatsApp: whatsApp)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: lines.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            // Someone starts typing: their bubble comes into view under the last message.
-            .onChange(of: typing != nil) { _, shown in
-                if shown { withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
             .animation(Theme.reveal, value: typing)
-            .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+        } floating: {
+            EmptyView()
+        } dock: { scroll in
+            footer(scroll)
         }
-        .safeAreaInset(edge: .bottom) { footer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                // The chat's face beside its name, as a messaging app's header.
-                HStack(spacing: Theme.Spacing.md) {
-                    if let chat {
-                        InboxAvatar(name: chat.name, app: chat.app, size: 30, picture: pictures.image(for: chat))
+            if whatsApp, let chat {
+                // WhatsApp's header: the round picture, the name, and under it who is typing.
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(spacing: Theme.Spacing.md) {
+                        InboxAvatar(name: chat.name, app: chat.app, size: 36, picture: pictures.image(for: chat), showsBadge: false)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(chat.name).font(Theme.font(17, .semibold)).foregroundStyle(WhatsAppLook.text).lineLimit(1)
+                            if let typing {
+                                Text(typing).font(Theme.font(12.5)).foregroundStyle(WhatsAppLook.green).lineLimit(1)
+                            }
+                        }
                     }
-                    SheetTitle(title: chat?.name ?? "", subtitle: chat?.appName)
+                }
+            } else {
+                ToolbarItem(placement: .principal) {
+                    // The chat's face beside its name, as a messaging app's header.
+                    HStack(spacing: Theme.Spacing.md) {
+                        if let chat {
+                            InboxAvatar(name: chat.name, app: chat.app, size: 30, picture: pictures.image(for: chat))
+                        }
+                        SheetTitle(title: chat?.name ?? "", subtitle: chat?.appName)
+                    }
                 }
             }
             if let chat {
@@ -317,7 +365,7 @@ struct InboxChatView: View {
                 }
             }
         }
-        .screen()
+        .chatScreen(whatsApp: whatsApp)
         .sheet(item: $info) { line in
             InboxMessageInfo(line: line)
                 .presentationDetents([.medium, .large])
@@ -338,14 +386,17 @@ struct InboxChatView: View {
         .onDisappear { Task { await client.unwatchChat(chatID) } }
     }
 
-    private static let bottom = "bottom"
+    /// Changes when something new comes in at the end: a message, someone typing, one of yours waiting to go.
+    private var followKey: [String] {
+        [lines.last?.id ?? "", String(lines.count), typing ?? "", String(client.outbox.chatMessages(to: chatID).count)]
+    }
 
     /// A WhatsApp chat gets the Mac's composer to answer, with the message it answers in a tray above it; any other
     /// chat says where to answer it.
     @ViewBuilder
-    private var footer: some View {
+    private func footer(_ scroll: ConversationScrollControl) -> some View {
         if chat?.canSend == true {
-            ComposerDock {
+            ComposerDock(fill: whatsApp ? WhatsAppLook.wallpaper : Theme.canvas) {
                 VStack(spacing: 0) {
                     if let replyingTo {
                         ComposerTray(edge: .top) {
@@ -368,16 +419,27 @@ struct InboxChatView: View {
                         }
                         .transition(.opacity.combined(with: .offset(y: 8)))
                     }
-                    SessionComposer(text: $text, prompt: "Message", sending: sending) {
-                        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        text = ""
-                        send(message)
+                    if whatsApp {
+                        WhatsAppComposer(text: $text, sending: sending) {
+                            let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            text = ""
+                            scroll.scrollToEnd()
+                            send(message)
+                        }
+                        .zIndex(1)
+                    } else {
+                        SessionComposer(text: $text, prompt: "Message", sending: sending) {
+                            let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            text = ""
+                            scroll.scrollToEnd()
+                            send(message)
+                        }
+                        .zIndex(1)
                     }
-                    .zIndex(1)
                 }
             }
         } else if let chat {
-            ComposerDock {
+            ComposerDock(offline: .reads) {
                 Label {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Text("Nook can only read this chat. Answer it in \(chat.appName).")

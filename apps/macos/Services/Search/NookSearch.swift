@@ -78,6 +78,23 @@ struct SearchDocument: Identifiable, Equatable, Sendable {
     var icon: SearchIcon? = nil
 }
 
+extension SearchDocument {
+    /// A session's state in the words and colors of the Agents list, from its flags; nil for anything that is not a
+    /// session. Settled wins: a session you filed away reads as finished, whatever it ended on.
+    var sessionState: AgentDisplayState? {
+        guard kind == .session else { return nil }
+        if flags.contains("settled") { return .finished }
+        if flags.contains("waiting") { return flags.contains("approval") ? .approval : .input }
+        if flags.contains("failed") { return .failed }
+        if flags.contains("running") { return .working }
+        if flags.contains("done") { return .ready }
+        return .idle
+    }
+
+    /// A session that is settled (done and filed away, or archived), as opposed to one still open.
+    var isSettledSession: Bool { kind == .session && flags.contains("settled") }
+}
+
 /// Who or what a search result is, as its row draws it.
 enum SearchIcon: Equatable, Sendable {
     /// A coding agent, by its display name ("Claude Code", "Codex"): its logo.
@@ -347,7 +364,7 @@ enum SearchText {
     static func fold(_ text: String) -> String { words(text).joined(separator: " ") }
 
     static func words(_ text: String) -> [String] {
-        let source = text.utf8.allSatisfy { $0 < 0x80 } ? text : text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let source = text.utf8.allSatisfy { $0 < 0x80 } ? text : TextKit.fold(text)
         var words: [String] = []
         var current = String.UnicodeScalarView()
         func flush() {
@@ -384,8 +401,8 @@ enum SearchText {
         return haystack.withUTF8 { text in
             needle.withUTF8 { wanted in
                 guard !wanted.isEmpty else { return true }
-                guard wanted.count <= text.count, let base = text.baseAddress else { return false }
-                return memmem(base, text.count, wanted.baseAddress, wanted.count) != nil
+                guard wanted.count <= text.count, let base = text.baseAddress, let pattern = wanted.baseAddress else { return false }
+                return memmem(base, text.count, pattern, wanted.count) != nil
             }
         }
     }
@@ -947,8 +964,9 @@ struct SearchVocabulary: Sendable {
             var parts = 0
             var from = 0
             while parts < 60, from < all.count {
-                guard let found = needle.withUnsafeBufferPointer({ wanted in
-                    memmem(base + from, all.count - from, wanted.baseAddress, wanted.count)
+                guard let found = needle.withUnsafeBufferPointer({ wanted -> UnsafeMutableRawPointer? in
+                    guard let pattern = wanted.baseAddress else { return nil }
+                    return memmem(base + from, all.count - from, pattern, wanted.count)
                 }) else { break }
                 let at = base.distance(to: found.assumingMemoryBound(to: UInt8.self))
                 let index = wordIndex(containing: at)

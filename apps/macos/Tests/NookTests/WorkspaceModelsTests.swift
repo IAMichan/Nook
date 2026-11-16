@@ -75,7 +75,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(WorktreeNaming.slug("!!!"), "sessie")
         XCTAssertLessThanOrEqual(WorktreeNaming.slug(String(repeating: "abc ", count: 40), limit: 20).count, 20)
         XCTAssertEqual(WorktreeNaming.title(from: "Korte taak\nmet details"), "Korte taak")
-        XCTAssertEqual(WorktreeNaming.title(from: "   "), "Nieuwe sessie")
+        XCTAssertEqual(WorktreeNaming.title(from: "   "), tr("agents.newSession"))
         XCTAssertTrue(WorktreeNaming.title(from: String(repeating: "woord ", count: 30)).hasSuffix("…"))
     }
 

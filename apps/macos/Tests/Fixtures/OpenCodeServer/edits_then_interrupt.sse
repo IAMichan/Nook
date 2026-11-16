@@ -1,0 +1,268 @@
+data: {"id":"evt_fixture0100000000000000000","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_fixture0200000000000000000","created":1794480713825,"type":"session.created","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","slug":"quiet-pixel","version":"2.2.7","projectID":"0000000000000000000000000000000000000000","location":{"directory":"/Users/me/project"},"subpath":"project","permissions":[{"action":"*","resource":"*","effect":"allow"}],"model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":0,"version":1}}
+
+data: {"id":"evt_fixture0300000000000000000","created":1794480717099,"type":"session.inbox.enqueued","location":{"directory":"/Users/me/project"},"data":{"inboxID":"msg_fixture0100000000000000000","sessionID":"ses_fixture0100000000000000000","item":{"type":"user","payload":{"text":"Create a file notes.txt with the content `alpha`, then edit it to say `beta`, then read readme.txt, then run the shell command `sleep 40`, then tell me done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":1,"version":1}}
+
+data: {"id":"evt_fixture0400000000000000000","created":1794480717100,"type":"session.execution.started","data":{"sessionID":"ses_fixture0100000000000000000"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":2,"version":1}}
+
+data: {"id":"evt_fixture0500000000000000000","created":1794480717109,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","delta":{"core/codemode":"a0a59ea3eb2128517230fe948673e658ada640a226832989dd3c728fd7fd45ff","core/skill-guidance":"6149e21fbd43447caca6a4637f18f2b4f7a4b4696efb37b9a8e6d1b371dd2bcf","core/instructions":"498cd9ee5effbffa18d91558ffa2476c71c248a6b51757c6c0672c5af3c7c571","core/date":"a7e13a150687c80c4d0443d32fcf7d9efe5c87e5523d17f39302e1f532dde9d8","core/environment":"a1ba6342fe1c03bad0616d1718eb55e7baba282253650789cd8d42442b5a126e"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":3,"version":2}}
+
+data: {"id":"evt_fixture0600000000000000000","created":1794480717109,"type":"session.inbox.delivered","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","inboxID":"msg_fixture0100000000000000000"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":4,"version":1}}
+
+data: {"id":"evt_fixture0700000000000000000","created":1794480720097,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0200000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480717116},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":5,"version":1}}
+
+data: {"id":"evt_fixture0800000000000000000","created":1794480720099,"type":"session.reasoning.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":6,"version":1}}
+
+data: {"id":"evt_fixture0900000000000000000","created":1794480720200,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","ordinal":0,"delta":"The user asks: create notes.txt with `alpha`, edit to `beta`, then read readme.txt, then"}}
+
+data: {"id":"evt_fixture1000000000000000000","created":1794480720309,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","ordinal":0,"delta":" run `sleep 40`, then say done. Let me check the working directory. I should do it step by step. Note the readme.txt"}}
+
+data: {"id":"evt_fixture1100000000000000000","created":1794480720384,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0100000000000000000","cost":0,"tokens":{"input":121,"output":9,"reasoning":204,"cache":{"read":384,"write":0}}}}
+
+data: {"id":"evt_fixture1200000000000000000","created":1794480720385,"type":"session.renamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","title":"notes.txt edit and sleep 40"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":8,"version":1}}
+
+data: {"id":"evt_fixture1300000000000000000","created":1794480720398,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","ordinal":0,"delta":" may not exist — need to check.\n\nLet me do the write and edit first."}}
+
+data: {"id":"evt_fixture1400000000000000000","created":1794480720398,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-9834ba0c4229e636","name":"write"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":9,"version":1}}
+
+data: {"id":"evt_fixture1500000000000000000","created":1794480720532,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-8071813c5167c97c","name":"glob"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":10,"version":1}}
+
+data: {"id":"evt_fixture1600000000000000000","created":1794480720647,"type":"session.reasoning.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","ordinal":0,"text":"The user asks: create notes.txt with `alpha`, edit to `beta`, then read readme.txt, then run `sleep 40`, then say done. Let me check the working directory. I should do it step by step. Note the readme.txt may not exist — need to check.\n\nLet me do the write and edit first.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":11,"version":1}}
+
+data: {"id":"evt_fixture1700000000000000000","created":1794480720648,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-9834ba0c4229e636","text":"{\"path\": \"notes.txt\", \"content\": \"alpha\\n\"}"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":12,"version":1}}
+
+data: {"id":"evt_fixture1800000000000000000","created":1794480720649,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-9834ba0c4229e636","input":{"path":"notes.txt","content":"alpha\n"},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":13,"version":1}}
+
+data: {"id":"evt_fixture1900000000000000000","created":1794480720650,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-8071813c5167c97c","text":"{\"pattern\": \"**/readme.txt\"}"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":14,"version":1}}
+
+data: {"id":"evt_fixture2000000000000000000","created":1794480720651,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-8071813c5167c97c","input":{"pattern":"**/readme.txt"},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":15,"version":1}}
+
+data: {"id":"evt_fixture2100000000000000000","created":1794480720652,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":16,"version":1}}
+
+data: {"id":"evt_fixture2200000000000000000","created":1794480720659,"type":"session.tool.success","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-9834ba0c4229e636","content":[{"type":"text","text":"Created file successfully: notes.txt"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":17,"version":2}}
+
+data: {"id":"evt_fixture2300000000000000000","created":1794480720675,"type":"session.tool.success","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","id":"chatcmpl-tool-8071813c5167c97c","content":[{"type":"text","text":"/Users/me/project/readme.txt"}],"metadata":{"count":1,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":18,"version":2}}
+
+data: {"id":"evt_fixture2400000000000000000","created":1794480720691,"type":"session.step.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0200000000000000000","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":15147,"output":87,"reasoning":70,"cache":{"read":2688,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":19,"version":1}}
+
+data: {"id":"evt_fixture2500000000000000000","created":1794480720693,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0100000000000000000","cost":0,"tokens":{"input":15268,"output":96,"reasoning":274,"cache":{"read":3072,"write":0}}}}
+
+data: {"id":"evt_fixture2600000000000000000","created":1794480723751,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0300000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480720698},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":20,"version":1}}
+
+data: {"id":"evt_fixture2700000000000000000","created":1794480723753,"type":"session.reasoning.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":21,"version":1}}
+
+data: {"id":"evt_fixture2800000000000000000","created":1794480723854,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","ordinal":0,"delta":"Now"}}
+
+data: {"id":"evt_fixture2900000000000000000","created":1794480723869,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","ordinal":0,"delta":" edit notes.txt to beta."}}
+
+data: {"id":"evt_fixture3000000000000000000","created":1794480723869,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-a7365d4d324ecc4f","name":"edit"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":22,"version":1}}
+
+data: {"id":"evt_fixture3100000000000000000","created":1794480723947,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-99bb67382f08387d","name":"read"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":23,"version":1}}
+
+data: {"id":"evt_fixture3200000000000000000","created":1794480724059,"type":"session.reasoning.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","ordinal":0,"text":"Now edit notes.txt to beta.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":24,"version":1}}
+
+data: {"id":"evt_fixture3300000000000000000","created":1794480724061,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-a7365d4d324ecc4f","text":"{\"path\": \"notes.txt\", \"oldString\": \"alpha\", \"newString\": \"beta\"}"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":25,"version":1}}
+
+data: {"id":"evt_fixture3400000000000000000","created":1794480724061,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-a7365d4d324ecc4f","input":{"path":"notes.txt","oldString":"alpha","newString":"beta"},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":26,"version":1}}
+
+data: {"id":"evt_fixture3500000000000000000","created":1794480724062,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-99bb67382f08387d","text":"{\"path\": \"readme.txt\"}"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":27,"version":1}}
+
+data: {"id":"evt_fixture3600000000000000000","created":1794480724062,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-99bb67382f08387d","input":{"path":"readme.txt"},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":28,"version":1}}
+
+data: {"id":"evt_fixture3700000000000000000","created":1794480724063,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":29,"version":1}}
+
+data: {"id":"evt_fixture3800000000000000000","created":1794480724069,"type":"session.tool.success","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-99bb67382f08387d","content":[{"type":"text","text":"Read file readme.txt, lines 1-1\n1: hello"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":30,"version":2}}
+
+data: {"id":"evt_fixture3900000000000000000","created":1794480724070,"type":"session.tool.success","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","id":"chatcmpl-tool-a7365d4d324ecc4f","content":[{"type":"text","text":"Edited notes.txt (1 replacement)"}],"metadata":{"files":[{"file":"notes.txt","patch":"Index: notes.txt\n===================================================================\n--- notes.txt\n+++ notes.txt\n@@ -1,1 +1,1 @@\n-alpha\n+beta\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":31,"version":2}}
+
+data: {"id":"evt_fixture4000000000000000000","created":1794480724088,"type":"session.step.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0300000000000000000","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":143,"output":102,"reasoning":7,"cache":{"read":17920,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":32,"version":1}}
+
+data: {"id":"evt_fixture4100000000000000000","created":1794480724090,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0100000000000000000","cost":0,"tokens":{"input":15411,"output":198,"reasoning":281,"cache":{"read":20992,"write":0}}}}
+
+data: {"id":"evt_fixture4200000000000000000","created":1794480726433,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0400000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480724095},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":33,"version":1}}
+
+data: {"id":"evt_fixture4300000000000000000","created":1794480726434,"type":"session.reasoning.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":34,"version":1}}
+
+data: {"id":"evt_fixture4400000000000000000","created":1794480726454,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","ordinal":0,"delta":"Now run sleep 40."}}
+
+data: {"id":"evt_fixture4500000000000000000","created":1794480726454,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","id":"chatcmpl-tool-8caacf7af79bb0a3","name":"shell"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":35,"version":1}}
+
+data: {"id":"evt_fixture4600000000000000000","created":1794480726627,"type":"session.reasoning.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","ordinal":0,"text":"Now run sleep 40.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":36,"version":1}}
+
+data: {"id":"evt_fixture4700000000000000000","created":1794480726628,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","id":"chatcmpl-tool-8caacf7af79bb0a3","text":"{\"command\": \"sleep 40\", \"timeout\": 60000}"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":37,"version":1}}
+
+data: {"id":"evt_fixture4800000000000000000","created":1794480726629,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","id":"chatcmpl-tool-8caacf7af79bb0a3","input":{"command":"sleep 40","timeout":60000},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":38,"version":1}}
+
+data: {"id":"evt_fixture4900000000000000000","created":1794480726629,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":39,"version":1}}
+
+data: {"id":"evt_fixture5000000000000000000","created":1794480726632,"type":"shell.created","location":{"directory":"/Users/me/project"},"data":{"info":{"id":"sh_fixture0100000000000000000","status":"running","command":"sleep 40","cwd":"/Users/me/project","shell":"/bin/zsh","file":"/Users/me/.local/share/opencode/shell/0000000000000000000000000000000000000000/sh_fixture0100000000000000000.out","metadata":{"sessionID":"ses_fixture0100000000000000000"},"time":{"started":1794480726630}}}}
+
+data: {"id":"evt_fixture5100000000000000000","created":1794480726632,"type":"session.tool.progress","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","id":"chatcmpl-tool-8caacf7af79bb0a3","metadata":{"shellID":"sh_fixture0100000000000000000"}}}
+
+: heartbeat
+
+data: {"id":"evt_fixture5200000000000000000","created":1794480742285,"type":"shell.exited","location":{"directory":"/Users/me/project"},"data":{"id":"sh_fixture0100000000000000000","status":"killed"}}
+
+data: {"id":"evt_fixture5300000000000000000","created":1794480742285,"type":"shell.deleted","location":{"directory":"/Users/me/project"},"data":{"id":"sh_fixture0100000000000000000"}}
+
+data: {"id":"evt_fixture5400000000000000000","created":1794480742285,"type":"session.tool.failed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","id":"chatcmpl-tool-8caacf7af79bb0a3","error":{"type":"aborted","message":"Tool execution interrupted"},"metadata":{"shellID":"sh_fixture0100000000000000000"},"executed":false},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":40,"version":2}}
+
+data: {"id":"evt_fixture5500000000000000000","created":1794480742287,"type":"project.updated","location":{"directory":"/Users/me/project"},"data":{"id":"0000000000000000000000000000000000000000","canonical":"/Users/me/repo","vcs":"git","time":{"created":1794480396599,"updated":1794480396599,"active":1794480742286},"sandboxes":[]}}
+
+data: {"id":"evt_fixture5600000000000000000","created":1794480742299,"type":"session.step.failed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0100000000000000000","assistantMessageID":"msg_fixture0400000000000000000","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":164,"output":58,"reasoning":6,"cache":{"read":18048,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":41,"version":1}}
+
+data: {"id":"evt_fixture5700000000000000000","created":1794480742300,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0100000000000000000","cost":0,"tokens":{"input":15575,"output":256,"reasoning":287,"cache":{"read":39040,"write":0}}}}
+
+data: {"id":"evt_fixture5800000000000000000","created":1794480742300,"type":"session.execution.interrupted","data":{"sessionID":"ses_fixture0100000000000000000","reason":"user"},"durable":{"aggregateID":"ses_fixture0100000000000000000","seq":42,"version":1}}
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+

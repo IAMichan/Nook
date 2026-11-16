@@ -49,7 +49,7 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
 
     /// What each app does before you chose: WhatsApp keeps groups, status updates and channels quiet, as it always did;
     /// Mail keeps newsletters and notifications quiet (`MailChatData.isAutomated`); every other app tells you about every
-    /// chat, as it always did.
+    /// chat, as it always did, except a private chat with a bot and one muted in the app (`isQuiet`).
     static let defaultQuietKinds: [String: Set<ChatKind>] = ["whatsapp": [.group, .status, .channel], "mail": [.channel]]
 
     /// The kinds of chat that stay quiet in this app.
@@ -93,27 +93,58 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
         quietKinds(for: app).contains(kind ?? .person)
     }
 
-    /// Whether a new message in this chat stays silent: hidden, the per-chat choice, then the kind's rule. A mention in
-    /// an automatic group still reaches you; a muted or hidden chat never does.
-    func isQuiet(chat: String, app: String, kind: ChatKind?, mentionsMe: Bool = false) -> Bool {
+    /// Whether a new message in this chat stays silent: hidden, the per-chat choice, then what the app says and the
+    /// kind's rule. While the chat is automatic, a chat muted in its own app (`mutedInApp`) is quiet as one muted in
+    /// Nook, and a private chat with a bot (`automated`) is quiet as Mail's newsletters are; choosing "always" for it
+    /// lets it reach you again. A mention in an automatic group still reaches you; a muted or hidden chat never does.
+    func isQuiet(chat: String, app: String, kind: ChatKind?, mentionsMe: Bool = false, automated: Bool = false,
+                 mutedInApp: Bool = false) -> Bool {
         if isHidden(chat) { return true }
         switch mode(for: chat) {
         case .loud: return false
         case .muted: return true
-        case .automatic: return kindIsQuiet(kind, app: app) && !(kind == .group && mentionsMe)
+        case .automatic: return automaticIsQuiet(kind: kind, app: app, mentionsMe: mentionsMe, automated: automated, mutedInApp: mutedInApp)
         }
+    }
+
+    /// `isQuiet` for a chat in the shared inbox, with what its app says of it.
+    func isQuiet(_ thread: InboxThread, mentionsMe: Bool = false) -> Bool {
+        isQuiet(chat: thread.id, app: thread.app, kind: thread.noticeKind, mentionsMe: mentionsMe,
+                automated: thread.isAutomated, mutedInApp: thread.mutedInApp == true)
+    }
+
+    /// What "automatic" does for a chat, before any per-chat choice: quiet when its app muted it, when it is a bot's,
+    /// or when its kind is quiet in its app (a group that mentions you excepted).
+    func automaticIsQuiet(kind: ChatKind?, app: String, mentionsMe: Bool = false, automated: Bool = false,
+                          mutedInApp: Bool = false) -> Bool {
+        if mutedInApp || automated { return true }
+        return kindIsQuiet(kind, app: app) && !(kind == .group && mentionsMe)
+    }
+
+    /// `automaticIsQuiet` for a chat in the shared inbox (what Settings says "automatic" does for it).
+    func automaticIsQuiet(_ thread: InboxThread) -> Bool {
+        automaticIsQuiet(kind: thread.noticeKind, app: thread.app, automated: thread.isAutomated, mutedInApp: thread.mutedInApp == true)
     }
 
     /// Whether a chat counts in Nook's badges and in what Nook tells about your chats: not when it is hidden, nor when it
     /// is quiet (muted, or by its kind), unless one of its messages from someone else would reach you anyway (a group
-    /// that mentioned you). As WhatsApp's own list did (`WAInbox.visible`).
-    func isVisible(_ thread: InboxThread) -> Bool {
-        guard !isHidden(thread.id) else { return false }
-        let kind = thread.noticeKind
-        if !isQuiet(chat: thread.id, app: thread.app, kind: kind) { return true }
-        return thread.messages.contains { message in
-            !message.isMine && !isQuiet(chat: thread.id, app: thread.app, kind: kind, mentionsMe: message.mentionsMe == true)
+    /// that mentioned you). `incoming` says, per message from someone else, whether it mentions you. Every list of chats
+    /// goes by this one rule: the shared inbox's (`isVisible(_:)`) and WhatsApp's own (`WAInbox.visible`).
+    func isVisible<Mentions: Sequence>(chat: String, app: String, kind: ChatKind?, automated: Bool = false, mutedInApp: Bool = false,
+                                       incoming: Mentions) -> Bool where Mentions.Element == Bool {
+        guard !isHidden(chat) else { return false }
+        let quiet = { (mentionsMe: Bool) in
+            isQuiet(chat: chat, app: app, kind: kind, mentionsMe: mentionsMe, automated: automated, mutedInApp: mutedInApp)
         }
+        if !quiet(false) { return true }
+        return incoming.contains { !quiet($0) }
+    }
+
+    /// `isVisible` for a chat in the shared inbox (`ChatInbox.visibleUnread`, the badges).
+    func isVisible(_ thread: InboxThread) -> Bool {
+        isVisible(chat: thread.id, app: thread.app, kind: thread.noticeKind, automated: thread.isAutomated,
+                  mutedInApp: thread.mutedInApp == true,
+                  incoming: thread.messages.lazy.filter { !$0.isMine }.map { $0.mentionsMe == true })
     }
 
     /// The rules from what Settings › WhatsApp kept before every app had them (`WAFilters`, by WhatsApp's chat ids):

@@ -164,6 +164,16 @@ enum ApprovalKind: Hashable, Codable, Sendable {
     case other(String)
 }
 
+/// Nook's id for a request an agent asks over a JSON-RPC connection of its own (Codex's app-server, ACP). Each agent
+/// process numbers its requests from 0, so the number alone repeats across sessions: two Codex sessions both ask
+/// request `0`. Every table of waiting requests, the approval card and the phone key on this id, so it carries the
+/// session: answering one session's request can never answer, replace or dismiss another's.
+enum PermissionRequestID {
+    static func scoped(_ family: String, session: UUID, native: String) -> String {
+        "\(family)-\(session.uuidString.lowercased())-\(native)"
+    }
+}
+
 /// Granted request kinds of one run, valid for the permission mode they were granted in.
 struct SessionApprovals: Equatable, Sendable {
     private(set) var mode: PermissionPolicy?
@@ -243,7 +253,7 @@ struct BackgroundRoster: Equatable, Sendable {
 
     var hasPending: Bool { !pending.isEmpty }
     var pendingCount: Int { pending.count }
-    func pendingCount(of kind: Kind) -> Int { pending.filter { $0.kind == kind }.count }
+    func pendingCount(of kind: Kind) -> Int { pending.count(where: { $0.kind == kind }) }
     func contains(_ id: String) -> Bool { pending.contains { $0.id == id } }
 
     /// A command that runs in the foreground blocks its own turn, so it is not background work.

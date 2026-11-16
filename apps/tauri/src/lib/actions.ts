@@ -87,6 +87,41 @@ export interface RunDetail {
   noJobs: NoJobs | null;
 }
 
+export type DispatchInputKind = "string" | "boolean" | "choice" | "number" | "environment";
+
+/// One input of a workflow's `workflow_dispatch` trigger, as its file declares it.
+export interface DispatchInput {
+  name: string;
+  description: string;
+  required: boolean;
+  default: string | null;
+  kind: DispatchInputKind;
+  options: string[];
+}
+
+export interface DispatchWorkflow {
+  id: number;
+  name: string;
+  path: string;
+  /// Null when the workflow has no `workflow_dispatch` trigger: it cannot be started by hand.
+  inputs: DispatchInput[] | null;
+}
+
+/// What the "Run workflow" form needs, read from the repository's default branch.
+export interface DispatchForm {
+  account: string;
+  defaultBranch: string;
+  /// The default branch first.
+  branches: string[];
+  workflows: DispatchWorkflow[];
+}
+
+export interface Dispatched {
+  account: string;
+  /// The new run, when GitHub said which one.
+  run: number | null;
+}
+
 export const actionsApi = {
   repos: () => invoke<ActionsRepos>("github_actions_repos"),
   workflows: (account: string | null, repo: string) => invoke<Workflow[]>("github_actions_workflows", { account, repo }),
@@ -96,7 +131,51 @@ export const actionsApi = {
   /// Only after a click in the run's view; written to the action log.
   act: (account: string | null, repo: string, run: number, action: RunAction) =>
     invoke<void>("github_actions_run_action", { account, repo, run, action }),
+  dispatchForm: (account: string | null, repo: string) => invoke<DispatchForm>("github_actions_dispatch_form", { account, repo }),
+  /// Only after a click on "Run" in the form; written to the action log.
+  dispatch: (account: string | null, repo: string, workflow: number, gitRef: string, inputs: Record<string, string>) =>
+    invoke<Dispatched>("github_actions_dispatch", { account, repo, workflow, gitRef, inputs }),
 };
+
+/// The runs of a list read for another filter that match this one, newest first: shown at once when the filter changes,
+/// while GitHub's own answer for it is on its way. `failed` is GitHub's `status=failure`.
+export function filterRuns(runs: WorkflowRun[], workflow: number | null, status: RunStatusFilter): WorkflowRun[] {
+  return runs.filter(
+    (r) =>
+      (workflow === null || r.workflowId === workflow) &&
+      (status === "all" || (status === "running" ? r.status === "in_progress" : r.conclusion === "failure")),
+  );
+}
+
+/// The workflows that can be started by hand.
+export const dispatchable = (form: DispatchForm) => form.workflows.filter((w) => w.inputs !== null);
+
+/// The form's first values: each input's default; a boolean is "true" or "false", a choice falls back to its first option.
+export function dispatchDefaults(inputs: DispatchInput[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const input of inputs) {
+    const value = input.default ?? "";
+    if (input.kind === "boolean") values[input.name] = String(value.trim().toLowerCase() === "true");
+    else if (input.kind === "choice" && input.options.length && !input.options.includes(value)) values[input.name] = input.options[0];
+    else values[input.name] = value;
+  }
+  return values;
+}
+
+/// The required inputs still empty; a boolean is always filled in.
+export const missingInputs = (inputs: DispatchInput[], values: Record<string, string>) =>
+  inputs.filter((i) => i.required && i.kind !== "boolean" && !(values[i.name] ?? "").trim());
+
+/// What is sent to GitHub: each input as text, empty optional ones left out (GitHub then uses the file's default).
+export function dispatchValues(inputs: DispatchInput[], values: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const input of inputs) {
+    const raw = values[input.name] ?? "";
+    const value = input.kind === "boolean" ? String(raw === "true") : input.kind === "number" ? raw.trim() : raw;
+    if (value.trim() || input.required) result[input.name] = value;
+  }
+  return result;
+}
 
 /// "owner/name", the same rule as `is_repository` in the core; a pasted GitHub link works too.
 export function parseRepo(text: string): string | null {
@@ -219,20 +298,28 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
   const noLog = tr("GitHub bewaart geen log voor een run zonder jobs.", "GitHub keeps no log for a run without jobs.");
   switch (reason.kind) {
     case "replaced": {
-      const on = run.branch ? tr(` op ${run.branch}`, ` on ${run.branch}`) : "";
+      const text = run.branch
+        ? tr(
+            "Geannuleerd voordat er een job begon: een nieuwere run van {workflow} op {branch} (#{number}) nam zijn plaats in. {noLog}",
+            "Cancelled before any job started: a newer run of {workflow} on {branch} (#{number}) took its place. {noLog}",
+            { workflow: run.workflow, branch: run.branch, number: reason.number, noLog },
+          )
+        : tr(
+            "Geannuleerd voordat er een job begon: een nieuwere run van {workflow} (#{number}) nam zijn plaats in. {noLog}",
+            "Cancelled before any job started: a newer run of {workflow} (#{number}) took its place. {noLog}",
+            { workflow: run.workflow, number: reason.number, noLog },
+          );
       return {
-        text: tr(
-          `Geannuleerd voordat er een job begon: een nieuwere run van ${run.workflow}${on} (#${reason.number}) nam zijn plaats in. ${noLog}`,
-          `Cancelled before any job started: a newer run of ${run.workflow}${on} (#${reason.number}) took its place. ${noLog}`,
-        ),
-        link: reason.url ? { label: tr(`Open #${reason.number}`, `Open #${reason.number}`), url: reason.url } : null,
+        text,
+        link: reason.url ? { label: tr("Open #{number}", "Open #{number}", { number: reason.number }), url: reason.url } : null,
       };
     }
     case "cancelled":
       return {
         text: tr(
-          `Geannuleerd voordat er een job begon, door iemand of door een andere workflow. ${noLog}`,
-          `Cancelled before any job started, by someone or by another workflow. ${noLog}`,
+          "Geannuleerd voordat er een job begon, door iemand of door een andere workflow. {noLog}",
+          "Cancelled before any job started, by someone or by another workflow. {noLog}",
+          { noLog },
         ),
         link: null,
       };
@@ -240,8 +327,9 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
       const file = reason.path || tr("het workflowbestand", "the workflow file");
       return {
         text: tr(
-          `GitHub kon de workflow niet starten, bijna altijd door een fout in ${file}. De precieze fout staat alleen op de pagina van de run op GitHub.`,
-          `GitHub could not start the workflow, nearly always because of an error in ${file}. The exact error is only on the run's page on GitHub.`,
+          "GitHub kon de workflow niet starten, bijna altijd door een fout in {file}. De precieze fout staat alleen op de pagina van de run op GitHub.",
+          "GitHub could not start the workflow, nearly always because of an error in {file}. The exact error is only on the run's page on GitHub.",
+          { file },
         ),
         link: reason.file ? { label: tr("Workflowbestand", "Workflow file"), url: reason.file } : null,
       };
@@ -251,23 +339,22 @@ export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" |
     case "approval":
       return { text: tr("De run wacht op goedkeuring voordat er een job begint.", "The run waits for approval before any job starts."), link: null };
     default:
-      return { text: tr(`Deze run heeft geen jobs. ${noLog}`, `This run has no jobs. ${noLog}`), link: null };
+      return { text: tr("Deze run heeft geen jobs. {noLog}", "This run has no jobs. {noLog}", { noLog }), link: null };
   }
 }
 
 /// What started a run, in words people use; an event Nook does not know keeps GitHub's name.
 export function eventName(event: string): string {
-  const names: Record<string, [string, string]> = {
-    push: ["push", "push"],
-    pull_request: ["pull request", "pull request"],
-    pull_request_target: ["pull request", "pull request"],
-    workflow_dispatch: ["handmatig", "manual"],
-    release: ["release", "release"],
-    schedule: ["gepland", "scheduled"],
-    merge_group: ["merge-wachtrij", "merge queue"],
-    workflow_run: ["na workflow", "after workflow"],
-    repository_dispatch: ["dispatch", "dispatch"],
-  };
-  const name = names[event];
-  return name ? tr(name[0], name[1]) : event.replaceAll("_", " ");
+  switch (event) {
+    case "push": return "push";
+    case "pull_request":
+    case "pull_request_target": return "pull request";
+    case "workflow_dispatch": return tr("handmatig", "manual");
+    case "release": return "release";
+    case "schedule": return tr("gepland", "scheduled");
+    case "merge_group": return tr("merge-wachtrij", "merge queue");
+    case "workflow_run": return tr("na workflow", "after workflow");
+    case "repository_dispatch": return "dispatch";
+    default: return event.replaceAll("_", " ");
+  }
 }

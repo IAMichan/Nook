@@ -125,6 +125,11 @@ struct CompletionPreferences: Codable, Equatable {
     /// A LoRA adapter (GGUF) for a GGUF model, applied on top of it; empty for none. The brain's MLX model takes none.
     var loraAdapterPath = ""
 
+    // Nook's composers (`ComposerCompletion`): suggestions while you write to an agent or to Nook, also with autocomplete off
+    // elsewhere, with a model of their own (`ComposerCompletion.Choice.stored`; empty: autocomplete's model).
+    var composerSuggestions = true
+    var composerModel = ""
+
     // Context
     var windowContext = true
     /// The text around the field in the window being written in (see `CompletionScreenCapture`, or Accessibility without it).
@@ -135,7 +140,18 @@ struct CompletionPreferences: Codable, Equatable {
     // Personal
     var instructions = ""
     var learn = true
+    /// Also learn from fields where no suggestion was taken, as Cotypist's "Record text even when you accept no suggestion":
+    /// the fields where suggestions miss are the ones there is most to learn from. Only what was typed there, not text the
+    /// field already held or a paste.
+    var learnWithoutSuggestion = true
     var personalStrength = 0.3
+    /// Write with the personal adapter trained on this Mac (see `CompletionAdapter`), when there is one for the model.
+    var personalAdapter = true
+    /// Train the personal adapter on the messages you sent in the chats Nook reads too, not only on what autocomplete
+    /// recorded.
+    var adapterFromChats = true
+    /// The hints on the General page to turn on learning and to fill in instructions were put away with "Not now".
+    var personalHintsDismissed = false
 
     // Per app and site
     var apps: [String: CompletionAppRule] = [:]

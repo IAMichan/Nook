@@ -1,0 +1,245 @@
+import SwiftUI
+import AppKit
+
+/// The pages the Agents tab opens on the right: your pull requests and a repository's GitHub Actions (from the buttons
+/// under the list; usage opens as a modal), and the tools that are not tied to one session: every terminal, the browser, every worktree.
+enum AgentsPage {
+    static let pullRequests = "pulls"
+    /// A repository's GitHub Actions: its workflow runs (CI, a promote, a release) and their jobs and logs.
+    static let actions = "actions"
+    static let terminals = "terminals"
+    static let browser = "browser"
+    static let worktrees = "worktrees"
+    static let simulator = "simulator"
+    /// The pages the footer opens: on them a back button in the footer returns to what was open before.
+    static let footerPages: Set<String> = [pullRequests, actions]
+    /// The pages that are a tool you work in: the panel widens for them and stays open.
+    static let tools: Set<String> = [terminals, browser, worktrees, simulator]
+}
+
+/// Settings, pull requests, Actions and usage as quiet icons, and one refresh button at the far end. It shows on every tab, under
+/// the tab's list (the sessions on Agents, the Nooks on the chat, the chats on Chats), taking the list's width so the
+/// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
+/// list would be. On the other tabs, pull requests and Actions open their page on Agents; usage opens its modal over any tab.
+/// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
+/// update button takes its place, so there is never a second round arrow beside it. On a page the footer opens (pull
+/// requests, Actions) a back button replaces the icons and the refresh, and only the update button stays beside it.
+struct PanelFooter: View {
+    let selected: String
+    let open: (String) -> Void
+    let openSettings: () -> Void
+    @ObservedObject var history: AgentHistory
+    /// The icons one under the other, for a narrow column (the Chats tab's rail of icons).
+    var vertical = false
+    /// Leaving a footer page for where you were; nil keeps the icons there too.
+    var onBack: (() -> Void)? = nil
+    @ObservedObject private var updater = AppUpdater.shared
+    @EnvironmentObject private var app: AppModel
+    /// Set by a click on Refresh, so only a check the user asked for says "up to date".
+    @State private var manualCheck = false
+
+    var body: some View {
+        if AgentsPage.footerPages.contains(selected), let onBack {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                FooterIcon(label: tr("agents.pr.back"), active: false, showsLabel: true, action: onBack) { _ in
+                    ToolGlyph(symbol: "chevron.left")
+                }
+                Spacer(minLength: 0)
+                UpdateFooterButton { EmptyView() }
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            icons
+        }
+    }
+
+    private var icons: some View {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: NookTheme.Spacing.xs))
+            : AnyLayout(HStackLayout(spacing: NookTheme.Spacing.xs))
+        return layout {
+            FooterIcon(label: tr("agents.footer.settings"), active: false,
+                       action: openSettings) { _ in ToolGlyph(symbol: "gearshape") }
+            FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
+                       action: { open(AgentsPage.pullRequests) }) { _ in PullRequestGlyph() }
+            FooterIcon(label: tr("actions.title"), hint: tr("actions.footerHint"), active: selected == AgentsPage.actions,
+                       action: { open(AgentsPage.actions) }) { _ in ToolGlyph(symbol: "play.circle") }
+            // Usage opens as a modal over whatever is open, not as a page.
+            FooterIcon(label: tr("agents.footer.usage"), active: app.usageModalOpen,
+                       action: { app.usageModalOpen = true }) { _ in UsageGlyph() }
+            if !vertical { Spacer(minLength: 0) }
+            UpdateFooterButton {
+                let busy = history.loading || updater.phase == .checking
+                FooterIcon(label: tr("agents.footer.refresh"), active: false, action: {
+                    history.refresh(minimumInterval: 0)
+                    manualCheck = true
+                    updater.check()
+                }) { color in
+                    TurningGlyph(symbol: RefreshSymbol.name, turning: busy, color: color)
+                }
+                .disabled(busy)
+            }
+            // The icons give up room first, so the update pill stays whole inside a narrow list.
+            .layoutPriority(1)
+        }
+        .onChange(of: updater.phase) { _, phase in
+            guard manualCheck, phase != .checking else { return }
+            manualCheck = false
+            if phase == .upToDate { ToastCenter.shared.success(tr("update.settings.status.upToDate")) }
+        }
+        .padding(.horizontal, NookTheme.Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: vertical ? .center : .leading)
+    }
+}
+
+private struct FooterIcon<Glyph: View>: View {
+    let label: String
+    /// A longer explanation for the tooltip, under the label.
+    var hint: String? = nil
+    let active: Bool
+    /// Writes the label after the glyph (the back button), instead of only in the tooltip.
+    var showsLabel = false
+    let action: () -> Void
+    @ViewBuilder var glyph: (Color) -> Glyph
+    @State private var hovering = false
+
+    var body: some View {
+        let color = active || hovering ? NookTheme.paper : NookTheme.textTertiary
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                glyph(color)
+                if showsLabel {
+                    Text(label)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(color)
+            .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
+            // An icon gives up a little room in a narrow list, so the footer stays inside it.
+            .frame(minWidth: showsLabel ? 32 : 24, idealWidth: 32, maxWidth: showsLabel ? nil : 32, minHeight: 30, maxHeight: 30)
+            .hoverRowFill($hovering, selected: active)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .nookTip(hint.map { label + "\n" + $0 } ?? label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Two nodes joined by a line, and a third one the line bends to: the pull request mark, drawn in the same line weight
+/// as the rest of the list.
+private struct PullRequestGlyph: View {
+    var body: some View { PullRequestStateGlyph(glyph: .open) }
+}
+
+/// The pull request marks GitHub uses, drawn on a 16-point grid so they stay crisp at any size: open (a node, a line,
+/// and a second line that bends back with an arrow), draft (the bend replaced by dots), merged (a branch curving back
+/// into the main line), closed (the arrow replaced by a cross), a conflict (a branch bending into the main line, a cross
+/// beside it in the free corner) and a stack (three nodes in a chain). Views show a state through `PullRequestStateIcon`,
+/// which picks the size, line weight and color.
+struct PullRequestStateGlyph: View {
+    let glyph: PullRequestBadge.Glyph
+    var size: CGFloat = 16
+    /// In grid units; a small glyph wants a heavier line to read as the same weight.
+    var lineWidth: CGFloat = 1.3
+    var nodeRadius: CGFloat = 1.6
+
+    var body: some View {
+        Canvas { context, canvas in
+            let unit = min(canvas.width, canvas.height) / 16
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }
+            let style = StrokeStyle(lineWidth: lineWidth * unit, lineCap: .round, lineJoin: .round)
+            let r = nodeRadius
+            var lines = Path()
+            var nodes: [CGPoint] = []
+            var dots: [CGPoint] = []
+
+            func trunk() {
+                lines.move(to: point(4, 3.6 + r)); lines.addLine(to: point(4, 12.4 - r))
+                nodes += [point(4, 3.6), point(4, 12.4)]
+            }
+
+            switch glyph {
+            case .open:
+                trunk()
+                lines.move(to: point(12, 12.4 - r)); lines.addLine(to: point(12, 7))
+                lines.addQuadCurve(to: point(10, 4.8), control: point(12, 4.8))
+                lines.addLine(to: point(8.6, 4.8))
+                lines.move(to: point(10.2, 3.2)); lines.addLine(to: point(8.6, 4.8)); lines.addLine(to: point(10.2, 6.4))
+                nodes.append(point(12, 12.4))
+            case .draft:
+                trunk()
+                lines.move(to: point(12, 12.4 - r)); lines.addLine(to: point(12, 8.6))
+                nodes.append(point(12, 12.4))
+                dots += [point(12, 6), point(12, 3.4)]
+            case .closed:
+                trunk()
+                lines.move(to: point(12, 12.4 - r)); lines.addLine(to: point(12, 8.2))
+                lines.move(to: point(10.2, 2.8)); lines.addLine(to: point(13.8, 6.4))
+                lines.move(to: point(13.8, 2.8)); lines.addLine(to: point(10.2, 6.4))
+                nodes.append(point(12, 12.4))
+            case .conflict:
+                // A branch from the top right bending into the main line, and a cross in the bottom right corner, clear
+                // of both lines so it stays readable at 12 points.
+                trunk()
+                lines.move(to: point(12, 5.2 + r))
+                lines.addCurve(to: point(4, 10.4), control1: point(12, 8.8), control2: point(4, 7.8))
+                lines.move(to: point(10.9, 10.9)); lines.addLine(to: point(14.3, 14.3))
+                lines.move(to: point(14.3, 10.9)); lines.addLine(to: point(10.9, 14.3))
+                nodes.append(point(12, 5.2))
+            case .merged:
+                trunk()
+                lines.move(to: point(4, 3.6 + r))
+                lines.addQuadCurve(to: point(12 - r, 9.6), control: point(4, 9.6))
+                nodes.append(point(12, 9.6))
+            case .stack:
+                nodes += [point(3.6, 12.4), point(8, 8), point(12.4, 3.6)]
+                let step = r * 0.7071
+                lines.move(to: point(3.6 + step, 12.4 - step)); lines.addLine(to: point(8 - step, 8 + step))
+                lines.move(to: point(8 + step, 8 - step)); lines.addLine(to: point(12.4 - step, 3.6 + step))
+            }
+
+            context.stroke(lines, with: .foreground, style: style)
+            for center in nodes {
+                let node = Path(ellipseIn: CGRect(x: center.x - r * unit, y: center.y - r * unit, width: 2 * r * unit, height: 2 * r * unit))
+                context.stroke(node, with: .foreground, style: style)
+            }
+            let dot = lineWidth * 0.75
+            for center in dots {
+                context.fill(Path(ellipseIn: CGRect(x: center.x - dot * unit, y: center.y - dot * unit, width: 2 * dot * unit, height: 2 * dot * unit)),
+                             with: .foreground)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A tool's symbol at the size of the drawn glyphs beside it.
+private struct ToolGlyph: View {
+    let symbol: String
+
+    var body: some View {
+        Image(icon: symbol)
+            .font(NookTheme.TextStyle.body)
+            .frame(width: 16, height: 16)
+    }
+}
+
+/// Three bars of different height.
+private struct UsageGlyph: View {
+    var body: some View {
+        Canvas { context, size in
+            let unit = min(size.width, size.height) / 16
+            let style = StrokeStyle(lineWidth: 1.6 * unit, lineCap: .round)
+            var bars = Path()
+            for (x, top) in [(3.5, 9.0), (8.0, 3.0), (12.5, 6.0)] as [(CGFloat, CGFloat)] {
+                bars.move(to: CGPoint(x: x * unit, y: 13.5 * unit))
+                bars.addLine(to: CGPoint(x: x * unit, y: top * unit))
+            }
+            context.stroke(bars, with: .foreground, style: style)
+        }
+        .frame(width: 16, height: 16)
+    }
+}

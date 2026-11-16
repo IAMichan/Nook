@@ -83,6 +83,16 @@ enum SpotifyWebAPI {
         _ = try await send("\(base)/me/player/shuffle?state=\(on)", method: "PUT", json: nil)
     }
 
+    /// The devices Spotify can play on now (Spotify Connect): this Mac, a phone, a speaker, a TV.
+    static func devices() async throws -> [MusicOutput] {
+        MusicOutputs.spotifyDevices(from: try await get("\(base)/me/player/devices"))
+    }
+
+    /// Moves playback to a Spotify Connect device; it keeps playing there.
+    static func transfer(to deviceID: String) async throws {
+        _ = try await send("\(base)/me/player", method: "PUT", json: MusicOutputs.spotifyTransferBody(deviceID: deviceID))
+    }
+
     /// The last 50 plays, on every device, oldest first.
     static func recentPlays() async throws -> [MusicPlay] {
         SpotifyResponses.recentPlays(from: try await get("\(base)/me/player/recently-played?limit=50"))

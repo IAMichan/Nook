@@ -166,6 +166,8 @@ final class OpenAIConversation: ModelConversation {
         var toolAcc: [Int: PartialToolCall] = [:]
         var received = false
         var lastEmit = Date.distantPast
+        // What is shown while it streams, followed piece by piece instead of reading the whole answer again each time.
+        var answer = StreamingAnswer()
 
         for try await rawLine in lines {
             let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -190,9 +192,10 @@ final class OpenAIConversation: ModelConversation {
             if let delta = choice["delta"] as? [String: Any] {
                 if let piece = delta["content"] as? String, !piece.isEmpty {
                     text += piece
+                    answer.append(piece)
                     if let onText, Date().timeIntervalSince(lastEmit) > 0.04 {
                         lastEmit = Date()
-                        let visible = EmbeddedModel.visible(text)
+                        let visible = answer.visible
                         if !visible.isEmpty { onText(visible) }
                     }
                 }
@@ -312,16 +315,20 @@ final class OllamaConversation: ModelConversation {
         var rawCalls: [[String: Any]] = []
         var received = false
         var lastEmit = Date.distantPast
+        // What is shown while it streams, followed piece by piece instead of reading the whole answer again each time.
+        var answer = StreamingAnswer()
         for try await line in lines {
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
             if let error = object["error"] as? String { throw NookError("Ollama: \(error)") }
             guard let message = object["message"] as? [String: Any] else { continue }
             received = true
-            text += (message["content"] as? String) ?? ""
+            let piece = (message["content"] as? String) ?? ""
+            text += piece
+            answer.append(piece)
             rawCalls += (message["tool_calls"] as? [[String: Any]]) ?? []
             if let onText, Date().timeIntervalSince(lastEmit) > 0.05 {
                 lastEmit = Date()
-                let visible = EmbeddedModel.visible(text)
+                let visible = answer.visible
                 if !visible.isEmpty { onText(visible) }
             }
         }

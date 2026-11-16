@@ -1,10 +1,29 @@
-/* Shared settings layout and controls. */
-.settings nav { border-right: 1px solid var(--line); padding: 20px 12px; background: var(--graphite); display: flex; flex-direction: column; gap: 4px; }
-.settings nav button { text-align: left; background: none; color: var(--text2); padding: 10px 12px; border: 1px solid transparent; min-height: 38px; }
-.settings nav button.on { background: var(--smoke); color: var(--paper); border-color: var(--line2); }
-.settings .pane > * { max-width: 880px; }
-.settings .pane { overflow-y: auto; padding: 32px clamp(20px, 4vw, 56px) 48px; scrollbar-gutter: stable; }
-.settings h2 { margin: 0 0 20px; font-size: 24px; font-weight: 550; letter-spacing: -.6px; }
+/* Shared settings layout and controls. The sidebar, the bar over the page and the page's width follow the Mac's
+   SettingsSidebar: a 240 px sidebar on the surface, quiet rows that fill when hovered or chosen, no borders. */
+.settings nav { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--hairline); }
+.settings .settings-search { position: relative; display: flex; align-items: center; gap: var(--space-6); margin: var(--space-16) var(--space-8) var(--space-8); padding: 0 var(--space-8); height: 30px; background: var(--field); border: 1px solid var(--field-stroke); border-radius: var(--radius-control); color: var(--text3); }
+.settings .settings-search:focus-within { border-color: var(--text3); }
+.settings .settings-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: transparent; border: 0; box-shadow: none; font: var(--text-control); font-weight: 400; }
+.settings .settings-search kbd { font: var(--text-caption); color: var(--text3); border: 1px solid var(--line2); border-radius: var(--radius-chip); padding: 0 5px; line-height: 16px; }
+.settings .pages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-8) var(--space-12); display: flex; flex-direction: column; gap: var(--space-12); scrollbar-width: none; }
+.settings .group-rows { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings .heading { font: var(--text-label); color: var(--text3); padding: 0 var(--space-6) var(--space-2); }
+.settings nav .navrow { display: flex; align-items: center; gap: var(--space-8); min-height: 30px; padding: 0 var(--space-6); text-align: left; background: transparent; border: 0; border-radius: var(--radius-control); color: var(--text-strong); font: var(--text-body); }
+.settings nav .navrow:hover:not(.on) { background: var(--row-hover); }
+.settings nav .navrow.on { background: var(--row-selected); color: var(--paper); }
+.settings nav .navrow .mark { display: grid; place-items: center; width: 18px; flex: none; color: var(--text2); }
+.settings nav .navrow.on .mark { color: var(--paper); }
+.settings nav .navrow .label { display: flex; flex-direction: column; min-width: 0; }
+.settings nav .navrow .label > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings nav .navrow .detail { font: var(--text-caption); color: var(--text3); }
+.settings nav .navrow:has(.detail) { min-height: 40px; }
+.settings nav .none { font: var(--text-detail); color: var(--text2); text-align: center; padding: var(--space-16) var(--space-8); margin: 0; }
+.settings .crumbs { display: flex; align-items: center; gap: var(--space-6); height: 48px; flex: none; padding: 0 var(--space-16); font: var(--text-body); font-weight: 500; white-space: nowrap; overflow: hidden; }
+.settings .crumbs .chev { display: grid; place-items: center; color: var(--text-muted); }
+.settings .crumbs .here { color: var(--paper); overflow: hidden; text-overflow: ellipsis; }
+.settings .pane { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-16) clamp(20px, 4vw, 48px) var(--space-48); scrollbar-gutter: stable; }
+.settings .pane > .page { max-width: 860px; margin: 0 auto; }
+.settings h2 { margin: 0 0 20px; font: var(--text-display); letter-spacing: -0.3px; }
 .settings h3 { margin: 22px 0 8px; font-size: 13px; color: var(--text2); }
 .settings .group { background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius); padding: 4px 18px; margin-top: 12px; }
 .settings .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
@@ -26,11 +45,15 @@
 .settings .entry { display: grid; grid-template-columns: 150px 160px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 @media (max-width: 640px) {
   .settings { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .settings nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 8px; }
+  /* On the phone the pages are one row of chips over the page, without search, headings or the bar. */
+  .settings nav { border-right: none; border-bottom: 1px solid var(--hairline); }
+  .settings .settings-search, .settings .heading, .settings .crumbs { display: none; }
+  .settings .pages { flex-direction: row; overflow-x: auto; padding: var(--space-8); gap: var(--space-4); }
+  .settings .group-rows { flex-direction: row; gap: var(--space-4); }
   .settings .entry { grid-template-columns: 1fr; }
   /* Eén kolom op de telefoon, met knoppen en velden die je met een vinger raakt. */
   .settings .pane { padding: 16px 16px 32px; }
-  .settings nav button { flex: none; min-height: 40px; }
+  .settings nav .navrow { flex: none; min-height: 40px; }
   .settings .row { flex-wrap: wrap; min-height: 48px; }
   .settings .row > span:first-child { flex: 1 1 160px; }
   .settings .row select, .settings .row input:not([type="checkbox"]) { min-height: 40px; max-width: 100%; }

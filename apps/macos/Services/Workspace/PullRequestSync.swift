@@ -161,9 +161,12 @@ final class PullRequestSync: ObservableObject {
         return landed >= since
     }
 
-    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`).
+    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`), with the
+    /// newest status of each (as the badge on its row shows it), not only what the last branch sync read.
     func autoSettleState(_ id: UUID, since: Date?) -> AutoSettlePolicy.PullRequestState {
-        PullRequestSettlement.autoSettleState(links: links[id] ?? [], since: since)
+        let kept = links[id] ?? []
+        let fresh = PullRequestSettlement.freshest(kept: kept, fresh: PullRequestStatusStore.shared.current(kept))
+        return PullRequestSettlement.autoSettleState(links: fresh, since: since)
     }
 
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
@@ -185,8 +188,8 @@ final class PullRequestSync: ObservableObject {
     func mark(repository: String, number: Int, state: PullRequestState) {
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in
-                guard link.host == .github, link.number == number, link.state != .merged, link.state != state,
-                      link.repository.lowercased() == repository.lowercased() else { return link }
+                guard link.host == .github, link.state != .merged, link.state != state,
+                      link.isRequest(repository: repository, number: number) else { return link }
                 var link = link
                 link.state = state
                 return link

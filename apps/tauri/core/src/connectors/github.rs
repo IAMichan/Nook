@@ -611,8 +611,8 @@ impl GitHub {
             LoopTool::action("github_comment_pr", "Posts a regular comment on a pull request, without a review verdict.", pr_schema(json!({"body": {"type": "string", "description": "The comment text."}}), &["body"])),
             LoopTool::action(
                 "github_merge_pr",
-                "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; default to 'merge'.",
-                pr_schema(json!({"method": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to merge."}}), &[]),
+                "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; without one, the repository's default (merge when its settings and rulesets allow it).",
+                pr_schema(json!({"method": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to the first one the repository allows (merge when allowed)."}}), &[]),
             ),
             LoopTool::action("github_close_pr", "Closes a pull request without merging. Only use when explicitly requested by the user.", pr_schema(json!({}), &[])),
             read(
@@ -697,14 +697,23 @@ impl GitHub {
             }
             "github_merge_pr" => {
                 let (repo, number) = target(input)?;
-                let method = field(input, "method").unwrap_or_else(|| "merge".into()).to_lowercase();
-                if !["merge", "squash", "rebase"].contains(&method.as_str()) {
+                let requested = field(input, "method").map(|m| m.to_lowercase());
+                if requested.as_deref().is_some_and(|m| !["merge", "squash", "rebase"].contains(&m)) {
                     return Err(ConnectorError::new("The method must be merge, squash, or rebase."));
                 }
+                let (_, token) = self.credentials(input)?;
+                // Without a method: merge when the repository and its rulesets allow it, else the first one they do, so a
+                // repository that only allows squash does not answer "Merge commits are not allowed".
+                let method = match requested {
+                    Some(method) => method,
+                    None => match pulls::allowed_methods(&self.env, &token, &repo, number).await {
+                        Some(allowed) if !allowed.iter().any(|m| m == "merge") && !allowed.is_empty() => allowed[0].clone(),
+                        _ => "merge".to_string(),
+                    },
+                };
                 // `sha` (set by the pull request view, not offered to the brain) merges only the head that was shown:
                 // when someone pushed since, GitHub refuses instead of merging commits nobody looked at.
                 let sha = field(input, "sha");
-                let (_, token) = self.credentials(input)?;
                 let body = pulls::merge_body(&method, sha.as_deref());
                 let url = format!("{}/repos/{repo}/pulls/{number}/merge", api());
                 let (status, bytes) = self.env.http.send("PUT", &url, &headers(&token), Some(&body), "GitHub").await?;

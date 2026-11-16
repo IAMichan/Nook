@@ -49,6 +49,21 @@ final class LookThemesTests: XCTestCase {
         }
     }
 
+    func testWarmAndMonoAreBuiltInAndKeepNookAsTheDefault() {
+        XCTAssertEqual(NookColorTheme.builtIn.map(\.id), ["nook", "warm", "mono", "midnight", "paper", "contrast"])
+        XCTAssertEqual(NookThemeChoice().darkTheme, "nook")
+        // Warm never uses pure white or black as its canvas.
+        XCTAssertEqual(NookColorTheme.warm.light?.canvas, 0xFAF9F5)
+        XCTAssertNotEqual(NookColorTheme.warm.dark?.canvas, 0x000000)
+    }
+
+    func testDensityScalesTextAndSpacing() {
+        XCTAssertEqual(NookDensity.comfortable.textScale, 1)
+        XCTAssertLessThan(NookDensity.compact.textScale, 1)
+        XCTAssertGreaterThan(NookDensity.spacious.spacingScale, 1)
+        XCTAssertEqual(NookDensity.allCases.count, 3)
+    }
+
     func testStateColorsReadOnLightCanvas() {
         let light = NookPalette.nookLight
         for (name, hex) in [("mint", light.mint), ("amber", light.amber), ("coral", light.coral), ("violet", light.violet), ("blue", light.blue)] {
@@ -176,10 +191,11 @@ final class LookThemesTests: XCTestCase {
         XCTAssertTrue(html.contains(#"data-tex="x&lt;y""#))
         XCTAssertTrue(html.contains("<strong>bold</strong>"))
         XCTAssertFalse(html.contains("<y"))
-        XCTAssertEqual(MathText.escapeHTML(#"<"&'>"#), "&lt;&quot;&amp;&#39;&gt;")
+        XCTAssertEqual(HTMLEntities.escape(#"<"&'>"#), "&lt;&quot;&amp;&#39;&gt;")
         XCTAssertTrue(MathText.html("\\frac{a}{b}", display: true).hasPrefix(#"<span class="tex display""#))
     }
 
+    #if os(macOS)  // MarkdownBlock is the Mac's (scripts/core-tests.sh leaves it out on Linux)
     func testMarkdownMathBlocks() {
         XCTAssertEqual(MarkdownBlock.parse("```math\n\\int_0^1 x\\,dx\n```"), [.math("\\int_0^1 x\\,dx")])
         XCTAssertEqual(MarkdownBlock.parse("Before\n\n$$\na^2 + b^2 = c^2\n$$\n\nAfter"),
@@ -188,6 +204,7 @@ final class LookThemesTests: XCTestCase {
         // Never closed (still streaming): a paragraph for now.
         XCTAssertEqual(MarkdownBlock.parse("$$\nx"), [.paragraph("$$\nx")])
     }
+    #endif
 
     // MARK: Composer styling
 
@@ -270,5 +287,108 @@ final class LookThemesTests: XCTestCase {
         var quotes = ComposerQuotes()
         quotes.add("cache is warm", source: c)
         XCTAssertEqual(quotes.items.first?.source, c)
+    }
+
+    // MARK: Colors set one by one
+
+    func testColorTokensAreUniqueAndCoverEveryGroup() {
+        let ids = NookColorToken.all.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
+        for group in NookColorToken.Group.allCases {
+            XCTAssertTrue(NookColorToken.all.contains { $0.group == group }, group.rawValue)
+        }
+        XCTAssertNil(NookColorToken.named("accent"), "the accent has its own control")
+    }
+
+    /// Every color in Settings › Colors has a name and an ⓘ that says where it shows (the keys are built from the
+    /// token's id, so the coverage test does not see them; it does check that each key is in every language).
+    func testEveryColorTokenIsNamedAndExplained() throws {
+        // `apps/macos`: from the environment when the tests run as a throwaway package (core-tests.sh), else from here.
+        let root = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"].map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let file = root.appendingPathComponent("Core/I18n+LookThemes.swift")
+        let text = try String(contentsOf: file, encoding: .utf8)
+        for token in NookColorToken.all {
+            XCTAssertTrue(text.contains("\"colors.token.\(token.id)\":"), "colors.token.\(token.id)")
+            XCTAssertTrue(text.contains("\"colors.info.\(token.id)\":"), "colors.info.\(token.id)")
+        }
+        for group in NookColorToken.Group.allCases {
+            XCTAssertTrue(text.contains("\"colors.group.\(group.rawValue)\":"), "colors.group.\(group.rawValue)")
+        }
+    }
+
+    /// The trays above and below the composer belong to it: a new composer color carries them, the theme's step apart,
+    /// and a tray color set itself wins.
+    func testComposerTraysFollowTheComposer() {
+        let dark = NookPalette.nookDark
+        XCTAssertEqual(dark.composerTray, dark.field, "Nook's look is unchanged")
+        let moved = dark.applying(["composer": 0x303040])
+        XCTAssertEqual(moved.composerTray, 0x2C2C3C)
+        XCTAssertEqual(dark.applying(["composer": 0x303040, "composerTray": 0x123456]).composerTray, 0x123456)
+        XCTAssertEqual(dark.applying(["composer": 0x020202]).composerTray, 0x000000, "kept within range")
+        XCTAssertEqual(NookPalette.nookLight.applying(["composer": 0xF0F0F0]).composerTray, 0xF0F0F0)
+    }
+
+    func testNoOverridesKeepNooksColors() {
+        let choice = NookThemeChoice()
+        XCTAssertEqual(choice.palette(dark: true, themes: NookColorTheme.builtIn), .nookDark)
+        XCTAssertEqual(choice.palette(dark: false, themes: NookColorTheme.builtIn), .nookLight)
+    }
+
+    func testAnOverrideChangesOnlyItsColorAndAppearance() {
+        var choice = NookThemeChoice()
+        choice.overrides.set("composer", to: 0x202020, dark: true)
+        choice.overrides.set("nope", to: 0x123456, dark: true)
+        let dark = choice.palette(dark: true, themes: NookColorTheme.builtIn)
+        XCTAssertEqual(dark.composer, 0x202020)
+        XCTAssertEqual(dark.surface, NookPalette.nookDark.surface)
+        XCTAssertEqual(choice.palette(dark: false, themes: NookColorTheme.builtIn), .nookLight)
+        XCTAssertEqual(choice.themePalette(dark: true, themes: NookColorTheme.builtIn), .nookDark)
+    }
+
+    func testSettingTheThemesOwnColorRemovesTheOverride() {
+        var overrides = NookColorOverrides()
+        overrides.set("amber", to: 0x111111, dark: true, themeValue: NookPalette.nookDark.amber)
+        XCTAssertFalse(overrides.isEmpty)
+        overrides.set("amber", to: NookPalette.nookDark.amber, dark: true, themeValue: NookPalette.nookDark.amber)
+        XCTAssertTrue(overrides.isEmpty)
+    }
+
+    func testOverridesRoundTrip() throws {
+        var overrides = NookColorOverrides()
+        overrides.set("added", to: 0x00FF00, dark: false)
+        let data = try JSONEncoder().encode(overrides)
+        XCTAssertEqual(try JSONDecoder().decode(NookColorOverrides.self, from: data), overrides)
+    }
+
+    func testComposerFollowsAGeneratedThemesSurface() {
+        for theme in NookColorTheme.builtIn where theme.id != "nook" {
+            for palette in [theme.dark, theme.light].compactMap({ $0 }) {
+                XCTAssertEqual(palette.composer, palette.surface, theme.id)
+            }
+        }
+    }
+
+    // MARK: Diff colors
+
+    func testDiffColorsComeFromTheThemesPalette() {
+        for theme in NookColorTheme.builtIn {
+            for palette in [theme.dark, theme.light].compactMap({ $0 }) {
+                XCTAssertEqual(NookDiffColors.redGreen.added(palette), palette.added, theme.id)
+                XCTAssertEqual(NookDiffColors.redGreen.removed(palette), palette.removed, theme.id)
+                XCTAssertEqual(NookDiffColors.blueOrange.added(palette), palette.blue, theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.added(palette), NookDiffColors.blueOrange.removed(palette), theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.modified(palette), palette.blue,
+                                  "\(theme.id): a changed file is not drawn as an added one")
+            }
+        }
+    }
+
+    func testBlueOrangeRemovedIsAnOrange() throws {
+        let palette = try XCTUnwrap(NookColorTheme.nook.dark)
+        let removed = NookColor.components(NookDiffColors.blueOrange.removed(palette))
+        XCTAssertGreaterThan(removed.r, removed.g)
+        XCTAssertGreaterThan(removed.g, removed.b)
+        XCTAssertGreaterThan(removed.g, 0.4, "orange, not the red that red-green color blindness mixes up with green")
     }
 }

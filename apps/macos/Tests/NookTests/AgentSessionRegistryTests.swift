@@ -101,7 +101,7 @@ final class AgentSessionRegistryTests: XCTestCase {
     }
 
     /// The desktop app's chat you continued in Nook is the Nook session now: listed once, also while its app works on it
-    /// again. A copy Nook made (another id) and a chat that waits for you
+    /// again (the chat stays open after an import). A copy Nook made (another id) and a chat that waits for you
     /// in its app stay.
     func testAChatContinuedInNookIsListedOnce() {
         let runs: [(agent: String, conversations: Set<String>)] = [(agent: "Claude Code", conversations: ["abc", "older"])]

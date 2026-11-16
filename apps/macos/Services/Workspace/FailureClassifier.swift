@@ -75,8 +75,7 @@ enum FailureClassifier {
         if lower.contains("[429]") || lower.contains("rate_limit_error") || saysUsageLimit(lower) {
             return .usageLimit(resetAt: latestStreamedReset(e) ?? textReset(e))
         }
-        if lower.contains("authentication_failed") || lower.contains("invalid api key") || lower.contains("/login")
-            || lower.contains("api error: 401") { return .authentication }
+        if saysSignIn(lower) { return .authentication }
         if lower.contains("api error: 403") { return .forbidden }
         if ["econnreset", "enotfound", "etimedout", "econnrefused", "fetch failed", "socket hang up",
             "network error", "network connection", "offline"].contains(where: lower.contains) { return .network }
@@ -91,6 +90,39 @@ enum FailureClassifier {
                        "usage limit", "rate limit exceeded", "rate limited", "too many requests", "hit your limit"]
         if phrases.contains(where: lower.contains) { return true }
         return lower.range(of: #"(^|[^0-9.])429([^0-9]|$)"#, options: .regularExpression) != nil
+    }
+
+    /// What agents say when their login no longer works, lowercased: Claude Code, Codex, Gemini CLI, the ACP agents
+    /// ("Authentication required", -32000) and the rest. Kept narrow: a word like "token" alone also appears in
+    /// context-window errors. The one list behind `.authentication`, `AgentSignInFailure` and `AgentErrorText`.
+    static let signInPhrases = [
+        "failed to authenticate", "authentication failed", "authentication_failed", "authentication_error",
+        "authentication required", "requires authentication", "please authenticate", "auth required", "auth_required",
+        "not authenticated", "not logged in", "not signed in", "please log in", "please login", "please sign in",
+        "/login", "login required", "log in again", "sign in again", "oauth session expired", "oauth token",
+        "token has expired", "token expired", "refresh token", "invalid_grant", "invalid api key", "invalid x-api-key",
+        "api error: 401", "unauthorized", "unauthenticated", "credentials have expired", "no credentials",
+    ]
+
+    /// Whether lowercased text says the agent needs you to sign in again.
+    static func saysSignIn(_ lower: String) -> Bool {
+        signInPhrases.contains(where: lower.contains)
+    }
+
+    /// What a session from a terminal shows when its agent's hook says the turn failed (`StopFailure`): a usage limit
+    /// and when it resets, or that the login ran out, the same way a session Nook runs says it; else the agent's own
+    /// words. For every agent whose hook passes its error.
+    static func hookFailure(_ error: String, now: Date = Date()) -> (kind: FailureClass, line: String) {
+        let kind = classify(FailureEvidence(isError: true, messageText: error, now: now))
+        switch kind {
+        case .usageLimit(let resetAt):
+            return (kind, resetAt.map { tr("agents.notice.limitUntil", $0.formatted(date: .omitted, time: .shortened)) }
+                ?? tr("agents.notice.limit"))
+        case .authentication:
+            return (kind, tr("agents.notice.signIn"))
+        case .interrupted, .forbidden, .network, .versionRejected, .generic:
+            return (kind, error)
+        }
     }
 
     /// Whether the turn failed. An interrupt is a stop, not a failure; a limit during `/compact` is one even though

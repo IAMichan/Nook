@@ -144,19 +144,19 @@ enum BridgeScheduleArguments {
     /// The schedule and rights fields that schedule_task and update_scheduled_task share.
     static var scheduleProperties: [String: Any] {
         [
-            "every_minutes": ["type": "integer", "description": "Run every this many minutes, counted from when the previous run finished (at least 1, at most \(maxIntervalMinutes))."],
-            "at": ["type": "string", "description": "Or run at this local time, \"HH:MM\" (24-hour)."],
+            "every_minutes": ["type": "integer", "description": "Interval in minutes after the previous run finishes (1...\(maxIntervalMinutes))."],
+            "at": ["type": "string", "description": "Local 24-hour time, \"HH:MM\"."],
             "weekdays": ["type": "array", "items": ["type": "string", "enum": weekdayNames],
-                         "description": "With at: only on these days. Default every day."],
+                         "description": "With at: days to run (default all)."],
             "rights": ["type": "string", "enum": [PermissionPolicy.ask.rawValue, PermissionPolicy.acceptEdits.rawValue],
-                       "description": "What each run may do without asking: ask (default) or acceptEdits. Never more than you have."],
-            "once_at": ["type": "string", "description": "Or run once at this local time, \"YYYY-MM-DD HH:MM\"."],
-            "enabled": ["type": "boolean", "description": "Whether the task is on. Default true for a new task."],
+                       "description": "ask (default) or acceptEdits; never above yours."],
+            "once_at": ["type": "string", "description": "Run once at local time \"YYYY-MM-DD HH:MM\"."],
+            "enabled": ["type": "boolean", "description": "Default true for new tasks."],
             "target": ["type": "string", "enum": ["new_session", "this_session", "session"],
                        "description": "new_session (in project_path), this_session, or session (session_id)."],
-            "session_id": ["type": "string", "description": "With target session: an id from session_list."],
+            "session_id": ["type": "string", "description": "With target session: id from session_list."],
             "conversation": ["type": "string", "enum": ["continue", "fresh"],
-                             "description": "With a session target: continue its conversation (default) or start fresh each run."]
+                             "description": "With session target: continue (default) or fresh each run."]
         ]
     }
 
@@ -355,6 +355,8 @@ enum BridgeScheduleArguments {
             return "when its webhook is called"
         case .once(let at):
             return "once at " + ISO8601DateFormatter().string(from: at)
+        case .message:
+            return NookSchedule.describe(rule)
         }
     }
 
@@ -366,6 +368,7 @@ enum BridgeScheduleArguments {
         case .newSession(let path, let provider, _): line += " · new \(provider) session in \(path)"
         case .existingSession(let id, let fresh):
             line += " · message to session \(id.uuidString)" + (fresh ? " (fresh conversation each run)" : " (continues the conversation)")
+        case .nook: line += " · answered by Nook Chat in a conversation of its own"
         }
         line += " · rights \(permission.rawValue)"
         if running { line += " · running now" }
@@ -391,9 +394,9 @@ enum BridgePullRequestTarget {
 
     static var properties: [String: Any] {
         [
-            "url": ["type": "string", "description": "The pull request's address. Optional."],
-            "number": ["type": "integer", "description": "The pull request's number, in repository (default: your folder's remote). Optional."],
-            "repository": ["type": "string", "description": "With number: owner/repo. Optional."]
+            "url": ["type": "string", "description": "PR/MR URL."],
+            "number": ["type": "integer", "description": "PR/MR number in repository (default: your folder's remote)."],
+            "repository": ["type": "string", "description": "With number: owner/repo."]
         ]
     }
 
@@ -475,9 +478,9 @@ enum BridgeBrowserScript {
 
     static var targetProperties: [String: Any] {
         [
-            "ref": ["type": "string", "description": "The element's ref from browser_snapshot, such as \"e7\". Preferred."],
-            "selector": ["type": "string", "description": "Or a CSS selector."],
-            "text": ["type": "string", "description": "Or the visible text of a link, button or label."]
+            "ref": ["type": "string", "description": "Element ref from browser_snapshot (e.g. \"e7\"; preferred)."],
+            "selector": ["type": "string", "description": "Or CSS selector."],
+            "text": ["type": "string", "description": "Or visible text of a link, button or label."]
         ]
     }
 
@@ -714,4 +717,56 @@ enum BridgeSecret {
         }
         return result + rest
     }
+}
+
+/// The `browser_*` tools with `in: "user"`: the same call in the user's own browser (Chrome, Brave, Edge, Arc…) through
+/// Nook's extension instead of in Nook's browser. The call becomes `nook_use` with the matching `chrome_*` tool
+/// (`BrowserExtensionTools`), so it takes every rule of that path: the extension must be connected, the privacy level
+/// must let agents have the source, an agent on another machine never gets it, and opening, clicking and typing always
+/// wait for the user's approval, whatever the session's rights.
+enum BridgeUserBrowser {
+    /// The argument that picks the browser.
+    static let key = "in"
+    static let user = "user"
+
+    /// The property every `browser_*` tool takes. `tab` and `browser` go along as `chrome_*` takes them.
+    static let property: [String: Any] = [
+        "type": "string", "enum": ["nook", user],
+        "description": "user: the user's own Chrome/Arc/Brave/Edge via Nook's extension, signed in (tab, browser as in chrome_* via nook_tools); actions always need approval."
+    ]
+
+    /// Whether the call is meant for the user's own browser.
+    static func wanted(_ arguments: [String: Any]) -> Bool {
+        BridgeArgs.string(arguments[key])?.lowercased() == user
+    }
+
+    /// The `chrome_*` tool a `browser_*` tool becomes.
+    static func chromeTool(for tool: BridgeTool) -> String? {
+        switch tool {
+        case .browserOpen: return "chrome_open"
+        case .browserRead: return "chrome_read"
+        case .browserScreenshot: return "chrome_screenshot"
+        case .browserSnapshot: return "chrome_find"
+        case .browserClick: return "chrome_click"
+        case .browserType: return "chrome_type"
+        case .browserWaitFor: return "chrome_wait"
+        default: return nil
+        }
+    }
+
+    /// The `nook_use` arguments for the call: the `chrome_*` tool and the arguments it knows, named as it names them.
+    static func nookUseArguments(for tool: BridgeTool, _ arguments: [String: Any]) -> [String: Any]? {
+        guard let name = chromeTool(for: tool) else { return nil }
+        var input = arguments
+        input.removeValue(forKey: key)
+        // browser_wait_for counts in timeout_seconds, chrome_wait in timeout.
+        if let seconds = input.removeValue(forKey: "timeout_seconds"), input["timeout"] == nil { input["timeout"] = seconds }
+        // browser_screenshot sizes its picture itself; the extension takes the tab as it is.
+        input.removeValue(forKey: "max_width")
+        return ["tool": name, "arguments": input]
+    }
+
+    /// What an agent hears when no browser has the extension connected.
+    static let notConnected = "Nook's extension is not connected in any of the user's browsers. Ask the user to connect it "
+        + "(Nook › Settings › Editor & browser › Nook in your browser), or leave out in: \"user\" to use Nook's own browser."
 }

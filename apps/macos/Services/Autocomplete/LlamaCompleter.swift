@@ -7,8 +7,11 @@ import LlamaSwift
 /// - The model's cache keeps the prompt of the last request: one more letter only has to read one more token. It has a slot
 ///   (a sequence) per field for the last few fields, so going back to one does not read its whole context again.
 /// - A certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its certainty drops.
-/// - After a space, the greedy suggestion and the ones that start with the next likeliest tokens are written side by side in
-///   one batch, and the surest is shown (see `generateRanked`); mid-word, the greedy one alone.
+/// - Where nothing has to be spelled first (after punctuation or a line break), the greedy suggestion and the ones that start
+///   with the next likeliest tokens are written side by side in one batch, and the surest is shown (see `generateRanked`).
+///   Mid-word and after a typed space, the greedy one alone, which starts by spelling the word or the space (see
+///   `CompletionPrompt.healed`). Measured on Gemma 4 E4B (M3 Max): a batch of three costs about 26 ms per token against
+///   15 ms for one, and ranking saved no more typing than the greedy suggestion alone.
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
 /// - A chat model (one with a chat template that is not a base model) gets the prompt as a request in its own template, with
 ///   its answer begun by the text typed so far (`CompletionChat`); a base model reads it as a document.
@@ -477,7 +480,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             let text = String(decoding: bytes, as: UTF8.self)
             if let typed = following.text, !CompletionFollowing.fits(text, typed: typed) { return nil }
             if text.completionWordCount > options.maxWords {
-                candidate.end()
+                candidate.end(atWordLimit: true)
                 break
             }
             // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
@@ -553,7 +556,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             sequences[index].bytes += piece
             sequences[index].token = token
             if String(decoding: sequences[index].bytes, as: UTF8.self).completionWordCount > options.maxWords {
-                sequences[index].candidate.end()
+                sequences[index].candidate.end(atWordLimit: true)
             }
         }
 

@@ -1,0 +1,7 @@
+# Security headers from Guard advice (Infaris Hosting)
+/*
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://github.com https://avatars.githubusercontent.com; font-src 'self' data:; connect-src 'self' https://api.github.com; media-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; report-uri https://api.infaris.com/api/public/csp-reports/cmwes5wnt00er07o5rjihq37f.qpLiVCLtnjDqv_NBGBFsWCRMnYH5lMjA
+  Strict-Transport-Security: max-age=31536000
+  X-Frame-Options: SAMEORIGIN
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

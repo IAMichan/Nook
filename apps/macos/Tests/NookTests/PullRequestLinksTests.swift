@@ -7,6 +7,19 @@ final class PullRequestLinksTests: XCTestCase {
                         updatedAt: at.map { Date(timeIntervalSince1970: $0) }, baseBranch: base, headBranch: head)
     }
 
+    // MARK: Naming a request
+
+    /// The folder's remote keeps a repository's old name after a rename; a merge from Nook names it by its new one.
+    func testRequestMatchesByRemoteNameOrByItsURL() {
+        let renamed = PullRequestLink(host: .github, repository: "InfarisHQ/pulse", number: 4121,
+                                      url: "https://github.com/InfarisHQ/monorepo/pull/4121")
+        XCTAssertTrue(renamed.isRequest(repository: "InfarisHQ/monorepo", number: 4121))
+        XCTAssertTrue(renamed.isRequest(repository: "infarishq/PULSE", number: 4121))
+        XCTAssertFalse(renamed.isRequest(repository: "InfarisHQ/monorepo", number: 4122))
+        XCTAssertFalse(renamed.isRequest(repository: "InfarisHQ/other", number: 4121))
+        XCTAssertFalse(link(4121, repo: "a/b").isRequest(repository: "InfarisHQ/monorepo", number: 4121))
+    }
+
     // MARK: Opening a link in Nook
 
     func testGitHubLinkOpensAsItem() throws {
@@ -79,6 +92,7 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(focus("https://dev.azure.com/org/proj/_git/repo/pullrequest/6?_a=commits"), .commits(sha: nil))
     }
 
+    #if canImport(CryptoKit)  // the hashes need CryptoKit (MD5, SHA-1); the core tests on Linux have none
     func testAFileAnchorFindsItsFileByHash() {
         let paths = ["README.md", "src/app.swift"]
         let sha256 = PullRequestFileAnchor.hashes(of: "src/app.swift")[0]
@@ -93,6 +107,7 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertNil(PullRequestFileAnchor(hash: String(repeating: "0", count: 64)).file(in: paths))
         XCTAssertNil(PullRequestFileAnchor().file(in: paths))
     }
+    #endif
 
     // MARK: PullRequestRef
 
@@ -203,8 +218,8 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(one, PullRequestBadge(glyph: .draft, label: .number(12)))
         XCTAssertEqual(one?.text, "#12")
         let many = PullRequestBadge.text(links: [link(12, head: "a"), link(13, head: "b", state: .merged), link(14, head: "c", state: .closed)])
-        XCTAssertEqual(many, PullRequestBadge(glyph: .open, label: .numberPlus(12, extra: 2)))
-        XCTAssertEqual(many?.text, "#12 +2")
+        XCTAssertEqual(many, PullRequestBadge(glyph: .closed, label: .numberPlus(14, extra: 2)))
+        XCTAssertEqual(many?.text, "#14 +2")
         let stack = PullRequestBadge.text(links: [link(1, base: "main", head: "a"), link(2, base: "a", head: "b"), link(3, base: "b", head: "c")])
         XCTAssertEqual(stack, PullRequestBadge(glyph: .stack, label: .stack(3, merged: 0)))
         XCTAssertNil(stack?.text)
@@ -220,9 +235,14 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(dropped, PullRequestBadge(glyph: .closed, label: .stack(2, merged: 0)))
     }
 
-    func testBadgePrefersUnresolvedThenMergedOverClosed() {
-        XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .closed), link(2, state: .merged)])?.glyph, .merged)
-        XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .open), link(2, state: .merged)])?.label, .numberPlus(1, extra: 1))
+    func testBadgeShowsTheNewestRequest() {
+        XCTAssertEqual(PullRequestBadge.text(links: [link(2, state: .merged), link(1, state: .closed)])?.glyph, .merged)
+        // An older request still open in conflict does not hide that the newest one merged.
+        var older = link(1326)
+        older.conflicted = true
+        let badge = PullRequestBadge.text(links: [older, link(1579, state: .merged)])
+        XCTAssertEqual(badge, PullRequestBadge(glyph: .merged, label: .numberPlus(1579, extra: 1)))
+        XCTAssertEqual(PullRequestBadge.text(links: [link(3, state: .merged), link(4, state: .draft)])?.glyph, .draft)
     }
 
     func testBadgeShowsAMergeConflictOnlyWhileOpen() {

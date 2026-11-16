@@ -5,6 +5,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { untrack } from "svelte";
   import { connectorsApi, gitlabDetail, gitlabHealth, type GitLabCheck } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
   import HealthPill from "./HealthPill.svelte";
 
@@ -69,7 +70,7 @@
       token = text;
       await save();
     } catch {
-      note = "Er staat niets bruikbaars op je klembord.";
+      note = tr("Er staat niets bruikbaars op je klembord.", "There's nothing usable on your clipboard.");
     }
   }
 
@@ -86,7 +87,7 @@
       <ServiceIcon domain="gitlab.com" title="GitLab" size={44} />
       <div>
         <h3>GitLab</h3>
-        <p class="muted">{host0 ? gitlabDetail(host0, checking ? null : check) : "Koppel GitLab in een paar eenvoudige stappen aan Nook."}</p>
+        <p class="muted">{host0 ? gitlabDetail(host0, checking ? null : check) : tr("Koppel {name} in een paar eenvoudige stappen aan Nook.", "Connect {name} to Nook in a few simple steps.", { name: "GitLab" })}</p>
       </div>
     </header>
 
@@ -94,37 +95,37 @@
       {#if host0}
         <div class="line">
           <HealthPill {health} />
-          {#if check?.kind === "unreachable" && !checking}<button onclick={verify}>Opnieuw proberen</button>{/if}
+          {#if check?.kind === "unreachable" && !checking}<button onclick={verify}>{tr("Opnieuw proberen", "Try again")}</button>{/if}
         </div>
-        <h4>Sleutels & beveiliging</h4>
+        <h4>{tr("Sleutels & beveiliging", "Keys & security")}</h4>
         {#if replacing || check?.kind === "rejected"}
           {@render tokenField()}
         {:else}
           <div class="line">
-            <span class="faint">🔒 Sleutel veilig bewaard in de kluis van je systeem</span>
-            <button onclick={() => (replacing = true)}>Vervang sleutel</button>
+            <span class="faint">🔒 {tr("Sleutel veilig bewaard in de kluis van je systeem", "Key stored safely in your system's keychain")}</span>
+            <button onclick={() => (replacing = true)}>{tr("Vervang sleutel", "Replace key")}</button>
           </div>
         {/if}
       {:else}
         <ol class="steps">
           <li class:done={saved}>
-            <strong>Maak een toegangstoken</strong>
-            <p class="muted">Maak op de tokenpagina van GitLab een persoonlijk toegangstoken met scope api.</p>
-            <button class="link" onclick={() => (showSelfHosted = !showSelfHosted)}>{showSelfHosted ? "▾" : "▸"} Eigen GitLab-server</button>
+            <strong>{tr("Maak een toegangstoken", "Create an access token")}</strong>
+            <p class="muted">{tr("Maak op de tokenpagina van GitLab een persoonlijk toegangstoken met scope api.", "On GitLab's token page, create a personal access token with the api scope.")}</p>
+            <button class="link" onclick={() => (showSelfHosted = !showSelfHosted)}>{showSelfHosted ? "▾" : "▸"} {tr("Eigen GitLab-server", "Self-hosted GitLab server")}</button>
             {#if showSelfHosted}
               <div class="selfhosted">
-                <input placeholder="Host (bijv. gitlab.com)" bind:value={host} />
-                <span class="faint small">Gebruik je GitLab op je eigen server? Vul het adres in voordat je de tokenpagina opent.</span>
+                <input placeholder={tr("Host (bijv. gitlab.com)", "Host (e.g. gitlab.com)")} bind:value={host} />
+                <span class="faint small">{tr("Gebruik je GitLab op je eigen server? Vul het adres in voordat je de tokenpagina opent.", "Using GitLab on your own server? Fill in the address before you open the token page.")}</span>
               </div>
             {/if}
-            <button onclick={() => openUrl(tokenPage)}>Open tokenpagina ↗</button>
+            <button onclick={() => openUrl(tokenPage)}>{tr("Open tokenpagina", "Open token page")} ↗</button>
           </li>
           <li class:done={saved}>
-            <strong>Plak het token</strong>
+            <strong>{tr("Plak het token", "Paste the token")}</strong>
             {@render tokenField()}
           </li>
           <li class:done={check?.kind === "valid"}>
-            <strong>Verbinding controleren</strong>
+            <strong>{tr("Verbinding controleren", "Check the connection")}</strong>
             {@render result()}
           </li>
         </ol>
@@ -135,15 +136,15 @@
     <footer>
       {#if host0}
         {#if confirmDisconnect}
-          <span class="faint">Weet je zeker dat je deze koppeling wilt verwijderen?</span>
-          <button onclick={() => (confirmDisconnect = false)}>Annuleer</button>
-          <button class="danger" onclick={disconnect}>Ontkoppel</button>
+          <span class="faint">{tr("Weet je zeker dat je deze koppeling wilt verwijderen?", "Are you sure you want to remove this connection?")}</span>
+          <button onclick={() => (confirmDisconnect = false)}>{tr("Annuleer", "Cancel")}</button>
+          <button class="danger" onclick={disconnect}>{tr("Ontkoppel", "Disconnect")}</button>
         {:else}
-          <button class="danger" onclick={() => (confirmDisconnect = true)}>Ontkoppel</button>
+          <button class="danger" onclick={() => (confirmDisconnect = true)}>{tr("Ontkoppel", "Disconnect")}</button>
         {/if}
       {/if}
       <span class="spacer"></span>
-      <button class="primary" onclick={onclose}>{saved || host0 ? "Klaar" : "Sluit"}</button>
+      <button class="primary" onclick={onclose}>{saved || host0 ? tr("Klaar", "Done") : tr("Sluit", "Close")}</button>
     </footer>
   </div>
 </div>
@@ -152,23 +153,23 @@
   <div class="fields">
     <input type="password" placeholder="glpat-…" bind:value={token} onkeydown={(e) => e.key === "Enter" && save()} />
     <div class="line">
-      <button onclick={paste} disabled={checking}>Plak van klembord</button>
-      <button class="primary" onclick={save} disabled={checking || !token.trim()}>Bewaar</button>
+      <button onclick={paste} disabled={checking}>{tr("Plak van klembord", "Paste from clipboard")}</button>
+      <button class="primary" onclick={save} disabled={checking || !token.trim()}>{tr("Bewaar", "Save")}</button>
     </div>
   </div>
 {/snippet}
 
 {#snippet result()}
   {#if checking}
-    <p class="muted">Nook controleert of de verbinding werkt…</p>
+    <p class="muted">{tr("Nook controleert of de verbinding werkt…", "Nook is checking whether the connection works…")}</p>
   {:else if check?.kind === "valid"}
-    <p class="ok">✓ Gekoppeld als @{check.username} op {normalized(host)}. Nook kan er nu merge requests voor je zoeken.</p>
+    <p class="ok">✓ {tr("Gekoppeld als @{user} op {host}. Nook kan er nu merge requests voor je zoeken.", "Connected as @{user} on {host}. Nook can now find merge requests there for you.", { user: check.username, host: normalized(host) })}</p>
   {:else if check?.kind === "rejected"}
-    <p class="warn">⚠ GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.</p>
+    <p class="warn">⚠ {tr("GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.", "GitLab rejects this token. Check that it has the api scope and hasn't expired.")}</p>
   {:else if check?.kind === "unreachable"}
-    <p class="bad">⚠ Nook kon {normalized(host)} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.</p>
+    <p class="bad">⚠ {tr("Nook kon {host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.", "Nook couldn't reach {host}. The token is saved; Nook tries again as soon as it's needed.", { host: normalized(host) })}</p>
   {:else}
-    <p class="muted">Vul eerst je token in bij stap 2.</p>
+    <p class="muted">{tr("Vul eerst je token in bij stap 2.", "Fill in your token in step 2 first.")}</p>
   {/if}
 {/snippet}
 

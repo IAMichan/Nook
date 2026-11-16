@@ -13,6 +13,8 @@ struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
         features.reactions = false
         features.updateBranch = false
         features.commitView = false
+        // The web page's "viewed" tick is kept through internal contribution calls, not the Git REST API.
+        features.viewedFiles = false
         return features
     }()
 

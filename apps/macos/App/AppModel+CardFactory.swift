@@ -17,6 +17,19 @@ extension AppModel {
         chat.append(message)
     }
 
+    /// Elements selected in Nook's browser as the chat's attachment: each one's markup and place, under one name.
+    /// `previous` is the name this selection gave the attachment before: selecting another grows it instead of announcing
+    /// a new one. Returns the attachment's name now.
+    func attachPageElements(_ elements: [PickedElement], replacing previous: String?) -> String? {
+        guard let combined = PickedElement.combined(elements) else { return nil }
+        if let previous, attachment?.name == previous {
+            attachment = (combined.name, combined.text, Date())
+        } else {
+            attachText(name: combined.name, text: combined.text)
+        }
+        return combined.name
+    }
+
     /// A file or folder for the chat to ask about. It is read off the main thread (a PDF or a zip can take a moment);
     /// what goes wrong shows under the chat's box (`attachmentError`), where you attached it, not as a card in the notch.
     func askAbout(_ url: URL) {

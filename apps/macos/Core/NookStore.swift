@@ -73,21 +73,41 @@ final class NookStore {
         """
     ]
 
-    init(url: URL = NookPaths.databaseURL) {
-        guard sqlite3_open(url.path, &db) == SQLITE_OK else {
-            Log.storage.error("Could not open the database at \(url.path, privacy: .public)")
-            return
+    /// Where the store lives; nil while it runs in memory only (the file could not be used, see `SQLiteRecovery`).
+    private(set) var fileURL: URL?
+    /// The first failure while the store sets itself up, for `SQLiteRecovery` to tell damage from other trouble.
+    private var setupFailure: Int32 = SQLITE_OK
+
+    init(url: URL = NookPaths.databaseURL, incidents: DatabaseIncidents = .shared) {
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        db = SQLiteRecovery.open(url, flags: flags, incidents: incidents) { handle in
+            db = handle
+            setupFailure = SQLITE_OK
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            setUp()
+            return setupFailure
         }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        if db != nil {
+            fileURL = url
+        } else {
+            // Nook keeps working this session: loops, the action log and memory live in memory until the next launch,
+            // and the notice (`DatabaseIncident`) says so. The file is left as `SQLiteRecovery` found or moved it.
+            sqlite3_open(":memory:", &db)
+            setupFailure = SQLITE_OK
+            setUp()
+        }
+        // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
+        // for one on the main thread or makes it wait, and the store lives as long as the work it started. Started a
+        // little later: right at launch the main thread reads memories and loops from the same connection.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) { [self] in pruneAudit() }
+    }
+
+    private func setUp() {
         exec("PRAGMA journal_mode = WAL;")
         // With WAL, NORMAL stays consistent after a crash and does not wait for the disk on every commit; audit lines are
         // written from the main actor. Only a power cut can lose the last commits.
         exec("PRAGMA synchronous = NORMAL;")
         migrate()
-        // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
-        // for one on the main thread or makes it wait, and the store lives as long as the work it started. Started a
-        // little later: right at launch the main thread reads memories and loops from the same connection.
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) { [self] in pruneAudit() }
     }
 
     deinit { sqlite3_close(db) }
@@ -112,7 +132,7 @@ final class NookStore {
             exec("BEGIN;")
             guard exec(sql) else {
                 exec("ROLLBACK;")
-                Log.storage.error("Database migration \(index + 1) failed; staying on version \(index)")
+                SafeStorage.report("Database migration \(index + 1) failed; staying on version \(index)")
                 return
             }
             exec("PRAGMA user_version = \(index + 1);")
@@ -125,9 +145,11 @@ final class NookStore {
         lock.lock()
         defer { lock.unlock() }
         var err: UnsafeMutablePointer<CChar>?
-        if sqlite3_exec(db, sql, nil, nil, &err) != SQLITE_OK {
+        let code = sqlite3_exec(db, sql, nil, nil, &err)
+        if code != SQLITE_OK {
+            if setupFailure == SQLITE_OK { setupFailure = sqlite3_extended_errcode(db) }
             if let err {
-                Log.storage.error("SQLite: \(String(cString: err), privacy: .public)")
+                SafeStorage.report("SQLite: \(String(cString: err))")
                 sqlite3_free(err)
             }
             return false
@@ -361,7 +383,7 @@ final class NookStore {
         if ok, sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK { return true }
         let reason = String(cString: sqlite3_errmsg(db))
         sqlite3_exec(db, "ROLLBACK;", nil, nil, nil)
-        Log.storage.error("Memories not saved: \(reason, privacy: .public)")
+        SafeStorage.report("Memories not saved: \(reason)")
         return false
     }
 

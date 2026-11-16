@@ -144,7 +144,8 @@ enum GitLabAPI {
                                    merge: PullRequestMergeFacts(state: GitLabPullRequestForge.mergeState(mergeRequest),
                                                                 autoMerge: (mergeRequest["auto_merge_enabled"] as? Bool) ?? (mergeRequest["merge_when_pipeline_succeeds"] as? Bool) ?? false,
                                                                 baseBranch: (mergeRequest["target_branch"] as? String) ?? ""),
-                                   mergeabilityKnown: PullRequestMergeability.gitlabKnown(mergeRequest))
+                                   mergeabilityKnown: PullRequestMergeability.gitlabKnown(mergeRequest),
+                                   title: mergeRequest["title"] as? String)
     }
 }
 

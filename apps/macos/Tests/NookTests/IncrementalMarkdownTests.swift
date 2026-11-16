@@ -11,6 +11,15 @@ final class IncrementalMarkdownTests: XCTestCase {
         "Line one\r\n\r\nLine two\r\n\r\n- item\r\n\r\n- item two\r\n",
         "\n\n\nStarts with blanks\n\n   \n\t\nTabs and spaces as blank lines\n\n```\n```\n\nx",
         "- a\n  continued\n\nNot a list\n\n* b\n\n+ c\n\n• d\n\n3 apples are not a list\n\nend",
+        // Fences right after a paragraph, a list, a table and an indented list continuation (no blank line before).
+        "Here is the code:\n```swift\nlet a = 1\n\nlet b = 2\n```\nAfter the code.\n```\nmore code\n\nstill",
+        "- item\n```\ncode\n```\n- next\n  ```\n  indented in the item\n  ```\nend",
+        "a | b\n|---|---|\n| 1 | 2 |\n```|x\ncode | here\n```\nafter\n```\ntail",
+        "Text\n$$\nx\n```\ncode\n```\n$$\nmore\n```\ny\n```\n",
+        "Before\n<details>\n<summary>S</summary>\n```\ncode\n```\n</details>\nafter\n```\nz",
+        // Lines that start with characters that are not ASCII, Unicode spaces, and a fence followed by a combining mark.
+        "• bullet\n\n• two\n\n\u{00A0}\n```\nx\n```\n\u{3000}```\ncode\n```\u{301}\nnot closed\n\névite\n",
+        "Para\r\n```\r\ncode\r\n\r\n```\r\nafter\r\n```\r\nnext\r\n",
     ]
 
     func testStreamingGivesTheSameBlocksAsAFullParse() {
@@ -41,6 +50,46 @@ final class IncrementalMarkdownTests: XCTestCase {
         let blocks = state.update("Other answer.\n\nElse.", parse: Self.reference)
         XCTAssertEqual(blocks, Self.reference("Other answer.\n\nElse."))
         XCTAssertEqual(state.update("Other", parse: Self.reference), ["p:Other"], "a shorter text starts over")
+    }
+
+    func testOnlyTheOpenCodeBlockIsParsedAgain() {
+        var state = IncrementalMarkdown<String>()
+        var parsed: [String] = []
+        let text = "Here is the code:\n```swift\nlet a = 1\n"
+        _ = state.update(text, parse: Self.reference)
+        _ = state.update(text + "let b", parse: { parsed.append($0); return Self.reference($0) })
+        XCTAssertEqual(parsed, ["```swift\nlet a = 1\nlet b"], "the paragraph before the fence is kept")
+        XCTAssertEqual(state.stable, ["p:Here is the code:"])
+    }
+
+    func testAFenceInsideAMultiLineBlockIsNoCut() {
+        XCTAssertNil(MarkdownBoundary.lastStable(in: "$$\nx\n```\ny\n"[...]))
+        XCTAssertNil(MarkdownBoundary.lastStable(in: "<DETAILS>\n```\ny\n"[...]))
+        XCTAssertNil(MarkdownBoundary.lastStable(in: "- a\n  ```\n"[...]), "an indented fence may continue a list item")
+        XCTAssertNil(MarkdownBoundary.lastStable(in: "a|b\n```|c\n"[...]), "a fence line with a pipe may be a table row")
+        XCTAssertEqual(MarkdownBoundary.lastStable(in: "a\n```\ny\n"[...]), 2)
+    }
+
+    /// A text that is replaced instead of continued (another answer, an edited one, a shorter one) starts over and still
+    /// gives the blocks of a full parse, also when it is streamed again afterwards.
+    func testReplacedTextsGiveTheSameBlocksAsAFullParse() {
+        var state = IncrementalMarkdown<String>()
+        for (index, sample) in samples.enumerated() {
+            let other = samples[(index + 3) % samples.count]
+            let characters = Array(sample)
+            var steps: [String] = []
+            for end in stride(from: 1, through: characters.count, by: 3) { steps.append(String(characters[..<end])) }
+            // Back to half, then on to the end; then a different answer, then the first again from its start.
+            steps.append(String(characters[..<(characters.count / 2)]))
+            steps.append(sample)
+            steps.append(other)
+            steps.append(String(other.prefix(other.count / 3)) + "\n\nedited")
+            steps.append(String(characters.prefix(4)))
+            steps.append(sample)
+            for text in steps {
+                XCTAssertEqual(state.update(text, parse: Self.reference), Self.reference(text), "text: \(text.debugDescription)")
+            }
+        }
     }
 
     func testNoCutInsideAFenceOrBeforeAListItem() {

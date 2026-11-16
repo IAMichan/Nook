@@ -1,0 +1,287 @@
+name: CI
+
+# The single entry point for Nook's builds and tests. A seconds-long ubuntu job reads the change and starts only the
+# areas it can affect (scripts/ci-changes.sh holds the path lists); each area is a reusable workflow (build.yml,
+# ios.yml, packages.yml, relay.yml, tauri.yml), next to quick ubuntu checks of the workflows, the Markdown links and new
+# dependencies. The `Check` job at the end passes only when every area passed or was
+# skipped because the change could not affect it, so `main` can require that one check however many pull requests
+# come in and however the jobs behind it change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+  # Ready for a merge queue: when the ruleset turns one on, each queued group runs here before it lands on main.
+  merge_group:
+  workflow_dispatch:
+  # Once a week every area runs on main from scratch, without the "already verified" shortcut, so a new runner image,
+  # Xcode or Swift release that breaks the build shows up within days instead of at the next pull request that touches
+  # the area. GitHub mails a failed scheduled run to whoever last changed this cron line.
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+  actions: read # verified-check looks up the markers of earlier runs
+
+# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
+# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
+# of merges costs at most two builds instead of cancelling every build before it completes.
+# The reusable workflows have no concurrency block of their own: theirs would share this group and deadlock.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changes
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      macos: ${{ steps.detect.outputs.macos }}
+      ios: ${{ steps.detect.outputs.ios }}
+      packages: ${{ steps.detect.outputs.packages }}
+      relay: ${{ steps.detect.outputs.relay }}
+      browser_extension: ${{ steps.detect.outputs.browser_extension }}
+      tauri: ${{ steps.detect.outputs.tauri }}
+      chatd: ${{ steps.detect.outputs.chatd }}
+      core_tests: ${{ steps.detect.outputs.core_tests }}
+      workflows: ${{ steps.detect.outputs.workflows }}
+      github_scripts: ${{ steps.detect.outputs.github_scripts }}
+      docs: ${{ steps.detect.outputs.docs }}
+      dependencies: ${{ steps.detect.outputs.dependencies }}
+    steps:
+      # Depth 2: on a pull request HEAD is GitHub's merge commit, and its first parent is the base branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # The mapping decides which builds a change skips, so a mistake in it hides a failing build. Its own test takes
+      # well under a second; when it fails, detection does not run and `Check` fails.
+      - name: Test the change mapping
+        run: scripts/ci-changes.test.sh
+      - name: Detect affected areas
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -uo pipefail
+          # Reads the change from git, not the REST API, so a busy day of pull requests does not eat the token quota.
+          # Detection fails open: when the diff cannot be resolved, every area runs.
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=HEAD^1
+          elif [ "$EVENT_NAME" = push ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != 0000000000000000000000000000000000000000 ] \
+            && git fetch --quiet --no-tags --depth=1 --filter=blob:none origin "$BEFORE_SHA"; then
+            base=$BEFORE_SHA
+          elif [ "$EVENT_NAME" = merge_group ] && git fetch --quiet --no-tags --depth=1 --filter=blob:none origin "$MERGE_GROUP_BASE_SHA"; then
+            base=$MERGE_GROUP_BASE_SHA
+          else
+            base=
+          fi
+          # --no-renames: a moved file counts at its old path too. With rename detection git lists only the new path,
+          # so moving a file out of apps/macos would not start the macOS build that the move can break.
+          if [ -n "$base" ] && files="$(git diff --name-only --no-renames "$base" HEAD)"; then
+            printf '%s\n' "$files" | scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "Running every area (started by hand or by the weekly schedule, or the change could not be resolved)."
+            scripts/ci-changes.sh --all | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # Cheap and on every pull request: no build logs, result bundles, screenshots-as-evidence or oversized files.
+  files:
+    name: Committed files
+    if: github.event_name == 'pull_request' && github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: No generated or oversized files
+        # --no-renames: a renamed file shows up as added, so a file that was moved and grew is still checked.
+        run: git diff --name-only --no-renames --diff-filter=AM HEAD^1 HEAD | scripts/pr-files-check.sh
+
+  # zizmor: template injection, dangerous triggers, broad permissions and leaked credentials in the workflows
+  # themselves. Settings and reasoned exceptions live in .github/zizmor.yml and `# zizmor: ignore[...]` comments.
+  workflows:
+    name: Workflow security
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          # Print the findings in the log and fail on them, instead of uploading to code scanning.
+          advanced-security: false
+          config: .github/zizmor.yml
+      # actionlint: the mistakes zizmor does not look for, which otherwise show up only when the workflow runs (a
+      # release, a schedule): unknown `needs`, outputs and inputs, typos in expressions, wrong types, bad cron lines.
+      # Shell style is left to the authors (-shellcheck=), so it checks the workflow itself, not the scripts in it.
+      - name: actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          archive="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/$archive" "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/$archive"
+          echo "$SHA256  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color -shellcheck= -pyflakes=
+
+  # The scripts that pr-overview.yml and welcome.yml load from main; they never run pull request code.
+  github_scripts:
+    name: Workflow scripts
+    needs: changes
+    if: needs.changes.outputs.github_scripts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Test
+        run: node --test '.github/scripts/**/*.test.cjs'
+
+  # Relative links and #anchors in every Markdown file, offline (external sites are too flaky to block a merge).
+  docs:
+    name: Markdown links
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
+          fail: true
+          jobSummary: true
+          format: markdown
+
+  # A pull request that adds a dependency with a known vulnerability (high or critical) fails here. Uses GitHub's
+  # dependency graph; runs only on pull requests that change a manifest or lock file.
+  dependencies:
+    name: Dependency review
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.dependencies == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # the summary comment on the pull request
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  macos:
+    name: macOS
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    uses: ./.github/workflows/build.yml
+
+  ios:
+    name: iOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/ios.yml
+
+  packages:
+    name: Packages
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
+    uses: ./.github/workflows/packages.yml
+
+  relay:
+    name: Relay
+    needs: changes
+    if: needs.changes.outputs.relay == 'true'
+    uses: ./.github/workflows/relay.yml
+
+  browser_extension:
+    name: Browser extension
+    needs: changes
+    if: needs.changes.outputs.browser_extension == 'true'
+    uses: ./.github/workflows/browser-extension.yml
+
+  tauri:
+    name: Tauri
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    uses: ./.github/workflows/tauri.yml
+
+  chatd:
+    name: chatd
+    needs: changes
+    if: needs.changes.outputs.chatd == 'true'
+    uses: ./.github/workflows/chatd.yml
+
+  core_tests:
+    name: Core tests (Linux)
+    needs: changes
+    if: needs.changes.outputs.core_tests == 'true'
+    uses: ./.github/workflows/core-tests.yml
+
+  # The ruleset on main requires this job by its name, `Check`. It fails when any other job fails, is cancelled, or is
+  # skipped although `changes` said its area was needed, so adding or splitting jobs needs no ruleset change. Add every
+  # new job to `needs` (and, when it can be skipped, to the jq map below). `always()` rather than `!cancelled()`: a
+  # skipped job reports success to the ruleset, so a cancelled run must still produce a failing check.
+  # Drafts and closed pull requests run nothing; GitHub does not merge a draft, and marking it ready starts a new run.
+  # One exception: a pull request run cancelled because the PR was merged or closed, or because a newer push replaced
+  # its commit, passes. Its commit can no longer be merged through this run, so a red check there only reports the
+  # cancel, not a failure. A cancel while the commit is still the open PR's head stays red.
+  check:
+    name: Check
+    if: always() && github.event.action != 'closed' && !github.event.pull_request.draft
+    needs: [changes, files, workflows, github_scripts, docs, dependencies, macos, ios, packages, relay, browser_extension, tauri, chatd, core_tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # reads whether a cancelled run's PR is still open at this commit
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          # A run cancelled after its PR was merged, closed or pushed to again is superseded, not failed. Anything other
+          # than a cancel (a failure, or a skip that was needed) still fails below.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && echo "$RESULTS" | jq -e 'any(.[]; .result == "cancelled")
+              and all(.[]; .result == "success" or .result == "skipped" or .result == "cancelled")' > /dev/null; then
+            pr=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.state + " " + .head.sha')
+            if [ "$pr" != "open $PR_HEAD_SHA" ]; then
+              echo "::notice::Cancelled because pull request #$PR_NUMBER was merged, closed or updated ($pr); nothing failed."
+              exit 0
+            fi
+          fi
+          # A job may skip only when `changes` said its area was not needed, or when it only runs on pull requests and
+          # this run is not one (a push to main, a merge queue group, a manual run).
+          echo "$RESULTS" | jq -e --arg event "$EVENT_NAME" '.changes.outputs as $gates
+            | ["files", "dependencies"] as $pr_only
+            | all(to_entries[];
+                .value.result == "success"
+                or (.value.result == "skipped"
+                  and ((.key as $k | $pr_only | index($k)) and $event != "pull_request" or $gates[.key] == "false")))' > /dev/null

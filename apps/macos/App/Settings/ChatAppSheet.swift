@@ -17,8 +17,6 @@ struct ChatAppSheet: View {
     @ObservedObject private var linker = ChatLinker.shared
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     @State private var unlinking: ChatLinkData.Account?
-    @State private var showService = false
-    @State private var showAdvanced = false
 
     private var name: String { MessagingApps.app(id: app)?.name ?? app }
     private var site: String? { MessagingApps.app(id: app)?.site }
@@ -30,7 +28,7 @@ struct ChatAppSheet: View {
     private var isLinked: Bool { ChatAppStates.state(app)?.linked == true }
 
     var body: some View {
-        SetupSheet(title: name, subtitle: subtitle, status: isLinked ? .working : nil) {
+        SetupSheet(title: name, subtitle: subtitle, status: isLinked ? health : nil) {
             ServiceTile(domain: site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 48, source: app)
         } content: {
             if isLinked { manageParts } else { linkSteps }
@@ -43,9 +41,7 @@ struct ChatAppSheet: View {
                 Task { if isLinking { await linker.cancel() } }
                 dismiss()
             }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .sheetPrimaryButton()
         }
         .confirmDelete($unlinking, question: { tr("chats.link.unlinkQuestion", $0.name) }, detail: tr("chats.link.unlinkDetail", name),
                        confirmTitle: tr("chats.link.unlink")) { account in
@@ -58,6 +54,19 @@ struct ChatAppSheet: View {
             guard !embedded else { return }
             Task { if isLinking { await linker.cancel() } }
             dismiss()
+        }
+    }
+
+    /// How the linked app is doing, from its accounts (`ChatAppStates`): an account that failed or needs signing in
+    /// again shows here, never a fixed "Working".
+    private var health: ConnectionHealth {
+        switch ChatAppStates.state(app)?.status ?? .notLinked {
+        case .connected: return .working
+        case .connecting: return .busy
+        case .expired: return .needsYou
+        case .unreachable: return .broken
+        case .off: return .off
+        case .notLinked: return .notLinked
         }
     }
 
@@ -78,20 +87,28 @@ struct ChatAppSheet: View {
             }
         }
         SheetPart(tr("chats.manage.inNook")) { ChatAppNoticeRows(app: app, setCollecting: setCollecting) }
-        if ChatOwnAdvanced.has(app) || (ownWay && linker.serviceRuns) {
-            DisclosureGroup(isExpanded: $showAdvanced) {
+        // Rarely needed, folded away last, each fold named for what it holds.
+        if ChatOwnAdvanced.has(app) {
+            SettingsFold(ChatOwnAdvanced.title(app)) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     ChatOwnAdvanced(app: app, setCollecting: setCollecting)
-                    // Nook links it in its own way; the chat service on this Mac is the other way.
-                    if ownWay, linker.serviceRuns {
-                        SettingLabel(tr("chats.link.viaService"), detail: tr("chats.link.viaServiceDetail", name))
-                        serviceSteps
-                    }
                 }
                 .padding(.top, NookTheme.Spacing.sm)
-            } label: {
-                SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
             }
+        }
+        // Nook links it in its own way; the chat service on this Mac is the other way.
+        if ownWay, linker.serviceRuns { serviceFold }
+    }
+
+    /// The chat service on this Mac as the other way to link an app Nook links itself: its own steps under a title that
+    /// says so, so their numbers read as a flow of their own beside the app's.
+    private var serviceFold: some View {
+        SettingsFold(tr("chats.fold.viaService")) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                SettingNote(tr("chats.link.viaServiceDetail", name))
+                serviceSteps
+            }
+            .padding(.top, NookTheme.Spacing.sm)
         }
     }
 
@@ -102,7 +119,6 @@ struct ChatAppSheet: View {
     private var linkSteps: some View {
         if ownWay {
             ChatOwnLinkSteps(app: app, setCollecting: setCollecting)
-            checkStep(number: ChatOwnLinkSteps.stepCount(app) + 1)
         }
         if let network, !network.accounts.isEmpty {
             if ownWay { NookDivider() }
@@ -111,12 +127,7 @@ struct ChatAppSheet: View {
         if linker.serviceRuns {
             if ownWay {
                 NookDivider()
-                DisclosureGroup(isExpanded: $showService) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { serviceSteps }
-                        .padding(.top, NookTheme.Spacing.sm)
-                } label: {
-                    SettingLabel(tr("chats.link.viaService"), detail: tr("chats.link.viaServiceDetail", name))
-                }
+                serviceFold
             } else {
                 serviceSteps
             }
@@ -125,7 +136,7 @@ struct ChatAppSheet: View {
             // words and points at the way its chats come in anyway. What a developer would do sits behind the hover.
             SetupStep(number: 1, title: tr("chats.link.unavailableTitle", name)) {
                 SettingNote(tr("chats.link.notYet", name, name))
-                    .help(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
+                    .nookTip(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
             }
         }
         // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
@@ -145,25 +156,16 @@ struct ChatAppSheet: View {
                 SheetPart(tr("sheet.part.canDo")) { SettingNote(howItReads) }
             }
             // Rarely needed, folded away last, the same words as on the linked app.
-            if app == "whatsapp" {
-                DisclosureGroup(isExpanded: $showAdvanced) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
-                        .padding(.top, NookTheme.Spacing.sm)
-                } label: {
-                    SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
+            if let link = MessagingApps.known(app)?.ownLink {
+                SettingsFold(ChatOwnAdvanced.title(app)) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        switch link {
+                        case .whatsAppGateway: WhatsAppGatewayRows()
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.sm)
                 }
             }
-        }
-    }
-
-    /// The last step of every chat app, as "Check the connection" is for every service: Nook reads its chats once it is
-    /// linked, and says so here.
-    private func checkStep(number: Int) -> some View {
-        SetupStep(number: number, title: tr("chats.link.step.check"), done: isLinked) {
-            Text(isLinked ? tr("chats.link.step.checkDone", name) : tr("chats.link.step.checkWaiting", name))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(isLinked ? NookTheme.mint : NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -207,14 +209,12 @@ struct ChatAppSheet: View {
         let ready = ChatServiceBridge.token != nil && linker.problem == nil && !linker.networks.isEmpty
         if !ready {
             SetupStep(number: 1, title: tr("chats.link.step.service"), done: false) {
-                Text(tr("chats.link.step.serviceDetail"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 if let problem = linker.problem ?? ChatHelper.shared.problem {
                     SettingNote(problem, tone: .error)
                 }
-                Button(tr("chats.status.retry")) { Task { await linker.refresh() } }
+                StepAction(detail: tr("chats.link.step.serviceDetail"), button: tr("chats.status.retry"), prominent: false) {
+                    Task { await linker.refresh() }
+                }
             }
         }
         SetupStep(number: ready ? 1 : 2, title: tr("chats.link.step.login", name), done: false) {
@@ -235,7 +235,20 @@ struct ChatAppSheet: View {
                 SettingNote(tr("chats.link.notOffered", name), tone: .info)
             }
         }
-        checkStep(number: ready ? 2 : 3)
+        ChatLinkCheckStep(app: app, number: ready ? 2 : 3)
+    }
+}
+
+/// The last step of linking every chat app, Nook's own way and the chat service's alike, as "Check the connection" is
+/// for every service: Nook reads its chats once it is linked, and says so here.
+struct ChatLinkCheckStep: View {
+    let app: String
+    let number: Int
+
+    var body: some View {
+        let name = MessagingApps.app(id: app)?.name ?? app
+        SetupCheckStep(number: number, title: tr("chats.link.step.check"), detail: tr("chats.link.step.checkWaiting", name),
+                       state: ChatAppStates.state(app)?.linked == true ? .passed(tr("chats.link.step.checkDone", name)) : .idle)
     }
 }
 
@@ -254,20 +267,11 @@ struct ChatLinkSteps: View {
             } else if !network.canLink {
                 SettingNote(tr("chats.link.unavailable", network.name), tone: .warning)
             } else {
-                Text(tr("chats.link.start.detail", network.name))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(tr("chats.link.start", network.name)) { Task { await linker.link(network) } }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(linker.isSending)
+                StepAction(detail: tr("chats.link.start.detail", network.name), button: tr("chats.link.start", network.name),
+                           disabled: linker.isSending) { Task { await linker.link(network) } }
             }
             if linker.isSending {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("chats.link.busy")).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(tr("chats.link.busy"))
             }
             if let problem = linker.stepProblem, linker.linking?.id == network.id || session == nil {
                 SettingNote(problem, tone: .error)
@@ -294,16 +298,16 @@ struct ChatLinkSteps: View {
                         if field.isSecret {
                             SecureField("", text: binding, prompt: Text(field.placeholder))
                         } else {
-                            TextField("", text: binding, prompt: Text(field.placeholder))
+                            TextField("", text: binding, prompt: Text(field.placeholder).foregroundStyle(NookTheme.textTertiary))
                         }
                     }
                     .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
+                    .settingsField()
                     .onSubmit { submit(fields) }
                 }
             }
             Button(tr("chats.link.continue")) { submit(fields) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(linker.isSending || fields.contains { !$0.isOptional && (values[$0.id] ?? $0.initial).trimmingCharacters(in: .whitespaces).isEmpty })
                 .id(id)
         case .browser(_, let instructions, let url, _, _, _, _):
@@ -313,18 +317,15 @@ struct ChatLinkSteps: View {
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
             } label: {
-                Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
+                Label(tr("chats.link.browser.open", url.host ?? network.name), icon: "person.badge.key")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             SettingNote(tr("chats.link.browser.privacy", network.name))
         case .display(_, let instructions, let show):
             instructionsText(instructions)
             display(show)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ProgressView().controlSize(.small)
-                Text(tr("chats.link.waiting")).foregroundStyle(NookTheme.textSecondary)
-            }
+            BusyLine(tr("chats.link.waiting"))
         case .complete(let instructions):
             instructionsText(instructions.isEmpty ? tr("chats.link.done", network.name) : instructions)
         }
@@ -346,7 +347,7 @@ struct ChatLinkSteps: View {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
-                ProgressView()
+                PatientSpinner()
             }
             .frame(maxWidth: 240, maxHeight: 160)
         case .nothing:
@@ -376,11 +377,8 @@ struct ChatLinkSteps: View {
     }
 }
 
-/// Nook's own way of linking an app, in numbered steps; nothing but Nook is needed for it.
+/// Nook's own way of linking an app, in numbered steps ending in Nook's check; nothing but Nook is needed for it.
 struct ChatOwnLinkSteps: View {
-    /// How many numbered steps an app's own way has, so the step after them gets the next number.
-    static func stepCount(_ app: String) -> Int { app == "whatsapp" ? 2 : 1 }
-
     let app: String
     let setCollecting: (Bool) -> Void
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -393,12 +391,26 @@ struct ChatOwnLinkSteps: View {
     @ObservedObject private var mail = ChatCaptureService.shared.mailBridge
 
     var body: some View {
+        steps
+        ChatLinkCheckStep(app: app, number: stepCount + 1)
+    }
+
+    /// How many numbered steps the app's own way has now, so the check after them gets the next number (Telegram asks
+    /// for a password only when one is set).
+    private var stepCount: Int {
+        switch app {
+        case "whatsapp": return 2
+        case telegram.app: return TelegramLinkSteps.count(telegram)
+        default: return 1
+        }
+    }
+
+    @ViewBuilder
+    private var steps: some View {
         switch app {
         case "whatsapp": whatsAppSteps
         case telegram.app:
-            SetupStep(number: 1, title: tr("chats.own.telegram.step"), done: telegram.isReady) {
-                TelegramSettingsRows(telegram: telegram) { linked(telegram.app) }
-            }
+            TelegramLinkSteps(telegram: telegram) { linked(telegram.app) }
         case teams.app:
             SetupStep(number: 1, title: tr("chats.own.teams.step"), done: teams.isReady) {
                 TeamsSettingsRows(teams: teams, problem: capture.bridgeProblems[teams.app]) {
@@ -449,14 +461,12 @@ struct ChatOwnLinkSteps: View {
             if installed && !installer.busy {
                 detail(tr("chats.own.whatsapp.installed"))
             } else {
-                detail(tr("chats.own.whatsapp.installDetail"))
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    if installer.busy {
-                        ProgressView().controlSize(.small)
-                        Text(installLine).foregroundStyle(NookTheme.textSecondary)
-                    } else {
-                        Button(tr("whatsapp.install.button")) { installer.install() }
-                            .buttonStyle(.borderedProminent)
+                if installer.busy {
+                    detail(tr("chats.own.whatsapp.installDetail"))
+                    BusyLine(installLine)
+                } else {
+                    StepAction(detail: tr("chats.own.whatsapp.installDetail"), button: tr("whatsapp.install.button")) {
+                        installer.install()
                     }
                 }
                 if case .failed(let why) = installer.step { SettingNote(why, tone: .error) }
@@ -464,21 +474,16 @@ struct ChatOwnLinkSteps: View {
         }
         SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: false) {
             if !WhatsAppSettings.enabled {
-                detail(tr("chats.own.whatsapp.scanDetail"))
-                Button(tr("chats.own.whatsapp.showQR")) {
+                StepAction(detail: tr("chats.own.whatsapp.scanDetail"), button: tr("chats.own.whatsapp.showQR"),
+                           disabled: !installed || installer.busy) {
                     whatsAppAccounts.setEnabled(true)
                     capture.setSource("whatsapp", on: true)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!installed || installer.busy)
             } else if whatsApp.link == .needsQR, let data = whatsApp.qrPNG, let image = NSImage(data: data) {
                 detail(tr("whatsapp.settings.scan"))
                 QRCodeView(image: image, label: tr("chats.link.qr"))
             } else {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(whatsApp.statusLine).foregroundStyle(NookTheme.textSecondary)
-                }
+                BusyLine(whatsApp.statusLine)
                 if whatsApp.link == .unreachable || whatsApp.link == .unauthorized {
                     Button(tr("whatsapp.settings.retry")) { whatsAppAccounts.settingsChanged() }
                 }
@@ -508,13 +513,11 @@ struct ChatOwnLinkSteps: View {
                 ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
                                      signOut: { capture.signOutSnapchat() })
             } else {
-                detail(tr("chats.snapchat.signInDetail"))
                 SettingNote(tr("chats.link.risk", "Snapchat"), tone: .warning)
-                Button(tr("chats.snapchat.signIn")) {
+                StepAction(detail: tr("chats.snapchat.signInDetail"), button: tr("chats.snapchat.signIn"),
+                           disabled: snapchat.isSigningIn) {
                     snapchat.signIn(title: tr("chats.link.browser.title", "Snapchat")) { linked(app) }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(snapchat.isSigningIn)
             }
         }
     }
@@ -527,12 +530,10 @@ struct ChatOwnLinkSteps: View {
             if mail.isLinked {
                 MailAccountRows()
             } else {
-                detail(tr("chats.mail.linkDetail"))
-                Button(tr("chats.mail.link")) {
+                StepAction(detail: tr("chats.mail.linkDetail"), button: tr("chats.mail.link")) {
                     if !capture.enabled { setCollecting(true) }
                     capture.linkMail()
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -546,14 +547,12 @@ struct ChatOwnLinkSteps: View {
             if ready {
                 detail(tr("chats.link.ownWay.messagesDone"))
             } else {
-                detail(tr("chats.capture.needsAccess"))
-                Button(tr("chats.capture.grant")) {
+                StepAction(detail: tr("chats.capture.needsAccess"), button: tr("chats.capture.grant")) {
                     if !capture.enabled { setCollecting(true) }
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -633,8 +632,8 @@ struct MailAccountRows: View {
     }
 }
 
-/// What a linked app has that is rarely needed, under Advanced: WhatsApp's gateway, Slack's token of an app of your own,
-/// Telegram's keys from my.telegram.org.
+/// What a linked app has that is rarely needed, folded under a name that says what it holds: WhatsApp's gateway, Slack's
+/// token of an app of your own, Telegram's keys from my.telegram.org.
 struct ChatOwnAdvanced: View {
     let app: String
     let setCollecting: (Bool) -> Void
@@ -647,6 +646,18 @@ struct ChatOwnAdvanced: View {
         return ["whatsapp", capture.slackBridge.app, capture.telegramBridge.app].contains(app)
     }
 
+    /// The name of the fold it sits in, for what it holds.
+    @MainActor
+    static func title(_ app: String) -> String {
+        let capture = ChatCaptureService.shared
+        switch app {
+        case "whatsapp": return tr("chats.fold.gateway")
+        case capture.slackBridge.app: return tr("chats.fold.slackToken")
+        case capture.telegramBridge.app: return tr("chats.telegram.keys")
+        default: return tr("chats.manage.advanced")
+        }
+    }
+
     var body: some View {
         let capture = ChatCaptureService.shared
         switch app {
@@ -655,10 +666,8 @@ struct ChatOwnAdvanced: View {
         case capture.slackBridge.app:
             SlackTokenRows(setCollecting: setCollecting)
         case telegram.app:
-            HStack {
-                SettingLabel(tr("chats.telegram.keys"), detail: tr("chats.telegram.keysDetail"))
-                Spacer()
-                TelegramKeysButton(telegram: telegram)
+            StepAction(detail: tr("chats.telegram.keysDetail"), button: tr("chats.telegram.changeKeys"), prominent: false) {
+                TelegramKeysButton.reset(telegram)
             }
         default:
             EmptyView()

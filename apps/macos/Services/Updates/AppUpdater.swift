@@ -11,7 +11,7 @@ import Combine
 /// ~/Library/Logs/Nook, and the install is written to the action log.
 /// A downloaded build (the release .dmg or .zip) has no checkout: it asks GitHub Releases for a newer version instead
 /// (`ReleaseBuild`), and an install downloads the release's .zip, checks its Ed25519 signature, unpacks it and puts the
-/// app in place, behind the same button., a downloaded build asks every few minutes (a
+/// app in place, behind the same button. A downloaded build asks every few minutes (a
 /// conditional request, so an unchanged list costs GitHub nothing), shows the download's progress, lists what the
 /// releases since this build brought, and says so when a restart did not start the new version.
 @MainActor
@@ -101,7 +101,19 @@ final class AppUpdater: ObservableObject {
     /// list (304) does not count against the rate limit.
     private var releaseListCache: (etag: String, data: Data)?
 
+    /// The release channel a downloaded build follows. Saved only once you pick one; until then it is the build's own
+    /// (a beta follows betas). Picking one checks right away.
+    @Published var channel: UpdateChannel {
+        didSet {
+            guard channel != oldValue else { return }
+            UserDefaults.standard.set(channel.rawValue, forKey: Self.channelKey)
+            // A check that is under way picks the channel when its answer arrives.
+            if !checking { check() }
+        }
+    }
+
     private static let autoCheckKey = "nook.updates.autoCheck"
+    private static let channelKey = "nook.updates.channel"
     private static let receiptKey = "nook.updates.receipt"
     /// The screen an install or restart was clicked on, with when the restart started (`at`).
     private static let restartScreenKey = "nook.updates.restartScreen"
@@ -118,6 +130,8 @@ final class AppUpdater: ObservableObject {
         self.release = source == nil ? release : nil
         self.fromXcode = fromXcode
         self.autoCheck = UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true
+        self.channel = UserDefaults.standard.string(forKey: Self.channelKey).flatMap(UpdateChannel.init(rawValue:))
+            ?? release?.defaultChannel ?? .stable
         if source == nil, release == nil { phase = .unavailable }
     }
 
@@ -251,7 +265,8 @@ final class AppUpdater: ObservableObject {
                     data = body
                     releaseListCache = (http?.value(forHTTPHeaderField: "ETag")).map { ($0, body) }
                 }
-                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release))
+                // Read after the answer arrives, so a channel picked during the request counts.
+                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release, channel: channel))
             } catch {
                 result = .failure(error)
             }
@@ -673,7 +688,7 @@ final class AppUpdater: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: Self.receiptKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.receiptKey)
         guard let saved = try? JSONDecoder().decode(UpdateReceipt.self, from: data) else { return }
-        // Restarted into a release update, but this is still the old version ("not applied" check). A
+        // Restarted into a release update, but this is still the old version (the "not applied" check). A
         // rollback says so itself, and from Xcode the new build is yours to start.
         if release != nil, UpdateTrialRunner.rollbackToReport == nil, !isFailed,
            let missing = UpdateApplied.notApplied(saved, running: build) {
@@ -1150,10 +1165,10 @@ final class Installation: @unchecked Sendable {
         append("\n== \(name) \(arguments.joined(separator: " "))\n")
         let output = try FileHandle(forWritingTo: logURL)
         defer { try? output.close() }
-        output.seekToEndOfFile()
+        _ = try? output.seekToEnd()
         let reader = try FileHandle(forReadingFrom: logURL)
         defer { try? reader.close() }
-        reader.seekToEndOfFile()
+        _ = try? reader.seekToEnd()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -1203,8 +1218,9 @@ final class Installation: @unchecked Sendable {
 
     private func append(_ text: String) {
         guard let handle = try? FileHandle(forWritingTo: logURL) else { return }
-        handle.seekToEndOfFile()
-        handle.write(Data(text.utf8))
+        // The throwing calls: the legacy ones raise an Objective-C exception (a crash) on a full disk or a lost volume.
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(text.utf8))
         try? handle.close()
     }
 }

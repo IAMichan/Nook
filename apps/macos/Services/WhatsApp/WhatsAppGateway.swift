@@ -22,6 +22,21 @@ struct WAChatInfo: Equatable, Sendable {
     var pinned: Bool? = nil
     /// Whether the chat is muted on the phone, when the gateway says (OpenWA); nil when it does not.
     var muted: Bool? = nil
+
+    /// The chat list as the gateway gives it again, with the names it already learned: GOWA lists every group as
+    /// "Group 1203…", so a group named earlier keeps its name instead of falling back to its id until it is named again.
+    static func keepingNames(_ chats: [WAChatInfo], from previous: [WAChatInfo]) -> [WAChatInfo] {
+        var learned: [String: String] = [:]
+        for chat in previous where learned[chat.jid] == nil && !WAJID.isPlaceholderName(chat.name, for: chat.jid) {
+            learned[chat.jid] = chat.name
+        }
+        return chats.map { chat in
+            guard WAJID.isPlaceholderName(chat.name, for: chat.jid), let name = learned[chat.jid] else { return chat }
+            var named = chat
+            named.name = name
+            return named
+        }
+    }
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -390,6 +405,20 @@ extension Array where Element == WAReaction {
 }
 
 extension WAMedia {
+    /// The file as every app's (`ChatMedia`), from this Mac once the link fetched it (`path`); nil for what is no file
+    /// (a location, a contact card, anything else).
+    func chatMedia(path: String? = nil) -> ChatMedia? {
+        switch self {
+        case .image: return ChatMedia(kind: .photo, path: path)
+        case .video: return ChatMedia(kind: .video, path: path)
+        case .audio(let seconds): return ChatMedia(kind: .audio, path: path, seconds: seconds.map(Double.init))
+        case .voice(let seconds): return ChatMedia(kind: .voice, path: path, seconds: seconds.map(Double.init))
+        case .document(let name): return ChatMedia(kind: .file, name: name, path: path)
+        case .sticker: return ChatMedia(kind: .sticker, path: path)
+        case .none, .location, .contact, .other: return nil
+        }
+    }
+
     /// A file Nook can fetch from the gateway and open on this Mac.
     var isOpenable: Bool {
         switch self {
@@ -613,53 +642,81 @@ struct WAGroupInfo: Equatable, Sendable {
     var profile: WAGroupProfile? = nil
 }
 
-/// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
-enum WAChatMode: String, CaseIterable, Sendable {
-    /// Follows the rule of its kind (groups, status updates, channels stay quiet; people reach you).
-    case automatic
-    /// Always reaches you, even a group without a mention or a channel.
-    case loud
-    /// Never reaches you; the chat is kept and can be opened.
-    case muted
-}
+/// What one chat does when a message arrives: the shared per-chat choice (`ChatMode`), by its old WhatsApp name.
+typealias WAChatMode = ChatMode
 
-/// What the user chose in Settings → WhatsApp.
+/// What one WhatsApp account sorts its gateway's messages by: the notice rules every chat app follows
+/// (`ChatNoticeRules`), keyed by this account's normalized JIDs (`ChatNoticeRulesStore.filters(account:)` makes them
+/// from the shared ones), plus the chats muted on the phone. Every decision goes through the shared rules, so WhatsApp's
+/// own list and the shared inbox never disagree.
 struct WAFilters: Equatable, Sendable {
+    /// The shared rules, by normalized JID under the app "whatsapp".
+    var rules = ChatNoticeRules()
+    /// Chats muted on the phone (normalized JIDs), as the gateway says (`WhatsAppLink.mutedChats`): quiet while their
+    /// choice in Nook is automatic, as every app's chat muted in the app (`InboxThread.mutedInApp`).
+    var mutedInApp: Set<String> = []
+
+    private static let app = "whatsapp"
+
     /// Groups stay quiet unless the message mentions you.
-    var muteGroups = true
-    /// Status updates (status@broadcast) stay quiet.
-    var muteStatus = true
-    /// Channels (…@newsletter) stay quiet.
-    var muteChannels = true
-    /// Chats never shown (JIDs).
-    var ignored: Set<String> = []
-    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
-    var modes: [String: WAChatMode] = [:]
-
-    func mode(for chat: String) -> WAChatMode { modes[WAJID.normalized(chat)] ?? .automatic }
-
-    mutating func setMode(_ mode: WAChatMode, for chat: String) {
-        let key = WAJID.normalized(chat)
-        if mode == .automatic { modes[key] = nil } else { modes[key] = mode }
+    var muteGroups: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.group) }
+        set { rules.setQuiet(newValue, kind: .group, app: Self.app) }
     }
+    /// Status updates (status@broadcast) stay quiet.
+    var muteStatus: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.status) }
+        set { rules.setQuiet(newValue, kind: .status, app: Self.app) }
+    }
+    /// Channels (…@newsletter) stay quiet.
+    var muteChannels: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.channel) }
+        set { rules.setQuiet(newValue, kind: .channel, app: Self.app) }
+    }
+    /// Chats never shown (normalized JIDs).
+    var ignored: Set<String> {
+        get { rules.hidden }
+        set { rules.hidden = newValue }
+    }
+    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
+    var modes: [String: WAChatMode] {
+        get { rules.modes }
+        set { rules.modes = newValue }
+    }
+
+    func mode(for chat: String) -> WAChatMode { rules.mode(for: WAJID.normalized(chat)) }
+
+    mutating func setMode(_ mode: WAChatMode, for chat: String) { rules.setMode(mode, for: WAJID.normalized(chat)) }
+
+    private static func kind(_ chat: String) -> ChatKind { ChatKind(WAJID.kind(chat)) }
 
     /// Whether a chat's kind keeps it quiet, before any per-chat choice.
-    func kindIsQuiet(_ chat: String) -> Bool {
-        switch WAJID.kind(chat) {
-        case .person: return false
-        case .group: return muteGroups
-        case .status: return muteStatus
-        case .channel: return muteChannels
-        }
+    func kindIsQuiet(_ chat: String) -> Bool { rules.kindIsQuiet(Self.kind(chat), app: Self.app) }
+
+    /// Whether a message in this chat stays silent (`ChatNoticeRules.isQuiet`): the per-chat choice first, then the
+    /// phone's mute and the kind's rule. A mention in an automatic group still reaches you; a muted chat never does.
+    func isQuiet(_ chat: String, mentionsMe: Bool = false) -> Bool {
+        let key = WAJID.normalized(chat)
+        return rules.isQuiet(chat: key, app: Self.app, kind: Self.kind(key), mentionsMe: mentionsMe,
+                             mutedInApp: mutedInApp.contains(key))
     }
 
-    /// Whether a message in this chat stays silent: the per-chat choice first, then the kind's rule. A mention in an
-    /// automatic group still reaches you; a muted chat never does.
-    func isQuiet(_ chat: String, mentionsMe: Bool = false) -> Bool {
-        switch mode(for: chat) {
-        case .loud: return false
-        case .muted: return true
-        case .automatic: return kindIsQuiet(chat) && !(WAJID.kind(chat) == .group && mentionsMe)
+    /// Whether the chat shows in the account's list and counts (`ChatNoticeRules.isVisible`).
+    func isVisible(_ conversation: WAConversation) -> Bool {
+        let key = WAJID.normalized(conversation.id)
+        return rules.isVisible(chat: key, app: Self.app, kind: Self.kind(key), mutedInApp: mutedInApp.contains(key),
+                               incoming: conversation.messages.lazy.filter { !$0.fromMe }.map(\.mentionsMe))
+    }
+}
+
+extension ChatKind {
+    /// WhatsApp's kind of chat by its JID, by the shared name.
+    init(_ kind: WAJID.Kind) {
+        switch kind {
+        case .person: self = .person
+        case .group: self = .group
+        case .status: self = .status
+        case .channel: self = .channel
         }
     }
 }
@@ -697,6 +754,13 @@ enum WAJID {
         let onlyNumbers = !trimmed.contains { $0.isLetter } && trimmed.filter(\.isNumber).count >= 7
         return trimmed.isEmpty || trimmed == jid || trimmed == displayNumber(jid) || (!user.isEmpty && trimmed.contains(user))
             || onlyNumbers
+    }
+
+    /// A group's name as handed to the shared inbox: one only known by its id ("Group 1203…", until the gateway names it)
+    /// keeps the real name the inbox already `shown`, from before a relaunch or an earlier read, instead of losing it.
+    static func keepingGroupName(_ name: String, for jid: String, shown: String?) -> String {
+        guard isGroup(jid), isPlaceholderName(name, for: jid), let shown, !isPlaceholderName(shown, for: jid) else { return name }
+        return shown
     }
 
     /// Two letters for the avatar: "Marie Dupont" → "MD", "+33 6…" → "#".
@@ -795,14 +859,19 @@ struct WAInbox: Equatable, Sendable {
 
     /// The chats the gateway's list says moved later than the newest message Nook holds of them (by more than a second,
     /// the rounding of the two): that message never came in live (a webhook or poll that missed it), and the row would
-    /// sit under "Today" with Friday's line and time. Only chats Nook already holds (a row without a line gets it from
-    /// `loadLine`), moved within `catchUpWindow`, and not asked for that same move before (`asked`): a newest message
-    /// that shows nothing (a vote, a blank) is never asked for again and again. Newest first, `catchUpLimit` at most.
-    func behind(_ chats: [WAChatInfo], asked: [String: Date], now: Date = Date()) -> [WAChatInfo] {
+    /// sit under "Today" with Friday's line and time. A chat Nook holds nothing of yet counts only when it moved after
+    /// `liveSince` (the moment the link began listening): its message should have come in live, and a quiet group you
+    /// wrote in from the phone would otherwise stay without it until someone else writes there. An older row without a
+    /// line gets it from `loadLine`. Moved within `catchUpWindow`, and not asked for that same move before (`asked`): a
+    /// newest message that shows nothing (a vote, a blank) is never asked for again and again. Newest first,
+    /// `catchUpLimit` at most.
+    func behind(_ chats: [WAChatInfo], asked: [String: Date], liveSince: Date? = nil, now: Date = Date()) -> [WAChatInfo] {
         let since = now.addingTimeInterval(-Self.catchUpWindow)
         return chats.filter { chat in
-            guard chat.last > since, asked[chat.jid] != chat.last,
-                  let newest = conversations[chat.jid]?.messages.last?.date else { return false }
+            guard chat.last > since, asked[chat.jid] != chat.last, WAJID.kind(chat.jid) != .status else { return false }
+            guard let newest = conversations[chat.jid]?.messages.last?.date else {
+                return liveSince.map { chat.last > $0 } ?? false
+            }
             return newest < chat.last.addingTimeInterval(-1)
         }
         .sorted { $0.last > $1.last }
@@ -861,6 +930,10 @@ struct WAInbox: Equatable, Sendable {
             return .duplicate
         }
         guard !filters.ignored.contains(chat) else { return .ignored }
+        // A blank is dropped before its id counts as seen: WhatsApp can deliver a group message twice under one id, first
+        // as a blank (it only hands over the sender's key, which the gateway passes on as a message) and then with its
+        // text. Seen, the real one was a duplicate, never new, and came in only later with the history, read.
+        guard !message.isBlank else { return .ignored }
         if !seen {
             seenIds.insert(message.id)
             seenOrder.append(message.id)
@@ -875,7 +948,6 @@ struct WAInbox: Equatable, Sendable {
             applyVote(vote, chat: chat, voter: message.fromMe ? WAPoll.me : message.sender)
             return .quiet
         }
-        guard !message.isBlank else { return .ignored }
 
         let kind = WAJID.kind(chat)
         let isGroup = kind == .group
@@ -965,6 +1037,22 @@ struct WAInbox: Equatable, Sendable {
                     if next != reader { conversation.messages[index].readers[chatKey] = next; touched = true }
                 }
                 receiptLedger.record(conversation.messages[index])
+            }
+            // In a private chat, reading a message reads everything you sent before it, as WhatsApp itself shows: a
+            // receipt often names only the newest of them, and the earlier ones would wait at two grey ticks.
+            let named = Set(ids)
+            if WAJID.kind(chatKey) == .person, status >= .read,
+               let newest = conversation.messages.lazy.filter({ $0.fromMe && named.contains($0.id) }).map(\.date).max() {
+                for index in conversation.messages.indices where conversation.messages[index].fromMe
+                    && conversation.messages[index].date < newest && !named.contains(conversation.messages[index].id) {
+                    let old = conversation.messages[index].receipt ?? .sent
+                    guard old >= .sent, old < status else { continue }
+                    conversation.messages[index].receipt = old.advanced(to: status)
+                    let reader = conversation.messages[index].readers[chatKey] ?? ChatReader(name: chatKey, receipt: .sent)
+                    conversation.messages[index].readers[chatKey] = reader.advanced(to: status, at: date)
+                    receiptLedger.record(conversation.messages[index])
+                    touched = true
+                }
             }
             if touched { conversations[chatKey] = conversation; changed = chatKey }
             if pending.isEmpty { break }
@@ -1182,11 +1270,7 @@ struct WAInbox: Equatable, Sendable {
     /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
     /// stay out of it unless something in them mentions you.
     func visible(filters: WAFilters) -> [WAConversation] {
-        sorted.filter { conversation in
-            guard !filters.ignored.contains(conversation.id) else { return false }
-            return conversation.messages.contains { !$0.fromMe && !filters.isQuiet(conversation.id, mentionsMe: $0.mentionsMe) }
-                || !filters.isQuiet(conversation.id)
-        }
+        sorted.filter(filters.isVisible)
     }
 
     /// Unread messages in the conversations the pill shows (a muted group's quiet messages
@@ -1557,7 +1641,7 @@ enum WAWebhook {
             id: id, chat: chat, sender: from,
             senderName: nonEmpty(p["sender_display_name"]) ?? nonEmpty(p["from_name"]) ?? "",
             text: text, media: gowaMedia(p),
-            date: WADate.rfc3339(p["timestamp"] as? String) ?? Date(),
+            date: ChatJSON.date(p["timestamp"]) ?? Date(),
             fromMe: p["is_from_me"] as? Bool ?? false)
         let poll = WAPollData.gowa(p["poll"])
         if poll.poll != nil || poll.vote != nil {
@@ -1602,7 +1686,7 @@ enum WAWebhook {
               let type = p["type"] as? String else { return .ignored }
         let jids = (p["jids"] as? [String] ?? []).filter { !$0.isEmpty }
         guard !jids.isEmpty else { return .ignored }
-        let date = WADate.rfc3339(json["timestamp"] as? String) ?? WADate.rfc3339(p["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.date(json["timestamp"]) ?? ChatJSON.date(p["timestamp"]) ?? Date()
         switch type {
         case "join", "leave":
             return .message(.membership(chat: chat, type == "join" ? .joined : .gone, by: nil, people: jids, date: date, me: me))
@@ -1621,14 +1705,17 @@ enum WAWebhook {
         guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]), let name = nonEmpty(p["name"]) else {
             return .ignored
         }
-        let date = WADate.rfc3339(json["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.date(json["timestamp"]) ?? Date()
         return .message(.groupChange(chat: chat, .renamed, by: nonEmpty(p["name_set_by"]), text: name, date: date, me: me))
     }
 
     /// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused", media: ""|"audio",
     /// is_group}}`: WhatsApp only sends it while this device says it is online (`WhatsAppProvider.setOnline`).
+    /// In a private chat GOWA gives `chat_id` as WhatsApp sent it, mostly the person's @lid, but `from` as their number
+    /// (as it names that chat everywhere else): the chat is the person who types, by their number.
     private static func parseGOWAPresence(_ json: [String: Any]) -> WAWebhookEvent {
-        guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]) else { return .ignored }
+        guard let p = json["payload"] as? [String: Any], var chat = nonEmpty(p["chat_id"]) else { return .ignored }
+        if !WAJID.isGroup(chat), let from = nonEmpty(p["from"]) { chat = from }
         return .typing(chat: chat, people: [WATyping(from: nonEmpty(p["from"]) ?? chat, name: nonEmpty(p["sender_display_name"]) ?? "",
                                                      active: p["state"] as? String == "composing",
                                                      recording: p["media"] as? String == "audio")])
@@ -1724,7 +1811,7 @@ enum WAWebhook {
             senderName: nonEmpty(contact?["name"]) ?? nonEmpty(contact?["pushName"]) ?? "",
             text: (d["body"] as? String) ?? "",
             media: openwaMedia(type, filename: nonEmpty(media?["filename"])),
-            date: WADate.epoch(d["timestamp"]) ?? Date(),
+            date: ChatJSON.epoch(seconds: d["timestamp"]) ?? Date(),
             fromMe: fromMe)
         if let poll = WAPollData.openwa(d["poll"]) {
             message.poll = poll
@@ -1771,7 +1858,7 @@ enum WAWebhook {
         guard !people.isEmpty else { return .ignored }
         let actor = nonEmpty(d["actorId"])
         let joined = json["event"] as? String == "group.join"
-        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.epoch(seconds: d["timestamp"]) ?? ChatJSON.date(d["timestamp"]) ?? Date()
         return .message(.membership(chat: chat, joined ? .added : .removed, by: actor, people: people, date: date, me: me))
     }
 
@@ -1781,7 +1868,7 @@ enum WAWebhook {
         guard let d = json["data"] as? [String: Any], let chat = nonEmpty(d["groupId"]) ?? nonEmpty(d["chatId"]),
               let changes = d["changes"] as? [String: Any] else { return .ignored }
         let actor = nonEmpty(d["actorId"])
-        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        let date = ChatJSON.epoch(seconds: d["timestamp"]) ?? ChatJSON.date(d["timestamp"]) ?? Date()
         if let subject = nonEmpty(changes["subject"]) {
             return .message(.groupChange(chat: chat, .renamed, by: actor, text: subject, date: date, me: me))
         }
@@ -1821,7 +1908,8 @@ enum WAWebhook {
     private static func parseOpenWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
         guard let d = json["data"] as? [String: Any],
               let id = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"]),
-              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:)) else { return .ignored }
+              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:))
+                ?? ChatJSON.number(d["ack"]).flatMap({ WAReceipt(ack: Int($0)) }) else { return .ignored }
         let chat = (d["chatId"] as? String) ?? ""
         // In a group OpenWA's ack is the whole group's, as WhatsApp's own ticks; one naming a member is that member's.
         if WAJID.isGroup(chat), let member = nonEmpty(d["participant"]), status >= .delivered {
@@ -1917,6 +2005,40 @@ enum WAAvatar {
 }
 
 enum WAGOWA {
+    /// The webhook events Nook asks GOWA for: messages, their ticks and emoji, who is typing, a message edited or
+    /// deleted for everyone, and people coming and going in a group (newer GOWA versions send the last three only when
+    /// asked by name). `webhookEventsBefore` is what a GOWA that refuses one of those names is asked for instead; it
+    /// still says edits and deletions inside `message`.
+    static let webhookEvents = "message,message.ack,message.reaction,chat_presence,message.edited,message.revoked,message.deleted,group.participants"
+    static let webhookEventsBefore = "message,message.ack,message.reaction,chat_presence"
+
+    /// Removes the files under `statics/media` and `statics/senditems` not modified within `age`, and the folders that
+    /// leaves empty. Returns how many files went.
+    @discardableResult
+    static func pruneStatics(_ statics: URL, olderThan age: TimeInterval, now: Date = Date()) -> Int {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
+        var removed = 0
+        for name in ["media", "senditems"] {
+            let root = statics.appendingPathComponent(name, isDirectory: true)
+            guard let items = fm.enumerator(at: root, includingPropertiesForKeys: keys) else { continue }
+            var folders: [URL] = []
+            for case let item as URL in items {
+                guard let values = try? item.resourceValues(forKeys: Set(keys)) else { continue }
+                if values.isDirectory == true { folders.append(item); continue }
+                guard values.isRegularFile == true, let date = values.contentModificationDate,
+                      now.timeIntervalSince(date) > age, (try? fm.removeItem(at: item)) != nil else { continue }
+                removed += 1
+            }
+            // Deepest first, so a chat's folder empties after its date folders did.
+            for folder in folders.sorted(by: { $0.path.count > $1.path.count })
+            where (try? fm.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+                try? fm.removeItem(at: folder)
+            }
+        }
+        return removed
+    }
+
     /// GOWA's envelope: `{code, message, results}` (no "status": the HTTP code says it).
     static func results(_ data: Data) -> Any? {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["results"]
@@ -2004,7 +2126,7 @@ enum WAGOWA {
         guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [] }
         return list.compactMap { c in
             guard let jid = c["jid"] as? String, !jid.isEmpty else { return nil }
-            return (jid, (c["name"] as? String) ?? "", WADate.rfc3339(c["last_message_time"] as? String) ?? .distantPast)
+            return (jid, (c["name"] as? String) ?? "", ChatJSON.date(c["last_message_time"]) ?? .distantPast)
         }
     }
 
@@ -2024,7 +2146,7 @@ enum WAGOWA {
         func field(_ key: String) -> Any? { info[key] ?? info[key.lowercased()] }
         func date(_ key: String) -> Date? {
             // Go's zero time ("0001-01-01T00:00:00Z") means WhatsApp did not say.
-            WADate.rfc3339(field(key) as? String).flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
+            ChatJSON.date(field(key)).flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
         }
         let topicDeleted = field("TopicDeleted") as? Bool == true
         return WAGroupProfile(about: topicDeleted ? nil : ChatProfile.text(field("Topic") as? String),
@@ -2116,7 +2238,7 @@ enum WAGOWA {
                 id: id, chat: chat, sender: (m["sender_jid"] as? String) ?? chat,
                 senderName: nonEmpty(m["sender_display_name"]) ?? "",
                 text: text, media: gowaStoredMedia(m["media_type"] as? String, filename: nonEmpty(m["filename"])),
-                date: WADate.rfc3339(m["timestamp"] as? String) ?? .distantPast,
+                date: ChatJSON.date(m["timestamp"]) ?? .distantPast,
                 fromMe: m["is_from_me"] as? Bool ?? false)
             msg.chatName = WAJID.isGroup(chat) ? chatName : nil
             msg.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: me)
@@ -2240,6 +2362,15 @@ enum WAGOWARelease {
 }
 
 enum WAOpenWA {
+    /// The webhook events Nook asks OpenWA for: messages and their ticks (a failed send among them), emoji, who is
+    /// typing, a message edited or deleted for everyone, and the group's changes. `webhookEventsBefore` is asked for
+    /// instead when OpenWA refuses one of those names (an older version).
+    static let webhookEvents = ["message.received", "message.sent", "message.ack", "message.receipt", "message.failed",
+                                "message.edited", "message.revoked", "message.reaction", "presence.update",
+                                "group.join", "group.leave", "group.update"]
+    static let webhookEventsBefore = ["message.received", "message.sent", "message.ack", "message.receipt",
+                                      "message.reaction", "presence.update", "group.join", "group.leave", "group.update"]
+
     /// `GET /contacts/{id}` → `{name, pushName, number, isMyContact, isBlocked}`: the name they gave themselves and
     /// whether you blocked them.
     static func person(_ obj: [String: Any]) -> ChatProfile {
@@ -2252,7 +2383,7 @@ enum WAOpenWA {
     /// `GET /groups/{id}` → `{description, owner, createdAt (epoch s), isAnnounce, isReadOnly, participants}`: what it
     /// says of the group besides its people.
     static func groupProfile(_ obj: [String: Any]) -> WAGroupProfile {
-        WAGroupProfile(about: ChatProfile.text(obj["description"] as? String), created: WADate.epoch(obj["createdAt"]),
+        WAGroupProfile(about: ChatProfile.text(obj["description"] as? String), created: ChatJSON.epoch(seconds: obj["createdAt"]),
                        createdBy: nonEmpty(obj["owner"]), adminsOnly: obj["isAnnounce"] as? Bool, locked: obj["isReadOnly"] as? Bool)
     }
 
@@ -2296,7 +2427,7 @@ enum WAOpenWA {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
         return list.compactMap { c in
             guard let id = c["id"] as? String, !id.isEmpty else { return nil }
-            return (id, (c["name"] as? String) ?? "", (c["unreadCount"] as? Int) ?? 0, WADate.epoch(c["timestamp"]) ?? .distantPast)
+            return (id, (c["name"] as? String) ?? "", (c["unreadCount"] as? Int) ?? 0, ChatJSON.epoch(seconds: c["timestamp"]) ?? .distantPast)
         }
     }
 
@@ -2331,7 +2462,7 @@ enum WAOpenWA {
                 id: id, chat: chat, sender: nonEmpty(m["author"]) ?? (m["from"] as? String) ?? chat,
                 senderName: "", text: (m["body"] as? String) ?? "",
                 media: WAWebhook.openwaMedia(type, filename: nonEmpty(media?["filename"])),
-                date: WADate.epoch(m["timestamp"]) ?? .distantPast,
+                date: ChatJSON.epoch(seconds: m["timestamp"]) ?? .distantPast,
                 fromMe: m["direction"] as? String == "outgoing")
             msg.chatName = nonEmpty(m["chatName"])
             if msg.fromMe { msg.receipt = (m["status"] as? String).flatMap(WAReceipt.init(status:)) }
@@ -2362,18 +2493,14 @@ enum WAOpenWA {
 enum WAMention {
     /// "@33612345678" in the text, for this account's number (how GOWA shows a mention of you).
     static func textMentions(_ text: String, me: String?) -> Bool {
-        guard let me, case let digits = WAJID.digits(me), digits.count >= 6 else { return false }
+        guard let me, case let digits = WAJID.digits(me), digits.count >= ChatHandle.digitCount.lowerBound else { return false }
         return text.contains("@" + digits)
     }
 }
 
 extension WAJID {
-    /// The user part's digits: "33612345678:3@s.whatsapp.net" → "33612345678".
-    static func digits(_ jid: String) -> String {
-        let user = jid.split(separator: "@").first.map(String.init) ?? jid
-        let base = user.split(separator: ":").first.map(String.init) ?? user
-        return base.filter(\.isNumber)
-    }
+    /// The user part's digits: "33612345678:3@s.whatsapp.net" → "33612345678" (`ChatHandle.digits`).
+    static func digits(_ jid: String) -> String { ChatHandle.digits(jid) }
 
     /// Two ids of the same person, whatever their server part (@c.us, @s.whatsapp.net, a bare number).
     static func sameUser(_ a: String, _ b: String) -> Bool {
@@ -2418,26 +2545,6 @@ enum WAMembers {
     }
 }
 
-enum WADate {
-    static func rfc3339(_ s: String?) -> Date? {
-        guard let s, !s.isEmpty else { return nil }
-        return standard.date(from: s) ?? NookDates.isoFractional.date(from: s)
-    }
-
-    static func iso(_ date: Date) -> String { standard.string(from: date) }
-
-    /// Default options, UTC; never changed, so one serves every message.
-    private static let standard = ISO8601DateFormatter()
-
-    /// Epoch seconds, as a number or a numeric string.
-    static func epoch(_ v: Any?) -> Date? {
-        if let n = v as? Double, n > 0 { return Date(timeIntervalSince1970: n) }
-        if let n = v as? Int, n > 0 { return Date(timeIntervalSince1970: TimeInterval(n)) }
-        if let s = v as? String, let n = Double(s), n > 0 { return Date(timeIntervalSince1970: n) }
-        return nil
-    }
-}
-
 private func nonEmpty(_ v: Any?) -> String? {
     guard let s = v as? String, !s.isEmpty else { return nil }
     return s
@@ -2447,46 +2554,23 @@ private func nonEmpty(_ v: Any?) -> String? {
 
 /// Pure helpers: who a recipient means, and messages as text. Tested in WhatsAppTests.
 enum WhatsAppRecipients {
-    /// A chat by id or number, else by name: exact, then the first name or a word of it, then a part of it.
-    /// Nil when nothing matches or two different chats match equally well.
+    /// A chat by id or number, else by name: exact, then the first name or a word of it, then a part of it, then a
+    /// typo, as every app's chats are found (`ChatRecipients.pick`). Nil when nothing matches or two different chats
+    /// match equally well.
     static func match(_ wanted: String, in chats: [(jid: String, name: String)]) -> (jid: String, name: String)? {
-        let fold: (String) -> String = { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
-        let query = fold(wanted)
-        if wanted.contains("@"), let chat = chats.first(where: { WAJID.normalized($0.jid) == WAJID.normalized(wanted) }) {
-            return chat
-        }
-        let digits = wanted.filter(\.isNumber)
-        if digits.count >= 8, digits.count * 2 >= wanted.filter({ !$0.isWhitespace }).count {
-            if let chat = chats.first(where: { WAJID.digits($0.jid).hasSuffix(String(digits.suffix(9))) }) { return chat }
-            return nil
-        }
-        func unique(_ found: [(jid: String, name: String)]) -> (jid: String, name: String)? {
-            let ids = Set(found.map(\.jid))
-            return ids.count == 1 ? found.first : nil
-        }
-        let exact = chats.filter { fold($0.name) == query }
-        if !exact.isEmpty { return unique(exact) }
-        let word = chats.filter { fold($0.name).split(separator: " ").contains { String($0) == query } }
-        if !word.isEmpty { return unique(word) }
-        guard query.count >= 3 else { return nil }
-        let partly = chats.filter { fold($0.name).contains(query) }
-        if !partly.isEmpty { return unique(partly) }
-        // A typo ("Lsia"): the one name that is close, never a guess between two.
-        guard let name = Fuzzy.best(wanted, in: chats.map(\.name)) else { return nil }
-        return unique(chats.filter { $0.name == name })
+        ChatRecipients.pick(wanted, in: chats, id: { WAJID.normalized($0.jid) }, name: \.name, number: \.jid,
+                            isID: { asked, chat in asked.contains("@") && WAJID.normalized(chat.jid) == WAJID.normalized(asked) }).found
     }
 
+    /// What stands for a message's file in the text: every app's placeholder (`ChatMedia.placeholder`), and WhatsApp's
+    /// own for what is no file.
     static func label(_ media: WAMedia) -> String? {
         switch media {
         case .none: return nil
-        case .image: return "[photo]"
-        case .video: return "[video]"
-        case .audio, .voice: return "[voice message]"
-        case .document(let name): return "[document\(name.map { ": \($0)" } ?? "")]"
-        case .sticker: return "[sticker]"
         case .location: return "[location]"
         case .contact: return "[contact]"
         case .other: return "[attachment]"
+        case .image, .video, .audio, .voice, .document, .sticker: return media.chatMedia()?.placeholder
         }
     }
 
