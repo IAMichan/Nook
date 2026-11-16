@@ -204,6 +204,37 @@ final class ScheduledTasksTests: XCTestCase {
         XCTAssertEqual(q.count(id), 0)
     }
 
+    // MARK: Time zones
+
+    /// After a flight from Amsterdam to New York, "every day at 9:00" means 9:00 in New York.
+    func testAFixedTimeFollowsTheWallClockAfterATimeZoneChange() {
+        var amsterdam = Calendar(identifier: .gregorian)
+        amsterdam.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let now = amsterdam.date(from: DateComponents(year: 2026, month: 5, day: 1, hour: 12))!
+        let rule = ScheduleRule.fixedTime(hour: 9, minute: 0, weekdays: [])
+        let planned = ScheduleTiming.nextRun(rule: rule, lastFinished: nil, now: now, calendar: amsterdam)!
+        let daily = ScheduledTask(title: "d", prompt: "p", rule: rule, target: .existingSession(id: UUID()), nextRun: planned,
+                                  createdAt: now)
+        let busy = ScheduledTask(title: "b", prompt: "p", rule: rule, target: .existingSession(id: UUID()), nextRun: planned,
+                                 createdAt: now)
+        let due = ScheduledTask(title: "o", prompt: "p", rule: rule, target: .existingSession(id: UUID()),
+                                nextRun: now.addingTimeInterval(-60), createdAt: now)
+        let interval = ScheduledTask(title: "i", prompt: "p", rule: .interval(seconds: 600), target: .existingSession(id: UUID()),
+                                     nextRun: now.addingTimeInterval(300), createdAt: now)
+        let out = ScheduledTask.replannedForTimeZone(tasks: [daily, busy, due, interval], now: now, running: [busy.id],
+                                                     calendar: newYork)
+        let moved = out[0].nextRun!
+        XCTAssertEqual(newYork.component(.hour, from: moved), 9)
+        XCTAssertEqual(newYork.component(.minute, from: moved), 0)
+        XCTAssertGreaterThan(moved, now)
+        XCTAssertNotEqual(moved, planned)
+        XCTAssertEqual(out[1], busy, "a running task is planned when it ends")
+        XCTAssertEqual(out[2], due, "a run that is due already goes as planned")
+        XCTAssertEqual(out[3], interval, "an interval does not depend on the clock")
+    }
+
     // MARK: Recovery
 
     func testRecoverInterruptedRunsAreFailedAndRescheduled() {
