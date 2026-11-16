@@ -56,6 +56,23 @@ final class ComposerCompleter {
         }
     }
 
+    /// The field got the keyboard or emptied (a message sent): a local model is loaded and the conversation read into its
+    /// cache now, so the first suggestion does not wait for either. A model API or the CLI has nothing to read ahead.
+    func warm(before: String = "", situation: ComposerCompletion.Situation, hint: String?) {
+        guard suggestsItself else { return }
+        let identity: String
+        switch choice {
+        case .sameAsAutocomplete: identity = ""
+        case .local(let chosen): identity = chosen
+        case .api, .agent: return
+        }
+        let input = ComposerCompletion.context(before: before, after: "", situation: situation, hint: hint)
+        warming?.cancel()
+        warming = Task { await AutocompleteController.shared.warmComposer(input, identity: identity) }
+    }
+
+    private var warming: Task<Void, Never>?
+
     func cancel() {
         work?.cancel()
         work = nil
