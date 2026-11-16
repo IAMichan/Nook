@@ -336,6 +336,8 @@ struct ScheduledTaskEditor: View {
     @State private var fresh: Bool
     /// Nook Chat only speaks up when something new needs the user.
     @State private var quiet: Bool
+    /// What a run of Nook's carries out by itself once it prepared the steps.
+    @State private var autonomy: NookAutonomy
     /// A message trigger: which apps (empty: all), from whom, about what, and whether group chats count.
     @State private var messageApps: Set<String>
     @State private var messageFrom: String
@@ -364,6 +366,7 @@ struct ScheduledTaskEditor: View {
         _sessionID = State(initialValue: sessionID)
         _fresh = State(initialValue: fresh)
         _quiet = State(initialValue: existing.map { ScheduledTaskStore.shared.isQuiet($0.id) } ?? false)
+        _autonomy = State(initialValue: existing.map { ScheduledTaskStore.shared.autonomy(for: $0.id) } ?? .ask)
         _path = State(initialValue: path)
         _provider = State(initialValue: provider)
         _rules = State(initialValue: existing.map { ScheduledTaskStore.shared.webhookRules(for: $0.id) } ?? WebhookRules())
@@ -442,6 +445,7 @@ struct ScheduledTaskEditor: View {
                     sessionPicker
                 } else {
                     quietRow
+                    autonomyRow
                 }
                 field(tr("sched.field.schedule")) { scheduleEditor }
                 if kind == .webhook {
@@ -626,6 +630,34 @@ struct ScheduledTaskEditor: View {
                 .accessibilityLabel(tr("automation.sched.quiet"))
         }
         .padding(NookTheme.Spacing.lg)
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+    }
+
+    /// What Nook Chat carries out by itself after a run: the three levels side by side, what the chosen one does under them.
+    private var autonomyRow: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(tr("autonomy.field"))
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+            Picker("", selection: $autonomy) {
+                ForEach(NookAutonomy.allCases) { Text($0.label).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .accessibilityLabel(tr("autonomy.field"))
+            Text(autonomy.detail)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(autonomy == .auto ? NookTheme.amber : NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if autonomy != .ask {
+                Text(tr(kind == .message || kind == .webhook ? "autonomy.hint.outside" : "autonomy.hint.limits"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
@@ -912,7 +944,7 @@ struct ScheduledTaskEditor: View {
             cleaned.coalesceSeconds = min(max(cleaned.coalesceSeconds, WebhookRules.coalesceRange.lowerBound), WebhookRules.coalesceRange.upperBound)
         }
         store.save(task, permission: kind == .webhook || destination == .nook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules(),
-                   quiet: destination == .nook && quiet)
+                   quiet: destination == .nook && quiet, autonomy: destination == .nook ? autonomy : .ask)
         onDone()
     }
 

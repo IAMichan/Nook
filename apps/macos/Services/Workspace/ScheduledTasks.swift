@@ -421,6 +421,50 @@ struct ScheduledTask: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// What a scheduled task may do beyond the pure `ScheduledTask` row: the permission policy the user chose for it in the
+/// editor. A task that never stored one runs with "ask" (every edit and command prompts), see `effectivePermission`.
+struct ScheduledTaskOptions: Codable, Equatable, Sendable {
+    var permission: PermissionPolicy = .ask
+    /// A webhook task's filters, duplicate key and coalesce window (`WebhookRules`).
+    var webhook = WebhookRules()
+    /// A task for Nook itself: only speak up when something new needs the user (`NookSchedule.runNote`).
+    var quiet = false
+    /// The ready-made task it was made from (`NookSchedule.Draft.preset`), whatever the app's language.
+    var preset: String?
+    /// A task for Nook: what a run carries out by itself once it prepared the steps (`NookAutonomy`).
+    var autonomy: NookAutonomy = .ask
+
+    init(permission: PermissionPolicy = .ask, webhook: WebhookRules = WebhookRules(), quiet: Bool = false, preset: String? = nil,
+         autonomy: NookAutonomy = .ask) {
+        self.permission = permission
+        self.webhook = webhook
+        self.quiet = quiet
+        self.preset = preset
+        self.autonomy = autonomy
+    }
+
+    private enum CodingKeys: String, CodingKey { case permission, webhook, quiet, preset, autonomy }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        permission = (try? c.decode(PermissionPolicy.self, forKey: .permission)) ?? .ask
+        webhook = (try? c.decode(WebhookRules.self, forKey: .webhook)) ?? WebhookRules()
+        quiet = (try? c.decode(Bool.self, forKey: .quiet)) ?? false
+        preset = try? c.decode(String.self, forKey: .preset)
+        // A row without a level, or with one this version does not know, asks: it must not start acting by itself.
+        autonomy = (try? c.decode(NookAutonomy.self, forKey: .autonomy)) ?? .ask
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(permission, forKey: .permission)
+        if !webhook.isEmpty { try c.encode(webhook, forKey: .webhook) }
+        if quiet { try c.encode(true, forKey: .quiet) }
+        try c.encodeIfPresent(preset, forKey: .preset)
+        if autonomy != .ask { try c.encode(autonomy, forKey: .autonomy) }
+    }
+}
+
 /// Remembers fire keys so a firing that is delivered twice (retry, relay replay) runs once. Bounded.
 struct FireLedger: Sendable {
     private var order: [String] = []
@@ -496,6 +540,8 @@ enum NookSchedule {
         var quiet = false
         /// The ready-made task this is (`secretary`), by an id that does not change with the app's language.
         var preset: String? = nil
+        /// What each run carries out by itself (`NookAutonomy`); the user approves this with the task.
+        var autonomy: NookAutonomy = .ask
     }
 
     /// What a quiet run answers when nothing new needs the user (`runNote`); Nook then drops that run without a notice.
@@ -589,7 +635,72 @@ enum NookSchedule {
         // A check every so many minutes is only worth hearing about when it finds something; an overview at a set time
         // always says how things stand.
         let quiet = (input["quiet"] as? Bool) ?? (text("quiet").lowercased() == "true" ? true : kind == .interval)
-        return (Draft(title: String(title.prefix(80)), prompt: prompt, rule: rule, quiet: quiet), [])
+        let rawAutonomy = text("autonomy")
+        guard rawAutonomy.isEmpty || NookAutonomy.parse(rawAutonomy) != nil else {
+            return (nil, ["autonomy must be one of: " + NookAutonomy.allCases.map(\.rawValue).joined(separator: ", ")])
+        }
+        return (Draft(title: String(title.prefix(80)), prompt: prompt, rule: rule, quiet: quiet,
+                      autonomy: NookAutonomy.parse(rawAutonomy) ?? .ask), [])
+    }
+
+    /// What `update_scheduled_task` changes on an existing task; nil fields stay as they are.
+    struct Change: Equatable {
+        var title: String?
+        var prompt: String?
+        var rule: ScheduleRule?
+        var enabled: Bool?
+        var quiet: Bool?
+        var autonomy: NookAutonomy?
+
+        var isEmpty: Bool { self == Change() }
+    }
+
+    /// The change the input asks for, or what is wrong with it. A new schedule takes the same fields as `schedule_task`.
+    static func parseChange(_ input: [String: Any], now: Date, calendar: Calendar = .current) -> (change: Change?, problems: [String]) {
+        func text(_ key: String) -> String {
+            ((input[key] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func flag(_ key: String) -> Bool? {
+            if let value = input[key] as? Bool { return value }
+            switch text(key).lowercased() {
+            case "true", "yes", "on": return true
+            case "false", "no", "off": return false
+            default: return nil
+            }
+        }
+        var change = Change()
+        var problems: [String] = []
+        if !text("title").isEmpty { change.title = String(text("title").prefix(80)) }
+        if !text("prompt").isEmpty { change.prompt = text("prompt") }
+        change.enabled = flag("enabled")
+        change.quiet = flag("quiet")
+        let rawAutonomy = text("autonomy")
+        if !rawAutonomy.isEmpty {
+            if let level = NookAutonomy.parse(rawAutonomy) { change.autonomy = level }
+            else { problems.append("autonomy must be one of: " + NookAutonomy.allCases.map(\.rawValue).joined(separator: ", ")) }
+        }
+        if !text("schedule").isEmpty {
+            // The schedule's own checks; the prompt is not part of it.
+            var scheduleInput = input
+            scheduleInput["prompt"] = "-"
+            scheduleInput["autonomy"] = nil
+            let parsed = parse(scheduleInput, now: now, calendar: calendar)
+            if let rule = parsed.draft?.rule { change.rule = rule } else { problems += parsed.problems }
+        }
+        if problems.isEmpty, change.isEmpty {
+            problems.append("say what to change: title, prompt, a new schedule, enabled, quiet or autonomy")
+        }
+        return problems.isEmpty ? (change, []) : (nil, problems)
+    }
+
+    /// The task a name or id points at: the same id (or its start), the same title, or the one title that contains it.
+    static func find(_ query: String, in tasks: [ScheduledTask]) -> ScheduledTask? {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        if let byID = tasks.first(where: { $0.id.uuidString.lowercased().hasPrefix(needle) && needle.count >= 6 }) { return byID }
+        if let exact = tasks.first(where: { $0.title.lowercased() == needle }) { return exact }
+        let containing = tasks.filter { $0.title.lowercased().contains(needle) }
+        return containing.count == 1 ? containing[0] : nil
     }
 
     /// "08:00", "8:30", "8.30", "8u30", "8h" or "8" → hour and minute.
@@ -688,8 +799,9 @@ enum NookSchedule {
     /// as the user's secretary. It looks through every source the task is about, says what matters, and prepares every
     /// step the user has to take as a proposal (a draft to send, an action to approve), so the user only says yes or what
     /// to change. `since`: the previous run, so a recurring task reports what is new. `quiet`: answer `nothingNew` when
-    /// nothing new needs the user.
-    static func runNote(title: String, since: Date? = nil, quiet: Bool = false, message: Bool = false) -> String {
+    /// nothing new needs the user. `autonomy`: what Nook carries out by itself afterwards (`NookAutonomy`).
+    static func runNote(title: String, since: Date? = nil, quiet: Bool = false, message: Bool = false,
+                        autonomy: NookAutonomy = .ask) -> String {
         var parts = [
             "This request is the user's own scheduled task \"\(title)\", which Nook runs by itself; the user is not watching and reads the answer later from a notice.",
             "Work as their personal secretary and do the whole task in one answer, without asking questions first.",
@@ -709,6 +821,11 @@ enum NookSchedule {
             "Nothing is sent or changed without the user's approval; never say you did something you only proposed.",
             "End with what the user has to decide, one short line each."
         ]
+        if autonomy != .ask {
+            // The steps are still proposed through the tools; Nook carries them out after the answer and says what ran.
+            parts[parts.count - 2] = "Prepare every step through its tool as usual and never claim in your text that something was sent or done: after your answer, Nook itself carries out the steps the user lets this task do unattended (\(autonomy.describe)) and adds what ran. So write each draft complete and ready to go as it is, addressed to the right person, with no placeholders; when you are unsure about a step, say so in the text."
+            parts[parts.count - 1] = "End with what still needs the user's own decision, one short line each."
+        }
         parts.append(quiet
             ? "When nothing new needs the user, answer only \(nothingNew) and nothing else: Nook then does not disturb them."
             : "When nothing needs the user, say so in one line.")

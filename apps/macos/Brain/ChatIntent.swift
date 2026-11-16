@@ -456,7 +456,7 @@ struct ChatIntent: Equatable {
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
-        .schedule: ["schedule_task", "set_up_secretary", "list_scheduled_tasks"],
+        .schedule: ["schedule_task", "set_up_secretary", "list_scheduled_tasks", "update_scheduled_task"],
         .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 

@@ -33,22 +33,25 @@ extension AppModel {
     }
 
     /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:
-    /// already completed steps are skipped. `force`: allows running steps previously flagged as duplicate.
-    func runPlan(_ id: UUID, force: Set<Int> = []) {
-        guard let message = chat.message(id), !message.actions.isEmpty, !message.planArchived, message.planState != .running, message.planState != .cancelled else { return }
-        if case .done = message.planState, force.isEmpty { return }
+    /// already completed steps are skipped. `force`: allows running steps previously flagged as duplicate. `approval`: what
+    /// the audit log records as the yes (a scheduled task that carries out steps by itself logs its own). Returns the run,
+    /// for a caller that waits for it; nil when nothing started.
+    @discardableResult
+    func runPlan(_ id: UUID, force: Set<Int> = [], approval: String = "plan_goedgekeurd") -> Task<Void, Never>? {
+        guard let message = chat.message(id), !message.actions.isEmpty, !message.planArchived, message.planState != .running, message.planState != .cancelled else { return nil }
+        if case .done = message.planState, force.isEmpty { return nil }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         let steps = message.actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }
         // Fields the user changed before running teach Nook their habits.
         learnFromPlan(message: id, actions: message.actions, include: message.actionIncluded, states: nil)
-        store.audit(tool: "plan_goedgekeurd", args: planSteps(message.actions).enumerated()
+        store.audit(tool: approval, args: planSteps(message.actions).enumerated()
             .filter { index, _ in index < message.actionIncluded.count ? message.actionIncluded[index] : true }
             .map(\.element.text).joined(separator: " | "), result: "")
         chat.update(id) { $0.planState = .running }
         let runner = planRunner(scope: scope) { [weak self] states in
             self?.chat.update(id) { $0.actionStates = states }
         }
-        Task {
+        return Task {
             let states = await runner.run(steps, states: message.actionStates, include: message.actionIncluded, force: force)
             learnFromPlan(message: id, actions: message.actions, include: message.actionIncluded, states: states)
             reloadLoops()
