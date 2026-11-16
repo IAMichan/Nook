@@ -11,6 +11,21 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(model.reaction(movedFrom: frame(1400), to: frame(1390)), .userScrolled)
     }
 
+    func testAWheelStepUpStopsFollowingWhileTheContentGrows() {
+        // While an agent works the sizes change on nearly every frame, so a move alone cannot tell you scrolled.
+        var model = ScrollModel()
+        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1500, content: 2100)))
+        XCTAssertEqual(model.reaction(toWheel: 3, nearEnd: true), .userScrolled, "up, even within the end margin")
+        model.apply(.userScrolled)
+        XCTAssertFalse(model.shouldFollowEnd)
+        XCTAssertNil(model.reaction(toWheel: 3, nearEnd: false), "already free: nothing to write")
+        XCTAssertNil(model.reaction(toWheel: -3, nearEnd: false), "down, still away from the end")
+        XCTAssertNil(model.reaction(toWheel: 0.2, nearEnd: true), "a sideways step")
+        XCTAssertEqual(model.reaction(toWheel: -3, nearEnd: true), .reachedEnd)
+        model.findStarted()
+        XCTAssertNil(model.reaction(toWheel: -3, nearEnd: true), "a find owns the position")
+    }
+
     func testGrowthIsNotAScroll() {
         var model = ScrollModel()
         XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1380, content: 1980)), "a row above measured shorter")

@@ -44,7 +44,7 @@ struct RenderedPageRow: View, Equatable {
             }
             if !hidden, !missing || html != nil {
                 if let html, onScreen {
-                    SandboxedPageView(html: html) { measured = $0 }
+                    SandboxedPageView(html: html, passesVerticalScroll: true) { measured = $0 }
                         .frame(maxWidth: .infinity)
                         .frame(height: height)
                         .roundedClip(NookTheme.Radius.control)
@@ -103,6 +103,8 @@ struct RenderedPageRow: View, Equatable {
 /// side; `onHeight` gets the height the whole page takes at that zoom, in points.
 struct SandboxedPageView: NSViewRepresentable {
     let html: String
+    /// In a conversation: up and down scrolls the conversation, not the page (`FittingWebView.passesVerticalScroll`).
+    var passesVerticalScroll = false
     var onHeight: (Double) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -116,6 +118,7 @@ struct SandboxedPageView: NSViewRepresentable {
         let view = FittingWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
+        view.passesVerticalScroll = passesVerticalScroll
         context.coordinator.view = view
         context.coordinator.onHeight = onHeight
         view.onWidthChange = { [weak coordinator = context.coordinator] in coordinator?.refit() }
@@ -185,7 +188,20 @@ struct SandboxedPageView: NSViewRepresentable {
 /// A web view that says when its width changes, so the page in it is fitted again.
 final class FittingWebView: WKWebView {
     var onWidthChange: () -> Void = {}
+    /// Hands a mostly vertical wheel step to the scroll view around it at once. A web view sends each step to its page
+    /// first and only hands back what the page did not use, a round trip to another process: scrolling a conversation
+    /// stalled and jerked each time the pointer passed over a page in it. The page is shown at its own height (or opens
+    /// full size or in the side panel), so it has nothing to scroll up or down there; sideways stays with the page.
+    var passesVerticalScroll = false
     private var lastWidth: CGFloat = 0
+
+    override func scrollWheel(with event: NSEvent) {
+        if passesVerticalScroll, abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX), let next = nextResponder {
+            next.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
 
     override func layout() {
         super.layout()

@@ -55,6 +55,18 @@ struct ScrollModel: Equatable, Sendable {
         return nil
     }
 
+    /// A scroll-wheel or trackpad step of yours over the conversation, before the view moves by it: `deltaY` as AppKit
+    /// gives it (above zero toward the start), `nearEnd` where the view stood. The step itself is the clearest sign of
+    /// you scrolling: while an agent works, the sizes change on nearly every frame (a running command's output, a pull
+    /// request being written, a page that measures itself), so `reaction(movedFrom:to:)` took every step for a size
+    /// change and the end-keeping pulled the view back down, and it shook up and down under your fingers.
+    /// Up stops following at once, also within the margin of the end; down at the end follows again.
+    func reaction(toWheel deltaY: Double, nearEnd: Bool) -> Reaction? {
+        if deltaY > 0.5 { return isFreeAfterUserScroll ? nil : .userScrolled }
+        if deltaY < -0.5, nearEnd, mode == .free, !isFinding { return .reachedEnd }
+        return nil
+    }
+
     /// What a move of the view means for following (`reaction(movedFrom:to:)`).
     enum Reaction: Equatable, Sendable {
         case userScrolled
