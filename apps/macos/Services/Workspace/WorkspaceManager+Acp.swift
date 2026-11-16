@@ -95,7 +95,7 @@ extension WorkspaceManager {
         }
         let provider = run.provider
         let profileID = run.profileID
-        client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
+        client.request("initialize", AcpRPC.initializeParams(), timeout: RPCDeadline.initialize) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
@@ -188,7 +188,9 @@ extension WorkspaceManager {
         let params = AcpRPC.sessionParams(cwd: run.workingDirectory, bridge: bridge, loadID: loadID)
         // A load also ends when its replay has gone quiet: some agents never answer it (see `AcpClient.load`).
         let open: (@escaping (Result<JSONBox, CodexAppServerError>) -> Void) -> Void = { completion in
-            if method == "session/load" { client.load(method, params, completion: completion) } else { client.request(method, params, completion: completion) }
+            if method == "session/load" { client.load(method, params, completion: completion) } else {
+                client.request(method, params, timeout: RPCDeadline.openSession, completion: completion)
+            }
         }
         open { [weak self] result in
             Task { @MainActor in

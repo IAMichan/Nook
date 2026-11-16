@@ -14,13 +14,28 @@ extension WorkspaceManager {
         command.flatMap { commandReceipts.receipt($0.id) }
     }
 
-    /// Keeps what a command did, also when it did nothing, so a repeat of it does nothing either.
+    /// Keeps what a command did, also when it did nothing, so a repeat of it does nothing either. A command claimed
+    /// before it ran (`claimCommand`) gets its real outcome here.
     func recordCommand(_ command: SessionCommand?, _ outcome: SessionCommandOutcome, created: String? = nil) {
         guard let command else { return }
-        commandReceipts.record(command.id, outcome, created: created)
+        commandReceipts.settle(command.id, outcome, created: created)
         let data = commandReceipts.encoded()
         let url = commandReceiptsURL
         Self.receiptWrites.async { SessionCommandReceipts.save(data, to: url) }
+    }
+
+    /// Before a command acts: its earlier receipt when it came before, else a receipt on disk now that says it is being
+    /// carried out (`provisional`, what it most likely does). A crash between the command's effect and its outcome being
+    /// saved then leaves this receipt, and the phone's resend of it does nothing instead of sending, stopping or deciding
+    /// a second time. Written at once, on the calling thread, after any write still queued: a few kilobytes on a tap.
+    func claimCommand(_ command: SessionCommand?, provisional: SessionCommandOutcome) -> SessionCommandReceipts.Receipt? {
+        guard let command else { return nil }
+        if let earlier = commandReceipt(command) { return earlier }
+        commandReceipts.record(command.id, provisional)
+        let data = commandReceipts.encoded()
+        let url = commandReceiptsURL
+        Self.receiptWrites.sync { SessionCommandReceipts.save(data, to: url) }
+        return nil
     }
 
     /// One write after another, off the main thread: a few kilobytes on a tap on the phone.
@@ -30,7 +45,7 @@ extension WorkspaceManager {
     /// while turn A ran never stops turn B that started after it (a queued message, a retry that came late).
     @discardableResult
     func stop(_ id: UUID, command: SessionCommand?) -> SessionCommandOutcome {
-        if let earlier = commandReceipt(command) { return earlier.outcome }
+        if let earlier = claimCommand(command, provisional: .stopped) { return earlier.outcome }
         let outcome: SessionCommandOutcome
         if SessionTurnCheck.applies(issuedFor: command?.turn, current: turnIdentity(id)) {
             stop(id)
@@ -49,6 +64,7 @@ extension WorkspaceManager {
         if let earlier = commandReceipt(command) { return earlier.outcome }
         let outcome: SessionCommandOutcome
         guard let run = run(id) else { return .stale }
+        _ = claimCommand(command, provisional: .queued)
         if !run.status.isActive || startsFreshConversation(id, text: text) {
             outcome = submit(id, text: text, fromYou: true) ? .sent : .queued
         } else if steer, SessionTurnCheck.applies(issuedFor: command?.turn, current: turnIdentity(id)), canSteer(id),

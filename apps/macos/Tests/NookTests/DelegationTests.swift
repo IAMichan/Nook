@@ -158,7 +158,8 @@ final class DelegationTests: XCTestCase {
         XCTAssertTrue(DelegatedTask.mayDeliver(.completed, hasQueuedWork: false))
         XCTAssertTrue(DelegatedTask.mayDeliver(.failed, hasQueuedWork: false))
         XCTAssertFalse(DelegatedTask.mayDeliver(.running, hasQueuedWork: false))
-        XCTAssertFalse(DelegatedTask.mayDeliver(.stopped, hasQueuedWork: false))
+        XCTAssertTrue(DelegatedTask.mayDeliver(.stopped, hasQueuedWork: false), "a stopped task reports as cancelled")
+        XCTAssertFalse(DelegatedTask.mayDeliver(.stopped, hasQueuedWork: true), "a stop that a message restarts is not the end")
     }
 
     func testOnlyAnUnrelatedSessionLeavesTheParentOutOfAFollowUp() {

@@ -713,6 +713,7 @@ final class CompanionServer: ObservableObject {
             }
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
+            _ = workspace.claimCommand(command, provisional: .decided)
             app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
             workspace.recordCommand(command, .decided)
@@ -732,6 +733,7 @@ final class CompanionServer: ObservableObject {
             }
             // A free answer only where the agent accepts one; otherwise it has to be one of the options.
             if !first.allowsOther, !first.options.contains(where: { $0.label == text }) { return .failure(request.id, .badRequest) }
+            _ = workspace.claimCommand(command, provisional: .answered)
             workspace.answer(runID, questionID: question.id, answers: [first.id: [text]])
             workspace.recordCommand(command, .answered)
             audit("answer", workspace.run(runID)?.title ?? "")

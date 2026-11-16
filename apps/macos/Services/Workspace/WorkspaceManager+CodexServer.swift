@@ -69,7 +69,7 @@ extension WorkspaceManager {
                                            mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)
         let method = run.providerSessionID == nil ? "thread/start" : "thread/resume"
-        client.request("initialize", CodexRPC.initializeParams()) { [weak self] result in
+        client.request("initialize", CodexRPC.initializeParams(), timeout: RPCDeadline.initialize) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 if case .failure(let error) = result {
@@ -77,7 +77,7 @@ extension WorkspaceManager {
                     return
                 }
                 client.notify("initialized")
-                client.request(method, thread) { [weak self] result in
+                client.request(method, thread, timeout: RPCDeadline.openSession) { [weak self] result in
                     Task { @MainActor in
                         guard let self else { return }
                         switch result {
@@ -152,10 +152,13 @@ extension WorkspaceManager {
                     self.failCodexTurn(id, failure)
                     return
                 }
-                client.request("turn/start", startParams) { [weak self] result in
+                client.request("turn/start", startParams, timeout: RPCDeadline.startTurn) { [weak self] result in
                     Task { @MainActor in
                         guard let self else { return }
                         switch result {
+                        case .failure(let error) where error.isTimeout:
+                            // A server that hangs on starting a turn is not used again: the next message starts a new one.
+                            self.codexServerFailed(id, client, error, prompt: prompt, executable: client.process.spec.executable)
                         case .failure(let error):
                             self.failCodexTurn(id, error.localizedDescription)
                         case .success(let response):

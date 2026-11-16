@@ -1,9 +1,10 @@
 import Foundation
 
-// Texts for the offline state and the last-synced line (`NookSyncStatus`). One block per language; every key in all five.
+// Texts for the offline state and the last-synced line (`NookSyncStatus`), and for agent connections that fail safe. One block per language; every key in all five.
 
 let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.rpc.timedOut": "De agent gaf geen antwoord op %@. Nook heeft hem gestopt; je volgende bericht start hem opnieuw.",
         "sync.last": "Laatst bijgewerkt %@",
         "sync.never": "Nog niet bijgewerkt",
         "sync.offline": "Offline. Nook toont wat hij heeft bewaard.",
@@ -15,6 +16,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Diagnose kopiëren",
     ],
     .en: [
+        "ws.rpc.timedOut": "The agent did not answer %@ in time. Nook stopped it; your next message starts it again.",
         "sync.last": "Last synced %@",
         "sync.never": "Not synced yet",
         "sync.offline": "Offline. Nook shows what it has saved.",
@@ -26,6 +28,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Copy diagnostics",
     ],
     .de: [
+        "ws.rpc.timedOut": "Der Agent hat auf %@ nicht rechtzeitig geantwortet. Nook hat ihn gestoppt; deine nächste Nachricht startet ihn neu.",
         "sync.last": "Zuletzt aktualisiert %@",
         "sync.never": "Noch nicht aktualisiert",
         "sync.offline": "Offline. Nook zeigt, was es gespeichert hat.",
@@ -37,6 +40,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Diagnose kopieren",
     ],
     .fr: [
+        "ws.rpc.timedOut": "L'agent n'a pas répondu à %@ à temps. Nook l'a arrêté ; ton prochain message le relance.",
         "sync.last": "Dernière synchronisation %@",
         "sync.never": "Pas encore synchronisé",
         "sync.offline": "Hors ligne. Nook affiche ce qu'il a enregistré.",
@@ -48,6 +52,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Copier le diagnostic",
     ],
     .es: [
+        "ws.rpc.timedOut": "El agente no respondió a %@ a tiempo. Nook lo detuvo; tu próximo mensaje lo vuelve a iniciar.",
         "sync.last": "Última sincronización %@",
         "sync.never": "Aún sin sincronizar",
         "sync.offline": "Sin conexión. Nook muestra lo que ha guardado.",

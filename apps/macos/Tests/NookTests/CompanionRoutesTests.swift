@@ -243,4 +243,26 @@ final class CompanionRoutesTests: XCTestCase {
         XCTAssertEqual(loaded.receipt("phone:start-1", now: now)?.created, "run-99")
         XCTAssertNil(loaded.receipt(cmd.id, now: now.addingTimeInterval(SessionCommandReceipts.lifetime + 1)))
     }
+    /// A command is claimed on disk before it acts (`claimCommand`), with the outcome it most likely has, and settled
+    /// after: a crash in between leaves the claim, so the phone's resend does nothing rather than act twice.
+    func testAClaimedCommandIsSettledWithItsRealOutcome() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nook-receipts-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("command-receipts.json")
+        let now = Date()
+
+        var store = SessionCommandReceipts()
+        store.record("phone:stop-1", .stopped, now: now)
+        // Nook crashed here: what is on disk is the claim, and a resend is answered with it.
+        SessionCommandReceipts.save(store.encoded(), to: file)
+        XCTAssertEqual(SessionCommandReceipts.load(from: file, now: now).receipt("phone:stop-1", now: now)?.outcome, .stopped)
+
+        // Without a crash the real outcome replaces the claim; what a start made is kept with it.
+        store.settle("phone:stop-1", .stale, now: now)
+        XCTAssertEqual(store.receipt("phone:stop-1", now: now)?.outcome, .stale)
+        store.settle("phone:start-2", .started, created: "run-7", now: now)
+        XCTAssertEqual(store.receipt("phone:start-2", now: now)?.created, "run-7", "settling an unknown command records it")
+        XCTAssertEqual(store.receipts.count, 2)
+    }
 }

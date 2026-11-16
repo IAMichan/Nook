@@ -164,6 +164,32 @@ enum ApprovalKind: Hashable, Codable, Sendable {
     case other(String)
 }
 
+/// Agents whose richer channel failed, so their turns use the simpler one (Codex `exec` instead of its app-server, Gemini's
+/// headless mode instead of ACP, OpenCode over ACP instead of its own server). A mark is decided from one failure, which
+/// can be passing (a sign-in that had expired, a network error, a bad config the user then fixes), and the simpler channel
+/// has no approvals or steering. So a mark lasts `lifetime`, and an executable that changed on disk since (an update of
+/// the CLI) is tried again at once.
+struct FallbackMarks {
+    static let lifetime: TimeInterval = 30 * 60
+
+    private var marks: [String: (at: Date, modified: Date?)] = [:]
+    /// When the executable at a path last changed; replaced in tests.
+    var modified: (String) -> Date? = { path in
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
+    init() {}
+
+    mutating func insert(_ executable: String, now: Date = Date()) {
+        marks[executable] = (now, modified(executable))
+    }
+
+    func contains(_ executable: String, now: Date = Date()) -> Bool {
+        guard let mark = marks[executable], now.timeIntervalSince(mark.at) < Self.lifetime else { return false }
+        return mark.modified == modified(executable)
+    }
+}
+
 /// Nook's id for a request an agent asks over a JSON-RPC connection of its own (Codex's app-server, ACP). Each agent
 /// process numbers its requests from 0, so the number alone repeats across sessions: two Codex sessions both ask
 /// request `0`. Every table of waiting requests, the approval card and the phone key on this id, so it carries the

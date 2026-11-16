@@ -182,6 +182,8 @@ enum DelegatedTask {
     }
 
     static let summaryLimit = 4_000
+    /// How long a result that could not reach its parent stays news (`deliverWaitingResults`).
+    static let waitingResultAge: TimeInterval = 24 * 3600
 
     /// `hasQueuedWork`: a message still waits to go out to the task (not held after a failure or a stop). The task is not
     /// done until it went (a follow-up waits for a run its child queued on its own thread).
@@ -197,10 +199,13 @@ enum DelegatedTask {
         }
     }
 
-    /// Whether the parent hears of a finished task now: it ended (well or not) and nothing it still has to do waits in its
-    /// queue. A task with work queued reports after that work, so its parent never reads a result that is not the last.
+    /// Whether the parent hears of a finished task now: it ended (well, failed, or stopped) and nothing it still has to do
+    /// waits in its queue. A task with work queued reports after that work, so its parent never reads a result that is
+    /// not the last. A stopped task reports as cancelled, with what it said last: you stopped it, or a restart cut it off
+    /// and Nook did not go on with it, and a parent that never hears waits for it forever. One its parent cancelled
+    /// reports to nobody (`cancelDelegated` turns its wake off).
     static func mayDeliver(_ status: RunStatus, hasQueuedWork: Bool) -> Bool {
-        (status == .completed || status == .failed) && !hasQueuedWork
+        (status == .completed || status == .failed || status == .stopped) && !hasQueuedWork
     }
 
     /// Where a message to a session comes from, by the session that sent it (`session_send`); nil for you, Nook, or a

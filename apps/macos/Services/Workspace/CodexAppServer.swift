@@ -599,6 +599,18 @@ enum CodexAppServerMapper {
     }
 }
 
+/// How long the steps that open a session and start a turn may take before Nook gives up on an agent's server (Codex's
+/// app-server, an ACP agent). Without a deadline a server that hangs on `initialize` or on opening its thread leaves the
+/// turn "working" until you stop it. The turn itself (`session/prompt`, Codex's events) and sign-in have none: they
+/// take as long as the work or you do.
+enum RPCDeadline {
+    static let initialize: TimeInterval = 30
+    /// Opening a conversation: a resume reads the whole of a long one first.
+    static let openSession: TimeInterval = 120
+    /// Starting a turn (Codex's `turn/start` answers once the turn began, not when it ends).
+    static let startTurn: TimeInterval = 60
+}
+
 /// One `codex app-server` process: requests with replies, notifications and server requests. Lines are handled on the
 /// process's own queue; callers hop to the main actor themselves.
 final class CodexAppServerClient: @unchecked Sendable {
@@ -633,12 +645,14 @@ final class CodexAppServerClient: @unchecked Sendable {
     /// `transport` and `scheduler` replace the process and the clock in tests (a recorded agent, `ReplayTransport`).
     init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
         process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
+        self.scheduler = scheduler
         // A keeper's agent has seen ids from an earlier Nook: answers to those must not match new requests.
         if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
 
     /// Held while a line is written, with the id it takes: everything reaches Codex in the order Nook sent it.
     private let writeLock = NSLock()
+    private let scheduler: ProcessScheduler
 
     var isRunning: Bool { process.isRunning }
 
@@ -659,8 +673,11 @@ final class CodexAppServerClient: @unchecked Sendable {
         try process.start()
     }
 
-    func request(_ method: String, _ params: [String: Any]? = nil, completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        writeLock.withLock {
+    /// - Parameter timeout: how long the answer may take (`RPCDeadline`); then the request fails with `.timedOut` and a
+    ///   late answer is dropped. Nil waits for as long as the process lives.
+    func request(_ method: String, _ params: [String: Any]? = nil, timeout: TimeInterval? = nil,
+                 completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
+        let id = writeLock.withLock { () -> Int in
             let id = lock.withLock { () -> Int in
                 let id = nextID
                 nextID = AcpRPC.nextRequestID(after: id)
@@ -668,6 +685,12 @@ final class CodexAppServerClient: @unchecked Sendable {
                 return id
             }
             process.send(CodexRPC.request(id: id, method: method, params: params))
+            return id
+        }
+        guard let timeout else { return }
+        scheduler.schedule(after: timeout) { [weak self] in
+            guard let self, let expired = self.lock.withLock({ self.pending.removeValue(forKey: id) }) else { return }
+            expired(.failure(.timedOut(method)))
         }
     }
 
@@ -702,12 +725,20 @@ final class CodexAppServerClient: @unchecked Sendable {
 enum CodexAppServerError: Error, Equatable, LocalizedError {
     case server(String)
     case exited(String)
+    /// No answer within the request's deadline (`RPCDeadline`): the agent's server hangs.
+    case timedOut(String)
 
     var errorDescription: String? {
         switch self {
         case .server(let message): return message
         case .exited(let stderr): return stderr.isEmpty ? "codex app-server stopped." : stderr
+        case .timedOut(let method): return tr("ws.rpc.timedOut", method)
         }
+    }
+
+    var isTimeout: Bool {
+        if case .timedOut = self { return true }
+        return false
     }
 
     /// Codex is too old for this method (or for `app-server` at all): use `codex exec` instead.
