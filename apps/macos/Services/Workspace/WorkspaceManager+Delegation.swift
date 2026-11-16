@@ -59,7 +59,8 @@ extension WorkspaceManager {
     /// out to it is not finished: it reports after that turn (`sendQueued` calls here once the queue is empty), and a
     /// result held for a monitor waits for it (`WakeCompletion`).
     func deliverDelegatedResult(_ id: UUID) {
-        guard let child = run(id), var link = child.delegation, link.wake, !link.delivered,
+        // Not while Nook quits: the parent is being stopped too, and the sweep after the relaunch brings the result.
+        guard !quitting, let child = run(id), var link = child.delegation, link.wake, !link.delivered,
               DelegatedTask.mayDeliver(child.status, hasQueuedWork: hasQueuedWork(id)), !heldWakeCompletions.contains(id),
               let parent = run(link.parentID), !parent.archived, parent.status != .stopped,
               // A full queue cannot take the result: it stays undelivered rather than marked delivered and dropped
@@ -74,6 +75,19 @@ extension WorkspaceManager {
         let free = parent.canContinue && processes[parent.id] == nil && !checkpointing.contains(parent.id)
         if !free || !send(parent.id, text: text, origin: .notice) {
             enqueue(parent.id, text: text, origin: .notice)
+        }
+    }
+
+    /// Results that waited: tasks that ended while their parent could not take them (you had stopped it, or Nook
+    /// restarted) report now. `parent` limits it to that session's tasks. Each still reports once (`delivered`), and
+    /// only a task that ended recently (`DelegatedTask.waitingResultAge`) or that Nook's quit stopped: a task left alone
+    /// for days is not news to its parent any more.
+    func deliverWaitingResults(of parent: UUID? = nil, now: Date = Date()) {
+        for child in runs {
+            guard let link = child.delegation, link.wake, !link.delivered, parent == nil || link.parentID == parent,
+                  child.stoppedByQuit == true || now.timeIntervalSince(child.updatedAt) <= DelegatedTask.waitingResultAge
+            else { continue }
+            deliverDelegatedResult(child.id)
         }
     }
 

@@ -873,6 +873,8 @@ final class WorkspaceManager: ObservableObject {
             onTurnFinished?(run)
             // Not while a message still waits to go out to it: then it reports after that turn (`sendQueued`).
             deliverDelegatedResult(id)
+            // Its own tasks that ended while it could not take their result (stopped by you) report now.
+            if run.status == .completed { deliverWaitingResults(of: id) }
         }
         captureCheckpoint(id)
         scheduleIdleCompaction(id)

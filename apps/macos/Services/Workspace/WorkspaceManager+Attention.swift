@@ -31,6 +31,9 @@ extension WorkspaceManager {
             append(run.id, RunEvent(kind: .system, text: tr(waited ? "ws.event.continueAfterBackgroundStop" : "ws.event.continueAfterRelaunch")))
             send(run.id, text: message)
         }
+        // Tasks the restart cut off and that do not go on report as cancelled; results that waited for their parent go
+        // out to it now.
+        deliverWaitingResults()
         // Only the first launch after the quit counts: a session left alone now (the setting off, or one that waits on you)
         // must not go on at some later launch.
         for run in runs where run.stoppedByQuit != nil {
