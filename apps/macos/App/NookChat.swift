@@ -17,6 +17,9 @@ struct MailDraft: Identifiable, Equatable {
     /// The Message-ID of the mail this answers (from inbox_mail, search_mail or read_mail). Set: Mail sends it as a reply
     /// to that message, in its thread and from the account it came to; empty, or a message Mail cannot find: a new mail.
     var replyTo: String = ""
+    /// A calendar invitation goes with it (`invite.ics` in `attachments`). Kept so the file is written again with the
+    /// recipients as they are when the user sends it, also after they changed To or Cc in the draft.
+    var invite: CalendarInvite.Event?
     var state: State = .draft
 
     /// Not sent, opened or closed yet.

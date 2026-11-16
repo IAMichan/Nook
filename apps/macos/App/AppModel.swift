@@ -143,6 +143,8 @@ final class AppModel: ObservableObject {
             if let address = await ContactDirectory.mailAddress(for: name) { return address }
             return PrivateBrief.address(for: name, among: ReplyContext.briefAddresses)
         },
+        // The organizer of an invitation: the first address of the first account Mail sends from.
+        ownAddress: { ChatCaptureService.shared.mailBridge.accounts.first?.addresses.first ?? "" },
         // Only an answer in the chat holds a plan: a notch card or thinking along has no message for it.
         onPlan: { [weak self] steps in
             guard let self, let id = self.replyTarget else { return }

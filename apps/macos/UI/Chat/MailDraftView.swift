@@ -98,6 +98,7 @@ struct MailDraftView: View {
             field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
             if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
             field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))
+            if let invite = draft.invite { inviteRow(invite) }
 
             MentionSuggestions(model: mentionModel, text: $body_, config: .mentions())
                 .padding(.top, mentionModel.isOpen ? NookTheme.Spacing.md : 0)
@@ -148,6 +149,23 @@ struct MailDraftView: View {
         default:
             Text(tr("chat.mail.youSend")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
         }
+    }
+
+    /// The calendar invitation that goes with the mail, so the user sees what the recipients will be asked to accept.
+    private func inviteRow(_ invite: CalendarInvite.Event) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(icon: "calendar.badge.plus")
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.iris)
+            Text(tr("chat.mail.invite", "\(invite.title) · \(NookDates.dayAndClock(invite.start))–\(NookDates.clock(invite.end))"))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+        }
+        .padding(.vertical, NookTheme.Spacing.md)
+        .overlay(alignment: .bottom) { NookDivider() }
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
