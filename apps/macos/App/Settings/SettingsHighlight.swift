@@ -111,19 +111,7 @@ struct SettingsFold<Content: View>: View {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    DisclosureChevron(open: open, size: 10, weight: .semibold)
-                        .frame(width: 12)
-                    Text(title).foregroundStyle(NookTheme.paper)
-                    Spacer(minLength: NookTheme.Spacing.lg)
-                    if let summary, !open {
-                        Text(summary)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                .contentShape(Rectangle())
+                SettingsFoldHeader(open: open, summary: summary) { Text(title) }
             }
             .buttonStyle(.nookPlain)
             .settingsAnchor(title)
@@ -140,5 +128,55 @@ struct SettingsFold<Content: View>: View {
     private func openForSearch() {
         guard let key = highlight.key, keys.contains(key) || highlight.title == title else { return }
         open = true
+    }
+}
+
+/// The header line of every fold in Settings: a chevron, the name, and on the right a summary while closed. Shared by
+/// `SettingsFold` and `SettingsDisclosureStyle`, so a fold of a whole group and a fold inside a row look the same.
+struct SettingsFoldHeader<Label: View>: View {
+    let open: Bool
+    var summary: String? = nil
+    @ViewBuilder var label: () -> Label
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            DisclosureChevron(open: open, size: 10, weight: .semibold)
+                .frame(width: 12)
+            label()
+                .foregroundStyle(NookTheme.paper)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let summary, !open {
+                Text(summary)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, NookTheme.Spacing.lg)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// Every `DisclosureGroup` on a Settings page or in a sheet draws as a `SettingsFold`: the same chevron, name and
+/// animation, the whole line clickable, its content under it. Set by `SettingsFormStyle` and `SheetPart`, so a fold
+/// inside a row never falls back to the system disclosure triangle.
+struct SettingsDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Button {
+                withAnimation(NookTheme.reveal) { configuration.isExpanded.toggle() }
+            } label: {
+                SettingsFoldHeader(open: configuration.isExpanded) { configuration.label }
+            }
+            .buttonStyle(.nookPlain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(configuration.isExpanded ? tr("settings.fold.open") : tr("settings.fold.closed"))
+            if configuration.isExpanded {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    configuration.content
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 }

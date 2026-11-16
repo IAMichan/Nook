@@ -16,6 +16,7 @@ struct SettingsFormStyle: FormStyle {
             .padding(.vertical, NookTheme.Spacing.xxl)
         }
         .toggleStyle(SettingsRowToggleStyle())
+        .disclosureGroupStyle(SettingsDisclosureStyle())
         .labeledContentStyle(SettingsRowLabeledStyle())
     }
 }

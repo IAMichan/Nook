@@ -373,6 +373,7 @@ struct SheetPart<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .roundedBackground(embedded ? Color.clear : NookTheme.surface, radius: NookTheme.Radius.card)
         }
+        .disclosureGroupStyle(SettingsDisclosureStyle())
     }
 }
 

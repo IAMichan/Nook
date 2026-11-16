@@ -162,7 +162,7 @@ extension AppModel {
         if settingsWindow == nil {
             // Kept after closing, so its content goes while it is closed: else Settings redraws with every change in the app.
             let root = WindowContent(presence: settingsPresence, background: NookTheme.canvas, minSize: CGSize(width: 720, height: 480)) {
-                SettingsView().nookToastHost()
+                SettingsView().nookToastHost().disclosureGroupStyle(SettingsDisclosureStyle())
             }
             let host = NSHostingController(rootView: root.nookAttention().environmentObject(self))
             // The window sets its own minSize: letting the hosting view drive it measured the whole Form on every update.
