@@ -1486,9 +1486,14 @@ private struct ReplyingBar: View {
 }
 
 extension ComposerCompletion.Situation {
-    /// A chat's: who it is with, and their last message, which what you type most likely answers.
+    /// A chat's: who it is with, their last message, which what you type most likely answers, and the conversation's
+    /// newest messages around it (yours too), so the suggestion also fits what was said before.
     static func chat(_ name: String?, bubbles: [ChatBubble]) -> Self {
-        Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text)
+        let messages = bubbles.filter { $0.notice == nil && !($0.deleted && !$0.keepsDeleted) }
+            .suffix(ComposerCompletion.conversationMessages)
+            .map { (fromMe: $0.fromMe || $0.local, sender: $0.sender, text: $0.copyText) }
+        return Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text,
+                    conversation: ComposerCompletion.conversation(Array(messages), contact: name))
     }
 }
 

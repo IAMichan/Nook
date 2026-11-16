@@ -72,4 +72,37 @@ final class ComposerCompletionTests: XCTestCase {
         XCTAssertNil(ComposerCompletion.carried(suggestion, inserted: " walk"), "typed something else")
         XCTAssertNil(ComposerCompletion.carried(suggestion, inserted: " run the tests"), "nothing left")
     }
+
+    func testAChatCarriesItsNewestMessagesNotOnlyTheLast() {
+        let conversation = ComposerCompletion.conversation([
+            (fromMe: false, sender: "", text: "Shall we eat at Anna's on Friday?"),
+            (fromMe: true, sender: "", text: "Good idea, what time?"),
+            (fromMe: false, sender: "", text: "Around seven\nor half past"),
+            (fromMe: false, sender: "", text: ""),
+        ], contact: "Bram")
+        XCTAssertEqual(conversation, "Bram: Shall we eat at Anna's on Friday?\nMe: Good idea, what time?\nBram: Around seven or half past")
+
+        let situation = ComposerCompletion.Situation(recipient: "Bram", lastAnswer: "Around seven", conversation: conversation)
+        XCTAssertEqual(ComposerCompletion.context(before: "Seven", after: "", situation: situation, hint: nil).screenText, conversation)
+        let prompt = ComposerCompletion.apiPrompt(before: "Seven", situation: situation, instructions: [])
+        XCTAssertTrue(prompt.contains("Shall we eat at Anna's on Friday?"), "earlier messages go along")
+        XCTAssertTrue(prompt.hasSuffix("TEXT:\nSeven"))
+    }
+
+    func testAGroupNamesItsSendersAndTheConversationStaysWithinItsLength() {
+        let group = ComposerCompletion.conversation([(fromMe: false, sender: "Anna", text: "Hi"), (fromMe: false, sender: "Bram", text: "Hey")],
+                                                    contact: "Friends")
+        XCTAssertEqual(group, "Anna: Hi\nBram: Hey")
+
+        let many = (0..<40).map { (fromMe: $0.isMultiple(of: 2), sender: "", text: "Message \($0) " + String(repeating: "x", count: 200)) }
+        let clipped = ComposerCompletion.conversation(many, contact: "Bram") ?? ""
+        XCTAssertLessThanOrEqual(clipped.count, ComposerCompletion.conversationLength)
+        XCTAssertTrue(clipped.hasSuffix("Bram: Message 39 " + String(repeating: "x", count: 200)), "the newest is always there")
+        XCTAssertGreaterThan(clipped.split(separator: "\n").count, 1)
+
+        let long = ComposerCompletion.conversation([(fromMe: false, sender: "", text: String(repeating: "y", count: 5_000) + " end")],
+                                                   contact: "Bram") ?? ""
+        XCTAssertEqual(long.count, ComposerCompletion.conversationLength)
+        XCTAssertTrue(long.hasPrefix("Bram: …") && long.hasSuffix(" end"))
+    }
 }
