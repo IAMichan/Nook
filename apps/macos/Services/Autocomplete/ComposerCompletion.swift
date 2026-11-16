@@ -43,15 +43,44 @@ enum ComposerCompletion {
         }
     }
 
-    /// What the message is written in: the agent it goes to, the project, and what the agent said last.
+    /// What the message is written in: the agent it goes to, the project, and what the agent said last. In a chat, the
+    /// conversation's newest messages too (`conversation(_:)`), so a reply fits what was said before the last message.
     struct Situation: Equatable {
         var recipient: String?
         var project: String?
         var lastAnswer: String?
+        /// The newest messages of a chat, one per line ("Anna: See you at eight", "Me: …"), newest last; nil outside a chat.
+        var conversation: String?
     }
 
     /// Characters of the agent's last answer that go along: its end, where it asks or reports.
     static let answerLength = 1_500
+    /// Messages of a chat that go along, at most, and the characters they may take together.
+    static let conversationMessages = 12
+    static let conversationLength = 1_500
+    /// How your own messages are marked in `conversation`.
+    static let ownName = "Me"
+
+    /// A chat's newest messages as the model reads them: who wrote each one (`ownName` for yours, `contact` where the
+    /// message carries no sender) and its text, newest last. Whole messages from the newest back, as many as fit in
+    /// `conversationLength`; the newest alone is cut to its end when it is longer. Nil without any text.
+    static func conversation(_ messages: [(fromMe: Bool, sender: String, text: String)], contact: String?) -> String? {
+        var lines: [String] = []
+        var length = 0
+        for message in messages.reversed() {
+            let text = message.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let name = message.fromMe ? ownName : (message.sender.isEmpty ? (contact ?? "Them") : message.sender)
+            var line = "\(name): \(text)"
+            if lines.isEmpty, line.count > conversationLength { line = "\(name): …" + String(text.suffix(conversationLength - name.count - 3)) }
+            guard length + line.count <= conversationLength else { break }
+            lines.append(line)
+            length += line.count + 1
+            if lines.count == conversationMessages { break }
+        }
+        return lines.isEmpty ? nil : lines.reversed().joined(separator: "\n")
+    }
     /// Characters of the message so far that a model API reads (and writes back): enough for the sentence and the one before.
     static let apiTextLength = 400
 
@@ -68,15 +97,15 @@ enum ComposerCompletion {
         return true
     }
 
-    /// The context a local model reads (`PromptBuilder`): Nook as the app, the recipient as the window, the agent's last
-    /// answer as the text on screen, so the suggestion fits the conversation.
+    /// The context a local model reads (`PromptBuilder`): Nook as the app, the recipient as the window, the chat's newest
+    /// messages (or else the agent's last answer) as the text on screen, so the suggestion fits the conversation.
     static func context(before: String, after: String, situation: Situation, hint: String?) -> CompletionContext {
         var input = CompletionContext(before: before)
         input.after = after
         input.appName = "Nook"
         input.windowTitle = title(situation)
         input.fieldHint = hint
-        input.screenText = situation.lastAnswer.map { String($0.suffix(answerLength)) }
+        input.screenText = situation.conversation ?? situation.lastAnswer.map { String($0.suffix(answerLength)) }
         return input
     }
 
@@ -101,7 +130,9 @@ enum ComposerCompletion {
         ]
         let rules = instructions.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         if !rules.isEmpty { lines.append("\nThe writer's own instructions:\n" + rules.joined(separator: "\n")) }
-        if let answer = situation.lastAnswer?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty {
+        if let conversation = situation.conversation, !conversation.isEmpty {
+            lines.append("\nThe conversation so far (oldest first, newest last; \"\(ownName)\" is the writer):\n" + conversation)
+        } else if let answer = situation.lastAnswer?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty {
             lines.append("\nWhat the message answers (the end of the last reply):\n" + String(answer.suffix(answerLength)))
         }
         lines.append("\nTEXT:\n" + apiText(before))
