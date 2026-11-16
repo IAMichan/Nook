@@ -999,8 +999,21 @@ final class AcpClient: @unchecked Sendable {
         try process.start()
     }
 
-    func request(_ method: String, _ params: [String: Any], completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        send(method, params, completion: completion)
+    /// - Parameter timeout: how long the answer may take (`RPCDeadline`); then the request fails with `.timedOut` and a
+    ///   late answer is dropped. Nil waits for as long as the process lives.
+    func request(_ method: String, _ params: [String: Any], timeout: TimeInterval? = nil,
+                 completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
+        let id = send(method, params, completion: completion)
+        guard let timeout else { return }
+        scheduler.schedule(after: timeout) { [weak self] in
+            guard let self, let expired = self.lock.withLock({ () -> ((Result<JSONBox, CodexAppServerError>) -> Void)? in
+                guard let completion = self.pending.removeValue(forKey: id) else { return nil }
+                if self.loadWaiting == id { self.loadWaiting = nil }
+                self.settled.insert(id)
+                return completion
+            }) else { return }
+            expired(.failure(.timedOut(method)))
+        }
     }
 
     /// A request whose answer may bring the session's config options (`session/set_config_option`, `set_model`,
