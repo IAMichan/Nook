@@ -381,7 +381,11 @@ final class PullRequestStore: ObservableObject {
             return
         }
         if loading {
-            if force { again = true }
+            if force {
+                again = true
+                // A click while a quiet read runs: it goes again right after, and the button turns until that is done.
+                if !quiet, !showsProgress { showsProgress = true }
+            }
             return
         }
         // The panel asks every half minute; a slow pass it is waiting for should not wait for a quiet read's gate.
@@ -427,7 +431,8 @@ final class PullRequestStore: ObservableObject {
         // Most answers repeat what is shown: only a change redraws the list and is written to disk.
         let changed = updated != accounts
         if changed { accounts = updated }
-        if showsProgress { showsProgress = false }
+        // A refresh asked for meanwhile runs next: the arrows keep turning through it instead of stopping in between.
+        if showsProgress, !again { showsProgress = false }
         // The pages you are most likely to open next are read ahead now, so they show at once.
         PullRequestDetailModel.warm(accounts: accounts)
         refreshInBackground(force: force, after: slowAfter)

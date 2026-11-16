@@ -407,11 +407,9 @@ struct UpdatePanel: View {
             }
             if refreshable {
                 Spacer(minLength: 0)
-                if updater.checking {
-                    ProgressView().controlSize(.mini).frame(width: 24, height: 24)
-                } else {
-                    ToolbarIconButton("arrow.clockwise", tr("update.refresh")) { updater.check() }
-                }
+                // The same turning arrows as the pull request pages, which turn at least once per click: a check that
+                // ends in a blink (or is refused while another runs) still shows it heard you.
+                RefreshIconButton(label: tr("update.refresh"), turning: updater.checking, size: 24) { updater.check() }
             }
         }
     }
