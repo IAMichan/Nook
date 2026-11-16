@@ -158,7 +158,7 @@
       {#if missing.length}
         <span class="faint small">{tr("Nog in te vullen: ", "Still to fill in: ")}{missing.map((i) => i.name).join(", ")}</span>
       {:else if chosen && branch}
-        <span class="faint small">{tr(`Start ${chosen.name} op ${branch}.`, `Runs ${chosen.name} on ${branch}.`)}</span>
+        <span class="faint small">{tr("Start {name} op {branch}.", "Runs {name} on {branch}.", { name: chosen.name, branch })}</span>
       {/if}
       <span class="spacer"></span>
       <button onclick={onclose}>{tr("Annuleer", "Cancel")}</button>
