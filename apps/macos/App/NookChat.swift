@@ -14,6 +14,9 @@ struct MailDraft: Identifiable, Equatable {
     var from: String = ""
     /// Files on this Mac that go with it, attached at the end of its text.
     var attachments: [String] = []
+    /// The Message-ID of the mail this answers (from inbox_mail, search_mail or read_mail). Set: Mail sends it as a reply
+    /// to that message, in its thread and from the account it came to; empty, or a message Mail cannot find: a new mail.
+    var replyTo: String = ""
     var state: State = .draft
 
     /// Not sent, opened or closed yet.
@@ -32,6 +35,8 @@ struct MailDraft: Identifiable, Equatable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: #"^((re|fw|fwd|aw|wg|tr|rv)\s*:\s*)+"#, with: "", options: .regularExpression)
         }
+        // Answers to two different messages are two mails, also to the same person; a new answer to the same one replaces it.
+        if !replyTo.isEmpty, !other.replyTo.isEmpty { return replyTo == other.replyTo }
         let recipients = people(to)
         if !recipients.isEmpty, recipients == people(other.to) { return true }
         let ownTopic = topic(subject)
@@ -998,6 +1003,7 @@ private struct StoredMail: Codable {
     var subject: String
     var body: String
     var from: String?
+    var replyTo: String?
     var state: String
 
     init(_ mail: MailDraft) {
@@ -1006,6 +1012,7 @@ private struct StoredMail: Codable {
         subject = mail.subject
         body = mail.body
         from = mail.from.isEmpty ? nil : mail.from
+        replyTo = mail.replyTo.isEmpty ? nil : mail.replyTo
         switch mail.state {
         case .sent: state = "sent"
         case .opened: state = "opened"
@@ -1016,6 +1023,7 @@ private struct StoredMail: Codable {
 
     func restored() -> MailDraft {
         var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, from: from ?? "")
+        mail.replyTo = replyTo ?? ""
         switch state {
         case "sent": mail.state = .sent
         case "opened": mail.state = .opened

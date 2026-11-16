@@ -271,8 +271,9 @@ final class MailBridge: ChatBridge, ObservableObject {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard let target = targets[chatID] else { throw NookError(tr("chats.mail.notFound")) }
-        let draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
+        var draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
                               from: target.from)
+        draft.replyTo = replyID(target)
         try await MailSender.deliver(draft, send: true)
         changedInMail()
     }
@@ -289,10 +290,17 @@ final class MailBridge: ChatBridge, ObservableObject {
         if case .file(let file) = outgoing { attachments = [file.path] }
         let body = outgoing.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty || !attachments.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
-        let draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
+        var draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
                               from: target.from, attachments: attachments)
+        draft.replyTo = replyID(target)
         try await MailSender.deliver(draft, send: true)
         changedInMail()
+    }
+
+    /// The Message-ID of the chat's newest mail from the other person, when it was read whole (you opened it): the answer
+    /// then goes out as Mail's reply in that thread, like an answer from Nook Chat. Empty: a new mail with "Re:", as before.
+    private func replyID(_ target: Target) -> String {
+        target.newestIncoming.flatMap { opened[$0.id]?.messageID } ?? ""
     }
 
     /// Nook changed something in Mail: the next round reads it in full, so it shows at once.

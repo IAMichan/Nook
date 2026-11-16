@@ -497,11 +497,11 @@ extension AppModel {
     /// are included in full and others as single-line summaries. Excluded sources are omitted.
     func contextSummary(scope: SourceScope, relevant: Set<String>?) -> (text: String, titles: [String]) {
         let now = Date()
-        var lines = ["Nu: \(NookDates.long(now))"]
+        var lines = ["Now: \(NookDates.long(now))"]
 
         if relevant != nil {
             lines.append("Sources for this question:")
-            lines.append("- Keuze: \(scope.label())")
+            lines.append("- Choice: \(scope.label())")
             if !scope.excluded.isEmpty || scope.mode == .only {
                 let blocked = SourceCatalog.all.filter { !scope.allows($0.id) }.map { $0.title }
                 lines.append("- Do not use (user preference): " + blocked.joined(separator: ", "))

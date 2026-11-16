@@ -144,6 +144,9 @@ enum ActionGate {
             if let change { problems += MailActions.problems(change, MailActions.selection(input)) }
         }
 
+        // A task Nook runs by itself needs what it does and a schedule that can come; the plan shows both.
+        if tool == "schedule_task" { problems += NookSchedule.parse(input, now: Date()).problems }
+
         // A batch merge lists every pull request it touches, so the plan shows exactly what gets merged.
         if tool == "github_merge_prs" { problems += PullRequestBatchMerge.problems(input["pulls"]) }
 

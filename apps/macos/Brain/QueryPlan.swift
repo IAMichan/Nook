@@ -52,6 +52,15 @@ struct QueryPlan: Equatable {
 }
 
 enum QueryPlanner {
+    /// How long the answer waits for a plan before Nook falls back to its own keyword research. The plan is one short call
+    /// (Haiku for Claude): an API brain that has not answered in 5 s is slow that moment, and every second here is a
+    /// second before the first word of the answer. A coding agent needs a few seconds to start its round (8), a model on
+    /// this Mac longer still (12).
+    static func timeout(small: Bool, agent: Bool) -> TimeInterval {
+        if small { return 12 }
+        return agent ? 8 : 5
+    }
+
     /// What the planner knows about one source: its id, its name and what Nook can do with it.
     struct Source: Equatable {
         var id: String
