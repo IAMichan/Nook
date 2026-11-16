@@ -235,6 +235,10 @@ pub enum CompanionOp {
     RequestUpdate,
     /// The pictures of chats (`items`; `avatars` in the answer, `feature::AVATARS`).
     Avatars,
+    /// The phone's own device key (`device_key`, `feature::DEVICE_KEY`): `text` is its public half (X9.63, base64). The
+    /// computer keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it already
+    /// holds a different one (the phone has to pair again).
+    BindKey,
 }
 
 impl CompanionOp {
@@ -280,6 +284,8 @@ pub mod feature {
     pub const ROUTES: &str = "routes";
     pub const RELAY: &str = "relay";
     pub const COMPRESSION: &str = "compression";
+    /// The computer takes `bindKey` and from then on wants the phone's requests signed (`device_key`).
+    pub const DEVICE_KEY: &str = "deviceKey";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -776,6 +782,10 @@ pub struct PairedDevice {
     pub push_token: Option<String>,
     #[serde(default)]
     pub push_production: Option<bool>,
+    /// The public half of the phone's device key (X9.63, base64; `device_key`): once set, only requests signed with it
+    /// are taken. `None` until the phone bound one (an older app never does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_key: Option<String>,
 }
 
 impl PairedDevice {

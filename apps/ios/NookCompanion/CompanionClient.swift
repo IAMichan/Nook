@@ -103,6 +103,8 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
     /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
     @Published var addingMac = false
+    /// A `bindKey` request is on its way (`bindDeviceKey`): answers to hello, list and subscribe meanwhile send no second.
+    private var bindingKey = false
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
@@ -279,6 +281,7 @@ final class CompanionClient: ObservableObject {
         CacheStore.remove(mac: id)
         PullCacheStore.remove(mac: id)
         ClockOffsets.forget(id)
+        DeviceKeyStore.forget(id)
         for entry in retries.waiting(for: id) { retries.remove(entry.id) }
         RetryStore.save(retries)
         pairings.remove(id)
@@ -1307,6 +1310,28 @@ final class CompanionClient: ObservableObject {
         ])
     }
 
+    // MARK: Device key
+
+    /// Tells the active Mac this phone's device key (`CompanionOp.bindKey`); from its "bound" on, every request to it is
+    /// signed. "other" means the Mac already holds a different key for this pairing (this phone lost its own): only
+    /// pairing again helps.
+    private func bindDeviceKey(_ id: String) async {
+        defer { bindingKey = false }
+        guard let publicKey = DeviceKeyStore.publicKey(for: id) else { return }
+        let response = await perform(CompanionRequest(op: .bindKey, text: publicKey.base64EncodedString()), quiet: true)
+        guard id == pairings.active?.id else { return }
+        switch response?.message {
+        case "bound":
+            DeviceKeyStore.markBound(id)
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "bound"])
+        case "other":
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "other"])
+            notice = String(localized: "Your Mac knows another key for this iPhone. Pair again with the code in Nook on your Mac.")
+        default:
+            break
+        }
+    }
+
     // MARK: Versions
 
     /// Opens Nook's update panel on the Mac, where the update waits for a click there; nothing is installed from the
@@ -1352,6 +1377,8 @@ final class CompanionClient: ObservableObject {
             switch response.error {
             case .notAllowedFromPhone where req.op == .inboxSend:
                 notice = String(localized: "Nook can only read this chat: answer it in its own app.")
+            case .notAllowedFromPhone where response.message == "signature":
+                notice = String(localized: "Your Mac knows another key for this iPhone. Pair again with the code in Nook on your Mac.")
             case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
             case .unknownSession where req.conversation != nil: notice = String(localized: "This chat is gone."); await loadChats()
             case .unknownItem where req.op == .inboxSend || req.op == .inboxMark:
@@ -1413,6 +1440,12 @@ final class CompanionClient: ObservableObject {
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
             UserDefaults.standard.set(features, forKey: featuresKey)
+        }
+        // A Mac that takes device keys gets this phone's once, right after pairing (`CompanionDeviceKey`).
+        if response.features?.contains(CompanionFeature.deviceKey) == true, let id = pairings.active?.id,
+           !DeviceKeyStore.isBound(id), !bindingKey {
+            bindingKey = true
+            Task { await bindDeviceKey(id) }
         }
         if let endpoints = response.endpoints { learn(endpoints) }
         // The relay the Mac uses now ("" when none): the route through it follows.

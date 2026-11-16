@@ -3,13 +3,16 @@ import CryptoKit
 
 /// Sealing of companion messages: ChaCha20-Poly1305 with a key derived (HKDF-SHA256) from the pairing key. The device id
 /// and the direction are authenticated too, so a request cannot be replayed to the phone as an answer, or the other way round.
-/// An envelope is `{"d": "<device id>", "s": "<base64 nonce+ciphertext+tag>"}`.
+/// An envelope is `{"d": "<device id>", "s": "<base64 nonce+ciphertext+tag>"}`, and for a request to a Mac that holds the
+/// phone's device key `"g"`: its signature by that key (`CompanionDeviceKey`) over `d|s`, outside the seal, as the seal
+/// is what it signs. An envelope without it reads as before.
 enum CompanionSeal {
     enum Direction: String { case request = "q", response = "r" }
 
     struct Envelope: Codable {
         var d: String
         var s: String
+        var g: String? = nil
     }
 
     enum Failure: Error { case malformed, authentication }
@@ -49,5 +52,26 @@ enum CompanionSeal {
         } catch {
             throw Failure.authentication
         }
+    }
+
+    // MARK: Device signatures
+
+    /// What a device key signs for an envelope: its device id and sealed bytes. Nil when it is not an envelope.
+    static func signedBytes(_ envelope: Data) -> Data? {
+        guard let parsed = try? JSONDecoder().decode(Envelope.self, from: envelope) else { return nil }
+        return Data((parsed.d + "|" + parsed.s).utf8)
+    }
+
+    /// The envelope with `signature` added (`g`).
+    static func attach(signature: Data, to envelope: Data) -> Data? {
+        guard var parsed = try? JSONDecoder().decode(Envelope.self, from: envelope) else { return nil }
+        parsed.g = signature.base64EncodedString()
+        return try? JSONEncoder().encode(parsed)
+    }
+
+    /// The signature an envelope carries, if any.
+    static func signature(_ envelope: Data) -> Data? {
+        guard let parsed = try? JSONDecoder().decode(Envelope.self, from: envelope), let g = parsed.g else { return nil }
+        return Data(base64Encoded: g)
     }
 }

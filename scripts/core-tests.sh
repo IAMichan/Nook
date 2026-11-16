@@ -80,6 +80,7 @@ if [ "$(uname)" != "Darwin" ]; then
     "Services/Updates/Ed25519Verifier.swift"
     "Services/Autocomplete/CompletionSealing.swift"
     "../../packages/protocol/Sources/CompanionSeal.swift"
+    "../../packages/protocol/Sources/CompanionDeviceKey.swift"
     "../../packages/protocol/Sources/RelayPushSeal.swift"
     "../../packages/protocol/Sources/GuestLinkSeal.swift"
   )

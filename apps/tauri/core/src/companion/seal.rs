@@ -2,6 +2,8 @@
 //! HKDF-SHA256 uit de koppelsleutel komt. Toestel-id en richting zitten in de geauthenticeerde data, zodat een
 //! aanvraag niet als antwoord kan worden teruggespeeld of andersom. Een envelop is
 //! `{"d": "<toestel-id>", "s": "<base64 van nonce + versleutelde tekst + tag>"}`, net als `ChaChaPoly.SealedBox.combined`.
+//! A request to a computer that holds the phone's device key also carries `"g"`: its signature by that key over `d|s`
+//! (`device_key`, `CompanionDeviceKey.swift`), outside the seal, as the seal is what it signs.
 
 use base64::Engine;
 use chacha20poly1305::aead::{Aead, Generate, KeyInit, Payload};
@@ -35,6 +37,8 @@ pub enum SealError {
 struct Envelope {
     d: String,
     s: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    g: Option<String>,
 }
 
 fn cipher(pairing_key: &[u8]) -> ChaCha20Poly1305 {
@@ -59,13 +63,32 @@ pub fn seal_with_nonce(plaintext: &[u8], pairing_key: &[u8], device_id: &str, di
         .expect("versleutelen in het geheugen faalt niet");
     let mut combined = nonce.to_vec();
     combined.extend(sealed);
-    let envelope = Envelope { d: device_id.into(), s: base64::engine::general_purpose::STANDARD.encode(combined) };
+    let envelope = Envelope { d: device_id.into(), s: base64::engine::general_purpose::STANDARD.encode(combined), g: None };
     serde_json::to_vec(&envelope).expect("JSON van twee tekenreeksen")
 }
 
 /// Het toestel-id dat een envelop noemt, om de sleutel te kiezen. Niet te vertrouwen tot `open` slaagt.
 pub fn claimed_device(envelope: &[u8]) -> Option<String> {
     serde_json::from_slice::<Envelope>(envelope).ok().map(|e| e.d)
+}
+
+/// What a device key signs for an envelope: its device id and sealed bytes (`CompanionSeal.signedBytes`).
+pub fn signed_bytes(envelope: &[u8]) -> Option<Vec<u8>> {
+    let parsed: Envelope = serde_json::from_slice(envelope).ok()?;
+    Some(format!("{}|{}", parsed.d, parsed.s).into_bytes())
+}
+
+/// The envelope with `signature` added (`g`).
+pub fn attach(signature: &[u8], envelope: &[u8]) -> Option<Vec<u8>> {
+    let mut parsed: Envelope = serde_json::from_slice(envelope).ok()?;
+    parsed.g = Some(base64::engine::general_purpose::STANDARD.encode(signature));
+    serde_json::to_vec(&parsed).ok()
+}
+
+/// The signature an envelope carries, if any.
+pub fn signature(envelope: &[u8]) -> Option<Vec<u8>> {
+    let parsed: Envelope = serde_json::from_slice(envelope).ok()?;
+    base64::engine::general_purpose::STANDARD.decode(parsed.g?.as_bytes()).ok()
 }
 
 pub fn open(envelope: &[u8], pairing_key: &[u8], direction: Direction) -> Result<Vec<u8>, SealError> {
@@ -135,10 +158,10 @@ mod tests {
         assert_eq!(open(&serde_json::to_vec(&envelope).unwrap(), &key(), Direction::Request), Err(SealError::Authentication));
         let mut bytes = base64::engine::general_purpose::STANDARD.decode(s(&sealed)).unwrap();
         bytes[14] ^= 1;
-        let changed = Envelope { d: "dev".into(), s: base64::engine::general_purpose::STANDARD.encode(bytes) };
+        let changed = Envelope { d: "dev".into(), s: base64::engine::general_purpose::STANDARD.encode(bytes), g: None };
         assert_eq!(open(&serde_json::to_vec(&changed).unwrap(), &key(), Direction::Request), Err(SealError::Authentication));
         assert_eq!(open(b"nonsense", &key(), Direction::Request), Err(SealError::Malformed));
-        let short = Envelope { d: "dev".into(), s: base64::engine::general_purpose::STANDARD.encode([0u8; 28]) };
+        let short = Envelope { d: "dev".into(), s: base64::engine::general_purpose::STANDARD.encode([0u8; 28]), g: None };
         assert_eq!(open(&serde_json::to_vec(&short).unwrap(), &key(), Direction::Request), Err(SealError::Malformed));
     }
 }

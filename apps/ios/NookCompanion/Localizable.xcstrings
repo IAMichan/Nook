@@ -13591,6 +13591,34 @@
         }
       }
     },
+    "Your Mac knows another key for this iPhone. Pair again with the code in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Mac kennt einen anderen Schlüssel für dieses iPhone. Kopple es erneut mit dem Code in Nook auf deinem Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Mac conoce otra clave para este iPhone. Vuelve a vincularlo con el código de Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre Mac connaît une autre clé pour cet iPhone. Associez-le à nouveau avec le code de Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je Mac kent een andere sleutel voor deze iPhone. Koppel opnieuw met de code in Nook op je Mac."
+          }
+        }
+      }
+    },
     "Your Mac refused the code." : {
       "extractionState" : "stale",
       "localizations" : {

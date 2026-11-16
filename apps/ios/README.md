@@ -28,6 +28,7 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   ChatViews.swift        Nook's own chats, shared bubble and composer
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
   ChatPictures.swift     the chats' own pictures from the Mac, kept in the caches folder
+  DeviceKeyStore.swift   the phone's own signing key per Mac, in the Secure Enclave (docs/COMPANION.md, "Device key")
   LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
   SplitViews.swift       the iPad: the split view at a regular width, where rows open, keyboard shortcuts
   ComposerDrop.swift     dragging pictures, a file, links and text into a composer

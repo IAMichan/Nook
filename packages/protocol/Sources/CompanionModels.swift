@@ -163,6 +163,10 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// One entry of a session's conversation in full (`session`, `item`: the entry's id), for an entry the timeline
     /// clipped (`TimelineEntry.clipped`); `entryText` in the answer (`CompanionFeature.fullTranscript`).
     case entry
+    /// The phone's own device key (`CompanionDeviceKey`, `CompanionFeature.deviceKey`): `text` is its public half (X9.63,
+    /// base64). The Mac keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it
+    /// already holds a different one (the phone has to pair again).
+    case bindKey
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -249,9 +253,11 @@ enum CompanionFeature {
     static let appIcons = "appIcons"
     /// The Mac takes `watchConversation`: the open Nook conversation's messages follow by themselves, as Nook writes them.
     static let liveConversation = "liveConversation"
+    /// The Mac takes `bindKey` and from then on wants the phone's requests signed (`CompanionDeviceKey`).
+    static let deviceKey = "deviceKey"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -913,6 +919,9 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     var appVersion: String?
     /// What it may do (`CompanionScope` names, `grantedScopes`); nil for a phone paired before scopes: everything.
     var scopes: [String]?
+    /// The public half of the phone's device key (X9.63, base64; `CompanionDeviceKey`): once set, the Mac takes only
+    /// requests signed with it. Nil until the phone bound one (an older app never does).
+    var deviceKey: String?
 
     init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
         self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen
