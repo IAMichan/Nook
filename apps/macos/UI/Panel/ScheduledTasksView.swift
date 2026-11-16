@@ -297,6 +297,22 @@ struct ScheduledTaskEditor: View {
     private enum Destination: String, CaseIterable, Identifiable {
         case newSession, session, nook
         var id: String { rawValue }
+
+        var titleKey: String {
+            switch self {
+            case .newSession: return "automation.sched.destination.new"
+            case .session: return "automation.sched.destination.session"
+            case .nook: return "automation.sched.destination.nook"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .newSession: return "plus.bubble"
+            case .session: return "square.stack"
+            case .nook: return "sparkles"
+            }
+        }
     }
 
     let existing: ScheduledTask?
@@ -389,7 +405,7 @@ struct ScheduledTaskEditor: View {
         SetupSheet(title: existing == nil ? tr("sched.new") : tr("sched.edit"), subtitle: tr("sched.editor.subtitle"), width: 540) {
             SettingsTile(.automation, size: 48)
         } content: {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 field(tr("sched.field.name")) { TextField(tr("sched.field.namePlaceholder"), text: $title).textFieldStyle(.plain).modifier(FieldBox()) }
                 field(tr("sched.field.prompt")) {
                     MentionSuggestions(model: mentionModel, text: $prompt, config: mentionConfig)
@@ -425,18 +441,7 @@ struct ScheduledTaskEditor: View {
                 } else if destination == .session {
                     sessionPicker
                 } else {
-                    Text(tr("automation.sched.nook.hint"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        Toggle(tr("automation.sched.quiet"), isOn: $quiet)
-                            .compactSwitch()
-                        Text(tr("automation.sched.quiet.hint"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    quietRow
                 }
                 field(tr("sched.field.schedule")) { scheduleEditor }
                 if kind == .webhook {
@@ -570,15 +575,46 @@ struct ScheduledTaskEditor: View {
         app.workspace.runs.filter { !$0.archived && !$0.isRemote }
     }
 
+    /// Three cards of one width side by side, so a long label wraps instead of pushing the sheet wider, and the line
+    /// under them says what the chosen one does.
     private var destinationPicker: some View {
-        Picker("", selection: $destination) {
-            Text(tr("automation.sched.destination.new")).tag(Destination.newSession)
-            Text(tr("automation.sched.destination.session")).tag(Destination.session)
-            Text(tr("automation.sched.destination.nook")).tag(Destination.nook)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                ForEach(Destination.allCases) { option in
+                    DestinationCard(symbol: option.symbol, title: tr(option.titleKey), selected: destination == option) {
+                        withAnimation(NookTheme.Motion.quick) { destination = option }
+                    }
+                }
+            }
+            if destination == .nook {
+                Text(tr("automation.sched.nook.hint"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 360, alignment: .leading)
+    }
+
+    /// Nook Chat's one setting: a row with the switch on the right and what it does under the title.
+    private var quietRow: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(tr("automation.sched.quiet"))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                Text(tr("automation.sched.quiet.hint"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("", isOn: $quiet)
+                .labelsHidden()
+                .compactSwitch()
+                .accessibilityLabel(tr("automation.sched.quiet"))
+        }
+        .padding(NookTheme.Spacing.lg)
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     @ViewBuilder
@@ -874,6 +910,40 @@ struct ScheduledTaskEditor: View {
         case .session: return .existingSession(id: sessionID ?? UUID(), fresh: fresh)
         case .nook: return .nook
         }
+    }
+}
+
+/// One choice of where a task's runs go: a symbol over its name, the chosen one outlined on the accent.
+private struct DestinationCard: View {
+    let symbol: String
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let shape = NookTheme.shape(NookTheme.Radius.card)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Image(icon: symbol)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
+                Text(title)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(NookTheme.Spacing.lg)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
+            .background(shape.fill(selected ? NookTheme.iris.opacity(0.12) : (hovered ? NookTheme.paper.opacity(0.06) : NookTheme.field)))
+            .overlay(shape.stroke(selected ? NookTheme.iris.opacity(0.8) : NookTheme.fieldStroke, lineWidth: 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.nookPlain)
+        .onHover { hovered = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
