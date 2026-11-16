@@ -100,6 +100,7 @@ struct SelectableProse: NSViewRepresentable {
         context.coordinator.ask = context.environment.askAboutSelection
         let references = context.environment.answerReferences
         context.coordinator.references = references
+        (view as? ProseTextView)?.citationReferences = references
         let files = context.environment.fileLinkBase != nil
         let citations = !references.isEmpty
         // The same blocks as last time (a redraw on hover or while scrolling): nothing to build or compare. Comparing the
@@ -108,7 +109,7 @@ struct SelectableProse: NSViewRepresentable {
                                       references: references)
         guard input != context.coordinator.input else { return }
         context.coordinator.input = input
-        let text = Self.withCitationHelp(Self.attributed(blocks, size: size, files: files, citations: citations), references)
+        let text = Self.withCitationLabels(Self.attributed(blocks, size: size, files: files, citations: citations), references, size: size)
         // The cache hands back the same text for the same blocks: skip comparing it character by character on every
         // redraw (hover, scrolling, another message streaming in).
         guard text !== context.coordinator.shown else { return }
@@ -118,11 +119,16 @@ struct SelectableProse: NSViewRepresentable {
         }
         context.coordinator.shown = text
         // A streaming answer only grows: keep what the user already selected.
+        (view as? ProseTextView)?.endCitationHover()
         let selection = view.selectedRanges
         storage.setAttributedString(text)
         context.coordinator.setMeasured(text)
         let kept = selection.filter { NSMaxRange($0.rangeValue) <= text.length }
         view.selectedRanges = kept.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : kept
+    }
+
+    static func dismantleNSView(_ view: NSTextView, coordinator: Coordinator) {
+        (view as? ProseTextView)?.endCitationHover()
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: NSTextView, context: Context) -> CGSize? {
@@ -255,8 +261,18 @@ struct SelectableProse: NSViewRepresentable {
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
             if let url, let number = MarkdownBlock.citationNumber(url) {
+                // One source that opens: open it. Several, or one with nothing to open (a calendar event): show what they
+                // say, with a button per source that opens.
                 let references = references
-                Task { @MainActor in AnswerCitation.open(number, in: references) }
+                MainActor.assumeIsolated {
+                    let cited = (textView as? ProseTextView)?.citedReferences(at: charIndex) ?? []
+                    if cited.count <= 1, let only = cited.first ?? references.first(where: { $0.number == number }),
+                       SourceReference.isOpenable(only.url) {
+                        AnswerCitation.open(only.number, in: references)
+                    } else {
+                        (textView as? ProseTextView)?.showCitationPreview(at: charIndex, pinned: true)
+                    }
+                }
                 return true
             }
             if let url, MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
@@ -417,19 +433,68 @@ struct SelectableProse: NSViewRepresentable {
 
     private static let bullets = ["•", "◦", "▪"]
 
-    /// The text with a hover on each citation that names its source; the text itself when there is nothing to name.
-    static func withCitationHelp(_ text: NSAttributedString, _ references: [SourceReference]) -> NSAttributedString {
+    /// The text with each citation (the raised numbers `inline` set, `[2][3]` as one) turned into a label: a space, the
+    /// first source's icon and short name, and "+2" for more, drawn as a pill by `InlineCodeLayoutManager`. It still opens
+    /// the source on a click, and `ProseTextView` shows what the sources say when the pointer rests on it. A citation of a
+    /// number the answer has no source for keeps its raised number.
+    @MainActor
+    static func withCitationLabels(_ text: NSAttributedString, _ references: [SourceReference], size: CGFloat) -> NSAttributedString {
         guard !references.isEmpty else { return text }
-        var found = false
-        text.enumerateAttribute(.citation, in: NSRange(location: 0, length: text.length)) { value, _, stop in
-            if value != nil { found = true; stop.pointee = true }
+        var groups: [(range: NSRange, numbers: [Int])] = []
+        text.enumerateAttribute(.citation, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard let number = value as? Int else { return }
+            if let last = groups.last, NSMaxRange(last.range) == range.location {
+                groups[groups.count - 1].range.length += range.length
+                if number != 0 { groups[groups.count - 1].numbers.append(number) }
+            } else {
+                groups.append((range, number == 0 ? [] : [number]))
+            }
         }
-        guard found, let copy = text.mutableCopy() as? NSMutableAttributedString else { return text }
-        copy.enumerateAttribute(.citation, in: NSRange(location: 0, length: copy.length)) { value, range, _ in
-            guard let number = value as? Int, let help = MainActor.assumeIsolated({ AnswerCitation.help(number, in: references) }) else { return }
-            copy.addAttribute(.toolTip, value: help, range: range)
+        guard !groups.isEmpty, let copy = text.mutableCopy() as? NSMutableAttributedString else { return text }
+        for (index, group) in groups.enumerated().reversed() {
+            let cited = AnswerCitation.references(group.numbers, in: references)
+            guard !cited.isEmpty else { continue }
+            let id = "\(index)|" + cited.map { String($0.number) }.joined(separator: ",")
+            copy.replaceCharacters(in: group.range, with: citationLabel(cited, id: id, size: size))
         }
         return copy
+    }
+
+    /// One citation's label (see `withCitationLabels`).
+    @MainActor
+    private static func citationLabel(_ cited: [SourceReference], id: String, size: CGFloat) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: round(size * 0.8), weight: .medium)
+        let padding = InlineCodeLayoutManager.labelPadding
+        // The space before it may wrap; the room for the pill's edge is its kerning.
+        let result = NSMutableAttributedString(string: " ", attributes: [.font: NSFont.systemFont(ofSize: size), .kern: padding])
+        let body = NSMutableAttributedString()
+        if let image = AnswerCitation.icon(cited[0], size: round(size * 0.86)) {
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            let side = image.size.height
+            attachment.bounds = CGRect(x: 0, y: round((font.capHeight - side) / 2), width: image.size.width, height: side)
+            body.append(NSAttributedString(attachment: attachment))
+            body.append(NSAttributedString(string: "\u{2060}"))
+        }
+        let nameStart = body.length
+        // No break inside the label: it reads as one thing.
+        body.append(NSAttributedString(string: AnswerCitation.label(cited).replacingOccurrences(of: " ", with: "\u{00A0}")))
+        let first = cited[0].number
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(NookTheme.textSecondary),
+            .citationLabel: id,
+            .citation: first,
+        ]
+        if let link = URL(string: "\(MarkdownBlock.citationScheme):\(first)") { attributes[.link] = link }
+        body.addAttributes(attributes, range: NSRange(location: 0, length: body.length))
+        if nameStart > 0 {
+            // A little room between the icon and the name.
+            body.addAttribute(.kern, value: round(size * 0.25), range: NSRange(location: nameStart - 1, length: 1))
+        }
+        body.addAttribute(.kern, value: padding, range: NSRange(location: body.length - 1, length: 1))
+        result.append(body)
+        return result
     }
 
     /// `MarkdownBlock.inline` (with its link checks) carried over to AppKit fonts and colors.
@@ -516,6 +581,207 @@ final class ProseTextView: NSTextView {
         text.replacingOccurrences(of: "\u{FFFC}", with: "").replacingOccurrences(of: "\u{2060}", with: "")
     }
 
+    // MARK: Citations
+
+    /// The answer's sources. With them the view follows the pointer, to show what a citation's sources say.
+    var citationReferences: [SourceReference] = [] {
+        didSet { if oldValue.isEmpty != citationReferences.isEmpty { updateTrackingAreas() } }
+    }
+    private var citationTracking: NSTrackingArea?
+    /// The label under the pointer, and the sentence it backs, lit while it is there.
+    private var hoveredLabel: (id: String, range: NSRange)?
+    private var litClaim: NSRange?
+    private var preview: NSPopover?
+    /// The label the preview shows, and whether a click opened it (it then stays until a click elsewhere).
+    private var previewLabel: String?
+    private var previewPinned = false
+    private var pendingShow: DispatchWorkItem?
+    private var watch: Timer?
+    private var missedChecks = 0
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let citationTracking { removeTrackingArea(citationTracking) }
+        citationTracking = nil
+        // Only an answer with sources follows the pointer: an agent's long transcript pays nothing.
+        guard !citationReferences.isEmpty else { return }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        citationTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard !citationReferences.isEmpty else { return }
+        setHovered(label(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setHovered(nil)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { endCitationHover() }
+    }
+
+    /// The sources the citation at `index` names.
+    func citedReferences(at index: Int) -> [SourceReference] {
+        guard let storage = textStorage, index >= 0, index < storage.length,
+              let id = storage.attribute(.citationLabel, at: index, effectiveRange: nil) as? String else { return [] }
+        return Self.references(id, in: citationReferences)
+    }
+
+    private static func references(_ id: String, in references: [SourceReference]) -> [SourceReference] {
+        let numbers = id.split(separator: "|").last.map { $0.split(separator: ",").compactMap { Int($0) } } ?? []
+        return AnswerCitation.references(numbers, in: references)
+    }
+
+    /// Shows what the sources of the citation at `index` say; `pinned` (after a click) keeps it until a click elsewhere.
+    func showCitationPreview(at index: Int, pinned: Bool) {
+        guard let storage = textStorage, index >= 0, index < storage.length else { return }
+        var range = NSRange()
+        guard let id = storage.attribute(.citationLabel, at: index, longestEffectiveRange: &range,
+                                         in: NSRange(location: 0, length: storage.length)) as? String else { return }
+        showPreview(id: id, range: range, pinned: pinned)
+    }
+
+    /// Lets go of a hovered citation and closes its preview: the text is about to change or the view leaves.
+    func endCitationHover() {
+        pendingShow?.cancel()
+        pendingShow = nil
+        setHovered(nil, closing: false)
+        closePreview()
+    }
+
+    /// The citation's label under `point`, if the pointer is on one.
+    private func label(at point: NSPoint) -> (id: String, range: NSRange)? {
+        guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0 else { return nil }
+        let inner = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: inner, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        let box = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard box.insetBy(dx: -InlineCodeLayoutManager.labelPadding, dy: -2).contains(inner) else { return nil }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        guard index < storage.length else { return nil }
+        var range = NSRange()
+        guard let id = storage.attribute(.citationLabel, at: index, longestEffectiveRange: &range,
+                                         in: NSRange(location: 0, length: storage.length)) as? String else { return nil }
+        return (id, range)
+    }
+
+    private func setHovered(_ label: (id: String, range: NSRange)?, closing: Bool = true) {
+        guard label?.id != hoveredLabel?.id else { return }
+        if let litClaim, let layoutManager, NSMaxRange(litClaim) <= (textStorage?.length ?? 0) {
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: litClaim)
+        }
+        litClaim = nil
+        hoveredLabel = label
+        (layoutManager as? InlineCodeLayoutManager)?.hoveredLabel = label?.id
+        pendingShow?.cancel()
+        pendingShow = nil
+        if let label {
+            // The sentence the citation backs lights up, so you see what the source is for.
+            let claim = claimRange(before: label.range.location)
+            if claim.length > 0 {
+                layoutManager?.addTemporaryAttribute(.backgroundColor, value: NSColor(NookTheme.iris).withAlphaComponent(0.16),
+                                                     forCharacterRange: claim)
+                litClaim = claim
+            }
+            if previewLabel != label.id {
+                // Moving from one label to the next swaps the preview at once; a first hover waits a moment, so passing
+                // over a label does not flash one.
+                let show = DispatchWorkItem { [weak self] in self?.showPreview(id: label.id, range: label.range, pinned: false) }
+                pendingShow = show
+                DispatchQueue.main.asyncAfter(deadline: .now() + (preview?.isShown == true ? 0 : 0.25), execute: show)
+            }
+        }
+        needsDisplay = true
+    }
+
+    /// From a citation back to the start of its sentence: a line's start, the end of the sentence before it, or the
+    /// citation before it in the same sentence.
+    private func claimRange(before location: Int) -> NSRange {
+        guard let storage = textStorage else { return NSRange(location: location, length: 0) }
+        let text = storage.string as NSString
+        func isSpace(_ c: unichar) -> Bool { c == 0x20 || c == 0xA0 }
+        var start = location
+        while start > 0 {
+            let c = text.character(at: start - 1)
+            if c == 0x0A || c == 0x2028 || c == 0x09 { break }
+            if storage.attribute(.citationLabel, at: start - 1, effectiveRange: nil) != nil { break }
+            if [0x2E, 0x21, 0x3F, 0x3B].contains(c), start < location, isSpace(text.character(at: start)) { break }
+            start -= 1
+        }
+        let skip = CharacterSet.whitespaces.union(.punctuationCharacters)
+        while start < location, let scalar = UnicodeScalar(text.character(at: start)), skip.contains(scalar) { start += 1 }
+        var end = location
+        while end > start, isSpace(text.character(at: end - 1)) { end -= 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    private func showPreview(id: String, range: NSRange, pinned: Bool) {
+        guard window != nil, let layoutManager, let textContainer, let storage = textStorage, NSMaxRange(range) <= storage.length else { return }
+        let cited = Self.references(id, in: citationReferences)
+        guard !cited.isEmpty else { return }
+        let claimRange = claimRange(before: range.location)
+        let claim = Self.plain((storage.string as NSString).substring(with: claimRange))
+        // The label's own box, without the space before it.
+        var labelRange = range
+        if labelRange.length > 1, (storage.string as NSString).character(at: labelRange.location) == 0x20 {
+            labelRange = NSRange(location: labelRange.location + 1, length: labelRange.length - 1)
+        }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: labelRange, actualCharacterRange: nil)
+        var anchor = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        anchor.origin.x += textContainerOrigin.x
+        anchor.origin.y += textContainerOrigin.y
+
+        let content = NSHostingController(rootView: CitationPreview(references: cited, claim: claim))
+        content.sizingOptions = .preferredContentSize
+        let popover = preview ?? NSPopover()
+        popover.behavior = pinned ? .transient : .applicationDefined
+        popover.animates = preview?.isShown != true
+        popover.contentViewController = content
+        if popover.isShown { popover.positioningRect = anchor } else { popover.show(relativeTo: anchor, of: self, preferredEdge: .maxY) }
+        preview = popover
+        previewLabel = id
+        previewPinned = pinned
+        startWatching()
+    }
+
+    /// While a hover preview shows, checks the pointer: it closes once the pointer has left both the label and the
+    /// preview for a moment, so it can be moved onto the preview to press Open.
+    private func startWatching() {
+        watch?.invalidate()
+        missedChecks = 0
+        guard !previewPinned else { return }
+        watch = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkPointer() }
+        }
+    }
+
+    private func checkPointer() {
+        guard let preview, preview.isShown else { closePreview(); return }
+        let onPreview = preview.contentViewController?.view.window?.frame.insetBy(dx: -6, dy: -6).contains(NSEvent.mouseLocation) ?? false
+        if hoveredLabel != nil || onPreview {
+            missedChecks = 0
+            return
+        }
+        missedChecks += 1
+        if missedChecks >= 2 { closePreview() }
+    }
+
+    private func closePreview() {
+        watch?.invalidate()
+        watch = nil
+        if preview?.isShown == true { preview?.performClose(nil) }
+        preview = nil
+        previewLabel = nil
+        previewPinned = false
+    }
+
     override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         guard type == .string else { return super.writeSelection(to: pboard, type: type) }
         let text = selectedRanges.map { (string as NSString).substring(with: $0.rangeValue) }.joined(separator: "\n")
@@ -528,6 +794,9 @@ extension NSAttributedString.Key {
     static let inlineCode = NSAttributedString.Key("NookInlineCode")
     /// Marks a citation's raised number with its source's number (0 for the comma between two).
     static let citation = NSAttributedString.Key("NookCitation")
+    /// Marks a citation's label (`SelectableProse.withCitationLabels`): "index|2,3", the label's place in the text and
+    /// the numbers of its sources. `InlineCodeLayoutManager` draws its pill.
+    static let citationLabel = NSAttributedString.Key("NookCitationLabel")
 }
 
 /// Draws inline code as a rounded chip that hugs the code's glyphs: as tall as the monospaced font with a little room
@@ -535,13 +804,48 @@ extension NSAttributedString.Key {
 final class InlineCodeLayoutManager: NSLayoutManager {
     /// Room between the chip's edge and its code, matched by the kerning around the span.
     static let padding: CGFloat = 3
+    /// Room between a citation label's pill and its icon and name, matched by the kerning around it.
+    static let labelPadding: CGFloat = 5
     private static let fill = NSColor(NookTheme.graphite)
     private static let stroke = NSColor(NookTheme.line2)
+    /// The citation label under the pointer (its `citationLabel` value): its pill takes the accent.
+    var hoveredLabel: String?
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         // Chips first, so a selection still draws over them.
         drawCodeChips(forGlyphRange: glyphsToShow, at: origin)
+        drawCitationLabels(forGlyphRange: glyphsToShow, at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    /// A citation's label as a capsule around its icon and name; in the accent while the pointer is on it.
+    private func drawCitationLabels(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let storage = textStorage, let container = textContainers.first else { return }
+        let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        storage.enumerateAttribute(.citationLabel, in: characters) { value, range, _ in
+            guard let id = value as? String, let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
+            let hovered = id == hoveredLabel
+            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
+                let part = NSIntersectionRange(glyphs, lineGlyphs)
+                guard part.length > 0 else { return }
+                let first = self.location(forGlyphAt: part.location)
+                // The last glyph's box takes in the kerning after it: the room on the pill's right.
+                let lastBox = self.boundingRect(forGlyphRange: NSRange(location: NSMaxRange(part) - 1, length: 1), in: container)
+                let baseline = lineRect.minY + first.y
+                let left = lineRect.minX + first.x - Self.labelPadding
+                let right = lastBox.maxX
+                let top = baseline - font.ascender - 2
+                let bottom = baseline - font.descender + 2
+                let pill = NSRect(x: left + origin.x, y: top + origin.y, width: max(0, right - left), height: bottom - top)
+                let path = NSBezierPath(roundedRect: pill.insetBy(dx: 0.5, dy: 0.5), xRadius: pill.height / 2, yRadius: pill.height / 2)
+                (hovered ? NSColor(NookTheme.iris).withAlphaComponent(0.22) : Self.fill).setFill()
+                path.fill()
+                (hovered ? NSColor(NookTheme.iris).withAlphaComponent(0.55) : Self.stroke).setStroke()
+                path.lineWidth = 1
+                path.stroke()
+            }
+        }
     }
 
     private func drawCodeChips(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
