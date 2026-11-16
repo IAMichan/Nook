@@ -14,6 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::backend::{BackendSession, CompanionBackend};
+use super::device_key;
 use super::models::*;
 use super::push;
 use super::seal::{self, Direction};
@@ -296,6 +297,18 @@ impl CompanionServer {
         if let Some(error) = refusal {
             return sealed(CompanionResponse::failure(&request.id, error));
         }
+        // A phone that bound its device key signs every request with it (`device_key`): without a valid signature the
+        // pairing key alone (a copy of it) is not enough.
+        if !pairing && device_key::needs_signature(request.op) {
+            if let Some(public_key) = self.store.device_key(&claimed) {
+                if !device_key::verify(frame, &public_key) {
+                    return sealed(CompanionResponse {
+                        message: Some("signature".into()),
+                        ..CompanionResponse::failure(&request.id, CompanionError::NotAllowedFromPhone)
+                    });
+                }
+            }
+        }
 
         if pairing {
             let name = request.text.clone().unwrap_or_default();
@@ -327,11 +340,29 @@ impl CompanionServer {
                     mac_name: Some(self.name.clone()),
                     endpoints: self.endpoints(),
                     relay: Some(self.reach().relay),
+                    // Only the device key beyond the first version: a phone offers nothing this computer cannot do.
+                    features: Some(vec![feature::DEVICE_KEY.into()]),
                     ..with_sessions(sessions)
                 }
             }
             // The relay test and "Why can't I connect?" on the phone: the sealed round trip is the answer.
             CompanionOp::Ping => CompanionResponse::success(id),
+            CompanionOp::BindKey => {
+                use base64::Engine;
+                let Some(public_key) = request
+                    .text
+                    .as_deref()
+                    .and_then(|t| base64::engine::general_purpose::STANDARD.decode(t.as_bytes()).ok())
+                    .filter(|k| device_key::is_valid_public_key(k))
+                else {
+                    return fail(CompanionError::BadRequest);
+                };
+                let bound = self.store.bind_key(device_id, &public_key);
+                if bound {
+                    self.audit("device_key", &self.store.device(device_id).map(|d| d.name).unwrap_or_default());
+                }
+                CompanionResponse { message: Some(if bound { "bound" } else { "other" }.into()), ..CompanionResponse::success(id) }
+            }
             CompanionOp::Register => {
                 // Het token komt in een URL op Apple's host: alleen hex.
                 let Some(token) = request.text.as_deref().filter(|t| push::valid_token(t)) else {

@@ -260,6 +260,14 @@ final class CompanionServer: ObservableObject {
             connection.cancel()
             return
         }
+        // A phone that bound its device key signs every request with it (`CompanionDeviceKey`): without a valid signature
+        // the pairing key alone (a copy of it) is not enough.
+        if !pairing, CompanionDeviceKey.needsSignature(request.op), let deviceKey = store.deviceKey(of: claimed),
+           !CompanionDeviceKey.verify(envelope: frame, publicKey: deviceKey) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "signature", "device": claimed])
+            send(.failure(request.id, .notAllowedFromPhone, message: "signature"), key: key, deviceID: claimed, on: connection)
+            return
+        }
         // Every answer to this request, and on a subscribe all that follows on it, compressed when large.
         let compress = request.compression == true
         peer.compression = compress
@@ -828,6 +836,12 @@ final class CompanionServer: ObservableObject {
             return await fileData(request, app: app)
         case .entry:
             return await entry(request, app: app)
+        case .bindKey:
+            guard let text = request.text, let publicKey = Data(base64Encoded: text),
+                  CompanionDeviceKey.isValidPublicKey(publicKey) else { return .failure(request.id, .badRequest) }
+            let bound = CompanionStore.shared.bindKey(device: deviceID, publicKey: publicKey)
+            if bound { audit("device_key", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "") }
+            return CompanionResponse(id: request.id, ok: true, message: bound ? "bound" : "other")
         }
     }
 

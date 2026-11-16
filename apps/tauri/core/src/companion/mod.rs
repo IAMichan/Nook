@@ -10,6 +10,7 @@
 pub mod apns;
 pub mod backend;
 pub mod client;
+pub mod device_key;
 #[cfg(test)]
 mod fixtures;
 pub mod keep_awake;
@@ -169,6 +170,18 @@ mod tests {
         assert_eq!(paired.sessions[0].excerpt.chars().count(), EXCERPT_LIMIT + 1);
         assert_eq!(store.devices().len(), 1);
         assert_eq!(store.devices()[0].name, "Pixel 8");
+        // Right after pairing the phone bound its own device key, and from then on signs: the pairing key alone (a copy
+        // of it) no longer gets an answer, a ping aside.
+        assert!(store.devices()[0].device_key.is_some());
+        let routes = [transport::Route::Direct { host: "127.0.0.1".into(), port }];
+        let copied = CompanionRequest::new(CompanionOp::List);
+        let (refused, _) = client::request(&link, &routes, &copied, None, &DnsResolver).await.unwrap();
+        assert_eq!(refused.error, Some(CompanionError::NotAllowedFromPhone));
+        assert_eq!(refused.message.as_deref(), Some("signature"));
+        let (pinged, _) = client::request(&link, &routes, &CompanionRequest::new(CompanionOp::Ping), None, &DnsResolver).await.unwrap();
+        assert!(pinged.ok);
+        let s = phone.refresh().await;
+        assert_eq!((s.phase, s.notice), (Phase::Connected, None), "the phone's own requests are signed");
         // Een gestopt koppelvenster: die code werkt niet meer.
         let cancelled = server.pairing_link("127.0.0.1").unwrap();
         store.cancel_pairing();
@@ -201,10 +214,10 @@ mod tests {
             *workspace.log.lock().unwrap(),
             vec!["decide S1 p1 false", "decide S1 p2 true", "answer S1 q1 SQLite", "send S1 ga door", "stop S1"]
         );
-        // This computer lists no features: the phone offers only the first version, and a request beyond it is
+        // This computer lists only the device key: the phone offers only the first version, and a request beyond it is
         // answered with a refusal rather than a closed connection.
         let s = phone.refresh().await;
-        assert!(s.features.is_empty());
+        assert_eq!(s.features, vec![feature::DEVICE_KEY.to_string()]);
         assert_eq!(s.scopes, None);
         let (s, answer) =
             phone.call(client::ClientCall { op: Some(CompanionOp::Timeline), session: Some("S1".into()), ..Default::default() }).await;

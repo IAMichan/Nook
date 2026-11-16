@@ -211,7 +211,7 @@ impl RelayHost {
         let route = super::transport::Route::Relay { relay, room: relay_room(&key) };
         let started = Instant::now();
         let ping = super::models::CompanionRequest::new(super::models::CompanionOp::Ping);
-        match super::client::request(&link, &[route], &ping, &super::client::DnsResolver).await {
+        match super::client::request(&link, &[route], &ping, None, &super::client::DnsResolver).await {
             Ok((response, _)) if response.ok => Ok(started.elapsed().as_millis() as u64),
             Ok(_) => Err("This computer answered, but refused the test.".into()),
             Err(super::client::ClientError::Closed) => Err("The relay closed the connection: this computer is not in the room yet.".into()),

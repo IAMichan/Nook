@@ -34,7 +34,7 @@ enum CompanionScopes {
     /// The one table of what each op needs. Every `CompanionOp` has an entry (`CompanionScopesTests`).
     static let table: [CompanionOp: Requirement] = [
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
-        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
+        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always, .bindKey: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
         .pulls: .scope(.read), .pull: .scope(.read), .history: .scope(.read), .entry: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),

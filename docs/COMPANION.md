@@ -114,7 +114,7 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 - **Snooze:** besides an hour, this evening and tomorrow morning, *Pick a time…* snoozes to any moment up to a month ahead (`snoozeUntil`) and *Until the limit resets* to when the usage limit that stopped the session resets (`snoozeLimitReset`, offered while the Mac knows that moment, `SessionDigest.limitResetsAt`).
 - **Main thread:** a session's menu turns its main thread on or off (`mainThreadOn` / `mainThreadOff` in `SessionDigest.actions`), as the Mac composer's switch does; the Mac lists the one that applies, only for an agent that may delegate. A phone that predates them leaves the two names out.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `fullTranscript`, `appIcons`, `liveConversation`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `fullTranscript`, `appIcons`, `liveConversation`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app lists `deviceKey` alone.
 
 ## iPad
 
@@ -238,6 +238,18 @@ Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/S
 - The Mac refuses a request outside the phone's scopes (`notAllowedFromPhone`), leaves out of every answer what the phone may not see, lists only the features it may use, and sends the phone its scopes with every `hello`, `list` and `subscribe` answer. The phone hides what it may not use (approve buttons, the message field, the Chats and Nook tabs). A change on the Mac ends the phone's live connection, so it reconnects and learns at once.
 
 ## Security Architecture
+
+- **Device key:** with a computer that lists `deviceKey` (the Mac and the Tauri app on Windows and Linux), the phone
+  makes a P-256 signing key of its own for that pairing and tells the computer its public half once, right after
+  pairing (`bindKey`). On the iPhone the key lives in the Secure Enclave where the phone has one (`DeviceKeyStore`; a
+  software key in the simulator); on Android it lives with the pairing in the app's secret store, for now a private app
+  folder without backup rather than the Android Keystore (`apps/tauri/core/src/companion/device_key.rs`). From the computer's "bound" on, every request carries a signature
+  over its sealed bytes (envelope field `g`: ECDSA P-256 with SHA-256 over `d|s`, its 64 raw bytes; `CompanionDeviceKey`),
+  and the computer refuses an unsigned or wrongly signed request from that phone (`notAllowedFromPhone`, message
+  `signature`), except `ping`. A copy of the pairing key alone (a backup, a leaked file) can then no longer act. The
+  first key a computer hears for a pairing is the one it keeps; a phone that lost its own is told to pair again.
+  Unpairing forgets the key on both sides. A phone or computer from before this sends and takes unsigned requests, as
+  before.
 
 - **Out-of-band key exchange:** The 32-byte random key is transferred exclusively via the QR code and never sent over the network.
 - **End-to-end authenticated encryption:** Every message is sealed with **ChaCha20-Poly1305** (keys derived via HKDF from the pairing key, with device ID and direction bound in the associated data). Anyone on the same Wi-Fi network cannot read session titles or commands, nor modify or forge requests.
