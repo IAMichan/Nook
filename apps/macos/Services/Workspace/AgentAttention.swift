@@ -268,7 +268,11 @@ struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
     static let limit = 3
-    static let message = "Continue where you left off."
+    /// What the agent reads. A restart can cut a turn off after a command ran but before its result reached the agent
+    /// (or Nook), so it is told to look before it repeats anything that changes state.
+    static let message = "Continue where you left off. Nook restarted while you were working, so check the current state "
+        + "first (files, git status, what is still running) and do not repeat a step that changes something unless you are "
+        + "sure it did not finish."
 
     /// Should this run get the continue message after Nook started?
     /// A session your quit stopped (`stoppedByQuit`) goes on the next time you open Nook, however long that took. Any other
@@ -317,6 +321,16 @@ enum RestartContinuation {
         let more = labels.count > noteLimit ? ["- and \(labels.count - noteLimit) more"] : []
         return (["Note: Nook restarted, and this background work was stopped before it finished. It will not report back on "
                  + "its own, so start again what you still need and wait for its result:"] + shown + more).joined(separator: "\n")
+    }
+
+    /// Whether the conversation's last turn had ended when Nook stopped: its result (every agent family writes one when
+    /// a turn ends, `RunEvent.Kind.result`) comes after your last message. The timeline's events are saved as they
+    /// come and the session's status a moment later, so a crash in between leaves a finished turn that reads as cut
+    /// off; continuing it would send the agent back to work it already finished.
+    static func turnEnded(_ events: [RunEvent]) -> Bool {
+        guard let result = events.lastIndex(where: { $0.kind == .result && $0.rolledBack != true }) else { return false }
+        guard let message = events.lastIndex(where: { $0.kind == .user && $0.rolledBack != true }) else { return true }
+        return result > message
     }
 
     /// Continuations in a row that still count: none once the last one is older than `loopWindow`.

@@ -9,6 +9,41 @@ struct RunCheckpoint: Codable, Equatable, Sendable {
     var conversation: ConversationMark? = nil
 }
 
+/// Whether and to which snapshot a session's files may go back. Restoring rewrites every file in the folder, so it is
+/// refused whenever it would undo more than the turns you chose, or work that is not this session's.
+enum RevertPlan {
+    /// The most missed snapshots a session remembers: enough to refuse a wrong restore, never a growing list.
+    static let missedLimit = 32
+
+    /// The last snapshot at or before `date`, unless a turn that ended in between has no snapshot (`missed`): restoring
+    /// the earlier one would also undo that turn, without saying so.
+    static func checkpointIndex(_ checkpoints: [RunCheckpoint], missed: [Date], before date: Date) -> Int? {
+        guard let index = checkpoints.lastIndex(where: { $0.date <= date }) else { return nil }
+        let from = checkpoints[index].date
+        return missed.contains { $0 > from && $0 <= date } ? nil : index
+    }
+
+    /// Two folders (normalized) where restoring one changes files of the other: the same folder, or one inside the other.
+    static func overlaps(_ first: String, _ second: String) -> Bool {
+        guard !first.isEmpty, !second.isEmpty else { return false }
+        if first == second { return true }
+        let a = first.hasSuffix("/") ? first : first + "/"
+        let b = second.hasSuffix("/") ? second : second + "/"
+        return a.hasPrefix(b) || b.hasPrefix(a)
+    }
+
+    /// Whether another session in an overlapping folder (`overlapping`, already checked) keeps a restore to the snapshot
+    /// of `since` from running: it is at work there (files would change under it), or it finished a turn there after
+    /// that snapshot (a fork, a side chat, a delegated task: the restore would throw its work away). An archived one
+    /// is done with.
+    static func blocks(_ other: WorkspaceRun, since: Date) -> Bool {
+        guard !other.archived else { return false }
+        if other.status.isActive { return true }
+        let turnEnds = (other.checkpoints ?? []).map(\.date) + (other.missedCheckpoints ?? [])
+        return turnEnds.contains { $0 > since }
+    }
+}
+
 /// Checkpoints are made with a temporary index (`read-tree HEAD`, `add -A`, `write-tree`, `commit-tree`, `update-ref`):
 /// tracked and untracked files, not ignored ones. Restoring writes the snapshot's files back and removes files that
 /// were added since. Synchronous, like the rest of GitService: call off the main thread.

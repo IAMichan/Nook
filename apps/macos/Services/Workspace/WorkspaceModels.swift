@@ -511,6 +511,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var changedLinesRemoved: Int? = nil
     /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
+    /// When a turn ended whose snapshot is not there: written before the snapshot is made and cleared once it is, so a
+    /// failed one and one Nook quit during both stay. Going back across one is refused (`RevertPlan`).
+    var missedCheckpoints: [Date]? = nil
     /// The agent's own conversation as Nook follows it (turns, Claude Code's last message), and a rollback of it that
     /// goes out with the next turn (see `ConversationRollback`).
     var conversation: ConversationLog? = nil

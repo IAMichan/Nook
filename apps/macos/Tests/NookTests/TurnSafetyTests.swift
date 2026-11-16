@@ -199,4 +199,15 @@ final class TurnSafetyTests: XCTestCase {
         XCTAssertFalse(LiveRights.coversCodex(.command, permission: .bypass, mode: .plan))
         XCTAssertFalse(LiveRights.coversCodex(.mcpTool, permission: .bypass, mode: .agent))
     }
+    /// Every Codex and ACP process numbers its requests from 0: the id Nook keys them by carries the session, so two
+    /// sessions asking at once never answer, replace or dismiss each other's request.
+    func testPermissionRequestIDsOfTwoSessionsNeverCollide() {
+        let first = UUID(), second = UUID()
+        XCTAssertNotEqual(PermissionRequestID.scoped("codex", session: first, native: "0"),
+                          PermissionRequestID.scoped("codex", session: second, native: "0"))
+        XCTAssertNotEqual(PermissionRequestID.scoped("codex", session: first, native: "0"),
+                          PermissionRequestID.scoped("acp", session: first, native: "0"))
+        XCTAssertEqual(PermissionRequestID.scoped("acp", session: first, native: "7"),
+                       PermissionRequestID.scoped("acp", session: first, native: "7"), "the same request keeps its id")
+    }
 }

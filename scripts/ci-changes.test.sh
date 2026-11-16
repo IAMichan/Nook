@@ -28,6 +28,8 @@ check() { # "paths" "expected areas"
 check "apps/macos/App/AppDelegate.swift" "macos core_tests"
 check "apps/macos/project.yml" "macos core_tests dependencies"
 check "packages/protocol/Sources/Protocol/Message.swift" "macos ios"
+# The golden fixtures are read by the Mac, the iPhone, the relay and the Tauri app alike.
+check "packages/protocol/Fixtures/requests.json" "macos ios relay tauri"
 check "apps/ios/Sources/ContentView.swift" "ios"
 check "packages/core/Sources/Core/Thing.swift" "packages"
 check "apps/relay/worker/index.js" "relay"
