@@ -5,7 +5,8 @@ import Foundation
 /// A long conversation used to send its newest sixteen messages at up to 4,000 characters each (up to 64,000 characters
 /// with every question, whatever the brain), and to forget everything before them. The window instead:
 ///
-/// - keeps the newest turns in full, so "and on Friday?" or "make it shorter" still sees what it refers to;
+/// - keeps the newest turns in full, so "and on Friday?" or "make it shorter" still sees what it refers to; the very
+///   newest one (usually a long answer being asked about) may take up to two thirds of the budget;
 /// - shortens older turns to their start, so they cost little but still say what was asked and answered;
 /// - folds the turns that no longer fit into one recap turn that lists what the user asked earlier, so the topic a
 ///   conversation started with is never lost when the user picks it up again;
@@ -62,7 +63,10 @@ enum ConversationWindow {
         var cut = turns.count
         for (offset, turn) in turns.reversed().enumerated() {
             guard kept.count < limits.maxTurns else { break }
-            let length = offset < limits.recentTurns ? limits.fullLength : limits.shortLength
+            // The newest turn, usually the answer a follow-up is about ("how did you get to that?"), may take up to two thirds
+            // of the window: a long briefing cut to its start left the brain unable to see what it said further down.
+            let length = offset == 0 ? max(limits.fullLength, limits.budget * 2 / 3)
+                : offset < limits.recentTurns ? limits.fullLength : limits.shortLength
             var text = shortened(turn.text, to: length)
             let left = limits.budget - used
             if text.count > left {
@@ -127,6 +131,16 @@ enum ConversationWindow {
             let rest = turn.text[end.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
             return rest.isEmpty ? nil : ChatTurn(fromUser: true, text: rest)
         }
+    }
+
+    /// The turns as text before a prompt, for brains that take one prompt instead of a message history. Without a limit
+    /// the whole window goes along: it is already sized to the brain (`Limits.fitting`). Brains such as Claude Code and
+    /// Codex used to get each turn cut again to its first 1,500 characters, so they could not see what their own previous
+    /// answer said. A turn longer than `length` is cut at a word and ends in "…", so the model knows it sees only the start.
+    static func asText(_ turns: [ChatTurn], limit: Int = .max, length: Int = .max) -> String {
+        guard !turns.isEmpty else { return "" }
+        let lines = turns.suffix(limit).map { "\($0.fromUser ? "User" : "Nook"): \(shortened($0.text, to: length))" }
+        return "Conversation so far (for follow-up context):\n" + lines.joined(separator: "\n") + "\n\n"
     }
 
     /// The text cut at a word near `length`, marked with an ellipsis when something was left out.

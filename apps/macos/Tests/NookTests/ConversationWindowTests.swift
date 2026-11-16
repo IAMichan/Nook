@@ -127,4 +127,21 @@ final class ConversationWindowTests: XCTestCase {
         let plain = [ChatTurn(fromUser: true, text: "Wat staat er in de offerte van Apollo?"), ChatTurn(fromUser: false, text: "Here it is.")]
         XCTAssertTrue(Research.terms(in: "En het budget?", history: plain).inherited)
     }
+
+    /// Brains that take one text prompt (Claude Code, Codex, Gemini CLI…) see the previous answer whole: it used to be cut
+    /// to its first 1,500 characters, so a follow-up on the end of a long briefing found nothing to refer to.
+    func testPromptBrainsSeeTheWholePreviousAnswer() {
+        let answer = Array(repeating: "briefing line", count: 300).joined(separator: "\n") + "\nInfaris.com: check the payment"
+        let window = ConversationWindow.fit([ChatTurn(fromUser: true, text: "Wat moet ik vandaag doen?"), ChatTurn(fromUser: false, text: answer)],
+                                            limits: .fitting(.cloud))
+        let prefix = ConversationWindow.asText(window)
+        XCTAssertTrue(prefix.contains("Infaris.com: check the payment"))
+        XCTAssertTrue(prefix.contains("User: Wat moet ik vandaag doen?"))
+    }
+
+    func testAShortenedHistoryTurnSaysItWasCut() {
+        let prefix = ConversationWindow.asText([ChatTurn(fromUser: false, text: long)], limit: 4, length: 300)
+        XCTAssertTrue(prefix.contains("…"))
+        XCTAssertFalse(prefix.contains(long))
+    }
 }
