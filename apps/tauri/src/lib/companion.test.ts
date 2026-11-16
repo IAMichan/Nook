@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTimeline, attentionWord, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyConversation, applyTimeline, attentionWord, resumePoint, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -92,6 +92,30 @@ describe("companion", () => {
     expect(applyTimeline(old, [e("4")], "missing")).toBeNull();
     expect(applyTimeline(null, [e("4")], "2")).toBeNull();
     expect(applyTimeline(old, [e("4")], "3", 2)?.map((x) => x.id)).toEqual(["3", "4"]);
+  });
+
+  it("follows Nook's answer as it writes, as ConversationDelta does", () => {
+    const line = (id: string, text: string, streaming = false) =>
+      ({ id, fromNook: id !== "q", text, date: 100, streaming, status: "", failed: false, onMac: false });
+    const old = [line("q", "Wat staat er vandaag?"), line("a", "Je hebt om 10:00", true)];
+    // Only Nook's new words come, counted in code points (an emoji with a skin tone is two).
+    const words = applyConversation(old, { messageAppend: { id: "a", at: 16, text: " een call 👋🏽", streaming: true, status: "" } });
+    expect(words?.[1].text).toBe("Je hebt om 10:00 een call 👋🏽");
+    const done = applyConversation(words, { messageAppend: { id: "a", at: 16 + Array.from(" een call 👋🏽").length, text: ".", streaming: false, status: "" } });
+    expect(done?.[1]).toMatchObject({ text: "Je hebt om 10:00 een call 👋🏽.", streaming: false });
+    // An update that does not build on what the phone has is refused: the phone asks again.
+    expect(applyConversation(old, { messageAppend: { id: "a", at: 3, text: "x", streaming: true, status: "" } })).toBeNull();
+    expect(applyConversation(old, { messageAppend: { id: "b", at: 16, text: "x", streaming: true, status: "" } })).toBeNull();
+    expect(applyConversation(null, { messageAppend: { id: "a", at: 0, text: "x", streaming: true, status: "" } })).toBeNull();
+    // New messages go after the last one both have; none named: the conversation whole.
+    const tail = applyConversation(done, { messages: [line("q2", "En morgen?"), line("a2", "", true)], messagesAfter: "a" });
+    expect(tail?.map((l) => l.id)).toEqual(["q", "a", "q2", "a2"]);
+    expect(applyConversation(old, { messages: [line("z", "")], messagesAfter: "gone" })).toBeNull();
+    expect(applyConversation(old, { messages: [line("z", "")] })?.map((l) => l.id)).toEqual(["z"]);
+    expect(applyConversation(old, {})).toBe(old);
+    // After a reconnect the phone names its last finished message.
+    expect(resumePoint(tail)).toBe("q2");
+    expect(resumePoint([])).toBeUndefined();
   });
 
   it("says which side to update, as CompanionCompatibility", () => {

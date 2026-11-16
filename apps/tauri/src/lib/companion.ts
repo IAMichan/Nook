@@ -196,7 +196,7 @@ export function looksLikePairingLink(text: string): boolean {
 
 export type Op =
   | "terminals" | "files" | "fileData" | "history" | "entry" | "requestUpdate" | "avatars"
-  | "watch" | "watchChat" | "diff" | "pulls" | "pull" | "pullAct" | "pullWork"
+  | "watch" | "watchChat" | "watchConversation" | "diff" | "pulls" | "pull" | "pullAct" | "pullWork"
   | "list" | "decide" | "answer" | "send" | "stop" | "options" | "start" | "timeline" | "chats" | "chat" | "ask" | "chatStop"
   | "home" | "usage" | "music" | "inbox" | "inboxChat" | "inboxSend" | "inboxMark" | "manage";
 
@@ -280,6 +280,9 @@ export interface ChatDigest { id: string; title: string; updated: number; busy: 
 
 export interface ChatLine { id: string; fromNook: boolean; text: string; date: number; streaming: boolean; status: string; failed: boolean; onMac: boolean }
 
+/** Nook's new words at the end of its last message (`ChatAppend`): `at` counts the Unicode scalars it already had. */
+export interface ChatAppend { id: string; at: number; text: string; streaming: boolean; status: string }
+
 export interface InboxChatDigest {
   id: string;
   app: string;
@@ -343,6 +346,11 @@ export interface CompanionResponse {
   timelineSession?: string;
   timelineAfter?: string;
   inboxChat?: string;
+  /** The Nook conversation `messages` or `messageAppend` belong to, on a live update (`watchConversation`). */
+  messagesConversation?: string;
+  /** `messages` go after this message; none: they are the conversation whole. */
+  messagesAfter?: string;
+  messageAppend?: ChatAppend;
   revoked?: boolean;
   diff?: DiffFile[];
   pulls?: PullDigest[];
@@ -362,7 +370,7 @@ export interface CallResult { view: ClientView; response: CompanionResponse | nu
 export const Feature = {
   diff: "diff", pullRequests: "pullRequests", images: "images", workspace: "workspace", filePreview: "filePreview",
   history: "history", fullTranscript: "fullTranscript", requestUpdate: "requestUpdate", avatars: "avatars", appIcons: "appIcons",
-  stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", usage: "usage",
+  stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", liveConversation: "liveConversation", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
   retry: "retry",
 } as const;
@@ -603,6 +611,36 @@ export function applyTimeline(old: TimelineEntry[] | null, entries: TimelineEntr
   return [...old.slice(0, index + 1), ...entries].slice(-limit);
 }
 
+/**
+ * The Nook conversation after a live update (`ConversationDelta.apply`): Nook's new words added to its last message, or
+ * the messages after `after` (the update whole when it names none). Null when the update does not build on what the
+ * phone has (it missed one): then it asks for the conversation again.
+ */
+export function applyConversation(old: ChatLine[] | null, update: Pick<CompanionResponse, "messages" | "messagesAfter" | "messageAppend">): ChatLine[] | null {
+  const append = update.messageAppend;
+  if (append) {
+    const last = old?.[old.length - 1];
+    // Counted in code points, as the Mac counts Unicode scalars.
+    if (!old || !last || last.id !== append.id || Array.from(last.text).length !== append.at) return null;
+    return [...old.slice(0, -1), { ...last, text: last.text + append.text, streaming: append.streaming, status: append.status }];
+  }
+  if (!update.messages) return old;
+  if (!update.messagesAfter) return update.messages;
+  if (!old) return null;
+  let index = -1;
+  for (let i = old.length - 1; i >= 0; i--) if (old[i].id === update.messagesAfter) { index = i; break; }
+  return index < 0 ? null : [...old.slice(0, index + 1), ...update.messages];
+}
+
+/** The message a phone names to resume the live conversation from (`ConversationDelta.resumePoint`): its last finished one. */
+export function resumePoint(lines: ChatLine[] | null | undefined): string | undefined {
+  for (let i = (lines?.length ?? 0) - 1; i >= 0; i--) if (!lines![i].streaming) return lines![i].id;
+  return undefined;
+}
+
+/** Nook writes in the open conversation but nothing came for this long: an update may be stuck, ask again (`CompanionTiming.conversationStall`). */
+export const CONVERSATION_STALL = 6_000;
+
 /** Who is typing, as the iPhone says it (`InboxTypist`). */
 export function typingText(t: InboxTypist[] | undefined): string | null {
   if (!t?.length) return null;
@@ -624,6 +662,7 @@ export const KNOWN_FEATURES = [
   "workspace", "start", "timeline", "chat", "home", "usage", "music", "inbox", "liveActivity", "manage", "stream", "routes", "retry",
   "relay", "requestUpdate", "steer", "liveTimeline", "diff", "images", "clock", "revoke", "foreground", "resume", "pullRequests",
   "attachments", "history", "compression", "filePreview", "liveChats", "avatars", "fullTranscript", "appIcons",
+  "liveConversation",
 ];
 
 export type VersionNotice = "macTooOld" | "phoneTooOld" | "macBehind" | "phoneBehind";
