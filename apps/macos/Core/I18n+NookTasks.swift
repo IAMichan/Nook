@@ -18,7 +18,15 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "nookTask.bar.title": "Nook does this on its own",
         "nookTask.run": "Scheduled run · %@",
         "nookTask.delete.detail": "Nook stops doing this. The conversations of earlier runs stay.",
-        "suggest.nookTask.morning": "Give me an update on my messages every morning at 9:00"
+        "suggest.nookTask.morning": "Give me an update on my messages every morning at 9:00",
+        "nooks.tab.conversations": "Conversations",
+        "nookTask.search": "Search scheduled tasks",
+        "nookTask.tab.help": "%ld tasks Nook runs on its own",
+        "nookTask.none": "Nothing scheduled yet",
+        "nookTask.none.detail": "Ask Nook to do something on a schedule, such as “every morning at 9:00, give me an update on my messages”, or add a task here.",
+        "nookTask.add": "New scheduled task",
+        "nookTask.count": "Scheduled tasks (%ld)",
+        "nookTask.section.resting": "Paused and done"
     ],
     .nl: [
         "nookTask.section": "Gepland",
@@ -34,7 +42,15 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "nookTask.bar.title": "Nook doet dit uit zichzelf",
         "nookTask.run": "Geplande run · %@",
         "nookTask.delete.detail": "Nook stopt hiermee. De gesprekken van eerdere runs blijven bewaard.",
-        "suggest.nookTask.morning": "Geef me elke ochtend om 9:00 een update over mijn berichten"
+        "suggest.nookTask.morning": "Geef me elke ochtend om 9:00 een update over mijn berichten",
+        "nooks.tab.conversations": "Gesprekken",
+        "nookTask.search": "Zoek in geplande taken",
+        "nookTask.tab.help": "%ld taken die Nook uit zichzelf doet",
+        "nookTask.none": "Nog niets gepland",
+        "nookTask.none.detail": "Vraag Nook iets op vaste momenten te doen, zoals “geef me elke ochtend om 9:00 een update over mijn berichten”, of voeg hier een taak toe.",
+        "nookTask.add": "Nieuwe geplande taak",
+        "nookTask.count": "Geplande taken (%ld)",
+        "nookTask.section.resting": "Gepauzeerd en klaar"
     ],
     .de: [
         "nookTask.section": "Geplant",
@@ -50,7 +66,15 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "nookTask.bar.title": "Nook macht das von selbst",
         "nookTask.run": "Geplanter Lauf · %@",
         "nookTask.delete.detail": "Nook hört damit auf. Die Gespräche früherer Läufe bleiben erhalten.",
-        "suggest.nookTask.morning": "Gib mir jeden Morgen um 9:00 ein Update zu meinen Nachrichten"
+        "suggest.nookTask.morning": "Gib mir jeden Morgen um 9:00 ein Update zu meinen Nachrichten",
+        "nooks.tab.conversations": "Gespräche",
+        "nookTask.search": "Geplante Aufgaben durchsuchen",
+        "nookTask.tab.help": "%ld Aufgaben, die Nook von selbst erledigt",
+        "nookTask.none": "Noch nichts geplant",
+        "nookTask.none.detail": "Bitte Nook, etwas regelmäßig zu tun, etwa „gib mir jeden Morgen um 9:00 ein Update zu meinen Nachrichten“, oder füge hier eine Aufgabe hinzu.",
+        "nookTask.add": "Neue geplante Aufgabe",
+        "nookTask.count": "Geplante Aufgaben (%ld)",
+        "nookTask.section.resting": "Pausiert und erledigt"
     ],
     .fr: [
         "nookTask.section": "Planifiées",
@@ -66,7 +90,15 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "nookTask.bar.title": "Nook le fait de lui-même",
         "nookTask.run": "Exécution planifiée · %@",
         "nookTask.delete.detail": "Nook arrête de le faire. Les conversations des exécutions précédentes sont conservées.",
-        "suggest.nookTask.morning": "Fais-moi chaque matin à 9:00 le point sur mes messages"
+        "suggest.nookTask.morning": "Fais-moi chaque matin à 9:00 le point sur mes messages",
+        "nooks.tab.conversations": "Conversations",
+        "nookTask.search": "Rechercher dans les tâches planifiées",
+        "nookTask.tab.help": "%ld tâches que Nook fait de lui-même",
+        "nookTask.none": "Rien de planifié pour l’instant",
+        "nookTask.none.detail": "Demande à Nook de faire quelque chose à heure fixe, par exemple « fais-moi chaque matin à 9:00 le point sur mes messages », ou ajoute une tâche ici.",
+        "nookTask.add": "Nouvelle tâche planifiée",
+        "nookTask.count": "Tâches planifiées (%ld)",
+        "nookTask.section.resting": "En pause et terminées"
     ],
     .es: [
         "nookTask.section": "Programadas",
@@ -82,6 +114,14 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "nookTask.bar.title": "Nook hace esto por su cuenta",
         "nookTask.run": "Ejecución programada · %@",
         "nookTask.delete.detail": "Nook deja de hacerlo. Las conversaciones de las ejecuciones anteriores se conservan.",
-        "suggest.nookTask.morning": "Dame cada mañana a las 9:00 un resumen de mis mensajes"
+        "suggest.nookTask.morning": "Dame cada mañana a las 9:00 un resumen de mis mensajes",
+        "nooks.tab.conversations": "Conversaciones",
+        "nookTask.search": "Buscar en tareas programadas",
+        "nookTask.tab.help": "%ld tareas que Nook hace por su cuenta",
+        "nookTask.none": "Nada programado todavía",
+        "nookTask.none.detail": "Pide a Nook que haga algo de forma periódica, como «dame cada mañana a las 9:00 un resumen de mis mensajes», o añade una tarea aquí.",
+        "nookTask.add": "Nueva tarea programada",
+        "nookTask.count": "Tareas programadas (%ld)",
+        "nookTask.section.resting": "En pausa y terminadas"
     ]
 ]

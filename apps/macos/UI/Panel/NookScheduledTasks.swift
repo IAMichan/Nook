@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Work Nook does on its own (`ScheduledTaskTarget.nook`), in the Nook tab: the "Scheduled" section at the top of the
-// list, the bar over a run's conversation, and the marker where a run asked its question.
+// Work Nook does on its own (`ScheduledTaskTarget.nook`), in the Nook tab: the Scheduled tab of the list, the bar over
+// a run's conversation, and the marker where a run asked its question.
 
 /// What a scheduled task for Nook is doing, in one line: "Every day at 09:00 · next Tue 09:00", "Paused", "Running…".
 @MainActor
@@ -68,42 +68,78 @@ extension View {
     }
 }
 
-// MARK: The list's section
+// MARK: The list's tab
 
-/// "Scheduled" at the top of the Nook list: every task Nook runs on its own, with when it runs next. A click opens the
-/// conversation of its latest run; run now and pause sit on hover, the rest on right-click. Nothing shows while there
-/// are no such tasks: Nook proposes one from the chat ("elke ochtend om 9:00…").
-struct NookScheduledSection: View {
+/// The Scheduled tab of the Nook list: every task Nook runs on its own, with when it runs next. Tasks that will run come
+/// first, paused and finished ones after them under a label of their own, so a long list stays easy to read. A click
+/// opens the conversation of its latest run; run now and pause sit on hover, the rest on right-click. The list's search
+/// filters the tasks by name and by what they ask. With no task yet, the tab says what it is for and offers the first.
+struct NookScheduledList: View {
     @ObservedObject var chat: NookChat
+    let query: String
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = ScheduledTaskStore.shared
     @State private var editing: NookTaskEdit?
     @State private var deleting: ScheduledTask?
 
-    private var tasks: [ScheduledTask] { store.tasks.filter { $0.target.isNook } }
+    /// Nook's tasks that match the search, the next to run first.
+    private var tasks: [ScheduledTask] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return store.tasks
+            .filter { $0.target.isNook }
+            .filter { needle.isEmpty || $0.title.localizedCaseInsensitiveContains(needle)
+                || $0.prompt.localizedCaseInsensitiveContains(needle) }
+            .sorted { ($0.nextRun ?? .distantFuture, $0.title) < ($1.nextRun ?? .distantFuture, $1.title) }
+    }
 
     var body: some View {
         let tasks = tasks
-        if !tasks.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    NookSectionLabel(tr("nookTask.section"))
-                    Spacer(minLength: 0)
-                    ToolbarIconButton("plus", tr("nookTask.new"), height: 20, width: 20) { editing = NookTaskEdit(task: nil) }
-                        .padding(.trailing, NookTheme.Spacing.md)
+        let active = tasks.filter { $0.enabled && !$0.isDone }
+        let resting = tasks.filter { !$0.enabled || $0.isDone }
+        Group {
+            if tasks.isEmpty && query.isEmpty {
+                WSEmptyState(symbol: "clock", title: tr("nookTask.none"), message: tr("nookTask.none.detail"),
+                             action: (tr("nookTask.add"), { editing = NookTaskEdit(task: nil) }))
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        NookSectionLabel(tr("nookTask.count", tasks.count))
+                        Spacer(minLength: 0)
+                        ToolbarIconButton("plus", tr("nookTask.new"), height: 20, width: 20) { editing = NookTaskEdit(task: nil) }
+                            .padding(.trailing, NookTheme.Spacing.md)
+                    }
+                    .padding(.bottom, NookTheme.Spacing.xxs)
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            if tasks.isEmpty {
+                                ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
+                            }
+                            rows(active)
+                            if !resting.isEmpty {
+                                NookSectionLabel(tr("nookTask.section.resting"))
+                                    .padding(.top, active.isEmpty ? 0 : NookTheme.Spacing.md)
+                                    .padding(.bottom, NookTheme.Spacing.xxs)
+                                rows(resting)
+                            }
+                        }
+                        .animation(NookTheme.reveal, value: tasks.map(\.id))
+                    }
                 }
-                .padding(.bottom, NookTheme.Spacing.xxs)
-                ForEach(tasks) { task in
-                    NookTaskRow(task: task, running: store.isRunning(task.id),
-                                selected: chat.active?.scheduledTaskID == task.id,
-                                open: { open(task) },
-                                toggle: { store.setEnabled(task.id, !task.enabled) })
-                        .contextMenu { menu(task) }
-                }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .padding(.bottom, NookTheme.Spacing.md)
-            .animation(NookTheme.reveal, value: tasks.map(\.id))
-            .nookTaskSheets(editing: $editing, deleting: $deleting)
+        }
+        .nookTaskSheets(editing: $editing, deleting: $deleting)
+    }
+
+    @ViewBuilder
+    private func rows(_ tasks: [ScheduledTask]) -> some View {
+        ForEach(tasks) { task in
+            NookTaskRow(task: task, running: store.isRunning(task.id),
+                        selected: chat.active?.scheduledTaskID == task.id,
+                        runStatus: chat.conversation(forTask: task.id)?.status ?? .idle,
+                        open: { open(task) },
+                        toggle: { store.setEnabled(task.id, !task.enabled) })
+                .contextMenu { menu(task) }
         }
     }
 
@@ -136,6 +172,9 @@ private struct NookTaskRow: View {
     let task: ScheduledTask
     let running: Bool
     let selected: Bool
+    /// Where its latest run's conversation stands: waiting for your approval or with an answer you have not read shows
+    /// the same badge a Nook row has.
+    var runStatus: Conversation.Status = .idle
     let open: () -> Void
     let toggle: () -> Void
     @State private var hovering = false
@@ -183,6 +222,9 @@ private struct NookTaskRow: View {
             Spacer(minLength: NookTheme.Spacing.sm)
             if task.lastStatus == .failed, !running {
                 NookTag(tr("nookTask.failed"), tint: NookTheme.coralSoft)
+                    .opacity(hovering ? 0 : 1)
+            } else if !running, runStatus == .waiting || runStatus == .unread {
+                AgentStatusBadge(state: runStatus == .waiting ? .approval : .ready)
                     .opacity(hovering ? 0 : 1)
             }
         }

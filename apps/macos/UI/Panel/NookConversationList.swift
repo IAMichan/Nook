@@ -5,7 +5,8 @@ import AppKit
 /// conversations first, then the rest, and the archive docked at the foot of the list, opening upwards, as the settled
 /// sessions are. Each row is a card with the title, the status as the same badge the agents use (working, needs you,
 /// new answer) or how long ago, and the last answer underneath. Pin and archive appear on hover, in the badge's place,
-/// so nothing shifts; right-click for the rest.
+/// so nothing shifts; right-click for the rest. The work Nook does on its own has a tab of its own beside the
+/// conversations (`NookListPart`), so many scheduled tasks never push the conversations down.
 struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -17,9 +18,13 @@ struct NookList: View {
     @State private var selection = ListSelection<UUID>()
     /// The Nook whose delete waits for a yes: a context menu cannot hold the dialog itself.
     @State private var deleting: Conversation?
+    /// Conversations or scheduled tasks, kept while Nook runs as the search is.
+    @State private var part = NookList.keptPart
+    @ObservedObject private var tasks = ScheduledTaskStore.shared
 
     /// The search you left in the list (not kept across a restart).
     static var keptQuery = ""
+    static var keptPart = NookListPart.conversations
 
     var body: some View {
         let items = chat.list(query: query, showArchived: false)
@@ -34,53 +39,60 @@ struct NookList: View {
             header
                 .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
                                confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
+            partTabs
             // Selecting several Nooks starts with a ⌘- or ⇧-click on a row, so it needs no button here.
             searchField
-            TimelineView(.nookTicks(every: 30)) { context in
-                VStack(alignment: .leading, spacing: 2) {
-                    // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
-                    // Archived ones still wait in the shelf below.
-                    if query.isEmpty && items.isEmpty && !showArchived {
-                        WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
-                                     message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
-                    } else {
-                        ScrollView(showsIndicators: false) {
-                            // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
-                            LazyVStack(alignment: .leading, spacing: 2) {
-                                // Work Nook does on its own, above the conversations: what runs when.
-                                if query.isEmpty { NookScheduledSection(chat: chat) }
-                                if items.isEmpty && (archivedCount == 0 || !showArchived) {
-                                    ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
-                                }
-                                if !pinned.isEmpty {
-                                    sectionLabel(tr("nooks.section.pinned"))
-                                    rows(pinned, now: context.date, shown: shown)
-                                }
-                                // The rest by age, as the Claude app groups it: Today, Yesterday, Previous 7 days, Older.
-                                let groups = DayBucket.group(rest, date: \.updated, now: context.date)
-                                ForEach(groups, id: \.bucket) { group in
-                                    sectionLabel(tr(group.bucket.titleKey))
-                                        .padding(.top, pinned.isEmpty && group.bucket == groups.first?.bucket ? 0 : NookTheme.Spacing.md)
-                                    rows(group.items, now: context.date, shown: shown)
+            if part == .scheduled {
+                NookScheduledList(chat: chat, query: query)
+            } else {
+                TimelineView(.nookTicks(every: 30)) { context in
+                    VStack(alignment: .leading, spacing: 2) {
+                        // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
+                        // Archived ones still wait in the shelf below.
+                        if query.isEmpty && items.isEmpty && !showArchived {
+                            WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
+                                         message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
+                        } else {
+                            ScrollView(showsIndicators: false) {
+                                // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
+                                LazyVStack(alignment: .leading, spacing: 2) {
+                                    if items.isEmpty && (archivedCount == 0 || !showArchived) {
+                                        ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
+                                    }
+                                    if !pinned.isEmpty {
+                                        sectionLabel(tr("nooks.section.pinned"))
+                                        rows(pinned, now: context.date, shown: shown)
+                                    }
+                                    // The rest by age, as the Claude app groups it: Today, Yesterday, Previous 7 days, Older.
+                                    let groups = DayBucket.group(rest, date: \.updated, now: context.date)
+                                    ForEach(groups, id: \.bucket) { group in
+                                        sectionLabel(tr(group.bucket.titleKey))
+                                            .padding(.top, pinned.isEmpty && group.bucket == groups.first?.bucket ? 0 : NookTheme.Spacing.md)
+                                        rows(group.items, now: context.date, shown: shown)
+                                    }
                                 }
                             }
+                            .frame(maxHeight: .infinity, alignment: .top)
                         }
-                        .frame(maxHeight: .infinity, alignment: .top)
-                    }
-                    // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
-                    if archivedCount > 0 {
-                        archiveShelf(archived, count: archivedCount, now: context.date, shown: shown)
+                        // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
+                        if archivedCount > 0 {
+                            archiveShelf(archived, count: archivedCount, now: context.date, shown: shown)
+                        }
                     }
                 }
-            }
-            if selection.isActive {
-                selectionBar(shown: shown)
+                if selection.isActive {
+                    selectionBar(shown: shown)
+                }
             }
         }
         .onChange(of: shown) { _, current in selection.keep(only: current) }
         .onChange(of: query) { _, value in NookList.keptQuery = value }
+        .onChange(of: part) { _, value in
+            NookList.keptPart = value
+            selection.clear()
+        }
         // ⌘⇧[ and ⌘⇧] go to the Nook above or below in the list, as they go through sessions on Agents.
-        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !shown.isEmpty)
+        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: part == .conversations && !shown.isEmpty)
     }
 
     /// Opens the Nook `offset` rows from the open one in the list (the first or last when none is open). False at either end.
@@ -160,7 +172,23 @@ struct NookList: View {
     }
 
     private var searchField: some View {
-        NookSearchField(prompt: tr("nooks.search"), text: $query)
+        NookSearchField(prompt: tr(part == .scheduled ? "nookTask.search" : "nooks.search"), text: $query)
+    }
+
+    /// Conversations and scheduled tasks as two tabs, so they never mix. The Scheduled tab carries an amber count of the
+    /// runs that wait for your approval, or a dot while a run left an answer you have not read.
+    private var partTabs: some View {
+        let nookTasks = tasks.tasks.filter { $0.target.isNook }
+        let runs = nookTasks.compactMap { chat.conversation(forTask: $0.id)?.status }
+        let items: [NookTabBar<NookListPart>.Item] = [
+            .init(value: .conversations, title: tr("nooks.tab.conversations")),
+            .init(value: .scheduled, title: tr("nookTask.section"), fresh: runs.contains(.unread),
+                  count: runs.filter { $0 == .waiting }.count,
+                  help: nookTasks.isEmpty ? nil : tr("nookTask.tab.help", nookTasks.count)),
+        ]
+        return NookTabBar(items: items, selected: part, onSelect: { value in
+            withAnimation(NookTheme.swap) { part = value }
+        }, segmented: true)
     }
 
     // MARK: Sections
@@ -529,4 +557,9 @@ private struct NookHoverCard: View {
         let count = conversation.messages.count
         return count == 1 ? tr("nooks.card.message") : tr("nooks.card.messages", count)
     }
+}
+
+/// The two tabs of the Nook list: the conversations, and the tasks Nook runs on its own.
+enum NookListPart: Hashable {
+    case conversations, scheduled
 }
