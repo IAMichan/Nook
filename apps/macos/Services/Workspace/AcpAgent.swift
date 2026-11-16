@@ -414,7 +414,9 @@ enum AcpRPC {
     static func autoAllows(_ call: AcpToolCall, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
         // An MCP server's question waits for you, as for Claude Code and Codex.
         if call.kind == elicitationKind { return false }
-        if mode == .plan { return ["read", "search", "think", "fetch"].contains(call.kind) }
+        // Plan mode only narrows the rights: it never allows what the session's own setting would ask about (a web fetch
+        // under "ask" can send what the agent read to any address).
+        if mode == .plan, !["read", "search", "think", "fetch"].contains(call.kind) { return false }
         switch permission {
         case .bypass: return true
         // No ACP agent offers "auto" (see `RunProvider.capabilities`); an old setting allows edits only.
