@@ -7,7 +7,7 @@ use nook_core::agents::hub::HubEvent;
 use nook_core::agents::models::{ApprovalDecision, ApprovalOrigin};
 use nook_core::companion::push::{PushEvent, PushKind};
 use nook_core::companion::sessions::{self, HUB_PREFIX};
-use nook_core::companion::{BackendSession, CompanionBackend};
+use nook_core::companion::{BackendSession, CompanionBackend, CompanionOp, CompanionRequest, CompanionResponse};
 use nook_core::workspace::manager::ManagerEvent;
 use nook_core::workspace::models::{RunStatus, WorkspaceRun};
 use tauri::{AppHandle, Manager as _};
@@ -109,6 +109,35 @@ impl CompanionBackend for AppBackend {
         ws.manager.stop(run);
         Ok(())
     }
+
+    /// Everything the Mac offers that this app can do too, area by area (`super::remote`, `super::home`,
+    /// `super::nook_chat`, `super::inbox`, `super::pulls`).
+    fn features(&self) -> Vec<&'static str> {
+        let mut list = Vec::new();
+        list.extend(super::remote::features(&self.app));
+        list.extend(super::home::features(&self.app));
+        list.extend(super::nook_chat::features(&self.app));
+        list.extend(super::inbox::features(&self.app));
+        list.extend(super::pulls::features(&self.app));
+        list
+    }
+
+    async fn extra(&self, request: &CompanionRequest, device: &str) -> Option<CompanionResponse> {
+        use CompanionOp::*;
+        let app = &self.app;
+        let mut response = match request.op {
+            Options | Start | Timeline | Entry | History | Manage | Send | Diff | Terminals | Files | FileData => {
+                super::remote::handle(app, request, device).await
+            }
+            Home | Usage | Music | RequestUpdate => super::home::handle(app, request, device).await,
+            Chats | Chat | Ask | ChatStop => super::nook_chat::handle(app, request, device).await,
+            Inbox | InboxChat | InboxSend | InboxMark | Avatars => super::inbox::handle(app, request, device).await,
+            Pulls | Pull | PullAct | PullWork => super::pulls::handle(app, request, device).await,
+            _ => None,
+        }?;
+        response.id = request.id.clone();
+        Some(response)
+    }
 }
 
 // MARK: Pushmeldingen
@@ -155,6 +184,10 @@ fn send(app: &AppHandle, event: PushEvent, turn: i64) {
 
 /// Een nieuwe goedkeuring of vraag, of een klare beurt in een sessie die Nook draait.
 pub fn on_workspace_event(app: &AppHandle, event: &ManagerEvent) {
+    // A live phone sees the change at once (its list, the open conversation).
+    if let Some(companion) = app.try_state::<Companion>() {
+        companion.server.nudge();
+    }
     match event {
         ManagerEvent::Approval(approval) => {
             let ApprovalOrigin::Run { run_id, request_id } = &approval.origin else { return };
@@ -208,6 +241,9 @@ pub fn on_workspace_event(app: &AppHandle, event: &ManagerEvent) {
 
 /// Hetzelfde voor sessies in een terminal of editor (via hooks).
 pub fn on_hub_event(app: &AppHandle, event: &HubEvent) {
+    if let Some(companion) = app.try_state::<Companion>() {
+        companion.server.nudge();
+    }
     let event = match event {
         HubEvent::Approval(r) => {
             let event = PushEvent {

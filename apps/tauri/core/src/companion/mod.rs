@@ -14,6 +14,7 @@ pub mod device_key;
 #[cfg(test)]
 mod fixtures;
 pub mod keep_awake;
+pub mod live;
 pub mod models;
 pub mod push;
 pub mod relay;
@@ -214,10 +215,11 @@ mod tests {
             *workspace.log.lock().unwrap(),
             vec!["decide S1 p1 false", "decide S1 p2 true", "answer S1 q1 SQLite", "send S1 ga door", "stop S1"]
         );
-        // This computer lists only the device key: the phone offers only the first version, and a request beyond it is
-        // answered with a refusal rather than a closed connection.
+        // A backend without extras lists only what the server does itself: the phone offers no timeline, and a request
+        // beyond it is answered with a refusal rather than a closed connection.
         let s = phone.refresh().await;
-        assert_eq!(s.features, vec![feature::DEVICE_KEY.to_string()]);
+        assert!(s.features.contains(&feature::DEVICE_KEY.to_string()) && s.features.contains(&feature::STREAM.to_string()));
+        assert!(!s.features.contains(&feature::TIMELINE.to_string()));
         assert_eq!(s.scopes, None);
         let (s, answer) =
             phone.call(client::ClientCall { op: Some(CompanionOp::Timeline), session: Some("S1".into()), ..Default::default() }).await;

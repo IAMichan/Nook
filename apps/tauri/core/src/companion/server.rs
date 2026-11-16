@@ -4,17 +4,19 @@
 //! De aankondiging op het netwerk (mDNS/Bonjour) doet de app.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::backend::{BackendSession, CompanionBackend};
 use super::device_key;
+use super::live;
 use super::models::*;
 use super::push;
 use super::seal::{self, Direction};
@@ -35,7 +37,7 @@ pub enum ServerState {
 
 pub struct CompanionServer {
     store: Arc<CompanionStore>,
-    backend: RwLock<Arc<dyn CompanionBackend>>,
+    backend: Arc<RwLock<Arc<dyn CompanionBackend>>>,
     audit: Option<Arc<NookStore>>,
     /// De naam die de telefoon ziet ("Michaels pc").
     name: String,
@@ -51,6 +53,17 @@ pub struct CompanionServer {
     /// with every `hello` and `list` (`endpoints`, `relay`), so a phone follows a new Wi-Fi address or the relay without
     /// pairing again (`CompanionEndpoints` on the Mac).
     reach: Mutex<Reach>,
+    /// The phones connected live (`subscribe`), by connection.
+    peers: Arc<Mutex<HashMap<u64, live::Peer>>>,
+    next_connection: AtomicU64,
+    /// The answers to requests that changed something, per phone (`feature::RETRY`).
+    receipts: Mutex<HashMap<String, live::Receipts>>,
+    /// The task that looks for changes while a phone is connected live; ends when none is.
+    ticker: Mutex<Option<tokio::task::AbortHandle>>,
+    nudged: Arc<tokio::sync::Notify>,
+    /// This app's version and the kind of computer it runs on, told with `hello`, `list` and `subscribe`.
+    app_version: Mutex<Option<String>>,
+    platform: &'static str,
 }
 
 /// What `hello` and `list` say about how to reach this computer.
@@ -73,7 +86,7 @@ impl CompanionServer {
     pub fn new(store: Arc<CompanionStore>, backend: Arc<dyn CompanionBackend>, audit: Option<Arc<NookStore>>, name: String) -> Self {
         Self {
             store,
-            backend: RwLock::new(backend),
+            backend: Arc::new(RwLock::new(backend)),
             audit,
             name,
             apns: Default::default(),
@@ -84,6 +97,73 @@ impl CompanionServer {
             task: Mutex::new(None),
             open: Arc::new(AtomicUsize::new(0)),
             reach: Mutex::new(Reach::default()),
+            peers: Arc::new(Mutex::new(HashMap::new())),
+            next_connection: AtomicU64::new(1),
+            receipts: Mutex::new(HashMap::new()),
+            ticker: Mutex::new(None),
+            nudged: Arc::new(tokio::sync::Notify::new()),
+            app_version: Mutex::new(None),
+            platform: if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "macos"
+            } else if cfg!(target_os = "android") {
+                "android"
+            } else {
+                "linux"
+            },
+        }
+    }
+
+    /// The version of this app, told to phones so they can say when one side is behind (`CompanionCompatibility`).
+    pub fn set_app_version(&self, version: &str) {
+        *self.app_version.lock().unwrap_or_else(|e| e.into_inner()) = Some(version.to_string());
+    }
+
+    /// Everything this computer can do (`CompanionFeature.all` on the Mac): what the server does itself, and what the
+    /// backend says it can.
+    pub fn features(&self) -> Vec<String> {
+        let backend = self.backend().features();
+        let mut list: Vec<&str> = vec![
+            feature::DEVICE_KEY,
+            feature::ROUTES,
+            feature::RELAY,
+            feature::STREAM,
+            feature::FOREGROUND,
+            feature::RETRY,
+            feature::CLOCK,
+            feature::COMPRESSION,
+            feature::REVOKE,
+        ];
+        if backend.contains(&feature::TIMELINE) {
+            list.extend([feature::LIVE_TIMELINE, feature::RESUME]);
+        }
+        if backend.contains(&feature::INBOX) || backend.contains(&feature::CHAT) {
+            list.push(feature::LIVE_CHATS);
+        }
+        if backend.contains(&feature::CHAT) {
+            list.push(feature::LIVE_CONVERSATION);
+        }
+        for f in backend {
+            if !list.contains(&f) {
+                list.push(f);
+            }
+        }
+        list.into_iter().map(str::to_string).collect()
+    }
+
+    /// The answer to `hello`, `list` and `subscribe`: the sessions, what this computer is and can do, and how to reach it.
+    async fn hello(&self, id: &str) -> CompanionResponse {
+        CompanionResponse {
+            mac_name: Some(self.name.clone()),
+            platform: Some(self.platform.into()),
+            sessions: Some(digests(self.backend().sessions().await)),
+            endpoints: self.endpoints(),
+            relay: Some(self.reach().relay),
+            features: Some(self.features()),
+            protocol_version: Some(PROTOCOL_VERSION),
+            app_version: self.app_version.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ..CompanionResponse::success(id)
         }
     }
 
@@ -244,34 +324,72 @@ impl CompanionServer {
         }
     }
 
-    /// Answers one connection: a phone on this network, or one that came through the relay (`relay::RelayHost`).
-    pub async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(&self, mut stream: S) {
-        let mut reader = FrameReader::default();
-        let mut buf = vec![0u8; 64 * 1024];
-        loop {
-            let n = match stream.read(&mut buf).await {
-                Ok(0) | Err(_) => return,
-                Ok(n) => n,
-            };
-            let frames = reader.feed(&buf[..n]);
-            if reader.overflowed() {
-                return;
-            }
-            for frame in frames {
-                match self.respond(&frame).await {
-                    Some(reply) => {
-                        if stream.write_all(&reply).await.is_err() {
-                            return;
-                        }
-                    }
-                    None => return,
+    /// Answers one connection: a phone on this network, or one that came through the relay (`relay::RelayHost`). A
+    /// connection that subscribed stays open while the phone is heard from (`live::STREAM_IDLE`), and gets what changes
+    /// by itself; any other closes after `live::REQUEST_IDLE` without a request.
+    pub async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(&self, stream: S) {
+        let (mut reader_half, mut writer_half) = tokio::io::split(stream);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let pending = Arc::new(AtomicUsize::new(0));
+        let connection = self.next_connection.fetch_add(1, Ordering::SeqCst);
+        let written = pending.clone();
+        let writer = async move {
+            while let Some(frame) = rx.recv().await {
+                let failed = writer_half.write_all(&frame).await.is_err();
+                written.fetch_sub(1, Ordering::SeqCst);
+                if failed {
+                    return;
                 }
             }
+        };
+        let reader = async {
+            let mut reader = FrameReader::default();
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                let idle = if self.is_live(connection) { live::STREAM_IDLE } else { live::REQUEST_IDLE };
+                let n = match tokio::time::timeout(idle, reader_half.read(&mut buf)).await {
+                    Ok(Ok(0)) | Ok(Err(_)) | Err(_) => return,
+                    Ok(Ok(n)) => n,
+                };
+                let frames = reader.feed(&buf[..n]);
+                if reader.overflowed() {
+                    return;
+                }
+                for frame in frames {
+                    match self.respond_on(&frame, Some((connection, &tx, &pending))).await {
+                        Some(reply) => {
+                            pending.fetch_add(1, Ordering::SeqCst);
+                            if tx.send(reply).is_err() {
+                                return;
+                            }
+                        }
+                        None => return,
+                    }
+                }
+            }
+        };
+        tokio::select! {
+            _ = reader => {}
+            _ = writer => {}
         }
+        self.peers.lock().unwrap_or_else(|e| e.into_inner()).remove(&connection);
+    }
+
+    fn is_live(&self, connection: u64) -> bool {
+        self.peers.lock().unwrap_or_else(|e| e.into_inner()).contains_key(&connection)
     }
 
     /// Het antwoord op één frame, al verzegeld en ingelijst; `None` = verbinding sluiten.
     pub async fn respond(&self, frame: &[u8]) -> Option<Vec<u8>> {
+        self.respond_on(frame, None).await
+    }
+
+    /// The answer to one frame on `connection` (none: a single request, as in the tests): sealed and framed.
+    async fn respond_on(
+        &self,
+        frame: &[u8],
+        connection: Option<(u64, &tokio::sync::mpsc::UnboundedSender<Vec<u8>>, &Arc<AtomicUsize>)>,
+    ) -> Option<Vec<u8>> {
         let claimed = seal::claimed_device(frame)?;
         let now = Utc::now();
         // De sleutel van een gekoppeld toestel, of die van het open koppelvenster (die zich bewijst door het bericht te openen).
@@ -283,20 +401,12 @@ impl CompanionServer {
             }
         };
         let plain = seal::open(frame, &key, Direction::Request).ok()?;
+        let plain = super::transport::unpack(&plain).ok()?;
         let request: CompanionRequest = serde_json::from_slice(&plain).ok()?;
-        let sealed = |response: CompanionResponse| {
-            let json = serde_json::to_vec(&response).ok()?;
-            FrameReader::frame(&seal::seal(&json, &key, &claimed, Direction::Response))
-        };
+        let compress = request.compression == Some(true);
+        let sealed = |response: CompanionResponse| Self::seal_response(&response, &key, &claimed, compress);
+        let seconds = now.timestamp_millis() as f64 / 1000.0;
 
-        // De bewaker hoort bij het toestel: een herhaald id of een stortvloed wordt vanaf hier geweigerd.
-        let refusal = {
-            let mut guards = self.guards.lock().unwrap_or_else(|e| e.into_inner());
-            guards.entry(claimed.clone()).or_default().admit(&request, now.timestamp_millis() as f64 / 1000.0)
-        };
-        if let Some(error) = refusal {
-            return sealed(CompanionResponse::failure(&request.id, error));
-        }
         // A phone that bound its device key signs every request with it (`device_key`): without a valid signature the
         // pairing key alone (a copy of it) is not enough.
         if !pairing && device_key::needs_signature(request.op) {
@@ -310,6 +420,40 @@ impl CompanionServer {
             }
         }
 
+        // A repeat of a request that changes something (its answer got lost, or it waited in the phone's outbox): the
+        // answer it got, without doing it again (`CommandReceipts`, `feature::RETRY`).
+        let keeps = !pairing && live::keeps(request.op);
+        if keeps {
+            let lookup = self.receipts.lock().unwrap_or_else(|e| e.into_inner()).entry(claimed.clone()).or_default().begin(&request.id);
+            match lookup {
+                live::Lookup::New => {}
+                live::Lookup::Answered(earlier) => {
+                    let refusal = self
+                        .guards
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .entry(claimed.clone())
+                        .or_default()
+                        .admit_retry(&request, seconds);
+                    return sealed(refusal.map(|e| Self::refusal(&request.id, e, seconds)).unwrap_or(earlier));
+                }
+                // Still being carried out: the phone asks again later and gets the answer then.
+                live::Lookup::Running => return sealed(CompanionResponse::failure(&request.id, CompanionError::Busy)),
+            }
+        }
+
+        // De bewaker hoort bij het toestel: een herhaald id of een stortvloed wordt vanaf hier geweigerd.
+        let refusal = {
+            let mut guards = self.guards.lock().unwrap_or_else(|e| e.into_inner());
+            guards.entry(claimed.clone()).or_default().admit(&request, seconds)
+        };
+        if let Some(error) = refusal {
+            if keeps {
+                self.receipts.lock().unwrap_or_else(|e| e.into_inner()).entry(claimed.clone()).or_default().cancel(&request.id);
+            }
+            return sealed(Self::refusal(&request.id, error, seconds));
+        }
+
         if pairing {
             let name = request.text.clone().unwrap_or_default();
             if request.op != CompanionOp::Hello || self.store.complete_pairing(&name, now).is_none() {
@@ -319,7 +463,55 @@ impl CompanionServer {
         } else {
             self.store.touch(&claimed, now);
         }
-        sealed(self.handle(&request, &claimed).await)
+
+        if let Some((connection, tx, pending)) = connection {
+            let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(peer) = peers.get_mut(&connection) {
+                peer.last_heard = std::time::Instant::now();
+                if let (Some(foreground), CompanionOp::Ping) = (request.foreground, request.op) {
+                    peer.foreground = foreground;
+                }
+            }
+            if request.op == CompanionOp::Subscribe && !pairing {
+                // One live connection per phone: a newer one (another network, the app restarted) replaces the older.
+                peers.retain(|_, p| p.device != claimed);
+                let mut peer = live::Peer::new(claimed.clone(), key.clone(), request.id.clone(), tx.clone(), pending.clone());
+                peer.compression = compress;
+                peer.foreground = request.foreground.unwrap_or(false);
+                peers.insert(connection, peer);
+                drop(peers);
+                self.ensure_ticker();
+            }
+        }
+
+        let mut response = self.handle(&request, &claimed, connection.map(|c| c.0)).await;
+        response.id = request.id.clone();
+        if request.op == CompanionOp::Subscribe {
+            if let Some((connection, ..)) = connection {
+                if let Some(peer) = self.peers.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&connection) {
+                    peer.sent_sessions = response.sessions.clone();
+                }
+            }
+        }
+        if keeps {
+            let mut receipts = self.receipts.lock().unwrap_or_else(|e| e.into_inner());
+            receipts.entry(claimed.clone()).or_default().finish(&request.id, &response);
+            if !live::settles(&response) {
+                self.guards.lock().unwrap_or_else(|e| e.into_inner()).entry(claimed.clone()).or_default().forget(&request);
+            }
+        }
+        sealed(response)
+    }
+
+    /// A refusal; a `stale` one says the computer's time, so the phone can correct for its clock (`feature::CLOCK`).
+    fn refusal(id: &str, error: CompanionError, now: f64) -> CompanionResponse {
+        CompanionResponse { mac_time: (error == CompanionError::Stale).then_some(now), ..CompanionResponse::failure(id, error) }
+    }
+
+    fn seal_response(response: &CompanionResponse, key: &[u8], device: &str, compress: bool) -> Option<Vec<u8>> {
+        let json = serde_json::to_vec(response).ok()?;
+        let packed = super::transport::pack(&json, compress);
+        FrameReader::frame(&seal::seal(&packed, key, device, Direction::Response))
     }
 
     fn audit(&self, action: &str, detail: &str) {
@@ -328,22 +520,15 @@ impl CompanionServer {
         }
     }
 
-    async fn handle(&self, request: &CompanionRequest, device_id: &str) -> CompanionResponse {
+    async fn handle(&self, request: &CompanionRequest, device_id: &str, connection: Option<u64>) -> CompanionResponse {
         let backend = self.backend();
         let id = request.id.as_str();
         let fail = |e| CompanionResponse::failure(id, e);
         let with_sessions = |sessions: Vec<SessionDigest>| CompanionResponse { sessions: Some(sessions), ..CompanionResponse::success(id) };
         match request.op {
-            CompanionOp::Hello | CompanionOp::List => {
-                let sessions = digests(backend.sessions().await);
-                CompanionResponse {
-                    mac_name: Some(self.name.clone()),
-                    endpoints: self.endpoints(),
-                    relay: Some(self.reach().relay),
-                    // Only the device key beyond the first version: a phone offers nothing this computer cannot do.
-                    features: Some(vec![feature::DEVICE_KEY.into()]),
-                    ..with_sessions(sessions)
-                }
+            CompanionOp::Hello | CompanionOp::List | CompanionOp::Subscribe => self.hello(id).await,
+            CompanionOp::Watch | CompanionOp::WatchChat | CompanionOp::WatchConversation => {
+                self.watch(request, device_id, connection).await
             }
             // The relay test and "Why can't I connect?" on the phone: the sealed round trip is the answer.
             CompanionOp::Ping => CompanionResponse::success(id),
@@ -422,6 +607,14 @@ impl CompanionServer {
                 self.audit("answer", &session.digest.title);
                 with_sessions(digests(backend.sessions().await))
             }
+            CompanionOp::Send if request.steer == Some(true) || request.images.as_ref().is_some_and(|i| !i.is_empty()) => {
+                let response = backend.extra(request, device_id).await.unwrap_or_else(|| fail(CompanionError::BadRequest));
+                if response.ok {
+                    self.audit(if request.steer == Some(true) { "steer" } else { "send" }, request.session.as_deref().unwrap_or_default());
+                    self.nudge();
+                }
+                response
+            }
             CompanionOp::Send => {
                 let sessions = backend.sessions().await;
                 let Some(session) = find(&sessions, request.session.as_deref()) else { return fail(CompanionError::UnknownSession) };
@@ -446,11 +639,360 @@ impl CompanionServer {
                 self.audit("stop", &session.digest.title);
                 with_sessions(digests(backend.sessions().await))
             }
-            // What this computer cannot do yet: it lists none of these features, so a phone does not ask; an answer that
-            // says so is better than closing the connection.
-            _ => fail(CompanionError::BadRequest),
+            // Everything else is the app's (`CompanionBackend::extra`); what it cannot do it does not list, so a phone
+            // does not ask, and an answer that says so is better than closing the connection.
+            _ => {
+                let response = backend.extra(request, device_id).await.unwrap_or_else(|| fail(CompanionError::BadRequest));
+                if response.ok && live::keeps(request.op) {
+                    // Something changed: the live phones hear it at once.
+                    self.nudge();
+                }
+                response
+            }
         }
     }
+}
+
+// Live connections (`subscribe`, `watch`, `watchChat`, `watchConversation`)
+
+impl CompanionServer {
+    /// Something changed (an action from a phone, or the app says so): the live phones are looked at now.
+    pub fn nudge(&self) {
+        self.nudged.notify_one();
+    }
+
+    /// Whether a phone is connected live and in front, so a push about what its screen already shows can be left out
+    /// (`ForegroundPolicy`).
+    pub fn phone_in_front(&self, device: &str) -> bool {
+        self.peers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .any(|p| p.device == device && p.foreground && p.last_heard.elapsed() < std::time::Duration::from_secs(10))
+    }
+
+    /// How many phones are connected live (for keeping the computer awake).
+    pub fn live_phones(&self) -> usize {
+        self.peers.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Tells a phone's live connections that it was removed (`revoked`), so it says "pair again" instead of looking
+    /// for this computer forever. Must run before its key is forgotten.
+    pub fn revoke(&self, device: &str) -> bool {
+        let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+        let mut told = false;
+        for peer in peers.values_mut().filter(|p| p.device == device) {
+            let mut update = peer.update();
+            update.ok = false;
+            update.error = Some(CompanionError::NotAllowedFromPhone);
+            update.revoked = Some(true);
+            told |= send_update(peer, &update);
+        }
+        peers.retain(|_, p| p.device != device);
+        told
+    }
+
+    /// Starts the task that sends the live phones what changed, unless it runs.
+    fn ensure_ticker(&self) {
+        let mut ticker = self.ticker.lock().unwrap_or_else(|e| e.into_inner());
+        if ticker.as_ref().is_some_and(|t| !t.is_finished()) {
+            return;
+        }
+        let (peers, backend, nudged) = (self.peers.clone(), self.backend.clone(), self.nudged.clone());
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+        *ticker = Some(runtime.spawn(tick(peers, backend, nudged)).abort_handle());
+    }
+
+    /// The phone opened a session, a chat or a Nook conversation (or closed it: none): from now on it follows over the
+    /// live connection. Answered with what it shows now, which every later update builds on.
+    async fn watch(&self, request: &CompanionRequest, device: &str, connection: Option<u64>) -> CompanionResponse {
+        let id = request.id.as_str();
+        let backend = self.backend();
+        let set = |apply: &dyn Fn(&mut live::Peer)| {
+            let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            let found =
+                connection.filter(|c| peers.contains_key(c)).or_else(|| peers.iter().find(|(_, p)| p.device == device).map(|(k, _)| *k));
+            if let Some(peer) = found.and_then(|k| peers.get_mut(&k)) {
+                apply(peer);
+            }
+        };
+        match request.op {
+            CompanionOp::Watch => {
+                let Some(session) = request.session.clone() else {
+                    set(&|p| {
+                        p.watch = None;
+                        p.sent_timeline.clear();
+                    });
+                    return CompanionResponse::success(id);
+                };
+                let asked = CompanionRequest { op: CompanionOp::Timeline, item: None, ..request.clone() };
+                let Some(answer) = backend.extra(&asked, device).await.filter(|r| r.ok) else {
+                    return CompanionResponse::failure(id, CompanionError::UnknownSession);
+                };
+                let entries = array(&answer.timeline);
+                set(&|p| {
+                    p.watch = Some(session.clone());
+                    p.sent_timeline = entries.clone();
+                });
+                if let Some((after, rest)) = live::resume_timeline(&entries, request.item.as_deref()) {
+                    return CompanionResponse {
+                        timeline: Some(Value::Array(rest)),
+                        timeline_session: Some(session),
+                        timeline_after: Some(after),
+                        ..CompanionResponse::success(id)
+                    };
+                }
+                CompanionResponse { timeline_session: Some(session), ..answer }
+            }
+            CompanionOp::WatchChat => {
+                let Some(chat) = request.item.clone() else {
+                    set(&|p| {
+                        p.watch_chat = None;
+                        p.sent_chat = None;
+                    });
+                    return CompanionResponse::success(id);
+                };
+                let asked = CompanionRequest { op: CompanionOp::InboxChat, ..request.clone() };
+                let Some(answer) = backend.extra(&asked, device).await else {
+                    return CompanionResponse::failure(id, CompanionError::BadRequest);
+                };
+                if answer.ok {
+                    let lines = (answer.inbox_lines.clone().unwrap_or(Value::Null), answer.inbox_typing.clone().unwrap_or(Value::Null));
+                    set(&|p| {
+                        p.watch_chat = Some(chat.clone());
+                        p.sent_chat = Some(lines.clone());
+                    });
+                }
+                answer
+            }
+            _ => {
+                let Some(conversation) = request.conversation.clone() else {
+                    set(&|p| {
+                        p.watch_conversation = None;
+                        p.sent_messages = None;
+                    });
+                    return CompanionResponse::success(id);
+                };
+                let asked = CompanionRequest { op: CompanionOp::Chat, item: None, ..request.clone() };
+                let Some(answer) = backend.extra(&asked, device).await else {
+                    return CompanionResponse::failure(id, CompanionError::BadRequest);
+                };
+                if !answer.ok {
+                    return answer;
+                }
+                let lines = array(&answer.messages);
+                set(&|p| {
+                    p.watch_conversation = Some(conversation.clone());
+                    p.sent_messages = Some(lines.clone());
+                });
+                if let Some((after, rest)) = live::resume_conversation(&lines, request.item.as_deref()) {
+                    return CompanionResponse {
+                        messages: Some(Value::Array(rest)),
+                        messages_conversation: Some(conversation),
+                        messages_after: Some(after),
+                        ..CompanionResponse::success(id)
+                    };
+                }
+                CompanionResponse { messages_conversation: Some(conversation), ..answer }
+            }
+        }
+    }
+}
+
+fn array(value: &Option<Value>) -> Vec<Value> {
+    value.as_ref().and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Seals `update` for `peer` and hands it to its writer; false when the connection is gone.
+fn send_update(peer: &live::Peer, update: &CompanionResponse) -> bool {
+    let Some(frame) = CompanionServer::seal_response(update, &peer.key, &peer.device, peer.compression) else { return false };
+    peer.pending.fetch_add(1, Ordering::SeqCst);
+    peer.tx.send(frame).is_ok()
+}
+
+/// Looks for changes while a phone is connected live: at once when nudged or when the backend's generation moves, and
+/// in full every `live::FULL_LOOK` (agents in a terminal and chats do not always say so). Ends when no phone is left.
+async fn tick(
+    peers: Arc<Mutex<HashMap<u64, live::Peer>>>,
+    backend: Arc<RwLock<Arc<dyn CompanionBackend>>>,
+    nudged: Arc<tokio::sync::Notify>,
+) {
+    let mut generation = u64::MAX;
+    let mut last_full = std::time::Instant::now() - live::FULL_LOOK;
+    loop {
+        let woken = tokio::select! {
+            _ = nudged.notified() => true,
+            _ = tokio::time::sleep(live::TICK) => false,
+        };
+        let backend = backend.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let now_generation = backend.generation();
+        let full = last_full.elapsed() >= live::FULL_LOOK;
+        if !woken && !full && now_generation == generation {
+            if peers.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
+                return;
+            }
+            continue;
+        }
+        generation = now_generation;
+        if full {
+            last_full = std::time::Instant::now();
+        }
+        if !push_pass(&peers, &backend, full).await {
+            return;
+        }
+        // At most a few passes a second while an agent streams: changes in between go in the next one.
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+}
+
+/// One look: what changed for each live phone goes to it (`pushChanges`, `pushTimelines`, `pushChats`,
+/// `pushConversations` on the Mac). False when no phone is connected live any more.
+async fn push_pass(peers: &Mutex<HashMap<u64, live::Peer>>, backend: &Arc<dyn CompanionBackend>, full: bool) -> bool {
+    struct Wants {
+        device: String,
+        watches: Vec<String>,
+        chats: Vec<String>,
+        conversations: Vec<String>,
+    }
+    let wants = {
+        let mut peers = peers.lock().unwrap_or_else(|e| e.into_inner());
+        // A phone that went quiet, or one that does not take what it is sent, is let go: it connects again and starts
+        // from a fresh snapshot.
+        peers.retain(|_, p| p.last_heard.elapsed() < live::STREAM_IDLE && p.backlog() < live::BACKLOG_DROP && !p.tx.is_closed());
+        let Some(device) = peers.values().next().map(|p| p.device.clone()) else { return false };
+        let mut w = Wants { device, watches: Vec::new(), chats: Vec::new(), conversations: Vec::new() };
+        for p in peers.values() {
+            if let Some(s) = &p.watch {
+                if !w.watches.contains(s) {
+                    w.watches.push(s.clone());
+                }
+            }
+            if let Some(c) = &p.watch_chat {
+                if !w.chats.contains(c) {
+                    w.chats.push(c.clone());
+                }
+            }
+            if let Some(c) = &p.watch_conversation {
+                if !w.conversations.contains(c) {
+                    w.conversations.push(c.clone());
+                }
+            }
+        }
+        w
+    };
+    let features = backend.features();
+    let ask = |op: CompanionOp| CompanionRequest::new(op);
+    let sessions = digests(backend.sessions().await);
+    let mut timelines: HashMap<String, Vec<Value>> = HashMap::new();
+    for session in &wants.watches {
+        let request = CompanionRequest { session: Some(session.clone()), ..ask(CompanionOp::Timeline) };
+        if let Some(answer) = backend.extra(&request, &wants.device).await.filter(|r| r.ok) {
+            timelines.insert(session.clone(), array(&answer.timeline));
+        }
+    }
+    let mut conversations: HashMap<String, Vec<Value>> = HashMap::new();
+    for conversation in &wants.conversations {
+        let request = CompanionRequest { conversation: Some(conversation.clone()), ..ask(CompanionOp::Chat) };
+        if let Some(answer) = backend.extra(&request, &wants.device).await.filter(|r| r.ok) {
+            conversations.insert(conversation.clone(), array(&answer.messages));
+        }
+    }
+    let mut chat_lines: HashMap<String, (Value, Value)> = HashMap::new();
+    let mut inbox: Option<(Value, Option<String>)> = None;
+    let mut conversation_list: Option<Value> = None;
+    if full && features.contains(&feature::INBOX) {
+        for chat in &wants.chats {
+            let request = CompanionRequest { item: Some(chat.clone()), ..ask(CompanionOp::InboxChat) };
+            if let Some(answer) = backend.extra(&request, &wants.device).await.filter(|r| r.ok) {
+                chat_lines.insert(chat.clone(), (answer.inbox_lines.unwrap_or(Value::Null), answer.inbox_typing.unwrap_or(Value::Null)));
+            }
+        }
+        if let Some(answer) = backend.extra(&ask(CompanionOp::Inbox), &wants.device).await.filter(|r| r.ok) {
+            inbox = answer.inbox.map(|list| (list, answer.message));
+        }
+    }
+    if full && features.contains(&feature::CHAT) {
+        if let Some(answer) = backend.extra(&ask(CompanionOp::Chats), &wants.device).await.filter(|r| r.ok) {
+            conversation_list = answer.conversations;
+        }
+    }
+
+    let mut peers = peers.lock().unwrap_or_else(|e| e.into_inner());
+    for peer in peers.values_mut() {
+        // Behind: nothing new until its connection took what waits; what it was not sent stays unsent, so the next
+        // pass sends all that changed as one update (`StreamBackpressure`).
+        if peer.backlog() > live::BACKLOG_WAIT {
+            continue;
+        }
+        if peer.sent_sessions.as_ref() != Some(&sessions) {
+            peer.sent_sessions = Some(sessions.clone());
+            let update = CompanionResponse { sessions: Some(sessions.clone()), ..peer.update() };
+            send_update(peer, &update);
+        }
+        if let Some(session) = peer.watch.clone() {
+            if let Some(entries) = timelines.get(&session).filter(|e| **e != peer.sent_timeline) {
+                let (after, rest) = live::delta(&peer.sent_timeline, entries);
+                peer.sent_timeline = entries.clone();
+                let update = CompanionResponse {
+                    timeline: Some(Value::Array(if after.is_some() { rest } else { entries.clone() })),
+                    timeline_session: Some(session),
+                    timeline_after: after,
+                    ..peer.update()
+                };
+                send_update(peer, &update);
+            }
+        }
+        if let Some(conversation) = peer.watch_conversation.clone() {
+            if let Some(lines) = conversations.get(&conversation).filter(|l| Some(*l) != peer.sent_messages.as_ref()) {
+                let (after, rest) = live::delta(peer.sent_messages.as_deref().unwrap_or_default(), lines);
+                peer.sent_messages = Some(lines.clone());
+                let update = CompanionResponse {
+                    messages: Some(Value::Array(if after.is_some() { rest } else { lines.clone() })),
+                    messages_conversation: Some(conversation),
+                    messages_after: after,
+                    ..peer.update()
+                };
+                send_update(peer, &update);
+            }
+        }
+        let mut update = CompanionResponse::success(&peer.stream_id);
+        let mut changed = false;
+        if let Some((list, message)) = &inbox {
+            if peer.sent_inbox.as_ref() != Some(list) {
+                // The first look after subscribing only takes note: the phone asks for the inbox itself then.
+                if peer.sent_inbox.is_some() {
+                    update.inbox = Some(list.clone());
+                    update.message = message.clone();
+                    changed = true;
+                }
+                peer.sent_inbox = Some(list.clone());
+            }
+        }
+        if let Some(chat) = peer.watch_chat.clone() {
+            if let Some(lines) = chat_lines.get(&chat).filter(|l| Some(*l) != peer.sent_chat.as_ref()) {
+                update.inbox_lines = Some(lines.0.clone());
+                update.inbox_typing = Some(lines.1.clone());
+                update.inbox_chat = Some(chat);
+                peer.sent_chat = Some(lines.clone());
+                changed = true;
+            }
+        }
+        if let Some(list) = &conversation_list {
+            if peer.sent_conversations.as_ref() != Some(list) {
+                if peer.sent_conversations.is_some() {
+                    update.conversations = Some(list.clone());
+                    changed = true;
+                }
+                peer.sent_conversations = Some(list.clone());
+            }
+        }
+        if changed {
+            let numbered = peer.update();
+            update.seq = numbered.seq;
+            send_update(peer, &update);
+        }
+    }
+    !peers.is_empty()
 }
 
 // Pushmeldingen (`CompanionNotifier.swift`)

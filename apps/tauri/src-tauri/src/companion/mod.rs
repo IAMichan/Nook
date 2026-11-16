@@ -7,11 +7,21 @@ pub mod backend;
 #[cfg(desktop)]
 pub mod background;
 #[cfg(desktop)]
+pub mod home;
+#[cfg(desktop)]
+pub mod inbox;
+#[cfg(desktop)]
 pub mod keep_awake;
 pub mod mdns;
+#[cfg(desktop)]
+pub mod nook_chat;
 mod poll;
 #[cfg(desktop)]
+pub mod pulls;
+#[cfg(desktop)]
 pub mod reach;
+#[cfg(desktop)]
+pub mod remote;
 
 use std::sync::Arc;
 
@@ -165,7 +175,14 @@ pub fn setup(app: &AppHandle) {
     #[cfg(desktop)]
     let server = {
         let store = Arc::new(CompanionStore::load_default(state.secrets.clone()));
-        Arc::new(CompanionServer::new(store, Arc::new(backend::AppBackend::new(app.clone())), Some(state.store.clone()), device_name()))
+        let server = Arc::new(CompanionServer::new(
+            store,
+            Arc::new(backend::AppBackend::new(app.clone())),
+            Some(state.store.clone()),
+            device_name(),
+        ));
+        server.set_app_version(&version);
+        server
     };
     #[cfg(desktop)]
     let relay = Arc::new(RelayHost::new(server.clone(), tauri::async_runtime::handle().inner().clone()));
