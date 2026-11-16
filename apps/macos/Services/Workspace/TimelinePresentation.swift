@@ -346,6 +346,11 @@ enum TimelinePresentation {
         return turns
     }
 
+    /// Where the agent woke up by itself after background work it left running (a build, a monitor) ended.
+    static func isWake(_ event: RunEvent) -> Bool {
+        event.kind == .system && event.tool == "wake"
+    }
+
     /// News about a pull request the session watches ("ws.prwatch.news"): Nook hands it to the agent without a message of
     /// yours, so once the turn before it ended it starts a turn of its own. Folded into the earlier turn, that turn's answer
     /// went under "Worked for…" and only the reply to the news stayed in sight.
