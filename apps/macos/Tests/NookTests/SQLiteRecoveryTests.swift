@@ -70,7 +70,7 @@ final class SQLiteRecoveryTests: XCTestCase {
         XCTAssertEqual(Set(incidents.all.map(\.kind)), [.damaged])
         XCTAssertEqual(Set(incidents.all.map(\.file.lastPathComponent)), ["chats.sqlite", "runs.sqlite"])
         // Both are usable: a reader opens the fresh file beside the writer.
-        XCTAssertEqual(log.schemaVersion, 1)
+        XCTAssertEqual(log.schemaVersion, RunEventLog.schemaLatest)
         XCTAssertNotNil(RunEventLog(url: runs, readOnly: true, incidents: incidents))
         XCTAssertNotNil(ChatStore(url: chats, readOnly: true, incidents: incidents))
         _ = store
