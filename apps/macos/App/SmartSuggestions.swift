@@ -113,6 +113,11 @@ extension AppModel {
             add(40, "stripe", tr("suggest.stripe"), .source("stripe"))
         }
 
+        // 9. Nook as the secretary: while nothing is scheduled for it yet, a morning update it gives by itself.
+        if !ScheduledTaskStore.shared.tasks.contains(where: { $0.target.isNook }) {
+            add(45, "secretary", tr("suggest.nookTask.morning"), .symbol("clock"))
+        }
+
         // Fallback: open-ended prompts that always work.
         add(10, "fallback", tr("home.suggestions.summarizeDay"), .symbol("text.alignleft"))
         add(9, "anything", tr("suggest.anything"), .symbol("sparkles"))

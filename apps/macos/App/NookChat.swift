@@ -61,6 +61,8 @@ struct ChatMessage: Identifiable {
     var status = ""
     var streaming = false
     var isError = false
+    /// A question a scheduled task asked (`ScheduledTaskTarget.nook`), not one the user typed: shown as the run's marker.
+    var scheduled = false
     /// Context attached without tools: screen content, a Shelf file.
     var sources: [String] = []
     /// What Nook consulted for this answer, with outcome per source.
@@ -198,6 +200,9 @@ struct Conversation: Identifiable, ConversationListItem {
     var pinned = false
     /// Out of the active list but kept; found again through the archive.
     var archived = false
+    /// The scheduled task whose run Nook answered here (`ScheduledTaskTarget.nook`): the list shows a clock and the
+    /// conversation the task's bar.
+    var scheduledTaskID: UUID?
 
     var isEmpty: Bool { messages.isEmpty }
 
@@ -467,6 +472,23 @@ final class NookChat: ObservableObject {
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
         if activeID == id { activeID = history.first?.id }
+        scheduleSave()
+    }
+
+    /// The latest conversation a scheduled task's runs answered in; nil before its first run or after the user deleted
+    /// them all.
+    func conversation(forTask task: UUID) -> Conversation? {
+        conversations.filter { $0.scheduledTaskID == task }.max { $0.updated < $1.updated }
+    }
+
+    /// Marks a run's conversation as the task's (the list's clock, the bar over it) and its question as the run's own,
+    /// not one the user typed.
+    func markScheduledRun(_ id: UUID, task: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].scheduledTaskID = task
+        if let first = conversations[index].messages.firstIndex(where: { $0.role == .user }) {
+            conversations[index].messages[first].scheduled = true
+        }
         scheduleSave()
     }
 
@@ -827,6 +849,7 @@ private struct StoredConversation: Codable, Sendable {
     var scope: SourceScope?
     var pinned: Bool?
     var archived: Bool?
+    var scheduledTask: UUID?
 
     @MainActor
     init(_ conversation: Conversation) {
@@ -839,6 +862,7 @@ private struct StoredConversation: Codable, Sendable {
         scope = conversation.scope == .automatic ? nil : conversation.scope
         pinned = conversation.pinned ? true : nil
         archived = conversation.archived ? true : nil
+        scheduledTask = conversation.scheduledTaskID
     }
 
     func restored() -> Conversation {
@@ -847,6 +871,7 @@ private struct StoredConversation: Codable, Sendable {
         conversation.scope = scope ?? .automatic
         conversation.pinned = pinned ?? false
         conversation.archived = archived ?? false
+        conversation.scheduledTaskID = scheduledTask
         conversation.messages = messages.map { $0.restored() }
         return conversation
     }
@@ -870,6 +895,7 @@ private struct StoredMessage: Codable {
     var plan: StoredPlan?
     var tasks: [RunTaskStep]?
     var privateBrief: String?
+    var scheduled: Bool?
 
     @MainActor
     init?(_ message: ChatMessage) {
@@ -891,6 +917,7 @@ private struct StoredMessage: Codable {
         notices = message.notices.isEmpty ? nil : message.notices
         tasks = message.tasks.isEmpty ? nil : message.tasks
         privateBrief = message.privateBrief.isEmpty ? nil : message.privateBrief
+        scheduled = message.scheduled ? true : nil
     }
 
     func restored() -> ChatMessage {
@@ -908,6 +935,7 @@ private struct StoredMessage: Codable {
         message.notices = notices ?? []
         message.tasks = tasks ?? []
         message.privateBrief = privateBrief ?? ""
+        message.scheduled = scheduled ?? false
         if let plan {
             plan.restore(into: &message)
         } else if let legacy = StoredPlan.legacy(in: text) {

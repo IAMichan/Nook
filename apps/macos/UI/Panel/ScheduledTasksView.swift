@@ -281,7 +281,8 @@ enum ScheduledTaskText {
 
 // MARK: Editor
 
-private struct ScheduledTaskEditor: View {
+/// The editor for one scheduled task, in Settings and in the Nook tab (`forNook`: a new task goes to Nook Chat).
+struct ScheduledTaskEditor: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = ScheduledTaskStore.shared
     @ObservedObject private var settings = WorkspaceSettings.shared
@@ -328,7 +329,7 @@ private struct ScheduledTaskEditor: View {
     @State private var showsDeliveries = false
     @StateObject private var secretCopied = CopiedMoment()
 
-    init(existing: ScheduledTask?, onDone: @escaping () -> Void) {
+    init(existing: ScheduledTask?, forNook: Bool = false, onDone: @escaping () -> Void) {
         self.existing = existing
         self.onDone = onDone
         _title = State(initialValue: existing?.title ?? "")
@@ -342,7 +343,7 @@ private struct ScheduledTaskEditor: View {
         if case .existingSession(let id, let isFresh)? = existing?.target {
             destination = .session; sessionID = id; fresh = isFresh
         }
-        if existing?.target.isNook == true { destination = .nook }
+        if existing?.target.isNook == true || (existing == nil && forNook) { destination = .nook }
         _destination = State(initialValue: destination)
         _sessionID = State(initialValue: sessionID)
         _fresh = State(initialValue: fresh)
@@ -368,6 +369,8 @@ private struct ScheduledTaskEditor: View {
         case nil:
             break
         }
+        // A new task for Nook starts as a time of day ("every morning at 9:00"), what people ask Nook for most.
+        if existing == nil && forNook { kind = .time }
         let trigger = existing?.rule.messageTrigger ?? MessageTrigger()
         _messageApps = State(initialValue: Set(trigger.apps))
         _messageFrom = State(initialValue: trigger.from)

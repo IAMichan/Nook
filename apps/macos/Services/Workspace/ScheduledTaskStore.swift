@@ -609,6 +609,7 @@ final class ScheduledTaskStore: ObservableObject {
         // later turn of the main actor, so it sees this.
         if quiet { quietRuns.insert(conversation) }
         app.chat.rename(conversation, to: task.title)
+        app.chat.markScheduledRun(conversation, task: task.id)
         // The run's own answer: a question the user asks in this conversation meanwhile replaces it, and that answer is
         // theirs, never stopped by this run's deadline.
         let ownReply = app.replies[conversation]

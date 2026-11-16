@@ -194,38 +194,55 @@ final class NookFixture {
             app.viewModel.windowSheet = nil
             app.viewModel.windowTab = .agents
             app.viewModel.selectedAgentID = "run:" + session.id.uuidString
-            if window == nil {
-                let presence = WindowPresence()
-                let root = WindowContent(presence: presence, background: NookTheme.canvas, minSize: CGSize(width: 900, height: 580)) {
-                    WorkspaceView()
-                }
-                    .nookAttention()
-                    .environmentObject(app)
-                    .environmentObject(app.workspace)
-                    .environmentObject(app.workspace.settings)
-                let host = WorkspaceHostingView(rootView: root)
-                host.sizingOptions = []
-                // Far outside every screen and never ordered in: nothing shows, nothing takes focus.
-                let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: size.width, height: size.height),
-                                      styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                                      backing: .buffered, defer: false)
-                window.isReleasedWhenClosed = false
-                window.contentView = host
-                NookWindowLook.adopt(window)
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-                window.toolbar = NSToolbar(identifier: "NookScenario")
-                window.toolbarStyle = .unified
-                window.setContentSize(size)
-                window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
-                // SwiftUI builds its accessibility elements only once something asks for them as an assistive app does:
-                // this process asks for them itself (these settings hold for this process only).
-                Self.setFlag(host, "set_accessibilityAllowsAutomationElements:", true)
-                self.window = window
-                screen.window = window
-            }
-            screen.settle(1.0)
+            host(size: size)
         }
+    }
+
+    /// Hosts the main window's real content on the Nook tab, with `conversation` open (nil: the list and the home).
+    func openNook(_ conversation: UUID?, size: CGSize = CGSize(width: 1240, height: 800)) throws {
+        try scenario.step("nook.openNook", conversation?.uuidString ?? "home") {
+            let app = self.app
+            app.viewModel.windowSheet = nil
+            app.viewModel.windowTab = .nook
+            if let conversation { app.chat.select(conversation) }
+            host(size: size)
+        }
+    }
+
+    /// The window that is never on screen, made once, then given time to settle.
+    private func host(size: CGSize) {
+        let app = self.app
+        if window == nil {
+            let presence = WindowPresence()
+            let root = WindowContent(presence: presence, background: NookTheme.canvas, minSize: CGSize(width: 900, height: 580)) {
+                WorkspaceView()
+            }
+                .nookAttention()
+                .environmentObject(app)
+                .environmentObject(app.workspace)
+                .environmentObject(app.workspace.settings)
+            let host = WorkspaceHostingView(rootView: root)
+            host.sizingOptions = []
+            // Far outside every screen and never ordered in: nothing shows, nothing takes focus.
+            let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: size.width, height: size.height),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            NookWindowLook.adopt(window)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.toolbar = NSToolbar(identifier: "NookScenario")
+            window.toolbarStyle = .unified
+            window.setContentSize(size)
+            window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+            // SwiftUI builds its accessibility elements only once something asks for them as an assistive app does:
+            // this process asks for them itself (these settings hold for this process only).
+            Self.setFlag(host, "set_accessibilityAllowsAutomationElements:", true)
+            self.window = window
+            screen.window = window
+        }
+        screen.settle(1.0)
     }
 
     /// Calls a one-`BOOL` setter by name, when the object has it.

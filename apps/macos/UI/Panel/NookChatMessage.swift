@@ -28,11 +28,17 @@ struct ChatMessageView: View, Equatable {
         }
     }
 
-    /// What you wrote: the same message as in an agent's conversation (`TranscriptUserMessage`), with its pictures.
+    /// What you wrote: the same message as in an agent's conversation (`TranscriptUserMessage`), with its pictures. A
+    /// scheduled task's question is not yours: it shows as the run's marker.
+    @ViewBuilder
     private var user: some View {
-        TranscriptUserMessage(text: message.text, date: message.date) {
-            if !message.images.isEmpty {
-                ImageMessageRow(images: message.images)
+        if message.scheduled {
+            ScheduledRunMarker(text: message.text, date: message.date)
+        } else {
+            TranscriptUserMessage(text: message.text, date: message.date) {
+                if !message.images.isEmpty {
+                    ImageMessageRow(images: message.images)
+                }
             }
         }
     }

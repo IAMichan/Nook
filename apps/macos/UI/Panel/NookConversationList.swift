@@ -47,6 +47,8 @@ struct NookList: View {
                         ScrollView(showsIndicators: false) {
                             // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
                             LazyVStack(alignment: .leading, spacing: 2) {
+                                // Work Nook does on its own, above the conversations: what runs when.
+                                if query.isEmpty { NookScheduledSection(chat: chat) }
                                 if items.isEmpty && (archivedCount == 0 || !showArchived) {
                                     ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                                 }
@@ -294,7 +296,7 @@ private struct NookRow: View, Equatable {
     static func == (a: NookRow, b: NookRow) -> Bool {
         let x = a.conversation, y = b.conversation
         return a.selected == b.selected && a.now == b.now && x.id == y.id && x.title == y.title && x.updated == y.updated
-            && x.pinned == y.pinned && x.archived == y.archived && x.busy == y.busy && x.unread == y.unread
+            && x.pinned == y.pinned && x.archived == y.archived && x.scheduledTaskID == y.scheduledTaskID && x.busy == y.busy && x.unread == y.unread
             && x.messages.count == y.messages.count && x.messages.last?.id == y.messages.last?.id
             && x.messages.last?.revision == y.messages.last?.revision && x.status == y.status
     }
@@ -334,6 +336,11 @@ private struct NookRow: View, Equatable {
                     .lineLimit(1)
                 if conversation.pinned {
                     Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                // The conversation of a scheduled task: Nook answers here on its own.
+                if conversation.scheduledTaskID != nil {
+                    Image(icon: "clock").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityLabel(tr("nookTask.bar.title"))
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)
