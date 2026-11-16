@@ -481,16 +481,13 @@ struct ScheduledTaskEditor: View {
 
     private var scheduleEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("", selection: $kind) {
-                Text(tr("sched.kind.interval")).tag(Kind.interval)
-                Text(tr("sched.kind.time")).tag(Kind.time)
-                Text(tr("automation.sched.kind.once")).tag(Kind.once)
-                Text(tr("sched.kind.webhook")).tag(Kind.webhook)
-                // Waiting for a message is for Nook Chat, which reads the chat and prepares the answer.
-                if destination == .nook { Text(tr("automation.sched.kind.message")).tag(Kind.message) }
+            // Chips that wrap instead of a segmented control: with Nook Chat's fifth choice a segmented control is
+            // wider than the sheet in every language and pushes the whole form past its edges.
+            ChipFlow(spacing: NookTheme.Spacing.sm) {
+                ForEach(kinds) { option in
+                    NookFilterChip(title: kindTitle(option), selected: kind == option) { kind = option }
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             switch kind {
             case .interval:
                 HStack(spacing: NookTheme.Spacing.md) {
@@ -538,6 +535,21 @@ struct ScheduledTaskEditor: View {
             case .message:
                 messageEditor
             }
+        }
+    }
+
+    /// The ways a task can start. Waiting for a message is for Nook Chat, which reads the chat and prepares the answer.
+    private var kinds: [Kind] {
+        Kind.allCases.filter { $0 != .message || destination == .nook }
+    }
+
+    private func kindTitle(_ kind: Kind) -> String {
+        switch kind {
+        case .interval: return tr("sched.kind.interval")
+        case .time: return tr("sched.kind.time")
+        case .once: return tr("automation.sched.kind.once")
+        case .webhook: return tr("sched.kind.webhook")
+        case .message: return tr("automation.sched.kind.message")
         }
     }
 
