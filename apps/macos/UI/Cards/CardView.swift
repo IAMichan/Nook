@@ -295,6 +295,7 @@ struct CardView: View {
                 return ComposerCompletion.Situation(recipient: card.chatReply ? card.title : nil)
             }
             .suggestsReply(replyTurn) { await AppModel.shared.suggestCardReply(card) }
+            .suggestsActions(actionTurn, place: AppModel.cardActionPlace(card)) { AppModel.cardActionLines(card) }
     }
 
     /// The newest message of the chat this card shows, when it is someone else's: the field suggests an answer to it, as the
@@ -302,6 +303,13 @@ struct CardView: View {
     private var replyTurn: ChatReplySuggestion.Turn? {
         guard card.chatReply, case .chat(let bubbles) = card.detail else { return nil }
         return ChatReplySuggestion.turn(chat: AppModel.chatCardThread(card) ?? card.id, bubbles: bubbles)
+    }
+
+    /// The newest message of the chat this card shows, anyone's: Nook looks whether it can do something for it, as the
+    /// Chats tab does for the same chat.
+    private var actionTurn: ChatActionSuggestion.Turn? {
+        guard card.chatReply, case .chat(let bubbles) = card.detail else { return nil }
+        return ChatActionSuggestion.turn(chat: AppModel.chatCardThread(card) ?? card.id, bubbles: bubbles)
     }
 
     /// The compact card's one field (the Double Tap field): the same composer as the Nook chat, with the model and what

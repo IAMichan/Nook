@@ -209,6 +209,25 @@ extension AppModel {
         UUID(uuidString: ((input["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// The folders agents may start in: the user's favorite projects, then the recent ones, each once, that still exist.
+    func agentProjectFolders() -> [String] {
+        let settings = workspace.settings
+        var seen = Set<String>()
+        return (settings.favoriteProjects + settings.recentProjects).map(WorkspacePathPolicy.normalize).filter { path in
+            !path.isEmpty && seen.insert(path).inserted && FileManager.default.fileExists(atPath: path)
+        }
+    }
+
+    /// The project folder `start_agent_session` means by `wanted` (a path or a folder's name; empty for the most recent
+    /// one), among `projects`; nil when it is none of them.
+    func agentFolder(named wanted: String, among projects: [String]) -> String? {
+        let wanted = wanted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return projects.first }
+        let path = WorkspacePathPolicy.normalize((wanted as NSString).expandingTildeInPath)
+        return projects.first { $0 == path }
+            ?? projects.first { ($0 as NSString).lastPathComponent.lowercased() == wanted.lowercased() }
+    }
+
     /// Starts a session the way the composer would: the user's remembered agent for that folder and the account, model,
     /// effort and rights for that agent, only in a folder the user already worked in.
     private func startAgentSession(_ input: [String: Any]) async throws -> String {
@@ -224,20 +243,12 @@ extension AppModel {
             return try await startRemoteAgentSession(task: task, provider: provider, machineName: machineName, input: input)
         }
 
-        var seen = Set<String>()
-        let projects = (settings.favoriteProjects + settings.recentProjects).map(WorkspacePathPolicy.normalize).filter { path in
-            !path.isEmpty && seen.insert(path).inserted && FileManager.default.fileExists(atPath: path)
-        }
-        let wanted = ((input["folder"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let projects = agentProjectFolders()
         let folder: String?
         if (input["scratch"] as? Bool) == true {
             folder = try ScratchProjects.create(prompt: task)
-        } else if wanted.isEmpty {
-            folder = projects.first
         } else {
-            let path = WorkspacePathPolicy.normalize((wanted as NSString).expandingTildeInPath)
-            folder = projects.first { $0 == path }
-                ?? projects.first { ($0 as NSString).lastPathComponent.lowercased() == wanted.lowercased() }
+            folder = agentFolder(named: (input["folder"] as? String) ?? "", among: projects)
         }
         guard let folder else {
             throw NookError("Agents start only in a project folder the user worked in before: " + projects.prefix(8).map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))

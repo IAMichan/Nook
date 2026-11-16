@@ -484,7 +484,7 @@ extension AppModel {
     /// The tools Nook may use in a chat's "@nook …": what Nook Chat may use, without what the privacy level keeps on this
     /// Mac and without the screen (no taking over, no clicking in apps). Each read tool reports itself to `onLookup` as
     /// it runs; an action tool only becomes a proposal.
-    private func draftTools(_ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) -> [ToolSpec] {
+    func draftTools(_ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) -> [ToolSpec] {
         let counter = LookupCounter()
         let excluded: Set<String> = [TakeoverPolicy.toolName, ChatTools.planTool]
         return scopedTools(privacyScope(.automatic), ledger: nil)
