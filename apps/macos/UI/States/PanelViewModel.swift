@@ -486,12 +486,23 @@ final class PanelViewModel: ObservableObject {
         return WorkspaceWindowController.shared.isOpen
     }
 
-    /// Whether `tab` is on screen in one place: the open notch (`inWindow` false), or the main window while that is in
-    /// front. The notch and the window each have the tab, with what is chosen in it of their own.
-    func isShowing(_ tab: PanelTab, inWindow: Bool) -> Bool {
-        guard inWindow else { return state == .panel(tab) }
-        if case .panel = state { return false }
-        return WorkspaceWindowController.shared.isKey && windowTab == tab && windowSheet == nil
+    /// Whether `tab` is on screen in one place: the open notch (`inWindow` false), the main window while that is in
+    /// front, or the tab's own window while that is in front (`ownWindow`). In the notch and the main window the tab
+    /// counts as the main tab or beside it in split view. Each place has the tab with what is chosen in it of its own.
+    func isShowing(_ tab: PanelTab, inWindow: Bool, ownWindow: Bool = false) -> Bool {
+        if ownWindow { return TabWindowController.shared.isKey(tab) }
+        let main: PanelTab
+        if inWindow {
+            if case .panel = state { return false }
+            guard WorkspaceWindowController.shared.isKey, windowSheet == nil else { return false }
+            main = windowTab
+        } else {
+            guard case .panel(let open) = state else { return false }
+            main = open
+        }
+        if PanelSplitChoice.same(main, tab) { return true }
+        let stored = UserDefaults.standard.string(forKey: PanelSplitChoice.key) ?? ""
+        return PanelSplitChoice.side(stored, current: main).map { PanelSplitChoice.same($0, tab) } ?? false
     }
 
     /// Whether `tab` is in sight anywhere: as the main tab under any of its names (Nook and its chat are one), beside
