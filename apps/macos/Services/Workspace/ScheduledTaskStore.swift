@@ -82,7 +82,26 @@ final class ScheduledTaskStore: ObservableObject {
         var receivedAt: Date
         /// Deliveries a coalesce window folded into this one.
         var combined = 1
+
+        var saved: SavedWebhookDelivery {
+            SavedWebhookDelivery(id: id, body: request.body, headers: request.headers, receivedAt: receivedAt, combined: combined)
+        }
+
+        init(id: String, request: WebhookRequestData, receivedAt: Date, combined: Int = 1) {
+            self.id = id
+            self.request = request
+            self.receivedAt = receivedAt
+            self.combined = combined
+        }
+
+        init(_ saved: SavedWebhookDelivery) {
+            self.init(id: saved.id, request: WebhookRequestData(body: saved.body, headers: saved.headers),
+                      receivedAt: saved.receivedAt, combined: saved.combined)
+        }
     }
+
+    /// Deliveries saved by the last run of Nook that wait to run, until `attach` queues them again.
+    private var restored: [UUID: [SavedWebhookDelivery]] = [:]
 
     enum WebhookAdmission: Equatable, Sendable {
         case accepted, queueFull, unknownTask
@@ -102,15 +121,18 @@ final class ScheduledTaskStore: ObservableObject {
         var options: [String: ScheduledTaskOptions]
         var deliveries: [String: [WebhookDeliveryRecord]] = [:]
         var dedupe: [String: WebhookDedupe] = [:]
+        /// Accepted deliveries whose run had not started yet (`SavedWebhookDelivery`).
+        var waiting: [String: [SavedWebhookDelivery]] = [:]
 
-        private enum CodingKeys: String, CodingKey { case version, tasks, options, deliveries, dedupe }
+        private enum CodingKeys: String, CodingKey { case version, tasks, options, deliveries, dedupe, waiting }
 
         init(tasks: [ScheduledTask], options: [String: ScheduledTaskOptions], deliveries: [String: [WebhookDeliveryRecord]],
-             dedupe: [String: WebhookDedupe]) {
+             dedupe: [String: WebhookDedupe], waiting: [String: [SavedWebhookDelivery]]) {
             self.tasks = LossyArray(tasks)
             self.options = options
             self.deliveries = deliveries
             self.dedupe = dedupe
+            self.waiting = waiting
         }
 
         init(from decoder: Decoder) throws {
@@ -120,6 +142,7 @@ final class ScheduledTaskStore: ObservableObject {
             options = (try? c.decode([String: ScheduledTaskOptions].self, forKey: .options)) ?? [:]
             deliveries = (try? c.decode([String: [WebhookDeliveryRecord]].self, forKey: .deliveries)) ?? [:]
             dedupe = (try? c.decode([String: WebhookDedupe].self, forKey: .dedupe)) ?? [:]
+            waiting = (try? c.decode([String: [SavedWebhookDelivery]].self, forKey: .waiting)) ?? [:]
         }
     }
 
@@ -162,12 +185,24 @@ final class ScheduledTaskStore: ObservableObject {
         }
         deliveries = byTask(file?.deliveries)
         dedupe = byTask(file?.dedupe)
+        let webhookTasks = Set(recovered.filter { $0.enabled && $0.rule.isWebhook }.map(\.id))
+        restored = SavedWebhookDelivery.restore(byTask(file?.waiting), webhookTasks: webhookTasks, now: now)
         if recovered != loaded { save() }
     }
 
     private func save() {
         func byKey<T>(_ map: [UUID: T]) -> [String: T] { Dictionary(uniqueKeysWithValues: map.map { ($0.key.uuidString, $0.value) }) }
-        let file = StoreFile(tasks: tasks, options: byKey(options), deliveries: byKey(deliveries), dedupe: byKey(dedupe))
+        // What waits to run: the queues, the latest delivery of each open coalesce window, and what the last run of Nook
+        // left that `attach` did not queue yet.
+        var waiting = restored
+        for (task, queue) in pending { waiting[task, default: []] += queue.map(\.saved) }
+        for (task, window) in coalescer.windows {
+            var latest = window.latest
+            latest.combined = window.count
+            waiting[task, default: []].append(latest.saved)
+        }
+        let file = StoreFile(tasks: tasks, options: byKey(options), deliveries: byKey(deliveries), dedupe: byKey(dedupe),
+                             waiting: byKey(waiting))
         guard let data = try? Self.encoder.encode(file) else { return }
         try? data.write(to: fileURL, options: [.atomic])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
@@ -205,6 +240,13 @@ final class ScheduledTaskStore: ObservableObject {
             }
             .store(in: &cancellables)
         WebhookListener.shared.attach(self)
+        resumeRestoredWebhooks()
+        // The Mac moved to another time zone: fixed times follow the wall clock where it is now.
+        NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.timeZoneChanged() }
+            }
+            .store(in: &cancellables)
         $tasks.map { $0.contains { $0.enabled && $0.rule.isWebhook } }
             .combineLatest(settings.$scheduledTasksEnabled, settings.$scheduledWebhooksPublic)
             .map { $0 && $1 && $2 }
@@ -285,6 +327,7 @@ final class ScheduledTaskStore: ObservableObject {
         tasks.removeAll { $0.id == id }
         options[id] = nil
         pending[id] = nil
+        restored[id] = nil
         messageQueues[id] = nil
         deliveries[id] = nil
         dedupe[id] = nil
@@ -454,10 +497,39 @@ final class ScheduledTaskStore: ObservableObject {
             log(taskID, deliveryID, .queueFull, nil, now: now)
             return .queueFull
         }
-        log(taskID, deliveryID, .accepted, nil, now: now)
         pending[taskID, default: []].append(delivery)
+        // Logged (and so saved) with the delivery in its queue: a quit from here on does not lose it.
+        log(taskID, deliveryID, .accepted, nil, now: now)
         drainWebhooks(taskID, now: now)
         return .accepted
+    }
+
+    /// Plans every fixed-time task again in the time zone the Mac is in now (`ScheduledTask.replannedForTimeZone`).
+    func timeZoneChanged(now: Date = Date()) {
+        NSTimeZone.resetSystemTimeZone()
+        var calendar = Calendar.current
+        calendar.timeZone = .current
+        let running = Set(tasks.map(\.id).filter { gate.isRunning($0) })
+        let replanned = ScheduledTask.replannedForTimeZone(tasks: tasks, now: now, running: running, calendar: calendar)
+        guard replanned != tasks else { return }
+        tasks = replanned
+        save()
+    }
+
+    /// Deliveries the last run of Nook accepted but did not start: they wait in their task's queue again, and run in turn.
+    /// With agent tasks switched off they are dropped, as a new delivery would be refused.
+    private func resumeRestoredWebhooks() {
+        let saved = isEnabled ? restored : [:]
+        let dropped = !restored.isEmpty && saved.isEmpty
+        restored = [:]
+        if dropped { save() }
+        for (taskID, list) in saved {
+            for delivery in list where webhookQueue.admit(taskID) == .accepted {
+                pending[taskID, default: []].append(Delivery(delivery))
+            }
+            drainWebhooks(taskID)
+        }
+        if !saved.isEmpty { save() }
     }
 
     /// When the window closes, its latest delivery joins the queue (its place was taken when the window opened).
@@ -476,6 +548,7 @@ final class ScheduledTaskStore: ObservableObject {
         var delivery = window.latest
         delivery.combined = window.count
         pending[taskID, default: []].append(delivery)
+        save()
         drainWebhooks(taskID, now: now)
     }
 

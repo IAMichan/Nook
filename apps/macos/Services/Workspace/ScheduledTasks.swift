@@ -395,6 +395,20 @@ struct ScheduledTask: Codable, Equatable, Identifiable, Sendable {
         return copy
     }
 
+    /// Rows after the Mac's time zone changed (travel): a fixed time is a wall-clock time, so "every day at 9:00" plans
+    /// 9:00 where the Mac is now instead of 9:00 where it was. Only a run still ahead moves; one that is due already runs
+    /// (or is skipped as missed) as planned, and one that is running gets its next time when it ends.
+    static func replannedForTimeZone(tasks: [ScheduledTask], now: Date, running: Set<UUID> = [],
+                                     calendar: Calendar = .current) -> [ScheduledTask] {
+        tasks.map { task in
+            guard task.enabled, case .fixedTime = task.rule, !running.contains(task.id),
+                  let planned = task.nextRun, planned > now else { return task }
+            var copy = task
+            copy.nextRun = ScheduleTiming.nextRun(rule: task.rule, lastFinished: nil, now: now, calendar: calendar)
+            return copy
+        }
+    }
+
     /// Rows left `running` by a restart become failed and are rescheduled, so a crashed run neither blocks the task
     /// forever nor counts as success. Other rows are returned unchanged.
     static func recoverInterrupted(tasks: [ScheduledTask], now: Date = Date(), calendar: Calendar = .current) -> [ScheduledTask] {

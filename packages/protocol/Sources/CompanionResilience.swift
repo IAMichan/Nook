@@ -333,3 +333,27 @@ struct SettledItems: Sendable {
         }
     }
 }
+
+/// Whether the Mac sends a live update to a phone now, by what still waits on that phone's connection (bytes sent that
+/// the network did not take yet). Every live update says the whole state or the change since the last one sent, so an
+/// update held back loses nothing: the next one carries everything that changed meanwhile. A connection that keeps that
+/// much waiting for `patience`, or far more than any update needs, is dead or stuck: it is dropped, and the phone
+/// connects again and starts from a fresh snapshot.
+enum StreamBackpressure {
+    enum Verdict: Equatable { case send, wait, drop }
+
+    /// More than this waiting and live updates wait.
+    static let waitAbove = 256 * 1024
+    /// More than this waiting and the connection goes.
+    static let dropAbove = 32 * 1024 * 1024
+    /// How long a connection may keep more than `waitAbove` waiting.
+    static let patience: TimeInterval = 120
+
+    /// `heldSince`: when this connection first had to wait, nil while it keeps up.
+    static func verdict(pending: Int, heldSince: Date?, now: Date = Date()) -> Verdict {
+        if pending > dropAbove { return .drop }
+        guard pending > waitAbove else { return .send }
+        if let heldSince, now.timeIntervalSince(heldSince) > patience { return .drop }
+        return .wait
+    }
+}

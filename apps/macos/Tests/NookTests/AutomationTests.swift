@@ -231,4 +231,30 @@ final class AutomationTests: XCTestCase {
         XCTAssertNil(SnoozePolicy.customEnd(t0.addingTimeInterval(-60), now: t0), "a moment that passed")
         XCTAssertEqual(SnoozePolicy.customEnd(t0.addingTimeInterval(400 * 86_400), now: t0), t0.addingTimeInterval(SnoozePolicy.maxCustom))
     }
+
+    /// Accepted deliveries that had not run yet come back after a launch: oldest first, only for tasks that still take
+    /// webhooks, not when they are too old, and never more than a queue holds.
+    func testSavedWebhookDeliveriesAreRestoredAfterALaunch() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let task = UUID(), gone = UUID()
+        func delivery(_ id: String, ago: TimeInterval) -> SavedWebhookDelivery {
+            SavedWebhookDelivery(id: id, body: Data("{}".utf8), headers: ["x-github-event": "push"],
+                                 receivedAt: now.addingTimeInterval(-ago), combined: 1)
+        }
+        let saved = [
+            task: [delivery("b", ago: 10), delivery("a", ago: 20), delivery("old", ago: SavedWebhookDelivery.maxAge + 1)],
+            gone: [delivery("c", ago: 5)],
+        ]
+        let restored = SavedWebhookDelivery.restore(saved, webhookTasks: [task], now: now)
+        XCTAssertEqual(restored[task]?.map(\.id), ["a", "b"])
+        XCTAssertNil(restored[gone], "a task that was deleted or switched off runs nothing")
+
+        let many = (0..<30).map { delivery("d\($0)", ago: TimeInterval(100 - $0)) }
+        XCTAssertEqual(SavedWebhookDelivery.restore([task: many], webhookTasks: [task], now: now)[task]?.count,
+                       WebhookQueue.maxQueuedPerTask)
+
+        // What is saved reads back the same.
+        let data = try JSONEncoder().encode(saved[task]!)
+        XCTAssertEqual(try JSONDecoder().decode([SavedWebhookDelivery].self, from: data), saved[task]!)
+    }
 }
