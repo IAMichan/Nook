@@ -281,6 +281,16 @@ final class PullRequestDetailModel: ObservableObject {
         }
         prefetching[entry] = Prefetch(summary: Task { _ = await summary.value }, done: done)
     }
+
+    /// The pull request with its timeline, for a row's comments card: what is kept when it was read in the last
+    /// minute, else read ahead and waited for. Nil when it cannot be read.
+    static func withActivity(accountID: String, item: PullRequestItem) async -> PullRequestDetail? {
+        let entry = Self.key(accountID, item.id)
+        prefetch(accountID: accountID, item: item)
+        await prefetching[entry]?.done.value
+        guard let detail = cache[entry]?.detail, detail.activityLoaded else { return nil }
+        return detail
+    }
 }
 
 extension PullRequestDetailModel {
