@@ -50,8 +50,8 @@ run-name: >-
 # Ed25519 signature (.zip.sig) and the app carries the public key, so a downloaded Nook installs the next release from
 # the update button after checking it. A release without them (or without a signing identity) fails instead of shipping.
 # Release token: with the repository secret NOOK_RELEASE_TOKEN (a fine-grained token, or a GitHub App's, for this
-# repository with Contents and Workflows read and write), the steps that create, fill and publish the release use it
-# instead of the workflow's own token. GitHub refuses a release on a commit whose .github/workflows differ from main's
+# repository with Contents, Workflows and Pull requests read and write; the last for the `changelog` job), the steps
+# that create, fill and publish the release use it instead of the workflow's own token. GitHub refuses a release on a commit whose .github/workflows differ from main's
 # to a token without the Workflows permission, and the workflow's own token can never have it. So without the secret, a
 # workflow change merged into main during the hour-long build fails the release at the end with "HTTP 403: Resource
 # not accessible by integration" (Beta 6); re-running does not help, start a new release from main instead.

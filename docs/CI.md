@@ -169,7 +169,8 @@ The release workflow signs Nook with the best identity the repository secrets pr
 workflow change merged into `main` while a release builds (about an hour) therefore fails the release at *Create the
 draft release* with `HTTP 403: Resource not accessible by integration`, and re-running the failed jobs fails the same
 way. Set the repository secret `NOOK_RELEASE_TOKEN` to a fine-grained personal access token (or a GitHub App token)
-for this repository with **Contents** and **Workflows** read and write; the release steps then use it. Without it,
+for this repository with **Contents**, **Workflows** and **Pull requests** read and write; the release steps then use
+it (Pull requests for the changelog pull request, see *Changelog* above). Without it,
 start a new release from `main` instead of re-running. A tag made with this token starts `release.yml` again (the
 workflow's own token does not); `plan` sees that the tag's release is already published and stops.
 
