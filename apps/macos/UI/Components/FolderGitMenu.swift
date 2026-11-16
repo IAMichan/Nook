@@ -391,11 +391,14 @@ struct DockedUsagePanel: View {
     var body: some View {
         ScrollView {
             SessionUsageCard(source: source, boxed: true)
+                // A page the agent opened rests under this card, its right edge on the card's.
+                .sessionBrowserDockCards()
                 // The scroll view would cut off the card's outline.
                 .padding(.vertical, NookTheme.Spacing.xxs)
                 .padding(.trailing, NookTheme.Spacing.sm)
         }
         .scrollIndicators(.never)
+        .sessionBrowserDockColumn()
     }
 }
 
