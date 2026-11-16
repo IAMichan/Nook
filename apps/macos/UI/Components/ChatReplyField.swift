@@ -355,6 +355,8 @@ struct ChatReplyField: View {
                         SessionComposer<EmptyView>.placeCaretAtEnd()
                         // The field suggests the rest of the sentence itself: autocomplete leaves it alone meanwhile.
                         AutocompleteController.shared.standAside(ComposerCompleter.shared.suggestsItself, for: "composer")
+                        // The conversation goes into the model now, so the first letter's suggestion shows at once.
+                        ComposerCompleter.shared.warm(before: text, situation: situation(), hint: placeholder)
                     } else {
                         letGoOfGhost()
                     }
@@ -554,6 +556,11 @@ struct ChatReplyField: View {
         let focused = focus.wrappedValue
         // Autocomplete may have started or stopped since the focus came: the sentence is its own or the field's, never both.
         if focused { AutocompleteController.shared.standAside(completer.suggestsItself, for: "composer") }
+        // A message sent (the field emptied): read the conversation in again for the next one.
+        if focused, !old.isEmpty, new.allSatisfy(\.isWhitespace) {
+            completer.cancel()
+            return completer.warm(situation: situation(), hint: placeholder)
+        }
         guard focused, old != new, !drafting, !busy, !menu.isOpen, ChatDraft.instruction(in: new) == nil, completer.suggestsItself,
               let selection = ComposerFieldStyle.focusedSelection(expecting: new), selection.length == 0,
               let caretIndex = String.Index(exactUTF16: selection.location, in: new) else { return completer.cancel() }

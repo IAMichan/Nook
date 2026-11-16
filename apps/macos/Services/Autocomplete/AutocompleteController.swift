@@ -1832,10 +1832,7 @@ final class AutocompleteController: ObservableObject {
     /// model, on battery while autocomplete pauses there, or when the model is not sure.
     func composerSuggestion(_ input: CompletionContext, identity: String) async -> CompletionSuggestion? {
         guard !power.paused, let source = await composerSource(identity), let engine = await composerEngine(for: source) else { return nil }
-        var input = input
-        input.instructions = prefs.instructions(app: nil, site: nil)
-        if prefs.memoryContext { input.facts = facts(input.topic(before: input.before)) }
-        let prompt = builder.build(input)
+        let prompt = composerPrompt(input)
         var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
         options.heal = Self.heals(input.before)
         options.candidates = suggestionCandidates
@@ -1850,6 +1847,37 @@ final class AutocompleteController: ObservableObject {
 
     /// A newer key in the composer: the running suggestion stops at its next token.
     func cancelComposerSuggestion() { composerEngineRunning?.cancel() }
+
+    /// A composer got the keyboard, or its message was sent: the model is loaded and the prompt (the conversation, the
+    /// instructions, the memories) read into its cache now, so the first letter only adds that letter, as autocomplete does
+    /// in other apps' fields (`warmFocusedField`). Not while the battery asks to save power.
+    func warmComposer(_ input: CompletionContext, identity: String) async {
+        guard !power.paused, power.warms, let source = await composerSource(identity),
+              let engine = await composerEngine(for: source) else { return }
+        engine.warm(prompt: composerPrompt(input))
+    }
+
+    /// The memories picked for a composer's conversation, kept while it stays the same (same recipient, same messages) for
+    /// at most `contextSeconds`: picked anew on every key, they would change the context and make the model read the whole
+    /// conversation again for each letter.
+    private var composerFacts: (key: String, made: Date, facts: [String])?
+
+    /// The prompt for a composer's text: the composer's context (`ComposerCompletion.context`) with the instructions and memories
+    /// added, its context fixed per conversation so consecutive keys share the model's cache.
+    private func composerPrompt(_ input: CompletionContext) -> CompletionPrompt {
+        var input = input
+        input.instructions = prefs.instructions(app: nil, site: nil)
+        if prefs.memoryContext {
+            let key = [input.windowTitle ?? "", input.fieldHint ?? "", input.screenText ?? ""].joined(separator: "\u{1F}")
+            if let saved = composerFacts, saved.key == key, Date().timeIntervalSince(saved.made) < Self.contextSeconds {
+                input.facts = saved.facts
+            } else {
+                input.facts = facts(input.topic(before: input.before))
+                composerFacts = (key, Date(), input.facts)
+            }
+        }
+        return builder.build(input)
+    }
 
     /// Autocomplete's own engine when it runs this model (loaded, or loading it when it is its active model), else one of
     /// the composer's own.
