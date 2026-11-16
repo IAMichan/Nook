@@ -188,7 +188,9 @@ extension AgentRunPanel {
                 // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                 .coordinateSpace(name: TimelineSpace.name)
                 .readingStackTop(reading)
-                .readingScroller(reading)
+                .readingScroller(reading) { deltaY in
+                    if let reaction = scroll.reaction(toWheel: deltaY, nearEnd: atEnd) { scroll.apply(reaction) }
+                }
                 .chatColumn()
                 .coordinateSpace(name: TimelineSpace.content)
             }
@@ -411,12 +413,13 @@ extension AgentRunPanel {
 
     /// Keeps the run at its end while it is there, as `TranscriptConversation.keepEnd` does: the lazy blocks below
     /// measure taller after the first scroll and the composer under it grows (a card, a draft), which let the run slip
-    /// up from its end as it opens. A landing on what is new that fits on screen ends at the end too, and follows from
-    /// there. Only moving while the sizes stay the same is you scrolling away.
+    /// up from its end as it opens. A landing follows the end (`settleAtEnd`), so it ends there too. Only moving while the
+    /// sizes stay the same, or a wheel step up, is you scrolling away.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
         guard new.resized(from: old), !finding else { return }
-        let wasAtEnd = old.maxOffset - old.offset <= 1
-        guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
+        // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a size
+        // change in the same frame as your step no longer pulls the view back to the end.
+        guard scroll.shouldFollowEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
         scroll.reachedEnd()
         var still = Transaction()
         still.disablesAnimations = true

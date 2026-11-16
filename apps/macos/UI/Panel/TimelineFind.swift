@@ -225,9 +225,11 @@ extension View {
         onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.content)).minY } action: { reading.stack(at: $0) }
     }
 
-    /// Lets `reading` scroll the conversation's scroll view; on a view inside its content.
-    func readingScroller(_ reading: TimelineReadingAnchor) -> some View {
-        background(ReadingAnchorScroller(reading: reading).frame(width: 0, height: 0))
+    /// Lets `reading` scroll the conversation's scroll view; on a view inside its content. `wheel` gets each scroll-wheel
+    /// or trackpad step of yours over the conversation (its vertical delta, above zero toward the start) before the view
+    /// moves by it (`ScrollModel.reaction(toWheel:nearEnd:)`).
+    func readingScroller(_ reading: TimelineReadingAnchor, wheel: @escaping (Double) -> Void = { _ in }) -> some View {
+        background(ReadingAnchorScroller(reading: reading, wheel: wheel).frame(width: 0, height: 0))
     }
 
     /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
@@ -398,25 +400,70 @@ extension ScrollFrame {
 /// `ScrollPosition` binding: the binding put the view back at the offset last asked for after a step of the scroll
 /// wheel (measured offscreen: every step of yours after a keep was taken back), and writing it drew the conversation
 /// again. Scrolling the clip view moves the view as a wheel step does, and the scroll view reports it as usual.
+///
+/// It also watches the wheel over the conversation (a local event monitor, which sees a step before any view handles
+/// it, also over a page or a command's output in a row): the step is what tells you scrolling apart from the rows
+/// changing size under you.
 private struct ReadingAnchorScroller: NSViewRepresentable {
     let reading: TimelineReadingAnchor
+    let wheel: (Double) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = ScrollerProbe()
+        view.wheel = wheel
         view.reading = reading
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
+        (view as? ScrollerProbe)?.wheel = wheel
         (view as? ScrollerProbe)?.reading = reading
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: ()) {
+        (view as? ScrollerProbe)?.stopWatching()
     }
 
     private final class ScrollerProbe: NSView {
         weak var reading: TimelineReadingAnchor? { didSet { connect() } }
+        var wheel: (Double) -> Void = { _ in }
+        private var monitor: Any?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             connect()
+            if window == nil { stopWatching() } else { watchWheel() }
+        }
+
+        func stopWatching() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        private func watchWheel() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                self?.saw(event)
+                return event
+            }
+        }
+
+        /// A mostly vertical step over this conversation, not over a scroll view of its own inside a row (a long
+        /// command's output) that takes it.
+        private func saw(_ event: NSEvent) {
+            guard let scrollView = enclosingScrollView, let window, event.window === window,
+                  abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX),
+                  let hit = window.contentView?.hitTest(event.locationInWindow), hit.isDescendant(of: scrollView) else { return }
+            var view: NSView? = hit
+            while let current = view, current !== scrollView {
+                if let inner = current as? NSScrollView, inner.hasVerticalScroller || Self.scrollsVertically(inner) { return }
+                view = current.superview
+            }
+            wheel(Double(event.scrollingDeltaY))
+        }
+
+        private static func scrollsVertically(_ scrollView: NSScrollView) -> Bool {
+            (scrollView.documentView?.frame.height ?? 0) > scrollView.contentView.bounds.height + 1
         }
 
         private func connect() {

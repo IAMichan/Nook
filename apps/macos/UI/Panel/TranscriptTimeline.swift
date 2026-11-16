@@ -176,7 +176,9 @@ struct TranscriptConversation: View {
                     // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
-                    .readingScroller(reading)
+                    .readingScroller(reading) { deltaY in
+                        if let reaction = scroll.reaction(toWheel: deltaY, nearEnd: atEnd) { scroll.apply(reaction) }
+                    }
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                     .coordinateSpace(name: TimelineSpace.content)
@@ -420,9 +422,9 @@ struct TranscriptConversation: View {
     /// there; only moving while the sizes stay the same is you scrolling away (a mouse wheel too, which reports no phase).
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
         if new.resized(from: old) {
-            // At the end before the change counts too: a landing on what is new that fits on screen ends there as well.
-            let wasAtEnd = old.maxOffset - old.offset <= 1
-            guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle,
+            // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a
+            // size change in the same frame as your step no longer pulls the view back to the end.
+            guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
                   new.maxOffset - new.offset > 0.5 else { return }
             scroll.reachedEnd()
             var still = Transaction()
