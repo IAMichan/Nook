@@ -124,6 +124,97 @@ final class RunStoreTests: XCTestCase {
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    /// The list lives in runs.sqlite: a background save writes only the table, and a new store reads it from there.
+    func testTheListLivesInTheDatabase() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        let runs = [TestData.run(status: .completed), TestData.run(status: .failed), TestData.run(status: .stopped)]
+        try store.saveRuns(runs, mirror: false)
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("runs.json"))
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), runs.map(\.id))
+    }
+
+    /// Order, renames and removals come back as saved, without the copy in runs.json.
+    func testChangesToTheListAreSavedInPlace() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        var runs = [TestData.run(status: .completed), TestData.run(status: .failed), TestData.run(status: .stopped)]
+        try store.saveRuns(runs, mirror: false)
+        runs[0].title = "Renamed"
+        runs.remove(at: 1)
+        runs.swapAt(0, 1)
+        runs.append(TestData.run(status: .completed))
+        try store.saveRuns(runs, mirror: false)
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("runs.json"))
+        let loaded = RunStore(directory: folder).loadRuns()
+        XCTAssertEqual(loaded.map(\.id), runs.map(\.id))
+        XCTAssertEqual(loaded[1].title, "Renamed")
+    }
+
+    /// The first launch with the table reads the sessions runs.json held.
+    func testTheListIsImportedFromRunsJSON() throws {
+        let runs = [TestData.run(status: .completed), TestData.run(status: .failed)]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(runs).write(to: folder.appendingPathComponent("runs.json"))
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), runs.map(\.id))
+        // Kept as it was, and the table holds the list now.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("runs.json").path))
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("runs.json"))
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), runs.map(\.id))
+    }
+
+    /// An older Nook ran in between and saved only runs.json: that file is read in again, not ignored.
+    func testARunsJSONSavedByAnotherNookIsReadAgain() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        try store.saveRuns([TestData.run(status: .completed)])
+        let theirs = [TestData.run(status: .failed), TestData.run(status: .stopped)]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let file = folder.appendingPathComponent("runs.json")
+        try encoder.encode(theirs).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), theirs.map(\.id))
+    }
+
+    /// The copy Nook wrote itself is not newer than the table: later saves to the table win.
+    func testItsOwnCopyDoesNotOverrideLaterSaves() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        var runs = [TestData.run(status: .completed)]
+        try store.saveRuns(runs)
+        runs.append(TestData.run(status: .failed))
+        try store.saveRuns(runs, mirror: false)
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), runs.map(\.id))
+    }
+
+    /// A database that had to be set aside starts empty: the copy in runs.json brings the list back.
+    func testALostDatabaseIsRebuiltFromTheCopy() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        let runs = [TestData.run(status: .completed), TestData.run(status: .stopped)]
+        try store.saveRuns(runs)
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("runs.sqlite" + suffix))
+        }
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.id), runs.map(\.id))
+    }
+
+    /// A row this build cannot read (a newer Nook's) is skipped, and kept by every later save.
+    func testUnreadableSessionRowsAreKept() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        try store.saveRuns([TestData.run(status: .completed)], mirror: false)
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
+        XCTAssertTrue(log.transaction { log.writeRuns(changed: [(UUID(), 5, Data("{\"future\":true}".utf8))], moved: [], removed: []) })
+        let next = RunStore(directory: folder)
+        let loaded = next.loadRuns()
+        XCTAssertEqual(loaded.count, 1)
+        try next.saveRuns([], mirror: false)
+        XCTAssertEqual(log.savedRuns()?.count, 1, "only the unreadable row is left")
+    }
+
     func testCorruptFileGivesEmptyList() throws {
         try "{niet goed".write(to: folder.appendingPathComponent("runs.json"), atomically: true, encoding: .utf8)
         XCTAssertTrue(RunStore(directory: folder).loadRuns().isEmpty)

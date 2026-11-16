@@ -1,7 +1,14 @@
 import Foundation
 
-/// Stores workspace sessions on your Mac: a list of sessions (`runs.json`) and the timelines, as an append-only log in
-/// `runs.sqlite` (see `RunEventLog`). Only readable by current user (directory 0700, files 0600).
+/// Stores workspace sessions on your Mac, in `runs.sqlite`: the list of sessions (one row per session, `runs`) and the
+/// timelines, as an append-only log (see `RunEventLog`). Only readable by current user (directory 0700, files 0600).
+///
+/// The list and the timelines share one database and one write queue, so a session's state and its events are written
+/// in the order they happened, and a save of the list writes only the sessions that changed, in one transaction (the
+/// whole list as one JSON file was rewritten for every change). `runs.json` stays as a copy (`mirror`): written when
+/// Nook quits and every few minutes, for a Nook from before the table, which reads only that file, and to rebuild the
+/// list when the database had to be set aside. A `runs.json` written later than the copy Nook made (an older Nook ran
+/// in between) is read in again, so going back and forth between versions loses nothing.
 ///
 /// Saving a timeline writes only what changed since it was last written: new events as `event` rows, events that
 /// changed (a streamed answer, a finished tool) as `update` rows. Nothing already written is rewritten, so a crash loses
@@ -18,6 +25,16 @@ final class RunStore: @unchecked Sendable {
     private var written: [UUID: WrittenTimeline] = [:]
     /// Sessions deleted this launch: a save still queued for one must not bring its timeline back.
     private var deleted: Set<UUID> = []
+    /// The session list as it is in the table: each session's place, and the ids of rows this build could not read
+    /// (from a newer Nook), which saves keep.
+    private var tableOrder: [UUID] = []
+    private var unreadableRows: Set<String> = []
+    /// `tableOrder` says what the table holds (it was loaded, or read before the first save).
+    private var tableKnown = false
+    /// When `runs.json` was last written as a copy of the table; nil until it is this launch.
+    private var mirroredAt: Date?
+    /// How often the background saves also write `runs.json` (`mirror`).
+    static let mirrorInterval: TimeInterval = 5 * 60
 
     /// A log this much longer than its timeline (rows of updates no longer needed) is compacted into one snapshot.
     static let compactionMinimumRows = 256
@@ -57,10 +74,13 @@ final class RunStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         // Opened here, off the main thread at launch: the one-time import of old timelines can take a moment.
-        _ = openLog()
-        // Entry by entry, and an unreadable file is kept aside: the next save must never wipe your sessions.
-        guard let runs = SafeStorage.load(LossyArray<WorkspaceRun>.self, from: runsURL, decoder: Self.decoder, skipped: { $0.skipped })
-            .value?.elements else { return [] }
+        let runs: [WorkspaceRun]
+        if let log = openLog() {
+            runs = loadTable(log)
+        } else {
+            // No database this launch: the copy in runs.json is the list, and saves go there.
+            runs = readJSONList() ?? []
+        }
         return runs.map { run in
             // Its keeper may hold it still: `reattachKeptRuns` looks.
             guard run.status.isActive, run.kept == nil else { return run }
@@ -74,10 +94,118 @@ final class RunStore: @unchecked Sendable {
         }
     }
 
+    /// Saves the list now and writes `runs.json` with it (Nook quits).
     func saveRuns(_ runs: [WorkspaceRun]) throws {
+        try saveRuns(runs, mirror: true)
+    }
+
+    /// Writes the sessions that changed to the table, in one transaction; `mirror` writes `runs.json` too, as does a
+    /// save when the last copy is older than `mirrorInterval`. Without a database it writes `runs.json` only.
+    func saveRuns(_ runs: [WorkspaceRun], mirror: Bool, now: Date = Date()) throws {
         lock.lock()
         defer { lock.unlock() }
-        try write(encodeRuns(runs), to: runsURL)
+        guard let log = openLog() else {
+            try write(encodeRuns(runs), to: runsURL)
+            return
+        }
+        if !tableKnown { learnTable(log) }
+        let before = encodedRuns
+        let json = try encodeRuns(runs)
+        var changed: [(id: UUID, position: Int, json: Data)] = []
+        var moved: [(id: UUID, position: Int)] = []
+        let oldPlace = Dictionary(tableOrder.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        for (position, run) in runs.enumerated() {
+            guard let piece = encodedRuns[run.id]?.json else { continue }
+            if before[run.id]?.json != piece || oldPlace[run.id] == nil {
+                changed.append((run.id, position, piece))
+            } else if oldPlace[run.id] != position {
+                moved.append((run.id, position))
+            }
+        }
+        let kept = Set(runs.map(\.id))
+        let removed = tableOrder.filter { !kept.contains($0) }.map(\.uuidString)
+        if !changed.isEmpty || !moved.isEmpty || !removed.isEmpty {
+            guard log.transaction({ log.writeRuns(changed: changed, moved: moved, removed: removed) }) else {
+                // Rolled back: the table is as it was, and the next save tries the same change again.
+                encodedRuns = before
+                throw RunStoreError.writeFailed
+            }
+            tableOrder = runs.map(\.id)
+        }
+        if mirror || mirroredAt.map({ now.timeIntervalSince($0) >= Self.mirrorInterval }) ?? true {
+            try writeMirror(json, log: log, now: now)
+        }
+    }
+
+    /// What the table holds, for a save before any load (a second store on the same folder).
+    private func learnTable(_ log: RunEventLog) {
+        tableKnown = true
+        for row in log.savedRuns() ?? [] {
+            if let id = UUID(uuidString: row.id) { tableOrder.append(id) } else { unreadableRows.insert(row.id) }
+        }
+    }
+
+    /// Writes `runs.json` as the copy of the table, and notes when, so a later write by another Nook is recognised.
+    private func writeMirror(_ json: Data, log: RunEventLog, now: Date) throws {
+        try write(json, to: runsURL)
+        mirroredAt = now
+        let written = (try? fileManager.attributesOfItem(atPath: runsURL.path))?[.modificationDate] as? Date ?? now
+        log.setMeta(Self.mirroredKey, String(written.timeIntervalSince1970))
+    }
+
+    private static let mirroredKey = "runs_json_mirrored_at"
+    private static let listImportedKey = "runs_json_imported"
+
+    /// The list from the table, after reading `runs.json` into it when that is newer: the first launch with the table,
+    /// a database that was set aside and made anew, or an older Nook that ran in between and saved only the file.
+    /// Call with the lock held.
+    private func loadTable(_ log: RunEventLog) -> [WorkspaceRun] {
+        let fileDate = (try? fileManager.attributesOfItem(atPath: runsURL.path))?[.modificationDate] as? Date
+        let mirrored = log.meta(Self.mirroredKey).flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+        let imported = log.meta(Self.listImportedKey) != nil
+        // A second of slack: the file system's dates are not finer than that everywhere.
+        let fileIsNewer = fileDate.map { date in mirrored.map { date.timeIntervalSince($0) > 1 } ?? true } ?? false
+        if !imported || fileIsNewer, let fromFile = readJSONList() {
+            let rows = fromFile.compactMap { run in (try? Self.encoder.encode(run)).map { (id: run.id, json: $0) } }
+            if log.transaction({ log.replaceRuns(rows) }) {
+                log.setMeta(Self.listImportedKey, "1")
+                if let fileDate { log.setMeta(Self.mirroredKey, String(fileDate.timeIntervalSince1970)) }
+                if imported { SafeStorage.report("runs.json is newer than runs.sqlite (another Nook saved it): read in again") }
+            }
+            let byID = Dictionary(fromFile.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            encodedRuns = Dictionary(rows.compactMap { row in byID[row.id].map { (row.id, (run: $0, json: row.json)) } },
+                                     uniquingKeysWith: { first, _ in first })
+            tableOrder = fromFile.map(\.id)
+            tableKnown = true
+            return fromFile
+        }
+        if !imported { log.setMeta(Self.listImportedKey, "1") }
+        guard let saved = log.savedRuns() else { return readJSONList() ?? [] }
+        var runs: [WorkspaceRun] = []
+        var encoded: [UUID: (run: WorkspaceRun, json: Data)] = [:]
+        unreadableRows = []
+        for row in saved {
+            if let run = try? Self.decoder.decode(WorkspaceRun.self, from: row.json), run.id.uuidString == row.id {
+                runs.append(run)
+                encoded[run.id] = (run, row.json)
+            } else {
+                unreadableRows.insert(row.id)
+            }
+        }
+        if !unreadableRows.isEmpty {
+            SafeStorage.report("runs.sqlite: skipped \(unreadableRows.count) unreadable session\(unreadableRows.count == 1 ? "" : "s"); kept in the table")
+        }
+        tableOrder = runs.map(\.id)
+        tableKnown = true
+        // The rows as they are: a session that does not change is not written again.
+        encodedRuns = encoded
+        return runs
+    }
+
+    /// `runs.json`, entry by entry; an unreadable file is kept aside (`SafeStorage`), so nothing is ever lost.
+    private func readJSONList() -> [WorkspaceRun]? {
+        SafeStorage.load(LossyArray<WorkspaceRun>.self, from: runsURL, decoder: Self.decoder, skipped: { $0.skipped })
+            .value?.elements
     }
 
     /// Each session's JSON as last encoded, with the session it came from.
@@ -112,7 +240,7 @@ final class RunStore: @unchecked Sendable {
     func saveRunsAsync(_ runs: [WorkspaceRun], failed: (@Sendable () -> Void)? = nil) {
         ioQueue.async { [weak self] in
             guard let self else { return }
-            do { try self.saveRuns(runs) } catch { failed?() }
+            do { try self.saveRuns(runs, mirror: false) } catch { failed?() }
         }
     }
 

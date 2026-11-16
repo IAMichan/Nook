@@ -46,8 +46,19 @@ final class RunEventLog {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        """,
+        // The session list (`RunStore.saveRuns`): one row per session, its JSON as `runs.json` held it, in list order.
         """
+        CREATE TABLE IF NOT EXISTS runs (
+            id TEXT PRIMARY KEY,
+            position INTEGER NOT NULL,
+            json TEXT NOT NULL
+        );
+        """,
     ]
+
+    /// The schema this build writes: a file with a higher `user_version` comes from a newer Nook.
+    static var schemaLatest: Int { migrations.count }
 
     /// The first failure while the log sets itself up, for `SQLiteRecovery` to tell damage from other trouble.
     private var setupFailure: Int32 = SQLITE_OK
@@ -281,16 +292,22 @@ final class RunEventLog {
         return Int(sqlite3_column_int(stmt, 0))
     }
 
+    /// Brings the schema up to date, one step per transaction; every statement of a step must succeed, or the step is
+    /// rolled back and the log not used (a step that half ran is never marked done). A file from a newer Nook
+    /// (`user_version` above `schemaLatest`) is used as it is: its tables are a superset of these, and nothing here
+    /// lowers its version.
     private func migrate() -> Bool {
         let current = schemaVersion
+        if current > Self.schemaLatest {
+            SafeStorage.report("runs.sqlite has schema \(current), newer than this build's \(Self.schemaLatest); used as it is")
+            return true
+        }
         for (index, sql) in Self.migrations.enumerated() where index >= current {
-            exec("BEGIN;")
-            guard exec(sql) else {
+            guard exec("BEGIN IMMEDIATE;") else { return false }
+            guard exec(sql), exec("PRAGMA user_version = \(index + 1);"), exec("COMMIT;") else {
                 exec("ROLLBACK;")
                 return false
             }
-            exec("PRAGMA user_version = \(index + 1);")
-            exec("COMMIT;")
         }
         return true
     }
@@ -387,6 +404,64 @@ final class RunEventLog {
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM run_events", -1, &stmt, nil) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
         return Int(sqlite3_column_int64(stmt, 0))
+    }
+
+    // MARK: Session list
+
+    /// One saved session: its id and its JSON. `id` is the text in the row, so a row that is not a UUID (written by hand,
+    /// or by a newer Nook) is still kept and never deleted by a save.
+    struct SavedRun: Equatable {
+        var id: String
+        var json: Data
+    }
+
+    /// Every saved session in list order; nil when the table cannot be read.
+    func savedRuns() -> [SavedRun]? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT id, json FROM runs ORDER BY position ASC", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        var result: [SavedRun] = []
+        var step = sqlite3_step(stmt)
+        while step == SQLITE_ROW {
+            defer { step = sqlite3_step(stmt) }
+            guard let id = sqlite3_column_text(stmt, 0) else { continue }
+            let length = Int(sqlite3_column_bytes(stmt, 1))
+            let json = sqlite3_column_blob(stmt, 1).map { Data(bytes: $0, count: length) } ?? Data()
+            result.append(SavedRun(id: String(cString: id), json: json))
+        }
+        return step == SQLITE_DONE ? result : nil
+    }
+
+    /// Writes a change to the session list. `changed` rows are written whole (JSON and place), `moved` ones only get their
+    /// new place, `removed` ones go. Called inside `transaction`, so the list is never half written.
+    func writeRuns(changed: [(id: UUID, position: Int, json: Data)], moved: [(id: UUID, position: Int)],
+                   removed: [String]) -> Bool {
+        var upsert: OpaquePointer?
+        defer { sqlite3_finalize(upsert) }
+        let sql = "INSERT INTO runs (id, position, json) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET position = excluded.position, json = excluded.json"
+        guard sqlite3_prepare_v2(db, sql, -1, &upsert, nil) == SQLITE_OK else { return false }
+        for row in changed {
+            sqlite3_reset(upsert)
+            sqlite3_bind_text(upsert, 1, row.id.uuidString, -1, transient)
+            sqlite3_bind_int64(upsert, 2, Int64(row.position))
+            _ = row.json.withUnsafeBytes { bytes in
+                sqlite3_bind_text(upsert, 3, bytes.baseAddress?.assumingMemoryBound(to: CChar.self), Int32(bytes.count), transient)
+            }
+            guard sqlite3_step(upsert) == SQLITE_DONE else { return false }
+        }
+        for row in moved {
+            guard execute("UPDATE runs SET position = ? WHERE id = ?", [Int64(row.position), row.id.uuidString]) else { return false }
+        }
+        for id in removed {
+            guard execute("DELETE FROM runs WHERE id = ?", [id]) else { return false }
+        }
+        return true
+    }
+
+    /// Replaces the whole session list (an import of `runs.json`). Inside `transaction`.
+    func replaceRuns(_ rows: [(id: UUID, json: Data)]) -> Bool {
+        guard exec("DELETE FROM runs;") else { return false }
+        return writeRuns(changed: rows.enumerated().map { ($0.element.id, $0.offset, $0.element.json) }, moved: [], removed: [])
     }
 
     func meta(_ key: String) -> String? {

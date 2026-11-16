@@ -238,7 +238,7 @@ final class RunEventLogTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: store.databaseURL.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
         let log = try XCTUnwrap(RunEventLog(url: store.databaseURL))
-        XCTAssertEqual(log.schemaVersion, 1)
+        XCTAssertEqual(log.schemaVersion, RunEventLog.schemaLatest)
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.databaseURL.path + "-wal"), "write-ahead log")
     }
 
@@ -330,6 +330,20 @@ final class RunEventLogTests: XCTestCase {
         // A timeline in use stays, however old and however far over.
         XCTAssertEqual(TimelineEviction.pick([busy], limit: 0, budget: 0), [])
         XCTAssertEqual(TimelineEviction.pick([busy, newest], limit: 0, budget: 0), [newest.id])
+    }
+
+    /// A file from a newer Nook (a higher schema version) is used as it is, never set aside or downgraded.
+    func testANewerSchemaIsUsedAsItIs() throws {
+        let url = URL(fileURLWithPath: try TestData.tempFolder()).appendingPathComponent("runs.sqlite")
+        do {
+            let log = try XCTUnwrap(RunEventLog(url: url))
+            XCTAssertEqual(log.schemaVersion, RunEventLog.schemaLatest)
+            XCTAssertNotNil(log.append(UUID(), .event, Data("{}".utf8)))
+            XCTAssertTrue(log.exec("PRAGMA user_version = 99;"))
+        }
+        let reopened = try XCTUnwrap(RunEventLog(url: url))
+        XCTAssertEqual(reopened.schemaVersion, 99)
+        XCTAssertEqual(reopened.rowCount, 1)
     }
 }
 

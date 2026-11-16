@@ -322,7 +322,7 @@ struct TimelineStore {
     var eventSaves: [UUID: Task<Void, Never>] = [:]
     /// A pending save of the session list that streaming asked for (see `scheduleRunsCatchUp`).
     var runsCatchUp: Task<Void, Never>?
-    /// The session list as it was last handed to the store: a timeline save only rewrites `runs.json` when it changed.
+    /// The session list as it was last handed to the store: a timeline save only saves the list when it changed.
     var savedRuns: [WorkspaceRun]?
     /// A change to `events` was announced less than `eventsPublishInterval` ago; `dirty` says another one followed.
     var throttled = false
