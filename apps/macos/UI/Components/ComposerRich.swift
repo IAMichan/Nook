@@ -563,9 +563,9 @@ struct ContextUsageBreakdown: View {
     }
 
     /// The agent has not said yet what fills the window it holds now: rows in the shape of the breakdown, no numbers.
-    private func skeleton(_ pending: ContextUsage.Pending) -> some View {
+    private func skeleton(_: ContextUsage.Pending) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(tr(pending == .afterTurn ? "compose.context.pendingTurn" : "compose.context.pendingLoading"))
+            Text(tr("compose.context.pendingLoading"))
                 .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {

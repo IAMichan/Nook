@@ -39,13 +39,13 @@ struct ContextUsage: Equatable, Sendable {
     var pending: Pending?
 
     enum Pending: Equatable, Sendable {
-        /// A turn is running: the parts move with every answer, so the agent is asked once it ends.
-        case afterTurn
         /// Asked, the answer is on its way.
         case loading
     }
 
     static let conversation = "conversation"
+    /// Claude Code's id for the part of the window the conversation takes.
+    static let conversationPart = "messages"
 
     var fraction: Double { window > 0 ? min(1, Double(usedTokens) / Double(window)) : 0 }
 
@@ -75,6 +75,26 @@ struct ContextUsage: Equatable, Sendable {
                             agents: (answer["agents"] as? [Any])?.count,
                             skills: skills,
                             detailed: true)
+    }
+
+    /// This breakdown when the context has since grown to `used`: what was said since is added to the messages and taken
+    /// from the free space (then the buffer), so the parts show at once while the agent is asked again. Nil when the
+    /// context shrank (a summary replaced the conversation) or the breakdown has no messages: then the old parts are wrong.
+    func grown(to used: Int) -> ContextUsage? {
+        let added = used - usedTokens
+        guard added >= 0, let messages = categories.firstIndex(where: { $0.id == Self.conversationPart }) else { return nil }
+        var grown = self
+        grown.usedTokens = used
+        grown.categories[messages].tokens += added
+        var left = added
+        for kind in [Kind.free, .buffer] {
+            for index in grown.categories.indices where grown.categories[index].kind == kind && left > 0 {
+                let taken = min(left, grown.categories[index].tokens)
+                grown.categories[index].tokens -= taken
+                left -= taken
+            }
+        }
+        return grown
     }
 
     /// For an agent that reports only how many tokens the conversation takes: that, the room between the auto-compact
