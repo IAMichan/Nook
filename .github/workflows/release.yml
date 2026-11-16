@@ -50,8 +50,8 @@ run-name: >-
 # Ed25519 signature (.zip.sig) and the app carries the public key, so a downloaded Nook installs the next release from
 # the update button after checking it. A release without them (or without a signing identity) fails instead of shipping.
 # Release token: with the repository secret NOOK_RELEASE_TOKEN (a fine-grained token, or a GitHub App's, for this
-# repository with Contents and Workflows read and write), the steps that create, fill and publish the release use it
-# instead of the workflow's own token. GitHub refuses a release on a commit whose .github/workflows differ from main's
+# repository with Contents, Workflows and Pull requests read and write; the last for the `changelog` job), the steps
+# that create, fill and publish the release use it instead of the workflow's own token. GitHub refuses a release on a commit whose .github/workflows differ from main's
 # to a token without the Workflows permission, and the workflow's own token can never have it. So without the secret, a
 # workflow change merged into main during the hour-long build fails the release at the end with "HTTP 403: Resource
 # not accessible by integration" (Beta 6); re-running does not help, start a new release from main instead.
@@ -613,3 +613,57 @@ jobs:
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           fi
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Once the release is public, the Unreleased entries it shipped move under its version in CHANGELOG.md
+  # (scripts/changelog-release.py), so nobody has to do it by hand. main only takes changes through a pull request that
+  # passes `Check`, so this opens one and turns on auto-merge. Opened with NOOK_RELEASE_TOKEN (which then also needs
+  # Pull requests read and write), CI runs on it and it merges by itself; opened with the workflow's own token, GitHub
+  # starts no workflows for it, so `Check` never reports: close and reopen the pull request, or merge it as an admin.
+  # A failure here leaves the release itself as it is.
+  changelog:
+    name: Changelog
+    needs: [plan, release, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the changelog branch
+      pull-requests: write # opens its pull request
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0 # the released commit, which can be a beta tag behind main
+          token: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }}
+          persist-credentials: true # pushes the branch below
+      - name: Move Unreleased under the version
+        env:
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git show "$RELEASE_COMMIT:CHANGELOG.md" > "$RUNNER_TEMP/released.md"
+          python3 scripts/changelog-release.py "$VERSION" "$(date -u +%F)" "$RUNNER_TEMP/released.md" CHANGELOG.md
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md already lists $TAG." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          BRANCH="changelog/$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git commit -m "Move the changelog's Unreleased entries under $VERSION" -- CHANGELOG.md
+          git push --force origin "$BRANCH"
+          if [ -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            BODY="$(printf '%s\n' \
+              '## Summary' '' "Moves the entries under **Unreleased** in CHANGELOG.md that $TAG shipped under its own version." \
+              '' '## Related issues' '' 'None' '' '## Why' '' \
+              'The release workflow keeps the changelog in step with the releases, so nobody has to move the section by hand.' \
+              '' '## Testing' '' \
+              "Made by the \`changelog\` job of the release workflow with \`scripts/changelog-release.py\` (tested by \`scripts/changelog-release.test.py\` in CI). Not checked by hand.")"
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --label "skip changelog" \
+              --title "Changelog for Nook $VERSION" --body "$BODY"
+          fi
+          gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --squash \
+            || echo "::warning::Could not turn on auto-merge; merge the changelog pull request by hand."
+          echo "Opened the changelog pull request for $TAG on $BRANCH." | tee -a "$GITHUB_STEP_SUMMARY"

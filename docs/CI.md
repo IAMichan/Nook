@@ -146,6 +146,12 @@ the pull request by a maintainer (issue templates only label the issue). The sho
   and must stay up for 30 seconds. `codesign --verify` does not catch a crash at launch; this does.
 - **Draft until complete.** The release is created as a draft and the `publish` job makes it public (and creates the
   tag) only when the macOS, Windows and Linux files are all attached. A failed run leaves a draft nobody sees.
+- **Changelog.** Once the release is public, the `changelog` job moves the **Unreleased** entries of `CHANGELOG.md`
+  that the released commit had under the new version (`scripts/changelog-release.py`) and opens a pull request with
+  auto-merge, since `main` takes changes only through one. Entries merged while the release was building stay under
+  Unreleased. A stable release folds the sections of its betas into one. With `NOOK_RELEASE_TOKEN` (which then also
+  needs *Pull requests* read and write) CI runs on that pull request and it merges by itself; with the workflow's own
+  token GitHub starts no CI for it, so close and reopen it to run `Check`.
 - **Build provenance.** Every download is attested: `gh attestation verify <file> --repo IAMichan/Nook`. The Sigstore bundles are attached as `Nook-<version>-macOS.intoto.jsonl` and `Nook-<version>-Windows-Linux.intoto.jsonl`, so the check also works offline with `--bundle <bundle>` (and OpenSSF Scorecard counts the releases as signed with provenance).
 
 ## Release signing (`release.yml`)
@@ -163,7 +169,8 @@ The release workflow signs Nook with the best identity the repository secrets pr
 workflow change merged into `main` while a release builds (about an hour) therefore fails the release at *Create the
 draft release* with `HTTP 403: Resource not accessible by integration`, and re-running the failed jobs fails the same
 way. Set the repository secret `NOOK_RELEASE_TOKEN` to a fine-grained personal access token (or a GitHub App token)
-for this repository with **Contents** and **Workflows** read and write; the release steps then use it. Without it,
+for this repository with **Contents**, **Workflows** and **Pull requests** read and write; the release steps then use
+it (Pull requests for the changelog pull request, see *Changelog* above). Without it,
 start a new release from `main` instead of re-running. A tag made with this token starts `release.yml` again (the
 workflow's own token does not); `plan` sees that the tag's release is already published and stops.
 
