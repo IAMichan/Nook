@@ -10,6 +10,7 @@
 #   scripts/xcode.sh test -only-testing:NookTests/ComposerCoreTests
 #   NOOK_XCODE_SCHEME=Nook scripts/xcode.sh test            # build the app too, as CI does
 #   NOOK_XCODE_SCHEME=NookScenarios scripts/xcode.sh test   # the end-to-end scenarios (scripts/scenarios.sh)
+#   NOOK_XCODE_DERIVED_DATA=path scripts/xcode.sh …         # build there instead (CI: next to the app's own build)
 #
 # The Mac is in use while this builds, so the build stays out of the way:
 #   - it waits for one of the Mac's build slots and builds at a lower priority (scripts/build-slot.sh), so the apps
@@ -54,7 +55,7 @@ fi
 JOBS="${NOOK_XCODE_JOBS:-$(sysctl -n hw.perflevel0.physicalcpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)}"
 
 XCODEBUILD=(xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS'
-  -derivedDataPath "$REPO/.build/xcode" -jobs "$JOBS"
+  -derivedDataPath "${NOOK_XCODE_DERIVED_DATA:-$REPO/.build/xcode}" -jobs "$JOBS"
   -skipMacroValidation -skipPackagePluginValidation
   CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO)
 

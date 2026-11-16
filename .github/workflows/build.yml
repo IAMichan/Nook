@@ -41,7 +41,7 @@ jobs:
         uses: ./.github/actions/verified-check
         with:
           name: macos
-          paths: apps/macos packages/protocol scripts/ui-lint.sh scripts/perf-lint.sh .github/workflows/build.yml .github/actions
+          paths: apps/macos packages/protocol scripts/ui-lint.sh scripts/perf-lint.sh scripts/scenarios.sh scripts/xcode.sh .github/workflows/build.yml .github/actions
 
   build:
     # The macOS runner is the scarce one: only start it once the quick lint has passed, and not at all when a run of
@@ -121,6 +121,19 @@ jobs:
           # shellcheck disable=SC2086 # the flags are meant to split into words
           xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" "${SELECTION[@]}" \
             -resultBundlePath "$RUNNER_TEMP/NookTests.xcresult" 2>&1 | tee test.log
+      # The end-to-end scenarios (docs/SCENARIOS.md): the real app code with the replay agent, offscreen. Their bundle
+      # compiles the app's sources once more, next to the build above, so the Swift packages are not built again.
+      - name: Scenarios
+        if: inputs.only-testing == ''
+        timeout-minutes: 25
+        env:
+          NOOK_XCODE_DERIVED_DATA: ${{ env.DERIVED_DATA }}
+          NOOK_BUILD_SLOT: "off"
+        run: |
+          status=0
+          ../../scripts/scenarios.sh > /dev/null || status=$?
+          cat ../../.scratch/scenarios/out/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          exit "$status"
       - name: Errors and warnings
         if: always()
         run: grep -E "error:|warning:" build.log | sort -u || true
@@ -136,6 +149,7 @@ jobs:
             apps/macos/build.log
             apps/macos/test.log
             ${{ runner.temp }}/NookTests.xcresult
+            .scratch/scenarios/out
           retention-days: 7
           if-no-files-found: ignore
       - name: Save Swift package build cache

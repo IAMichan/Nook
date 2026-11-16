@@ -44,6 +44,7 @@ check "packages/web-ui/package-lock.json" "browser_extension tauri dependencies"
 check "apps/tauri/src-tauri/Cargo.lock" "tauri dependencies"
 check "apps/chatd/main.go" "chatd"
 check "scripts/ui-lint.sh" "macos"
+check "scripts/scenarios.sh" "macos"
 check "scripts/core-tests.sh" "core_tests"
 # Shared actions feed every job that fingerprints its inputs, and are audited as workflows.
 check ".github/actions/verified-check/action.yml" "macos ios packages chatd core_tests workflows"
