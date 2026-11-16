@@ -738,12 +738,11 @@ private struct SummaryDetail: View {
             .font(NookTheme.TextStyle.body)
             .lineSpacing(3)
             .foregroundStyle(NookTheme.textSecondary)
-            .lineLimit(3)
             .truncationMode(.tail)
+            .nookTipWhenCut(text, lines: 3)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nookTip(text)
     }
 }
 

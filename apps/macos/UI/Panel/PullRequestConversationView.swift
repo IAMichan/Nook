@@ -381,7 +381,7 @@ private struct PullRequestCommentLocation: View {
             let label = path + (line.map { ":\($0)" } ?? "")
             HStack(spacing: NookTheme.Spacing.sm) {
                 Image(icon: "doc.text").font(NookTheme.font(10))
-                Text(label).font(NookTheme.mono(11)).lineLimit(1).truncationMode(.head).nookTip(label)
+                Text(label).font(NookTheme.mono(11)).truncationMode(.head).nookTipWhenCut(label)
                 if event.outdated {
                     NookTag(tr("agents.pr.thread.outdated"), tint: NookTheme.amber)
                 }

@@ -75,3 +75,26 @@ struct TooltipTiming {
         return elapsed >= 0 && elapsed <= Self.warmWindow
     }
 }
+
+/// What a text tooltip (`.nookTip`) shows: a tip is a glance, not a reader. A long text (a whole heredoc command, a
+/// pasted message) is cut to its first `maxLines` lines and `maxCharacters` characters, ending in "…", so the tip stays
+/// a small label instead of a column down the screen. Blank lines are dropped and runs of spaces become one.
+enum TooltipText {
+    static let maxLines = 6
+    static let maxCharacters = 280
+
+    static func clamped(_ text: String) -> String {
+        let lines = text.split(whereSeparator: \.isNewline)
+            .map { $0.split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ") }
+            .filter { !$0.isEmpty }
+        let kept = lines.prefix(maxLines)
+        var cut = lines.count > kept.count
+        var joined = kept.joined(separator: "\n")
+        if joined.count > maxCharacters {
+            joined = String(joined.prefix(maxCharacters))
+            cut = true
+        }
+        guard cut else { return joined }
+        return joined.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+}

@@ -18,6 +18,19 @@ extension View {
         .accessibilityHint(active ? text : "")
     }
 
+    /// A tip that repeats a text only while it is cut short: when the whole text shows, there is nothing to add and no
+    /// tip. Put it on the text itself in place of its `lineLimit`: it limits the text to `lines` lines. `text` is what the
+    /// tip shows, usually the same words.
+    func nookTipWhenCut(_ text: String, lines: Int = 1, edge: Edge = .top) -> some View {
+        modifier(CutTextTip(text: text, lines: lines, edge: edge))
+    }
+
+    /// Limits this text to `lines` lines and reports whether that cut it short, for a view that puts
+    /// `nookTip(_:enabled:)` on something larger than the text. Measured only when its size changes.
+    func lineLimit(_ lines: Int, reportingCut cut: Binding<Bool>) -> some View {
+        modifier(CutReader(lines: lines, cut: cut))
+    }
+
     /// A richer tip (title + detail lines), same timing and window, placed beside the view (`.trailing`, top-aligned).
     /// For content that holds nothing to click; for clickable cards keep `.hoverCard`. The card is drawn in its own
     /// window: it gets `AppModel` as an environment object, but no other environment of the view it belongs to, so hand
@@ -34,14 +47,57 @@ extension View {
     }
 }
 
+// MARK: - Only when cut
+
+/// Compares the height the text got with its height uncut at the same width (a hidden copy without a line limit): a
+/// line that ran out of room wraps in the copy, so it is taller.
+private struct CutReader: ViewModifier {
+    let lines: Int
+    @Binding var cut: Bool
+    @State private var shown: CGFloat = 0
+    @State private var whole: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .lineLimit(lines)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shown = $0; update() }
+            .background(alignment: .topLeading) {
+                content
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { whole = $0; update() }
+            }
+    }
+
+    private func update() {
+        let now = shown > 0 && whole > shown + 0.5
+        if now != cut { cut = now }
+    }
+}
+
+private struct CutTextTip: ViewModifier {
+    let text: String
+    let lines: Int
+    let edge: Edge
+    @State private var cut = false
+
+    func body(content: Content) -> some View {
+        content
+            .lineLimit(lines, reportingCut: $cut)
+            .nookTip(text, edge: edge, enabled: cut)
+    }
+}
+
 // MARK: - The tip's look
 
-/// The text tip: a small dark label, wrapped when long (the composer's tip look).
+/// The text tip: a small dark label, wrapped when long (the composer's tip look). A long text is cut short
+/// (`TooltipText.clamped`), so a whole command or message never fills the screen; VoiceOver still gets all of it.
 private struct TooltipLabel: View {
     let text: String
 
     var body: some View {
-        Text(text)
+        Text(TooltipText.clamped(text))
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.paper)
             .multilineTextAlignment(.leading)

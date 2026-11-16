@@ -71,7 +71,7 @@ struct PullRequestChecksStatus: View {
                         }) {
                             HStack(spacing: NookTheme.Spacing.md) {
                                 CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 16)
-                                Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1).nookTip(check.name)
+                                Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).nookTipWhenCut(check.name)
                                 Spacer(minLength: NookTheme.Spacing.sm)
                                 CICheckStatusText(check: check)
                             }
