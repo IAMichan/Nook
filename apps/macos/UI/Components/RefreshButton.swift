@@ -9,16 +9,29 @@ enum RefreshSymbol {
 
 /// A refresh button in the look of `NookIconButton` whose arrows turn while `turning`, so you see the read is still
 /// running. The click stays live while it turns: a page that is already reading reads again once it is done.
+/// Every click turns the arrows at least once, also when the read is over in a blink or was folded into one already
+/// running: a click with nothing moving reads as a button that does not work.
 struct RefreshIconButton: View {
     let label: String
     let turning: Bool
     var size: CGFloat = 28
     let action: () -> Void
     @State private var hovering = false
+    /// Bumped by each click; the arrows keep turning until the turn it started is done.
+    @State private var clicks = 0
+    @State private var acknowledged = 0
 
     var body: some View {
-        Button(action: action) {
-            TurningGlyph(symbol: RefreshSymbol.name, turning: turning,
+        Button {
+            clicks += 1
+            let click = clicks
+            action()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(RefreshIconButton.minimumTurn * 1_000_000_000))
+                acknowledged = max(acknowledged, click)
+            }
+        } label: {
+            TurningGlyph(symbol: RefreshSymbol.name, turning: turning || clicks > acknowledged,
                          color: hovering ? NookTheme.paper : NookTheme.textSecondary,
                          pointSize: size * 0.42, weight: .semibold)
                 .frame(width: size, height: size)
@@ -29,8 +42,11 @@ struct RefreshIconButton: View {
         .onHover { hovering = $0 }
         .nookTip(label)
         .accessibilityLabel(label)
-        .accessibilityValue(turning ? tr("a11y.loading") : "")
+        .accessibilityValue(turning || clicks > acknowledged ? tr("a11y.loading") : "")
     }
+
+    /// One full turn of `TurningGlyph`.
+    static let minimumTurn: TimeInterval = 1
 }
 
 /// A symbol that turns once a second while `turning`. Core Animation turns it, not a SwiftUI timeline: a refresh is
@@ -81,6 +97,7 @@ private final class TurningSymbolView: NSView {
     private let symbolLayer = CALayer()
     private var shown: Look?
     private static let turnKey = "turn"
+    private static let settleKey = "settle"
 
     var turning = false {
         didSet { if turning != oldValue { updateTurn() } }
@@ -138,18 +155,44 @@ private final class TurningSymbolView: NSView {
         CATransaction.commit()
     }
 
+    /// Turning starts from where the arrows stand; stopping lets them finish the turn they are in, so they come to rest
+    /// upright instead of jumping back.
     private func updateTurn() {
-        guard turning, window != nil else {
-            symbolLayer.removeAnimation(forKey: Self.turnKey)
+        guard window != nil else {
+            symbolLayer.removeAllAnimations()
             return
         }
-        guard symbolLayer.animation(forKey: Self.turnKey) == nil else { return }
-        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
-        turn.fromValue = 0
-        // Clockwise: the layer's y axis points up.
-        turn.toValue = -2 * Double.pi
-        turn.duration = 1
-        turn.repeatCount = .infinity
-        symbolLayer.add(turn, forKey: Self.turnKey)
+        if turning {
+            guard symbolLayer.animation(forKey: Self.turnKey) == nil else { return }
+            let from = currentAngle()
+            symbolLayer.removeAnimation(forKey: Self.settleKey)
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            turn.fromValue = from
+            // Clockwise: the layer's y axis points up.
+            turn.toValue = from - 2 * Double.pi
+            turn.duration = 1
+            turn.repeatCount = .infinity
+            symbolLayer.add(turn, forKey: Self.turnKey)
+        } else {
+            guard symbolLayer.animation(forKey: Self.turnKey) != nil else { return }
+            let from = currentAngle()
+            symbolLayer.removeAnimation(forKey: Self.turnKey)
+            // What is left of this turn, at the same speed; the layer itself stands at 0, which is a full turn.
+            let left = 2 * Double.pi + from
+            guard left > 0.01 else { return }
+            let settle = CABasicAnimation(keyPath: "transform.rotation.z")
+            settle.fromValue = from
+            settle.toValue = -2 * Double.pi
+            settle.duration = left / (2 * Double.pi)
+            settle.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            symbolLayer.add(settle, forKey: Self.settleKey)
+        }
+    }
+
+    /// The angle the arrows show now, in (-2π, 0]: clockwise turns count down from 0.
+    private func currentAngle() -> Double {
+        guard let angle = symbolLayer.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double else { return 0 }
+        let turned = angle.truncatingRemainder(dividingBy: 2 * Double.pi)
+        return turned > 0 ? turned - 2 * Double.pi : turned
     }
 }
