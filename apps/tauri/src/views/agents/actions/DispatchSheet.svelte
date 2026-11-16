@@ -110,6 +110,17 @@
           </select>
         </label>
 
+        {#if chosen && !inputs.length}
+          <p class="muted">
+            {tr(
+              "Deze workflow vraagt geen invoer: hij draait zoals zijn bestand zegt.",
+              "This workflow asks for no inputs: it runs as its file says.",
+            )}
+          </p>
+        {:else if inputs.length}
+          <span class="section">{tr("Invoer", "Inputs")}</span>
+        {/if}
+
         {#each inputs as input (input.name)}
           {#if input.kind === "boolean"}
             <label class="check">
@@ -145,7 +156,9 @@
 
     <footer>
       {#if missing.length}
-        <span class="faint small">{tr("Vul de verplichte velden in (*).", "Fill in the required fields (*).")}</span>
+        <span class="faint small">{tr("Nog in te vullen: ", "Still to fill in: ")}{missing.map((i) => i.name).join(", ")}</span>
+      {:else if chosen && branch}
+        <span class="faint small">{tr(`Start ${chosen.name} op ${branch}.`, `Runs ${chosen.name} on ${branch}.`)}</span>
       {/if}
       <span class="spacer"></span>
       <button onclick={onclose}>{tr("Annuleer", "Cancel")}</button>
@@ -169,6 +182,7 @@
   .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .field input, .field select { width: 100%; }
   .label { font-size: 12px; color: var(--text2); }
+  .section { font-size: 12px; font-weight: 600; color: var(--text2); margin-top: 4px; }
   .check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; }
   .check .text { display: flex; flex-direction: column; gap: 2px; }
   .small { font-size: 11px; }
