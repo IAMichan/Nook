@@ -22,10 +22,12 @@ paths_for() {
     # fails when that list gains one that is missing here.
     ios) echo "apps/ios/ packages/protocol/ apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/Services/Workspace/ComposerQuotes.swift apps/macos/UI/Components/BrandLogo.swift apps/macos/UI/Shared/ apps/macos/UI/Theme/NookIcon.swift apps/macos/UI/Theme/NookPalette.swift apps/macos/UI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets/ apps/macos/Resources/katex/ apps/macos/Resources/mermaid/ .github/workflows/ios.yml .github/actions/" ;;
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
-    relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
+    # The relay and the Tauri app read the companion protocol's golden fixtures in their own tests: a changed fixture
+    # must run them too, or the Rust and JS side of the protocol only fail on a later, unrelated pull request.
+    relay) echo "apps/relay/ packages/protocol/Fixtures/ .github/workflows/relay.yml" ;;
     # Nook's browser extension; its tests also read the Mac app's side of it (the host and the protocol version).
     browser_extension) echo "apps/browser-extension/ apps/macos/Services/BrowserExtension/ .github/workflows/browser-extension.yml" ;;
-    tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
+    tauri) echo "apps/tauri/ packages/protocol/Fixtures/ .github/workflows/tauri.yml" ;;
     chatd) echo "apps/chatd/ .github/workflows/chatd.yml .github/actions/" ;;
     # scripts/core-tests.sh on Linux: the portable half of NookTests that contributors without a Mac can run.
     core_tests) echo "apps/macos/ scripts/core-tests.sh scripts/core-tests-sync.py .github/workflows/core-tests.yml .github/actions/" ;;

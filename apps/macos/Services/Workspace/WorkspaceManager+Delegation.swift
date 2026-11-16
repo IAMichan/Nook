@@ -61,15 +61,18 @@ extension WorkspaceManager {
     func deliverDelegatedResult(_ id: UUID) {
         guard let child = run(id), var link = child.delegation, link.wake, !link.delivered,
               DelegatedTask.mayDeliver(child.status, hasQueuedWork: hasQueuedWork(id)), !heldWakeCompletions.contains(id),
-              let parent = run(link.parentID), !parent.archived, parent.status != .stopped else { return }
+              let parent = run(link.parentID), !parent.archived, parent.status != .stopped,
+              // A full queue cannot take the result: it stays undelivered rather than marked delivered and dropped
+              // (`delivered` is only set once the result went out or waits in line), so a later wake can still bring it.
+              (queued[parent.id]?.count ?? 0) < MessageQueue.limit else { return }
         link.delivered = true
         update(id) { $0.delegation = link }
         let text = DelegatedTask.wakeMessage(snapshot(of: child))
         append(parent.id, RunEvent(kind: .system, text: tr("ws.event.delegatedDone", child.title)))
-        // The parent carries on its own work: its working timer keeps going (`TurnTimer`).
-        if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
-            send(parent.id, text: text, origin: .notice)
-        } else {
+        // The parent carries on its own work: its working timer keeps going (`TurnTimer`). A send that cannot go out
+        // (its agent or folder is gone for now) leaves the result waiting in the queue, never lost.
+        let free = parent.canContinue && processes[parent.id] == nil && !checkpointing.contains(parent.id)
+        if !free || !send(parent.id, text: text, origin: .notice) {
             enqueue(parent.id, text: text, origin: .notice)
         }
     }

@@ -10,6 +10,15 @@ extension WorkspaceManager {
         for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: waitsOnQuestion(run.id),
                                                                  settled: FinishedSessions.shared.contains(FinishedSessions.key(run: run)),
                                                                  now: now) {
+            // A turn whose result was saved had finished; only its status was not saved yet. Sending it back to work
+            // would repeat what it did: it is no longer "interrupted", and waits for you like any stopped session.
+            if run.status == .stopped, run.statusDetail == "interrupted" {
+                loadTimeline(run.id)
+                if RestartContinuation.turnEnded(timeline(run.id)) {
+                    update(run.id) { $0.statusDetail = nil }
+                    continue
+                }
+            }
             let message = RestartContinuation.message(for: run)
             let waited = run.cutBackgroundWork != nil
             update(run.id) {

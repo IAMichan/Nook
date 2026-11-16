@@ -127,4 +127,24 @@ final class RestartBackgroundWaitTests: XCTestCase {
         server.background = true
         XCTAssertEqual(RestartContinuation.waitedOn([running, done, server]), ["Audit chats"])
     }
+    /// A crash after the turn's result was saved but before its status was: the turn had finished, so it is not sent
+    /// back to work. A message after the result (a new turn that was cut off) still counts as interrupted.
+    func testATurnWhoseResultWasSavedHadEnded() {
+        let ask = RunEvent(kind: .user, text: "Fix the build")
+        let reply = RunEvent(kind: .assistant, text: "Done")
+        let result = RunEvent(kind: .result, text: "", state: .done)
+        XCTAssertTrue(RestartContinuation.turnEnded([ask, reply, result]))
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, reply]), "cut off before its result")
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, reply, result, RunEvent(kind: .user, text: "Now the tests")]),
+                       "the next turn was cut off")
+        var undone = result
+        undone.rolledBack = true
+        XCTAssertFalse(RestartContinuation.turnEnded([ask, undone, RunEvent(kind: .user, text: "Again")]))
+        XCTAssertFalse(RestartContinuation.turnEnded([]))
+    }
+
+    func testTheContinueMessageWarnsAgainstRepeatingSideEffects() {
+        XCTAssertTrue(RestartContinuation.message.hasPrefix("Continue where you left off."))
+        XCTAssertTrue(RestartContinuation.message.contains("do not repeat"))
+    }
 }

@@ -479,6 +479,10 @@ final class WorkspaceManager: ObservableObject {
     @Published var worktreeSetups: [UUID: WorktreeSetupProgress] = [:]
     /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
     var reopeningWorktrees: Set<UUID> = []
+    /// Folders a restore is putting back (`revertFiles`, `restoreHolds`), normalized, and the sessions whose message
+    /// waits for one to end.
+    var restoringFolders: Set<String> = []
+    var restoreWaiting: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
     var projectCache: [String: ProjectInfo] = [:]
     /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
@@ -716,6 +720,12 @@ final class WorkspaceManager: ObservableObject {
             enqueue(id, text: clean, origin: origin)
             return true
         }
+        // Its folder's files are being put back (`revertFiles`): the turn starts once they are, never under the restore.
+        if restoreHolds(run) {
+            enqueue(id, text: clean, origin: origin)
+            restoreWaiting.insert(id)
+            return true
+        }
         // Its timeline is read back for a message of yours whose turn starts right after: yours waits behind it, and a
         // hidden one is refused as it is while a turn runs (`processes` below), so its caller cleans up.
         if timelineStore.readingToSend.contains(id) {
@@ -881,16 +891,24 @@ final class WorkspaceManager: ObservableObject {
         let mark = conversationMark(run)
         let key = folderKey(run)
         checkpointing.insert(id)
+        // Marked missed until it is made: a capture that fails, or that Nook quits during, leaves a gap no restore crosses.
+        update(id) { $0.missedCheckpoints = Array((($0.missedCheckpoints ?? []) + [date]).suffix(RevertPlan.missedLimit)) }
         Task { [weak self] in
             // Never while a restore or removal of the same folder runs (FolderLease).
             let made = (try? await FolderLease.shared.run(key) { try git.checkpoint(directory, ref: ref) }) != nil
-            self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil)
+            self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil, at: date)
         }
     }
 
-    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
+    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?, at date: Date) {
         checkpointing.remove(id)
-        if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
+        if let checkpoint {
+            update(id) {
+                $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint]
+                $0.missedCheckpoints?.removeAll { $0 == date }
+                if $0.missedCheckpoints?.isEmpty == true { $0.missedCheckpoints = nil }
+            }
+        }
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
             // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
             if !send(id, text: waiting, shown: true) {
@@ -903,21 +921,56 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
+    /// Files can go back to how they were before a message: a worktree session that is idle, with a snapshot for every
+    /// turn since then, and no other session's work in the folder (or a folder inside or around it) to lose (`RevertPlan`).
     func canRevert(_ id: UUID, before date: Date = .distantFuture) -> Bool {
         guard let run = run(id), run.isolation == .worktree, !run.status.isActive,
-              (run.checkpoints ?? []).contains(where: { $0.date <= date }) else { return false }
-        return activeRuns(sharing: run.workingDirectory, except: id).isEmpty
+              let index = RevertPlan.checkpointIndex(run.checkpoints ?? [], missed: run.missedCheckpoints ?? [], before: date),
+              let since = run.checkpoints?[index].date else { return false }
+        return !revertBlocked(run, since: since)
+    }
+
+    /// Another session's work that a restore of `run`'s folder to the snapshot of `since` would undo or run under.
+    private func revertBlocked(_ run: WorkspaceRun, since: Date) -> Bool {
+        let folder = WorkspacePathPolicy.normalize(run.workingDirectory)
+        return runs.contains { other in
+            other.id != run.id && other.remote?.machineID == run.remote?.machineID && RevertPlan.blocks(other, since: since)
+                && RevertPlan.overlaps(folder, WorkspacePathPolicy.normalize(other.workingDirectory))
+        }
+    }
+
+    /// Folders whose files a restore is putting back right now: no turn starts in them (or in a folder inside or around
+    /// them) until it is done; a message meanwhile waits in its session's queue (`send`).
+    func restoreHolds(_ run: WorkspaceRun) -> Bool {
+        guard !restoringFolders.isEmpty else { return false }
+        let folder = WorkspacePathPolicy.normalize(run.workingDirectory)
+        return restoringFolders.contains { RevertPlan.overlaps($0, folder) }
+    }
+
+    /// A restore ended (done or failed): the messages that waited for it go out, each as its session's next turn.
+    private func releaseRestore(_ folder: String) {
+        restoringFolders.remove(folder)
+        for id in restoreWaiting {
+            guard let run = run(id) else { restoreWaiting.remove(id); continue }
+            guard !restoreHolds(run) else { continue }
+            restoreWaiting.remove(id)
+            guard !run.status.isActive, let first = queued[id]?.messages.first else { continue }
+            if run.status == .completed { sendQueued(id) } else { sendQueuedNow(id, message: first.id) }
+        }
     }
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). Where the agent can, its
     /// conversation goes back with them (see `rollBackConversation`); otherwise the conversation stays.
     func revertFiles(_ id: UUID, before date: Date) async throws {
         guard canRevert(id, before: date), let run = run(id), let git = sessionGit(for: run),
-              let index = run.checkpoints?.lastIndex(where: { $0.date <= date }), let checkpoint = run.checkpoints?[index] else {
+              let index = RevertPlan.checkpointIndex(run.checkpoints ?? [], missed: run.missedCheckpoints ?? [], before: date),
+              let checkpoint = run.checkpoints?[index] else {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
         let directory = run.workingDirectory
+        let held = WorkspacePathPolicy.normalize(directory)
+        restoringFolders.insert(held)
+        defer { releaseRestore(held) }
         try await FolderLease.shared.run(folderKey(run), priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }
         let conversation = rollBackConversation(id, to: checkpoint, index: index)
         append(id, RunEvent(kind: .system, text: tr(conversation ? "ws.revert.doneConversation" : "ws.revert.done")))
@@ -1471,6 +1524,7 @@ final class WorkspaceManager: ObservableObject {
         forkLaunched.remove(id)
         displayPrompt[id] = nil
         reopeningWorktrees.remove(id)
+        restoreWaiting.remove(id)
         keptReplays[id] = nil
         capacity.forget(id)
         runPositions = nil

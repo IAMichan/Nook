@@ -587,7 +587,7 @@ extension WorkspaceManager {
                     continue
                 }
                 pauseLive(id)
-                let requestID = "acp-" + rpcID.text
+                let requestID = PermissionRequestID.scoped("acp", session: id, native: rpcID.text)
                 acpRequests[requestID] = (rpcID, [], AcpToolCall(id: requestID, title: message, kind: AcpRPC.elicitationKind,
                                                                  status: nil, input: nil, output: "", paths: []))
                 presentMcpRequest(id, requestID: requestID, server: server, tool: "", message: message, arguments: [:], suggestions: nil)
@@ -617,7 +617,7 @@ extension WorkspaceManager {
     }
 
     private func presentAcpPermission(_ id: UUID, rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption]) {
-        let requestID = "acp-" + rpcID.text
+        let requestID = PermissionRequestID.scoped("acp", session: id, native: rpcID.text)
         var input = call.input?.dictionary ?? [:]
         if input["command"] == nil, call.kind == "execute", !call.title.isEmpty { input["command"] = call.title }
         let summary = call.title.isEmpty ? call.toolName : call.title

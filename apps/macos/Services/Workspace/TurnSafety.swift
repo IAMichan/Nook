@@ -164,6 +164,16 @@ enum ApprovalKind: Hashable, Codable, Sendable {
     case other(String)
 }
 
+/// Nook's id for a request an agent asks over a JSON-RPC connection of its own (Codex's app-server, ACP). Each agent
+/// process numbers its requests from 0, so the number alone repeats across sessions: two Codex sessions both ask
+/// request `0`. Every table of waiting requests, the approval card and the phone key on this id, so it carries the
+/// session: answering one session's request can never answer, replace or dismiss another's.
+enum PermissionRequestID {
+    static func scoped(_ family: String, session: UUID, native: String) -> String {
+        "\(family)-\(session.uuidString.lowercased())-\(native)"
+    }
+}
+
 /// Granted request kinds of one run, valid for the permission mode they were granted in.
 struct SessionApprovals: Equatable, Sendable {
     private(set) var mode: PermissionPolicy?

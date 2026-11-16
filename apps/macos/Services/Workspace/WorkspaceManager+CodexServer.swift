@@ -404,7 +404,7 @@ extension WorkspaceManager {
             append(id, RunEvent(kind: .system, text: tr("ws.event.sessionAllowed", ToolSummary.oneLine(request.command.isEmpty ? request.reason : request.command, 80))))
             return
         }
-        let requestID = "codex-" + request.rpcID.text
+        let requestID = PermissionRequestID.scoped("codex", session: id, native: request.rpcID.text)
         if request.kind == .mcpTool {
             presentCodexMcpApproval(id, request, requestID: requestID)
             return
