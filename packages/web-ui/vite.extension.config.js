@@ -11,7 +11,10 @@ const extension = here('../../apps/browser-extension/');
 
 export default defineConfig({
   root: here('.'),
-  plugins: [svelte({ compilerOptions: { css: 'injected' } })],
+  // rootDir: Svelte hashes a component's file path into its CSS class (svelte-xxxx), relative to rootDir (the working
+  // directory by default). The extension's components live outside this folder, so without the repository root here
+  // the hash came from the absolute path and every checkout (CI's too) built a different composer.js.
+  plugins: [svelte({ compilerOptions: { css: 'injected', rootDir: here('../../') } })],
   // Svelte is installed here only: imports of it from the extension's files resolve to this copy.
   resolve: { alias: { '@nook/web-ui': here('src') }, dedupe: ['svelte'] },
   build: {
