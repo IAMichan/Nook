@@ -28,6 +28,19 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertEqual(usage.share(usage.inWindow[1]), 0.1106, accuracy: 0.0001)
     }
 
+    /// During a turn the last breakdown shows at once, with what was said since added to the messages.
+    func testBreakdownGrowsWithTheConversation() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(claudeAnswer.utf8)) as? [String: Any])
+        let usage = try XCTUnwrap(ContextUsage.claude(object))
+        let grown = try XCTUnwrap(usage.grown(to: 124_125))
+        XCTAssertEqual(grown.usedTokens, 124_125)
+        XCTAssertEqual(grown.categories.first { $0.id == "messages" }?.tokens, 120_600)
+        XCTAssertEqual(grown.categories.first { $0.id == "free_space" }?.tokens, 827_062)
+        XCTAssertEqual(grown.categories.first { $0.id == "autocompact_buffer" }?.tokens, 33_000)
+        XCTAssertNil(grown.pending)
+        XCTAssertNil(usage.grown(to: 100_000), "a summarized context does not keep the old parts")
+    }
+
     func testAnswerWithoutAWindowIsNoBreakdown() {
         XCTAssertNil(ContextUsage.claude(["categories": [], "maxTokens": 0]))
     }

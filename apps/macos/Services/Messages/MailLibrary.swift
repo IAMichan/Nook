@@ -97,6 +97,18 @@ enum MailLibrary {
         return text.count > length ? String(text.prefix(length)) : text
     }
 
+    /// An inbox row's own message, read from its file through the index: its Message-ID (what read_mail and a reply
+    /// take) and its text. Nil when the index has no file for it.
+    static func message(of row: MailStats.InboxRow) async -> (message: MailIndex.Message, file: URL)? {
+        guard row.indexID != 0, let path = databasePath else { return nil }
+        let root = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
+        let indexed = MailIndex.Row(id: row.indexID, subject: row.subject, sender: row.sender, recipients: "",
+                                    date: row.date, summary: "", mailbox: row.indexMailbox)
+        guard let file = MailIndex.messageFile(root: root, row: indexed),
+              let message = await MailConnector.readFile(file), !message.id.isEmpty else { return nil }
+        return (message, file)
+    }
+
     /// The Chats tab's rows of these accounts from the index (`MailChatData.Row`), with the start of each text by
     /// Mail's id, except for the ids in `known` (read before: a message's text does not change). A row's place is where
     /// Mail lists it, newest first, so a script finds it there fast (`locate`).
@@ -194,10 +206,15 @@ enum MailLibrary {
             for mailbox in found[account.id] ?? [] where mailbox.box.kind == .inbox {
                 unread += mailbox.unread
                 for (place, message) in mailbox.messages.enumerated() {
-                    rows.append(MailStats.InboxRow(account: account.name, mailbox: mailbox.box.path, index: place + 1,
-                                                   subject: message.subject, sender: message.sender, date: message.date,
-                                                   read: message.read, replied: message.replied,
-                                                   body: await text(of: message, length: bodyLength)))
+                    var row = MailStats.InboxRow(account: account.name, mailbox: mailbox.box.path, index: place + 1,
+                                                 subject: message.subject, sender: message.sender, date: message.date,
+                                                 read: message.read, replied: message.replied,
+                                                 body: await text(of: message, length: bodyLength))
+                    row.indexID = message.id
+                    row.indexMailbox = message.mailbox
+                    // Every To address for read_mail; the first one with its name when the index gave no list.
+                    row.recipient = message.recipients.isEmpty ? message.recipient : message.recipients
+                    rows.append(row)
                 }
             }
             result[account.name] = (unread, rows.sorted { $0.date > $1.date })

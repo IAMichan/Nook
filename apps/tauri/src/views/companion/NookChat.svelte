@@ -1,8 +1,16 @@
+<script module lang="ts">
+  // The screen that holds the live conversation now: an older one that closes after a newer one opened leaves it on.
+  let watcher: symbol | null = null;
+</script>
+
 <script lang="ts">
   // A chat with Nook on your computer (`ChatView`): your words and Nook's answers as in a session, "Thinking…" with Nook's
   // face while it writes, and Ask Nook at the bottom, Stop while it writes. A plan, draft or chart waits on the computer.
-  import { onMount, untrack } from "svelte";
-  import { companion, messageTime, writingWaits, type ChatLine, type ClientView } from "../../lib/companion";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import {
+    applyConversation, companion, CONVERSATION_STALL, Feature, followsLive, messageTime, resumePoint, writingWaits,
+    type ChatLine, type ClientView, type CompanionResponse,
+  } from "../../lib/companion";
   import { activeMac, cacheFor, kept, recordChatLines, saveSoon } from "../../lib/companion-cache";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
   import OfflineNote from "./ui/OfflineNote.svelte";
@@ -38,8 +46,31 @@
   const queued = $derived((view.outbox ?? []).filter((q) => q.op === "ask" && (q.conversation ?? null) === id));
   const thinking = $derived(sending || (last?.fromNook && last.streaming && !last.text));
 
-  async function load() {
+  // With a computer that keeps a connection open, Nook's answer comes by itself as it writes (`watchConversation`):
+  // only its new words travel, a reconnect fetches only what came after the last finished message, and a missed update
+  // asks for the conversation again. Without one, this screen asks.
+  const live = $derived(followsLive(view, Feature.liveConversation) && view.phase === "connected");
+  const me = Symbol("NookChat");
+  let heard = Date.now();
+
+  /** Takes an answer or a live update; false when it does not build on what this screen has. */
+  function take(r: Pick<CompanionResponse, "messages" | "messagesAfter" | "messageAppend">): boolean {
+    const next = applyConversation(lines, r);
+    if (!next) return false;
+    if (next !== lines) lines = next;
+    heard = Date.now();
+    return true;
+  }
+
+  async function load(resume = true) {
     if (!id || document.visibilityState !== "visible" || untrack(() => offline)) return;
+    if (untrack(() => live)) {
+      watcher = me;
+      const conversation = id;
+      const r = await companion.call({ op: "watchConversation", conversation, item: resume ? resumePoint(lines) : undefined });
+      if (r.response && conversation === id && !take(r.response) && resume) await load(false);
+      return;
+    }
     const r = await companion.call({ op: "chat", conversation: id });
     if (r.response?.messages) lines = r.response.messages;
   }
@@ -48,9 +79,33 @@
     title = r.response?.conversations?.find((c) => c.id === id)?.title ?? "";
   }
 
-  // While Nook writes, ask every 1.5 seconds; otherwise every 6.
+  // Live: watch this conversation (again) once the connection is there or another conversation opened here.
+  $effect(() => {
+    if (id && live) untrack(() => load());
+  });
+  onMount(() => {
+    const un = companion.onLive((r) => {
+      if (!id || r.messagesConversation !== id) return;
+      if (!take(r)) load(false);
+    });
+    return () => { un.then((f) => f()); };
+  });
+  onDestroy(() => {
+    if (watcher !== me) return;
+    watcher = null;
+    if (untrack(() => live)) companion.call({ op: "watchConversation" });
+  });
+
+  // Without a live connection: ask every 1.5 seconds while Nook writes, otherwise every 6. Live, only check that an
+  // answer being written did not get stuck on a bad connection.
   $effect(() => {
     if (!id) return;
+    if (live) {
+      const timer = setInterval(() => {
+        if (untrack(() => last?.streaming) && Date.now() - heard > CONVERSATION_STALL) load();
+      }, 2000);
+      return () => clearInterval(timer);
+    }
     const timer = setInterval(load, busy ? 1500 : 6000);
     return () => clearInterval(timer);
   });
@@ -66,7 +121,8 @@
     text = "";
     if (r.response.created) id = r.response.created;
     if (r.response.messages) lines = r.response.messages;
-    else load();
+    // Live, the new conversation is watched by the effect above; otherwise ask for it.
+    else if (!live) load();
     if (!title) loadTitle();
   }
 
@@ -78,7 +134,7 @@
   }
 
   onMount(() => {
-    if (initial) { load(); loadTitle(); }
+    if (initial) { if (!untrack(() => live)) load(); loadTitle(); }
     else if (question) send(question);
   });
 </script>

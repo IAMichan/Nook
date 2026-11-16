@@ -120,13 +120,15 @@ struct PanelTabContent: View {
     @ObservedObject var viewModel: PanelViewModel
     let tab: PanelTab
     let inWindow: Bool
+    /// In a window of its own (`TabWindowController`) rather than beside the main tab.
+    var ownWindow = false
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
         switch tab {
         case .nook, .chat, .connect, .shelf: NookChatView(viewModel: viewModel, chat: app.chat, compact: true)
         case .agents: AgentsTab(viewModel: viewModel)
-        case .inbox: ChatsTab(viewModel: viewModel, inWindow: inWindow)
+        case .inbox: ChatsTab(viewModel: viewModel, inWindow: inWindow, ownWindow: ownWindow)
         case .music: MusicTab()
         }
     }

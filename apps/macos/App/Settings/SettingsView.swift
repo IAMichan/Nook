@@ -116,6 +116,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     static func page(for target: ConnectionsRoute.Target?) -> SettingsSection {
         switch target {
         case .chat, .add(.chats): return .chats
+        case .option(let id) where id.hasPrefix("chat."): return .chats
         default: return .connections
         }
     }

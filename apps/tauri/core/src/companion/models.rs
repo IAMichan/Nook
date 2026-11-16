@@ -210,6 +210,10 @@ pub enum CompanionOp {
     /// The chat the phone has open in the Chats tab (`item`; none when it closed it): its messages follow by themselves
     /// (`feature::LIVE_CHATS`). Answered like `inboxChat`.
     WatchChat,
+    /// The Nook conversation the phone has open (`conversation`; none when it closed it; `item`: its last finished
+    /// message, to resume after): answered like `chat`, then Nook's new words follow by themselves
+    /// (`feature::LIVE_CONVERSATION`, `messagesConversation`, `messagesAfter`, `messageAppend`).
+    WatchConversation,
     /// What a session changed in its folder (`session`; `diff` in the answer, `feature::DIFF`).
     Diff,
     /// Pull requests (`feature::PULL_REQUESTS`): the list (a session's linked ones with `session`), one in full by its
@@ -260,6 +264,7 @@ pub mod feature {
     pub const STREAM: &str = "stream";
     pub const LIVE_TIMELINE: &str = "liveTimeline";
     pub const LIVE_CHATS: &str = "liveChats";
+    pub const LIVE_CONVERSATION: &str = "liveConversation";
     pub const FOREGROUND: &str = "foreground";
     pub const DIFF: &str = "diff";
     pub const PULL_REQUESTS: &str = "pullRequests";
@@ -478,6 +483,15 @@ pub struct CompanionResponse {
     /// The chat whose messages `inboxLines` holds, on a live update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inbox_chat: Option<String>,
+    /// The Nook conversation `messages` or `messageAppend` belong to, on a live update (`ConversationDelta`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages_conversation: Option<String>,
+    /// `messages` go after this message; none: they are the conversation whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages_after: Option<String>,
+    /// `ChatAppend`: Nook's new words at the end of its last message, passed through to the interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_append: Option<serde_json::Value>,
     /// The order of the updates on a kept connection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<i64>,
@@ -944,7 +958,12 @@ mod tests {
         assert_eq!(json["replyTo"], "m1");
         assert_eq!(json["launch"]["mainThread"], true);
         assert!(json["launch"].get("model").is_none());
-        for (op, name) in [(CompanionOp::ChatStop, "chatStop"), (CompanionOp::InboxChat, "inboxChat"), (CompanionOp::Options, "options")] {
+        for (op, name) in [
+            (CompanionOp::ChatStop, "chatStop"),
+            (CompanionOp::InboxChat, "inboxChat"),
+            (CompanionOp::Options, "options"),
+            (CompanionOp::WatchConversation, "watchConversation"),
+        ] {
             assert_eq!(serde_json::to_value(op).unwrap(), name);
         }
         assert!(!CompanionOp::Hello.callable() && !CompanionOp::Register.callable() && CompanionOp::Timeline.callable());

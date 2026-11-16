@@ -50,7 +50,7 @@ extension WorkspaceBridge {
             switch task.target {
             case .newSession(let path, _, _): return !folder.isEmpty && WorkspacePathPolicy.normalize(path) == folder
             case .existingSession(let id, _): return id == session
-            // Nook's own tasks belong to no agent's folder or session.
+            // Nook's own tasks belong to no folder or session: an agent sees them only when it asks for all.
             case .nook: return false
             }
         }
@@ -185,7 +185,8 @@ extension WorkspaceBridge {
         }
         let store = ScheduledTaskStore.shared
         guard let task = store.task(id) else { return .error("No such scheduled task. Use an id from list_scheduled_tasks.") }
-        guard store.isEnabled else { return .error("not available: scheduled tasks are switched off in Nook's settings.") }
+        // Nook's own tasks run without the switch for agent tasks, as in the list in Settings.
+        guard store.mayRun(task) else { return .error("not available: scheduled tasks are switched off in Nook's settings.") }
         return try await once(.runScheduledTaskNow, arguments, caller) {
             if store.isRunning(id) { return BridgeRPC.ToolResult(text: "busy: the task is running already.") }
             let allowed = await ask(caller, tool: .runScheduledTaskNow, title: tr("bridge.approval.scheduleRun", caller.agent),
@@ -219,7 +220,7 @@ extension WorkspaceBridge {
             place = tr("bridge.schedule.thisSession") + " (" + id.uuidString.prefix(8).lowercased() + ", "
                 + tr(fresh ? "automation.sched.fresh" : "automation.sched.continue") + ")"
         case .nook:
-            place = tr("nookTask.destination")
+            place = tr("automation.sched.destination.nook")
         }
         return [scheduleText(task.rule), place, permission.rawValue, tr(task.enabled ? "bridge.schedule.on" : "bridge.schedule.off")]
             .joined(separator: " · ")
@@ -240,6 +241,8 @@ extension WorkspaceBridge {
             return tr("bridge.schedule.webhook")
         case .once(let at):
             return tr("automation.sched.rule.once", ScheduledTaskText.date(at))
+        case .message(let trigger):
+            return ScheduledTaskText.messageSummary(trigger)
         }
     }
 

@@ -495,8 +495,9 @@ struct WorkspaceSettingsSection: View {
                     SettingNote(tr("sched.public.readable"), tone: .warning)
                     if relay.state == .noRelay { SettingNote(tr("sched.public.noRelay"), tone: .warning) }
                 }
-                Button(tr("sched.settings.open")) { showScheduled = true }
             }
+            // Nook's own tasks (made in the chat or here) run without the switch for agent tasks, so the list is always there.
+            Button(tr("sched.settings.open")) { showScheduled = true }
         } header: {
             SettingsSectionTitle(tr("sched.title"), info: tr("sched.settings.footer"))
         }

@@ -14,6 +14,9 @@ struct MailDraft: Identifiable, Equatable {
     var from: String = ""
     /// Files on this Mac that go with it, attached at the end of its text.
     var attachments: [String] = []
+    /// The Message-ID of the mail this answers (from inbox_mail, search_mail or read_mail). Set: Mail sends it as a reply
+    /// to that message, in its thread and from the account it came to; empty, or a message Mail cannot find: a new mail.
+    var replyTo: String = ""
     var state: State = .draft
 
     /// Not sent, opened or closed yet.
@@ -32,6 +35,8 @@ struct MailDraft: Identifiable, Equatable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: #"^((re|fw|fwd|aw|wg|tr|rv)\s*:\s*)+"#, with: "", options: .regularExpression)
         }
+        // Answers to two different messages are two mails, also to the same person; a new answer to the same one replaces it.
+        if !replyTo.isEmpty, !other.replyTo.isEmpty { return replyTo == other.replyTo }
         let recipients = people(to)
         if !recipients.isEmpty, recipients == people(other.to) { return true }
         let ownTopic = topic(subject)
@@ -195,8 +200,8 @@ struct Conversation: Identifiable, ConversationListItem {
     var pinned = false
     /// Out of the active list but kept; found again through the archive.
     var archived = false
-    /// The scheduled task whose runs Nook answers here (`ScheduledTaskTarget.nook`): every run of it comes to this
-    /// conversation, so Nook sees what it said last time and the list does not fill up with one Nook per run.
+    /// The scheduled task whose run Nook answered here (`ScheduledTaskTarget.nook`): the list shows a clock and the
+    /// conversation the task's bar.
     var scheduledTaskID: UUID?
 
     var isEmpty: Bool { messages.isEmpty }
@@ -470,27 +475,21 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
-    /// The conversation a scheduled task's runs go to; nil before its first run or after the user deleted it.
+    /// The latest conversation a scheduled task's runs answered in; nil before its first run or after the user deleted
+    /// them all.
     func conversation(forTask task: UUID) -> Conversation? {
-        conversations.first { $0.scheduledTaskID == task }
+        conversations.filter { $0.scheduledTaskID == task }.max { $0.updated < $1.updated }
     }
 
-    /// The conversation for the next run of a scheduled task: the one its runs went to, back from the archive, or a new
-    /// one named after the task, beside the conversation on screen. Nil while Nook still answers there.
-    func conversationForRun(of task: ScheduledTask) -> UUID? {
-        if let index = conversations.firstIndex(where: { $0.scheduledTaskID == task.id }) {
-            guard !conversations[index].busy else { return nil }
-            conversations[index].archived = false
-            scheduleSave()
-            return conversations[index].id
-        }
-        let id = startInBackground()
-        if let index = index(of: id) {
-            conversations[index].scheduledTaskID = task.id
-            conversations[index].title = String((task.title.isEmpty ? tr("sched.untitled") : task.title).prefix(80))
+    /// Marks a run's conversation as the task's (the list's clock, the bar over it) and its question as the run's own,
+    /// not one the user typed.
+    func markScheduledRun(_ id: UUID, task: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].scheduledTaskID = task
+        if let first = conversations[index].messages.firstIndex(where: { $0.role == .user }) {
+            conversations[index].messages[first].scheduled = true
         }
         scheduleSave()
-        return id
     }
 
     func rename(_ id: UUID, to title: String) {
@@ -562,9 +561,7 @@ final class NookChat: ObservableObject {
         let target = id ?? ensureActive()
         guard let index = index(of: target) else { return }
         // First user prompt sets conversation title.
-        // A scheduled task's conversation keeps the task's name.
-        if message.role == .user, !message.scheduled, conversations[index].scheduledTaskID == nil,
-           !conversations[index].messages.contains(where: { $0.role == .user }) {
+        if message.role == .user, !conversations[index].messages.contains(where: { $0.role == .user }) {
             conversations[index].title = Conversation.title(from: message.text)
         }
         conversations[index].messages.append(message)
@@ -1034,6 +1031,7 @@ private struct StoredMail: Codable {
     var subject: String
     var body: String
     var from: String?
+    var replyTo: String?
     var state: String
 
     init(_ mail: MailDraft) {
@@ -1042,6 +1040,7 @@ private struct StoredMail: Codable {
         subject = mail.subject
         body = mail.body
         from = mail.from.isEmpty ? nil : mail.from
+        replyTo = mail.replyTo.isEmpty ? nil : mail.replyTo
         switch mail.state {
         case .sent: state = "sent"
         case .opened: state = "opened"
@@ -1052,6 +1051,7 @@ private struct StoredMail: Codable {
 
     func restored() -> MailDraft {
         var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, from: from ?? "")
+        mail.replyTo = replyTo ?? ""
         switch state {
         case "sent": mail.state = .sent
         case "opened": mail.state = .opened

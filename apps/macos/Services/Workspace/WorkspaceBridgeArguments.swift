@@ -355,6 +355,8 @@ enum BridgeScheduleArguments {
             return "when its webhook is called"
         case .once(let at):
             return "once at " + ISO8601DateFormatter().string(from: at)
+        case .message:
+            return NookSchedule.describe(rule)
         }
     }
 
@@ -366,7 +368,7 @@ enum BridgeScheduleArguments {
         case .newSession(let path, let provider, _): line += " · new \(provider) session in \(path)"
         case .existingSession(let id, let fresh):
             line += " · message to session \(id.uuidString)" + (fresh ? " (fresh conversation each run)" : " (continues the conversation)")
-        case .nook: line += " · asks Nook itself in Nook Chat"
+        case .nook: line += " · answered by Nook Chat in a conversation of its own"
         }
         line += " · rights \(permission.rawValue)"
         if running { line += " · running now" }

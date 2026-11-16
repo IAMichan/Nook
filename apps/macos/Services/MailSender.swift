@@ -70,11 +70,19 @@ enum MailSender {
         }
         let files = MailChatData.attachLines(draft.attachments, send: send)
         let guardAccount = send ? "\n    if (count of accounts) is 0 then error \"no account\" number \(noAccountError)" : ""
+        let fresh = """
+            set m to make new outgoing message with properties {subject:\(ScriptText.quote(draft.subject)), content:\(ScriptText.quote(draft.body)), visible:\(send ? "false" : "true")}
+                tell m\(recipients)
+                end tell
+        """
+        // An answer to a received mail goes out as Mail's own reply to it (same thread, same account); a message Mail no
+        // longer finds gets a new mail, as before.
+        let reply = draft.replyTo.isEmpty ? "" : MailActions.replyScript(id: draft.replyTo, body: draft.body, subject: draft.subject.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                                                    to: to, cc: cc, openWindow: !send) + "\n"
+        let make = draft.replyTo.isEmpty ? fresh : reply + "    if m is missing value then\n    \(fresh)\n    end if"
         return """
         tell application "Mail"\(guardAccount)
-            set m to make new outgoing message with properties {subject:\(ScriptText.quote(draft.subject)), content:\(ScriptText.quote(draft.body)), visible:\(send ? "false" : "true")}
-            tell m\(recipients)
-            end tell\(sender)\(files)
+        \(make)\(sender)\(files)
             \(send ? "send m" : "activate")
         end tell
         """

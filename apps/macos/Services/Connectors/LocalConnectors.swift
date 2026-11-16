@@ -429,7 +429,7 @@ final class MailConnector: ContextSource {
     }
 
     /// Recent inbox mail from memory, refreshed first only when it is stale.
-    func inbox(days: Int, unansweredOnly: Bool) async throws -> String {
+    func inbox(days: Int, unansweredOnly: Bool, unreadOnly: Bool = false, limit: Int = 15) async throws -> String {
         try await Self.ensureRunning()
         if !isFresh { await refresh() }
         // A failed refresh shortly after a good one still leaves the inbox of a few minutes ago, which beats no answer.
@@ -439,9 +439,25 @@ final class MailConnector: ContextSource {
         // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
         // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
         guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
-        var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
+        var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly, unreadOnly: unreadOnly, limit: limit)
+        // Nook holds the newest mails of each mailbox only: unread mail older than those is counted, not listed. Say so,
+        // instead of "no unread mail" while some waits.
+        let older = unreadOnly ? MailStats.unreadBeyond(loaded: recent, unreadTotal: inboxes.values.reduce(0) { $0 + $1.unread }) : 0
+        let beyond = older > 0 ? "\n\n" + MailStats.unreadBeyondNote(older) : ""
         guard !rows.isEmpty else {
-            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
+            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : unreadOnly ? " die nog ongelezen is." : ".") + beyond
+        }
+        // Each message with its own id, so the brain can open it (read_mail), change it (mark_mail, trash_mail) or answer it
+        // (compose_mail with reply_to) without searching for it again. Mail's index gives its row; the id is in its file,
+        // which is read once and kept with the message for read_mail.
+        for index in rows.indices where rows[index].messageID.isEmpty {
+            guard let found = await MailLibrary.message(of: rows[index]) else { continue }
+            let row = rows[index]
+            rows[index].messageID = found.message.id
+            MailConnector.messageCache[found.message.id] = CachedMail(subject: row.subject, sender: row.sender, recipients: row.recipient,
+                                                                      date: NookDates.iso(row.date), body: found.message.text,
+                                                                      cachedAt: Date())
+            MailConnector.indexedFiles[found.message.id] = found.file
         }
         // The refresh only reads the text of mail that waits for a reply: a subject alone says too little about what someone
         // asks, so read the start of the rest of these now (once; kept for the next refresh).
@@ -454,7 +470,7 @@ final class MailConnector: ContextSource {
                 bodies[rows[index].key] = text
             }
         }
-        return MailStats.describe(rows, date: NookDates.iso)
+        return MailStats.describe(rows, date: NookDates.iso) + beyond
     }
 
     /// Inbox mail Nook already holds whose sender or subject has one of `words`, newest first, with the start of each
@@ -492,6 +508,7 @@ final class MailConnector: ContextSource {
             for row in waiting {
                 let snippet = row.body.replacingOccurrences(of: "\n", with: " ").prefix(160)
                 lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date)) | \(row.read ? "gelezen" : "ongelezen")"
+                             + (row.messageID.isEmpty ? "" : " | id: \(row.messageID)")
                              + (snippet.isEmpty ? "" : " | \"\(snippet)\""))
             }
         }
@@ -531,10 +548,12 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "inbox_mail",
-                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, and the start of the body text, with a link per message. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, and spam do not.",
+                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, the account, its id and the start of the body text. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', 'what happened in my mail' or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, and spam do not. Open a message in full with read_mail and its id; answer it with compose_mail and reply_to set to that id.",
                 schema: ["type": "object", "properties": [
-                    "days": ["type": "integer", "description": "How many days back (default 7, at most 30)."],
-                    "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any]
+                    "days": ["type": "integer", "description": "How many days back (default 7, at most 30). 1 for today and last night."],
+                    "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any],
+                    "unread_only": ["type": "boolean", "description": "Only mail the user has not read yet (default false)."] as [String: Any],
+                    "limit": ["type": "integer", "description": "How many messages at most (default 15, at most 40)."]
                 ]],
                 kind: .read,
                 summarize: { _ in "Read inbox" },
@@ -543,7 +562,9 @@ final class MailConnector: ContextSource {
                     guard let self else { throw NookError("Mail is niet beschikbaar.") }
                     let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
                     let unanswered = (input["unanswered_only"] as? Bool) ?? false
-                    return try await self.inbox(days: days, unansweredOnly: unanswered)
+                    let unread = (input["unread_only"] as? Bool) ?? false
+                    let limit = min(40, max(1, (input["limit"] as? Int) ?? Int((input["limit"] as? Double) ?? 15)))
+                    return try await self.inbox(days: days, unansweredOnly: unanswered, unreadOnly: unread, limit: limit)
                 }
             ),
             ToolSpec(
@@ -624,9 +645,9 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "read_mail",
-                description: "Reads one whole message from the Mail app (inbox or sent): subject, sender, recipients, date and the full text. Give the id from search_mail. Use this when the start of a message is not enough to answer.",
+                description: "Reads one whole message from the Mail app (inbox or sent): subject, sender, recipients, date and the full text. Give the id from search_mail or inbox_mail. Use this when the start of a message is not enough to answer.",
                 schema: ["type": "object", "properties": [
-                    "id": ["type": "string", "description": "The message id from search_mail (the part after \"id:\")."]
+                    "id": ["type": "string", "description": "The message id from search_mail or inbox_mail (the part after \"id:\")."]
                 ], "required": ["id"]],
                 kind: .read,
                 summarize: { _ in "Read mail" },

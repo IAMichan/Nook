@@ -1,6 +1,6 @@
 # Security Policy
 
-Nook has access to sensitive local context—including screen text, calendars, microphone audio, and coding-agent shell hooks—so we take security issues seriously.
+Nook has access to sensitive local context—including screen text, calendars, microphone audio, and coding-agent shell hooks—so we take security issues seriously. [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) describes what Nook can reach, why it runs without the App Sandbox, and what protects you instead.
 
 ## Reporting a Vulnerability
 

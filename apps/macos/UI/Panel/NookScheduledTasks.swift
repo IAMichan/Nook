@@ -1,31 +1,29 @@
 import SwiftUI
 
 // Work Nook does on its own (`ScheduledTaskTarget.nook`), in the Nook tab: the "Scheduled" section at the top of the
-// list, the bar over a task's own conversation, and the marker where a run asked its question. Every run of a task
-// answers in that one conversation, so the list holds one Nook per task, not one per run.
+// list, the bar over a run's conversation, and the marker where a run asked its question.
 
 /// What a scheduled task for Nook is doing, in one line: "Every day at 09:00 · next Tue 09:00", "Paused", "Running…".
 @MainActor
 enum NookTaskText {
-    static func status(_ task: ScheduledTask, running: Bool, enabledGlobally: Bool) -> String {
+    static func status(_ task: ScheduledTask, running: Bool) -> String {
         if running { return tr("nookTask.running") }
-        if !enabledGlobally { return tr("nookTask.off") }
         if !task.enabled { return tr("nookTask.paused") }
         if task.isDone { return tr("automation.sched.done") }
         if let next = task.nextRun { return tr("nookTask.next", AgentFormat.upcoming(next)) }
         return ""
     }
 
-    static func detail(_ task: ScheduledTask, running: Bool, enabledGlobally: Bool) -> String {
-        let status = status(task, running: running, enabledGlobally: enabledGlobally)
+    static func detail(_ task: ScheduledTask, running: Bool) -> String {
+        let status = status(task, running: running)
         return [ScheduledTaskText.summary(task.rule), status].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The tint of the clock: Nook's own color while it will run, amber when it waits on you (off or paused).
-    static func tint(_ task: ScheduledTask, running: Bool, enabledGlobally: Bool) -> Color {
+    /// The tint of the clock: Nook's own color while it will run, coral after a failed run, grey when paused or done.
+    static func tint(_ task: ScheduledTask, running: Bool) -> Color {
         if running { return NookTheme.iris }
         if task.lastStatus == .failed { return NookTheme.coralSoft }
-        return task.enabled && enabledGlobally && !task.isDone ? NookTheme.iris : NookTheme.textTertiary
+        return task.enabled && !task.isDone ? NookTheme.iris : NookTheme.textTertiary
     }
 
     /// "Run now" with the result as a toast, as Settings does it.
@@ -73,13 +71,12 @@ extension View {
 // MARK: The list's section
 
 /// "Scheduled" at the top of the Nook list: every task Nook runs on its own, with when it runs next. A click opens the
-/// task's conversation (its runs); run now and pause sit on hover, the rest on right-click. Nothing shows while there
+/// conversation of its latest run; run now and pause sit on hover, the rest on right-click. Nothing shows while there
 /// are no such tasks: Nook proposes one from the chat ("elke ochtend om 9:00…").
 struct NookScheduledSection: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = ScheduledTaskStore.shared
-    @ObservedObject private var settings = WorkspaceSettings.shared
     @State private var editing: NookTaskEdit?
     @State private var deleting: ScheduledTask?
 
@@ -96,9 +93,8 @@ struct NookScheduledSection: View {
                         .padding(.trailing, NookTheme.Spacing.md)
                 }
                 .padding(.bottom, NookTheme.Spacing.xxs)
-                if !settings.scheduledTasksEnabled { offNotice }
                 ForEach(tasks) { task in
-                    NookTaskRow(task: task, running: store.isRunning(task.id), enabledGlobally: settings.scheduledTasksEnabled,
+                    NookTaskRow(task: task, running: store.isRunning(task.id),
                                 selected: chat.active?.scheduledTaskID == task.id,
                                 open: { open(task) },
                                 toggle: { store.setEnabled(task.id, !task.enabled) })
@@ -111,26 +107,7 @@ struct NookScheduledSection: View {
         }
     }
 
-    /// Scheduled tasks are switched off in Settings: nothing runs, and one click switches them on.
-    private var offNotice: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(icon: "pause.circle")
-                .font(NookTheme.font(11))
-                .foregroundStyle(NookTheme.amber)
-            Text(tr("nookTask.offNotice"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(2)
-            Spacer(minLength: NookTheme.Spacing.sm)
-            SmallGhostButton(title: tr("nookTask.turnOn")) { settings.scheduledTasksEnabled = true }
-        }
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
-        .padding(.bottom, NookTheme.Spacing.xs)
-    }
-
-    /// The task's conversation; before its first run there is none, so its editor opens instead.
+    /// The conversation of the task's latest run; before its first run there is none, so its editor opens instead.
     private func open(_ task: ScheduledTask) {
         if let conversation = chat.conversation(forTask: task.id) {
             app.openConversation(conversation.id)
@@ -145,7 +122,7 @@ struct NookScheduledSection: View {
             Button(tr("nookTask.openRuns")) { app.openConversation(conversation.id) }
         }
         Button(tr("sched.runNow")) { NookTaskText.runNow(task) }
-            .disabled(!settings.scheduledTasksEnabled || store.isRunning(task.id))
+            .disabled(store.isRunning(task.id))
         Button(tr(task.enabled ? "nookTask.pause" : "nookTask.resume")) { store.setEnabled(task.id, !task.enabled) }
         Button(tr("sched.edit")) { editing = NookTaskEdit(task: task) }
         Divider()
@@ -158,14 +135,13 @@ struct NookScheduledSection: View {
 private struct NookTaskRow: View {
     let task: ScheduledTask
     let running: Bool
-    let enabledGlobally: Bool
     let selected: Bool
     let open: () -> Void
     let toggle: () -> Void
     @State private var hovering = false
 
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
-    private var active: Bool { task.enabled && enabledGlobally && !task.isDone }
+    private var active: Bool { task.enabled && !task.isDone }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -179,7 +155,7 @@ private struct NookTaskRow: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(task.title), \(NookTaskText.detail(task, running: running, enabledGlobally: enabledGlobally))")
+        .accessibilityLabel("\(task.title), \(NookTaskText.detail(task, running: running))")
     }
 
     private var content: some View {
@@ -190,7 +166,7 @@ private struct NookTaskRow: View {
                 } else {
                     Image(icon: task.enabled ? "clock" : "pause.circle")
                         .font(NookTheme.font(12, .medium))
-                        .foregroundStyle(NookTaskText.tint(task, running: running, enabledGlobally: enabledGlobally))
+                        .foregroundStyle(NookTaskText.tint(task, running: running))
                 }
             }
             .frame(width: 16)
@@ -199,7 +175,7 @@ private struct NookTaskRow: View {
                     .font(active ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
                     .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
                     .lineLimit(1)
-                Text(NookTaskText.detail(task, running: running, enabledGlobally: enabledGlobally))
+                Text(NookTaskText.detail(task, running: running))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
@@ -220,7 +196,7 @@ private struct NookTaskRow: View {
     private var actions: some View {
         HStack(spacing: 2) {
             ToolbarIconButton("play", tr("sched.runNow"), height: 22, width: 22) { NookTaskText.runNow(task) }
-                .disabled(running || !enabledGlobally)
+                .disabled(running)
             ToolbarIconButton(task.enabled ? "pause" : "play.circle", tr(task.enabled ? "nookTask.pause" : "nookTask.resume"),
                               height: 22, width: 22, toggle)
         }
@@ -229,12 +205,11 @@ private struct NookTaskRow: View {
 
 // MARK: The conversation's bar
 
-/// Over the conversation of a scheduled task: that Nook does this on its own, when, and how the last run went, with
-/// run now, pause and edit at hand. A task that was removed leaves the conversation as an ordinary one.
+/// Over the conversation of a scheduled run: that Nook does this on its own, when it runs next, with run now, pause and
+/// edit at hand. A task that was removed leaves the conversation as an ordinary one.
 struct NookTaskBar: View {
     let taskID: UUID
     @ObservedObject private var store = ScheduledTaskStore.shared
-    @ObservedObject private var settings = WorkspaceSettings.shared
     @State private var editing: NookTaskEdit?
     @State private var deleting: ScheduledTask?
 
@@ -244,25 +219,21 @@ struct NookTaskBar: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 Image(icon: task.enabled ? "clock" : "pause.circle")
                     .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTaskText.tint(task, running: running, enabledGlobally: settings.scheduledTasksEnabled))
+                    .foregroundStyle(NookTaskText.tint(task, running: running))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(tr("nookTask.bar.title"))
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
-                    Text(NookTaskText.detail(task, running: running, enabledGlobally: settings.scheduledTasksEnabled))
+                    Text(NookTaskText.detail(task, running: running))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                if !settings.scheduledTasksEnabled {
-                    SmallGhostButton(title: tr("nookTask.turnOn")) { settings.scheduledTasksEnabled = true }
-                } else {
-                    ToolbarIconButton("play", tr("sched.runNow"), height: 24, width: 24) { NookTaskText.runNow(task) }
-                        .disabled(running)
-                    ToolbarIconButton(task.enabled ? "pause" : "play.circle", tr(task.enabled ? "nookTask.pause" : "nookTask.resume"),
-                                      height: 24, width: 24) { store.setEnabled(task.id, !task.enabled) }
-                }
+                ToolbarIconButton("play", tr("sched.runNow"), height: 24, width: 24) { NookTaskText.runNow(task) }
+                    .disabled(running)
+                ToolbarIconButton(task.enabled ? "pause" : "play.circle", tr(task.enabled ? "nookTask.pause" : "nookTask.resume"),
+                                  height: 24, width: 24) { store.setEnabled(task.id, !task.enabled) }
                 Menu {
                     Button(tr("sched.edit")) { editing = NookTaskEdit(task: task) }
                     Divider()

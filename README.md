@@ -347,6 +347,8 @@ Nook is designed around strict user control and local-first privacy:
 - **Hardened Runtime & Socket Security:** The Unix domain socket for agent hooks enforces `0600` file permissions and peer UID verification. The Claude Code brain runs in an empty working directory without file or web tools, and `NetworkGuard` blocks private/loopback redirects (SSRF protection).
 - **Full Audit Log & Safe Storage:** Every executed action is recorded in a local SQLite audit log (`nook.sqlite`, `audit` table, searchable in **Settings › Activity log**, retained for 90 days). Unreadable user files are preserved alongside a `.unreadable-<date>.json` backup and never overwritten.
 
+What Nook can reach, why it runs without the App Sandbox, and how you take access back: [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md). **Settings › Privacy › Access** lists every macOS permission and every linked account, each with one click to revoke or manage it.
+
 Found a security vulnerability? Please report it privately via [SECURITY.md](SECURITY.md).
 
 ---
@@ -355,6 +357,7 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 
 | Topic | Document |
 |---|---|
+| Security model: what Nook can reach and how you take it back | [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) |
 | Assistant, sources & citations | [`docs/ASSISTANT.md`](docs/ASSISTANT.md) |
 | Coding-agent integration (`nook_agent`) | [`docs/AGENTS.md`](docs/AGENTS.md) |
 | Every integration and the coding-agent feature matrix | [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) |
@@ -420,7 +423,7 @@ nook/
 
 - **First Build Time & Hardware:** The built-in local model relies on `mlx-swift-lm`, `swift-huggingface`, and `swift-transformers`, which require **Xcode 26+** and an **Apple Silicon Mac**. The initial package resolution and build can take several minutes.
 - **Code Signing:** When built from source without an Apple Developer ID certificate, `xcodegen` sets up a self-signed local signing identity once and every build is re-signed with it, so macOS keeps Accessibility/Screen Recording/Keychain permissions across rebuilds (see `apps/macos/Config/local-signing.sh`).
-- **App Sandbox:** Nook uses the Hardened Runtime without the App Sandbox because AppleScript automation and managing local coding-agent processes are not permitted inside a sandbox.
+- **App Sandbox:** Nook uses the Hardened Runtime (without its weakening exceptions) instead of the App Sandbox, because starting local coding agents, the Accessibility API on other apps, and AppleScript automation are not permitted inside a sandbox. [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) explains what protects you instead.
 - **System Notifications:** macOS does not provide a public API for third-party apps to read or filter notifications from other apps; however, all notifications from your connected coding agents route directly through Nook.
 
 **Windows, Linux & Android**

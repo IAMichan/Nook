@@ -2,12 +2,11 @@ import AppKit
 
 /// Nook as the user's secretary: work it does on its own shows in the Nook tab. The list has a Scheduled section with
 /// when each task runs next, the task's conversation has the bar with run now and pause, a run shows as a marker
-/// instead of a question the user typed, and the proposal to schedule one is a plan card the user approves.
+/// instead of a question the user typed, and the proposal to schedule one (`schedule_task`) is a plan card to approve.
 final class NookScheduledWork: Scenario {
     func testNookScheduledWork() throws {
         try scenario("The Nook tab lists scheduled work, its conversation has the bar, and a run shows as a marker") { nook, screen, app in
             let model = nook.app
-            WorkspaceSettings.shared.scheduledTasksEnabled = true
             let store = ScheduledTaskStore.shared
             let task = ScheduledTask(title: "Morning update", prompt: "Give me an overview of the messages I received since the previous run, per topic.",
                                      rule: .fixedTime(hour: 9, minute: 0, weekdays: []), target: .nook, createdAt: Date())
@@ -17,14 +16,13 @@ final class NookScheduledWork: Scenario {
             store.save(weekly, permission: .ask)
             store.setEnabled(weekly.id, false)
 
-            // One run of the morning update in its own conversation, as `ScheduledTaskStore` leaves it.
-            guard let conversation = model.chat.conversationForRun(of: task) else {
-                throw ScenarioFailure.couldNotRun("no conversation for the task")
-            }
+            // One run of the morning update in its own conversation, as `ScheduledTaskStore.runInNook` leaves it.
+            let conversation = model.chat.startInBackground()
             var question = ChatMessage(role: .user, text: task.prompt)
-            question.scheduled = true
             question.date = Date().addingTimeInterval(-3600)
             model.chat.append(question, to: conversation)
+            model.chat.rename(conversation, to: task.title)
+            model.chat.markScheduledRun(conversation, task: task.id)
             var answer = ChatMessage(role: .nook, text: "**3 chats wait for an answer.**\n\n### Work\n- Lisa asks if the deck is ready for Thursday.\n- The team moved stand-up to 9:30.\n\n### Private\n- Mom asks about Sunday dinner.")
             answer.date = Date().addingTimeInterval(-3550)
             model.chat.append(answer, to: conversation)
@@ -33,8 +31,8 @@ final class NookScheduledWork: Scenario {
             let ask = model.chat.startInBackground()
             model.chat.append(ChatMessage(role: .user, text: "Give me an update on my messages every morning at 9:00"), to: ask)
             var proposal = ChatMessage(role: .nook, text: "I'll do that for you every morning at 9:00 and let you know when it's ready.")
-            proposal.actions = [PlannedAction(tool: AppModel.scheduleNookTool, input: [
-                "title": "Morning update", "prompt": task.prompt, "time": "09:00", "days": "every day"
+            proposal.actions = [PlannedAction(tool: "schedule_task", input: [
+                "title": "Morning update", "prompt": task.prompt, "schedule": "daily", "time": "09:00"
             ])]
             proposal.actionStates = [.pending]
             proposal.actionIncluded = [true]
@@ -51,7 +49,7 @@ final class NookScheduledWork: Scenario {
             try app.screenshot("scheduled-conversation")
 
             try nook.openNook(ask)
-            try expect(screen.text("Nook schedules: Morning update").first).toBeVisible()
+            try expect(screen.text("Morning update").first).toBeVisible()
             try app.screenshot("proposal")
         }
     }

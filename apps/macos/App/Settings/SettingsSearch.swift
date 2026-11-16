@@ -156,6 +156,7 @@ enum SettingsSearch {
         .init("settings.privacy.levelTitle", .privacy),
         .init("settings.privacy.permissions", .permissions),
         .init("settings.privacy.neverRead.title", .permissions),
+        .init("access.linked.title", .permissions),
         .init("settings.private.title", .onDevice),
         .init("settings.privacy.whatLeavesMac", .privacy),
         .init("settings.privacy.forgetScreenText", .privacy),

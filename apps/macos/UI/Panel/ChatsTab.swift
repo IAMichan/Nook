@@ -394,6 +394,8 @@ struct ChatsTab: View {
     var openOnAgents: ((String) -> Void)?
     /// In the main window rather than the notch: each has its own open chat, read only while that one is in sight.
     var inWindow = false
+    /// In a window of its own (Chats opened in its own window): read while that window is in front.
+    var ownWindow = false
     @StateObject private var panelMediaStage = ChatMediaStage()
     /// Asked, not watched: the app model changes up to four times a second while an agent works, and each change drew
     /// the whole tab again (sidebar, list, every row's menu) while you scrolled. What the tab shows from it watches it
@@ -666,7 +668,7 @@ struct ChatsTab: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
         // A chat open in a tab that was out of sight (the notch closed, another tab or a sheet in front, the panel over
         // the window) when it was picked or when something new came in, is read once the tab comes into sight.
-        .onChange(of: viewModel.isShowing(.inbox, inWindow: inWindow)) { _, showing in
+        .onChange(of: viewModel.isShowing(.inbox, inWindow: inWindow, ownWindow: ownWindow)) { _, showing in
             if showing { readOpenChat() }
         }
     }
@@ -674,7 +676,7 @@ struct ChatsTab: View {
     /// Reads the open chat in Nook, only while you can be looking at this one: in the open notch, or in the main window
     /// while that is in front. A window that opened behind the app you are in leaves it unread.
     private func readOpenChat() {
-        guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow), let entry = current,
+        guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow, ownWindow: ownWindow), let entry = current,
               entry.read.isUnread || (entry.read == .readInNook && AppModel.readsInAppOnOpen) else { return }
         // Marked unread by hand while it was open here (from the notch, the main window, the iPhone): it stays so.
         if let marked = capture.markedUnread(entry.id), marked > openedAt { return }

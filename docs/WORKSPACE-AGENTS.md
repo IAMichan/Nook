@@ -198,14 +198,7 @@ A task (Settings › Automation › Scheduled tasks, or `schedule_task`) runs ev
 **once** at a date and time (a run the Mac slept through runs when it wakes; afterwards the task shows as done and
 editing it does not run it again unless its moment changes), or when its webhook is called.
 
-**Where runs go:** Nook itself, a new session in a project each run, or one session. A **Nook** task
-(`ScheduledTaskTarget.nook`) makes Nook the user's secretary: every run asks Nook the prompt in the task's own Nook
-conversation (`NookChat.conversationForRun`), so Nook sees its earlier runs and the list holds one conversation per
-task; the answer arrives as Nook's usual notice and any action in it waits for approval. Nook proposes such a task from
-the chat with `schedule_nook_task` (also `list_nook_tasks` and `delete_nook_task`, see `AppModel+NookTasks`); approving
-it switches scheduled tasks on. A Nook task never runs from a webhook. The Nook tab lists these tasks under
-**Scheduled** (`NookScheduledSection`) and shows a bar over their conversation (`NookTaskBar`).
-Otherwise runs go to a new session in a project each run, or one session. A one-session task either **continues the
+**Where runs go:** a new session in a project each run, or one session. A one-session task either **continues the
 conversation** or starts a **fresh conversation each run** (`WorkspaceManager.startFreshConversation`: the agent's
 process ends and its next turn starts without the earlier conversation, for every agent; the timeline keeps every run).
 The editor can change the target, which moves the task to another session; `update_scheduled_task` takes `target`

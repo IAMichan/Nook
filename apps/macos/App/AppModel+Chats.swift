@@ -17,6 +17,8 @@ extension AppModel {
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
         capture.skips = { notice in MessagingApps.known(notice.app)?.ownLink.map(Self.isLinked) == true }
         capture.onFresh = { [weak self] ids in ids.forEach { self?.presentChat($0) } }
+        // Automations that wait for a message (every chat app, Mail included) start from the same news.
+        capture.onArrived = { messages in ScheduledTaskStore.shared.messagesArrived(messages) }
         // Read in its own app (on the phone, in the app on this Mac): a card still waiting in line goes, and so does its
         // macOS notification; the card on screen stays (you may be typing) and follows its chat.
         capture.onReadElsewhere = { [weak self] ids in

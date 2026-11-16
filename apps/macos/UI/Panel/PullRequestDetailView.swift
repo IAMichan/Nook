@@ -339,7 +339,7 @@ struct PullRequestDetailView: View {
     }
 
     /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers. The title (on two
-    /// lines at most, a pencil beside it under the pointer), who opened it and when it last changed with the checkout
+    /// lines at most, a pencil beside it under the pointer), who opened it, when, and when it last changed, with the checkout
     /// command to copy, then the branches with the size on the right.
     var header: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -360,10 +360,19 @@ struct PullRequestDetailView: View {
                 if !author.isEmpty {
                     GitHubPerson(login: author)
                 }
-                if let updated = detail?.updated ?? item.updated {
+                let created = detail?.created ?? item.created
+                if let created {
                     if !author.isEmpty { Text("·").foregroundStyle(NookTheme.textMuted) }
+                    Text(PullRequestRow.opened(Date().timeIntervalSince(created)))
+                        .monospacedDigit()
+                        .fixedSize()
+                        .nookTip(created.formatted(date: .abbreviated, time: .shortened))
+                }
+                if let updated = detail?.updated ?? item.updated {
+                    if !author.isEmpty || created != nil { Text("·").foregroundStyle(NookTheme.textMuted) }
                     Text(tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
                         .monospacedDigit()
+                        .nookTip(updated.formatted(date: .abbreviated, time: .shortened))
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if let detail { checkoutCommand(detail) }
@@ -371,7 +380,6 @@ struct PullRequestDetailView: View {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .lineLimit(1)
-            .nookTip(detail?.created.map { tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince($0))) } ?? "")
             if let detail {
                 branchLine(detail).padding(.top, NookTheme.Spacing.xxs)
             } else {

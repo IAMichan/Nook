@@ -178,7 +178,9 @@ enum MailIndex {
                (SELECT x.address FROM recipients r JOIN addresses x ON x.ROWID = r.address WHERE r.message = m.ROWID AND r.type = 0
                 ORDER BY r.position LIMIT 1) AS to_address,
                (SELECT x.comment FROM recipients r JOIN addresses x ON x.ROWID = r.address WHERE r.message = m.ROWID AND r.type = 0
-                ORDER BY r.position LIMIT 1) AS to_name
+                ORDER BY r.position LIMIT 1) AS to_name,
+               (SELECT group_concat(x.address, ', ') FROM recipients r JOIN addresses x ON x.ROWID = r.address
+                WHERE r.message = m.ROWID AND r.type = 0) AS to_all
         FROM messages m JOIN subjects s ON s.ROWID = m.subject JOIN mailboxes b ON b.ROWID = m.mailbox
         LEFT JOIN addresses a ON a.ROWID = m.sender LEFT JOIN summaries su ON su.ROWID = m.summary
         WHERE m.deleted = 0 AND \(condition)
@@ -211,6 +213,8 @@ enum MailIndex {
         var summary: String
         /// The url of the mailbox its file is in (All Mail for a Gmail inbox message), for `messageFile`.
         var mailbox: String
+        /// Every To address, comma-separated (`recipient` is the first, with its name); empty when the index gave none.
+        var recipients: String = ""
     }
 
     static func recent(_ raw: [[String: Any]]) -> [Recent] {
@@ -226,7 +230,8 @@ enum MailIndex {
                           recipient: person(row["to_address"], row["to_name"]), date: Date(timeIntervalSince1970: stamp),
                           read: ((row["read"] as? NSNumber)?.intValue ?? 0) != 0,
                           replied: ((row["replied"] as? NSNumber)?.intValue ?? 0) != 0,
-                          summary: (row["summary"] as? String) ?? "", mailbox: (row["mailbox"] as? String) ?? "")
+                          summary: (row["summary"] as? String) ?? "", mailbox: (row["mailbox"] as? String) ?? "",
+                          recipients: (row["to_all"] as? String) ?? "")
         }
     }
 

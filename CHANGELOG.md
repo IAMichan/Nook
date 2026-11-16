@@ -11,6 +11,27 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Automations in Nook Chat: ask "check my mail every morning at 8, tell me what happened and draft the replies" and Nook
+  proposes a scheduled task you approve with one click. Each run is a conversation of its own with an overview and a
+  ready reply per mail that needs one, so you only click Send; a notice says when it is ready. Nothing is sent or changed
+  by the run itself. Nook's own tasks run without the switch for agent tasks, a morning overview the Mac slept through
+  runs when it wakes, and you can also pick *Nook Chat* as the destination in Settings › Automation › Scheduled tasks.
+
+- Nook as your personal secretary: automations work across everything Nook sees (mail, every chat app, calendar,
+  reminders, pull requests, agents, connected services). Each run reports what is new since the last one and prepares
+  every reply and action so you only approve or say what to change. Checks through the day can stay quiet until
+  something new needs you, and *Set up personal secretary* (or asking for one in the chat) adds a morning briefing, a
+  quiet midday check and an end-of-day wrap-up.
+
+- Automations that start on a message: "as soon as Lisa writes on WhatsApp, prepare an answer" or "when a mail about an
+  invoice comes in, add a reminder". Filter by app (every chat app Nook reads, Mail included), sender and words, with
+  group chats optional; Nook reads the chat and prepares the reply and other steps for your approval. A source you keep on
+  this Mac (Settings › Privacy) never starts one, so its messages never reach an external brain this way.
+
+- Better mail in Nook Chat: replies go out as Mail's own reply to the message (same thread and account) instead of a new
+  mail, also from the Chats tab; `inbox_mail` lists each message's id (so Nook can open, mark or answer exactly that
+  mail) and takes `unread_only` and `limit`; drafts follow your earlier mail to that person and the sender's language.
+
 - Nook Companion stays usable without your Mac: Nook's chats and the Chats tab are now kept on the iPhone with their
   last messages, so every tab reads while the Mac is off, asleep or out of reach. What you write still waits on the
   iPhone and goes as soon as the Mac is back. While offline, every conversation keeps an amber strip in sight saying
@@ -210,6 +231,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Nook Chat answers sooner: an API brain gets 5 s instead of 8 s to plan a question before Nook falls back to its own
+  search, the connection to the brain is opened while Nook prepares (also with the chat open), and a retry (a chart, a
+  corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
+- Your answer style and a space's instructions now reach the brain as your own instructions instead of inside the
+  context marked as third-party data, so they are followed; the prompt names the date line correctly ("Now").
 - Nook in your browser is much faster and answers better: a question from the side panel takes the page's text (and
   what you selected) along, so Nook answers about the page right away instead of first reading it with a tool. Nook
   pushes its answer to the side panel as it writes it, as live as in Nook's own window, instead of the panel asking
@@ -226,10 +252,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - While Nook works on a page, your own clicks and keys there wait, so you never get in each other's way (scrolling and
   Stop stay free). Nook keeps working in its tab while you use another one, at full speed. When a page asks to sign
   in, Nook lets you type and click, and goes on by itself once you are in; it never sees your password.
-- Nook's answers stream into the iPhone companion as Nook writes them: the Mac sends the open conversation by itself
-  over the live connection instead of the phone asking every second and a half. Only Nook's new words travel, a slow
-  connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what was missed, and a
-  lost update repairs itself.
+- Nook's answers stream into the iPhone and Android companions as Nook writes them: the Mac sends the open
+  conversation by itself over the live connection instead of the phone asking every second and a half. Only Nook's new
+  words travel, a slow connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what
+  was missed, and a lost update repairs itself.
 - Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
   after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
 - The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
