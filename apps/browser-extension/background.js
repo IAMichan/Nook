@@ -4,7 +4,8 @@
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
   GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, cleanLook, commandError, consoleText,
-  describeTabs, isAnswering, isBlocked, isRestricted, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf
+  describeTabs, isAnswering, isBlocked, isRestricted, normalizeURL, panelMessageAllowed, questionImages, reconnectDelay,
+  serial, siteOf
 } from './lib/core.js';
 
 const REQUEST_TIMEOUT = 20_000;
@@ -735,7 +736,10 @@ async function handlePanel(message) {
     case 'ask': {
       const tab = await activeTab(message.windowId);
       const page = await pageForQuestion(tab);
-      return request({ kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page });
+      // Pictures from the composer (pasted, dropped or picked) go along; the Mac scales them for the model.
+      const images = questionImages(message.images);
+      const question = { kind: 'ask', text: String(message.text || ''), conversation: message.conversation || null, page };
+      return request(images.length ? { ...question, images } : question);
     }
     case 'look':
       return { ok: true, look: await refreshLook() };

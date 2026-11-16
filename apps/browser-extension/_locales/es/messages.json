@@ -3,7 +3,7 @@
     "message": "Nook"
   },
   "appDesc": {
-    "message": "Nook, tu asistente en el Mac, en tu navegador: pregunta sobre la página en la que estás y deja que Nook lea tus pestañas y actúe en ellas cuando lo apruebes."
+    "message": "Nook, tu asistente del Mac, en el navegador: pregunta sobre esta página y deja que Nook lea y actúe en tus pestañas si lo apruebas."
   },
   "actionTitle": {
     "message": "Abrir Nook"
@@ -82,6 +82,18 @@
   },
   "stopAnswer": {
     "message": "Detener"
+  },
+  "messageField": {
+    "message": "Mensaje para Nook"
+  },
+  "attachImages": {
+    "message": "Adjuntar imágenes"
+  },
+  "removeImage": {
+    "message": "Quitar imagen"
+  },
+  "imageQuestion": {
+    "message": "¿Qué hay en esta imagen?"
   },
   "thinking": {
     "message": "Nook está pensando"

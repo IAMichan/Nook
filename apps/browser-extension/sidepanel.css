@@ -249,23 +249,6 @@ button.warn {
 }
 button.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 18%, transparent); }
 
-/* The round 32 pt send and stop buttons of Nook's composer. */
-button.round {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  border-color: transparent;
-}
-button.round svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-button.send { background: var(--accent); color: var(--on-accent); }
-button.send:hover:not(:disabled) { background: var(--accent-hover); }
-button.send:disabled { background: var(--smoke); color: var(--text-tertiary); opacity: 1; }
-button.stop { background: var(--paper); color: var(--canvas); }
-button.stop svg { fill: currentColor; stroke: none; }
-
 /* MARK: Conversation */
 
 .chat {
@@ -369,31 +352,7 @@ button.stop svg { fill: currentColor; stroke: none; }
 
 .composer { padding: var(--space-md) var(--pad-lg) var(--pad-lg); background: var(--canvas); }
 
-/* The composer box, as Nook's: the tray color at rest, the composer color with a stronger line while you type. */
-.composer-box {
-  border: 1px solid var(--field-stroke);
-  border-radius: var(--radius-composer);
-  background: var(--composer-tray);
-  padding: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);
-  transition: background-color .2s var(--ease), border-color .2s var(--ease);
-}
-.composer-box:focus-within { background: var(--composer); border-color: var(--line2); }
-.composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 40px;
-  max-height: 160px;
-  resize: none;
-  border: 0;
-  padding: var(--space-xs) var(--space-xs) 0 0;
-  background: transparent;
-  color: var(--paper);
-  font: var(--body)/1.45 var(--sans);
-  outline: none;
-}
-.composer textarea::placeholder { color: var(--text-tertiary); }
-.composer textarea:disabled { cursor: default; }
-.composer-row { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-sm); margin-left: calc(-1 * var(--space-sm)); }
+/* The box itself is the shared composer's (packages/web-ui), in these tokens (apps/browser-extension/composer). */
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

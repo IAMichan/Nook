@@ -238,6 +238,29 @@ export function isAnswering(messages) {
   return !last.fromNook || !!last.streaming;
 }
 
+/** Pictures that go with one question at most, and the most one may weigh (base64 characters, about 12 MB). */
+export const MAX_QUESTION_IMAGES = 10;
+export const MAX_IMAGE_BASE64 = 16_000_000;
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/**
+ * The pictures from the side panel's composer as Nook takes them: `{ mediaType, base64 }` of a kind Nook can read,
+ * at most `MAX_QUESTION_IMAGES`, none larger than `MAX_IMAGE_BASE64`. Anything else is dropped, not sent.
+ */
+export function questionImages(raw) {
+  if (!Array.isArray(raw)) return [];
+  const images = [];
+  for (const image of raw) {
+    if (images.length >= MAX_QUESTION_IMAGES) break;
+    const mediaType = String(image?.mediaType || '').toLowerCase();
+    const base64 = image?.base64;
+    if (!IMAGE_TYPES.has(mediaType) || typeof base64 !== 'string' || !base64 || base64.length > MAX_IMAGE_BASE64) continue;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) continue;
+    images.push({ mediaType, base64 });
+  }
+  return images;
+}
+
 /**
  * Runs async tasks one after another, so a read-modify-write of the extension's storage (the activity list, the tab
  * groups per window) never loses a concurrent change. A failed task does not stop the ones after it.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
   isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError,
-  WATCH_LEASE, WATCH_RENEW, watchRenewalDue
+  WATCH_LEASE, WATCH_RENEW, watchRenewalDue, questionImages, MAX_QUESTION_IMAGES, MAX_IMAGE_BASE64
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -225,3 +225,13 @@ test('the panel keeps following an answer that runs longer than Nook\'s lease', 
   assert.equal(watchRenewalDue(WATCH_RENEW - 1, 0), false, 'not sooner than needed');
 });
 
+
+test('only pictures Nook can read go with a question', () => {
+  const png = { mediaType: 'image/png', base64: 'iVBORw0KGgo=' };
+  assert.deepEqual(questionImages([png, { mediaType: 'IMAGE/JPEG', base64: 'AAAA' }]), [png, { mediaType: 'image/jpeg', base64: 'AAAA' }]);
+  assert.deepEqual(questionImages('not a list'), []);
+  assert.deepEqual(questionImages([{ mediaType: 'application/pdf', base64: 'AAAA' }]), [], 'not a picture');
+  assert.deepEqual(questionImages([{ mediaType: 'image/png', base64: 'not base64!' }]), [], 'not base64');
+  assert.deepEqual(questionImages([{ mediaType: 'image/png', base64: 'A'.repeat(MAX_IMAGE_BASE64 + 4) }]), [], 'too large');
+  assert.equal(questionImages(Array(MAX_QUESTION_IMAGES + 3).fill(png)).length, MAX_QUESTION_IMAGES);
+});

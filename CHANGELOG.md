@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- One composer for Nook's web surfaces: the browser extension's side panel now writes with the same composer as the
+  Windows and Linux app (packages/web-ui). In the browser you can paste, drop or pick pictures to ask about, bring back
+  an earlier question with Up, and stop an answer with Escape. `npm run package` in apps/browser-extension makes the
+  Chrome Web Store zip, and the extension's descriptions now fit the store's 132-character limit.
+
 - Automations in Nook Chat: ask "check my mail every morning at 8, tell me what happened and draft the replies" and Nook
   proposes a scheduled task you approve with one click. Each run is a conversation of its own with an overview and a
   ready reply per mail that needs one, so you only click Send; a notice says when it is ready. Nothing is sent or changed

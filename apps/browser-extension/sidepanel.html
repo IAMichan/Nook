@@ -51,21 +51,8 @@
     </details>
   </section>
 
-  <form id="composer" class="composer">
-    <div class="composer-box">
-      <textarea id="input" rows="2" data-i18n-placeholder="askPlaceholder"></textarea>
-      <div class="composer-row">
-        <button id="new-chat" type="button" class="quiet small" data-i18n="newChat"></button>
-        <span class="grow"></span>
-        <button id="stop" type="button" class="round stop" hidden>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"/></svg>
-        </button>
-        <button id="send" type="submit" class="round send">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"/></svg>
-        </button>
-      </div>
-    </div>
-  </form>
+  <!-- Nook's shared composer (packages/web-ui), mounted by sidepanel.js from ui/composer.js. -->
+  <div id="composer" class="composer"></div>
 
   <script type="module" src="sidepanel.js"></script>
 </body>

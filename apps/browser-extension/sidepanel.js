@@ -5,6 +5,7 @@
 import {
   cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
 } from './lib/core.js';
+import { mountComposer, questionsAsked } from './ui/composer.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -50,10 +51,16 @@ async function trySend(message) {
 
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 for (const element of document.querySelectorAll('[data-i18n-placeholder]')) element.placeholder = t(element.dataset.i18nPlaceholder);
-for (const [id, key] of [['send', 'send'], ['stop', 'stopAnswer']]) {
-  $(id).setAttribute('aria-label', t(key));
-  $(id).title = t(key);
-}
+
+// MARK: - Composer
+
+// Nook's shared composer (packages/web-ui), the same as in the Tauri app: Return sends, Up brings back an earlier
+// question, and pictures can be pasted, dropped or picked. sidepanel.js keeps it up to date in `renderComposer`.
+const composer = mountComposer($('composer'), {
+  onsend: (text, images) => ask(text, images),
+  onstop: () => stopAnswer(),
+  onnewchat: () => newChat()
+});
 
 // MARK: - Nook's look
 
@@ -263,13 +270,14 @@ function webHref(text) {
 
 function renderComposer() {
   const busy = isAnswering(messages);
-  const connected = status.nook === 'connected';
-  const stoppable = busy && !!conversation;
-  $('send').disabled = !connected || busy;
-  $('send').hidden = stoppable;
-  $('input').disabled = !connected;
-  $('stop').hidden = !stoppable;
-  $('new-chat').hidden = !messages.length;
+  composer.set({
+    connected: status.nook === 'connected',
+    busy,
+    canStop: busy && !!conversation,
+    showNewChat: messages.length > 0,
+    history: questionsAsked(messages),
+    conversation
+  });
 }
 
 function failure(reply) {
@@ -277,11 +285,11 @@ function failure(reply) {
   return reply?.error || t('errorGeneric');
 }
 
-async function ask(text) {
+async function ask(text, images = []) {
   const asked = chatEpoch;
   messages = [...messages, { fromNook: false, text }, { fromNook: true, text: '', streaming: true }];
   renderMessages();
-  const reply = await trySend({ type: 'ask', text, conversation, windowId });
+  const reply = await trySend({ type: 'ask', text, images, conversation, windowId });
   if (asked !== chatEpoch) return;
   if (!reply?.ok) {
     messages = [...messages.slice(0, -1), { fromNook: true, text: failure(reply), failed: true }];
@@ -343,33 +351,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (isAnswering(messages) && !pollTimer) follow();
 });
 
-$('composer').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const input = $('input');
-  const text = input.value.trim();
-  if (!text || $('send').disabled) return;
-  input.value = '';
-  fitInput();
-  ask(text);
-});
-
-/** The field grows with what you type, up to its maximum height, as Nook's composer does. */
-function fitInput() {
-  const input = $('input');
-  input.style.height = 'auto';
-  input.style.height = input.scrollHeight + 'px';
-}
-
-$('input').addEventListener('input', fitInput);
-
-$('input').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    $('composer').requestSubmit();
-  }
-});
-
-$('new-chat').addEventListener('click', async () => {
+async function newChat() {
   chatEpoch += 1;
   clearTimeout(pollTimer);
   pollTimer = null;
@@ -377,16 +359,16 @@ $('new-chat').addEventListener('click', async () => {
   messages = [];
   revision = null;
   renderMessages();
-  $('input').focus();
+  composer.focus();
   await chrome.storage.session.remove('conversation').catch(() => {});
-});
+}
 
-$('stop').addEventListener('click', async () => {
+async function stopAnswer() {
   if (!conversation) return;
   const stopped = chatEpoch;
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
   if (stopped === chatEpoch && reply?.messages) applyMessages(reply.messages, reply.revision);
-});
+}
 
 // MARK: - Start
 

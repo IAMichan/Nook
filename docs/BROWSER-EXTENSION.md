@@ -204,6 +204,11 @@ Nook's commands ─────────┘                                  
   answers within 1.5 s). That text goes to the brain like a dropped file (`ReplyContext.page`), so Nook answers about
   the page without first spending a round on `chrome_read`. It goes only to a brain that may see the browser
   extension; see "Your privacy settings, in the browser too" for what happens when it stays on this Mac.
+- **Composer.** The side panel writes with Nook's shared web composer (`packages/web-ui`), the same one as the Tauri
+  app: Return sends, Shift+Return is a new line, Up in an empty field brings back an earlier question, Escape stops the
+  answer, and pictures can be pasted, dropped or picked. The pictures go with the question as `images`
+  (`questionImages` in `lib/core.js`: PNG, JPEG, GIF or WebP, at most 10); the Mac scales and encodes them as every
+  picture it sends a model (`ImageAttachment`). Documents are not taken in the browser.
 - **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
   `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
   and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got
@@ -214,8 +219,14 @@ Nook's commands ─────────┘                                  
 ```sh
 cd apps/browser-extension
 npm test                       # lib/core.js, the manifest and id, the five languages, the page agent in Chromium (Node's test runner)
+npm run build                  # the composer into ui/composer.js (once: npm ci in packages/web-ui)
+npm run package                # the Chrome Web Store zip in .scratch/, without the manifest's key
 ../../scripts/core-tests.sh --filter BrowserExtensionTests   # the Mac side: host, hub, tools
 ```
+
+The composer's sources are `composer/` here and `packages/web-ui/src`. The built `ui/composer.js` is checked in, so the
+Mac app carries a working extension without a build step and the extension's folder holds no `node_modules` (the app
+copies all of it). Run `npm run build` after changing either and commit the result; CI fails when it is not up to date.
 
 After you change the extension, click **Reload** on it in `chrome://extensions`. When Nook updates, it copies the new
 version into `Browser Extension` the next time it starts.

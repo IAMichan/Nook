@@ -46,7 +46,7 @@ test('every text is there in all five languages', () => {
     }
   }
   const used = new Set();
-  for (const file of ['sidepanel.html', 'sidepanel.js', 'page/presence.js', 'page/agent.js', 'manifest.json']) {
+  for (const file of ['sidepanel.html', 'sidepanel.js', 'page/presence.js', 'page/agent.js', 'manifest.json', 'composer/PanelComposer.svelte']) {
     const text = read(file);
     // say('…') is the page agent's own getMessage (the cursor's badge).
     for (const match of text.matchAll(/data-i18n(?:-placeholder)?="(\w+)"|\bt\('(\w+)'|getMessage\('(\w+)'|\bsay\('(\w+)'|__MSG_(\w+)__/g)) {
@@ -54,4 +54,13 @@ test('every text is there in all five languages', () => {
     }
   }
   for (const key of used) assert.ok(english[key], `missing text ${key}`);
+});
+
+test('the store listing fits the Chrome Web Store limits in every language', () => {
+  for (const language of readdirSync(new URL('_locales/', root))) {
+    const messages = JSON.parse(read(`_locales/${language}/messages.json`));
+    // The Web Store rejects a package whose description is longer than 132 characters or whose name is longer than 75.
+    assert.ok([...messages.appDesc.message].length <= 132, `${language}.appDesc is ${[...messages.appDesc.message].length} characters`);
+    assert.ok([...messages.appName.message].length <= 75, `${language}.appName`);
+  }
 });
