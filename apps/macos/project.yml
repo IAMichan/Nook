@@ -302,6 +302,7 @@ targets:
       - path: Core/I18n+Safeguards.swift
       - path: Core/I18n+BrowserExtension.swift
       - path: Core/I18n+BrowserMemory.swift
+      - path: Core/I18n+NookTasks.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
