@@ -119,7 +119,8 @@ extension WorkspaceBridge {
 
         guard action else {
             do {
-                let output = try await spec.run(input)
+                // Chats of an app kept on this Mac stay out of what the agent reads.
+                let output = try await BridgeChats.$withheldApps.withValue(keptOnMac(app)) { try await spec.run(input) }
                 audit(.nookUse, caller, name, "gelezen")
                 return BridgeRPC.ToolResult(text: shielded(output, app))
             } catch {
@@ -138,7 +139,9 @@ extension WorkspaceBridge {
                 return .error(Self.refusal(.action))
             }
         }
-        let outcome = await app.perform([PlannedAction(tool: name, input: input)])
+        let outcome = await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
+            await app.perform([PlannedAction(tool: name, input: input)])
+        }
         if let failure = outcome.failure {
             audit(.nookUse, caller, name, "mislukt: \(failure)")
             return .error(failure)
@@ -162,7 +165,7 @@ extension WorkspaceBridge {
         }
         var result = await nookUse(use, caller, context)
         guard tool == .chatList, !result.isError else { return result }
-        let writable = ChatInboxConnector.writableApps()
+        let writable = BridgeChats.$withheldApps.withValue(keptOnMac(app)) { ChatInboxConnector.writableApps() }
         result.text += "\n\n" + (writable.isEmpty ? "chat_send cannot write in any of these apps yet; they are read only."
             : "chat_send can write in chats of \(writable.joined(separator: ", ")); chats of other apps are read only.")
             + " Nook Chat itself: nook_chat_list and nook_chat_send."

@@ -777,6 +777,13 @@ enum BridgeUserBrowser {
 /// (`chat_inbox`, `chat_send` in `ChatInboxConnector`), named for agents, so a message from an agent goes the same route,
 /// through the same checks and the same approval as one from Nook Chat or the Chats tab, whichever app it is for.
 enum BridgeChats {
+    /// The chat apps (by id) whose chats this call may not see or send in: the sources the user keeps on this Mac, set by
+    /// the workspace bridge around an agent's call. Empty for Nook itself, so the Chats tab and Nook Chat are unaffected.
+    @TaskLocal static var withheldApps: Set<String> = []
+
+    /// Whether this call must leave out the chats of an app.
+    static func withholds(app: String) -> Bool { withheldApps.contains(app) }
+
     /// The Nook tool behind a chat tool.
     static func nookTool(for tool: BridgeTool) -> String? {
         switch tool {

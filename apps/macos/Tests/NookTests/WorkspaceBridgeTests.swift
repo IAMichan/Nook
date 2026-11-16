@@ -239,6 +239,15 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertNil(BridgeChats.problem(for: .chatList, [:]))
     }
 
+    func testChatsOfAnAppKeptOnThisMacStayHiddenFromAgents() {
+        XCTAssertFalse(BridgeChats.withholds(app: "whatsapp"), "Nook itself sees every chat")
+        BridgeChats.$withheldApps.withValue(["whatsapp", "calendar"]) {
+            XCTAssertTrue(BridgeChats.withholds(app: "whatsapp"), "a WhatsApp kept on this Mac never reaches an agent")
+            XCTAssertFalse(BridgeChats.withholds(app: "telegram"), "other apps show as in the Chats tab")
+        }
+        XCTAssertFalse(BridgeChats.withholds(app: "whatsapp"), "only for the agent's own call")
+    }
+
     func testTakingOverTheScreenAlwaysAsks() {
         for caller in [run(), run(.agent, .ask), run(.agent, .bypass), external] {
             XCTAssertEqual(BridgePolicy.verdict(tool: .takeOverScreen, caller: caller), .ask(.screen),
