@@ -16,7 +16,10 @@ enum NookTaskText {
 
     static func detail(_ task: ScheduledTask, running: Bool) -> String {
         let status = status(task, running: running)
-        return [ScheduledTaskText.summary(task.rule), status].filter { !$0.isEmpty }.joined(separator: " · ")
+        // A task that acts by itself says so, so the list shows at a glance which ones do not wait for you.
+        let autonomy = ScheduledTaskStore.shared.autonomy(for: task.id)
+        let acts = autonomy == .ask ? "" : autonomy.label
+        return [ScheduledTaskText.summary(task.rule), acts, status].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// The tint of the clock: Nook's own color while it will run, coral after a failed run, grey when paused or done.

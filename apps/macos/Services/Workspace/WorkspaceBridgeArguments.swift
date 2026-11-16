@@ -361,7 +361,7 @@ enum BridgeScheduleArguments {
     }
 
     /// One task for list_scheduled_tasks. The prompt is cut short: the list is for finding a task, not reading it.
-    static func render(_ task: ScheduledTask, permission: PermissionPolicy, running: Bool) -> String {
+    static func render(_ task: ScheduledTask, permission: PermissionPolicy, running: Bool, autonomy: NookAutonomy? = nil) -> String {
         let iso = ISO8601DateFormatter()
         var line = "- \(task.id.uuidString) · \(task.title) · \(describe(task.rule)) · " + (task.enabled ? "on" : "off")
         switch task.target {
@@ -370,6 +370,8 @@ enum BridgeScheduleArguments {
             line += " · message to session \(id.uuidString)" + (fresh ? " (fresh conversation each run)" : " (continues the conversation)")
         case .nook: line += " · answered by Nook Chat in a conversation of its own"
         }
+        // What a run of Nook's carries out by itself is the user's own choice (Nook Chat or the editor), not an agent's.
+        if let autonomy, task.target.isNook { line += " · after a run \(autonomy.describe)" }
         line += " · rights \(permission.rawValue)"
         if running { line += " · running now" }
         if let next = task.nextRun { line += " · next \(iso.string(from: next))" }
