@@ -9,6 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 
+use super::keep_awake::KeepAwakeMode;
 use super::models::{base64url_decode, base64url_encode, is_control, PairedDevice, KEY_LENGTH, PAIRING_WINDOW};
 use super::push::PushSettings;
 use crate::secrets::SecretStore;
@@ -24,6 +25,19 @@ struct Stored {
     /// Het sleutel-id en team-id van je APNs-sleutel (Apple Developer); de .p8 zelf staat in de kluis.
     apns_key_id: String,
     apns_team_id: Option<String>,
+    /// Reaching this computer away from home through a relay (Settings › Companion › Away from home).
+    relay: RelaySettings,
+    keep_awake: KeepAwakeMode,
+}
+
+/// Whose relay, and whether it is on (`CompanionRelayClient` settings on the Mac).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RelaySettings {
+    pub enabled: bool,
+    /// Use the user's own relay at `address` instead of Nook's (also when this build has none of its own).
+    pub own: bool,
+    pub address: String,
 }
 
 struct Pending {
@@ -90,6 +104,22 @@ impl CompanionStore {
 
     pub fn device(&self, id: &str) -> Option<PairedDevice> {
         self.with(|s| s.devices.iter().find(|d| d.id == id).cloned(), false)
+    }
+
+    pub fn relay(&self) -> RelaySettings {
+        self.with(|s| s.relay.clone(), false)
+    }
+
+    pub fn set_relay(&self, relay: RelaySettings) {
+        self.with(|s| s.relay = relay, true);
+    }
+
+    pub fn keep_awake(&self) -> KeepAwakeMode {
+        self.with(|s| s.keep_awake, false)
+    }
+
+    pub fn set_keep_awake(&self, mode: KeepAwakeMode) {
+        self.with(|s| s.keep_awake = mode, true);
     }
 
     pub fn push(&self) -> PushSettings {

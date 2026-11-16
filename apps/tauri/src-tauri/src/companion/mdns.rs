@@ -103,17 +103,3 @@ impl HostResolver for LocalResolver {
         found.into_iter().map(|ip| SocketAddr::new(ip, port)).collect()
     }
 }
-
-/// De IPv4-adressen van deze computer in het lokale netwerk, voor wie liever een adres dan `….local` in de code heeft.
-#[cfg(desktop)]
-pub fn local_addresses() -> Vec<String> {
-    if_addrs::get_if_addrs()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|i| !i.is_loopback())
-        .filter_map(|i| match i.ip() {
-            IpAddr::V4(v4) if v4.is_private() => Some(v4.to_string()),
-            _ => None,
-        })
-        .collect()
-}
