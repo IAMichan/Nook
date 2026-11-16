@@ -343,7 +343,15 @@ struct AgentSessionDetail: View {
         // check the disk.
         let canSend = app.canReply(to: session)
         let canTakeOver = app.canTakeOver(session)
-        return Observing(composerState) { liveComposerContent(session, canSend: canSend, canTakeOver: canTakeOver) }
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            // What Nook could do for what was said here, as under a session Nook runs.
+            ActionSuggestionBar(turn: app.agentSuggestionTurn(session), busy: session.status == .running,
+                                place: .agent(name: session.name, title: session.project),
+                                lines: { AppModel.agentActionLines(session) },
+                                act: { [app] in await app.runDraftActions($0) },
+                                adjust: { [app] in app.adjustSuggestedAction($0) })
+            Observing(composerState) { liveComposerContent(session, canSend: canSend, canTakeOver: canTakeOver) }
+        }
     }
 
     @ViewBuilder

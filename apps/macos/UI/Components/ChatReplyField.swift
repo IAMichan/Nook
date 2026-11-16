@@ -83,6 +83,10 @@ struct ChatReplyField: View {
     private var replyTurn: ChatReplySuggestion.Turn?
     private var writeReply: (() async -> String?)?
     @ObservedObject private var replies = ChatReplySuggestions.shared
+    /// The chat's newest message, and how Nook reads the chat for what it could do (`ChatActionSuggestion`); nil
+    /// suggests nothing.
+    private var actionTurn: ChatActionSuggestion.Turn?
+    private var actionSource: (place: ChatActionSuggestion.Place, lines: () -> [ChatActionSuggestion.Line])?
     /// Who the message goes to and what they said last, for the grey rest of the sentence (`ComposerCompleter`).
     private var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
@@ -173,6 +177,16 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// What Nook could do for what was said in the chat (start an agent on a task, a reminder), above the field once it
+    /// has looked at `turn`, the newest message (`ActionSuggestionBar`). Runs through `runsActions`.
+    func suggestsActions(_ turn: ChatActionSuggestion.Turn?, place: ChatActionSuggestion.Place,
+                         lines: @escaping () -> [ChatActionSuggestion.Line]) -> Self {
+        var copy = self
+        copy.actionTurn = turn
+        copy.actionSource = (place, lines)
+        return copy
+    }
+
     /// ← and → in the empty field walk what waits to go: `walk` gets the direction (false when it has nothing to walk).
     func walksFiles(_ walk: @escaping (Int) -> Bool) -> Self {
         var copy = self
@@ -237,6 +251,11 @@ struct ChatReplyField: View {
                            undo: backToRequest, tweak: { rewrite($0.request) },
                            rewrite: { rewrite(steer) })
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            // What Nook could do for what was said, while its own draft is not on screen.
+            if outgoing == nil, !showsDraft, let act, let actionSource {
+                ActionSuggestionBar(turn: actionTurn, busy: drafting, place: actionSource.place, lines: actionSource.lines,
+                                    act: act, adjust: { AppModel.shared.adjustSuggestedAction($0) })
             }
             // Nook's own progress and a message on its way have their panel; any other notice (a failed rewrite or send)
             // stays a line above.
@@ -1012,22 +1031,37 @@ private struct DraftPanel: View {
 
 /// What Nook proposes to do under "@nook …", as a short numbered list with one button: Do it runs the steps, then
 /// each line says it is done, or the failure shows under them. The cross lets the proposal go.
-private struct DraftActions: View {
+/// What Nook proposes to do, each step on a row, with Do it, how running it went, and the cross that lets it go. Under
+/// "@nook …" in a chat's panel, and on its own above a conversation's field as a suggestion (`ActionSuggestionBar`).
+struct DraftActions: View {
     let actions: [ChatDraftAction]
     let run: ChatDraftActionRun
     let perform: (() -> Void)?
     let dismiss: () -> Void
+    /// The line on top; the suggestion names itself here.
+    var title = tr("chats.draft.actions")
+    /// Why Nook proposes it, in a line under the title; nil for none.
+    var reason: String? = nil
+    /// A second way, beside Do it: open the step to change it first (a new session's composer); nil for none.
+    var adjust: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(tr("chats.draft.actions"))
+                Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if run != .running {
                     ToolbarIconButton("xmark", tr(isDone ? "button.close" : "chats.draft.actions.dismiss"), dismiss)
                 }
+            }
+            if let reason, !reason.isEmpty {
+                Text(reason)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 ForEach(actions) { row($0) }
@@ -1083,6 +1117,10 @@ private struct DraftActions: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(2)
                     Spacer(minLength: NookTheme.Spacing.sm)
+                    if let adjust {
+                        NookGhostButton(title: tr("suggestActions.adjust"), symbol: "slider.horizontal.3", action: adjust)
+                            .fixedSize()
+                    }
                     NookPrimaryButton(title: tr("chats.draft.actions.run"), symbol: "checkmark", action: perform)
                         .fixedSize()
                 }
@@ -1494,6 +1532,24 @@ extension ComposerCompletion.Situation {
             .map { (fromMe: $0.fromMe || $0.local, sender: $0.sender, text: $0.copyText) }
         return Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text,
                     conversation: ComposerCompletion.conversation(Array(messages), contact: name))
+    }
+}
+
+extension ChatActionSuggestion {
+    /// The turn a chat's bubbles end on for a suggested step: its newest message, yours as well (you may be the one who
+    /// said what should be done), leaving out the lines about the group.
+    static func turn(chat: String, bubbles: [ChatBubble]) -> Turn? {
+        guard !chat.isEmpty, let last = bubbles.last(where: { $0.notice == nil }) else { return nil }
+        return Turn(conversation: chat, message: last.id, date: last.date)
+    }
+
+    /// A chat's newest messages as the brain reads them: you as "You", everyone else by name.
+    static func lines(_ bubbles: [ChatBubble], contact: String) -> [Line] {
+        bubbles.filter { $0.notice == nil && !$0.deleted }.suffix(30).map { bubble in
+            let mine = bubble.fromMe || bubble.local
+            return Line(speaker: mine ? tr("chat.you") : (bubble.sender.isEmpty ? contact : bubble.sender), text: bubble.copyText,
+                        id: bubble.id)
+        }
     }
 }
 

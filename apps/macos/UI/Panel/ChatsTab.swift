@@ -2421,6 +2421,10 @@ private struct ChatsDetail: View, Equatable {
                 let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                 return await app.suggestChatReply(app: appName, chat: entry.name, transcript: transcript)
             }
+            .suggestsActions(ChatActionSuggestion.turn(chat: entry.id, bubbles: bubbles),
+                             place: .chat(app: appName, name: entry.name)) {
+                ChatActionSuggestion.lines(bubbles, contact: entry.name)
+            }
             .tray(entry.read.isUnread
                 ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                        markReadInNook: { app.markChatReadInNook(entry) },

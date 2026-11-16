@@ -568,6 +568,11 @@ struct NookChatView: View {
                 ComposerErrorLine(message: problem) { app.attachmentError = nil }
                     .padding(.horizontal, NookTheme.Spacing.xxs)
             }
+            // What Nook could do next for what was said here (an agent on a task that came up), as in every chat.
+            ActionSuggestionBar(turn: actionTurn, busy: actionBusy,
+                                place: .nook, lines: { [chat] in AppModel.nookActionLines(chat.messages) },
+                                act: { [app] in await app.runDraftActions($0) },
+                                adjust: { [app] in app.adjustSuggestedAction($0) })
             // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
             VStack(spacing: 0) {
                 queuedTray
@@ -577,6 +582,18 @@ struct NookChatView: View {
         }
         // The attachment and the queued questions keep to the composer's column too.
         .chatColumn()
+    }
+
+    /// Nook's newest answer, once it is written: Nook looks whether there is something it could do next.
+    private var actionTurn: ChatActionSuggestion.Turn? {
+        guard let id = chat.activeID, let last = chat.messages.last, last.role == .nook, !last.streaming else { return nil }
+        return ChatActionSuggestion.Turn(conversation: "nook:" + id.uuidString, message: last.id.uuidString, date: last.date)
+    }
+
+    /// Nook is still answering, or its answer already proposes steps of its own (a plan) or failed: no suggestion then.
+    private var actionBusy: Bool {
+        guard let last = chat.messages.last else { return chat.busy }
+        return chat.busy || !last.actions.isEmpty || last.isError
     }
 
     /// The box itself, drawn again for each key you type without the chat around it.

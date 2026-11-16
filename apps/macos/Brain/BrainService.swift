@@ -258,19 +258,22 @@ final class BrainService {
     /// "@nook …" in a chat: the chosen brain looks up what the request refers to ("what Gijs said in the mail") with the
     /// read tools and proposes what it asks to be done ("make a reminder for this") with the action tools, as Nook Chat
     /// does. Actions are never run here: they come back in the plan for the user's own click. The plan's text is the
-    /// message for the field. Nil when the brain is not ready.
-    func writeInChat(system: String, prompt: String, request: String, tools: [ToolSpec]) async throws -> BrainPlan? {
+    /// message for the field. `extra`: tools offered ahead of the rest (`ChatActionSuggestion.preferredTools`); `rounds`:
+    /// how many tool rounds it may take. Nil when
+    /// the brain is not ready.
+    func writeInChat(system: String, prompt: String, request: String, tools: [ToolSpec],
+                     preferring extra: [String] = [], rounds: Int = 6) async throws -> BrainPlan? {
         guard settings.brainReady else { return nil }
         let profile = settings.brainProfile
         // What the request is about, recognized on the Mac ("herinner me…" → create_reminder), goes first, as in the chat.
         let intent = ChatIntent.detect(request, history: [])
-        let preferred = intent.tools + ["search_mail", "read_mail", "chat_inbox", "list_events"]
+        let preferred = intent.tools + extra + ["search_mail", "read_mail", "chat_inbox", "list_events"]
         let offered = Self.withCompanions(Self.prioritized(tools, for: request, limit: min(profile.maxTools, 28),
                                                            preferred: preferred + Research.companions(of: preferred)),
                                           from: tools)
         let runner = ToolRunner(
             tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
-            limits: .init(rounds: 6, calls: 14, repairs: 2),
+            limits: .init(rounds: rounds, calls: 14, repairs: 2),
             validate: { tool, input, schema in ActionGate.problems(tool: tool, input: input, schema: schema, parseDate: NookDates.parse) },
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
@@ -397,11 +400,11 @@ final class BrainService {
         let conversation: ModelConversation
         switch selection.provider {
         case .claudeCode:
-            conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
+            conversation = ClaudeCodeBrain.conversation(model: selection.model, system: system,
                                                         prompt: Self.windowPrefix(history) + prompt,
                                                         allowWebSearch: webAllowed)
         case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
-            conversation = SubscriptionBrain.conversation(provider: selection.provider, model: settings.activeProviderModel,
+            conversation = SubscriptionBrain.conversation(provider: selection.provider, model: selection.model,
                                                           system: system,
                                                           prompt: Self.windowPrefix(history) + prompt,
                                                           allowWebSearch: webAllowed)
@@ -412,8 +415,8 @@ final class BrainService {
         case .claude:
             guard let key = settings.key(for: .claude), !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
             conversation = AnthropicConversation(
-                model: settings.model, system: system, history: history, prompt: prompt, images: images,
-                webSearchTool: webAllowed ? Self.webSearchTool(for: settings.model) : nil, maxTokens: 8192,
+                model: selection.model, system: system, history: history, prompt: prompt, images: images,
+                webSearchTool: webAllowed ? Self.webSearchTool(for: selection.model) : nil, maxTokens: 8192,
                 stream: { [weak self] body, onPartial in
                     guard let self else { throw CancellationError() }
                     return try await self.stream(body, key: key, onText: onPartial)

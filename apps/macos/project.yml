@@ -330,6 +330,7 @@ targets:
       - path: Services/EmbeddedApps/EmbeddedAppCatalog.swift
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
       - path: Services/Messages/ChatInbox.swift
+      - path: Services/Messages/ChatActionSuggestion.swift
       - path: Services/Messages/ChatHistorySearch.swift
       - path: Services/Messages/ChatStore.swift
       - path: Services/Messages/TranscriptReadingAnchor.swift

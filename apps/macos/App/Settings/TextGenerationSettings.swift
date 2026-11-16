@@ -10,7 +10,7 @@ struct TextGenerationSection: View {
         Section {
             SettingToggle(tr("textgen.next.setting"), detail: tr("textgen.next.setting.detail"), isOn: $ws.suggestNextPrompt)
             ForEach(TextTask.allCases) { task in
-                TextGeneratorRow(task: task, generator: Binding(get: { ws.textGenerator(for: task) },
+                TextGeneratorRow(label: "textgen.task." + task.rawValue, generator: Binding(get: { ws.textGenerator(for: task) },
                                                                 set: { ws.setTextGenerator($0, for: task) }))
             }
         } header: {
@@ -20,9 +20,12 @@ struct TextGenerationSection: View {
 }
 
 /// One kind of text: the generator picker, and for an API its model, its key (saved on Return), and the same
-/// "Connection" row as the Brain page.
-private struct TextGeneratorRow: View {
-    let task: TextTask
+/// "Connection" row as the Brain page. Also who looks for suggested actions (Settings › Autocomplete), where `.agent`
+/// is the brain itself: `agentOption` names that first choice.
+struct TextGeneratorRow: View {
+    /// The I18n key of the row's label.
+    let label: String
+    var agentOption = "textgen.generator.agent"
     @Binding var generator: TextGenerator
     @ObservedObject private var brain = AppSettings.shared
     @State private var modelDraft = ""
@@ -35,13 +38,13 @@ private struct TextGeneratorRow: View {
             generator = provider.map { .api($0, model: "") } ?? .agent
             result = nil
         })) {
-            Text(tr("textgen.generator.agent")).tag(AIProvider?.none)
+            Text(tr(agentOption)).tag(AIProvider?.none)
             Divider()
             ForEach(TextGenerator.apiProviders) { provider in
                 Text(name(provider)).tag(AIProvider?.some(provider))
             }
         } label: {
-            SettingText("textgen.task." + task.rawValue)
+            SettingText(label)
         }
         if let provider = generator.provider {
             SettingFieldRow(tr("textgen.model")) {

@@ -54,6 +54,15 @@ enum TextGenerator: Hashable, Sendable {
         return nil
     }
 
+    /// The brain a suggested action is looked for on (`AppSettings.actionSuggestionModel`): nil for `.agent`, which there
+    /// means the brain itself (the default), and for an API whose key is missing, which falls back to the brain as the
+    /// text falls back to the agent.
+    func brain(hasKey: (AIProvider) -> Bool) -> BrainSelection? {
+        guard case .api(let provider, _) = self else { return nil }
+        if provider.needsKey, !hasKey(provider) { return nil }
+        return .resolve(useLocal: false, provider: provider, localModel: "", providerModel: model)
+    }
+
     /// The model to ask for: the one chosen, else the provider's default; "" lets a local server use the one it has loaded.
     var model: String {
         guard case .api(let provider, let model) = self else { return "" }

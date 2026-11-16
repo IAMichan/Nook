@@ -221,4 +221,15 @@ final class TextGeneratorTests: XCTestCase {
         XCTAssertEqual(arguments[index + 1], "low")
         XCTAssertFalse(TextGeneration.claudeArguments(schema: NextPromptSuggestion.schema).contains("--effort"))
     }
+
+    func testSuggestionsUseTheBrainUnlessAnotherModelIsChosen() {
+        XCTAssertNil(TextGenerator.agent.brain(hasKey: { _ in true }), "the brain itself by default")
+        XCTAssertNil(TextGenerator(stored: nil).brain(hasKey: { _ in true }))
+        let haiku = TextGenerator.api(.claude, model: "claude-haiku-5-5").brain(hasKey: { _ in true })
+        XCTAssertEqual(haiku, BrainSelection(runtime: .external, provider: .claude, model: "claude-haiku-5-5"))
+        XCTAssertNil(TextGenerator.api(.claude, model: "claude-haiku-5-5").brain(hasKey: { _ in false }),
+                     "without its key the brain looks instead")
+        let ollama = TextGenerator.api(.ollama, model: "qwen3:8b").brain(hasKey: { _ in false })
+        XCTAssertEqual(ollama, BrainSelection(runtime: .ollama, provider: .ollama, model: "qwen3:8b"), "no key needed on this Mac")
+    }
 }
