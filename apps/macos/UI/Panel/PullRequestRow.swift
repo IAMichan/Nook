@@ -248,7 +248,12 @@ struct PullRequestRow: View, Equatable {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize()
-                    .nookTip(tr("agents.pulls.row.comments", comments))
+                    .contentShape(Rectangle())
+                    // The comments themselves on hover, read ahead with the rest of the pull request.
+                    .hoverCard(arrowEdge: .trailing, suppressed: !readable) {
+                        PullRequestCommentsCard(item: item, accountID: accountID, count: comments)
+                    }
+                    .accessibilityLabel(tr("agents.pulls.row.comments", comments))
                 }
             }
             // The ⋯ of a session's own list sits over this corner while the pointer is on the row.
@@ -384,6 +389,69 @@ extension PullRequestRow {
 
 /// "+120 −8": the lines a pull request adds and removes, the same on a row, the page's header and a file. Large numbers
 /// are grouped ("1,204"), and the minus is a real minus sign so both columns line up.
+/// The card over a row's comment count: the most recent comments, each with its author, when and a line of what it says.
+/// Read with the pull request's timeline, so it shows "Loading…" until that is in.
+private struct PullRequestCommentsCard: View {
+    let item: PullRequestItem
+    let accountID: String
+    let count: Int
+    /// How many comments the card lists, newest last.
+    private static let shown = 5
+    @State private var events: [PullRequestEvent]?
+    @State private var failed = false
+
+    var body: some View {
+        HoverCard(title: tr("agents.pulls.row.comments", count)) {
+            if let events {
+                let recent = Array(events.suffix(Self.shown))
+                ForEach(recent) { event in comment(event) }
+                if events.count > recent.count {
+                    Text(tr("agents.pulls.row.commentsOlder", events.count - recent.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+            } else {
+                Text(tr(failed ? "agents.pulls.row.commentsUnavailable" : "agents.pulls.row.commentsLoading"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .frame(width: 320)
+        .task {
+            guard let detail = await PullRequestDetailModel.withActivity(accountID: accountID, item: item) else {
+                failed = true
+                return
+            }
+            events = PullRequestConversation.items(detail.events).flatMap(\.events)
+                .filter { !PullRequestConversation.preview($0.body).isEmpty }
+        }
+    }
+
+    private func comment(_ event: PullRequestEvent) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                GitHubAvatar(login: event.author, size: 14)
+                Text(event.author)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                if let date = event.date {
+                    Text(verbatim: NookDates.ago(date))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            Text(PullRequestConversation.preview(event.body))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct PullRequestLineCounts: View {
     let additions: Int
     let deletions: Int
