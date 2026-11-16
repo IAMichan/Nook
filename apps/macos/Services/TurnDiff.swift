@@ -294,7 +294,7 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
         var turns: [TurnDiff] = []
         var kept: [String: TurnDiffCache.Entry] = [:]
         var number = 0
-        for events in TimelinePresentation.split(events) {
+        for events in workTurns(events) {
             guard let first = events.first else { continue }
             if first.kind == .user { number += 1 }
             // A turn without a result is still at work; it has no card yet.
@@ -311,6 +311,23 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
             if keepEmpty || !turn.isEmpty { turns.append(turn) }
         }
         cache.entries = kept
+        return turns
+    }
+
+    /// `TimelinePresentation.split`'s turns, with each finished turn the agent woke up for by itself (background work that
+    /// ended) joined to the turn before it: that is the same piece of work, so its changes are one card under its last
+    /// answer, at the end, rather than above the answer it gave once the build it waited for was done. A wake turn still
+    /// at work stays apart until it ends, so the card waits under the answer before it.
+    static func workTurns(_ events: [RunEvent]) -> [[RunEvent]] {
+        var turns: [[RunEvent]] = []
+        for turn in TimelinePresentation.split(events) {
+            if let first = turn.first, TimelinePresentation.isWake(first), !turns.isEmpty,
+               turn.contains(where: { $0.kind == .result }) {
+                turns[turns.count - 1] += turn
+            } else {
+                turns.append(turn)
+            }
+        }
         return turns
     }
 

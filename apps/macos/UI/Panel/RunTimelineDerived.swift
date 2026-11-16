@@ -121,13 +121,21 @@ final class RunTimelineDerived {
         finalAnswers = []
         cards = [:]
         let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        // Split as `TurnDiff.collect` does, so a turn and its card share the id of its first event.
+        func answer(of turn: [RunEvent]) -> RunEvent? {
+            turn.last(where: { $0.kind == .assistant && $0.tool != "plan" && BackgroundWork.notice($0.text).isEmpty })
+        }
         let split = TimelinePresentation.split(all)
-        for (index, turn) in split.enumerated() {
-            // A turn still at work gets its final answer (and its card) when it is done.
-            let finished = index < split.count - 1 || !active
-            let answer = finished ? turn.last(where: { $0.kind == .assistant && $0.tool != "plan" && BackgroundWork.notice($0.text).isEmpty }) : nil
-            if let answer { finalAnswers.insert(answer.id) }
+        for (index, turn) in split.enumerated() where index < split.count - 1 || !active {
+            // A turn still at work gets its final answer when it is done.
+            if let answer = answer(of: turn) { finalAnswers.insert(answer.id) }
+        }
+        // Split as `TurnDiff.collect` does (`TurnDiff.workTurns`), so a turn and its card share the id of its first event:
+        // a turn and the wake turns that finished its background work share one,
+        // under the last answer of them all.
+        let work = TurnDiff.workTurns(all)
+        for (index, turn) in work.enumerated() {
+            let finished = index < work.count - 1 || !active
+            let answer = finished ? answer(of: turn) : nil
             guard let first = turn.first, let diff = byTurn[first.id.uuidString] else { continue }
             if let answer {
                 cards[answer.id] = diff

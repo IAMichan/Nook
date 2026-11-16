@@ -96,6 +96,34 @@ final class TurnDiffTests: XCTestCase {
         XCTAssertTrue(all[1].isEmpty)
     }
 
+    func testAWakeTurnAfterBackgroundWorkJoinsTheTurnBeforeIt() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let edit = #"{"file_path":"/p/A.swift","old_string":"a","new_string":"b"}"#
+        var events = [
+            RunEvent(kind: .user, text: "Change A", date: t0),
+            RunEvent(kind: .tool, text: "Edit", tool: "Edit", detail: edit, state: .done, date: t0.addingTimeInterval(1)),
+            RunEvent(kind: .assistant, text: "Waiting for the build", date: t0.addingTimeInterval(2)),
+            RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(3)),
+            RunEvent(kind: .system, text: "Background command done", tool: "wake", date: t0.addingTimeInterval(4)),
+            RunEvent(kind: .assistant, text: "Still waiting", date: t0.addingTimeInterval(5)),
+        ]
+        // The wake turn is still at work: the card stays under the answer before it.
+        var turns = TurnDiff.collect(events: events)
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(turns[0].answerID, events[3].id.uuidString)
+
+        events.append(RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(6)))
+        events.append(RunEvent(kind: .system, text: "Build done", tool: "wake", date: t0.addingTimeInterval(7)))
+        events.append(RunEvent(kind: .assistant, text: "All done", date: t0.addingTimeInterval(8)))
+        events.append(RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(9)))
+        turns = TurnDiff.collect(events: events, keepEmpty: true)
+        XCTAssertEqual(turns.count, 1, "the wake turns are the same piece of work")
+        XCTAssertEqual(turns[0].id, events[0].id.uuidString)
+        XCTAssertEqual(turns[0].answerID, events[9].id.uuidString, "the card goes under the last answer")
+        XCTAssertEqual(turns[0].files.map(\.path), ["/p/A.swift"])
+        XCTAssertEqual(turns[0].end, t0.addingTimeInterval(9))
+    }
+
     func testACachedCollectGivesTheSameTurnsAndReadsAChangedTurnAgain() {
         let t0 = Date(timeIntervalSince1970: 0)
         let edit = #"{"file_path":"/p/A.swift","old_string":"a","new_string":"b"}"#
