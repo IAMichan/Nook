@@ -134,6 +134,9 @@ extension AppModel {
         - Dates more than two days away. Always read the full year and compare with the current date ("Now").
         - A calendar item or reminder for ongoing work (code, a pull request, a document, a tool or app).
         - Summaries, compliments, generic productivity advice, or describing what they are already doing.
+        - Answering, paying or acting on a mail or message that looks like phishing, a scam or spam (a sender name claiming a \
+        bank, shop, carrier or government from another address, pressure to log in, verify or pay by a deadline, prizes, gift cards). \
+        At most a tip that starts with "Tip:" and says it looks fake and why.
         - Offering something without calling the tool in this same answer. A question without an action is never allowed.
 
         Form: when you take something over, call the tool right away and start your text with one short question of at most \

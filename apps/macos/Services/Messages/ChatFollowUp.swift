@@ -18,6 +18,8 @@ struct ChatFollowUpTurn: Equatable, Sendable {
     /// What the newest message says (its caption for a file); empty when nothing.
     var lastText: String
     var unread: Int
+    /// Their newest messages look like phishing or a scam (`InboxThread.trust`): nothing anyone owes an answer.
+    var suspicious: Bool = false
 
     /// The newest message asks something (`TextKit.asksQuestion`).
     var asksQuestion: Bool { TextKit.asksQuestion(lastText) }
@@ -27,8 +29,12 @@ extension ChatFollowUpTurn {
     /// The same reduction for every app: an `InboxThread` already is the shared shape.
     init(_ thread: InboxThread) {
         let last = thread.messages.last { !$0.isNotice }
+        // Judged only where it could be owed (a recent private chat whose last word is theirs): the list is built on
+        // every draw, and most chats are not that.
+        let candidate = thread.noticeKind == .person && last.map { !$0.isMine && Date().timeIntervalSince($0.date) <= ChatFollowUps.owedUntil } == true
         self.init(chat: thread.id, app: thread.app, name: thread.name, kind: thread.noticeKind, date: last?.date,
-                  lastIsMine: last?.isMine ?? false, lastText: last?.text ?? "", unread: thread.unread)
+                  lastIsMine: last?.isMine ?? false, lastText: last?.text ?? "", unread: thread.unread,
+                  suspicious: candidate && thread.trust.isSuspicious)
     }
 }
 
@@ -97,10 +103,10 @@ struct ChatFollowUps: Codable, Equatable, Sendable {
 
     /// The chats where the last word is theirs and has waited since `owedAfter` (and not longer than `owedUntil`):
     /// questions first, then the oldest. A group, a status update or a channel is not a person waiting on you, and a
-    /// snoozed chat comes back when its time is up.
+    /// snoozed chat comes back when its time is up. A message that looks like phishing or a scam is owed nothing.
     func owed(_ turns: [ChatFollowUpTurn], now: Date) -> [ChatFollowUpTurn] {
         turns.filter { turn in
-            guard turn.kind == .person, !turn.lastIsMine, let date = turn.date, !isSnoozed(turn.chat, now: now) else { return false }
+            guard turn.kind == .person, !turn.lastIsMine, !turn.suspicious, let date = turn.date, !isSnoozed(turn.chat, now: now) else { return false }
             let age = now.timeIntervalSince(date)
             return age >= Self.owedAfter && age <= Self.owedUntil
         }.sorted {

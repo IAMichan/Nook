@@ -515,7 +515,10 @@ final class MailConnector: ContextSource {
         let unread = recent.filter { !$0.read && !waiting.contains($0) }.prefix(8)
         if !unread.isEmpty {
             lines.append("Andere nieuwste ongelezen:")
-            for row in unread { lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))") }
+            for row in unread {
+                let trust = row.trust
+                lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))" + (trust.isSuspicious ? " | " + trust.marker : ""))
+            }
         }
         return lines
     }
@@ -548,7 +551,7 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "inbox_mail",
-                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, the account, its id and the start of the body text. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', 'what happened in my mail' or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, and spam do not. Open a message in full with read_mail and its id; answer it with compose_mail and reply_to set to that id.",
+                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, the account, its id and the start of the body text. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', 'what happened in my mail' or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, spam, phishing and scams do not (a message marked WARNING looks fake: never count it as one to answer). Open a message in full with read_mail and its id; answer it with compose_mail and reply_to set to that id.",
                 schema: ["type": "object", "properties": [
                     "days": ["type": "integer", "description": "How many days back (default 7, at most 30). 1 for today and last night."],
                     "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any],
@@ -668,7 +671,8 @@ final class MailConnector: ContextSource {
                         var body = cached.body
                         if body.count > 12_000 { body = String(body.prefix(12_000)) + "\n… (truncated: the first 12,000 characters)" }
                         let to = cached.recipients.trimmingCharacters(in: CharacterSet(charactersIn: ", "))
-                        return "## \(cached.subject)\nFrom: \(cached.sender)\nTo: \(to)\nDate: \(cached.date)\n\n\(body)\n"
+                        return "## \(cached.subject)\nFrom: \(cached.sender)\nTo: \(to)\nDate: \(cached.date)\n"
+                            + MailConnector.trustLine(sender: cached.sender, subject: cached.subject, body: body) + "\n\(body)\n"
                             + ReferenceParser.line(title: cached.subject.isEmpty ? "(no subject)" : cached.subject, url: MailConnector.messageLink(id),
                                                    detail: "\(MailConnector.name(cached.sender)) · \(String(cached.date.prefix(10)))")
                     }
@@ -728,7 +732,8 @@ final class MailConnector: ContextSource {
                     MailConnector.messageCache[id] = CachedMail(
                         subject: header[0], sender: header[1], recipients: to, date: header[3], body: body, cachedAt: Date()
                     )
-                    return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n\n\(body)\n"
+                    return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n"
+                        + MailConnector.trustLine(sender: header[1], subject: header[0], body: body) + "\n\(body)\n"
                         + ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: MailConnector.messageLink(id),
                                                detail: "\(MailConnector.name(header[1])) · \(String(header[3].prefix(10)))")
                 }
@@ -846,11 +851,19 @@ final class MailConnector: ContextSource {
             let who = sent ? "to \(header[2])" : "from \(header[1])"
             let state = status && !header[2].isEmpty ? " | \(header[2])" : ""
             let id = header[4].trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
-            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\(id.isEmpty ? "" : " [id: \(id)]")\n\(body)")
+            let trust = sent ? nil : MessageTrust.assess(sender: header[1], subject: header[0], body: body)
+            let warning = trust?.isSuspicious == true ? "\n" + trust!.marker : ""
+            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\(id.isEmpty ? "" : " [id: \(id)]")\(warning)\n\(body)")
             refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: messageLink(header[4]),
                                              detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
         }
         return (blocks + refs).joined(separator: "\n\n")
+    }
+
+    /// The warning line `read_mail` puts under a message's header when it looks like phishing or a scam; empty otherwise.
+    nonisolated static func trustLine(sender: String, subject: String, body: String) -> String {
+        let trust = MessageTrust.assess(sender: sender, subject: subject, body: body)
+        return trust.isSuspicious ? trust.marker + "\n" : ""
     }
 
     /// message:%3C…%3E opens the message in Mail. Only with a valid message id, otherwise no link.
