@@ -200,7 +200,7 @@ final class WorkspaceManager: ObservableObject {
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
     /// Codex executables without a usable app-server: their sessions use `codex exec`.
-    var codexExecOnly: Set<String> = []
+    var codexExecOnly = FallbackMarks()
     /// Codex approval requests waiting for you, by Nook's request id.
     var codexRequests: [String: CodexApprovalRequest] = [:]
     /// The latest token totals per Codex session, so a turn's own usage is the difference.
@@ -216,7 +216,7 @@ final class WorkspaceManager: ObservableObject {
     /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
     var acpClients: [UUID: AcpClient] = [:]
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption], call: AcpToolCall)] = [:]
-    var acpFallback: Set<String> = []
+    var acpFallback = FallbackMarks()
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// OpenCode over its own server (`WorkspaceManager+OpenCodeServer`): the servers by account, each session's place on
     /// one, its idle close, the permission requests waiting for you, servers stopping for lack of sessions, and OpenCode
@@ -226,7 +226,7 @@ final class WorkspaceManager: ObservableObject {
     var openCodeIdleClose: [UUID: Task<Void, Never>] = [:]
     var openCodeRequests: [String: (runID: UUID, permission: OpenCodePermission)] = [:]
     var openCodeHostStops: [String: Task<Void, Never>] = [:]
-    var openCodeFallback: Set<String> = []
+    var openCodeFallback = FallbackMarks()
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
     /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
@@ -873,6 +873,8 @@ final class WorkspaceManager: ObservableObject {
             onTurnFinished?(run)
             // Not while a message still waits to go out to it: then it reports after that turn (`sendQueued`).
             deliverDelegatedResult(id)
+            // Its own tasks that ended while it could not take their result (stopped by you) report now.
+            if run.status == .completed { deliverWaitingResults(of: id) }
         }
         captureCheckpoint(id)
         scheduleIdleCompaction(id)
@@ -1240,6 +1242,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
+        // Saved at once (`RunDurability`): a crash before the turn has ended must not make it read as cut off.
+        if run(id)?.status.isActive == true { update(id) { $0.stopRequestedAt = Date() } }
         stopDelegatedChildren(of: id)
         if cancelWaitingTurn(id) { return }
         if let task = prepareTasks.removeValue(forKey: id) {
@@ -1614,8 +1618,15 @@ final class WorkspaceManager: ObservableObject {
         // A summary Nook runs on its own is no activity of yours: the session keeps its place in the list, its "last
         // active" and its read state, instead of jumping up while it runs and landing first among the idle ones after.
         if idleCompacting.contains(id) { run.updatedAt = runs[index].updatedAt }
+        let atOnce = save && runsLoaded && RunDurability.savesAtOnce(runs[index], run)
         runs[index] = run
-        if save { scheduleSave() }
+        if atOnce {
+            timelineStore.saveTask?.cancel()
+            timelineStore.saveTask = nil
+            writeRuns(runs)
+        } else if save {
+            scheduleSave()
+        }
         // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.
         if freedPlace, !capacity.isEmpty {
             Task { @MainActor [weak self] in self?.startWaitingTurns() }

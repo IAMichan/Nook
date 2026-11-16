@@ -211,8 +211,9 @@ private struct AgentListBuilder {
             agent: run.provider.displayName,
             account: account(app.profile(for: run)),
             status: status,
-            // Working also covers subagents that outlive their turn: the badge counts on from the turn that started them.
-            started: attention == .working ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
+            // Working also covers subagents that outlive their turn: without a running turn the badge counts from when the
+            // turn ended, never from when the conversation was created (a chat reopened days later read "working 3d").
+            started: attention == .working ? (run.turnStartedAt ?? run.updatedAt) : run.updatedAt,
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
             unseen: attention == .ready,
@@ -266,9 +267,9 @@ private struct AgentListBuilder {
             agent: session.name,
             account: account(app.profile(for: session)),
             status: status,
-            // Busy: how long this turn runs, not how long ago the session started.
+            // Busy: how long this turn runs, not how long ago the session or its conversation started (a resumed old chat).
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
-                : (session.turnStarted ?? session.compactingSince ?? session.started ?? known?.started),
+                : (session.turnStarted ?? session.compactingSince ?? session.updated ?? session.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && mayBeUnseen(session.updated),

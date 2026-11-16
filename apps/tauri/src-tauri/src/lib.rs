@@ -25,6 +25,10 @@ pub fn run() {
         // Eén Nook tegelijk: een tweede start haalt het venster van de eerste naar voren.
         builder = builder
             .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                // The task that keeps Nook running starts it every minute; while it runs, that start ends quietly.
+                if args.iter().any(|a| a == companion::background::BACKGROUND_ARG) {
+                    return;
+                }
                 platform::desktop::show_main(app, platform::desktop::route_from_args(&args).unwrap_or("chat"))
             }))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -133,6 +137,10 @@ pub fn run() {
             commands::companion::companion_set_apns,
             commands::companion::companion_remove_apns_key,
             commands::companion::companion_push_test,
+            commands::companion::companion_set_relay,
+            commands::companion::companion_test_relay,
+            commands::companion::companion_set_keep_awake,
+            commands::companion::companion_set_background,
             commands::companion::companion_client,
             commands::companion::companion_client_pair,
             commands::companion::companion_client_unpair,

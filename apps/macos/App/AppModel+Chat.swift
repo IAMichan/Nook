@@ -664,7 +664,8 @@ extension AppModel {
             // A scheduled run's plan always waits for the user's own click, whatever the access level: nobody asked just now.
             if !ScheduledTaskStore.shared.isScheduledReply(id),
                canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
-            nookFinished(conversation)
+            // A scheduled run that carries out steps by itself gives its notice once they ran (`ScheduledTaskStore`).
+            if !ScheduledTaskStore.shared.defersNotice(id) { nookFinished(conversation) }
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
             nameAfterFirstAnswer(question: text, reply: id, conversation: conversation)

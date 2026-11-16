@@ -124,8 +124,9 @@ Core logic (source scoping, action validation, tool loop, session registry, work
 A maintainer publishes a release from **Actions › Release › Run workflow**, choosing what to bump: the next beta
 (`v0.1.0-beta.1` → `v0.1.0-beta.2`, the default), or the first beta of the next patch, minor, or major version
 (`scripts/next-release-tag.sh` picks the tag). A tag with a `-beta.N` suffix becomes a pre-release. The release page lists
-the merged pull requests grouped by label (`.github/release.yml`); before releasing, move the **Unreleased** section of
-[CHANGELOG.md](CHANGELOG.md) under the new version. Signing is described in [docs/CI.md](docs/CI.md#release-signing-releaseyml).
+the merged pull requests grouped by label (`.github/release.yml`). Once the release is public, the workflow opens a
+pull request that moves the entries it shipped from **Unreleased** in [CHANGELOG.md](CHANGELOG.md) under the new version
+and merges it by itself; a stable release folds its betas into one section. Signing is described in [docs/CI.md](docs/CI.md#release-signing-releaseyml).
 
 ## Pull Request Guidelines
 

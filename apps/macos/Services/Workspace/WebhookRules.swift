@@ -300,6 +300,33 @@ struct WebhookDedupe: Codable, Equatable, Sendable {
     }
 }
 
+/// A delivery that was accepted (the sender got its "accepted") but had not started its run yet, as saved with the
+/// tasks: in the task's queue, or the latest of an open coalesce window. The sender does not send it again, and the
+/// listener refuses its delivery id if it did, so without this a quit or a crash would lose it.
+struct SavedWebhookDelivery: Codable, Equatable, Sendable {
+    var id: String
+    var body: Data
+    var headers: [String: String]
+    var receivedAt: Date
+    /// Deliveries a coalesce window folded into this one.
+    var combined: Int
+
+    /// Older than this at launch and it is not news any more: it is not run.
+    static let maxAge: TimeInterval = 24 * 3600
+
+    /// What runs after a launch: per task that still takes webhooks, its saved deliveries that are not too old, oldest
+    /// first, at most what its queue holds (`WebhookQueue.maxQueuedPerTask`).
+    static func restore(_ saved: [UUID: [SavedWebhookDelivery]], webhookTasks: Set<UUID>,
+                        now: Date) -> [UUID: [SavedWebhookDelivery]] {
+        var out: [UUID: [SavedWebhookDelivery]] = [:]
+        for (task, list) in saved where webhookTasks.contains(task) {
+            let fresh = list.filter { now.timeIntervalSince($0.receivedAt) <= maxAge }.sorted { $0.receivedAt < $1.receivedAt }
+            if !fresh.isEmpty { out[task] = Array(fresh.prefix(WebhookQueue.maxQueuedPerTask)) }
+        }
+        return out
+    }
+}
+
 /// A burst of deliveries folded into one run: the window opens with the first delivery and closes `seconds` later
 /// (later deliveries do not extend it); the run gets the latest delivery and how many came in.
 struct WebhookCoalescer<Delivery: Sendable>: Sendable {

@@ -12,8 +12,10 @@ pub mod backend;
 pub mod client;
 #[cfg(test)]
 mod fixtures;
+pub mod keep_awake;
 pub mod models;
 pub mod push;
+pub mod relay;
 pub mod seal;
 pub mod server;
 pub mod sessions;
@@ -517,6 +519,174 @@ mod tests {
         let room = super::transport::relay_room(&link.key);
         assert_eq!(rooms.lock().unwrap()[0], format!("/v1/rooms/{room}?role=phone"));
         assert_eq!(phone.decide("S1", "p2", true).await.route, "relay");
+    }
+
+    /// The computer as a server away from home (`relay::RelayHost`): it dials out to the relay and keeps a room per
+    /// phone, so a phone that reaches none of its addresses pairs and works through the relay. The relay here speaks
+    /// the real mux (`apps/relay/worker/room.js`): the computer's socket carries `[kind][connection][payload]`, the
+    /// phone's the payload alone.
+    #[tokio::test]
+    #[allow(clippy::result_large_err)] // tungstenite's handshake callback returns its own large error type
+    async fn the_computer_serves_phones_through_its_relay_rooms() {
+        use super::relay::{mux_decode, mux_encode, MuxKind, RelayHost, RelayStatus};
+        use futures_util::{SinkExt, StreamExt};
+        use std::collections::HashMap;
+        use tokio::sync::mpsc;
+        use tokio_tungstenite::tungstenite::Message;
+
+        type Out = mpsc::UnboundedSender<Message>;
+        #[derive(Default)]
+        struct Rooms {
+            macs: HashMap<String, Out>,
+            phones: HashMap<(String, u32), Out>,
+            next: u32,
+        }
+        let rooms = Arc::new(Mutex::new(Rooms::default()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let shared = rooms.clone();
+        tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                let rooms = shared.clone();
+                tokio::spawn(async move {
+                    let path = Arc::new(Mutex::new(String::new()));
+                    let p = path.clone();
+                    let ws = tokio_tungstenite::accept_hdr_async(
+                        socket,
+                        move |req: &tokio_tungstenite::tungstenite::handshake::server::Request, res| {
+                            *p.lock().unwrap() = req.uri().to_string();
+                            Ok(res)
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    let path = path.lock().unwrap().clone();
+                    let room = path.trim_start_matches("/v1/rooms/").split('?').next().unwrap().to_string();
+                    let mac = path.ends_with("role=mac");
+                    let (mut sink, mut stream) = ws.split();
+                    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+                    tokio::spawn(async move {
+                        while let Some(m) = rx.recv().await {
+                            if sink.send(m).await.is_err() {
+                                return;
+                            }
+                        }
+                    });
+                    let connection = if mac {
+                        rooms.lock().unwrap().macs.insert(room.clone(), tx.clone());
+                        0
+                    } else {
+                        let mut r = rooms.lock().unwrap();
+                        let Some(mac) = r.macs.get(&room).cloned() else {
+                            let _ = tx.send(Message::Close(Some(tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                                code: 4404.into(),
+                                reason: "".into(),
+                            })));
+                            return;
+                        };
+                        r.next += 1;
+                        let c = r.next;
+                        r.phones.insert((room.clone(), c), tx.clone());
+                        let _ = mac.send(Message::Binary(mux_encode(MuxKind::Open, c, &[]).into()));
+                        c
+                    };
+                    while let Some(Ok(message)) = stream.next().await {
+                        match message {
+                            Message::Text(t) if t.as_str() == "ping" => {
+                                let _ = tx.send(Message::Text("pong".into()));
+                            }
+                            Message::Binary(b) if mac => {
+                                let Some((kind, c, payload)) = mux_decode(&b) else { continue };
+                                let phone = rooms.lock().unwrap().phones.get(&(room.clone(), c)).cloned();
+                                if let Some(phone) = phone {
+                                    let _ = phone.send(match kind {
+                                        MuxKind::Data => Message::Binary(payload.to_vec().into()),
+                                        _ => Message::Close(None),
+                                    });
+                                }
+                            }
+                            Message::Binary(b) => {
+                                let mac = rooms.lock().unwrap().macs.get(&room).cloned();
+                                if let Some(mac) = mac {
+                                    let _ = mac.send(Message::Binary(mux_encode(MuxKind::Data, connection, &b).into()));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !mac {
+                        let mac = rooms.lock().unwrap().macs.get(&room).cloned();
+                        if let Some(mac) = mac {
+                            let _ = mac.send(Message::Binary(mux_encode(MuxKind::Close, connection, &[]).into()));
+                        }
+                    }
+                });
+            }
+        });
+
+        let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+        store.set_enabled(true);
+        let pc = Arc::new(CompanionServer::new(store.clone(), Arc::new(FakeWorkspace::default()), None, "Windows-pc".into()));
+        let ServerState::Listening { port } = pc.apply().await else { panic!() };
+        let host = RelayHost::new(pc.clone(), tokio::runtime::Handle::current());
+        // No paired phone and no pairing window: no room, nothing to connect.
+        host.apply(true, Some(&relay));
+        assert_eq!(host.status(), RelayStatus::Off);
+        assert_eq!(host.advertised(), relay);
+        pc.set_reach(server::Reach {
+            hosts: vec![server::ReachHost { host: "100.101.1.2".into(), tailnet: true }],
+            relay: host.advertised(),
+        });
+
+        // A pairing window opens a room; the code carries the relay and the Tailscale address.
+        let mut link = pc.pairing_link("127.0.0.2").unwrap();
+        assert_eq!(link.relay.as_deref(), Some(relay.as_str()));
+        assert_eq!(link.alternates, vec!["100.101.1.2".to_string()]);
+        host.apply(true, Some(&relay));
+        for _ in 0..100 {
+            if host.status() == RelayStatus::Connected {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(host.status(), RelayStatus::Connected);
+
+        // The phone reaches none of the addresses, so it pairs through the relay.
+        link.port = 9;
+        link.alternates.clear();
+        let phone = CompanionClient::new(Arc::new(MemorySecrets::default()), Arc::new(DnsResolver));
+        let s = phone.pair(&link.url(), "iPhone").await;
+        assert_eq!(s.phase, Phase::Connected, "{:?}", s.notice);
+        assert_eq!(s.route, "relay");
+        assert_eq!(s.mac_name, "Windows-pc");
+        assert_eq!(store.devices().len(), 1);
+
+        // Paired: the pairing window's room goes, the phone's own room comes, and actions work through it.
+        host.apply(true, Some(&relay));
+        let room = super::transport::relay_room(&store.key(&store.devices()[0].id).unwrap());
+        for _ in 0..100 {
+            if rooms.lock().unwrap().macs.contains_key(&room) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let s = phone.decide("S1", "p2", true).await;
+        assert_eq!(s.route, "relay", "{:?}", s.notice);
+        assert!(s.notice.is_none(), "{:?}", s.notice);
+
+        // Settings' *Test relay* takes the same way round.
+        assert!(host.test().await.is_ok());
+
+        // `list` tells the phone where else the computer is, and which relay it uses.
+        let reach = pc.reach();
+        assert_eq!(reach.relay, relay);
+        let _ = port;
+
+        // Off: every room closes, and phones are told to drop the relay.
+        host.apply(false, Some(&relay));
+        assert_eq!(host.status(), RelayStatus::Off);
+        assert_eq!(host.advertised(), "");
     }
 
     /// The push key and a sealed push as the Mac makes them (the vectors of `RelayPushTests` on the Mac, made outside

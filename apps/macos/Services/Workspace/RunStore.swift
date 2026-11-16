@@ -743,6 +743,19 @@ enum RestartRequests {
         }
     }
 
+    /// The queues as they are saved: a message you sent "now", waiting outside its queue while the turn it interrupts
+    /// stops, goes in front of its session's queue.
+    static func queues(_ queues: [UUID: MessageQueue], sendingNow: [UUID: String], fresh: Set<UUID>) -> [UUID: MessageQueue] {
+        guard !sendingNow.isEmpty else { return queues }
+        var all = queues
+        for (id, text) in sendingNow {
+            var queue = all[id] ?? MessageQueue()
+            queue.requeueFirst(text, fresh: fresh.contains(id))
+            all[id] = queue
+        }
+        return all
+    }
+
     /// Takes what was saved out of the loaded sessions, by session.
     static func take(_ runs: inout [WorkspaceRun]) -> [UUID: Saved] {
         var saved: [UUID: Saved] = [:]

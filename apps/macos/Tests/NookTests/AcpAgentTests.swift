@@ -63,6 +63,9 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertFalse(AcpRPC.autoAllows(call("execute"), permission: .acceptEdits, mode: .agent))
         XCTAssertTrue(AcpRPC.autoAllows(call("execute"), permission: .bypass, mode: .agent))
         XCTAssertFalse(AcpRPC.autoAllows(call("edit"), permission: .bypass, mode: .plan), "plan mode only reads")
+        XCTAssertFalse(AcpRPC.autoAllows(call("fetch"), permission: .ask, mode: .plan), "plan mode never allows more than ask")
+        XCTAssertTrue(AcpRPC.autoAllows(call("fetch"), permission: .acceptEdits, mode: .plan))
+        XCTAssertTrue(AcpRPC.autoAllows(call("read"), permission: .ask, mode: .plan))
     }
 
     func testUpdatesBecomeEvents() {

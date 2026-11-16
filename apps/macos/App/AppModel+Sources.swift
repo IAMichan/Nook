@@ -101,15 +101,22 @@ extension AppModel {
     }
 
     func sendMail(_ draft: MailDraft) {
+        Task { await deliverMail(draft) }
+    }
+
+    /// Sends a draft and records it; true when it went. `approval`: who said yes, for the audit log (a scheduled task
+    /// that sends by itself names itself).
+    @discardableResult
+    func deliverMail(_ draft: MailDraft, approval: String? = nil) async -> Bool {
         chat.updateMail(draft.id) { $0 = draft; $0.state = .sending }
-        Task {
-            do {
-                try await MailSender.deliver(draft, send: true)
-                store.audit(tool: "send_mail", args: "\(draft.to) · \(draft.subject)", result: "verstuurd")
-                chat.updateMail(draft.id) { $0.state = .sent }
-            } catch {
-                chat.updateMail(draft.id) { $0.state = .failed(error.localizedDescription) }
-            }
+        do {
+            try await MailSender.deliver(draft, send: true)
+            store.audit(tool: "send_mail", args: "\(draft.to) · \(draft.subject)" + (approval.map { " · \($0)" } ?? ""), result: "verstuurd")
+            chat.updateMail(draft.id) { $0.state = .sent }
+            return true
+        } catch {
+            chat.updateMail(draft.id) { $0.state = .failed(error.localizedDescription) }
+            return false
         }
     }
 

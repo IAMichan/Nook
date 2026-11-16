@@ -313,4 +313,23 @@ final class CompanionResilienceTests: XCTestCase {
         settled.settle("q", at: Date())
         XCTAssertEqual(settled.hiding([waiting(["q"], attention: "failed")], now: Date()).first?.attention, "failed")
     }
+
+    /// A phone that keeps up gets every live update; one that falls behind waits, so memory does not grow with it.
+    func testLiveUpdatesWaitForASlowPhone() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: 0, heldSince: nil, now: now), .send)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: StreamBackpressure.waitAbove, heldSince: nil, now: now), .send)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: StreamBackpressure.waitAbove + 1, heldSince: nil, now: now), .wait)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: StreamBackpressure.waitAbove + 1, heldSince: now.addingTimeInterval(-60), now: now), .wait)
+    }
+
+    /// A connection that stays stuck, or holds far more than any update needs, is dropped so the phone starts afresh.
+    func testAStuckConnectionIsDropped() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let stuck = now.addingTimeInterval(-StreamBackpressure.patience - 1)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: StreamBackpressure.waitAbove + 1, heldSince: stuck, now: now), .drop)
+        XCTAssertEqual(StreamBackpressure.verdict(pending: StreamBackpressure.dropAbove + 1, heldSince: nil, now: now), .drop)
+        // One that caught up is fine again, however long it waited before.
+        XCTAssertEqual(StreamBackpressure.verdict(pending: 10, heldSince: stuck, now: now), .send)
+    }
 }

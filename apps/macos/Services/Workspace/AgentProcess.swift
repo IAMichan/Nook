@@ -296,7 +296,7 @@ final class AgentProcess: @unchecked Sendable {
     /// What went over stdio, when Settings › Workspace asks for it (see `ProviderTrafficLog`).
     let trafficLog: ProviderTrafficLog?
     private let queue = DispatchQueue(label: "nook.agent-process")
-    private var buffer = Data()
+    private var lines = StdoutLines()
     private var stderrTail = Data()
     private let lock = NSLock()
     private var finished = false
@@ -537,23 +537,14 @@ final class AgentProcess: @unchecked Sendable {
     }
 
     private func consume(_ data: Data) {
-        // What is left in the buffer holds no newline, so only the new bytes need searching for the first one; the
-        // consumed lines are dropped in one go at the end. Removing each line on its own shifted the rest of the buffer
-        // every time, and rescanning a long line from its start for every chunk made both quadratic in the output size.
-        var from = buffer.endIndex
-        buffer.append(data)
-        var start = buffer.startIndex
-        var batch: [String] = []
-        while let newline = buffer[from...].firstIndex(of: 0x0A) {
-            let lineData = buffer[start..<newline]
-            let line = String(decoding: lineData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !line.isEmpty { batch.append(line) }
-            start = newline + 1
-            from = start
-        }
+        let droppedBefore = lines.dropped
+        let (batch, taken) = lines.take(data)
         batchStart = consumed
-        consumed += UInt64(buffer.distance(from: buffer.startIndex, to: start))
-        if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
+        consumed += UInt64(taken)
+        if lines.dropped > droppedBefore {
+            // Said with the exit, so a turn that ends for want of that line says why.
+            stderrTail.append(Data("\nNook skipped an output line longer than \(StdoutLines.maxLine >> 20) MB.\n".utf8))
+        }
         guard !batch.isEmpty else { return }
         if let trafficLog { for line in batch { trafficLog.inbound(line) } }
         if let onLines {
@@ -564,15 +555,69 @@ final class AgentProcess: @unchecked Sendable {
     }
 
     private func flushRemainder() {
-        guard !buffer.isEmpty else { return }
-        let line = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        buffer.removeAll()
-        guard !line.isEmpty else { return }
+        guard let line = lines.remainder() else { return }
         trafficLog?.inbound(line)
         if let onLines {
             onLines([line])
         } else {
             onLine?(line)
         }
+    }
+}
+
+/// Splits an agent's stdout into lines. What is left holds no newline, so only new bytes are searched for the next one,
+/// and the lines taken are dropped in one go: removing each on its own shifted the rest of the buffer every time, and
+/// rescanning a long line from its start for every chunk made both quadratic in the output size. A line longer than
+/// `maxLine` (an agent printing a huge file on one line, or binary data with no newline) is skipped up to its end
+/// instead of growing the buffer without bound; `dropped` counts them.
+struct StdoutLines {
+    static let maxLine = 64 << 20
+
+    private var buffer = Data()
+    /// Inside a line that was too long: bytes go until its newline.
+    private var skipping = false
+    private(set) var dropped = 0
+    let maxLine: Int
+
+    init(maxLine: Int = StdoutLines.maxLine) { self.maxLine = maxLine }
+
+    /// The complete lines in `data` with what came before it (trimmed, blank ones left out), and how many bytes are now
+    /// done with: taken as lines or skipped (`AgentProcess.consumed`).
+    mutating func take(_ data: Data) -> (lines: [String], consumed: Int) {
+        var data = data[...]
+        var taken = 0
+        if skipping {
+            guard let newline = data.firstIndex(of: 0x0A) else { return ([], data.count) }
+            taken = data.distance(from: data.startIndex, to: newline) + 1
+            data = data[(newline + 1)...]
+            skipping = false
+        }
+        var from = buffer.endIndex
+        buffer.append(contentsOf: data)
+        var start = buffer.startIndex
+        var batch: [String] = []
+        while let newline = buffer[from...].firstIndex(of: 0x0A) {
+            let line = String(decoding: buffer[start..<newline], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !line.isEmpty { batch.append(line) }
+            start = newline + 1
+            from = start
+        }
+        taken += buffer.distance(from: buffer.startIndex, to: start)
+        if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
+        if buffer.count > maxLine {
+            taken += buffer.count
+            buffer.removeAll()
+            skipping = true
+            dropped += 1
+        }
+        return (batch, taken)
+    }
+
+    /// The last line, which had no newline after it (the process ended); nil when there is none.
+    mutating func remainder() -> String? {
+        defer { buffer.removeAll(); skipping = false }
+        guard !skipping, !buffer.isEmpty else { return nil }
+        let line = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
     }
 }

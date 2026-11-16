@@ -60,7 +60,8 @@ extension WorkspaceBridge {
             lines.append(all ? "There are no scheduled tasks." : "No scheduled tasks for your folder or session (all: true lists every task).")
         }
         for task in tasks {
-            lines.append(BridgeScheduleArguments.render(task, permission: store.permission(for: task.id), running: store.isRunning(task.id)))
+            lines.append(BridgeScheduleArguments.render(task, permission: store.permission(for: task.id), running: store.isRunning(task.id),
+                                                           autonomy: store.autonomy(for: task.id)))
         }
         return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
     }
@@ -175,7 +176,7 @@ extension WorkspaceBridge {
         store.save(updated, permission: permission)
         audit(.updateScheduledTask, caller, updated.title, "gewijzigd")
         let saved = store.task(change.id) ?? updated
-        return BridgeRPC.ToolResult(text: "Changed.\n" + BridgeScheduleArguments.render(saved, permission: permission, running: store.isRunning(saved.id)))
+        return BridgeRPC.ToolResult(text: "Changed.\n" + BridgeScheduleArguments.render(saved, permission: permission, running: store.isRunning(saved.id), autonomy: store.autonomy(for: saved.id)))
     }
 
     func runScheduledTaskNow(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {

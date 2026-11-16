@@ -78,6 +78,16 @@ struct SessionCommandReceipts: Codable, Equatable, Sendable {
         return receipt
     }
 
+    /// Sets what a command did once it is done: a command claimed before it ran (`WorkspaceManager.claimCommand`) gets
+    /// its real outcome. One not kept yet is recorded.
+    @discardableResult
+    mutating func settle(_ id: String, _ outcome: SessionCommandOutcome, created: String? = nil, now: Date = Date()) -> Receipt {
+        guard let index = receipts.lastIndex(where: { $0.id == id }) else { return record(id, outcome, created: created, now: now) }
+        receipts[index].outcome = outcome
+        if let created { receipts[index].created = created }
+        return receipts[index]
+    }
+
     /// The receipts kept at `url`; none when the file is missing or unreadable.
     static func load(from url: URL, now: Date = Date()) -> SessionCommandReceipts {
         guard let data = try? Data(contentsOf: url),

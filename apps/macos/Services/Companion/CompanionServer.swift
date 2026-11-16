@@ -39,6 +39,8 @@ final class CompanionServer: ObservableObject {
     private var conversationWatch: AnyCancellable?
     /// A look at the live conversations is planned, after one waited for a slow connection.
     private var conversationRetry = false
+    /// A live update waits for a phone that is behind (`mayPush`): one more pass is on its way.
+    private var streamRetry = false
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
     private var timelinePushRunning = false
@@ -426,7 +428,7 @@ final class CompanionServer: ObservableObject {
         guard let app, !streams.isEmpty else { return }
         let sessions = digests(app)
         for peer in streams where peer.sent != sessions {
-            guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID else { continue }
+            guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID, mayPush(peer) else { continue }
             peer.seq += 1
             peer.sent = sessions
             send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport,
@@ -447,7 +449,7 @@ final class CompanionServer: ObservableObject {
         var conversations: [ChatDigest]?
         var lines: [String: (lines: [InboxLine], typing: [InboxTypist])?] = [:]
         for peer in streams {
-            guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID else { continue }
+            guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID, mayPush(peer) else { continue }
             let granted = scopes(of: deviceID)
             var update = CompanionResponse(id: id, ok: true)
             var changed = false
@@ -543,6 +545,33 @@ final class CompanionServer: ObservableObject {
         }
     }
 
+    /// Whether a live update goes to this phone now (`StreamBackpressure`). A phone that is behind gets nothing new until
+    /// its connection took what waits: what it was not sent stays unsent (`sent…` is left alone), so the next pass sends
+    /// all that changed as one update, and memory never grows with a slow phone. A connection stuck for too long is
+    /// dropped: the phone connects again and starts from a fresh snapshot.
+    private func mayPush(_ peer: CompanionPeer) -> Bool {
+        switch StreamBackpressure.verdict(pending: peer.transport.pending, heldSince: peer.heldSince) {
+        case .send:
+            peer.heldSince = nil
+            return true
+        case .wait:
+            if peer.heldSince == nil { peer.heldSince = Date() }
+            if !streamRetry {
+                streamRetry = true
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    self?.streamRetry = false
+                    self?.pushChanges()
+                }
+            }
+            return false
+        case .drop:
+            CompanionDiagnosticsLog.mac.record("streamStuck", ["device": peer.deviceID ?? "", "pending": String(peer.transport.pending)])
+            peer.transport.cancel()
+            return false
+        }
+    }
+
     /// More than this waiting on a phone's connection and the live conversation waits for it (`pushConversations`).
     static let conversationBacklog = 24 * 1024
 
@@ -583,7 +612,7 @@ final class CompanionServer: ObservableObject {
                 timelinePushAgain = false
                 for peer in streams {
                     guard let session = peer.watch, let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID,
-                          let entries = await timelineEntries(session, app: app),
+                          mayPush(peer), let entries = await timelineEntries(session, app: app),
                           peer.watch == session, entries != peer.sentTimeline else { continue }
                     let change = TimelineDelta.delta(from: peer.sentTimeline, to: entries)
                     // A tail too big for one answer goes whole instead, which `newestFitting` already cut to size.
@@ -696,6 +725,7 @@ final class CompanionServer: ObservableObject {
             // "Always" only where the request offers it, as on the Mac (`ApprovalRequest.canAlways`).
             let always = allow && request.always == true
             if always, !pending.canAlways { return .failure(request.id, .notAllowedFromPhone) }
+            _ = workspace.claimCommand(command, provisional: .decided)
             app.approvals.decide(run: runID, requestID: pending.id, allow ? (always ? .always : .allow) : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
             workspace.recordCommand(command, .decided)
@@ -715,6 +745,7 @@ final class CompanionServer: ObservableObject {
             }
             // A free answer only where the agent accepts one; otherwise it has to be one of the options.
             if !first.allowsOther, !first.options.contains(where: { $0.label == text }) { return .failure(request.id, .badRequest) }
+            _ = workspace.claimCommand(command, provisional: .answered)
             workspace.answer(runID, questionID: question.id, answers: [first.id: [text]])
             workspace.recordCommand(command, .answered)
             audit("answer", workspace.run(runID)?.title ?? "")
@@ -960,6 +991,8 @@ final class CompanionPeer {
     var sentMessages: [ChatLine]?
     /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
     var compression = false
+    /// Since when live updates wait for this phone's connection to catch up (`StreamBackpressure`); nil while it keeps up.
+    var heldSince: Date?
 
     init(_ transport: CompanionTransport, counted: Bool) {
         self.transport = transport

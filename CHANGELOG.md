@@ -5,11 +5,17 @@ and versions follow [Semantic Versioning](https://semver.org) with `-beta.N` pre
 
 Every [GitHub release](https://github.com/IAMichan/nook/releases) also lists each merged pull request, grouped by label
 (see `.github/release.yml`). This file is the short, human-written summary: when your pull request changes something a
-user or contributor notices, add a line under **Unreleased**. At release time that section becomes the new version.
+user or contributor notices, add a line under **Unreleased**. When a release is published, the release workflow moves
+the entries it shipped under its version (`scripts/changelog-release.py`); a stable release gathers its betas.
 
 ## Unreleased
 
 ### Added
+
+- The changelog keeps up with the releases by itself: once a release is public, the release workflow opens a pull
+  request that moves the **Unreleased** entries it shipped under its version and merges it when `Check` passes. Entries
+  merged while the release was building wait for the next one, and a stable release gathers its betas into one
+  section (`scripts/changelog-release.py`).
 
 - One composer for Nook's web surfaces: the browser extension's side panel now writes with the same composer as the
   Windows and Linux app (packages/web-ui). In the browser you can paste, drop or pick pictures to ask about, bring back

@@ -4,6 +4,7 @@
   import { companion, type CompanionInfo } from "../../lib/companion";
   import { relativeTime } from "../../lib/state.svelte";
   import CompanionPush from "./CompanionPush.svelte";
+  import CompanionAway from "./CompanionAway.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
   let info = $state<CompanionInfo | null>(null);
@@ -120,6 +121,8 @@
         "The phone has to be on the same network (or through a VPN like Tailscale; then pick that address). If your firewall asks whether Nook may receive connections, allow it for your private network.",
       )}
     </p>
+
+    {#if info.away}<CompanionAway {info} onchange={(i) => (info = i)} />{/if}
 
     <h3>{tr("Meldingen op de iPhone", "Notifications on iPhone")}</h3>
     {#if info.push}<CompanionPush {info} onchange={(i) => (info = i)} />{/if}
