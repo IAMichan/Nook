@@ -1,12 +1,14 @@
 import SwiftUI
 import AppKit
 
-/// All your Nooks, listed the way the Agents tab lists sessions: a header with the new-Nook button, a search, pinned
-/// conversations first, then the rest, and the archive docked at the foot of the list, opening upwards, as the settled
-/// sessions are. Each row is a card with the title, the status as the same badge the agents use (working, needs you,
-/// new answer) or how long ago, and the last answer underneath. Pin and archive appear on hover, in the badge's place,
-/// so nothing shifts; right-click for the rest. The work Nook does on its own has a tab of its own beside the
-/// conversations (`NookListPart`), so many scheduled tasks never push the conversations down.
+/// All your Nooks, listed the way the Agents tab lists sessions: a header whose title is the two parts of the list as
+/// tabs (conversations, and the work Nook does on its own: `NookListPart`) with the new-Nook button, a search, then
+/// "For you": a card with what asks something of you (a new answer, a run waiting for your yes, one still working),
+/// each with the agents' badge and the line that says what it did. Below it the pinned ones and the rest by age, one
+/// line each (title and how long ago; the last answer is on the hover card), and the archive docked at the foot of the
+/// list, opening upwards, as the settled sessions are. A scheduled task's run shows here only while it asks something
+/// of you (or when pinned, or found by a search); otherwise its task's row in the Scheduled tab opens it. Pin and
+/// archive appear on hover, in the badge's place, so nothing shifts; right-click for the rest.
 struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -27,19 +29,17 @@ struct NookList: View {
     static var keptPart = NookListPart.conversations
 
     var body: some View {
-        let items = chat.list(query: query, showArchived: false)
         // The archive (up to 500) is sorted only while its shelf is open; closed, it shows a count.
         let archived = showArchived ? chat.list(query: query, showArchived: true) : []
         let archivedCount = showArchived ? archived.count : chat.count(query: query, showArchived: true)
-        let pinned = items.filter(\.pinned)
-        let rest = items.filter { !$0.pinned }
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
+        let items = attention + pinned + rest
         // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
-        let shown = (pinned + rest + (showArchived ? archived : [])).map(\.id)
+        let shown = (attention + pinned + rest + (showArchived ? archived : [])).map(\.id)
         VStack(alignment: .leading, spacing: 8) {
             header
                 .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
                                confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
-            partTabs
             // Selecting several Nooks starts with a ⌘- or ⇧-click on a row, so it needs no button here.
             searchField
             if part == .scheduled {
@@ -58,6 +58,12 @@ struct NookList: View {
                                 LazyVStack(alignment: .leading, spacing: 2) {
                                     if items.isEmpty && (archivedCount == 0 || !showArchived) {
                                         ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
+                                    }
+                                    // What asks something of you (a new answer, a run waiting for your yes, one still
+                                    // working) on a card of its own on top, so it never hides between the read ones.
+                                    if !attention.isEmpty {
+                                        attentionCard(attention, now: context.date, shown: shown)
+                                            .padding(.bottom, NookTheme.Spacing.sm)
                                     }
                                     if !pinned.isEmpty {
                                         sectionLabel(tr("nooks.section.pinned"))
@@ -116,9 +122,9 @@ struct NookList: View {
 
     /// The rows as `body` shows them, top to bottom, as they are right now.
     private func shownNow() -> [UUID] {
-        let items = chat.list(query: query, showArchived: false)
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
         let archived = showArchived ? chat.list(query: query, showArchived: true) : []
-        return (items.filter(\.pinned) + items.filter { !$0.pinned } + archived).map(\.id)
+        return (attention + pinned + rest + archived).map(\.id)
     }
 
     /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
@@ -163,9 +169,11 @@ struct NookList: View {
 
     // MARK: Header and search
 
-    /// "Nook" with the button that starts a new one, as "Agents" has.
+    /// The two parts of the list as the title, with the button that starts a new Nook on the right, as "Agents" has.
     private var header: some View {
-        PanelListHeader(tr("tab.nook"), sidebarTitle: tr("sidebar.conversations")) {
+        PanelTabHeader(items: partItems, selected: part, onSelect: { value in
+            withAnimation(NookTheme.swap) { part = value }
+        }) {
             PanelNewButton(label: tr("nooks.newHelp"), active: chat.isEmpty) { app.newChat() }
                 .keyCommand("session.new") { app.newChat() }
         }
@@ -177,24 +185,38 @@ struct NookList: View {
 
     /// Conversations and scheduled tasks as two tabs, so they never mix. The Scheduled tab carries an amber count of the
     /// runs that wait for your approval, or a dot while a run left an answer you have not read.
-    private var partTabs: some View {
+    private var partItems: [NookTabBar<NookListPart>.Item] {
         let nookTasks = tasks.tasks.filter { $0.target.isNook }
         let runs = nookTasks.compactMap { chat.conversation(forTask: $0.id)?.status }
-        let items: [NookTabBar<NookListPart>.Item] = [
+        return [
             .init(value: .conversations, title: tr("nooks.tab.conversations")),
             .init(value: .scheduled, title: tr("nookTask.section"), fresh: runs.contains(.unread),
                   count: runs.filter { $0 == .waiting }.count,
                   help: nookTasks.isEmpty ? nil : tr("nookTask.tab.help", nookTasks.count)),
         ]
-        return NookTabBar(items: items, selected: part, onSelect: { value in
-            withAnimation(NookTheme.swap) { part = value }
-        }, segmented: true)
     }
 
     // MARK: Sections
 
     private func sectionLabel(_ title: String) -> some View {
         NookSectionLabel(title).padding(.bottom, NookTheme.Spacing.xxs)
+    }
+
+    /// "For you": the Nooks that ask something of you, on a card above the rest, each with its badge (new answer, needs
+    /// you, working) and the line that says what it did. The rest of the list keeps to one line a Nook.
+    private func attentionCard(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                NookSectionLabel(tr("nooks.section.forYou"), inset: 0)
+                NookCountBadge(count: conversations.count)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.top, NookTheme.Spacing.xs)
+            .padding(.bottom, NookTheme.Spacing.xxs)
+            rows(conversations, now: now, shown: shown)
+        }
+        .padding(NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line, radius: NookTheme.Radius.panel + NookTheme.Spacing.xxs)
     }
 
     /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
@@ -332,6 +354,8 @@ private struct NookRow: View, Equatable {
     /// No fill at rest, as in every list: only the row under the pointer or the selected one lifts.
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
     private var receded: Bool { conversation.status == .idle && !selected }
+    /// Settled (nothing new, nothing waiting, not working): one line, title and how long ago.
+    private var compact: Bool { conversation.status == .idle }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -341,7 +365,7 @@ private struct NookRow: View, Equatable {
                 // Only the buttons themselves hold the card back, not the backdrop's fade or the padding around them.
                 .onHover { onActions = $0 }
                 .rowActionsBackdrop(background)
-                .padding(.top, NookTheme.Spacing.md)
+                .padding(.top, compact ? NookTheme.Spacing.xs + NookTheme.Spacing.xxs : NookTheme.Spacing.md)
                 .padding(.trailing, NookTheme.Spacing.md)
                 .revealOnHover(hovering)
         }
@@ -354,8 +378,8 @@ private struct NookRow: View, Equatable {
     }
 
     private var content: some View {
-        // Read once: it searches the last answer for citations.
-        let preview = conversation.preview
+        // Read once: it searches the last answer for citations. Not at all for a one-line row.
+        let preview = compact ? "" : conversation.preview
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(conversation.title)
@@ -373,13 +397,17 @@ private struct NookRow: View, Equatable {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)
             }
-            Text(preview.isEmpty ? statusText : preview)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
+            // A settled Nook keeps to one line: its last answer is on the hover card. What asks something of you says
+            // what it did underneath.
+            if !compact {
+                Text(preview.isEmpty ? statusText : preview)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.vertical, compact ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .roundedBackground(background, radius: NookTheme.Radius.card)
         .contentShape(Rectangle())

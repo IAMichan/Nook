@@ -224,6 +224,26 @@ extension PanelListHeader where Trailing == EmptyView {
     }
 }
 
+/// The title row of a list that has parts of its own (Nook's conversations and scheduled tasks): the parts are the
+/// title, as tabs, so the list's name is not said twice and no second row of tabs sits between the header and the
+/// list. Same height and trailing actions as `PanelListHeader`, so it lines up when you switch tabs. The selected tab's
+/// text lines up with the text of the rows under it.
+struct PanelTabHeader<Value: Hashable, Trailing: View>: View {
+    let items: [NookTabBar<Value>.Item]
+    let selected: Value
+    let onSelect: (Value) -> Void
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            NookTabBar(items: items, selected: selected, onSelect: onSelect)
+            Spacer(minLength: NookTheme.Spacing.xs)
+            HStack(spacing: NookTheme.Spacing.xxs) { trailing() }
+        }
+        .frame(height: 30)
+    }
+}
+
 /// "New" in a list's title row (a new Nook, a new session): lit while the new one is what is open.
 struct PanelNewButton: View {
     let label: String

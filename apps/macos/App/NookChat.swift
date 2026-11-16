@@ -205,6 +205,8 @@ struct Conversation: Identifiable, ConversationListItem {
     var scheduledTaskID: UUID?
 
     var isEmpty: Bool { messages.isEmpty }
+    var asksAttention: Bool { status != .idle }
+    var isScheduledRun: Bool { scheduledTaskID != nil }
 
     /// While Nook answers: when you asked, so the list and the header can show how long it has been going.
     var turnStarted: Date? { busy ? messages.last(where: { $0.role == .user })?.date : nil }

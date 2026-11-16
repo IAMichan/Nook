@@ -667,10 +667,36 @@ extension AppModel {
             nookFinished(conversation)
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
+            nameAfterFirstAnswer(question: text, reply: id, conversation: conversation)
             sendQueued(conversation)
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
+        }
+    }
+
+    /// After a Nook's first answer: the chosen brain gives it a short title ("Offer from Infaris") in place of the first
+    /// words of the question, so the list reads at a glance. Only while the title is still the one the question gave: a
+    /// name you gave it or a scheduled task's stays. In the background; on failure the title stays as it was.
+    func nameAfterFirstAnswer(question: String, reply id: UUID, conversation: UUID) {
+        guard settings.brainReady, !ScheduledTaskStore.shared.isScheduledReply(id),
+              let current = chat.conversation(conversation), current.scheduledTaskID == nil,
+              current.messages.filter({ $0.role == .user }).count == 1,
+              let first = current.messages.first(where: { $0.role == .user }),
+              current.title == Conversation.title(from: first.text),
+              let answer = chat.message(id)?.text, !answer.isEmpty else { return }
+        let seed = current.title
+        Task { [weak self] in
+            // Let the next question go first, as a reflection does.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self else { return }
+            // A model on this Mac runs one thing at a time: a title never waits for, or holds up, an answer.
+            if self.settings.isLocalBrain,
+               self.chat.conversations.contains(where: \.busy) || !EnergyMonitor.shared.plan.runsLocalModels { return }
+            let reply = await self.brain.rewrite(system: ConversationTitle.system,
+                                                 prompt: ConversationTitle.prompt(question: question, answer: answer), timeout: 45)
+            guard let title = reply.flatMap(ConversationTitle.clean), self.chat.conversation(conversation)?.title == seed else { return }
+            self.chat.rename(conversation, to: title)
         }
     }
 
