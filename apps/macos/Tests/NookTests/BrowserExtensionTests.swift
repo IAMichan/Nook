@@ -92,6 +92,21 @@ final class BrowserExtensionTests: XCTestCase {
 
     // MARK: - Hub
 
+    func testTheSidePanelsPicturesGoWithTheQuestion() {
+        let picture = Data([0x89, 0x50, 0x4E, 0x47]).base64EncodedString()
+        var images: [[String: Any]] = [
+            ["mediaType": "image/png", "base64": picture],
+            ["mediaType": "text/plain", "base64": picture],
+            ["mediaType": "image/png", "base64": "not base64!"]
+        ]
+        images += Array(repeating: ["mediaType": "image/jpeg", "base64": picture], count: 12)
+        let request = BrowserExtensionRequest(["kind": "ask", "text": "What is this?", "images": images])
+        XCTAssertEqual(request.images.count, BrowserExtensionRequest.maxImages)
+        XCTAssertEqual(request.images.first?.mediaType, "image/png")
+        XCTAssertEqual(request.images.first?.data, Data([0x89, 0x50, 0x4E, 0x47]))
+        XCTAssertTrue(BrowserExtensionRequest(["kind": "ask", "text": "Hi"]).images.isEmpty)
+    }
+
     func testHelloRegistersTheBrowser() {
         let hub = BrowserExtensionHub()
         hub.appVersion = "1.2.3"

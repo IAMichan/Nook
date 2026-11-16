@@ -349,3 +349,32 @@ enum BrowserExtensionPanel {
         return lines.joined(separator: "\n")
     }
 }
+
+/// The parts of a side panel request the app reads, taken out of the JSON on the socket's thread.
+struct BrowserExtensionRequest: Sendable {
+    let kind: String
+    let text: String
+    let conversation: String?
+    let page: BrowserExtensionPanel.Page?
+    /// The side panel wants the conversation's changes pushed to it from now on.
+    let watch: Bool
+    /// Pictures pasted, dropped or picked in the side panel's composer, as the extension sends them (`questionImages`).
+    let images: [(mediaType: String, data: Data)]
+
+    /// At most this many pictures go with one question, as the extension also limits them.
+    static let maxImages = 10
+
+    init(_ message: [String: Any]) {
+        kind = (message["kind"] as? String) ?? ""
+        text = (message["text"] as? String) ?? ""
+        conversation = message["conversation"] as? String
+        page = (message["page"] as? [String: Any]).flatMap(BrowserExtensionPanel.Page.init)
+        watch = (message["watch"] as? Bool) ?? false
+        let pictures = ((message["images"] as? [[String: Any]]) ?? []).lazy.compactMap { image -> (mediaType: String, data: Data)? in
+            guard let mediaType = image["mediaType"] as? String, mediaType.hasPrefix("image/"),
+                  let base64 = image["base64"] as? String, let data = Data(base64Encoded: base64), !data.isEmpty else { return nil }
+            return (mediaType, data)
+        }
+        images = Array(pictures.prefix(Self.maxImages))
+    }
+}

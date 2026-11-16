@@ -200,14 +200,7 @@ export const brainApi = {
 };
 
 /** Leest een bestand als base64 (zonder het "data:"-voorvoegsel). */
-export function fileBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
+export { fileBase64 } from "@nook/web-ui/draft.svelte";
 
 /** Een korte tekst voor een opzoeking: "doorzocht (3)", "niets gevonden", "mislukt: …". */
 export function outcomeLabel(outcome: Outcome): string {

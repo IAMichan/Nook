@@ -3,7 +3,7 @@
     "message": "Nook"
   },
   "appDesc": {
-    "message": "Nook, je assistent op de Mac, in je browser: vraag iets over de pagina waar je bent, en laat Nook je tabbladen lezen en erin werken nadat je het goedkeurt."
+    "message": "Nook, je Mac-assistent, in je browser: vraag iets over deze pagina en laat Nook in je tabbladen lezen en werken na jouw akkoord."
   },
   "actionTitle": {
     "message": "Nook openen"
@@ -82,6 +82,18 @@
   },
   "stopAnswer": {
     "message": "Stoppen"
+  },
+  "messageField": {
+    "message": "Bericht aan Nook"
+  },
+  "attachImages": {
+    "message": "Afbeeldingen bijvoegen"
+  },
+  "removeImage": {
+    "message": "Afbeelding weghalen"
+  },
+  "imageQuestion": {
+    "message": "Wat staat er op deze afbeelding?"
   },
   "thinking": {
     "message": "Nook denkt na"

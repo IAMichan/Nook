@@ -190,7 +190,11 @@ final class BrowserExtensionService: ObservableObject {
             let kept = settings.privateSources.contains(BrowserExtensionTools.sourceID)
             let privacy: BrowserExtensionPanel.Privacy = !kept ? .shared : settings.pageWorker != nil ? .readHere : .keptHere
             let reading = request.page?.reading.map { ScreenSnapshot(appName: $0.site, windowTitle: $0.title, text: $0.text) }
-            app.ask(text, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser, privacy: privacy),
+            // Pictures from the composer, scaled and encoded as every picture Nook sends a model (`ImageAttachment`).
+            let images = request.images.enumerated().compactMap { index, image in
+                NSImage(data: image.data).flatMap { ImageAttachment(image: $0, name: "browser-\(index + 1)") }
+            }
+            app.ask(text, images: images, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser, privacy: privacy),
                     page: privacy == .keptHere ? nil : reading)
             app.store.audit(tool: "browser_extension_ask", args: client.browser, result: app.chat.conversation(id)?.title ?? "")
             return conversationReply(id, watchedBy: client.id)
@@ -278,23 +282,5 @@ final class BrowserExtensionService: ObservableObject {
                 "onMac": !message.actions.isEmpty || !message.mails.isEmpty || !message.charts.isEmpty
             ]
         }
-    }
-}
-
-/// The parts of a side panel request the app reads, taken out of the JSON on the socket's thread.
-struct BrowserExtensionRequest: Sendable {
-    let kind: String
-    let text: String
-    let conversation: String?
-    let page: BrowserExtensionPanel.Page?
-    /// The side panel wants the conversation's changes pushed to it from now on.
-    let watch: Bool
-
-    init(_ message: [String: Any]) {
-        kind = (message["kind"] as? String) ?? ""
-        text = (message["text"] as? String) ?? ""
-        conversation = message["conversation"] as? String
-        page = (message["page"] as? [String: Any]).flatMap(BrowserExtensionPanel.Page.init)
-        watch = (message["watch"] as? Bool) ?? false
     }
 }

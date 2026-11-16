@@ -32,8 +32,10 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: npm
-    # The Svelte interface of the Tauri app.
-    directory: "/apps/tauri"
+    # The Svelte interface of the Tauri app, and the shared composer it builds for the browser extension
+    # (packages/web-ui), in one pull request so both keep the same Svelte. A bump there needs `npm run build` in
+    # apps/browser-extension; its CI fails until ui/composer.js is rebuilt.
+    directories: ["/apps/tauri", "/packages/web-ui"]
     schedule:
       interval: monthly
     cooldown:

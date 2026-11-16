@@ -2,8 +2,10 @@
   "name": "nook-browser-extension",
   "private": true,
   "type": "module",
-  "description": "Nook's browser extension (Chrome, Brave, Edge, Arc, Vivaldi). Loaded unpacked from Nook › Settings › Editor & browser.",
+  "description": "Nook's browser extension (Chrome, Brave, Edge, Arc, Vivaldi). Loaded unpacked from Nook \u203a Settings \u203a Editor & browser.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build": "npm --prefix ../../packages/web-ui run build:extension",
+    "package": "npm run build && node scripts/package.js"
   }
 }

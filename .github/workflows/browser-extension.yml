@@ -10,8 +10,9 @@ permissions:
   contents: read
 
 # Nook's browser extension (apps/browser-extension): which pages Nook may touch, how commands are checked, its texts in
-# five languages, and that its id and protocol match the Mac app's host. Node's own test runner; Ubuntu only, seconds;
-# no dependencies to install.
+# five languages, and that its id and protocol match the Mac app's host. Node's own test runner; Ubuntu only, seconds.
+# Its composer is Nook's shared one (packages/web-ui), built into ui/composer.js and checked in: the build must give
+# exactly the file in the commit.
 jobs:
   test:
     if: github.event.action != 'closed' && !github.event.pull_request.draft
@@ -29,3 +30,14 @@ jobs:
           node-version: 22
       - name: Test
         run: npm test
+      - name: Install the composer's build tools
+        working-directory: packages/web-ui
+        run: npm ci --no-audit --no-fund
+      - name: The built composer is up to date
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- ui)" ]; then
+            git status --short -- ui
+            echo "::error::apps/browser-extension/ui is not what packages/web-ui builds: run npm run build in apps/browser-extension and commit it."
+            exit 1
+          fi

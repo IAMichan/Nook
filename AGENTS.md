@@ -42,6 +42,7 @@ apps/
 packages/
   protocol/    # Shared Companion protocol, ChaCha20-Poly1305 sealing & webhook security
   core/        # Cross-platform Foundation-only Swift core package
+  web-ui/      # Shared Svelte interface (the composer) for the Tauri app and the browser extension
 docs/          # Architecture and feature documentation
 scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 ```
