@@ -168,6 +168,14 @@ export const table: Table = {
   "{n} failing": { de: "{n} fehlgeschlagen", fr: "{n} en échec", es: "{n} con fallos" },
   "Close tab": { de: "Tab schließen", fr: "Fermer l'onglet", es: "Cerrar pestaña" },
   "Run workflow": { de: "Workflow starten", fr: "Lancer le workflow", es: "Ejecutar workflow" },
+  "Inputs": { de: "Eingaben", fr: "Entrées", es: "Entradas" },
+  "This workflow asks for no inputs: it runs as its file says.": {
+    de: "Dieser Workflow fragt nach keinen Eingaben: Er läuft so, wie seine Datei es sagt.",
+    fr: "Ce workflow ne demande aucune entrée : il s'exécute comme son fichier l'indique.",
+    es: "Este workflow no pide entradas: se ejecuta como dice su archivo.",
+  },
+  "Still to fill in: ": { de: "Noch auszufüllen: ", fr: "Encore à remplir : ", es: "Falta por rellenar: " },
+  "Runs {name} on {branch}.": { de: "Startet {name} auf {branch}.", fr: "Lance {name} sur {branch}.", es: "Ejecuta {name} en {branch}." },
   "Start a workflow that can be run by hand": {
     de: "Einen Workflow starten, der sich von Hand ausführen lässt",
     fr: "Lancer un workflow qui peut être exécuté à la main",
