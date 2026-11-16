@@ -63,4 +63,27 @@ final class CrashWindowTests: XCTestCase {
         XCTAssertEqual(saved[other]?.messages.first?.fresh, true)
         XCTAssertEqual(RestartRequests.queues([id: queue], sendingNow: [:], fresh: []), [id: queue])
     }
+
+    /// A fallback to the simpler channel lasts a while, not until Nook restarts.
+    func testAFallbackMarkExpires() {
+        var marks = FallbackMarks()
+        marks.modified = { _ in Date(timeIntervalSince1970: 1) }
+        let start = Date(timeIntervalSince1970: 1_000)
+        marks.insert("/bin/codex", now: start)
+        XCTAssertTrue(marks.contains("/bin/codex", now: start.addingTimeInterval(60)))
+        XCTAssertFalse(marks.contains("/bin/other", now: start))
+        XCTAssertFalse(marks.contains("/bin/codex", now: start.addingTimeInterval(FallbackMarks.lifetime + 1)))
+    }
+
+    /// An agent updated on disk gets its richer channel back at once.
+    func testAFallbackMarkEndsWhenTheExecutableChanges() {
+        var marks = FallbackMarks()
+        var stamp = Date(timeIntervalSince1970: 1)
+        marks.modified = { _ in stamp }
+        let start = Date(timeIntervalSince1970: 1_000)
+        marks.insert("/bin/gemini", now: start)
+        XCTAssertTrue(marks.contains("/bin/gemini", now: start))
+        stamp = Date(timeIntervalSince1970: 2)
+        XCTAssertFalse(marks.contains("/bin/gemini", now: start))
+    }
 }

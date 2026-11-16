@@ -200,7 +200,7 @@ final class WorkspaceManager: ObservableObject {
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
     /// Codex executables without a usable app-server: their sessions use `codex exec`.
-    var codexExecOnly: Set<String> = []
+    var codexExecOnly = FallbackMarks()
     /// Codex approval requests waiting for you, by Nook's request id.
     var codexRequests: [String: CodexApprovalRequest] = [:]
     /// The latest token totals per Codex session, so a turn's own usage is the difference.
@@ -216,7 +216,7 @@ final class WorkspaceManager: ObservableObject {
     /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
     var acpClients: [UUID: AcpClient] = [:]
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption], call: AcpToolCall)] = [:]
-    var acpFallback: Set<String> = []
+    var acpFallback = FallbackMarks()
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// OpenCode over its own server (`WorkspaceManager+OpenCodeServer`): the servers by account, each session's place on
     /// one, its idle close, the permission requests waiting for you, servers stopping for lack of sessions, and OpenCode
@@ -226,7 +226,7 @@ final class WorkspaceManager: ObservableObject {
     var openCodeIdleClose: [UUID: Task<Void, Never>] = [:]
     var openCodeRequests: [String: (runID: UUID, permission: OpenCodePermission)] = [:]
     var openCodeHostStops: [String: Task<Void, Never>] = [:]
-    var openCodeFallback: Set<String> = []
+    var openCodeFallback = FallbackMarks()
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
     /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
