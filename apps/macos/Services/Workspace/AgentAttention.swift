@@ -290,6 +290,8 @@ enum RestartContinuation {
         guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
         if run.interruptedWhileWaiting == true, !run.provider.capabilities.pendingRequestsSurviveRestart { return false }
         if let until = run.snoozedUntil, until > now { return false }
+        // A stop was asked for before the restart: the turn was meant to end, not to go on.
+        guard run.stopRequestedAt == nil else { return false }
         let interrupted = run.status == .stopped && run.statusDetail == "interrupted"
         let waiting = run.status == .completed && !(run.cutBackgroundWork?.labels.isEmpty ?? true)
         guard interrupted || waiting else { return false }

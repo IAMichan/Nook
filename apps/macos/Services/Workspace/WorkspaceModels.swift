@@ -339,6 +339,20 @@ enum IsolationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// Which changes to a session are written at once rather than with the next save a moment later (`scheduleSave`): what
+/// a crash in that moment must not lose, because what Nook does after a restart depends on it. The agent's conversation
+/// id (else the conversation cannot be resumed), the keeper it runs under (else it is orphaned and started twice), the
+/// end of a turn (else it reads as cut off), a stop you asked for, the restart counters, and the snapshots a revert
+/// relies on. Streaming changes none of these, so this costs a write per turn, not per token.
+enum RunDurability {
+    static func savesAtOnce(_ old: WorkspaceRun, _ new: WorkspaceRun) -> Bool {
+        old.providerSessionID != new.providerSessionID || old.kept != new.kept
+            || old.status.isActive != new.status.isActive || old.stopRequestedAt != new.stopRequestedAt
+            || old.continuations != new.continuations || old.lastContinuedAt != new.lastContinuedAt
+            || old.checkpoints != new.checkpoints || old.missedCheckpoints != new.missedCheckpoints
+    }
+}
+
 /// State of a session. All transitions must go through `RunStatus.canMove(to:)`.
 enum RunStatus: String, Codable, CaseIterable, Sendable {
     /// Setting up folder or worktree, launching agent.
@@ -544,6 +558,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// Nook's last quit stopped this session (in the middle of a turn, or while it waited on background work): the next
     /// launch goes on with it however long Nook stayed closed, then clears this (see `RestartContinuation`).
     var stoppedByQuit: Bool? = nil
+    /// You (or Nook for you) asked the running turn to stop: saved at once, so a crash before the stop finished never
+    /// reads as a turn the restart cut off, and Nook does not go on with it by itself. Cleared when the next turn starts.
+    var stopRequestedAt: Date? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
@@ -620,6 +637,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     @discardableResult
     mutating func move(to next: RunStatus, detail: String? = nil, now: Date = Date()) -> Bool {
         guard status.canMove(to: next) else { return false }
+        if next.isActive, !status.isActive { stopRequestedAt = nil }
         status = next
         statusDetail = detail
         updatedAt = now

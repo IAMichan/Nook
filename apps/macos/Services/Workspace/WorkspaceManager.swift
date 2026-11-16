@@ -1240,6 +1240,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
+        // Saved at once (`RunDurability`): a crash before the turn has ended must not make it read as cut off.
+        if run(id)?.status.isActive == true { update(id) { $0.stopRequestedAt = Date() } }
         stopDelegatedChildren(of: id)
         if cancelWaitingTurn(id) { return }
         if let task = prepareTasks.removeValue(forKey: id) {
@@ -1614,8 +1616,15 @@ final class WorkspaceManager: ObservableObject {
         // A summary Nook runs on its own is no activity of yours: the session keeps its place in the list, its "last
         // active" and its read state, instead of jumping up while it runs and landing first among the idle ones after.
         if idleCompacting.contains(id) { run.updatedAt = runs[index].updatedAt }
+        let atOnce = save && runsLoaded && RunDurability.savesAtOnce(runs[index], run)
         runs[index] = run
-        if save { scheduleSave() }
+        if atOnce {
+            timelineStore.saveTask?.cancel()
+            timelineStore.saveTask = nil
+            writeRuns(runs)
+        } else if save {
+            scheduleSave()
+        }
         // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.
         if freedPlace, !capacity.isEmpty {
             Task { @MainActor [weak self] in self?.startWaitingTurns() }

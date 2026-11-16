@@ -21,7 +21,10 @@ extension WorkspaceManager {
                                     Self.savedApprovalLength)
             }
         }
-        return RestartRequests.merged(snapshot, questions: asked, approvals: waiting, queues: queued)
+        // A message you sent "now" waits outside the queue while the turn it interrupts stops (`pendingSendNow`): it is
+        // saved at the front of the queue, so a crash in that moment keeps it.
+        let queues = RestartRequests.queues(queued, sendingNow: pendingSendNow, fresh: pendingSendNowFresh)
+        return RestartRequests.merged(snapshot, questions: asked, approvals: waiting, queues: queues)
     }
 
     /// A question or approval came or went: the list is saved with it, and a kept agent's output is not marked read past
