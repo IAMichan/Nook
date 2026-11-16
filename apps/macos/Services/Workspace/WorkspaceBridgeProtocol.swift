@@ -94,56 +94,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
         return nil
     }
 
-    /// Short, language-neutral label for a session's timeline.
-    var label: String {
-        switch self {
-        case .workspaceInfo: return "Nook workspace"
-        case .terminalRun: return "Nook terminal"
-        case .terminalRead: return "Nook terminal output"
-        case .terminalList: return "Nook terminals"
-        case .terminalStop: return "Stop Nook terminal"
-        case .browserOpen: return "Nook browser"
-        case .browserRead: return "Read Nook browser"
-        case .browserScreenshot: return "Nook browser screenshot"
-        case .pullRequestCreate: return "Pull request"
-        case .orchestratorCapabilities: return "Nook agents"
-        case .delegateTask: return "Delegate task"
-        case .taskStatus: return "Task status"
-        case .taskWait: return "Wait for tasks"
-        case .taskCancel: return "Cancel task"
-        case .sessionRead: return "Read session"
-        case .sessionList: return "Nook sessions"
-        case .sessionSend: return "Message session"
-        case .sessionStart: return "Start session"
-        case .sessionSuggest: return "Suggest session"
-        case .sessionWait: return "Wait for sessions"
-        case .sessionSearch: return "Search sessions"
-        case .sessionOrganize: return "Organize session"
-        case .sessionQuestions: return "Questions of sessions"
-        case .renderPage: return "Show page"
-        case .deviceList: return "Simulators"
-        case .deviceOpen: return "Open simulator"
-        case .deviceScreenshot: return "Simulator screenshot"
-        case .deviceClose: return "Close simulator"
-        case .browserSnapshot: return "Nook browser elements"
-        case .browserClick: return "Click in Nook browser"
-        case .browserType: return "Type in Nook browser"
-        case .browserWaitFor: return "Wait in Nook browser"
-        case .scheduleTask: return "Schedule task"
-        case .listScheduledTasks: return "Scheduled tasks"
-        case .updateScheduledTask: return "Change scheduled task"
-        case .runScheduledTaskNow: return "Run scheduled task"
-        case .watchPullRequest: return "Watch pull request"
-        case .getPullRequestStatus: return "Pull request status"
-        case .requestSecret: return "Ask for a secret"
-        case .nookTools: return "Nook's apps and connectors"
-        case .nookUse: return "Nook"
-        case .nookChatList: return "Nook Chat conversations"
-        case .nookChatRead: return "Read Nook Chat"
-        case .nookChatSend: return "Write in Nook Chat"
-        case .takeOverScreen: return "Take over screen"
-        }
-    }
+    /// Short label for a session's timeline, in the user's language.
+    var label: String { tr("bridge.tool." + rawValue) }
 
     /// The most telling argument of a call, for the timeline: the command, the address, the title or the terminal.
     static func detail(_ input: [String: Any]) -> String? {

@@ -207,6 +207,10 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- A coding agent's steps with Nook's own tools (terminal, browser, sessions, simulators, scheduled tasks, Nook Chat…)
+  now show in the timeline in your language on macOS, Windows and Linux, instead of always in English on macOS and
+  partly in Dutch on Windows and Linux.
+
 - Merging a GitHub pull request in a repository whose ruleset only allows squash (or rebase) no longer fails with
   "Merge commits are not allowed on this repository": Nook now reads the merge methods the base branch's rulesets
   allow and picks one of those, on macOS and in the Windows, Linux and Android app.

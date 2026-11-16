@@ -289,8 +289,9 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(BridgeTool.named("browser_open"), .browserOpen)
         XCTAssertEqual(BridgeTool.named("nook.pull_request_create"), .pullRequestCreate)
         XCTAssertNil(BridgeTool.named("mcp__other__terminal_run"))
-        XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__terminal_run", input: ["command": "npm run dev"]), "Nook terminal · npm run dev")
-        XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__workspace_info", input: [:]), "Nook workspace")
+        XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__terminal_run", input: ["command": "npm run dev"]),
+                       BridgeTool.terminalRun.label + " · npm run dev", "the label, in the user's language")
+        XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__workspace_info", input: [:]), BridgeTool.workspaceInfo.label)
         XCTAssertEqual(ToolSummary.describe(tool: "terminal_run", input: ["command": "ls"]), "terminal_run · ls",
                        "another server's tool with the same name is left alone")
     }
@@ -298,7 +299,7 @@ final class WorkspaceBridgeTests: XCTestCase {
     func testCodexTimelineNamesNookTools() {
         let nook = #"{"type":"item.started","item":{"id":"m1","type":"mcp_tool_call","server":"nook","tool":"browser_open","arguments":{"url":"http://localhost:3000"},"status":"in_progress"}}"#
         XCTAssertEqual(CodexStreamParser.parse(nook),
-                       [.toolCall(id: "m1", name: "Nook browser", detail: "http://localhost:3000", finished: false, failed: false,
+                       [.toolCall(id: "m1", name: BridgeTool.browserOpen.label, detail: "http://localhost:3000", finished: false, failed: false,
                                   input: JSONBox(["url": "http://localhost:3000"]))])
         let other = #"{"type":"item.completed","item":{"id":"m2","type":"mcp_tool_call","server":"linear","tool":"browser_open","status":"completed"}}"#
         XCTAssertEqual(CodexStreamParser.parse(other),
