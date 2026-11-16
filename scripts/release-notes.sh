@@ -1,6 +1,6 @@
 #!/bin/bash
-# Writes the release page for a macOS release (.github/workflows/release.yml) to stdout: the banner, the download
-# button and the downloads right under it, the three install steps, and the change list folded away at the bottom, so
+# Writes the release page (.github/workflows/release.yml) to stdout: the banner, the Mac, Windows and Linux download
+# buttons with the other downloads right under them, the three install steps, and the change list folded away at the bottom, so
 # nobody has to scroll past the changes to find the .dmg.
 #
 #   TAG=v0.1.0-beta.2 VERSION=0.1.0-beta.2 REPO=IAMichan/nook PRERELEASE=true NOTARIZED=false \
@@ -25,8 +25,23 @@ size_of() {
   echo " · $(( (bytes + 524288) / 1048576 )) MB"
 }
 
-# The button: a shields.io badge in Nook's paper white on its near-black ink, with Apple's mark.
-BUTTON="https://img.shields.io/badge/Download_for_Mac-.dmg$(size_of "$DMG" | sed 's/ · /_%C2%B7_/; s/ /_/g')-F5F5F5?style=for-the-badge&logo=apple&logoColor=0B0B0D&labelColor=F5F5F5&color=D6D6D6"
+# The Windows and Linux files come from tauri.yml and are attached by the `desktop` job after this page is written; the
+# release stays a draft until they are there, so the links below work once it is public. Their names are set there.
+EXE="Nook-$VERSION-Windows-setup.exe"
+MSI="Nook-$VERSION-Windows.msi"
+APPIMAGE="Nook-$VERSION-Linux.AppImage"
+DEB="Nook-$VERSION-Linux.deb"
+
+# A button: a shields.io badge in Nook's paper white on its near-black ink, with the platform's mark.
+badge() { # label, file type, logo
+  echo "https://img.shields.io/badge/$1-$2-F5F5F5?style=for-the-badge&logo=$3&logoColor=0B0B0D&labelColor=F5F5F5&color=D6D6D6"
+}
+# Simple Icons (shields.io's logos) has no Microsoft mark, so the four squares go along as an SVG in Microsoft's colors.
+MICROSOFT_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 23 23"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M12 1h10v10H12z"/><path fill="#00A4EF" d="M1 12h10v10H1z"/><path fill="#FFB900" d="M12 12h10v10H12z"/></svg>'
+MICROSOFT_LOGO="data:image/svg%2bxml;base64,$(printf '%s' "$MICROSOFT_SVG" | base64 | tr -d '\n')"
+MAC_BUTTON="$(badge Mac ".dmg$(size_of "$DMG" | sed 's/ · /_%C2%B7_/; s/ /_/g')" apple)"
+WINDOWS_BUTTON="$(badge Windows .exe "$MICROSOFT_LOGO")"
+LINUX_BUTTON="$(badge Linux .AppImage linux)"
 
 cat <<EOF
 <p align="center">
@@ -34,12 +49,14 @@ cat <<EOF
 </p>
 
 <p align="center">
-  <a href="$DOWNLOADS/$DMG"><img src="$BUTTON" alt="Download Nook for Mac (.dmg)" height="44"></a>
+  <a href="$DOWNLOADS/$DMG"><img src="$MAC_BUTTON" alt="Download Nook for Mac (.dmg)" height="40"></a>
+  <a href="$DOWNLOADS/$EXE"><img src="$WINDOWS_BUTTON" alt="Download Nook for Windows (.exe)" height="40"></a>
+  <a href="$DOWNLOADS/$APPIMAGE"><img src="$LINUX_BUTTON" alt="Download Nook for Linux (.AppImage)" height="40"></a>
 </p>
 
 <p align="center">
-  <sub>Apple Silicon (M1 or newer) · macOS 15 Sequoia or newer</sub><br>
-  <sub><a href="$DOWNLOADS/$ZIP">.zip instead</a>$(size_of "$ZIP") · <a href="$DOWNLOADS/SHA256SUMS.txt">SHA-256 checksums</a> · <a href="https://github.com/$REPO/releases">all releases</a></sub>
+  <sub><b>Mac:</b> Apple Silicon (M1 or newer) · macOS 15 Sequoia or newer · <a href="$DOWNLOADS/$ZIP">.zip instead</a>$(size_of "$ZIP") · <a href="$DOWNLOADS/SHA256SUMS.txt">SHA-256 checksums</a></sub><br>
+  <sub><b>Windows:</b> <a href="$DOWNLOADS/$MSI">.msi instead</a> · <b>Linux:</b> <a href="$DOWNLOADS/$DEB">.deb instead</a> · <a href="$DOWNLOADS/SHA256SUMS-Windows-Linux.txt">SHA-256 checksums</a> · <a href="https://github.com/$REPO/releases">all releases</a></sub>
 </p>
 
 EOF
@@ -53,7 +70,7 @@ EOF
 fi
 
 cat <<EOF
-## Install in three steps
+## Install on a Mac in three steps
 
 1. **Open** \`$DMG\` and drag **Nook** onto **Applications**.
 EOF
