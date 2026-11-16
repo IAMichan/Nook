@@ -2,8 +2,8 @@ import SwiftUI
 
 // An answer from Nook, the same wherever it shows: in the Nook chat (`ChatMessageView`) and in the notch's card for a
 // question asked with Double Tap or from a notice (`CardDetail.answer`). Its Markdown reads as in the chat (headings,
-// lists, tables), its citations are small raised numbers that open their source, the sources it cites are chips under
-// it, and what Nook can do next is a row of chips that asks it.
+// lists, tables), each citation is a small label with the source's icon and name beside the fact it backs (a hover shows
+// what the source says, a click opens it), and what Nook can do next is a row of chips that asks it.
 
 /// Nook's answer with the sources it can cite and what it offers to do next.
 struct NookAnswer: Equatable {
@@ -12,12 +12,6 @@ struct NookAnswer: Equatable {
     var references: [SourceReference] = []
     /// What Nook can do next ("Add to my calendar"); a click asks it.
     var offers: [String] = []
-
-    /// The sources the text cites, in their own order; the ones it does not cite are left out.
-    var cited: [SourceReference] {
-        let used = Citations.used(in: text)
-        return references.filter { used.contains($0.number) }
-    }
 }
 
 /// Marks a citation's raised number in an answer's text (the source's number; 0 for the comma between two), so the
@@ -70,16 +64,47 @@ enum AnswerCitation {
         AppModel.shared.openReference(reference)
     }
 
-    /// What a citation's hover says: the source's name and where it is from.
-    static func help(_ number: Int, in references: [SourceReference]) -> String? {
-        guard let reference = references.first(where: { $0.number == number }) else { return nil }
-        return reference.origin.isEmpty ? reference.title : "\(reference.shortTitle) — \(reference.origin)"
+    /// The sources a citation of `numbers` names, each once, in the order it names them.
+    static func references(_ numbers: [Int], in references: [SourceReference]) -> [SourceReference] {
+        var seen = Set<Int>()
+        return numbers.compactMap { number in
+            guard seen.insert(number).inserted else { return nil }
+            return references.first { $0.number == number }
+        }
+    }
+
+    /// The longest name a citation's label shows before it is cut with "…".
+    static let labelLength = 22
+
+    /// A citation's label: the first source's short name (a mail's sender, which says more than a long subject), cut to `labelLength`, and "+2" for two more.
+    static func label(_ references: [SourceReference]) -> String {
+        guard let first = references.first else { return "" }
+        var name = (first.sender ?? first.shortTitle).trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { name = SourceCatalog.title(first.sourceID) }
+        if name.count > labelLength { name = String(name.prefix(labelLength - 1)).trimmingCharacters(in: .whitespaces) + "…" }
+        return references.count > 1 ? "\(name) +\(references.count - 1)" : name
+    }
+
+    /// The symbol for a source with no app or site icon on this Mac.
+    @MainActor
+    static func symbol(_ reference: SourceReference) -> String {
+        AppModel.shared.connectors.source(id: reference.sourceID)?.symbol ?? SourcesDisclosure.symbol(reference.sourceID)
+    }
+
+    /// The source's icon for a citation's label in the text: its app's icon, its site's, or its symbol in grey.
+    @MainActor
+    static func icon(_ reference: SourceReference, size: CGFloat) -> NSImage? {
+        let domain = AppModel.shared.connectors.source(id: reference.sourceID)?.iconDomain
+        if let image = SourceBrand.menuImage(for: reference.sourceID, domain: domain, size: size) { return image }
+        let configuration = NSImage.SymbolConfiguration(pointSize: size * 0.8, weight: .semibold)
+            .applying(.init(paletteColors: [NSColor(NookTheme.textSecondary)]))
+        return NookIcon.nsImage(symbol(reference))?.withSymbolConfiguration(configuration)
     }
 }
 
-/// Nook's answer as one view: its Markdown with citations that open their source, the cited sources as chips, and what
-/// Nook can do next. The notch's card for a question asked with Double Tap shows it; the Nook chat draws the same text
-/// with the same citations (`TranscriptReply` with `answerReferences`) and the same offer chips.
+/// Nook's answer as one view: its Markdown with a label beside each fact naming its source (`CitationPreview` on hover,
+/// the source on a click), and what Nook can do next. The notch's card for a question asked with Double Tap shows it; the
+/// Nook chat draws the same text with the same labels (`TranscriptReply` with `answerReferences`) and the same offer chips.
 struct NookAnswerView: View {
     let answer: NookAnswer
     var size: CGFloat = TranscriptStyle.textSize
@@ -87,67 +112,87 @@ struct NookAnswerView: View {
     var onAsk: ((String) -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            MarkdownView(text: answer.text, size: size, onChoose: onAsk)
-                .answerReferences(answer.references)
-            let cited = answer.cited
-            if !cited.isEmpty {
-                AnswerSourceChips(references: cited)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        MarkdownView(text: Citations.shown(answer.text), size: size, onChoose: onAsk)
+            .answerReferences(answer.references)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// The sources an answer cites, as small chips that wrap: the number its citations show, the source's name, and a
-/// click that opens it (a chat in the Chats tab, a mail in Mail, a page in the browser).
-struct AnswerSourceChips: View {
+/// What a citation rests on, shown when the pointer rests on its label: per source its icon, where it is from, its name,
+/// and the lines of it that match the sentence (`SourcePassage`), the matching ones bright with an accent bar, plus a
+/// button that opens the original. The same card in the chat, the notch's card, and the sources list under an answer.
+struct CitationPreview: View {
     let references: [SourceReference]
+    /// The sentence the citation backs, to find the lines it took from the source.
+    var claim: String = ""
+
+    static let width: CGFloat = 340
 
     var body: some View {
-        ChipFlow(spacing: NookTheme.Spacing.xs) {
-            ForEach(references) { reference in
-                AnswerSourceChip(reference: reference)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            ForEach(Array(references.prefix(3).enumerated()), id: \.element.id) { index, reference in
+                if index > 0 { NookDivider() }
+                source(reference)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// One cited source: its number in a small circle, then its name. Grey at rest; it lifts under the pointer when it opens.
-struct AnswerSourceChip: View {
-    let reference: SourceReference
-    @State private var hovering = false
-
-    private var openable: Bool { SourceReference.isOpenable(reference.url) }
-
-    var body: some View {
-        Button { AppModel.shared.openReference(reference) } label: {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text("\(reference.number)")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .frame(minWidth: 15, minHeight: 15)
-                    .background(Circle().fill(NookTheme.smoke))
-                Text(reference.shortTitle)
+            if references.count > 3 {
+                Text(tr("chat.citation.more", references.count - 3))
                     .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(hovering && openable ? NookTheme.paper : NookTheme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .foregroundStyle(NookTheme.textTertiary)
             }
-            .padding(.leading, NookTheme.Spacing.xs)
-            .padding(.trailing, NookTheme.Spacing.md)
-            .frame(height: 24)
-            .frame(maxWidth: 220, alignment: .leading)
-            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering && openable ? NookTheme.smoke : NookTheme.field))
-            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.nookPlain)
-        .disabled(!openable)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .nookTip(AnswerCitation.help(reference.number, in: [reference]) ?? reference.title)
-        .accessibilityLabel(reference.title)
+        .padding(NookTheme.Spacing.lg)
+        .frame(width: Self.width, alignment: .leading)
+    }
+
+    private func source(_ reference: SourceReference) -> some View {
+        let openable = SourceReference.isOpenable(reference.url)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SiteIcon(domain: AppModel.shared.connectors.source(id: reference.sourceID)?.iconDomain,
+                         fallback: AnswerCitation.symbol(reference), tint: NookTheme.textSecondary, size: 14, source: reference.sourceID)
+                Text(reference.origin.isEmpty ? SourceCatalog.title(reference.sourceID) : reference.origin)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if openable {
+                    SmallGhostButton(title: tr("chat.citation.open")) { AppModel.shared.openReference(reference) }
+                        .nookTip(tr("chat.references.open"))
+                }
+            }
+            Text(reference.shortTitle)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            passage(reference)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func passage(_ reference: SourceReference) -> some View {
+        let lines = reference.excerpt.map { SourcePassage.pick($0, claim: claim, title: reference.shortTitle) } ?? []
+        if lines.isEmpty {
+            Text(tr("chat.citation.noExcerpt"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line.text)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(line.relevant ? NookTheme.textStrong : NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, NookTheme.Spacing.md)
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(line.relevant ? NookTheme.iris : NookTheme.line2).frame(width: 2)
+                        }
+                }
+            }
+            .textSelection(.enabled)
+        }
     }
 }
 

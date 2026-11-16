@@ -591,7 +591,7 @@ extension AppModel {
 
             // Strip citations pointing to sources that were not actually retrieved.
             let references = ledger.references
-            var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
+            var body = Citations.withoutSourceList(Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number))))
             let bareBody = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
             // Still empty, or still code/JSON or the wrong language after the second try: show what Nook found instead.
             let unusable = bareBody.isEmpty || bareBody == "NONE" || (retry && Self.looksBroken(body, question: text, expected: settings.answerLanguage(for: text)))
@@ -831,7 +831,6 @@ extension AppModel {
             let heading = plain.hasPrefix("#")
             height += CGFloat(max(1, Int(ceil(Double(plain.count) / perLine)))) * (heading ? 26 : 23) + (heading ? 10 : 4)
         }
-        if !answer.cited.isEmpty { height += 36 }
         if !answer.offers.isEmpty { height += 40 }
         // The header, the buttons and the margins around them.
         return min(470, max(150, 104 + height + field))

@@ -51,7 +51,7 @@ struct ChatMessageView: View, Equatable {
             ChatErrorCard(message: message, canRetry: isLast)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            TranscriptReply(text: message.text, date: message.date, footer: !message.streaming,
+            TranscriptReply(text: Citations.shown(message.text), date: message.date, footer: !message.streaming,
                             onChoose: !message.streaming && isNewest ? { ask($0) } : nil) {
                 extras
             } actions: {
@@ -59,7 +59,8 @@ struct ChatMessageView: View, Equatable {
                     ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
                 }
             }
-            // Its citations are raised numbers that open their source, as in the notch's card (`NookAnswerView`).
+            // Each citation is a label with its source's icon and name beside the fact: a hover shows what the source
+            // says, a click opens it, as in the notch's card (`NookAnswerView`).
             .answerReferences(message.references)
         }
     }
@@ -96,15 +97,6 @@ struct ChatMessageView: View, Equatable {
 
         if !message.privateBrief.isEmpty {
             PrivateBriefDisclosure(brief: message.privateBrief)
-        }
-
-        // The sources the answer cites, right under it as chips that open them, as in the notch's card
-        // (`NookAnswerView`): where a fact comes from is one click away without opening the details.
-        if !message.streaming {
-            let cited = NookAnswer(text: message.text, references: message.references).cited
-            if !cited.isEmpty {
-                AnswerSourceChips(references: cited)
-            }
         }
 
         // Where Nook looked, folded away after every answer until you want to see it; a failed source shows as a badge.

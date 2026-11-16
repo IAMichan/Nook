@@ -108,10 +108,12 @@ and a selected row stands a full step above a hovered one. In practice:
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
 - **One answer from Nook.** Nook's answer reads the same in the Nook chat and in the notch's card for a question asked
   with Double Tap or from a notice (`UI/Components/NookAnswer.swift`): `NookAnswerView` draws its Markdown, the
-  card's `CardDetail.answer` shows it in the title's place, and `.answerReferences(_:)` turns its `[2]` into a small grey
-  raised number that opens source 2 (a chat opens in the Chats tab) and names it on hover. The cited sources are
-  `AnswerSourceChips`, and what Nook can do next is `AnswerOfferChips` in both places. Never draw an answer's text as a
-  plain `Text` or build another offer chip.
+  card's `CardDetail.answer` shows it in the title's place, and `.answerReferences(_:)` turns its `[2]` into a label
+  beside the fact: the source's icon and short name (a mail's sender) in a pill, "+1" for more. A hover lights up the
+  sentence it backs and shows `CitationPreview` (where the source is from and the lines of it that match the sentence);
+  a click opens the source, or pins the preview when there is nothing to open. The sources list under a chat answer
+  shows the same preview on its rows. What Nook can do next is `AnswerOfferChips` in both places. Never draw an
+  answer's text as a plain `Text`, write sources out under it, or build another offer chip.
 - **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
   the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
   14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus

@@ -482,21 +482,24 @@ private struct ReferenceRow: View {
     let cited: Bool
     let open: () -> Void
     @State private var hovering = false
+    /// What the source says, beside the row after the pointer rests on it a moment (`CitationPreview`).
+    @State private var previewing = false
+    @State private var pendingPreview: DispatchWorkItem?
 
     private var openable: Bool { SourceReference.isOpenable(reference.url) }
 
     var body: some View {
         Button(action: open) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("\(reference.number)")
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(cited ? NookTheme.onIris : NookTheme.textSecondary)
-                    .frame(minWidth: 16, minHeight: 16)
-                    .background(Circle().fill(cited ? NookTheme.iris : NookTheme.smoke))
+                // The sources the answer cites stand out; the ones it only looked at stay quiet.
+                Circle()
+                    .fill(cited ? NookTheme.iris : NookTheme.smoke)
+                    .frame(width: 6, height: 6)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(reference.title)
                         .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.paper)
+                        .foregroundStyle(cited ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
                     Text(([SourceCatalog.title(reference.sourceID)] + (reference.detail.isEmpty ? [] : [reference.detail])).joined(separator: " · "))
                         .font(NookTheme.TextStyle.detail)
@@ -512,13 +515,26 @@ private struct ReferenceRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .roundedBackground(hovering && openable ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
+            .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .disabled(!openable)
-        .onHover { hovering = $0 }
-        .nookTip(openable ? tr("chat.references.open") : tr("chat.references.noLink"))
+        .onHover { inside in
+            hovering = inside
+            pendingPreview?.cancel()
+            if inside {
+                let show = DispatchWorkItem { previewing = true }
+                pendingPreview = show
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: show)
+            } else {
+                previewing = false
+            }
+        }
+        .popover(isPresented: $previewing, arrowEdge: .trailing) {
+            CitationPreview(references: [reference])
+        }
+        .accessibilityLabel(reference.title)
+        .accessibilityHint(openable ? tr("chat.references.open") : tr("chat.references.noLink"))
     }
 }
 
