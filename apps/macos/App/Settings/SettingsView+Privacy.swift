@@ -28,7 +28,8 @@ extension SettingsView {
         case .access:
             Section {
                 ForEach(SystemPermission.allCases) { permission in
-                    permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
+                    permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission),
+                                  turnOff: { permission.openSettings() }) {
                         await permissions.request(permission, app: app)
                     }
                 }
@@ -37,6 +38,7 @@ extension SettingsView {
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
+            LinkedAccessSection()
             neverReadAppsSection
         case .onDevice:
             privateSourcesSection
@@ -130,10 +132,17 @@ extension SettingsView {
         .accessibilityHint(detail)
     }
 
-    func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
+    /// `turnOff` opens the place a granted permission is taken back: macOS lets only the user do that, in System Settings.
+    func permissionRow(_ title: String, detail: String, granted: Bool, turnOff: (() -> Void)? = nil,
+                       request: @escaping @MainActor () async -> Void) -> some View {
         // Once granted, the row is just its name and a check; why Nook asks only shows while it still has to.
         StatusRow(title: title, detail: granted ? "" : detail, state: granted ? .done : .todo) {
             // Granted needs no word: the check in front of the row says it.
+            if granted, let turnOff {
+                Button(tr("access.permission.turnOff"), action: turnOff)
+                    .controlSize(.small)
+                    .nookTip(tr("access.permission.turnOffDetail"))
+            }
             if !granted {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }

@@ -10,6 +10,8 @@ final class ConnectionsRoute: ObservableObject {
     enum Target: Equatable {
         case add(ConnectionCategory?)
         case chat(String)
+        /// One option of the Add sheet by its id ("signin.notion"), opened on its own steps or management.
+        case option(String)
     }
 
     @Published var pending: Target?
@@ -353,6 +355,9 @@ struct ConnectionsPage: View {
             sheet = Sheet(category: category)
         case .chat(let id):
             sheet = Sheet(category: .chats, option: ConnectionCatalog.options(app).first { $0.id == "chat." + id })
+        case .option(let id):
+            let option = ConnectionCatalog.options(app).first { $0.id == id }
+            sheet = Sheet(category: option?.category, option: option)
         }
     }
 }
