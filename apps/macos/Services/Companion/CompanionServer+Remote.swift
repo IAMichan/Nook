@@ -376,7 +376,7 @@ extension CompanionServer {
     /// What the phone may do to a Workspace session, as the Agents list on the Mac offers it: rename it, archive it once
     /// it rests, snooze it (or wake it), and turn its main thread on or off as the composer's switch does.
     static func actions(_ run: WorkspaceRun, now: Date, access: BridgeAccess) -> [SessionAction] {
-        var actions: [SessionAction] = [.rename]
+        var actions: [SessionAction] = [.rename, .model]
         if MainThread.offered(provider: run.provider, access: access) {
             actions.append(run.mainThread == true ? .mainThreadOff : .mainThreadOn)
         }
@@ -425,6 +425,14 @@ extension CompanionServer {
             workspace.snooze(runID, until: end)
         case .mainThreadOn: workspace.setMainThread(runID, true)
         case .mainThreadOff: workspace.setMainThread(runID, false)
+        case .model:
+            // Only a model the composer's menu offers for this agent (as `launchOptions` lists them), or its default.
+            let model = (request.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let offered = app.models(for: run.provider) + app.models(for: run.provider, profileID: run.profileID)
+            guard model.isEmpty || offered.contains(model) else { return .failure(request.id, .badRequest) }
+            if case .reject = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: model) {
+                return .failure(request.id, .busy)
+            }
         case .end: return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)

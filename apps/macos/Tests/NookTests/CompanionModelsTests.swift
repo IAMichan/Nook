@@ -157,6 +157,19 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(SessionAction(rawValue: "mainThreadOff"), .mainThreadOff)
     }
 
+    func testModelSwitchTravelsAndOldMacsStillDecode() throws {
+        XCTAssertEqual(SessionAction(rawValue: "model"), .model)
+        let digest = SessionDigest(id: "s", title: "Fix", agent: "Codex", attention: "idle", folder: "nook", branch: nil,
+                                   updated: 1, excerpt: "", items: [], agentID: "codex", modelChoice: "gpt-5.5")
+        let decoded = try JSONDecoder().decode(SessionDigest.self, from: JSONEncoder().encode(digest))
+        XCTAssertEqual(decoded.agentID, "codex")
+        XCTAssertEqual(decoded.modelChoice, "gpt-5.5")
+        let old = Data(#"{"id":"s","title":"Fix","agent":"Codex","attention":"idle","folder":"nook","updated":1,"excerpt":"","items":[]}"#.utf8)
+        let fromOldMac = try JSONDecoder().decode(SessionDigest.self, from: old)
+        XCTAssertNil(fromOldMac.agentID, "a Mac that predates it")
+        XCTAssertNil(fromOldMac.modelChoice)
+    }
+
     func testInboxCodable() throws {
         let request = CompanionRequest(op: .inboxSend, item: "wa|31600000000@s.whatsapp.net", text: "On my way", replyTo: "m1")
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
