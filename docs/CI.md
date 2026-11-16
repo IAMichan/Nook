@@ -146,6 +146,12 @@ the pull request by a maintainer (issue templates only label the issue). The sho
   and must stay up for 30 seconds. `codesign --verify` does not catch a crash at launch; this does.
 - **Draft until complete.** The release is created as a draft and the `publish` job makes it public (and creates the
   tag) only when the macOS, Windows and Linux files are all attached. A failed run leaves a draft nobody sees.
+- **Changelog.** Once the release is public, the `changelog` job moves the **Unreleased** entries of `CHANGELOG.md`
+  that the released commit had under the new version (`scripts/changelog-release.py`) and opens a pull request with
+  auto-merge, since `main` takes changes only through one. Entries merged while the release was building stay under
+  Unreleased. A stable release folds the sections of its betas into one. With `NOOK_RELEASE_TOKEN` (which then also
+  needs *Pull requests* read and write) CI runs on that pull request and it merges by itself; with the workflow's own
+  token GitHub starts no CI for it, so close and reopen it to run `Check`.
 - **Build provenance.** Every download is attested: `gh attestation verify <file> --repo IAMichan/Nook`. The Sigstore bundles are attached as `Nook-<version>-macOS.intoto.jsonl` and `Nook-<version>-Windows-Linux.intoto.jsonl`, so the check also works offline with `--bundle <bundle>` (and OpenSSF Scorecard counts the releases as signed with provenance).
 
 ## Release signing (`release.yml`)
