@@ -2077,6 +2077,74 @@ enum ChatDraft {
     }
 }
 
+// MARK: A suggested reply
+
+/// The answer you will likely send, shown as grey text in a chat's empty field when you open a chat whose newest message
+/// is someone else's, as an agent's composer shows the next prompt after its turn (`NextPromptSuggestion`). The brain
+/// writes it as "@nook" alone would (`ChatDraft.prompt` with no request); Tab puts it in the field, typing hides it and
+/// Escape lets it go. One try per message, and only while you are there to read it.
+enum ChatReplySuggestion {
+    /// The message a suggestion answers: the chat and its newest message. A new message is a new turn, so an older
+    /// suggestion never shows under it.
+    struct Turn: Equatable, Hashable {
+        var chat: String
+        var message: String
+        var date: Date?
+    }
+
+    /// The newest message of a chat (its id, whether it is yours, when it came), oldest first, as the turn a suggestion
+    /// would answer; nil when there is nothing to answer: no message, or the newest one is your own.
+    static func turn(chat: String, messages: [(id: String, fromMe: Bool, date: Date?)]) -> Turn? {
+        guard !chat.isEmpty, let last = messages.last, !last.fromMe else { return nil }
+        return Turn(chat: chat, message: last.id, date: last.date)
+    }
+
+    /// Whether a suggestion may be written now: each is a request to the brain, so only for a fresh message of someone
+    /// else's, with the field empty and nothing else going on in it, once per message.
+    struct Gate: Equatable {
+        var enabled: Bool
+        var brainReady: Bool
+        var fieldEmpty: Bool
+        /// Something else has the field: Nook writing a draft, a message going out, a quote or a change to your last one.
+        var busy: Bool
+        var alreadyTried: Bool
+        /// The message came a while ago: browsing old chats should not cost a request each.
+        var stale: Bool
+
+        /// How long after a message came an answer is still worth suggesting.
+        static let freshFor: TimeInterval = 24 * 60 * 60
+
+        static func isStale(_ date: Date?, now: Date = Date()) -> Bool {
+            date.map { now.timeIntervalSince($0) > freshFor } ?? false
+        }
+
+        var allows: Bool { enabled && brainReady && fieldEmpty && !busy && !alreadyTried && !stale }
+    }
+
+    /// At most this many characters are suggested: a chat message, not a letter.
+    static let maxLength = 400
+
+    /// The brain's answer as a suggestion: cleaned as a draft (`ChatDraft.clean`), nil when nothing is left or it is
+    /// too long to be an answer you would take as is.
+    static func clean(_ answer: String?) -> String? {
+        guard let answer, let text = ChatDraft.clean(answer), text.count <= maxLength else { return nil }
+        return text
+    }
+}
+
+/// A chat's suggestion for one message: being written, ready to show, or done with (taken, dismissed, none).
+struct ChatReplySuggestionState: Equatable {
+    enum Phase: Equatable { case writing, ready(String), done }
+    var turn: ChatReplySuggestion.Turn
+    var phase: Phase
+
+    /// The text to show while `turn` is still the newest message.
+    func shown(for current: ChatReplySuggestion.Turn?) -> String? {
+        guard turn == current, case .ready(let text) = phase else { return nil }
+        return text
+    }
+}
+
 // MARK: Steering a draft
 
 extension ChatDraft {

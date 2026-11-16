@@ -396,6 +396,12 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(richComposer, forKey: "richComposer") }
     }
 
+    /// Opening a chat whose newest message is someone else's shows a fitting answer as grey text in its empty field
+    /// (`ChatReplySuggestion`), as an agent's composer shows the next prompt after its turn.
+    @Published var suggestChatReply: Bool {
+        didSet { UserDefaults.standard.set(suggestChatReply, forKey: "suggestChatReply") }
+    }
+
     /// The built-in themes, then the imported ones.
     var themes: [NookColorTheme] { NookColorTheme.builtIn + customThemeCache }
 
@@ -829,6 +835,7 @@ final class AppSettings: ObservableObject {
         renderMath = defaults.object(forKey: "renderMath") as? Bool ?? true
         MathText.renderingEnabled = defaults.object(forKey: "renderMath") as? Bool ?? true
         richComposer = defaults.object(forKey: "richComposer") as? Bool ?? true
+        suggestChatReply = defaults.object(forKey: "suggestChatReply") as? Bool ?? true
         let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
         nookLook = storedLook
         NookAppearance.shared.look = storedLook
