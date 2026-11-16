@@ -8,6 +8,9 @@ pub const ROWS: &[Row] = &[
     ("Nook Chat conversations", "Unterhaltungen in Nook Chat", "Conversations Nook Chat", "Conversaciones de Nook Chat"),
     ("Read Nook Chat", "Nook Chat lesen", "Lire Nook Chat", "Leer Nook Chat"),
     ("Write in Nook Chat", "In Nook Chat schreiben", "Écrire dans Nook Chat", "Escribir en Nook Chat"),
+    ("Chats", "Chats", "Discussions", "Chats"),
+    ("Read chat", "Chat lesen", "Lire la discussion", "Leer chat"),
+    ("Send chat message", "Chatnachricht senden", "Envoyer un message", "Enviar mensaje de chat"),
     ("Take over screen", "Bildschirm übernehmen", "Prendre le contrôle de l'écran", "Tomar el control de la pantalla"),
     (
         "Give the task for the agent.",
