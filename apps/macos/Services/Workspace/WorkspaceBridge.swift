@@ -469,6 +469,7 @@ final class WorkspaceBridge: ObservableObject {
             case .nookChatList: return nookChatList(arguments)
             case .nookChatRead: return nookChatRead(arguments)
             case .nookChatSend: return await nookChatSend(arguments, caller, context)
+            case .chatList, .chatRead, .chatSend: return await chats(tool, arguments, caller, context)
             case .takeOverScreen: return await takeOverScreen(arguments, caller, context)
             }
         } catch {

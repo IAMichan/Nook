@@ -56,11 +56,16 @@ final class ChatInboxConnector: ContextSource {
         return lines
     }
 
+    /// Whether a chat shows to this call: shown in the Chats tab, and of an app the caller may see (`BridgeChats.withholds`).
+    static func reveals(_ thread: InboxThread) -> Bool {
+        ChatCaptureService.shared.isShown(thread) && !BridgeChats.withholds(app: thread.app)
+    }
+
     /// The apps with at least one shown chat Nook can write in, by name: the same routes the Chats tab sends through.
-    private static func writableApps() -> [String] {
+    static func writableApps() -> [String] {
         let capture = ChatCaptureService.shared
         var apps: [String] = []
-        for thread in capture.loadedInbox.sorted where capture.isShown(thread) && !apps.contains(thread.app) {
+        for thread in capture.loadedInbox.sorted where reveals(thread) && !apps.contains(thread.app) {
             if AppModel.shared.chatRoute(for: thread) != nil { apps.append(thread.app) }
         }
         return apps.map { MessagingApps.app(id: $0)?.name ?? $0 }
@@ -92,7 +97,7 @@ final class ChatInboxConnector: ContextSource {
                     // Every chat that shows, the same way for every app (`ChatCaptureService.isShown`).
                     let capture = ChatCaptureService.shared
                     let inbox = capture.loadedInbox
-                    let shown = inbox.sorted.filter(capture.isShown)
+                    let shown = inbox.sorted.filter(ChatInboxConnector.reveals)
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let query = AppData.string(input["query"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -107,14 +112,16 @@ final class ChatInboxConnector: ContextSource {
                         return threads.isEmpty ? "No chats collected yet." : "Recent chats (newest first):\n" + ChatInbox.overview(threads, limit: 20)
                     }
                     let thread: InboxThread
-                    switch inbox.pick(chat, app: appID, among: capture.isShown) {
+                    switch inbox.pick(chat, app: appID, among: ChatInboxConnector.reveals) {
                     case .one(let found): thread = found
                     case .several(let threads): return ChatInbox.which(chat, among: threads)
                     case .none:
                         let names = shown.prefix(12).map(\.name).joined(separator: ", ")
                         return "No collected chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names)."
                     }
-                    let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
+                    // Clamped before it becomes an Int: a huge or non-finite number would trap.
+                    let requested = AppData.number(input["limit"]) ?? 20
+                    let limit = requested.isFinite ? Int(min(max(requested, 1), 50)) : 20
                     let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
                     let details = ChatInbox.details(thread)
                     return "\(appName) chat with \(thread.name):\n" + (details.isEmpty ? "" : details + "\n\nMessages:\n")
@@ -145,11 +152,11 @@ final class ChatInboxConnector: ContextSource {
                     let text = AppData.string(input["message"])
                     // A name that fits two chats is never sent to a guess: Nook asks which one.
                     let thread: InboxThread
-                    switch capture.loadedInbox.pick(chat, app: appID, among: capture.isShown) {
+                    switch capture.loadedInbox.pick(chat, app: appID, among: ChatInboxConnector.reveals) {
                     case .one(let found): thread = found
                     case .several(let threads): throw NookError(ChatInbox.which(chat, among: threads))
                     case .none:
-                        let names = capture.loadedInbox.sorted.filter(capture.isShown).prefix(12).map(\.name).joined(separator: ", ")
+                        let names = capture.loadedInbox.sorted.filter(ChatInboxConnector.reveals).prefix(12).map(\.name).joined(separator: ", ")
                         throw NookError("No chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names).")
                     }
                     let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app

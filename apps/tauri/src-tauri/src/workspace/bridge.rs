@@ -311,6 +311,9 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         | BridgeTool::NookChatList
         | BridgeTool::NookChatRead
         | BridgeTool::NookChatSend
+        | BridgeTool::ChatList
+        | BridgeTool::ChatRead
+        | BridgeTool::ChatSend
         | BridgeTool::TakeOverScreen) => nook::call(app, t, a, &caller, context).await,
     };
     result.unwrap_or_else(ToolResult::error)
