@@ -262,7 +262,11 @@ extension AgentHub {
         switch kind {
         case "SessionStart":
             // Claude Code starts again after a compaction (`source: "compact"`): the session works no more than before.
-            if (event["source"] as? String) != "compact" { record.status = .running }
+            // A resumed old chat starts its work now: the timer never counts from when Nook first heard of it.
+            if (event["source"] as? String) != "compact" {
+                record.status = .running
+                if record.turnStarted == nil { record.turnStarted = Date() }
+            }
         case "UserPromptSubmit":
             record.status = .running
             record.turnStarted = Date()
