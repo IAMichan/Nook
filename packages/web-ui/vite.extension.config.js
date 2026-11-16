@@ -4,14 +4,22 @@
 // extension's folder holds no node_modules (the Mac app copies all of it). CI fails when it is not up to date.
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 const extension = here('../../apps/browser-extension/');
+const repository = here('../../');
+
+// Svelte names a component's styles after its file: the absolute path for one outside this package (the extension's
+// own composer), so every checkout built a different composer.js and CI's check could not be met on another machine.
+// Hashing the path from the repository root gives the same file everywhere.
+const cssHash = ({ css, filename, hash }) =>
+  `svelte-${hash(filename && filename !== '(unknown)' ? relative(repository, resolve(here('.'), filename)).replace(/\\/g, '/') : css)}`;
 
 export default defineConfig({
   root: here('.'),
-  plugins: [svelte({ compilerOptions: { css: 'injected' } })],
+  plugins: [svelte({ compilerOptions: { css: 'injected', cssHash } })],
   // Svelte is installed here only: imports of it from the extension's files resolve to this copy.
   resolve: { alias: { '@nook/web-ui': here('src') }, dedupe: ['svelte'] },
   build: {
