@@ -39,22 +39,29 @@ struct MusicNowPlayingView: View {
         GeometryReader { geo in
             Group {
                 if wide {
-                    // One column on the cover's two edges: the cover, the track, the bar and the controls all line up.
-                    let side = min(320, geo.size.width * 0.34, max(160, geo.size.height - 240))
-                    HStack(alignment: .top, spacing: NookTheme.Spacing.xxxl) {
+                    // Two panels of one height side by side: the player on the left, the card on the right. One column
+                    // on the cover's two edges inside the player: the cover, the track, the bar and the controls line up.
+                    let inset = NookTheme.Spacing.xl
+                    let side = min(320, geo.size.width * 0.34, max(160, geo.size.height - 240 - inset * 2))
+                    HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                             cover(side: side)
                             details
                         }
                         .frame(width: max(Self.column, side))
+                        .padding(inset)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .background { playerPanel(center: UnitPoint(x: 0.5, y: 0.25)) }
                         card
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                         HStack(alignment: .top, spacing: NookTheme.Spacing.xl) {
                             cover(side: min(132, geo.size.width * 0.3))
                             details
                         }
+                        .padding(NookTheme.Spacing.lg)
+                        .background { playerPanel(center: UnitPoint(x: 0.15, y: 0.2)) }
                         card
                     }
                 }
@@ -63,15 +70,21 @@ struct MusicNowPlayingView: View {
             .padding(.bottom, NookTheme.Spacing.lg)
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
-        .background {
-            // The cover's colours over the whole page, brightest behind the cover.
-            MusicArtworkGlow(url: info.artworkURL, seed: info.title, opacity: 0.5,
-                             center: wide ? UnitPoint(x: 0.2, y: 0.3) : UnitPoint(x: 0.15, y: 0.1), reach: 0.7)
-        }
         .onLayoutWidthChange { width = $0 }
         // The position and volume shown here need the player polled every couple of seconds, as under the bar.
         .onAppear { service.addViewer() }
         .onDisappear { service.removeViewer() }
+    }
+
+    /// The player's panel: the card's shape, fill and border, with the cover's colours glowing in it, brightest
+    /// behind the cover, as the player card on Home.
+    private func playerPanel(center: UnitPoint) -> some View {
+        let shape = NookTheme.shape(NookTheme.Radius.sheet)
+        return shape
+            .fill(NookTheme.surface.opacity(0.78))
+            .overlay { MusicArtworkGlow(url: info.artworkURL, seed: info.title, opacity: 0.5, center: center, reach: 0.9) }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(NookTheme.border, lineWidth: 1))
     }
 
     // MARK: Player
