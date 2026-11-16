@@ -775,6 +775,16 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// the chat helper's networks). It stays quiet by default, as Mail's newsletters do (`ChatNoticeRules.isQuiet`), and
     /// is no person in People.
     var isAutomated: Bool { profile?.bot == true && noticeKind != .group }
+    /// Whether what they wrote last looks like phishing or a scam (`MessageTrust`), the same for every chat app: their
+    /// newest few messages, judged by who the chat says they are (their name and address) and whether you ever wrote here.
+    var trust: MessageTrust.Verdict {
+        let incoming = messages.filter { $0.isIncoming }.suffix(3)
+        guard !incoming.isEmpty else { return MessageTrust.Verdict(score: 0, reasons: []) }
+        let email = ChatProfile.text(profile?.email) ?? ""
+        let sender = email.isEmpty ? name : "\(ChatProfile.text(profile?.ownName) ?? name) <\(email)>"
+        return MessageTrust.assess(sender: sender, body: incoming.map(\.text).joined(separator: "\n"),
+                                   known: messages.contains { $0.isMine })
+    }
     /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people. What its
     /// app says comes first.
     var isPrivate: Bool {
@@ -1859,7 +1869,8 @@ extension ChatInbox {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
             let unread = thread.unread > 0 ? " (\(thread.unread) unread)" : ""
             let last = thread.messages.last.map { " · " + stamp($0.date) + " · " + line($0, in: thread) } ?? ""
-            return "- \(app) · \(thread.name)\(unread)\(last)"
+            let trust = thread.trust
+            return "- \(app) · \(thread.name)\(unread)\(last)" + (trust.isSuspicious ? " · " + trust.marker : "")
         }.joined(separator: "\n")
     }
 
@@ -1885,6 +1896,8 @@ extension ChatInbox {
         if profile.verified == true { lines.append("Verified") }
         if profile.bot == true { lines.append("A bot") }
         if profile.blocked == true { lines.append("You blocked them") }
+        let trust = thread.trust
+        if trust.isSuspicious { lines.insert(trust.marker, at: 0) }
         for (label, value) in [("Their own name", profile.ownName), ("Username", profile.username), ("Phone", profile.phone),
                                ("Email", profile.email), ("Job title", profile.title), ("Business", profile.business),
                                ("Category", profile.category), ("Address", profile.address), ("Website", profile.website),

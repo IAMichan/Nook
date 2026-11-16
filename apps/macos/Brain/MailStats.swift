@@ -239,6 +239,8 @@ enum MailStats {
             guard let pattern = MailStats.automatedPattern else { return false }
             return pattern.firstMatch(in: sender, range: NSRange(sender.startIndex..., in: sender)) != nil
         }
+        /// Whether it looks like phishing or a scam (`MessageTrust`); a sender the user replied to counts as known.
+        var trust: MessageTrust.Verdict { MessageTrust.assess(sender: sender, subject: subject, body: body, known: replied) }
     }
 
     /// Senders that never need a reply (newsletters, notifications, no-reply addresses).
@@ -268,12 +270,13 @@ enum MailStats {
         return (unread, rows.sorted { $0.date > $1.date })
     }
 
-    /// Within `days`, newest first; with `unansweredOnly` only mail from people that has no reply yet, with `unreadOnly`
-    /// only mail not read yet.
+    /// Within `days`, newest first; with `unansweredOnly` only mail from people that has no reply yet (no newsletters, no
+    /// phishing or scams), with `unreadOnly` only mail not read yet.
     static func select(_ rows: [InboxRow], now: Date, days: Int, unansweredOnly: Bool, unreadOnly: Bool = false, limit: Int = 15) -> [InboxRow] {
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
         let kept = rows.filter {
-            $0.date >= cutoff && (!unansweredOnly || (!$0.replied && !$0.isAutomated)) && (!unreadOnly || !$0.read)
+            $0.date >= cutoff && (!unansweredOnly || (!$0.replied && !$0.isAutomated && !$0.trust.isSuspicious))
+                && (!unreadOnly || !$0.read)
         }
         return Array(kept.sorted { $0.date > $1.date }.prefix(limit))
     }
@@ -289,7 +292,9 @@ enum MailStats {
             let state = (row.read ? "gelezen" : "ongelezen") + (row.replied ? ", beantwoord" : "")
             let body = row.body.isEmpty ? "" : "\n" + row.body
             let id = row.messageID.isEmpty ? "" : " | id: \(row.messageID)"
-            return "### \(row.subject) | van \(row.sender) | \(date(row.date)) | \(state) | \(row.account)\(id)\(body)"
+            let trust = row.trust
+            let warning = trust.isSuspicious ? "\n" + trust.marker : ""
+            return "### \(row.subject) | van \(row.sender) | \(date(row.date)) | \(state) | \(row.account)\(id)\(warning)\(body)"
         }.joined(separator: "\n\n")
     }
 
