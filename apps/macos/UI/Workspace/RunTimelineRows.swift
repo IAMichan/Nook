@@ -139,17 +139,14 @@ struct EventRow: View {
         case .system where event.tool == "limit":
             // When the limit that stopped this turn frees up.
             TranscriptWorkLine(symbol: "hourglass", label: event.text)
-                .nookTip(event.text)
 
         case .system where event.tool == "resume":
             // Nook goes on by itself after a limit: on the same account at reset, or on the one you switched to.
             TranscriptWorkLine(symbol: "play.circle", label: event.text)
-                .nookTip(event.text)
 
         case .system where event.tool == "origin":
             // Another agent, a script or Nook Chat started this session (`NewRunConfig.startedBy`).
             TranscriptWorkLine(symbol: "arrow.turn.right.down", label: event.text)
-                .nookTip(event.text)
 
         case .system where CompactionProgress.isCompaction(event):
             // A compaction: live while the agent summarizes, then what it did (`CompactionProgress`).
@@ -160,19 +157,16 @@ struct EventRow: View {
                 TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.event.compactionStopped"), failed: true)
             default:
                 TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: event.text)
-                    .nookTip(event.text)
             }
 
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)
                 .padding(.top, NookTheme.Spacing.sm)
-                .nookTip(event.text)
 
         case .system:
             TranscriptWorkLine(symbol: event.tool == "launch" ? "terminal" : "info.circle", label: event.text,
                                mono: event.tool == "launch")
-                .nookTip(event.text)
 
         case .result:
             // The end of a turn says nothing of its own: the fold above already says how long it worked, as in an agent's
@@ -552,7 +546,6 @@ struct ToolRow: View {
                                failed: failed, checks: Verification.check(event).map { [$0] } ?? [], lines: step.lines,
                                open: opens ? expanded : nil, reveals: file == nil ? nil : reveals, quietChevron: true,
                                action: toggle)
-                .nookTip(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? event.text)
                 .accessibilityLabel(event.text)
             // An MCP app is there to be used: shown whether or not the call is open.
             if let app = McpUI.resource(in: event.output) {

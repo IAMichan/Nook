@@ -301,9 +301,8 @@ struct PullRequestDetailView: View {
                 numberLink
                 Text(detail?.title ?? item.title)
                     .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .nookTip(detail?.title ?? item.title)
+                    .nookTipWhenCut(detail?.title ?? item.title)
             } else {
                 Button {
                     if let url = URL(string: (forgeRepository?.webOrigin ?? "https://github.com") + "/" + item.repo) { NSWorkspace.shared.open(url) }
@@ -349,10 +348,9 @@ struct PullRequestDetailView: View {
                 Text(detail?.title ?? item.title)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
-                    .lineLimit(2)
                     .truncationMode(.tail)
+                    .nookTipWhenCut(detail?.title ?? item.title, lines: 2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .nookTip(detail?.title ?? item.title)
                     .textSelection(.enabled)
             }
             let author = detail?.author ?? item.author

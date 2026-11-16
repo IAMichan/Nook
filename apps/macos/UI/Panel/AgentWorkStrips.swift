@@ -18,9 +18,8 @@ struct GoalStrip: View {
                 Text(tr("ws.goal.title")).foregroundStyle(NookTheme.textTertiary)
                 Text(goal.objective)
                     .foregroundStyle(NookTheme.paper.opacity(0.85))
-                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .nookTip(goal.objective)
+                    .nookTipWhenCut(goal.objective)
                 Spacer(minLength: 6)
                 Text(statusLine).foregroundStyle(NookTheme.textSecondary)
                 if canPause, goal.status == .active {
@@ -405,7 +404,6 @@ private struct SubagentToolLine: View {
         let tool = AgentToolStep(id: "", name: step.toolName, summary: step.toolDetail, state: .done)
         let text = TranscriptStepText.parts(tool)
         TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tool.name), label: text.verb, detail: text.detail, mono: text.mono)
-            .nookTip(step.text)
     }
 }
 
@@ -481,9 +479,8 @@ struct PullRequestWatchStrip: View {
                 Text(title)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(isCurrent ? NookTheme.textStrong : NookTheme.textSecondary)
-                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .nookTip(title)
+                    .nookTipWhenCut(title)
             }
             if let branch {
                 Text(branch)

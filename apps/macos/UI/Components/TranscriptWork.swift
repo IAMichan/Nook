@@ -8,7 +8,8 @@ import SwiftUI
 // MARK: Lines
 
 /// One line of the agent's work: an icon, what it did in muted text, and a chevron when it opens. The line that runs now
-/// shimmers.
+/// shimmers. When its words are cut short, a tip shows them whole; when they all show, there is no tip (put a `nookTip`
+/// on a line only when it says more than the line).
 struct TranscriptWorkLine: View {
     let symbol: String
     let label: String
@@ -34,6 +35,14 @@ struct TranscriptWorkLine: View {
     var quietChevron = false
     var action: (() -> Void)? = nil
     @State private var hovering = false
+    /// The label and detail are cut short: only then does the line show them whole in a tip.
+    @State private var cut = false
+
+    /// The words of the line in full, for the tip while they are cut.
+    private var fullText: String {
+        guard let detail, !detail.isEmpty else { return label }
+        return label + " " + detail
+    }
 
     private var clickable: Bool { open != nil || reveals != nil || link != nil }
 
@@ -60,8 +69,8 @@ struct TranscriptWorkLine: View {
                     .lineLimit(1)
             } else {
                 labelText
-                    .lineLimit(1)
                     .truncationMode(.tail)
+                    .lineLimit(1, reportingCut: $cut)
             }
             if let open {
                 DisclosureChevron(open: open, tint: NookTheme.textTertiary.opacity(0.7))
@@ -92,8 +101,10 @@ struct TranscriptWorkLine: View {
                 .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 .accessibilityAddTraits(open == true || reveals == true ? .isSelected : [])
+                .nookTip(fullText, enabled: cut && !live)
         } else {
             content
+                .nookTip(fullText, enabled: cut && !live)
         }
     }
 }

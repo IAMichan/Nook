@@ -566,9 +566,8 @@ struct PanelSheetView: View {
                     Text(subtitle)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
                         .truncationMode(.middle)
-                        .nookTip(subtitle)
+                        .nookTipWhenCut(subtitle)
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: dismiss)
