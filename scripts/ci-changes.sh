@@ -17,7 +17,7 @@ AREAS=(macos ios packages relay browser_extension tauri chatd core_tests workflo
 # (* also matches /), anything else is one file.
 paths_for() {
   case "$1" in
-    macos) echo "apps/macos/ packages/protocol/ scripts/ui-lint.sh scripts/perf-lint.sh .github/workflows/build.yml .github/actions/" ;;
+    macos) echo "apps/macos/ packages/protocol/ scripts/ui-lint.sh scripts/perf-lint.sh scripts/scenarios.sh scripts/xcode.sh .github/workflows/build.yml .github/actions/" ;;
     # The companion also compiles a few of the Mac app's files (`path: ../macos/…` in apps/ios/project.yml); the test
     # fails when that list gains one that is missing here.
     ios) echo "apps/ios/ packages/protocol/ apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/Services/Workspace/ComposerQuotes.swift apps/macos/UI/Components/BrandLogo.swift apps/macos/UI/Shared/ apps/macos/UI/Theme/NookIcon.swift apps/macos/UI/Theme/NookPalette.swift apps/macos/UI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets/ apps/macos/Resources/katex/ apps/macos/Resources/mermaid/ .github/workflows/ios.yml .github/actions/" ;;

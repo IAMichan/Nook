@@ -104,6 +104,10 @@ The first build compiles the app's sources a second time (into the test bundle) 
 Run one at a time per checkout: a run recreates the checkout's scenario home and output. Use a second worktree for a
 second run.
 
+CI runs them too: the macOS job in `.github/workflows/build.yml` runs `scripts/scenarios.sh` after the unit tests, with
+its build next to the app's own (`NOOK_XCODE_DERIVED_DATA`), puts `summary.md` on the job page, and keeps the output of a
+failed run as an artifact.
+
 ## Prove a fix
 
 ```sh

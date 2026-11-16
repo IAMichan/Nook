@@ -368,6 +368,8 @@ The wire format is pinned by golden fixtures in `packages/protocol/Fixtures` tha
 | `relay.json` | rooms, mux, close codes | — | rooms, mux, close codes |
 
 A change to the wire format starts with the fixture; each implementation's test then says what still needs to follow.
+Every request type (`CompanionOp`) has at least one entry in `requests.json`: `CompanionFixturesTests` fails for one
+that has none.
 
 ## Direct APNs Push Notifications
 

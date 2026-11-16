@@ -32,8 +32,9 @@ extension SettingsView {
         }
     }
 
-    /// Puts a redacted report on the clipboard: versions and set-up facts, with mail addresses, tokens, phone numbers and
-    /// the user's name in paths taken out (`DiagnosticsRedactor`). Nothing is sent anywhere.
+    /// Puts a redacted report on the clipboard: versions and set-up facts and Nook's log of the last half hour
+    /// (`DiagnosticsLog`), with mail addresses, tokens, phone numbers and the user's name in paths taken out
+    /// (`DiagnosticsRedactor`). Nothing is sent anywhere. The log is read off the main thread.
     private func copyRedactedDiagnostics() {
         let info = Bundle.main.infoDictionary
         let header: [(String, String)] = [
@@ -43,7 +44,13 @@ extension SettingsView {
             ("Language", I18n.shared.currentLanguage.rawValue),
             ("Demo mode", app.demoMode ? "on" : "off"),
         ]
-        Pasteboard.copy(DiagnosticsRedactor.report(header: header, log: []))
+        Task {
+            let now = Date()
+            let entries = await Task.detached(priority: .userInitiated) {
+                Log.recentEntries(since: now.addingTimeInterval(-DiagnosticsLog.window))
+            }.value
+            Pasteboard.copy(DiagnosticsRedactor.report(header: header, log: DiagnosticsLog.lines(entries, now: now), now: now))
+        }
     }
 
     // MARK: About

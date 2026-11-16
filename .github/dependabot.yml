@@ -30,6 +30,12 @@ updates:
       cargo:
         applies-to: version-updates
         patterns: ["*"]
+    ignore:
+      # windows-collections must use the same windows-core as the `windows` crate (0.62 → windows-collections 0.3): a
+      # bump of it alone pulls in a second windows-core, and the Windows speech code no longer compiles (#1668). Move it
+      # by hand together with `windows`.
+      - dependency-name: windows-collections
+        versions: [">=0.4"]
 
   - package-ecosystem: npm
     # The Svelte interface of the Tauri app, and the shared composer it builds for the browser extension

@@ -50,6 +50,14 @@ final class CompanionFixturesTests: XCTestCase {
         }
     }
 
+    /// Every request the phone can make has a fixture: a new `CompanionOp` without one fails here, so a change to how
+    /// it travels cannot slip past the round trip above (and the Tauri and relay tests that read the same file).
+    func testEveryRequestTypeHasAFixture() throws {
+        let covered = Set(try entries(fixture("requests.json"), "requests").compactMap { ($0["json"] as? [String: Any])?["op"] as? String })
+        let missing = CompanionOp.allCases.map(\.rawValue).filter { !covered.contains($0) }
+        XCTAssertEqual(missing, [], "add these to packages/protocol/Fixtures/requests.json")
+    }
+
     func testResponsesReadAndWriteBack() throws {
         for entry in try entries(fixture("responses.json"), "responses") {
             let json = try JSONSerialization.data(withJSONObject: try XCTUnwrap(entry["json"]))

@@ -32,6 +32,13 @@ class Scenario: XCTestCase {
         return short == className ? className : className + "-" + short
     }
 
+    /// The agent scanner asks your login shell where agents are installed, a minute after it starts and then now and
+    /// then (`HistoryScanner.locateExecutables`): a long run meets it in whichever scenario is on screen then. The guard
+    /// still refuses it (a login shell reads your own startup files), but it starts no agent, so it is only a note.
+    static func isPathLookup(_ refusal: String) -> Bool {
+        refusal.contains("-ilc printf 'NOOK-")
+    }
+
     func log(_ line: String) { notes.append(line) }
 
     /// SwiftUI builds its accessibility elements only for an app an assistive client asked about; the process asks
@@ -66,7 +73,7 @@ class Scenario: XCTestCase {
             let refused = ScenarioRuntimeGuards.drain() + ScenarioHome.drainSpawnRefusals()
             if !refused.isEmpty {
                 notes += refused.map { "guard: " + $0 }
-                if let agent = refused.first(where: { $0.hasPrefix("spawn refused") || $0.hasPrefix("process") }),
+                if let agent = refused.first(where: { ($0.hasPrefix("spawn refused") || $0.hasPrefix("process")) && !Self.isPathLookup($0) }),
                    fixture.agentRefusalsFail {
                     throw ScenarioFailure.couldNotRun("a guard refused to start a real agent: \(agent)")
                 }
