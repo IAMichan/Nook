@@ -84,9 +84,15 @@ impl BridgeTool {
             Self::PullRequestCreate => "pull_request_create",
             Self::SessionList => "session_list",
             Self::SessionRead => "session_read",
-            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => {
-                super::bridge_nook::name(t)
-            }
+            t @ (Self::NookTools
+            | Self::NookUse
+            | Self::NookChatList
+            | Self::NookChatRead
+            | Self::NookChatSend
+            | Self::ChatList
+            | Self::ChatRead
+            | Self::ChatSend
+            | Self::TakeOverScreen) => super::bridge_nook::name(t),
         }
     }
 
@@ -101,9 +107,15 @@ impl BridgeTool {
             | Self::SessionRead => Effect::Read,
             Self::TerminalRun | Self::TerminalStop | Self::BrowserOpen => Effect::Local,
             Self::PullRequestCreate => Effect::Outward,
-            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => {
-                super::bridge_nook::effect(t)
-            }
+            t @ (Self::NookTools
+            | Self::NookUse
+            | Self::NookChatList
+            | Self::NookChatRead
+            | Self::NookChatSend
+            | Self::ChatList
+            | Self::ChatRead
+            | Self::ChatSend
+            | Self::TakeOverScreen) => super::bridge_nook::effect(t),
         }
     }
 
@@ -127,9 +139,15 @@ impl BridgeTool {
             Self::PullRequestCreate => "Pull request",
             Self::SessionList => "Nook-sessies",
             Self::SessionRead => "Lees sessie",
-            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => {
-                super::bridge_nook::label(t)
-            }
+            t @ (Self::NookTools
+            | Self::NookUse
+            | Self::NookChatList
+            | Self::NookChatRead
+            | Self::NookChatSend
+            | Self::ChatList
+            | Self::ChatRead
+            | Self::ChatSend
+            | Self::TakeOverScreen) => super::bridge_nook::label(t),
         }
     }
 
@@ -201,9 +219,15 @@ impl BridgeTool {
             Self::SessionRead => {
                 object(json!({"session_id": {"type": "string", "description": "The session id from session_list."}}), &["session_id"])
             }
-            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => {
-                super::bridge_nook::schema(t)
-            }
+            t @ (Self::NookTools
+            | Self::NookUse
+            | Self::NookChatList
+            | Self::NookChatRead
+            | Self::NookChatSend
+            | Self::ChatList
+            | Self::ChatRead
+            | Self::ChatSend
+            | Self::TakeOverScreen) => super::bridge_nook::schema(t),
         }
     }
 

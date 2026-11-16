@@ -95,7 +95,13 @@ fn data(text: &str) -> ToolResult {
 
 /// `chat_list`, `chat_read` and `chat_send`: Nook's own chat tools under names for agents, run through `nook_use`, so a
 /// read is shielded and a message approved exactly as there.
-async fn chats(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, caller: &BridgeCaller, context: &Context) -> Result<ToolResult, String> {
+async fn chats(
+    app: &AppHandle,
+    tool: BridgeTool,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
     let (name, input) = rules::chat_use(tool, a)?;
     if !agent_tools(app).iter().any(|(t, _)| t.name == name) {
         let ctx = ToolCtx::new(app, "");
