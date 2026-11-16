@@ -39,6 +39,12 @@ enum MailSender {
                 throw NookError(tr("mail.send.invalidAddress", wrong))
             }
         }
+        // The invitation goes to whoever the draft is addressed to now, not to who it was written for.
+        if var event = draft.invite, let file = draft.attachments.first(where: { $0.hasSuffix("/invite.ics") }) {
+            event.attendees = to + cc
+            if !from.isEmpty { event.organizer = from }
+            try? Data(CalendarInvite.ics(event).utf8).write(to: URL(fileURLWithPath: file), options: .atomic)
+        }
         await launchMail()
         let result = await ScriptText.run(script(draft, to: to, cc: cc, from: from, send: send), timeout: sendTimeout)
         if let error = result.errorNumber {

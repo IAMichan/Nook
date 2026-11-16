@@ -69,6 +69,32 @@ extension ConnectorHub {
                 }
             ),
             ToolSpec(
+                name: "find_time",
+                description: "Finds concrete free times for a meeting, call or block of work across ALL of the user's calendars (the same ones check_availability reads), and returns ready options with exact ISO start and end. Use this whenever the user wants to plan, schedule or move something (\"plan een uur met Jan volgende week\", \"when can I fit in two hours for the report?\", \"find a time for lunch with Sara\", \"plan my afternoon\"), instead of working out gaps yourself. Offer the options to the user (or, when they asked you to just plan it, pick the first) and use its start and end in create_event; to invite other people, add invite to compose_mail.",
+                schema: [
+                    "type": "object",
+                    "properties": [
+                        "duration_minutes": ["type": "number", "description": "How long it takes, in minutes. Default 60."],
+                        "from": ["type": "string", "description": "Earliest moment, ISO 8601 (a date alone is the start of that day). Default: now."],
+                        "to": ["type": "string", "description": "Latest moment, ISO 8601 (a date alone includes that whole day). Default: seven days after from. At most 31 days."],
+                        "count": ["type": "number", "description": "How many options. Default 3, at most 10."],
+                        "day_start": ["type": "string", "description": "Earliest time of day, \"HH:MM\". Default 09:00 (or what the user said: \"in the evening\" is 18:00)."],
+                        "day_end": ["type": "string", "description": "Latest end time of day, \"HH:MM\". Default 18:00."],
+                        "prefer": ["type": "string", "enum": ["any", "morning", "afternoon", "evening"], "description": "Part of the day to try first. Default any."],
+                        "buffer_minutes": ["type": "number", "description": "Free minutes kept before and after other appointments (travel, a breather). Default 0; 15 to 30 for a meeting somewhere else."],
+                        "weekends": ["type": "boolean", "description": "Also Saturday and Sunday. Default false, unless the user names a weekend day or a private plan."]
+                    ],
+                    "required": [String]()
+                ],
+                kind: .read,
+                summarize: { _ in "Finding a time in all calendars" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self else { throw NookError("Integrations are not available.") }
+                    return try await self.findTime(input)
+                }
+            ),
+            ToolSpec(
                 name: "list_sources",
                 description: "Shows which sources Nook currently knows (calendars, mail, services, custom sources), which are active, and which are not yet connected. Use this when the user asks about an app or service with no data visible, so you can ask which app they use and explain how to connect it.",
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
@@ -115,12 +141,11 @@ extension ConnectorHub {
     private static let dayStartHour = 8
     private static let dayEndHour = 19
 
-    func availability(from: Date, to: Date) async throws -> String {
-        let calendar = Calendar.current
+    /// Every active calendar's events in the range, which calendars were read and what could not be.
+    private func gatherAgenda(from: Date, to: Date) async -> (checked: [String], entries: [AgendaEntry], problems: [String]) {
         var checked: [String] = []
         var entries: [AgendaEntry] = []
         var problems: [String] = []
-
         for source in agendaSources where source.isActive {
             do {
                 let result = try await source.agendaEntries(from: from, to: to)
@@ -131,6 +156,12 @@ extension ConnectorHub {
                 problems.append("\(source.title): \(CloudHelp.errorText(error, service: source.title))")
             }
         }
+        return (checked, entries, problems)
+    }
+
+    func availability(from: Date, to: Date) async throws -> String {
+        let calendar = Calendar.current
+        let (checked, entries, problems) = await gatherAgenda(from: from, to: to)
         let skipped = agendaSources.filter { !$0.isActive }.map { $0.title }
         let hasFeeds = agendaSources.contains { $0.id == "icalfeeds" && $0.isActive }
 
@@ -183,6 +214,62 @@ extension ConnectorHub {
         lines.append(hasFeeds
             ? "Is another calendar or app missing? Ask the user which one they use."
             : "Note: this is everything Nook can access. Does the user also use another calendar (Google Calendar, Outlook, work calendar) not in the list above? Ask which one, and explain they can connect it under Settings › Integrations › Other calendars using its ICS URL.")
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: Finding a time
+
+    func findTime(_ input: [String: Any], now: Date = Date()) async throws -> String {
+        let calendar = Calendar.current
+        func number(_ key: String) -> Double? {
+            if let value = input[key] as? Double { return value }
+            if let value = input[key] as? Int { return Double(value) }
+            return (input[key] as? String).flatMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        }
+        let fromText = (input["from"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let toText = (input["to"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let from = max(NookDates.parse(fromText) ?? now, calendar.startOfDay(for: now))
+        var to = NookDates.parse(toText) ?? (calendar.date(byAdding: .day, value: 7, to: from) ?? from.addingTimeInterval(7 * 86_400))
+        if toText.count == 10, let next = calendar.date(byAdding: .day, value: 1, to: to) { to = next }
+        to = min(to, from.addingTimeInterval(TimeInterval(MeetingTimes.maxDays) * 86_400))
+        guard to > from else { throw NookError("to must be after from.") }
+
+        let minutes = min(max(number("duration_minutes") ?? 60, 5), 12 * 60)
+        var request = MeetingTimes.Request(from: from, to: to, duration: minutes * 60)
+        request.count = Int(number("count") ?? 3)
+        request.dayStart = MeetingTimes.minutes(input["day_start"] as? String) ?? request.dayStart
+        request.dayEnd = MeetingTimes.minutes(input["day_end"] as? String) ?? request.dayEnd
+        if request.dayEnd <= request.dayStart { request.dayEnd = min(request.dayStart + Int(minutes), 24 * 60) }
+        request.buffer = min(max(number("buffer_minutes") ?? 0, 0), 120) * 60
+        request.weekends = (input["weekends"] as? Bool) ?? ((input["weekends"] as? String) == "true")
+        request.preference = MeetingTimes.Preference(text: input["prefer"] as? String)
+
+        let (checked, entries, problems) = await gatherAgenda(from: from.addingTimeInterval(-request.buffer), to: to.addingTimeInterval(request.buffer))
+        // All-day items and events marked "free" do not block, as in check_availability.
+        let busy = entries.filter { !$0.allDay && $0.busy }.map { MeetingTimes.Busy(start: $0.start, end: $0.end) }
+        let slots = MeetingTimes.find(request, busy: busy, now: now, calendar: calendar)
+
+        func clock(_ value: Int) -> String { String(format: "%02d:%02d", value / 60, value % 60) }
+        var lines: [String] = []
+        lines.append("Looking for \(Int(minutes)) minutes between \(NookDates.long(from)) and \(NookDates.long(to)), \(clock(request.dayStart))–\(clock(request.dayEnd))"
+            + (request.weekends ? "" : ", weekdays only") + (request.buffer > 0 ? ", \(Int(request.buffer / 60)) minutes buffer around other appointments" : "")
+            + (request.preference == .any ? "" : ", \(request.preference.rawValue) first") + ".")
+        lines.append(checked.isEmpty ? "Checked: none (no calendar connected or access not granted): these times are not checked against anything." : "Checked: " + checked.joined(separator: "; ") + ".")
+        if !problems.isEmpty { lines.append("Could not read: " + problems.joined(separator: "; ") + ".") }
+        if slots.isEmpty {
+            lines.append("No free time of that length in this window. Offer a longer period, other hours, the weekend or a shorter duration.")
+        } else {
+            lines.append("Options:")
+            for (index, slot) in slots.enumerated() {
+                lines.append("\(index + 1). \(NookDates.day(slot.start)) \(NookDates.time(slot.start))–\(NookDates.time(slot.end)) | start \(NookDates.iso(slot.start)) | end \(NookDates.iso(slot.end))")
+            }
+            let allDay = entries.filter(\.allDay)
+            if !allDay.isEmpty {
+                lines.append("All-day items in this period (they do not block, judge for yourself): "
+                    + allDay.prefix(6).map { "\(NookDates.day($0.start)) \(CloudHelp.short($0.title))" }.joined(separator: "; ") + ".")
+            }
+            lines.append("Give the options as a short list the user can pick from (or take the first when they asked you to just plan it). For the chosen one: create_event with its start and end; when other people come, compose_mail to them with invite, so they get a real invitation.")
+        }
         return lines.joined(separator: "\n")
     }
 
