@@ -2761,4 +2761,47 @@ final class ChatSenderFaceTests: XCTestCase {
         XCTAssertEqual(inbox.threads.values.first?.faces, ["u1": "/a.jpg", "u2": "/b.jpg"])
         XCTAssertFalse(inbox.merge(later), "the same faces again change nothing")
     }
+
+    // MARK: Suggested reply
+
+    func testSuggestedReplyAnswersOnlySomeoneElsesNewestMessage() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let theirs = ChatReplySuggestion.turn(chat: "t1", messages: [("a", true, now), ("b", false, now)])
+        XCTAssertEqual(theirs, ChatReplySuggestion.Turn(chat: "t1", message: "b", date: now))
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "t1", messages: [("a", false, now), ("b", true, now)]),
+                     "you already answered")
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "t1", messages: []), "nothing to answer")
+        XCTAssertNil(ChatReplySuggestion.turn(chat: "", messages: [("a", false, now)]), "no chat to key it on")
+    }
+
+    func testSuggestedReplyGate() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let open = ChatReplySuggestion.Gate(enabled: true, brainReady: true, fieldEmpty: true, busy: false,
+                                            alreadyTried: false, stale: false)
+        XCTAssertTrue(open.allows)
+        for blocked in [\ChatReplySuggestion.Gate.enabled, \.brainReady, \.fieldEmpty] {
+            var gate = open
+            gate[keyPath: blocked] = false
+            XCTAssertFalse(gate.allows)
+        }
+        for blocked in [\ChatReplySuggestion.Gate.busy, \.alreadyTried, \.stale] {
+            var gate = open
+            gate[keyPath: blocked] = true
+            XCTAssertFalse(gate.allows)
+        }
+        XCTAssertTrue(ChatReplySuggestion.Gate.isStale(now.addingTimeInterval(-2 * 24 * 3600), now: now))
+        XCTAssertFalse(ChatReplySuggestion.Gate.isStale(now.addingTimeInterval(-3600), now: now))
+        XCTAssertFalse(ChatReplySuggestion.Gate.isStale(nil, now: now), "a message without a date still gets one")
+    }
+
+    func testSuggestedReplyShowsOnlyForItsOwnMessage() {
+        let turn = ChatReplySuggestion.Turn(chat: "t1", message: "b", date: nil)
+        let state = ChatReplySuggestionState(turn: turn, phase: .ready("Sounds good!"))
+        XCTAssertEqual(state.shown(for: turn), "Sounds good!")
+        XCTAssertNil(state.shown(for: ChatReplySuggestion.Turn(chat: "t1", message: "c", date: nil)), "a newer message came")
+        XCTAssertNil(ChatReplySuggestionState(turn: turn, phase: .done).shown(for: turn))
+        XCTAssertEqual(ChatReplySuggestion.clean("\"See you at eight\""), "See you at eight")
+        XCTAssertNil(ChatReplySuggestion.clean(String(repeating: "a", count: 500)), "too long to be a reply")
+        XCTAssertNil(ChatReplySuggestion.clean(nil))
+    }
 }

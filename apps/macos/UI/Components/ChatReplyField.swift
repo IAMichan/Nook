@@ -78,6 +78,11 @@ struct ChatReplyField: View {
     private var tagPeople: () -> [ChatTagPerson] = { [] }
     /// Runs what Nook proposed, after your click; nil leaves "@nook …" to messages only.
     private var act: (([PlannedAction]) async -> (results: [String], failure: String?))?
+    /// The newest message of someone else's this field may suggest an answer to, and who writes it
+    /// (`ChatReplySuggestion`); nil suggests none.
+    private var replyTurn: ChatReplySuggestion.Turn?
+    private var writeReply: (() async -> String?)?
+    @ObservedObject private var replies = ChatReplySuggestions.shared
     /// Who the message goes to and what they said last, for the grey rest of the sentence (`ComposerCompleter`).
     private var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
@@ -158,6 +163,16 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// A suggested answer to `turn`, the chat's newest message, as grey text in the empty field (as an agent's composer
+    /// shows the next prompt): `write` writes it once per message while the field is on screen and empty. Tab puts it in
+    /// the field, typing hides it, Escape lets it go.
+    func suggestsReply(_ turn: ChatReplySuggestion.Turn?, write: @escaping () async -> String?) -> Self {
+        var copy = self
+        copy.replyTurn = turn
+        copy.writeReply = write
+        return copy
+    }
+
     /// ← and → in the empty field walk what waits to go: `walk` gets the direction (false when it has nothing to walk).
     func walksFiles(_ walk: @escaping (Int) -> Bool) -> Self {
         var copy = self
@@ -191,6 +206,21 @@ struct ChatReplyField: View {
 
     /// A message is on its way: the field and its button wait until it is there or failed.
     private var busy: Bool { outgoing.map { !$0.sent } ?? false }
+
+    /// Something else has the field: no suggested answer is written or shown meanwhile.
+    private var occupied: Bool { drafting || showsDraft || outgoing != nil || quote != nil || menu.isOpen }
+
+    /// The suggested answer on screen now: only in the empty field with nothing else going on in it.
+    private var suggestedReply: String? {
+        guard text.isEmpty, !occupied else { return nil }
+        return replies.shown(replyTurn)
+    }
+
+    /// Asks for a suggested answer to the newest message, when the gate allows one (`ChatReplySuggestions`).
+    private func requestReply() {
+        guard let writeReply else { return }
+        replies.request(replyTurn, fieldEmpty: text.isEmpty, busy: occupied, write: writeReply)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -291,7 +321,19 @@ struct ChatReplyField: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .background(alignment: .leading) {
-                    if text.isEmpty {
+                    if let suggestedReply {
+                        // The suggested answer in the ghost text's quiet grey, with the key that takes it.
+                        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                            Text(suggestedReply)
+                                .font(NookTheme.TextStyle.body)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            NookKeyHint(text: tr("textgen.next.tab"))
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    } else if text.isEmpty {
                         Text(placeholder)
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textTertiary)
@@ -302,7 +344,11 @@ struct ChatReplyField: View {
                     }
                 }
                 .accessibilityLabel(placeholder)
+                .accessibilityHint(suggestedReply.map { tr("textgen.next.accessibility", $0) } ?? "")
                 .focused(focus)
+                .onChange(of: replyTurn, initial: true) { _, _ in requestReply() }
+                .onChange(of: text.isEmpty) { _, _ in requestReply() }
+                .onChange(of: occupied) { _, _ in requestReply() }
                 // A restored draft is selected whole when the field gets the keyboard: put the caret at its end.
                 .onChange(of: focus.wrappedValue) { _, now in
                     if now {
@@ -329,6 +375,10 @@ struct ChatReplyField: View {
                 .onKeyPress(.rightArrow) { () -> KeyPress.Result in walkFiles(1) }
                 .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
                 .onKeyPress(.escape) { () -> KeyPress.Result in
+                    if suggestedReply != nil {
+                        replies.dismiss(replyTurn)
+                        return .handled
+                    }
                     if ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: text)) != nil {
                         ComposerInlineGhost.shared.dismiss()
                         return .handled
@@ -471,6 +521,12 @@ struct ChatReplyField: View {
     /// Tab chooses the menu's line; on the grey rest of the sentence Tab takes a word of it, ⇧Tab all of it.
     private func tabKey(_ press: KeyPress) -> KeyPress.Result {
         let all = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        if let suggestedReply {
+            text = suggestedReply
+            replies.dismiss(replyTurn)
+            ComposerFieldStyle.placeCaret((suggestedReply as NSString).length, expecting: suggestedReply)
+            return .handled
+        }
         if menu.isOpen, !all {
             chooseSelected()
             return .handled
@@ -1433,5 +1489,12 @@ extension ComposerCompletion.Situation {
     /// A chat's: who it is with, and their last message, which what you type most likely answers.
     static func chat(_ name: String?, bubbles: [ChatBubble]) -> Self {
         Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text)
+    }
+}
+
+extension ChatReplySuggestion {
+    /// The turn a chat's bubbles end on: its newest message, leaving out the lines about the group.
+    static func turn(chat: String, bubbles: [ChatBubble]) -> Turn? {
+        turn(chat: chat, messages: bubbles.filter { $0.notice == nil }.map { ($0.id, $0.fromMe || $0.local, $0.date) })
     }
 }

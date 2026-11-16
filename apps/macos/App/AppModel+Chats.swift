@@ -508,6 +508,24 @@ extension AppModel {
             }
     }
 
+    /// The answer a chat's empty field suggests (`ChatReplySuggestion`): what "@nook" alone would write, without lookups
+    /// or actions, by the chosen brain. Nil when there is no brain or it wrote nothing.
+    func suggestChatReply(app appName: String, chat name: String, transcript: String) async -> String? {
+        guard settings.brainReady else { return nil }
+        let prompt = ChatDraft.prompt(app: appName, chat: name, transcript: transcript, instruction: "")
+        return await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 60)
+    }
+
+    /// The same for a card's field: the chat the card shows, as `draftCardReply` reads it. A card that is no chat has
+    /// nothing to answer.
+    func suggestCardReply(_ card: NookCard) async -> String? {
+        guard card.chatReply, case .chat(let bubbles) = card.detail else { return nil }
+        let thread = Self.chatCardThread(card).flatMap { ChatCaptureService.shared.loadedInbox.threads[$0] }
+        let app = thread.map { MessagingApps.app(id: $0.app)?.name ?? $0.app } ?? card.replyCopiesTo ?? card.context
+        let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
+        return await suggestChatReply(app: app, chat: card.title, transcript: transcript)
+    }
+
     /// Runs what Nook proposed under a chat's "@nook …", after your click, as a plan in Nook Chat runs: one step after
     /// another, stopping at the first that fails.
     func runDraftActions(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
@@ -528,6 +546,47 @@ extension AppModel {
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction,
                                           onLookup: onLookup)
+    }
+}
+
+/// The suggested answers of every chat (`ChatReplySuggestion`), one per chat for its newest message, shared by the
+/// Chats tab and the chat cards so a chat open in both asks once and shows the same.
+@MainActor
+final class ChatReplySuggestions: ObservableObject {
+    static let shared = ChatReplySuggestions()
+
+    @Published private(set) var states: [String: ChatReplySuggestionState] = [:]
+    private var tasks: [String: Task<Void, Never>] = [:]
+
+    /// The suggestion to show for `turn` now, if any.
+    func shown(_ turn: ChatReplySuggestion.Turn?) -> String? {
+        turn.flatMap { states[$0.chat]?.shown(for: $0) }
+    }
+
+    /// A chat's field is on screen: writes a suggestion for its newest message through `write` when the gate allows it.
+    func request(_ turn: ChatReplySuggestion.Turn?, fieldEmpty: Bool, busy: Bool, write: @escaping () async -> String?) {
+        guard let turn else { return }
+        let settings = AppSettings.shared
+        let gate = ChatReplySuggestion.Gate(
+            enabled: settings.suggestChatReply, brainReady: settings.brainReady, fieldEmpty: fieldEmpty, busy: busy,
+            alreadyTried: states[turn.chat]?.turn == turn, stale: ChatReplySuggestion.Gate.isStale(turn.date))
+        guard gate.allows else { return }
+        states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: .writing)
+        tasks[turn.chat]?.cancel()
+        tasks[turn.chat] = Task { [weak self] in
+            let text = ChatReplySuggestion.clean(await write())
+            guard let self, !Task.isCancelled, self.states[turn.chat]?.turn == turn,
+                  self.states[turn.chat]?.phase == .writing else { return }
+            self.tasks[turn.chat] = nil
+            self.states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: text.map { .ready($0) } ?? .done)
+        }
+    }
+
+    /// You took the suggestion or let it go: none for this message any more, and no request left running.
+    func dismiss(_ turn: ChatReplySuggestion.Turn?) {
+        guard let turn, let state = states[turn.chat], state.turn == turn, state.phase != .done else { return }
+        tasks.removeValue(forKey: turn.chat)?.cancel()
+        states[turn.chat] = ChatReplySuggestionState(turn: turn, phase: .done)
     }
 }
 
