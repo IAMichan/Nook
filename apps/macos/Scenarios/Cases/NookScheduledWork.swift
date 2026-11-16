@@ -1,7 +1,7 @@
 import AppKit
 
-/// Nook as the user's secretary: work it does on its own shows in the Nook tab. The list has a Scheduled section with
-/// when each task runs next, the task's conversation has the bar with run now and pause, a run shows as a marker
+/// Nook as the user's secretary: work it does on its own shows in the Nook tab. The list has a Scheduled tab beside the
+/// conversations with when each task runs next (paused ones under a label of their own), the task's conversation has the bar with run now and pause, a run shows as a marker
 /// instead of a question the user typed, and the proposal to schedule one (`schedule_task`) is a plan card to approve.
 final class NookScheduledWork: Scenario {
     func testNookScheduledWork() throws {
@@ -40,14 +40,19 @@ final class NookScheduledWork: Scenario {
             model.chat.append(proposal, to: ask)
 
             try nook.openNook(conversation)
-            try expect(screen.text("Scheduled").first).toBeVisible()
+            // The conversations tab lists the run's conversation, not the tasks: those have a tab of their own.
+            try expect(screen.text("Weekly mail review").first).toBeHidden()
+            try screen.button("Scheduled").first.tap()
+            try expect(screen.text("Scheduled tasks (2)").first).toBeVisible()
             try expect(screen.text("Morning update").first).toBeVisible()
+            try expect(screen.text("Paused and done").first).toBeVisible()
             try expect(screen.text("Weekly mail review").first).toBeVisible()
             try expect(screen.text("Nook does this on its own").first).toBeVisible()
             try expect(screen.labelled("Run now").first).toBeVisible()
             try expect(screen.text("3 chats wait for an answer.").first).toBeVisible()
             try app.screenshot("scheduled-conversation")
 
+            try screen.button("Conversations").first.tap()
             try nook.openNook(ask)
             try expect(screen.text("Morning update").first).toBeVisible()
             try app.screenshot("proposal")
