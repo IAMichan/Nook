@@ -6,8 +6,9 @@ import AppKit
 /// "For you": a card with what asks something of you (a new answer, a run waiting for your yes, one still working),
 /// each with the agents' badge and the line that says what it did. Below it the pinned ones and the rest by age, one
 /// line each (title and how long ago; the last answer is on the hover card), and the archive docked at the foot of the
-/// list, opening upwards, as the settled sessions are. Pin and archive appear on hover, in the badge's place, so
-/// nothing shifts; right-click for the rest.
+/// list, opening upwards, as the settled sessions are. A scheduled task's run shows here only while it asks something
+/// of you (or when pinned, or found by a search); otherwise its task's row in the Scheduled tab opens it. Pin and
+/// archive appear on hover, in the badge's place, so nothing shifts; right-click for the rest.
 struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -28,11 +29,11 @@ struct NookList: View {
     static var keptPart = NookListPart.conversations
 
     var body: some View {
-        let items = chat.list(query: query, showArchived: false)
         // The archive (up to 500) is sorted only while its shelf is open; closed, it shows a count.
         let archived = showArchived ? chat.list(query: query, showArchived: true) : []
         let archivedCount = showArchived ? archived.count : chat.count(query: query, showArchived: true)
-        let (attention, pinned, rest) = NookList.split(items)
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
+        let items = attention + pinned + rest
         // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
         let shown = (attention + pinned + rest + (showArchived ? archived : [])).map(\.id)
         VStack(alignment: .leading, spacing: 8) {
@@ -121,17 +122,9 @@ struct NookList: View {
 
     /// The rows as `body` shows them, top to bottom, as they are right now.
     private func shownNow() -> [UUID] {
-        let (attention, pinned, rest) = NookList.split(chat.list(query: query, showArchived: false))
+        let (attention, pinned, rest) = ConversationList.sections(chat.list(query: query, showArchived: false), searching: !query.isEmpty)
         let archived = showArchived ? chat.list(query: query, showArchived: true) : []
         return (attention + pinned + rest + archived).map(\.id)
-    }
-
-    /// The open Nooks in the list's three parts: what asks something of you (any status but idle, pinned or not), the
-    /// pinned ones, and the rest. Each keeps the order the store gives.
-    static func split(_ items: [Conversation]) -> (attention: [Conversation], pinned: [Conversation], rest: [Conversation]) {
-        let attention = items.filter { $0.status != .idle }
-        let settled = items.filter { $0.status == .idle }
-        return (attention, settled.filter(\.pinned), settled.filter { !$0.pinned })
     }
 
     /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
