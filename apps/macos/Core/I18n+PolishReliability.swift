@@ -12,7 +12,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "sync.queued.one": "%d bericht wacht om verstuurd te worden",
         "sync.queued.other": "%d berichten wachten om verstuurd te worden",
         "diagnostics.export": "Diagnose exporteren",
-        "diagnostics.export.detail": "Kopieert versies en instellingen, zonder mailadressen, sleutels, telefoonnummers of je naam in paden. Er wordt niets verstuurd.",
+        "diagnostics.export.detail": "Kopieert versies, instellingen en het logboek van het afgelopen halfuur, zonder mailadressen, sleutels, telefoonnummers of je naam in paden. Er wordt niets verstuurd.",
         "diagnostics.copy": "Diagnose kopiëren",
     ],
     .en: [
@@ -24,7 +24,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "sync.queued.one": "%d message waits to be sent",
         "sync.queued.other": "%d messages wait to be sent",
         "diagnostics.export": "Export diagnostics",
-        "diagnostics.export.detail": "Copies versions and set-up facts, without mail addresses, keys, phone numbers or your name in paths. Nothing is sent.",
+        "diagnostics.export.detail": "Copies versions, set-up facts and the log of the last half hour, without mail addresses, keys, phone numbers or your name in paths. Nothing is sent.",
         "diagnostics.copy": "Copy diagnostics",
     ],
     .de: [
@@ -36,7 +36,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "sync.queued.one": "%d Nachricht wartet aufs Senden",
         "sync.queued.other": "%d Nachrichten warten aufs Senden",
         "diagnostics.export": "Diagnose exportieren",
-        "diagnostics.export.detail": "Kopiert Versionen und Einrichtung, ohne E-Mail-Adressen, Schlüssel, Telefonnummern oder deinen Namen in Pfaden. Es wird nichts gesendet.",
+        "diagnostics.export.detail": "Kopiert Versionen, Einrichtung und das Protokoll der letzten halben Stunde, ohne E-Mail-Adressen, Schlüssel, Telefonnummern oder deinen Namen in Pfaden. Es wird nichts gesendet.",
         "diagnostics.copy": "Diagnose kopieren",
     ],
     .fr: [
@@ -48,7 +48,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "sync.queued.one": "%d message attend d'être envoyé",
         "sync.queued.other": "%d messages attendent d'être envoyés",
         "diagnostics.export": "Exporter le diagnostic",
-        "diagnostics.export.detail": "Copie les versions et la configuration, sans adresses e-mail, clés, numéros de téléphone ni ton nom dans les chemins. Rien n'est envoyé.",
+        "diagnostics.export.detail": "Copie les versions, la configuration et le journal de la dernière demi-heure, sans adresses e-mail, clés, numéros de téléphone ni ton nom dans les chemins. Rien n'est envoyé.",
         "diagnostics.copy": "Copier le diagnostic",
     ],
     .es: [
@@ -60,7 +60,7 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "sync.queued.one": "%d mensaje espera para enviarse",
         "sync.queued.other": "%d mensajes esperan para enviarse",
         "diagnostics.export": "Exportar diagnóstico",
-        "diagnostics.export.detail": "Copia versiones y configuración, sin direcciones de correo, claves, teléfonos ni tu nombre en las rutas. No se envía nada.",
+        "diagnostics.export.detail": "Copia versiones, configuración y el registro de la última media hora, sin direcciones de correo, claves, teléfonos ni tu nombre en las rutas. No se envía nada.",
         "diagnostics.copy": "Copiar diagnóstico",
     ],
 ]
