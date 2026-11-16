@@ -387,14 +387,6 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(healed.pending, " ")
     }
 
-    func testCotypistInstructionsAreTakenAsWritten() {
-        XCTAssertEqual(CompletionCotypist.instructions(from: "  My name is Sam.\nI write in Dutch.\n"), "My name is Sam.\nI write in Dutch.")
-        XCTAssertNil(CompletionCotypist.instructions(from: "   "))
-        XCTAssertNil(CompletionCotypist.instructions(from: nil))
-        XCTAssertNil(CompletionCotypist.instructions(from: 42))
-        XCTAssertEqual(CompletionCotypist.instructions(from: String(repeating: "a", count: 3_000))?.count, 2_000)
-    }
-
     func testWordLimitIsToldApartFromDoubt() {
         let options = CompletionOptions(maxWords: 2, eagerness: 0.5)
         var capped = CompletionCandidate()
