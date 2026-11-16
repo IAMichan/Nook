@@ -114,16 +114,25 @@ enum ScheduledTaskTarget: Equatable, Sendable, Codable {
     /// Every run goes to this session. `fresh`: each run starts a new conversation there (the agent sees nothing of the
     /// earlier runs, the timeline keeps them all); otherwise it continues the conversation.
     case existingSession(id: UUID, fresh: Bool = false)
+    /// Every run asks Nook itself, in a new Nook Chat conversation named after the task: Nook as the user's secretary
+    /// ("every morning at 9, what came in since yesterday"). Nook answers with its own tools; whatever it wants to do is
+    /// a proposal the user approves, as in any chat, and the finished answer arrives as a notice.
+    case nook
 
     private enum CodingKeys: String, CodingKey { case type, projectPath, provider, profileID, id, fresh }
 
     var sessionID: UUID? { if case .existingSession(let id, _) = self { return id }; return nil }
     var freshConversation: Bool { if case .existingSession(_, let fresh) = self { return fresh }; return false }
+    var isNook: Bool { if case .nook = self { return true }; return false }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let id = try? c.decode(UUID.self, forKey: .id), (try? c.decode(String.self, forKey: .type)) == "existingSession" {
             self = .existingSession(id: id, fresh: (try? c.decode(Bool.self, forKey: .fresh)) ?? false)
+            return
+        }
+        if (try? c.decode(String.self, forKey: .type)) == "nook" {
+            self = .nook
             return
         }
         self = .newSession(projectPath: (try? c.decode(String.self, forKey: .projectPath)) ?? "",
@@ -143,6 +152,8 @@ enum ScheduledTaskTarget: Equatable, Sendable, Codable {
             try c.encode("existingSession", forKey: .type)
             try c.encode(id, forKey: .id)
             if fresh { try c.encode(true, forKey: .fresh) }
+        case .nook:
+            try c.encode("nook", forKey: .type)
         }
     }
 }
@@ -295,4 +306,85 @@ struct WebhookQueue: Sendable {
 
     /// The task was deleted or its webhook rotated.
     mutating func forget(_ taskID: UUID) { counts.removeValue(forKey: taskID) }
+}
+
+/// The schedule Nook Chat fills in for `schedule_nook_task`: a time of day with optional weekdays, every so many
+/// minutes, or one moment. Exactly one of the three. Foundation only, so the rules are tested without the app.
+enum NookTaskSchedule {
+    enum Problem: Error, Equatable, Sendable {
+        /// None, or more than one, of time, every_minutes and at.
+        case when
+        /// The time is not a time of day ("09:00").
+        case time
+        /// A weekday that is not one.
+        case days
+        /// every_minutes below the floor.
+        case interval
+        /// at is not a date, or lies in the past.
+        case moment
+    }
+
+    /// Days as the model writes them: "every day", "weekdays", "weekend", or names like "mon, wed, fri" (English, Dutch,
+    /// German, French or Spanish, full or the first three letters). 1 = Sunday, like `Calendar`; empty = every day.
+    static func weekdays(_ raw: String) -> Set<Int>? {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty || ["every day", "everyday", "daily", "all", "elke dag", "dagelijks"].contains(text) { return [] }
+        if ["weekdays", "workdays", "werkdagen", "weekdagen", "werktage", "semaine", "laborables"].contains(text) { return [2, 3, 4, 5, 6] }
+        if ["weekend", "weekends", "wochenende", "fin de semana", "week-end"].contains(text) { return [1, 7] }
+        let names: [[String]] = [
+            ["sun", "sunday", "zo", "zondag", "son", "sonntag", "dim", "dimanche", "dom", "domingo"],
+            ["mon", "monday", "ma", "maandag", "mo", "montag", "lun", "lundi", "lunes"],
+            ["tue", "tues", "tuesday", "di", "dinsdag", "die", "dienstag", "mar", "mardi", "martes"],
+            ["wed", "wednesday", "wo", "woensdag", "mi", "mit", "mittwoch", "mer", "mercredi", "mie", "miércoles", "miercoles"],
+            ["thu", "thur", "thurs", "thursday", "do", "donderdag", "don", "donnerstag", "jeu", "jeudi", "jue", "jueves"],
+            ["fri", "friday", "vr", "vrijdag", "fr", "fre", "freitag", "ven", "vendredi", "vie", "viernes"],
+            ["sat", "saturday", "za", "zaterdag", "sa", "sam", "samstag", "samedi", "sab", "sáb", "sábado", "sabado"]
+        ]
+        var days: Set<Int> = []
+        for word in text.split(whereSeparator: { ", ;/&".contains($0) }).map(String.init) where !["and", "en", "und", "et", "y"].contains(word) {
+            guard let index = names.firstIndex(where: { $0.contains(word) }) else { return nil }
+            days.insert(index + 1)
+        }
+        return days.isEmpty ? nil : days
+    }
+
+    /// "09:00", "9:30", "9", "21.15" → hour and minute.
+    static func time(_ raw: String) -> (hour: Int, minute: Int)? {
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: { ":.h".contains($0) }).map(String.init)
+        guard (1...2).contains(parts.count), let hour = Int(parts[0]), (0...23).contains(hour) else { return nil }
+        let minute = parts.count == 2 ? Int(parts[1]) : 0
+        guard let minute, (0...59).contains(minute) else { return nil }
+        return (hour, minute)
+    }
+
+    /// What Nook knows about a scheduled question: the user set it up and approved it, nobody is watching right now, and
+    /// the earlier runs are in the same conversation.
+    static func runNote(_ task: ScheduledTask) -> String {
+        "This is the scheduled task \"\(task.title)\" the user set up earlier; it runs now on its own and the user reads the "
+            + "answer later. Answer it as a complete update they can read at a glance. Earlier runs of this task are "
+            + "the earlier turns of this conversation: focus on what is new or changed since the previous run, and say so when nothing is. Do not ask questions back. Propose any action as usual so the user approves it."
+    }
+
+    /// The rule from the tool's input, or what is wrong with it.
+    static func rule(_ input: [String: Any], now: Date = Date(), parseDate: (String) -> Date?) -> Result<ScheduleRule, Problem> {
+        func text(_ key: String) -> String? {
+            let value = (input[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
+        let minutes = (input["every_minutes"] as? Int) ?? (input["every_minutes"] as? NSNumber)?.intValue
+            ?? text("every_minutes").flatMap(Int.init)
+        let given = [text("time") != nil, minutes != nil, text("at") != nil].filter { $0 }.count
+        guard given == 1 else { return .failure(.when) }
+        if let raw = text("time") {
+            guard let time = time(raw) else { return .failure(.time) }
+            guard let days = weekdays(text("days") ?? "") else { return .failure(.days) }
+            return .success(.fixedTime(hour: time.hour, minute: time.minute, weekdays: days))
+        }
+        if let minutes {
+            guard minutes * 60 >= ScheduleRule.minimumIntervalSeconds else { return .failure(.interval) }
+            return .success(.interval(seconds: minutes * 60))
+        }
+        guard let at = text("at").flatMap(parseDate), at > now else { return .failure(.moment) }
+        return .success(.once(at: at))
+    }
 }

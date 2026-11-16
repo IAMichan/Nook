@@ -56,6 +56,8 @@ struct ChatMessage: Identifiable {
     var status = ""
     var streaming = false
     var isError = false
+    /// A question a scheduled task asked (`ScheduledTaskTarget.nook`), not one the user typed: shown as the run's marker.
+    var scheduled = false
     /// Context attached without tools: screen content, a Shelf file.
     var sources: [String] = []
     /// What Nook consulted for this answer, with outcome per source.
@@ -193,6 +195,9 @@ struct Conversation: Identifiable, ConversationListItem {
     var pinned = false
     /// Out of the active list but kept; found again through the archive.
     var archived = false
+    /// The scheduled task whose runs Nook answers here (`ScheduledTaskTarget.nook`): every run of it comes to this
+    /// conversation, so Nook sees what it said last time and the list does not fill up with one Nook per run.
+    var scheduledTaskID: UUID?
 
     var isEmpty: Bool { messages.isEmpty }
 
@@ -465,6 +470,29 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
+    /// The conversation a scheduled task's runs go to; nil before its first run or after the user deleted it.
+    func conversation(forTask task: UUID) -> Conversation? {
+        conversations.first { $0.scheduledTaskID == task }
+    }
+
+    /// The conversation for the next run of a scheduled task: the one its runs went to, back from the archive, or a new
+    /// one named after the task, beside the conversation on screen. Nil while Nook still answers there.
+    func conversationForRun(of task: ScheduledTask) -> UUID? {
+        if let index = conversations.firstIndex(where: { $0.scheduledTaskID == task.id }) {
+            guard !conversations[index].busy else { return nil }
+            conversations[index].archived = false
+            scheduleSave()
+            return conversations[index].id
+        }
+        let id = startInBackground()
+        if let index = index(of: id) {
+            conversations[index].scheduledTaskID = task.id
+            conversations[index].title = String((task.title.isEmpty ? tr("sched.untitled") : task.title).prefix(80))
+        }
+        scheduleSave()
+        return id
+    }
+
     func rename(_ id: UUID, to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let index = index(of: id), !trimmed.isEmpty else { return }
@@ -534,7 +562,9 @@ final class NookChat: ObservableObject {
         let target = id ?? ensureActive()
         guard let index = index(of: target) else { return }
         // First user prompt sets conversation title.
-        if message.role == .user, !conversations[index].messages.contains(where: { $0.role == .user }) {
+        // A scheduled task's conversation keeps the task's name.
+        if message.role == .user, !message.scheduled, conversations[index].scheduledTaskID == nil,
+           !conversations[index].messages.contains(where: { $0.role == .user }) {
             conversations[index].title = Conversation.title(from: message.text)
         }
         conversations[index].messages.append(message)
@@ -822,6 +852,7 @@ private struct StoredConversation: Codable, Sendable {
     var scope: SourceScope?
     var pinned: Bool?
     var archived: Bool?
+    var scheduledTask: UUID?
 
     @MainActor
     init(_ conversation: Conversation) {
@@ -834,6 +865,7 @@ private struct StoredConversation: Codable, Sendable {
         scope = conversation.scope == .automatic ? nil : conversation.scope
         pinned = conversation.pinned ? true : nil
         archived = conversation.archived ? true : nil
+        scheduledTask = conversation.scheduledTaskID
     }
 
     func restored() -> Conversation {
@@ -842,6 +874,7 @@ private struct StoredConversation: Codable, Sendable {
         conversation.scope = scope ?? .automatic
         conversation.pinned = pinned ?? false
         conversation.archived = archived ?? false
+        conversation.scheduledTaskID = scheduledTask
         conversation.messages = messages.map { $0.restored() }
         return conversation
     }
@@ -865,6 +898,7 @@ private struct StoredMessage: Codable {
     var plan: StoredPlan?
     var tasks: [RunTaskStep]?
     var privateBrief: String?
+    var scheduled: Bool?
 
     @MainActor
     init?(_ message: ChatMessage) {
@@ -886,6 +920,7 @@ private struct StoredMessage: Codable {
         notices = message.notices.isEmpty ? nil : message.notices
         tasks = message.tasks.isEmpty ? nil : message.tasks
         privateBrief = message.privateBrief.isEmpty ? nil : message.privateBrief
+        scheduled = message.scheduled ? true : nil
     }
 
     func restored() -> ChatMessage {
@@ -903,6 +938,7 @@ private struct StoredMessage: Codable {
         message.notices = notices ?? []
         message.tasks = tasks ?? []
         message.privateBrief = privateBrief ?? ""
+        message.scheduled = scheduled ?? false
         if let plan {
             plan.restore(into: &message)
         } else if let legacy = StoredPlan.legacy(in: text) {

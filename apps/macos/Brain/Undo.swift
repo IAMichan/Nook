@@ -16,6 +16,9 @@ enum Undo {
             return createdID(in: result).map { Step(tool: "delete_event", input: titled(["id": $0], input)) }
         case "create_reminder":
             return createdID(in: result).map { Step(tool: "delete_reminder", input: titled(["id": $0], input)) }
+        case "schedule_nook_task":
+            // Work Nook scheduled for itself stops again.
+            return createdID(in: result).map { Step(tool: "delete_nook_task", input: titled(["id": $0], input)) }
         case "add_open_loop":
             return bracketID(in: result).map { Step(tool: "complete_open_loop", input: ["loop": $0]) }
         case "complete_reminder":

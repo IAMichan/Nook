@@ -107,6 +107,12 @@ struct NookChatView: View {
                             header
                                 .padding(.bottom, NookTheme.Spacing.xs)
                                 .readableChat(!compact)
+                            // The conversation of work Nook does on its own: when it runs, and run now, pause and edit.
+                            if let taskID = chat.active?.scheduledTaskID {
+                                NookTaskBar(taskID: taskID)
+                                    .padding(.bottom, NookTheme.Spacing.xs)
+                                    .readableChat(!compact)
+                            }
                             thread
                         }
                     }

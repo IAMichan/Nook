@@ -9,6 +9,8 @@ struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
         case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover, network
+        /// Something Nook does again and again on its own: "elke ochtend om 9:00 een overzicht van mijn berichten".
+        case schedule
     }
 
     /// Recognized kinds, strongest first.
@@ -120,6 +122,8 @@ struct ChatIntent: Equatable {
         intent.forgets = MemoryRequest.asksToForget(text)
         intent.recalls = MemoryRequest.asksWhatIsKnown(text)
         if remembers || intent.forgets || intent.recalls { kinds.append(.memory) }
+        let recurring = Self.recurs(text)
+        if recurring { kinds.append(.schedule) }
         if has(#"herinner|herinnering|\breminder|remind me|erinner|vergeet (ik )?niet|niet vergeten|don'?t forget"#) { kinds.append(.reminder) }
         if has(#"beschikbaar|\bvrij\b|\bbezet\b|available|availability|\bfree (on|at|this|next|tomorrow|today)|am i free|verfügbar|\bfrei\b|tijd voor een|time for a"#) { kinds.append(.availability) }
         if has(#"afspra|meeting|vergader|overleg|\bcall\b|inplannen|\bplan\b[^.?!]{0,30}\bin\b|agenda|calendar|kalender|\btermin|\bevent|evenement|verplaats|reschedule|\bmove (my|the)\b|verschieb|lunch met|diner met|lunch with|dinner with"#) { kinds.append(.event) }
@@ -181,12 +185,12 @@ struct ChatIntent: Equatable {
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)[,:]?\s+"#, with: "", options: .regularExpression)
         let imperative = polite.range(of: #"^(maak|zet|plan|boek|bestel|koop|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|buy|order|unsubscribe|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
-        let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
+        let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|wil jij|kun jij|kan jij|zou jij|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
         // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
         // "I saw a post on Reddit" names a site too, but asks for nothing.
         let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp || fillsForm)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || (recurring && !Self.questions(text)) || postsNow || editsScreen || namesOtherApp || fillsForm)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting
@@ -339,6 +343,23 @@ struct ChatIntent: Equatable {
         return !kinds.isEmpty || text.lowercased().range(of: #"\b(deze|dit|this|these|diese[rsmn]?|cette|este|esta)\b(?! (week|weekend|maand|jaar|keer|month|year|time|woche|monat|jahr))"#, options: .regularExpression) != nil
     }
 
+    /// Something to happen again and again ("elke ochtend om 9:00", "dagelijks", "every monday", "jeden Morgen", "tous les
+    /// soirs", "cada día"), or a scheduled task named as such: Nook schedules itself (`schedule_nook_task`).
+    static func recurs(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let days = "maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+            + "|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"
+            + "|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo"
+        let pattern = #"\b(elke|iedere|ieder)\s+(dag|ochtend|morgen|middag|avond|nacht|week|maand|werkdag|weekdag|uur|kwartier|\d+\s+(minuten|uur)|"# + days + #")\b"#
+            + #"|\b(dagelijks|wekelijks|maandelijks|daily|weekly|hourly|täglich|wöchentlich|stündlich|quotidiennement|chaque jour|diariamente|semanalmente)\b"#
+            + #"|\b(every|each)\s+(day|morning|afternoon|evening|night|week|month|weekday|workday|hour|\d+\s+(minutes|hours)|"# + days + #")\b"#
+            + #"|\b(jeden|jede|jeder)\s+(tag|morgen|abend|nachmittag|woche|monat|werktag|stunde|"# + days + #")\b"#
+            + #"|\b(chaque|tous les|toutes les)\s+(jour|jours|matin|matins|soir|soirs|semaine|semaines|heure|heures|"# + days + #")\b"#
+            + #"|\bcada\s+(día|dia|mañana|tarde|noche|semana|hora|"# + days + #")\b|\btodos los (días|dias|"# + days + #")\b|\btodas las (mañanas|tardes|noches)\b"#
+            + #"|geplande taak|terugkerende taak|scheduled task|recurring task|geplante aufgabe|wiederkehrende aufgabe|tâche planifiée|tâche récurrente|tarea programada|tarea recurrente"#
+        return lower.range(of: pattern, options: .regularExpression) != nil
+    }
+
     /// Doing it again: "opnieuw", "stuur het nog een keer", "probeer het nog eens", "try again", "nochmal".
     static func retries(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
@@ -358,7 +379,7 @@ struct ChatIntent: Equatable {
     private static func questions(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasSuffix("?") else { return false }
-        return text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) == nil
+        return text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|wil jij|kun jij|kan jij|zou jij|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) == nil
     }
 
     /// Nook's turn ends with a question to the user (suggestions below it aside).
@@ -417,6 +438,7 @@ struct ChatIntent: Equatable {
 
     /// Tools per kind, the most useful first. Action tools come before the lookups that support them.
     static let toolsByKind: [Kind: [String]] = [
+        .schedule: ["schedule_nook_task", "list_nook_tasks", "delete_nook_task"],
         .reminder: ["create_reminder", "list_reminders", "search_reminders", "complete_reminder"],
         .event: ["create_event", "update_event", "list_events", "check_availability"],
         .availability: ["check_availability", "list_events"],
@@ -447,13 +469,13 @@ struct ChatIntent: Equatable {
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
-        .takeover, .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
+        .takeover, .memory, .schedule, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
         .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.
     static let actionByKind: [Kind: String] = [
-        .reminder: "create_reminder", .event: "create_event", .note: "create_note", .todo: "add_open_loop",
+        .schedule: "schedule_nook_task", .reminder: "create_reminder", .event: "create_event", .note: "create_note", .todo: "add_open_loop",
         .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
         .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember", .takeover: "take_over"
     ]

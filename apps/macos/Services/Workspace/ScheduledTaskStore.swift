@@ -64,6 +64,8 @@ final class ScheduledTaskStore: ObservableObject {
     private var pending: [UUID: [Delivery]] = [:]
     /// Task → the session it started, for tasks that are running now.
     private var running: [UUID: UUID] = [:]
+    /// The tasks in `running` whose run is a question to Nook (the value is a Nook conversation, not a session).
+    private var nookRuns: Set<UUID> = []
     private var runningTrigger: [UUID: ScheduleTrigger] = [:]
 
     private struct Delivery: Sendable {
@@ -514,12 +516,37 @@ final class ScheduledTaskStore: ObservableObject {
             let cleared = fresh && app.workspace.startFreshConversation(sessionID, reason: tr("automation.sched.freshEvent", task.title))
             app.workspace.submit(sessionID, text: prompt, fresh: fresh && !cleared)
             finish(task.id, status: .succeeded, error: nil)
+        case .nook:
+            // Words from outside are not the user's: a webhook never makes Nook act, whatever its access.
+            guard trigger != .webhook else { return finish(task.id, status: .failed, error: "sched.error.webhookRights") }
+            guard app.settings.brainReady else { return finish(task.id, status: .failed, error: "sched.error.noBrain") }
+            // Every run in the task's own conversation; while Nook still answers there (you are talking in it), this
+            // round is skipped rather than cutting that answer off.
+            guard let conversation = app.chat.conversationForRun(of: task) else {
+                return finish(task.id, status: .skipped, error: "sched.skip.overlap")
+            }
+            running[task.id] = conversation
+            nookRuns.insert(task.id)
+            app.ask(prompt, in: conversation, reveal: false, note: NookTaskSchedule.runNote(task), scheduled: true)
+            // The answer ends the run; `nookFinished` already brings it to the user as a notice.
+            let deadline = Date().addingTimeInterval(Self.nookRunTimeout)
+            repeat {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            } while app.chat.isBusy(conversation) && Date() < deadline && running[task.id] == conversation
+            guard running[task.id] == conversation else { return }
+            if app.chat.isBusy(conversation) { return finish(task.id, status: .failed, error: "sched.error.nookTimeout") }
+            let reply = app.chat.conversation(conversation)?.messages.last { $0.role == .nook }
+            if reply?.isError == true { return finish(task.id, status: .failed, error: reply?.text) }
+            finish(task.id, status: .succeeded, error: nil)
         }
     }
 
+    /// How long a scheduled question to Nook may take before its run counts as failed.
+    static let nookRunTimeout: TimeInterval = 10 * 60
+
     /// A started session that is no longer active ends the run of its task.
     private func checkRuns(_ runs: [WorkspaceRun]) {
-        for (taskID, sessionID) in running {
+        for (taskID, sessionID) in running where !nookRuns.contains(taskID) {
             guard let run = runs.first(where: { $0.id == sessionID }) else {
                 finish(taskID, status: .failed, error: "sched.error.noSession")
                 continue
@@ -535,6 +562,7 @@ final class ScheduledTaskStore: ObservableObject {
 
     private func finish(_ id: UUID, status: ScheduledRunStatus, error: String?, now: Date = Date()) {
         running[id] = nil
+        nookRuns.remove(id)
         let trigger = runningTrigger.removeValue(forKey: id)
         gate.finish(id)
         if trigger == .webhook { webhookQueue.release(id) }

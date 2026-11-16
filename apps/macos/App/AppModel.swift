@@ -156,6 +156,8 @@ final class AppModel: ObservableObject {
     private(set) lazy var memoryTools: [ToolSpec] = makeMemoryTools()
     /// get_settings, change_setting and open_settings (see `AppModel+SettingsTools`).
     private(set) lazy var settingsTools: [ToolSpec] = makeSettingsTools()
+    /// schedule_nook_task, list_nook_tasks and delete_nook_task (see `AppModel+NookTasks`).
+    private(set) lazy var nookTaskTools: [ToolSpec] = makeNookTaskTools()
 
     /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
@@ -165,6 +167,7 @@ final class AppModel: ObservableObject {
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools + musicTools + agentSessionTools
         if settings.useMemory { all += memoryTools }
         all += settingsTools
+        all += nookTaskTools
         all += webSpecs
         all += BrowserStore.tools
         all += EmbeddedAppStore.tools
@@ -177,7 +180,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools + musicTools + agentSessionTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools + nookTaskTools + musicTools + agentSessionTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.tools

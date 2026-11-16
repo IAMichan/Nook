@@ -135,10 +135,10 @@ extension AppModel {
     /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
     /// (see `ReplyContext`). `target` asks in that conversation instead of the active one, and `reveal: false` leaves the
     /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
-    /// `ReplyContext.selfContained`.
+    /// `ReplyContext.selfContained`. `scheduled`: a scheduled task asks, not the user (`ScheduledTaskTarget.nook`).
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
              in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false,
-             page: ScreenSnapshot? = nil) {
+             page: ScreenSnapshot? = nil, scheduled: Bool = false) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
@@ -157,6 +157,7 @@ extension AppModel {
         let runs = screenBrain ?? relay ?? settings.selection
         var question = ChatMessage(role: .user, text: text)
         question.images = images
+        question.scheduled = scheduled
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true

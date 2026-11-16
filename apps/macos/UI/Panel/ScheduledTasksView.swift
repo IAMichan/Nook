@@ -166,6 +166,7 @@ private struct TaskRow: View {
         if task.target.sessionID != nil {
             parts.append(tr(task.target.freshConversation ? "automation.sched.fresh" : "automation.sched.continue"))
         }
+        if task.target.isNook { parts.append(tr("nookTask.destination")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -187,8 +188,11 @@ enum ScheduledTaskText {
         (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }
     }
 
+    /// The short name of a weekday in the app's language ("Fri", "vr", "Fr."), not the language of macOS.
     static func weekdayName(_ day: Int, _ calendar: Calendar = .current) -> String {
-        calendar.shortWeekdaySymbols[(day - 1) % 7]
+        var named = calendar
+        named.locale = Locale(identifier: NookDates.appLocale)
+        return named.shortWeekdaySymbols[(day - 1) % 7]
     }
 
     static func summary(_ rule: ScheduleRule) -> String {
@@ -241,7 +245,7 @@ enum ScheduledTaskText {
 
 // MARK: Editor
 
-private struct ScheduledTaskEditor: View {
+struct ScheduledTaskEditor: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = ScheduledTaskStore.shared
     @ObservedObject private var settings = WorkspaceSettings.shared
@@ -251,9 +255,10 @@ private struct ScheduledTaskEditor: View {
         var id: String { rawValue }
     }
 
-    /// Where the runs go: each one a new session in a project, or all of them into one session.
+    /// Where the runs go: Nook itself (its answer in the task's own Nook conversation), each one a new session in a
+    /// project, or all of them into one session.
     private enum Destination: String, CaseIterable, Identifiable {
-        case newSession, session
+        case nook, newSession, session
         var id: String { rawValue }
     }
 
@@ -280,7 +285,8 @@ private struct ScheduledTaskEditor: View {
     @State private var showsDeliveries = false
     @StateObject private var secretCopied = CopiedMoment()
 
-    init(existing: ScheduledTask?, onDone: @escaping () -> Void) {
+    /// `forNook`: a new task starts with Nook as its destination (opened from the Nook tab).
+    init(existing: ScheduledTask?, forNook: Bool = false, onDone: @escaping () -> Void) {
         self.existing = existing
         self.onDone = onDone
         _title = State(initialValue: existing?.title ?? "")
@@ -294,6 +300,7 @@ private struct ScheduledTaskEditor: View {
         if case .existingSession(let id, let isFresh)? = existing?.target {
             destination = .session; sessionID = id; fresh = isFresh
         }
+        if existing?.target.isNook == true || (existing == nil && forNook) { destination = .nook }
         _destination = State(initialValue: destination)
         _sessionID = State(initialValue: sessionID)
         _fresh = State(initialValue: fresh)
@@ -342,7 +349,12 @@ private struct ScheduledTaskEditor: View {
                         .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 }
                 field(tr("automation.sched.destination")) { destinationPicker }
-                if destination == .newSession {
+                if destination == .nook {
+                    Text(tr("nookTask.editor.hint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if destination == .newSession {
                 field(tr("sched.field.project")) {
                     HStack(spacing: NookTheme.Spacing.md) {
                         Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
@@ -373,7 +385,7 @@ private struct ScheduledTaskEditor: View {
                     Text(tr("sched.permission.webhookNote"))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
-                } else {
+                } else if destination != .nook {
                     field(tr("sched.permission")) { permissionPicker }
                 }
             }
@@ -406,7 +418,7 @@ private struct ScheduledTaskEditor: View {
                 Text(tr("sched.kind.interval")).tag(Kind.interval)
                 Text(tr("sched.kind.time")).tag(Kind.time)
                 Text(tr("automation.sched.kind.once")).tag(Kind.once)
-                Text(tr("sched.kind.webhook")).tag(Kind.webhook)
+                if destination != .nook { Text(tr("sched.kind.webhook")).tag(Kind.webhook) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -467,12 +479,15 @@ private struct ScheduledTaskEditor: View {
 
     private var destinationPicker: some View {
         Picker("", selection: $destination) {
+            Text(tr("nookTask.destination")).tag(Destination.nook)
             Text(tr("automation.sched.destination.new")).tag(Destination.newSession)
             Text(tr("automation.sched.destination.session")).tag(Destination.session)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(maxWidth: 360, alignment: .leading)
+        .frame(maxWidth: 420, alignment: .leading)
+        // Nook does not run from a webhook: words from outside never make it act.
+        .onChange(of: destination) { if destination == .nook && kind == .webhook { kind = .time } }
     }
 
     @ViewBuilder
@@ -692,6 +707,8 @@ private struct ScheduledTaskEditor: View {
     private var problem: String? {
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return tr("sched.invalid.prompt") }
         switch destination {
+        case .nook:
+            if kind == .webhook { return tr("nookTask.invalid.webhook") }
         case .newSession:
             if path.isEmpty || !FileManager.default.fileExists(atPath: path) { return tr("sched.invalid.project") }
         case .session:
@@ -757,6 +774,7 @@ private struct ScheduledTaskEditor: View {
 
     private func target(profileID: String?) -> ScheduledTaskTarget {
         switch destination {
+        case .nook: return .nook
         case .newSession: return .newSession(projectPath: path, provider: provider.rawValue, profileID: profileID)
         case .session: return .existingSession(id: sessionID ?? UUID(), fresh: fresh)
         }

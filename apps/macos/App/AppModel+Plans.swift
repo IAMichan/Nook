@@ -29,7 +29,9 @@ extension AppModel {
             return [tr("chat.account.notAllowed", chosen)]
         }
         let schema = Self.restrictAccounts(spec, to: scope)?.schema ?? spec.schema
-        return ActionGate.problems(tool: action.tool, input: action.input, schema: schema, parseDate: NookDates.parse)
+        let problems = ActionGate.problems(tool: action.tool, input: action.input, schema: schema, parseDate: NookDates.parse)
+        // A schedule Nook cannot run (no time, a time that is not one, a moment gone) is fixed before the click.
+        return action.tool == Self.scheduleNookTool ? problems + Self.nookTaskProblems(action.input) : problems
     }
 
     /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:
