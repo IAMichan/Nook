@@ -196,6 +196,49 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatSend, caller: run(.plan, .bypass)), .refuse(.planMode))
     }
 
+    func testChatAppsReadDirectlyAndSendOnlyAfterApproval() {
+        for tool in [BridgeTool.chatList, .chatRead] {
+            XCTAssertEqual(BridgePolicy.verdict(tool: tool, caller: run(.plan)), .allow, tool.rawValue)
+            XCTAssertEqual(BridgePolicy.verdict(tool: tool, caller: external), .allow, tool.rawValue)
+        }
+        for caller in [run(), run(.agent, .ask), run(.agent, .bypass), external] {
+            XCTAssertEqual(BridgePolicy.verdict(tool: .chatSend, caller: caller), .ask(.action),
+                           "a message from the user's own account: always their decision, whatever the session's rights")
+        }
+        XCTAssertEqual(BridgePolicy.verdict(tool: .chatSend, caller: run(.plan, .bypass)), .refuse(.planMode))
+        XCTAssertTrue(BridgeTool.chatSend.asksInHandler, "the approval comes from nook_use with the exact step")
+        for tool in [BridgeTool.chatList, .chatRead, .chatSend] {
+            XCTAssertEqual(tool.capability, .nookApps, "switched with Nook's apps")
+            XCTAssertFalse(RemoteBridge.allows(tool), "never from another machine")
+            XCTAssertFalse(RemoteAccessLevel.readOnly.allows(tool), "other people's messages: only at the Full level")
+            XCTAssertTrue(RemoteAccessLevel.full.allows(tool))
+        }
+    }
+
+    func testChatToolsRunNooksOwnChatTools() throws {
+        let list = try XCTUnwrap(BridgeChats.nookUseArguments(for: .chatList, ["app": " telegram ", "query": "", "chat": "x"]))
+        XCTAssertEqual(list["tool"] as? String, "chat_inbox")
+        XCTAssertEqual(list["arguments"] as? [String: String], ["app": "telegram"], "only what the overview knows, empty left out")
+
+        let read = try XCTUnwrap(BridgeChats.nookUseArguments(for: .chatRead, ["chat": "Lisa ", "limit": 5]))
+        XCTAssertEqual(read["tool"] as? String, "chat_inbox")
+        let readInput = try XCTUnwrap(read["arguments"] as? [String: Any])
+        XCTAssertEqual(readInput["chat"] as? String, "Lisa")
+        XCTAssertEqual(readInput["limit"] as? Int, 5)
+
+        let send = try XCTUnwrap(BridgeChats.nookUseArguments(for: .chatSend, ["to": "Team", "app": "slack", "message": " Hi! "]))
+        XCTAssertEqual(send["tool"] as? String, "chat_send")
+        XCTAssertEqual(send["arguments"] as? [String: String], ["to": "Team", "app": "slack", "message": " Hi! "],
+                       "the message goes exactly as written")
+
+        XCTAssertNil(BridgeChats.nookUseArguments(for: .nookUse, [:]))
+        XCTAssertNotNil(BridgeChats.problem(for: .chatRead, ["chat": "  "]))
+        XCTAssertNotNil(BridgeChats.problem(for: .chatSend, ["to": "Lisa", "message": "\n"]))
+        XCTAssertNotNil(BridgeChats.problem(for: .chatSend, ["message": "Hi"]))
+        XCTAssertNil(BridgeChats.problem(for: .chatSend, ["to": "Lisa", "message": "Hi"]))
+        XCTAssertNil(BridgeChats.problem(for: .chatList, [:]))
+    }
+
     func testTakingOverTheScreenAlwaysAsks() {
         for caller in [run(), run(.agent, .ask), run(.agent, .bypass), external] {
             XCTAssertEqual(BridgePolicy.verdict(tool: .takeOverScreen, caller: caller), .ask(.screen),

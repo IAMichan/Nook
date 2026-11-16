@@ -57,7 +57,7 @@ final class ChatInboxConnector: ContextSource {
     }
 
     /// The apps with at least one shown chat Nook can write in, by name: the same routes the Chats tab sends through.
-    private static func writableApps() -> [String] {
+    static func writableApps() -> [String] {
         let capture = ChatCaptureService.shared
         var apps: [String] = []
         for thread in capture.loadedInbox.sorted where capture.isShown(thread) && !apps.contains(thread.app) {

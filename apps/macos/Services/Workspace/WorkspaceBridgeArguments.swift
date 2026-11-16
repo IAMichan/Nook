@@ -772,3 +772,61 @@ enum BridgeUserBrowser {
     static let notConnected = "Nook's extension is not connected in any of the user's browsers. Ask the user to connect it "
         + "(Nook › Settings › Editor & browser › Nook in your browser), or leave out in: \"user\" to use Nook's own browser."
 }
+
+/// The user's chat apps as bridge tools (`chat_list`, `chat_read`, `chat_send`): the same Nook tools Nook Chat uses
+/// (`chat_inbox`, `chat_send` in `ChatInboxConnector`), named for agents, so a message from an agent goes the same route,
+/// through the same checks and the same approval as one from Nook Chat or the Chats tab, whichever app it is for.
+enum BridgeChats {
+    /// The Nook tool behind a chat tool.
+    static func nookTool(for tool: BridgeTool) -> String? {
+        switch tool {
+        case .chatList, .chatRead: return "chat_inbox"
+        case .chatSend: return "chat_send"
+        default: return nil
+        }
+    }
+
+    /// The `nook_use` arguments for the call: only the arguments the Nook tool knows, trimmed, empty ones left out.
+    static func nookUseArguments(for tool: BridgeTool, _ arguments: [String: Any]) -> [String: Any]? {
+        guard let name = nookTool(for: tool) else { return nil }
+        let keys: [String]
+        switch tool {
+        case .chatList: keys = ["app", "query"]
+        case .chatRead: keys = ["chat", "app", "limit"]
+        default: keys = ["to", "app", "message"]
+        }
+        var input: [String: Any] = [:]
+        for key in keys {
+            if let text = arguments[key] as? String {
+                // The message goes as written; names and apps are trimmed.
+                let value = key == "message" ? text : text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { input[key] = value }
+            } else if let number = arguments[key] as? Int {
+                input[key] = number
+            }
+        }
+        return ["tool": name, "arguments": input]
+    }
+
+    /// What an agent hears when a call misses what it needs, before anything reaches Nook's tools.
+    static func problem(for tool: BridgeTool, _ arguments: [String: Any]) -> String? {
+        let input = (nookUseArguments(for: tool, arguments)?["arguments"] as? [String: Any]) ?? [:]
+        switch tool {
+        case .chatRead where input["chat"] == nil:
+            return "Give the chat's name (a person or group) as chat_list shows it."
+        case .chatSend where input["to"] == nil:
+            return "Give the chat to send to (to), as chat_list shows it."
+        case .chatSend where input["message"] == nil:
+            return "Give the message to send."
+        default:
+            return nil
+        }
+    }
+
+    /// What an agent hears when Nook has no chats to offer: none collected and no WhatsApp linked.
+    static let unavailable = "Nook has no chats for agents yet. Ask the user to turn on Chats (Settings › Connections › On your Mac) "
+        + "or link WhatsApp in Nook."
+
+    /// What an agent hears when the user keeps their chats on this Mac.
+    static let keptOnMac = "The user keeps their chats on this Mac (Settings › Privacy): agents cannot read or send them."
+}

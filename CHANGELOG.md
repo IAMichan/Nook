@@ -12,6 +12,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- Coding agents can now use your chat apps directly through Nook's MCP: `chat_list`, `chat_read` and `chat_send` work
+  with every chat Nook links (WhatsApp, Messages, Telegram, Slack, Teams, Signal and more; WhatsApp on Windows and
+  Linux). Every message waits for your approval with the exact text, whatever rights the agent has. Together with
+  `nook_chat_*` an agent can read a chat, ask Nook about it and send a reply, and an assistant in another app gets
+  the same tools at the **Full** access level.
+
 - The changelog keeps up with the releases by itself: once a release is public, the release workflow opens a pull
   request that moves the **Unreleased** entries it shipped under its version and merges it when `Check` passes. Entries
   merged while the release was building wait for the next one, and a stable release gathers its betas into one

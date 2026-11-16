@@ -43,7 +43,8 @@ enum RemoteBridge {
              .sessionSuggest,
              .sessionOrganize, .sessionQuestions, .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose, .scheduleTask,
              .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest, .getPullRequestStatus,
-             .requestSecret, .nookTools, .nookUse, .nookChatList, .nookChatRead, .nookChatSend, .takeOverScreen:
+             .requestSecret, .nookTools, .nookUse, .nookChatList, .nookChatRead, .nookChatSend, .chatList, .chatRead, .chatSend,
+             .takeOverScreen:
             return false
         }
     }
