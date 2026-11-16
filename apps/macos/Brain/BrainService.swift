@@ -398,12 +398,12 @@ final class BrainService {
         switch selection.provider {
         case .claudeCode:
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
-                                                        prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
+                                                        prompt: Self.windowPrefix(history) + prompt,
                                                         allowWebSearch: webAllowed)
         case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
             conversation = SubscriptionBrain.conversation(provider: selection.provider, model: settings.activeProviderModel,
                                                           system: system,
-                                                          prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
+                                                          prompt: Self.windowPrefix(history) + prompt,
                                                           allowWebSearch: webAllowed)
         case .ollama:
             // `selection`, not the provider's stored model: on the screen brain this is the model picked for screen work.
@@ -615,9 +615,12 @@ final class BrainService {
 
     /// For brains without structured message history: preceding conversation formatted as text before the prompt.
     nonisolated static func historyPrefix(_ history: [ChatTurn], limit: Int, length: Int) -> String {
-        guard !history.isEmpty else { return "" }
-        let lines = history.suffix(limit).map { "\($0.fromUser ? "User" : "Nook"): \($0.text.prefix(length))" }
-        return "Conversation so far (for follow-up context):\n" + lines.joined(separator: "\n") + "\n\n"
+        ConversationWindow.asText(history, limit: limit, length: length)
+    }
+
+    /// The whole window, for brains that take one prompt (`ConversationWindow.asText(_:)`).
+    nonisolated static func windowPrefix(_ history: [ChatTurn]) -> String {
+        ConversationWindow.asText(history)
     }
 
     // MARK: Prompt
