@@ -181,6 +181,8 @@ jobs:
         env:
           BUNDLES: ${{ matrix.bundles }}
           VERSION: ${{ inputs.version }}
+          # Nook's own relay, so a PC is reachable away from home with one switch (as NOOK_RELAY_URL in release.yml).
+          NOOK_RELAY_URL: ${{ vars.NOOK_RELAY_URL }}
         shell: bash
         run: |
           # A release stamps its own version into the installers; CI builds keep the one in tauri.conf.json.

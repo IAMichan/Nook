@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 use super::backend::{BackendSession, CompanionBackend};
 use super::models::*;
@@ -46,6 +46,26 @@ pub struct CompanionServer {
     state: Mutex<ServerState>,
     task: Mutex<Option<tokio::task::AbortHandle>>,
     open: Arc<AtomicUsize>,
+    /// Where phones can reach this computer besides the address in their code, and the relay it keeps rooms on: told
+    /// with every `hello` and `list` (`endpoints`, `relay`), so a phone follows a new Wi-Fi address or the relay without
+    /// pairing again (`CompanionEndpoints` on the Mac).
+    reach: Mutex<Reach>,
+}
+
+/// What `hello` and `list` say about how to reach this computer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reach {
+    /// The `.local` name and the addresses of this computer's interfaces (the port is the listener's).
+    pub hosts: Vec<ReachHost>,
+    /// The relay address phones should use, or "" so they drop the one they knew.
+    pub relay: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReachHost {
+    pub host: String,
+    /// The address is this computer's Tailscale address (not just any address in 100.64/10).
+    pub tailnet: bool,
 }
 
 impl CompanionServer {
@@ -62,7 +82,31 @@ impl CompanionServer {
             state: Mutex::new(ServerState::Stopped),
             task: Mutex::new(None),
             open: Arc::new(AtomicUsize::new(0)),
+            reach: Mutex::new(Reach::default()),
         }
+    }
+
+    /// Updates what phones are told about reaching this computer.
+    pub fn set_reach(&self, reach: Reach) {
+        *self.reach.lock().unwrap_or_else(|e| e.into_inner()) = reach;
+    }
+
+    pub fn reach(&self) -> Reach {
+        self.reach.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The endpoints for an answer: every known host on the listener's port; nil while not listening.
+    fn endpoints(&self) -> Option<Vec<CompanionEndpoint>> {
+        let ServerState::Listening { port } = self.state() else { return None };
+        let reach = self.reach();
+        Some(
+            reach
+                .hosts
+                .into_iter()
+                .filter(|h| valid_host(&h.host))
+                .map(|h| CompanionEndpoint { host: h.host, port, tailnet: h.tailnet.then_some(true) })
+                .collect(),
+        )
     }
 
     pub fn store(&self) -> &Arc<CompanionStore> {
@@ -85,6 +129,11 @@ impl CompanionServer {
 
     pub fn last_push(&self) -> Option<String> {
         self.last_push.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The sessions as the backend gives them (for keeping the computer awake while agents work).
+    pub async fn sessions(&self) -> Vec<BackendSession> {
+        self.backend().sessions().await
     }
 
     fn backend(&self) -> Arc<dyn CompanionBackend> {
@@ -148,7 +197,7 @@ impl CompanionServer {
                 me.open.fetch_add(1, Ordering::SeqCst);
                 let conn = me.clone();
                 tokio::spawn(async move {
-                    let _ = tokio::time::timeout(CONNECTION_DEADLINE, conn.serve(stream)).await;
+                    let _ = tokio::time::timeout(CONNECTION_DEADLINE, conn.serve_stream(stream)).await;
                     conn.open.fetch_sub(1, Ordering::SeqCst);
                 });
             }
@@ -169,10 +218,33 @@ impl CompanionServer {
         let ServerState::Listening { port } = self.state() else { return None };
         let now = Utc::now();
         let key = self.store.active_pending(now).unwrap_or_else(|| self.store.begin_pairing(now));
-        Some(PairingLink { host: host.into(), port, key, mac_name: self.name.clone(), ..Default::default() })
+        Some(self.link(host, port, key))
     }
 
-    async fn serve(&self, mut stream: TcpStream) {
+    /// A pairing code for `key`: `host` first, this computer's other addresses as alternates (`&a=`, so a phone that
+    /// cannot resolve one still pairs, and knows the Tailscale address from the start), and the relay while it is on
+    /// (`&r=`, so a phone can even pair away from home).
+    pub fn link(&self, host: &str, port: u16, key: Vec<u8>) -> PairingLink {
+        let reach = self.reach();
+        let mut alternates: Vec<String> = Vec::new();
+        for h in reach.hosts {
+            if !h.host.eq_ignore_ascii_case(host) && valid_host(&h.host) && !alternates.contains(&h.host) {
+                alternates.push(h.host);
+            }
+        }
+        alternates.truncate(MAX_ALTERNATES);
+        PairingLink {
+            host: host.into(),
+            port,
+            key,
+            mac_name: self.name.clone(),
+            alternates,
+            relay: Some(reach.relay).filter(|r| !r.is_empty()),
+        }
+    }
+
+    /// Answers one connection: a phone on this network, or one that came through the relay (`relay::RelayHost`).
+    pub async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(&self, mut stream: S) {
         let mut reader = FrameReader::default();
         let mut buf = vec![0u8; 64 * 1024];
         loop {
@@ -251,8 +323,15 @@ impl CompanionServer {
         match request.op {
             CompanionOp::Hello | CompanionOp::List => {
                 let sessions = digests(backend.sessions().await);
-                CompanionResponse { mac_name: Some(self.name.clone()), ..with_sessions(sessions) }
+                CompanionResponse {
+                    mac_name: Some(self.name.clone()),
+                    endpoints: self.endpoints(),
+                    relay: Some(self.reach().relay),
+                    ..with_sessions(sessions)
+                }
             }
+            // The relay test and "Why can't I connect?" on the phone: the sealed round trip is the answer.
+            CompanionOp::Ping => CompanionResponse::success(id),
             CompanionOp::Register => {
                 // Het token komt in een URL op Apple's host: alleen hex.
                 let Some(token) = request.text.as_deref().filter(|t| push::valid_token(t)) else {

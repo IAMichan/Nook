@@ -326,6 +326,15 @@ A Mac that sleeps drops its connection to the relay and to Tailscale, so the pho
 
 On the power adapter Nook holds off all sleep (`PreventSystemSleep`), which keeps a MacBook awake with its lid closed too; on battery only idle sleep (`PreventUserIdleSystemSleep`), only for work or a connected phone (never for *Always* alone), and never below 20% charge. The screen still turns off. The assertions are named "Nook: keeps this Mac reachable for your iPhone" (`pmset -g assertions`), and Settings shows why the Mac is kept awake right now. When the Mac wakes or changes networks it connects to the relay again at once instead of waiting for the keep-alive to notice. A Mac that is shut down cannot be reached at all: messages to a session wait in the phone's outbox (up to a day) until it is back.
 
+## A Windows or Linux PC as the Server
+
+Nook for Windows and Linux (`apps/tauri`) can be the computer the phone pairs with, and can be left running as an always-on server for it (Settings › Companion › *Always reachable*), as t3code runs its server as a background service:
+
+- **Away from home:** the same relay as the Mac (Nook's, or your own address), with a room per paired phone and one for the pairing window, the relay in the code and in every answer (`core/src/companion/relay.rs`). Its LAN and Tailscale addresses go in the code and in every `hello`/`list` answer, so the phone follows a new address without pairing again.
+- **Keep this computer awake:** the same rules as the Mac (`core/src/companion/keep_awake.rs`); `SetThreadExecutionState` on Windows (a closed lid follows the power plan), `systemd-inhibit` on Linux.
+- **Keep Nook running:** Windows registers a Task Scheduler task that starts `nook --background` at sign-in and every minute (`IgnoreNew`: a second Nook ends at once in the single-instance check, without a window), so Nook comes back within a minute when it stops; Linux enables a systemd user service in the graphical session with `Restart=on-failure`. Nook runs in your session: lock the screen instead of signing out.
+- The PC still answers only approve, answer, send and stop (see *Versions* for what it does not list).
+
 ## Scope & Intentional Boundaries
 
 - Works on the same local network, over Tailscale or another VPN, and through a relay: Nook's own, or one on your own Cloudflare account (see *Away from Home*). Either way the relay only passes sealed bytes; without Tailscale or a relay, the Mac is reachable only at home. Using a relay is opt-in.

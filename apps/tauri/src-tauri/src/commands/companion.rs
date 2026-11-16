@@ -42,6 +42,25 @@ pub struct CompanionInfo {
     devices: Vec<DeviceView>,
     pairing: Option<PairingView>,
     push: Option<PushView>,
+    /// Reaching this computer away from home, and keeping it reachable (Settings › Companion › Always reachable).
+    away: Option<AwayView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwayView {
+    relay: nook_core::companion::store::RelaySettings,
+    /// Nook's own relay in this build; without one, only your own relay can be used.
+    nook_relay: Option<String>,
+    relay_status: nook_core::companion::relay::RelayStatus,
+    keep_awake: nook_core::companion::keep_awake::KeepAwakeMode,
+    /// What is held now and why (none while nothing is).
+    keep_awake_decision: Option<nook_core::companion::keep_awake::Decision>,
+    /// Nook keeps running: started at sign-in, and again when it stops (Task Scheduler, systemd).
+    background_supported: bool,
+    background: bool,
+    /// Whether this computer has a Tailscale address phones were told about.
+    tailscale: bool,
 }
 
 #[derive(Serialize)]
@@ -74,19 +93,12 @@ fn info(c: &Companion) -> CompanionInfo {
     let store = c.server.store();
     let now = Utc::now();
     let mut hosts = vec![companion::local_host_name()];
-    hosts.extend(companion::mdns::local_addresses());
+    hosts.extend(companion::reach::interface_addresses().into_iter().map(|(_, ip)| ip.to_string()));
     let chosen = c.pairing_host.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let pairing = match (store.active_pending(now), store.pending_until(now), &c.server.state()) {
         (Some(key), Some(until), nook_core::companion::server::ServerState::Listening { port }) => {
             let host = chosen.unwrap_or_else(|| hosts[0].clone());
-            let link = nook_core::companion::PairingLink {
-                host: host.clone(),
-                port: *port,
-                key,
-                mac_name: c.server.name().into(),
-                ..Default::default()
-            };
-            let url = link.url();
+            let url = c.server.link(&host, *port, key).url();
             Some(PairingView { qr_svg: qr_svg(&url), url, host, until })
         }
         _ => None,
@@ -112,6 +124,16 @@ fn info(c: &Companion) -> CompanionInfo {
             can_push: store.can_push(),
             last_result: c.server.last_push(),
         }),
+        away: Some(AwayView {
+            relay: store.relay(),
+            nook_relay: companion::nook_relay(),
+            relay_status: c.relay.status(),
+            keep_awake: store.keep_awake(),
+            keep_awake_decision: c.keep.lock().unwrap_or_else(|e| e.into_inner()).decision.filter(|d| d.reason.is_some()),
+            background_supported: companion::background::supported(),
+            background: companion::background::installed(),
+            tailscale: c.server.reach().hosts.iter().any(|h| h.tailnet),
+        }),
     }
 }
 
@@ -127,6 +149,7 @@ fn info(_: &Companion) -> CompanionInfo {
         devices: Vec::new(),
         pairing: None,
         push: None,
+        away: None,
     }
 }
 
@@ -148,6 +171,7 @@ pub async fn companion_set_enabled(companion: State<'_, Companion>, enabled: boo
         }
         let state = companion.server.apply().await;
         companion.announcer.apply(&state, companion.server.name());
+        companion::apply_relay(&companion);
         Ok(info(&companion))
     }
     #[cfg(not(desktop))]
@@ -165,6 +189,8 @@ pub fn companion_begin_pairing(companion: State<'_, Companion>, host: Option<Str
         let host = host.filter(|h| nook_core::companion::valid_host(h)).unwrap_or_else(companion::local_host_name);
         companion.server.pairing_link(&host).ok_or("De companion luistert niet.")?;
         *companion.pairing_host.lock().unwrap_or_else(|e| e.into_inner()) = Some(host);
+        // The pairing window gets its own room, so a phone can even pair away from home.
+        companion::apply_relay(&companion);
         Ok(info(&companion))
     }
     #[cfg(not(desktop))]
@@ -184,7 +210,10 @@ pub fn companion_cancel_pairing(companion: State<'_, Companion>) -> CompanionInf
 #[tauri::command]
 pub fn companion_remove_device(companion: State<'_, Companion>, id: String) -> CompanionInfo {
     #[cfg(desktop)]
-    companion.server.store().remove(&id);
+    {
+        companion.server.store().remove(&id);
+        companion::apply_relay(&companion);
+    }
     #[cfg(not(desktop))]
     let _ = id;
     info(&companion)
@@ -251,6 +280,74 @@ pub async fn companion_push_test(companion: State<'_, Companion>) -> Result<Stri
     #[cfg(not(desktop))]
     {
         let _ = companion;
+        Err(NO_SERVER.into())
+    }
+}
+
+// Always reachable: the relay, keeping the computer awake, keeping Nook running.
+
+/// Turns the relay on or off, and picks Nook's relay or your own (`address`).
+#[tauri::command]
+pub fn companion_set_relay(companion: State<'_, Companion>, enabled: bool, own: bool, address: String) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        let address = address.trim().to_string();
+        if own && enabled && !address.is_empty() && nook_core::companion::transport::normalize_relay(&address).is_none() {
+            return Err("That is not an https address.".into());
+        }
+        companion.server.store().set_relay(nook_core::companion::store::RelaySettings { enabled, own, address });
+        companion::apply_relay(&companion);
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, enabled, own, address);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// *Test relay*: a round trip through the relay as a paired phone makes it; the time in milliseconds.
+#[tauri::command]
+pub async fn companion_test_relay(companion: State<'_, Companion>) -> Result<u64, String> {
+    #[cfg(desktop)]
+    {
+        companion.relay.test().await
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = companion;
+        Err(NO_SERVER.into())
+    }
+}
+
+#[tauri::command]
+pub fn companion_set_keep_awake(
+    companion: State<'_, Companion>,
+    mode: nook_core::companion::keep_awake::KeepAwakeMode,
+) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        companion.server.store().set_keep_awake(mode);
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, mode);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// Keeps Nook running (Task Scheduler on Windows, a systemd user service on Linux), or stops doing so.
+#[tauri::command]
+pub fn companion_set_background(companion: State<'_, Companion>, on: bool) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        companion::background::set(on)?;
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, on);
         Err(NO_SERVER.into())
     }
 }

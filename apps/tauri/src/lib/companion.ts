@@ -64,6 +64,31 @@ export interface CompanionInfo {
   devices: { id: string; name: string; pairedAt: string; lastSeen: string | null; push: boolean }[];
   pairing: { url: string; qrSvg: string; host: string; until: string } | null;
   push: { settings: PushSettings; keyId: string; teamId: string; hasKey: boolean; canPush: boolean; lastResult: string | null } | null;
+  /** Reaching this computer away from home and keeping it reachable; null on a phone. */
+  away: AwayInfo | null;
+}
+
+export type RelayStatus =
+  | { state: "off" }
+  | { state: "invalid" }
+  | { state: "connecting" }
+  | { state: "connected" }
+  | { state: "failed"; message: string };
+
+export type KeepAwakeMode = "off" | "whileWorking" | "always";
+
+export interface AwayInfo {
+  relay: { enabled: boolean; own: boolean; address: string };
+  /** Nook's own relay in this build; null when only your own relay can be used. */
+  nookRelay: string | null;
+  relayStatus: RelayStatus;
+  keepAwake: KeepAwakeMode;
+  /** What is held now and why; null while nothing is. */
+  keepAwakeDecision: { hold: "none" | "idle" | "system"; reason: "working" | "phone" | "always" | null } | null;
+  backgroundSupported: boolean;
+  background: boolean;
+  /** This computer has a Tailscale address that phones know. */
+  tailscale: boolean;
 }
 
 export interface ClientView {
@@ -104,6 +129,10 @@ export const companion = {
   setApns: (keyId: string, teamId: string, pem?: string) => invoke<CompanionInfo>("companion_set_apns", { keyId, teamId, pem }),
   removeApnsKey: () => invoke<CompanionInfo>("companion_remove_apns_key"),
   pushTest: () => invoke<string>("companion_push_test"),
+  setRelay: (enabled: boolean, own: boolean, address: string) => invoke<CompanionInfo>("companion_set_relay", { enabled, own, address }),
+  testRelay: () => invoke<number>("companion_test_relay"),
+  setKeepAwake: (mode: KeepAwakeMode) => invoke<CompanionInfo>("companion_set_keep_awake", { mode }),
+  setBackground: (on: boolean) => invoke<CompanionInfo>("companion_set_background", { on }),
 
   client: () => invoke<ClientView>("companion_client"),
   pair: (link: string, name: string) => invoke<ClientView>("companion_client_pair", { link, name }),
