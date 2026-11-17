@@ -438,6 +438,28 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 Workspace-only blocks (`InfoRow`, `WSSectionTitle`, `StatusBadge`) live in
 `UI/Workspace/WorkspaceComponents.swift`; `WSEmptyState`, used by the iPhone too, is in `UI/Shared/PanelParts.swift`.
 
+## The Tauri app's components — `apps/tauri/src/components/ui`
+
+The Tauri app (Windows, Linux, Android) builds its views from the same parts, as Svelte components next to their Swift
+names. Each takes its colors, type, radii and spacing from the variables in `src/app.css` (the twins of `NookTheme`)
+and draws the desktop look by default; inside the companion (`.phone`, `views/companion/ui/phone.css`) it takes the
+iPhone's look, so the phone and the desktop share one component. Use these instead of drawing a dialog, menu, sheet or
+switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the twins still to build.
+
+| Svelte | Swift | Use |
+| --- | --- | --- |
+| `ConfirmedButton.svelte`, `ask()` in `lib/confirm.svelte.ts` | `ConfirmedButton`, `.confirmDelete` | Anything that cannot be undone asks first: the question as the title, what is lost under it, the red button and Cancel (bold, so Return never removes anything). `ConfirmedButton` is the button; `await ask({ question, detail, confirmTitle })` is for handlers and menu items. `ConfirmHost.svelte` (mounted once in `App.svelte`) shows one question at a time. Never `window.confirm`; `confirm.test.ts` fails on it |
+| `Dialog.svelte` | `confirmationDialog`, `.alert` | A question with a visible title, a message, maybe a field, and its buttons, the answer first and Cancel last. Escape closes it, Return in the field takes the bold button |
+| `Sheet.svelte` | `.sheet` | A sheet over the page: a centered card on the desktop, sliding up on the phone. Escape and a click beside it close it |
+| `Menu.svelte` | `NookMenuItems`, the iPhone's menus | A menu near what was clicked: sections, a checkmark on the chosen row, destructive rows in coral, an optional row of quick reactions |
+| `Toggle.svelte` | `Toggle` in a settings row | An on/off switch, mint when on |
+| `SearchField.svelte` | `NookSearchField` | The search field, with a clear button once something is typed |
+| `EmptyState.svelte` | `WSEmptyState` | An empty page: an icon, a title, a line and maybe one action |
+| `Banner.svelte` | `Banner` | An icon in its color and a line on a card, optionally a button |
+| `StatusPill.svelte`, `PulseDot.svelte` | `StatusBadgeLabel`, `PulseDot` | A session's state as a mark and a word in its color; the pulsing dot while it works |
+| `TabBar.svelte` | the iPhone's tab bar | Tabs along the bottom, each with its icon, name and count |
+| `Ico.svelte` | `NookIcon` | A Lucide icon in the text color around it |
+
 ## Shortcut cheat sheet
 
 `ShortcutCheatSheetView` (`UI/Panel`) is the one overlay that lists every key (`?` or ⌘/): it reads the live rules from

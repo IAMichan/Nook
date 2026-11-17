@@ -2,6 +2,7 @@
   // Instellingen › Agents: koppelen (met precies wat er verandert, een backup en pas na OK), accounts, gebruik en
   // de werkruimte voor agents.
   import type { Component } from "svelte";
+  import { ask } from "../../lib/confirm.svelte";
   import { agentApi, agentNames, type AgentKind, type AgentProfile, type Integration, type LinkPreview } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
   import { nook } from "../../lib/state.svelte";
@@ -98,7 +99,11 @@
   }
 
   async function removeProfile(p: AgentProfile) {
-    if (!confirm(tr("{title} uit Nook halen? De map {folder} en de inlog blijven op je computer staan.", "Remove {title} from Nook? The folder {folder} and the login stay on your computer.", { title: p.title, folder: p.displayHome }))) return;
+    if (!(await ask({
+      question: tr("{title} uit Nook halen?", "Remove {title} from Nook?", { title: p.title }),
+      detail: tr("De map {folder} en de inlog blijven op je computer staan.", "The folder {folder} and the login stay on your computer.", { folder: p.displayHome }),
+      confirmTitle: tr("Haal weg", "Remove"),
+    }))) return;
     try {
       await agentApi.removeProfile(p.id);
     } catch (e) {

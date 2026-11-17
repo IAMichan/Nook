@@ -4,6 +4,7 @@
   // beëindigen.
   import { agentApi, statusLabels, type AgentSession } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { ask } from "../../lib/confirm.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import Conversation from "./Conversation.svelte";
@@ -28,7 +29,11 @@
   const busy = $derived(session.status === "running" || session.status === "waiting");
 
   async function end() {
-    if (!confirm(tr("{name} in {project} beëindigen? De agent bewaart zijn gesprek, zodat je later verder kunt.", "End {name} in {project}? The agent keeps its conversation, so you can continue later.", { name: session.name, project: session.project }))) return;
+    if (!(await ask({
+      question: tr("{name} in {project} beëindigen?", "End {name} in {project}?", { name: session.name, project: session.project }),
+      detail: tr("De agent bewaart zijn gesprek, zodat je later verder kunt.", "The agent keeps its conversation, so you can continue later."),
+      confirmTitle: tr("Beëindig sessie", "End session"),
+    }))) return;
     try {
       await agentApi.end(session.id);
     } catch (e) {

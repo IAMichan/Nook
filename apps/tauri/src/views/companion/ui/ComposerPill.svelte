@@ -1,7 +1,7 @@
 <script lang="ts">
   // A quiet choice in a composer's row (`ComposerPill`): an optional mark, a word, and a chevron when it opens a menu.
   import type { Snippet } from "svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { label, icon, lead, chevron = true, on = false, tint, onclick }: {
     label: string; icon?: string; lead?: Snippet; chevron?: boolean; on?: boolean; tint?: string; onclick: (e: MouseEvent) => void;
   } = $props();

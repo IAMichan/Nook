@@ -1,6 +1,6 @@
 <script lang="ts">
   // A shelf you fold (`NookShelfHeader`): its name, how many, and a chevron; open or closed is remembered.
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { title, count, open, ontoggle }: { title: string; count: number; open: boolean; ontoggle: () => void } = $props();
 </script>
 

@@ -13,8 +13,8 @@
   } from "../../lib/companion";
   import { nookAct, nookMenu } from "./nook-chats";
   import type { ChatConfirm } from "./chat-actions";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import { activeMac, cacheFor, kept, recordChatLines, saveSoon } from "../../lib/companion-cache";
@@ -26,8 +26,8 @@
   import { haptic } from "../../lib/haptics";
   import NavBar from "./ui/NavBar.svelte";
   import NookMark from "./ui/NookMark.svelte";
-  import PulseDot from "./ui/PulseDot.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import PulseDot from "../../components/ui/PulseDot.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
 

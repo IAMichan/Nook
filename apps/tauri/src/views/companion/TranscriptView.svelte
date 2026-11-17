@@ -6,7 +6,7 @@
   import { richContent } from "../../lib/rich";
   import { duration, stepIcon, stepParts, tally, transcriptRows, type TranscriptRow } from "../../lib/transcript";
   import { tr } from "../../lib/i18n.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { entries, working, onreply, onwhole }: { entries: TimelineEntry[]; working: boolean; onreply?: (text: string) => void; onwhole?: (entry: TimelineEntry) => void } = $props();
   const rows = $derived(transcriptRows(entries, working));
