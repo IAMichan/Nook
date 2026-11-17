@@ -14,7 +14,6 @@ extension NewSessionComposer {
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
-                    .composerTip(tr("ws.remote.limits"))
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
@@ -23,7 +22,6 @@ extension NewSessionComposer {
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)
                         .frame(minWidth: 90, maxWidth: 150)
-                        .composerTip(tr("ws.remote.baseHelp"))
                 }
             } else {
                 // A folder that is no git repository has no branch or worktree to choose.
@@ -41,11 +39,9 @@ extension NewSessionComposer {
                     } content: {
                         BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
                     }
-                    .composerTip(tr("compose.from.help"))
                 } else if let branch = project?.currentBranch {
                     ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
                         .frame(maxWidth: 220)
-                        .composerTip(tr("compose.currentBranch.help"))
                 }
             }
         }
@@ -69,7 +65,7 @@ extension NewSessionComposer {
                 remember()
             }
         }
-        .composerTip(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
+        .composerTip(worktreeAllowed ? "" : reason)
     }
 
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.

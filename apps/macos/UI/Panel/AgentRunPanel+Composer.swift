@@ -483,7 +483,6 @@ extension AgentRunPanel {
                                          stopIfBusy: true)
             }
         }
-        .composerTip(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     /// The session's options, and while the agent works a word on what picking another account or agent does then.

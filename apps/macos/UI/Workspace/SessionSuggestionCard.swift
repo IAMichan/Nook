@@ -44,7 +44,6 @@ struct SessionSuggestionCard: View {
                             + Text(suggestion.summary.isEmpty ? "" : " · " + suggestion.summary).foregroundStyle(NookTheme.textTertiary))
                             .font(NookTheme.TextStyle.body)
                             .lineLimit(2)
-                            .nookTip(suggestion.prompt)
                     }
                     Spacer(minLength: 0)
                     if let choose {
@@ -54,12 +53,9 @@ struct SessionSuggestionCard: View {
                 if let choose {
                     HStack(spacing: NookTheme.Spacing.md) {
                         SmallGhostButton(title: tr("suggest.options")) { choose(.options) }
-                            .nookTip(tr("suggest.optionsHelp"))
                         Spacer(minLength: 0)
                         SmallGhostButton(title: tr("suggest.here")) { choose(.here) }
-                            .nookTip(tr("suggest.hereHelp"))
                         SmallPrimaryButton(title: tr("suggest.start")) { choose(.start) }
-                            .nookTip(tr("suggest.startHelp"))
                     }
                 }
             }

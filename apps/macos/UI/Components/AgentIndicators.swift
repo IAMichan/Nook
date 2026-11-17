@@ -110,7 +110,8 @@ struct PullRequestPill: View {
             }
         }
         .modifier(RowBadgeBackground(horizontal: compact ? 3 : 5))
-        .nookTip(label.isEmpty ? status : "\(label) · \(status)", enabled: tooltip)
+        // Only a bare state mark needs its name on hover; with a number beside it, the pill says enough.
+        .nookTip(status, enabled: tooltip && ((compact ? progress : label) ?? "").isEmpty)
         .accessibilityLabel(label.isEmpty ? status : "\(label), \(status)")
     }
 

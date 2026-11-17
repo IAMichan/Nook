@@ -199,9 +199,13 @@ The checklist for a new or changed view:
 - A notification card says its state in `NookCard.status` (a tinted pill at the end of its header, colored by its
   `DoneTone`) and an agent's changed lines in `NookCard.changes`; its `context` keeps only who and where.
 - The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
-- Every string through `tr("key")` in all five languages, and a `.nookTip` (or `.help`) and accessibility label on a
-  symbol-only control or menu (`ToolbarIconButton` and `NookIconButton` set both from their label). In lists, sidebars
-  and toolbars prefer `.nookTip`: AppKit's `.help` waits about a second and never swaps instantly.
+- Every string through `tr("key")` in all five languages, and a `.nookTip` and accessibility label on a symbol-only
+  control or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
+- A tooltip only where it is needed, never by default. It belongs on: a symbol-only control (its name); text that is
+  cut short (`.nookTipWhenCut`); a disabled control (why it is disabled); a lone mark with no words beside it that
+  say the same. Never on a whole row, card or tab, a control with a visible label, metadata (dates, authors, counts,
+  branches, line counts), or a mark next to text that already says it. An explanation a setting needs is an ⓘ
+  (`SettingsInfoButton`, `SettingInfoLabel`) or a footnote, not a hover.
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
 - A key that runs a command (send, find, the command palette, a new session, undo…) is a keybinding command, offered

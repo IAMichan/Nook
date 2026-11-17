@@ -342,7 +342,6 @@ struct ConnectionOptionTile: View {
                 if option.linked {
                     Image(icon: "checkmark.circle.fill")
                         .foregroundStyle(NookTheme.mint)
-                        .nookTip(tr("hub.picker.linked"))
                         .accessibilityLabel(tr("hub.picker.linked"))
                 } else {
                     ConnectMethodBadge(method: option.method)

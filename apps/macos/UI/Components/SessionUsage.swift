@@ -293,7 +293,6 @@ private struct CompactNowButton: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .nookTip(tr("compose.context.compact"))
     }
 }
 
@@ -356,7 +355,6 @@ struct SessionUsageCard: View {
                     .onHover { hovering = $0 }
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(tr(folded ? "usage.session.unfold" : "usage.session.fold"))
                 if !folded { SessionUsageSection(source: source) }
             }
             .padding(.horizontal, NookTheme.Spacing.lg)

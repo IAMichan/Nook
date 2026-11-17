@@ -82,7 +82,6 @@ struct PullRequestConversationFilter: View {
             DropdownRow(symbol: showFinished ? "checkmark.square.fill" : "square", title: tr("agents.pr.comments.finished"),
                         chosen: showFinished, staysOpen: true) { showFinished.toggle() }
         }
-        .nookTip(tr("agents.pr.comments.filter"))
         .accessibilityLabel(tr("agents.pr.comments.filter"))
     }
 }
@@ -316,7 +315,6 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .monospacedDigit()
-                    .nookTip(date.formatted(date: .abbreviated, time: .shortened))
             }
             if let url = event.url {
                 // Under the pointer only: ten comments should not mean ten buttons at rest. It keeps its room, so the

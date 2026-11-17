@@ -25,7 +25,7 @@ struct LineageLink: View {
         .buttonStyle(.nookPlain)
         .disabled(parent == nil)
         .onHover { hovering = $0 }
-        .nookTip(parent == nil ? tr("lineage.deleted") : tr("lineage.open"))
+        .nookTip(tr("lineage.deleted"), enabled: parent == nil)
     }
 }
 
@@ -53,6 +53,5 @@ struct LauncherLink: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .nookTip(tr("launched.help"))
     }
 }

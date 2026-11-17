@@ -88,8 +88,7 @@ extension PullRequestDetailView {
         if case .commit(let sha) = event.kind {
             PullRequestCommitEntry(sha: sha, message: event.body,
                                    details: PullRequestCommit.detailsBySHA(detail.commits)[sha] ?? "",
-                                   time: event.date.map { AgentFormat.short(now.timeIntervalSince($0)) },
-                                   date: event.date) { openCommit(sha, detail: detail) }
+                                   time: event.date.map { AgentFormat.short(now.timeIntervalSince($0)) }) { openCommit(sha, detail: detail) }
         }
     }
 
@@ -103,7 +102,6 @@ extension PullRequestDetailView {
             .font(NookTheme.font(11))
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
-            .nookTip(date.formatted(date: .abbreviated, time: .shortened))
     }
 
     func activityLook(_ type: String) -> (symbol: String, color: Color) {

@@ -57,21 +57,24 @@ extension SettingsView {
     /// Double Tap: the feature and its key together, so turning it on and choosing its key happen in one place.
     private var doubleTapSection: some View {
         Section {
-            // What a double tap can do takes four paragraphs; they show on hover, so the section stays short.
-            Toggle(isOn: $doubleTap.enabled) { SettingText("doubletap.settings.enable") }
-                .nookTip(doubleTapHelp)
+            // What a double tap can do takes four paragraphs; they sit behind the ⓘ, so the section stays short.
+            Toggle(isOn: $doubleTap.enabled) {
+                SettingInfoLabel(info: doubleTapHelp) { SettingText("doubletap.settings.enable") }
+            }
             Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
                 ForEach(FlowKey.allCases) { key in
                     Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
                 }
             }
             .disabled(!doubleTap.enabled)
-            Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
+            Toggle(isOn: $doubleTap.taskOnTap) {
+                SettingInfoLabel(tr("takeover.settings.onTap"), info: tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+            }
                 .disabled(!doubleTap.enabled)
-                .nookTip(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
-            Toggle(tr("doubletap.settings.suggest"), isOn: $doubleTap.suggests)
+            Toggle(isOn: $doubleTap.suggests) {
+                SettingInfoLabel(tr("doubletap.settings.suggest"), info: tr("doubletap.settings.suggestDetail"))
+            }
                 .disabled(!doubleTap.enabled)
-                .nookTip(tr("doubletap.settings.suggestDetail"))
         } header: {
             SettingText("doubletap.settings.title")
         } footer: {
@@ -82,7 +85,7 @@ extension SettingsView {
         }
     }
 
-    /// Everything a double tap can do, as one tooltip.
+    /// Everything a double tap can do, as one explanation.
     private var doubleTapHelp: String {
         [tr("doubletap.settings.askDetail", doubleTap.key.symbol), tr("doubletap.settings.writeDetail"),
          tr("doubletap.settings.editDetail"), tr("doubletap.settings.detail")].joined(separator: "\n\n")

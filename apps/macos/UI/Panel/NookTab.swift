@@ -352,9 +352,8 @@ struct NookChatView: View {
                     Text(conversation.title)
                         .font(NookTheme.TextStyle.title)
                         .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
+                        .nookTipWhenCut(conversation.title)
                         .onTapGesture(count: 2) { startRenaming(conversation) }
-                        .nookTip(tr("ws.title.renameHelp"))
                 }
                 if conversation.pinned {
                     Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
