@@ -230,26 +230,37 @@ fn set_draft(app: &AppHandle, nook_id: &str, message_id: &str, draft: MailDraft)
 /// Bewaart wat de gebruiker in het concept veranderde.
 #[tauri::command]
 pub fn mail_update(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
     if current.state == "sent" {
         return Err("Deze mail is al verstuurd.".into());
     }
-    set_draft(&app, &nook_id, &message_id, MailDraft { state: "draft".into(), error: String::new(), ..draft });
+    current.to = draft.to;
+    current.cc = draft.cc;
+    current.subject = draft.subject;
+    current.body = draft.body;
+    current.state = "draft".into();
+    current.error = String::new();
+    tools::sync_invite(&mut current);
+    set_draft(&app, &nook_id, &message_id, current);
     Ok(())
 }
 
 /// Versturen (de klik van de gebruiker): het concept gaat naar het mailprogramma, klaar om te verzenden.
 #[tauri::command]
 pub fn mail_send(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, _) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
-    match tools::send_mail(&app, &draft) {
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    current.to = draft.to;
+    current.cc = draft.cc;
+    current.subject = draft.subject;
+    current.body = draft.body;
+    match tools::send_mail(&app, &mut current) {
         Ok(()) => {
-            app.state::<AppState>().store.audit("send_mail", &format!("{} · {}", draft.to, draft.subject), "naar het mailprogramma");
-            set_draft(&app, &nook_id, &message_id, MailDraft { state: "sent".into(), error: String::new(), ..draft });
+            app.state::<AppState>().store.audit("send_mail", &format!("{} · {}", current.to, current.subject), "naar het mailprogramma");
+            set_draft(&app, &nook_id, &message_id, MailDraft { state: "sent".into(), error: String::new(), ..current });
             Ok(())
         }
         Err(error) => {
-            set_draft(&app, &nook_id, &message_id, MailDraft { state: "failed".into(), error: error.clone(), ..draft });
+            set_draft(&app, &nook_id, &message_id, MailDraft { state: "failed".into(), error: error.clone(), ..current });
             Err(error)
         }
     }
@@ -257,9 +268,26 @@ pub fn mail_send(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
 
 #[tauri::command]
 pub fn mail_open(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, _) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
-    tools::open_mail(&app, &draft)?;
-    set_draft(&app, &nook_id, &message_id, MailDraft { state: "opened".into(), error: String::new(), ..draft });
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    current.to = draft.to;
+    current.cc = draft.cc;
+    current.subject = draft.subject;
+    current.body = draft.body;
+    tools::open_mail(&app, &mut current)?;
+    set_draft(&app, &nook_id, &message_id, MailDraft { state: "opened".into(), error: String::new(), ..current });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mail_open_invite(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id)
+        .ok_or_else(|| nook_core::i18n::tr("Dit concept bestaat niet meer.", "This draft no longer exists."))?;
+    current.to = draft.to;
+    current.cc = draft.cc;
+    current.subject = draft.subject;
+    current.body = draft.body;
+    tools::open_invite(&app, &mut current)?;
+    set_draft(&app, &nook_id, &message_id, current);
     Ok(())
 }
 

@@ -41,6 +41,7 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 }
 
 pub mod action_gate;
+pub mod calendar_invite;
 pub mod chart;
 pub mod chat_image;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
