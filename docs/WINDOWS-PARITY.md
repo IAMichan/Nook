@@ -201,7 +201,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [x] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 - [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
-- [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
+- [x] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 - [ ] **BR-45** Conversation list like the Mac: Conversations/Scheduled header tabs, For you card, one-line settled rows, hover card, archive shelf, multi-select, mark unread (`NookConversationList`) · M
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 - [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S

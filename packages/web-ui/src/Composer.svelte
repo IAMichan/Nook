@@ -14,6 +14,8 @@
     field: string;
     send: string;
     stop: string;
+    /** The queue button while Nook answers ("Queue: goes after this turn"); needed with `queues`. */
+    queue?: string;
     attach: string;
     removeImage: string;
     /** The three below show only where documents can be attached (`Draft.readsDocuments`). */
@@ -43,6 +45,7 @@
     onsend,
     onstop,
     busy = false,
+    queues = false,
     disabled = false,
     history = [],
     historyKey = null,
@@ -62,6 +65,8 @@
     onstop?: () => void;
     /** Nook is answering: send waits (or becomes stop when `onstop` is given). */
     busy?: boolean;
+    /** While busy, Return and the queue button still send: the message waits in line for after this answer. */
+    queues?: boolean;
     /** Nothing can be sent at all (not connected): the field is read-only. */
     disabled?: boolean;
     /** Your earlier questions in this conversation, newest first (`askedBefore`). */
@@ -101,7 +106,7 @@
   }
 
   const stoppable = $derived(busy && !!onstop);
-  const canSend = $derived(!draft.empty && !busy && !disabled && !draft.reading);
+  const canSend = $derived(!draft.empty && (!busy || queues) && !disabled && !draft.reading);
 
   async function send() {
     if (!canSend) return;
@@ -218,6 +223,11 @@
       {@render controls?.()}
       <span class="grow"></span>
       {@render extras?.()}
+      {#if stoppable && queues && !draft.empty}
+        <button type="button" class="round queue" onclick={send} disabled={!canSend} title={texts.queue} aria-label={texts.queue}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4" /></svg>
+        </button>
+      {/if}
       {#if stoppable}
         <button type="button" class="round stop" onclick={() => onstop?.()} title={texts.stop} aria-label={texts.stop}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5" /></svg>
@@ -291,8 +301,8 @@
   button.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
   button.round { width: 32px; height: 32px; border-radius: 999px; }
   button.round svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-  button.send { background: var(--nc-accent, #1e1e22); color: var(--nc-on-accent, #ffffff); }
-  button.send:hover:not(:disabled) { background: var(--nc-accent-hover, var(--nc-accent, #3b3b3f)); }
+  button.send, button.queue { background: var(--nc-accent, #1e1e22); color: var(--nc-on-accent, #ffffff); }
+  button.send:hover:not(:disabled), button.queue:hover:not(:disabled) { background: var(--nc-accent-hover, var(--nc-accent, #3b3b3f)); }
   button.send:disabled { background: var(--nc-disabled, #e4e4e7); color: var(--nc-faint, #62626c); cursor: default; }
   button.stop { background: var(--nc-stop, #18181b); color: var(--nc-on-stop, #fcfcfc); }
   button.stop svg { fill: currentColor; stroke: none; }

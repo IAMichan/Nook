@@ -62,6 +62,7 @@ pub mod network_guard;
 pub mod prepare;
 pub mod profile;
 pub mod quality;
+pub mod queue;
 pub mod query_plan;
 pub mod research;
 pub mod retrieval;

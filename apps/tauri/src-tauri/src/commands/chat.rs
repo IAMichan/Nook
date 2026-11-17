@@ -198,6 +198,27 @@ fn ask_with(
     let state = app.state::<AppState>();
     let settings = state.settings();
 
+    // Nook is still answering here: the question waits in line and goes out once that answer is done. A card's own
+    // prompt is not yours, so it never waits behind your questions.
+    if card.is_none() {
+        let queued = state.with_chat(|c| match c.get_mut(nook_id) {
+            Some(conv) if conv.busy => {
+                let document = attachment.as_ref().map(|a| (a.name.clone(), a.text.clone()));
+                Some(conv.queue.enqueue(raw, images.clone(), document, chrono::Utc::now()).is_some())
+            }
+            _ => None,
+        });
+        match queued {
+            Some(true) => {
+                state.save_chat();
+                updated(app, nook_id);
+                return Ok(None);
+            }
+            Some(false) => return Err(nook_core::i18n::tr("De wachtrij is vol.", "The queue is full.").into()),
+            None => {}
+        }
+    }
+
     // "Maak ongedaan": de laatste acties, omgekeerd, als plan om goed te keuren.
     if undo::is_request(&text) {
         propose_undo(app, nook_id, &text);
@@ -830,6 +851,39 @@ fn finish(app: &AppHandle, nook_id: &str) {
     state.running.lock().unwrap_or_else(|e| e.into_inner()).remove(nook_id);
     state.save_chat();
     updated(app, nook_id);
+    send_queued(app, nook_id, None);
+}
+
+/// The next question that waited in line, once the answer before it is done. `message`: that question right away (Send
+/// now), stopping the answer that runs; it also lets a line held after a stop or an error go again.
+pub fn send_queued(app: &AppHandle, nook_id: &str, message: Option<&str>) {
+    let state = app.state::<AppState>();
+    if message.is_some() && state.with_chat(|c| c.get(nook_id).is_some_and(|conv| conv.busy)) {
+        stop(app, nook_id);
+    }
+    let next = state.with_chat(|c| {
+        let conv = c.get_mut(nook_id).filter(|conv| !conv.busy)?;
+        match message {
+            Some(id) => conv.queue.take(id),
+            None => conv.queue.take_next(),
+        }
+    });
+    let Some(next) = next else { return };
+    state.save_chat();
+    // Like the Mac's `sendQueued`: it never brings the main window to the front.
+    let attachment = next.document.map(|(name, text)| Attachment { name, text });
+    if let Err(e) = ask_with(app, nook_id, &next.text, next.images, attachment, None, None, false) {
+        log::warn!("queued question for {nook_id} did not go out: {e}");
+    }
+}
+
+/// Holds the line after a stop or an error: nothing goes out on its own until you send one of its questions.
+fn hold_queue(app: &AppHandle, nook_id: &str) {
+    app.state::<AppState>().with_chat(|c| {
+        if let Some(conv) = c.get_mut(nook_id) {
+            conv.queue.hold();
+        }
+    });
 }
 
 fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, settings: &Settings) {
@@ -846,6 +900,7 @@ fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, s
             m.text += &format!("\n\n_{error}_");
         }
     });
+    hold_queue(app, nook_id);
     finish(app, nook_id);
 }
 
@@ -1013,6 +1068,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
                     m.text = "Gestopt.".into();
                 }
             }
+            conv.queue.hold();
         }
     });
     state.save_chat();

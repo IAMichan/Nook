@@ -296,6 +296,9 @@ pub struct Conversation {
     pub pinned: bool,
     #[serde(default)]
     pub archived: bool,
+    /// Questions waiting for the answer that is being written (`NookChat.enqueue` on the Mac).
+    #[serde(default, skip_serializing_if = "crate::brain::queue::MessageQueue::is_empty")]
+    pub queue: crate::brain::queue::MessageQueue,
 }
 
 impl Conversation {
@@ -312,6 +315,7 @@ impl Conversation {
             scope: None,
             pinned: false,
             archived: false,
+            queue: Default::default(),
         }
     }
 

@@ -190,6 +190,21 @@ export interface Conversation {
   pinned: boolean;
   archived: boolean;
   scope: SourceScope | null;
+  /** Questions waiting for the answer that is being written (absent when none wait). */
+  queue?: MessageQueue;
+}
+
+export interface QueuedQuestion {
+  id: string;
+  text: string;
+  created: string;
+  imageCount: number;
+  documentName?: string;
+}
+
+export interface MessageQueue {
+  messages: QueuedQuestion[];
+  isHeld: boolean;
 }
 
 export interface ConversationSummary {

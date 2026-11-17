@@ -29,6 +29,9 @@ export const api = {
   ask: (nookId: string, text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) =>
     invoke<string | null>("ask", { nookId, text, images, attachment }),
   stop: (nookId: string) => invoke<void>("stop", { nookId }),
+  queueRemove: (nookId: string, id: string) => invoke<void>("queue_remove", { nookId, id }),
+  queueMove: (nookId: string, id: string, to: number) => invoke<void>("queue_move", { nookId, id, to }),
+  queueSendNow: (nookId: string, id: string) => invoke<void>("queue_send_now", { nookId, id }),
   planSteps: (nookId: string, messageId: string) => invoke<PlanStep[]>("plan_steps", { nookId, messageId }),
   executePlan: (nookId: string, messageId: string, included: boolean[], inputs?: unknown[]) =>
     invoke<void>("execute_plan", { nookId, messageId, included, inputs }),
