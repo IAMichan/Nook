@@ -326,16 +326,16 @@ struct SessionDetailView: View {
 
     /// "Steer now" or "After this turn", as a quiet choice under the text, as the Mac's composer offers it.
     private var steerMenu: some View {
-        Menu {
-            Button { steerByDefault = true } label: {
-                Label("Steer now", systemImage: steerByDefault ? "checkmark" : "arrow.turn.down.right")
-            }
-            Button { steerByDefault = false } label: {
-                Label("After this turn", systemImage: steerByDefault ? "list.bullet" : "checkmark")
-            }
-        } label: {
+        ComposerDropdown(title: "While the agent works") {
             ComposerPill(symbol: steerByDefault ? "arrow.turn.down.right" : "list.bullet",
                          text: steerByDefault ? String(localized: "Steer now") : String(localized: "After this turn"))
+        } content: {
+            DropdownRow(symbol: "arrow.turn.down.right", title: String(localized: "Steer now"), chosen: steerByDefault) {
+                steerByDefault = true
+            }
+            DropdownRow(symbol: "list.bullet", title: String(localized: "After this turn"), chosen: !steerByDefault) {
+                steerByDefault = false
+            }
         }
         .accessibilityLabel("While the agent works")
     }
@@ -351,14 +351,12 @@ struct SessionDetailView: View {
     /// The model, as the Mac's composer menu: another one runs from the next turn, in the same conversation.
     private func modelMenu(_ session: SessionDigest, _ models: [LaunchOptions.Model]) -> some View {
         let chosen = session.modelChoice ?? ""
-        return Menu {
-            ForEach(models) { option in
-                Button { manage(session, .model, text: option.id) } label: {
-                    if chosen == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
-                }
-            }
-        } label: {
+        return ComposerDropdown(title: "Model") {
             ComposerPill(symbol: "cpu", text: models.first { $0.id == chosen }?.name ?? session.model ?? models.first?.name ?? "")
+        } content: {
+            ForEach(models) { option in
+                DropdownRow(title: option.name, chosen: chosen == option.id) { manage(session, .model, text: option.id) }
+            }
         }
         .disabled(client.isOffline)
         .accessibilityLabel("Model")
@@ -874,46 +872,41 @@ struct NewSessionView: View {
 
     /// "What should we build in Nook?": the project is the menu, underlined with dots as on the Mac.
     private func heading(_ options: LaunchOptions) -> some View {
-        Menu {
-            ForEach(options.projects) { option in
-                Button { withAnimation(Theme.reveal) { project = option.path; baseBranch = option.defaultBase ?? "" } } label: {
-                    if project == option.path {
-                        Label(option.name, systemImage: "checkmark")
-                    } else {
-                        Text(option.name)
-                    }
-                }
-            }
-        } label: {
+        ComposerDropdown(title: "Folder") {
             (Text("What should we build in ").foregroundStyle(Theme.paper)
              + Text(verbatim: chosenProject?.name ?? "…").foregroundStyle(Theme.paper).underline(true, pattern: .dot, color: Theme.textTertiary)
              + Text(verbatim: "?").foregroundStyle(Theme.paper))
                 .font(Theme.TextStyle.display)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } content: {
+            ForEach(options.projects) { option in
+                DropdownRow(symbol: "folder", title: option.name, detail: Self.tilde(option.path), chosen: project == option.path) {
+                    withAnimation(Theme.reveal) { project = option.path; baseBranch = option.defaultBase ?? "" }
+                }
+            }
         }
-        .buttonStyle(.plain)
     }
 
     /// The model, as the Mac's composer offers it for this agent ("Default" is the agent's own choice).
     private func modelMenu(_ models: [LaunchOptions.Model]) -> some View {
-        Menu {
-            ForEach(models) { option in
-                Button { withAnimation(Theme.reveal) { model = option.id } } label: {
-                    if model == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
-                }
-            }
-        } label: {
+        ComposerDropdown(title: "Model") {
             ComposerPill(symbol: "cpu", text: models.first { $0.id == model }?.name ?? models.first?.name ?? "")
+        } content: {
+            ForEach(models) { option in
+                DropdownRow(title: option.name, chosen: model == option.id) { withAnimation(Theme.reveal) { model = option.id } }
+            }
         }
         .accessibilityLabel("Model")
     }
 
     /// The agent, with its logo, as a menu in the composer.
     private func agentMenu(_ options: LaunchOptions) -> some View {
-        Menu {
+        ComposerDropdown(title: "Agent") {
+            ComposerPill(agent: chosenAgent?.name ?? agent, text: chosenAgent?.name ?? "")
+        } content: {
             ForEach(options.agents) { option in
-                Button {
+                DropdownRow(agent: option.name, title: option.name, chosen: agent == option.id) {
                     withAnimation(Theme.reveal) {
                         agent = option.id
                         // Another agent starts on its own default model, effort and access.
@@ -921,38 +914,29 @@ struct NewSessionView: View {
                         effort = option.defaultEffort ?? ""
                         permission = option.defaultPermission ?? ""
                     }
-                } label: {
-                    if agent == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
                 }
             }
-        } label: {
-            ComposerPill(agent: chosenAgent?.name ?? agent, text: chosenAgent?.name ?? "")
         }
     }
 
     /// Effort and access for the new session, as the Mac composer's picker offers them; access never above "allow edits".
     private func choicesMenu(_ agent: LaunchOptions.Agent) -> some View {
-        Menu {
+        ComposerDropdown(title: "Effort and access") {
+            ComposerPill(symbol: "slider.horizontal.3", text: choicesSummary(agent))
+        } content: {
             if let efforts = agent.efforts, efforts.count > 1 {
-                Section("Effort") {
-                    ForEach(efforts) { level in
-                        Button { effort = level.id } label: {
-                            if effort == level.id { Label(level.name, systemImage: "checkmark") } else { Text(level.name) }
-                        }
-                    }
+                DropdownHeader(title: "Effort")
+                ForEach(efforts) { level in
+                    DropdownRow(title: level.name, chosen: effort == level.id) { effort = level.id }
                 }
             }
             if let permissions = agent.permissions, permissions.count > 1, !plan {
-                Section("Access") {
-                    ForEach(permissions) { level in
-                        Button { permission = level.id } label: {
-                            if permission == level.id { Label(level.name, systemImage: "checkmark") } else { Text(level.name) }
-                        }
-                    }
+                if (agent.efforts?.count ?? 0) > 1 { DropdownDivider() }
+                DropdownHeader(title: "Access")
+                ForEach(permissions) { level in
+                    DropdownRow(title: level.name, chosen: permission == level.id) { permission = level.id }
                 }
             }
-        } label: {
-            ComposerPill(symbol: "slider.horizontal.3", text: choicesSummary(agent))
         }
         .accessibilityLabel("Effort and access")
     }
@@ -968,14 +952,13 @@ struct NewSessionView: View {
     @ViewBuilder
     private var baseMenu: some View {
         if worktree, let branches = chosenProject?.branches, branches.count > 1 {
-            Menu {
+            let chosen = baseBranch.isEmpty ? (chosenProject?.defaultBase ?? "") : baseBranch
+            ComposerDropdown(title: "Base branch") {
+                ComposerPill(symbol: "arrow.triangle.branch", text: chosen)
+            } content: {
                 ForEach(branches, id: \.self) { branch in
-                    Button { baseBranch = branch } label: {
-                        if baseBranch == branch { Label(branch, systemImage: "checkmark") } else { Text(branch) }
-                    }
+                    DropdownRow(symbol: "arrow.triangle.branch", title: branch, chosen: chosen == branch) { baseBranch = branch }
                 }
-            } label: {
-                ComposerPill(symbol: "arrow.triangle.branch", text: baseBranch.isEmpty ? (chosenProject?.defaultBase ?? "") : baseBranch)
             }
             .accessibilityLabel("Base branch")
         }
@@ -985,16 +968,12 @@ struct NewSessionView: View {
     private var whereRow: some View {
         HStack(spacing: Theme.Spacing.sm) {
             if chosenProject?.canWorktree == true {
-                Menu {
-                    Button { worktree = false } label: {
-                        if worktree { Text("Current checkout") } else { Label("Current checkout", systemImage: "checkmark") }
-                    }
-                    Button { worktree = true } label: {
-                        if worktree { Label("New worktree", systemImage: "checkmark") } else { Text("New worktree") }
-                    }
-                } label: {
+                ComposerDropdown {
                     ComposerPill(symbol: worktree ? "square.stack.3d.up" : "folder",
                                  text: worktree ? String(localized: "New worktree") : String(localized: "Current checkout"))
+                } content: {
+                    DropdownRow(symbol: "folder", title: String(localized: "Current checkout"), chosen: !worktree) { worktree = false }
+                    DropdownRow(symbol: "square.stack.3d.up", title: String(localized: "New worktree"), chosen: worktree) { worktree = true }
                 }
             } else {
                 ComposerPill(symbol: "folder", text: String(localized: "Current checkout"), showsChevron: false)
