@@ -1398,7 +1398,7 @@ impl WhatsAppLink {
         if messages.is_empty() {
             return Ok(format!("No messages found in the WhatsApp chat with {name}."));
         }
-        Ok(format!("WhatsApp chat with {name} (chat id {target}):\n{}", super::lines(&messages, &name)))
+        Ok(format!("WhatsApp chat with {name} (chat id {target}):\n{}", super::lines_with_trust(&messages, &name)))
     }
 
     async fn search(&self, query: &str) -> CResult<String> {
@@ -1444,7 +1444,7 @@ impl WhatsAppLink {
         let mut out = vec![format!("WhatsApp chats matching \"{query}\":")];
         for (id, name, messages) in found.iter().take(8) {
             out.push(format!("\n{name} (chat id {id}):"));
-            out.push(super::lines(&messages.iter().rev().take(8).cloned().collect::<Vec<_>>(), name));
+            out.push(super::lines_with_trust(&messages.iter().rev().take(8).cloned().collect::<Vec<_>>(), name));
         }
         Ok(out.join("\n"))
     }
