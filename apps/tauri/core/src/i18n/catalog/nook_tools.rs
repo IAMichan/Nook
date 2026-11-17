@@ -151,4 +151,7 @@ pub const ROWS: &[Row] = &[
         "Le navigateur tourne sur ton ordinateur, pas sur ton téléphone.",
         "El navegador se ejecuta en tu ordenador, no en tu teléfono.",
     ),
+    // System and network status tools (`tools::system`).
+    ("This computer's status", "Status dieses Computers", "État de cet ordinateur", "Estado de este ordenador"),
+    ("IP addresses of this computer", "IP-Adressen dieses Computers", "Adresses IP de cet ordinateur", "Direcciones IP de este ordenador"),
 ];
