@@ -5,6 +5,7 @@
 //! Signal, Slack and the others reach it through the chat helper (CH-02) and their own bridges.
 
 pub mod bridge;
+pub mod chatd;
 pub mod inbox;
 pub mod store;
 

@@ -3,6 +3,7 @@
 
 mod agents;
 mod brain;
+mod chats;
 pub mod cli;
 mod commands;
 mod companion;
@@ -204,6 +205,7 @@ pub fn run() {
             commands::connectors::whatsapp_mark_read,
             commands::connectors::whatsapp_ignore,
             commands::connectors::whatsapp_unmute,
+            chats::helper::chat_helper_status,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
             commands::whatsapp::whatsapp_avatars,
