@@ -1,78 +1,100 @@
-//! De geopende browser van de gebruiker als bron (`read_browser_tab`): leest de actieve of genoemde tab via
-//! UI Automation (Windows) of AT-SPI (Linux); zodra CH-60 landt kan de browserextensie hier voorrang krijgen.
+//! Nook's own browser (`read_nook_browser`, `open_in_nook_browser`, matching `BrowserView.tools` on the Mac). Reading
+//! the currently open page runs directly in the loop without launching the browser if nothing is open; opening a new
+//! `https://` address waits for user approval in the chat's plan.
 
-use nook_core::brain::open_browser_tab::{self, BrowserTabResult};
 use nook_core::brain::LoopTool;
-use nook_core::i18n::tr;
-use serde_json::json;
+use nook_core::i18n::{tr, trf};
+use nook_core::NookError;
+use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::{text, ToolCtx, ToolSource};
-use crate::services::Services;
 
-pub struct Browser;
+pub struct NookBrowser;
 
 #[async_trait::async_trait]
-impl ToolSource for Browser {
+impl ToolSource for NookBrowser {
     fn id(&self) -> &'static str {
         "browser"
     }
 
+    #[cfg(desktop)]
     fn tools(&self, ctx: &ToolCtx) -> Vec<LoopTool> {
-        let Some(services) = ctx.app.try_state::<Services>() else {
-            return vec![];
-        };
-        if !services.platform.screen.available() {
+        use nook_core::workspace::browser::format_page;
+        if ctx.app.try_state::<crate::workspace::WorkspaceState>().is_none() || !crate::platform::capabilities().terminals {
             return vec![];
         }
         let app = ctx.app.clone();
-        vec![LoopTool::read(
-            "read_browser_tab",
-            "Reads the web page open in the user's browser (Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox, Zen): its title, address and text, also while Nook's chat is in front. Without arguments it reads the page shown in the browser the user works in; with tab it finds the open tab whose title or address contains that text (\"FileSender\", \"bol.com\"). Use it when the user talks about a page, form or site that is open in their browser. A page it finds is open, even when its text cannot be read: never tell the user it is not open.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "tab": {
-                        "type": "string",
-                        "description": "Part of the title or address of the tab to read, when the user names the site or page. Leave empty for the page shown now."
-                    },
-                    "browser": {
-                        "type": "string",
-                        "description": "Optional browser name (Google Chrome, Microsoft Edge, Brave, Arc, Vivaldi, Opera, Firefox, Zen)."
-                    }
-                }
-            }),
-            move |input| {
-                let app = app.clone();
-                async move {
-                    let tab = text(&input, "tab");
-                    let browser = text(&input, "browser");
-                    let (_, tab_query) = open_browser_tab::parse_query(&tab, &browser);
-                    let app_clone = app.clone();
-                    let browser_arg = (!browser.trim().is_empty()).then_some(browser);
-                    let tab_arg = (!tab.trim().is_empty()).then_some(tab);
-                    let outcome = tauri::async_runtime::spawn_blocking(move || {
-                        app_clone
-                            .state::<Services>()
-                            .platform
-                            .screen
-                            .read_browser_tab(browser_arg.as_deref(), tab_arg.as_deref())
-                    })
-                    .await
-                    .map_err(|e| nook_core::NookError(e.to_string()))?
-                    .map_err(nook_core::NookError)?;
-                    match outcome {
-                        BrowserTabResult::Found(found) => Ok(open_browser_tab::describe(&found)),
-                        BrowserTabResult::NotFound { running } => {
-                            Ok(open_browser_tab::no_browser_message(&running, tab_query.as_deref()))
+        vec![
+            LoopTool::read(
+                "read_nook_browser",
+                "Reads the text of the page open in Nook's own browser (Agents › Browser), with its title and address.",
+                json!({"type": "object", "properties": {}, "required": []}),
+                move |_| {
+                    let app = app.clone();
+                    async move {
+                        let ws = app.try_state::<crate::workspace::WorkspaceState>().ok_or_else(|| NookError::new("Nook is not ready."))?;
+                        // Never opened: nothing to read, and no reason to start the browser for that.
+                        let state = ws.browser.state();
+                        if !state.open || state.url.is_empty() {
+                            return Err(NookError(
+                                tr("Er staat geen pagina open in de browser van Nook.", "No page is open in Nook's browser.").into(),
+                            ));
                         }
-                        BrowserTabResult::Unsupported => Err(nook_core::NookError::new(tr(
-                            "Browsertabbladen lezen is niet beschikbaar op dit platform.",
-                            "Reading browser tabs is not available on this platform.",
-                        ))),
+                        let page = ws.browser.page_text(&app).await.map_err(NookError)?;
+                        if let Some(brain) = app.try_state::<crate::brain::BrainState>() {
+                            brain.urls.remember(&page.url);
+                        }
+                        Ok(format_page(&page.title, &page.url, &page.text))
                     }
-                }
-            },
-        )]
+                },
+            ),
+            LoopTool::action(
+                "open_in_nook_browser",
+                "Opens a web address in Nook's own browser so the user can look at it together with Nook. Only https addresses.",
+                json!({"type": "object", "properties": {"url": {"type": "string", "description": "The full https address."}}, "required": ["url"]}),
+            ),
+        ]
+    }
+
+    #[cfg(not(desktop))]
+    fn tools(&self, _ctx: &ToolCtx) -> Vec<LoopTool> {
+        vec![]
+    }
+
+    fn summarize(&self, tool: &str, input: &Value) -> Option<String> {
+        match tool {
+            "open_in_nook_browser" => Some(format!("Browser: open {}", text(input, "url"))),
+            _ => None,
+        }
+    }
+
+    #[cfg(desktop)]
+    async fn execute(&self, ctx: &ToolCtx, tool: &str, input: &Value) -> Option<Result<String, String>> {
+        if tool != "open_in_nook_browser" {
+            return None;
+        }
+        let url = match nook_core::workspace::browser::https_url(&text(input, "url")) {
+            Ok(url) => url,
+            Err(err) => return Some(Err(err)),
+        };
+        let Some(ws) = ctx.app.try_state::<crate::workspace::WorkspaceState>() else {
+            return Some(Err("Nook is not ready.".into()));
+        };
+        Some(
+            ws.browser
+                .go(&ctx.app, &url, None)
+                .map(|()| trf("Geopend in de browser van Nook: {url}", "Opened {url} in Nook's browser", &[("url", &url)])),
+        )
+    }
+
+    #[cfg(not(desktop))]
+    async fn execute(&self, _ctx: &ToolCtx, tool: &str, _input: &Value) -> Option<Result<String, String>> {
+        if tool != "open_in_nook_browser" {
+            return None;
+        }
+        Some(Err(
+            tr("De browser draait op je computer, niet op je telefoon.", "The browser runs on your computer, not on your phone.").into()
+        ))
     }
 }

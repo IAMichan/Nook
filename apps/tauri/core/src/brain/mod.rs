@@ -41,6 +41,7 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 }
 
 pub mod action_gate;
+pub mod answer_images;
 pub mod calendar_invite;
 pub mod chart;
 pub mod chat_image;
@@ -55,6 +56,7 @@ pub mod fuzzy;
 pub mod http;
 pub mod intent;
 pub mod local_intent;
+pub mod meeting_times;
 pub mod memory;
 pub mod model_download;
 pub mod network_guard;

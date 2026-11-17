@@ -6,7 +6,7 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { PullRequestItem } from "../../../lib/connectors";
-  import { renderMarkdown } from "../../../lib/markdown";
+  import Markdown from "../../../components/Markdown.svelte";
   import {
     activitySentence, chosenMethod, ciStatusLine, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
     type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile, type ReviewEvent,
@@ -222,8 +222,8 @@
       {#if tab === "conversation" && shownCheck}
         <CheckLog accountId={accountId} repo={detail.repo} check={shownCheck} onback={() => (openCheck = null)} />
       {:else if tab === "conversation"}
-        <div class="card markdown">
-          {#if detail.body}{@html renderMarkdown(detail.body)}{:else}<span class="faint">{tr("Geen beschrijving.", "No description.")}</span>{/if}
+        <div class="card">
+          {#if detail.body}<Markdown text={detail.body} />{:else}<span class="faint">{tr("Geen beschrijving.", "No description.")}</span>{/if}
         </div>
         <div class="section">
           <div class="label faint">{tr("Checks", "Checks")}</div>
@@ -387,7 +387,7 @@
         {#if event.date}<span class="faint small">{ago(event.date, now)}</span>{/if}
         {#if event.url}<button class="ghost tiny" title={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(event.url)}>↗</button>{/if}
       </div>
-      {#if event.body}<div class="markdown body">{@html renderMarkdown(event.body)}</div>{/if}
+      {#if event.body}<div class="body"><Markdown text={event.body} /></div>{/if}
     </div>
   {/if}
 {/snippet}
