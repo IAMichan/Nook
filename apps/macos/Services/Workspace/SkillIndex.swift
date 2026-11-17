@@ -25,6 +25,21 @@ enum SkillIndex {
         return nil
     }
 
+    /// The folders the agent itself reads (`SkillPlaces`) besides the shared ones below, each once, every project folder
+    /// before every user one: what the `$` list offers is what that agent can use, also a skill installed only for it.
+    static func roots(for provider: RunProvider, home: URL, project: URL?) -> [URL] {
+        let shared = defaultRoots(home: home, project: project)
+        var ordered: [URL] = []
+        if let project {
+            if let root = SkillPlaces.root(for: provider, scope: .project(project), home: home) { ordered.append(root) }
+            ordered += shared.filter { $0.path.hasPrefix(project.path + "/") }
+        }
+        if let root = SkillPlaces.root(for: provider, scope: .user, home: home) { ordered.append(root) }
+        ordered += shared
+        var seen = Set<String>()
+        return ordered.filter { seen.insert($0.standardizedFileURL.path).inserted }
+    }
+
     /// `<project>` roots come first: the first root that defines a name wins, so a project skill beats a user one.
     static func defaultRoots(home: URL, project: URL?) -> [URL] {
         var roots: [URL] = []
@@ -114,7 +129,7 @@ enum SkillIndex {
         return closed ? out : [:]
     }
 
-    private static func clean(_ value: String?) -> String? {
+    static func clean(_ value: String?) -> String? {
         guard var v = value?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return nil }
         if v.count >= 2, let f = v.first, f == v.last, f == "\"" || f == "'" { v = String(v.dropFirst().dropLast()) }
         v = v.trimmingCharacters(in: .whitespaces)

@@ -15,7 +15,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case start, general, appearance, notch, notifications, notificationApps, sound, shortcuts,
          brain, assistant, memory, instructions,
          autocomplete, autocompleteApps, autocompleteStyle, autocompletePlayground, autocompleteStats, dictation,
-         agents, sessions, automation, usage, archive,
+         agents, skills, sessions, automation, usage, archive,
          projects, worktrees, openIn, pullRequests,
          chats, connections, iphone, machines,
          privacy, permissions, onDevice, activityLog,
@@ -60,7 +60,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .assistant: return [.assistant, .memory, .instructions]
         case .autocomplete: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
                                     .autocompleteStats, .dictation]
-        case .agents: return [.agents, .usage]
+        case .agents: return [.agents, .skills, .usage]
         case .sessions: return [.sessions, .worktrees, .openIn, .archive]
         case .projects: return [.projects, .pullRequests]
         case .iphone: return [.iphone, .machines]
@@ -267,6 +267,7 @@ struct SettingsView: View {
         case .iphone: CompanionSettingsRows()
         case .machines: RemoteMachinesSection()
         case .agents: agentsSection
+        case .skills: SkillsSettingsSection()
         case .sessions: WorkspaceSettingsSection(part: .sessions, scope: $sessionScope)
         case .automation: WorkspaceSettingsSection(part: .automation, scope: $sessionScope)
         // What an agent costs, and how to spend fewer tokens: one subject, one page.
