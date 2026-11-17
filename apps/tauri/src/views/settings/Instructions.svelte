@@ -9,7 +9,6 @@
   import { instructionsApi, partText, promptLine, type InstructionsView, type PartKind } from "../../lib/instructions";
   import ConfirmedButton from "../../components/ui/ConfirmedButton.svelte";
   import DisclosureChevron from "../../components/ui/DisclosureChevron.svelte";
-  import IconButton from "../../components/ui/IconButton.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import Sheet from "../../components/ui/Sheet.svelte";
 
@@ -111,9 +110,8 @@
 </div>
 
 <div class="head">
-  <h3>{tr("Bewaarde prompts", "Saved prompts")}</h3>
-  <span class="info" title={tr("Een variabele wordt gevraagd als je de prompt gebruikt; de tekst na | is de standaardwaarde.", "A variable is asked for when you use the prompt; the text after | is its default.")}><Ico name="info" size={13} /></span>
-  <IconButton title={tr("Prompt toevoegen", "Add prompt")} onclick={() => (addingPrompt = true)}><Ico name="plus" size={14} /></IconButton>
+  <div class="head-text"><h3>{tr("Bewaarde prompts", "Saved prompts")}</h3><span class="sub">{tr("Een variabele wordt gevraagd als je de prompt gebruikt; de tekst na | is de standaardwaarde.", "A variable is asked for when you use the prompt; the text after | is its default.")}</span></div>
+  <button class="ghost add" onclick={() => (addingPrompt = true)}><Ico name="plus" size={14} />{tr("Prompt toevoegen", "Add prompt")}</button>
 </div>
 <div class="group">
   {#if view && !view.prompts.length}
@@ -128,9 +126,8 @@
 </div>
 
 <div class="head">
-  <h3>{tr("Ruimtes", "Spaces")}</h3>
-  <span class="info" title={tr("Instructies gaan mee met elke vraag in de ruimte. Er gaat niets van deze computer weg behalve wat het gekozen brein leest.", "Instructions are sent with every question in the space. Nothing leaves this computer except what the chosen brain reads.")}><Ico name="info" size={13} /></span>
-  <IconButton title={tr("Ruimte toevoegen", "Add space")} onclick={() => (addingSpace = true)}><Ico name="plus" size={14} /></IconButton>
+  <div class="head-text"><h3>{tr("Ruimtes", "Spaces")}</h3><span class="sub">{tr("Instructies gaan mee met elke vraag in de ruimte. Er gaat niets van deze computer weg behalve wat het gekozen brein leest.", "Instructions are sent with every question in the space. Nothing leaves this computer except what the chosen brain reads.")}</span></div>
+  <button class="ghost add" onclick={() => (addingSpace = true)}><Ico name="plus" size={14} />{tr("Ruimte toevoegen", "Add space")}</button>
 </div>
 <div class="group">
   {#if view && !view.spaces.length}
@@ -168,7 +165,7 @@
   {:else}
     <p class="faint note">{tr("Vraag Nook iets en de context van dat antwoord verschijnt hier.", "Ask Nook something and the context of that answer shows here.")}</p>
   {/if}
-  <p class="faint note">{tr("Dit las het model voor het laatste antwoord. Groottes zijn schattingen.", "This is what the model read for the last answer. Sizes are estimates.")}</p>
+  <p class="faint note divided">{tr("Dit las het model voor het laatste antwoord. Groottes zijn schattingen.", "This is what the model read for the last answer. Sizes are estimates.")}</p>
 </div>
 
 {#if addingPrompt}
@@ -204,14 +201,17 @@
 {/if}
 
 <style>
-  .head { display: flex; align-items: center; gap: var(--space-6); }
-  .head h3 { flex: none; }
-  .head :global(button) { margin-left: auto; }
-  .info { color: var(--text3); display: inline-flex; margin-top: 14px; }
+  .head { display: flex; align-items: flex-end; gap: var(--space-16); }
+  .head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .head-text h3 { margin-bottom: var(--space-2); }
+  .sub { font: var(--text-detail); color: var(--text2); }
+  .add { display: inline-flex; align-items: center; gap: var(--space-6); font: var(--text-control); color: var(--text-strong); white-space: nowrap; }
+  .divided { border-top: 1px solid var(--separator); padding-top: 12px; }
   .item { display: flex; align-items: center; gap: var(--space-8); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   .detail { font: var(--text-detail); color: var(--text2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .empty { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-16) 0; font: var(--text-detail); }
+  .empty strong { font: var(--text-title); }
   .space { padding: var(--space-8) 0; border-bottom: 1px solid var(--separator); }
   .space:last-child { border-bottom: 0; }
   .space textarea { width: 100%; resize: vertical; font: var(--text-detail); margin-bottom: var(--space-4); }

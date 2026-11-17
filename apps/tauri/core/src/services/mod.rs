@@ -4,6 +4,7 @@
 
 pub mod audio;
 pub mod autocomplete;
+pub mod double_tap_suggest;
 pub mod energy;
 pub mod files;
 pub mod flow;
