@@ -2,6 +2,7 @@
   // Het hele gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen.
   import { agentApi, type ChatMessage } from "../../lib/agents";
   import { renderMarkdown } from "../../lib/markdown";
+  import MarkdownBody from "../../components/MarkdownBody.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
   let { path, refreshKey = "" }: { path: string; refreshKey?: string } = $props();
@@ -27,7 +28,7 @@
     {#if m.kind === "thinking"}
       <details class="thinking"><summary>{tr("Denkstappen", "Thinking")}</summary><div class="markdown">{@html renderMarkdown(m.text)}</div></details>
     {:else}
-      <div class="msg {m.kind}"><div class="markdown">{@html renderMarkdown(m.text)}</div></div>
+      <div class="msg {m.kind}"><div class="markdown">{#if m.kind === "assistant"}<MarkdownBody text={m.text} />{:else}{@html renderMarkdown(m.text)}{/if}</div></div>
     {/if}
   {:else}
     {#if loading}<p class="faint">{tr("Gesprek lezen…", "Reading conversation…")}</p>{:else if path}<p class="faint">{tr("Nog niets in dit gesprek.", "Nothing in this conversation yet.")}</p>{/if}

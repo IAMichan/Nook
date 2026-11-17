@@ -2,7 +2,7 @@
   // A session's conversation as the iPhone reads it (`TranscriptConversation`): your messages in a soft bubble on the
   // right, the agent's answers as text, its work as quiet lines that open, a finished turn folded into "Worked for …".
   import { messageTime, type TimelineEntry } from "../../lib/companion";
-  import { renderMarkdown } from "../../lib/markdown";
+  import MarkdownBody from "../../components/MarkdownBody.svelte";
   import { richContent } from "../../lib/rich";
   import { duration, stepIcon, stepParts, tally, transcriptRows, type TranscriptRow } from "../../lib/transcript";
   import { tr } from "../../lib/i18n.svelte";
@@ -34,7 +34,7 @@
     </div>
   {:else if r.kind === "answer"}
     <div class="answer" class:final={r.final} class:failed={r.entry.failed}>
-      <div class="markdown" use:richContent={r.entry.text}>{@html renderMarkdown(r.entry.text)}</div>
+      <div class="markdown" use:richContent={r.entry.text}><MarkdownBody text={r.entry.text} /></div>
       {#if r.entry.clipped}{#if onwhole}<button class="clipped" onclick={() => onwhole?.(r.entry)}><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</button>{:else}<span class="clipped"><Ico name="list-plus" size={13} />{tr("Lees het hele bericht", "Read the whole message")}</span>{/if}{/if}
       {#if r.final}
         <span class="foot"><span class="time">{messageTime(r.entry.date)}</span>
