@@ -68,6 +68,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Onboarding (welcome card, three steps). **Tauri:** ✓. **Where:** `src/views/`
 
+- OpenRouter sign-in instead of a key (`OpenRouterSignIn`): OpenRouter's page in the system browser, PKCE, the code back on 127.0.0.1, traded for a key that goes into the keychain like a pasted one. **Tauri:** ◐ (page address, code and key handling unit-tested; not signed in against OpenRouter for real; the Mac comes back through `nook://`, here through the loopback the MCP sign-in uses). **Where:** `core/src/connectors/openrouter.rs`, `openrouter_sign_in`, `views/settings/Brain.svelte`
+
 - Plans with Run, never run twice, Undo. **Tauri:** ✓. **Where:** `src-tauri/src/commands/plans.rs`
 
 - `Research`, `Retrieval` (searching on its own, numbered sources). **Tauri:** ✓. **Where:** `core/src/brain/research.rs`, `retrieval.rs`

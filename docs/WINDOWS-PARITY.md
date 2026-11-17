@@ -242,7 +242,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 
-- [ ] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
+- [x] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
 
 - [x] **BR-05** OCR for images sent to brains that can't see images (`ChatImage`) · S
 
