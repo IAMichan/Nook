@@ -65,7 +65,6 @@ struct SubThreadStrip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(tr(isOpen ? "ws.subthread.close" : side.subThreadRoom ? "ws.subthread.open" : "ws.subthread.openHere"))
         .accessibilityAddTraits(isOpen ? .isSelected : [])
         .contextMenu {
             if side.subThreadRoom {
@@ -76,7 +75,7 @@ struct SubThreadStrip: View {
     }
 
     /// What it did so far: the lines it changed, as the agents list and the Changes panel count them (the number of
-    /// files on hover, or alone when no lines were counted), and how long it has worked: counting up while it works,
+    /// files alone when no lines were counted), and how long it has worked: counting up while it works,
     /// its total once it ended.
     private func stats(_ thread: WorkspaceRun) -> some View {
         let added = thread.changedLinesAdded ?? 0, removed = thread.changedLinesRemoved ?? 0
@@ -84,7 +83,6 @@ struct SubThreadStrip: View {
         return HStack(spacing: NookTheme.Spacing.sm) {
             if added + removed > 0 {
                 PullRequestLineCounts(additions: added, deletions: removed, font: NookTheme.mono(10.5))
-                    .nookTip(tr("ws.subthread.changes", added, removed, files))
             } else if files > 0 {
                 Text(tr("ws.subthread.files", files)).foregroundStyle(NookTheme.textTertiary).fixedSize()
             }
@@ -106,7 +104,6 @@ struct SubThreadStrip: View {
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
             .fixedSize()
-            .nookTip(tr(thread.status.isActive ? "ws.subthread.working" : "ws.subthread.worked", SubThreadStats.clockText(worked)))
     }
 
     /// Beside the main thread, or (`here`, or without room beside it) in its place.

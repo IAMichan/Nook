@@ -13,7 +13,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use nook_core::platform::{
-    Capture, InstalledApp, MediaCommand, MediaControl, NowPlaying, RunningApp, ScreenReader, SeenWindow, SystemControl, WindowText,
+    Capture, InstalledApp, MediaCommand, MediaControl, MenuCommandOutcome, NowPlaying, RunningApp, ScreenReader, SeenWindow, SystemControl,
+    WindowText,
 };
 use nook_core::services::{files, fuzzy, screen};
 use tauri::AppHandle;
@@ -299,6 +300,28 @@ impl ScreenReader for LinuxScreen {
             }
         }
         apps
+    }
+
+    fn list_app_menu(&self, pid: u32) -> Result<Vec<String>, String> {
+        self.with_atspi(|a| a.list_app_menu(pid)).ok_or_else(|| match self.status() {
+            s if s.is_empty() => nook_core::i18n::tr(
+                "Geen verbinding met de toegankelijkheidslaag (AT-SPI).",
+                "No connection to the accessibility bus (AT-SPI).",
+            )
+            .into(),
+            s => s,
+        })
+    }
+
+    fn click_app_menu(&self, pid: u32, path: &[String]) -> Result<MenuCommandOutcome, String> {
+        self.with_atspi(|a| a.click_app_menu(pid, path)).ok_or_else(|| match self.status() {
+            s if s.is_empty() => nook_core::i18n::tr(
+                "Geen verbinding met de toegankelijkheidslaag (AT-SPI).",
+                "No connection to the accessibility bus (AT-SPI).",
+            )
+            .into(),
+            s => s,
+        })?
     }
 
     fn can_capture(&self) -> bool {

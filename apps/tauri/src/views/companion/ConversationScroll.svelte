@@ -7,7 +7,7 @@
   import { tick } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { tr } from "../../lib/i18n.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { children, floating, version, reserve = 0, background, land = null }: {
     children: Snippet;

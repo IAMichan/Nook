@@ -2,7 +2,7 @@
   // While the computer cannot be reached: one quiet line in place of what the phone did not keep (a chat or a
   // conversation it never saw), as the iPhone's `OfflineNote`.
   import type { Snippet } from "svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { children }: { children: Snippet } = $props();
 </script>
 

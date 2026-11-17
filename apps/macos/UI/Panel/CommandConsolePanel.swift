@@ -93,7 +93,6 @@ struct CommandConsolePanel: View {
             Spacer(minLength: NookTheme.Spacing.md)
             if let showNewer {
                 SmallGhostButton(title: tr("ws.console.newer"), action: showNewer)
-                    .nookTip(tr("ws.console.newer.help"))
             }
             CopyIconButton(tr("ws.console.copy")) { "$ " + command + (output.isEmpty ? "" : "\n" + output) }
             SidePanelCloseButton(help: tr("ws.console.close"), action: close)

@@ -36,10 +36,8 @@ struct ResetCreditRow: View {
                     ProgressView()
                         .controlSize(.mini)
                         .frame(width: 30, height: 30)
-                        .nookTip(tr("agents.reset.using"))
                 } else if credits.available > 0 {
                     SmallGhostButton(title: tr("agents.reset.use")) { asking = true }
-                        .nookTip(tr("agents.reset.help"))
                 }
             }
             .confirmationDialog(tr("agents.reset.question", profile.kind.name), isPresented: $asking, titleVisibility: .visible) {

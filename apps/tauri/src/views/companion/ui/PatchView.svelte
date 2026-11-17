@@ -4,7 +4,7 @@
   import { newNumbers } from "../../../lib/patch";
   import { tr } from "../../../lib/i18n.svelte";
   import { haptic } from "../../../lib/haptics";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { patch, pickable = true, oncomment }: { patch: string; pickable?: boolean; oncomment?: (from: number, to: number, lines: string[]) => void } = $props();
   const lines = $derived(patch.replace(/\n$/, "").split("\n"));
   const numbers = $derived(newNumbers(lines));

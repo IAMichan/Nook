@@ -4,9 +4,9 @@
   import { attentionTint, companion, may, type ClientView, type SessionDigest } from "../../../lib/companion";
   import { tr } from "../../../lib/i18n.svelte";
   import AgentMark from "./AgentMark.svelte";
-  import StatusPill from "./StatusPill.svelte";
+  import StatusPill from "../../../components/ui/StatusPill.svelte";
   import DecisionButton from "./DecisionButton.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   import { haptic } from "../../../lib/haptics";
   let { view, session, onopen, act }: { view: ClientView; session: SessionDigest; onopen: () => void; act: (f: () => Promise<ClientView>) => Promise<void> } = $props();
   const item = $derived(session.items[0]);

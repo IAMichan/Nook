@@ -433,7 +433,6 @@ struct EmbeddedAppPane: View {
                 ComposerPill(text: tr("embedded.mode.short." + now.rawValue))
             }
             .composerMenu()
-            .nookTip(tr("embedded.mode.help"))
         }
     }
 
@@ -493,9 +492,8 @@ struct SessionArtifactPanel: View {
                     Text(title)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
                         .truncationMode(.middle)
-                        .nookTip(title)
+                        .nookTipWhenCut(title)
                     if store.artifactLoading { ProgressView().controlSize(.small) }
                     Spacer(minLength: NookTheme.Spacing.md)
                     ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }

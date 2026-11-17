@@ -67,7 +67,6 @@ private struct MusicBar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("music.openNowPlaying"))
             .accessibilityLabel("\(info.title), \(subtitle)")
             .accessibilityHint(tr("music.openNowPlaying"))
             .frame(maxWidth: .infinity, alignment: .leading)

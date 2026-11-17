@@ -101,7 +101,7 @@ struct VerificationChips: View {
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .padding(.vertical, NookTheme.Spacing.xxs)
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(Self.color(check.outcome).opacity(0.12)))
-                .nookTip(labelled ? check.command : Self.text(check) + " · " + check.command)
+                .nookTip(Self.text(check) + " · " + check.command, enabled: !labelled)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Self.text(check))
             }
@@ -159,7 +159,6 @@ struct TaskChecklistCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr(collapsed ? "ws.checklist.expand" : "ws.checklist.collapse"))
             .accessibilityLabel(tr("ws.tasks.accessibility", progress.done, progress.total, progress.current))
             if !collapsed {
                 TaskListRows(steps: steps).transition(.opacity)

@@ -4,7 +4,7 @@
   // what you do here. Amber, so it never reads as live. It waits a moment, so a short drop passes unseen.
   import { offlineWords, writingWaits, type ClientView } from "../../../lib/companion";
   import { tr } from "../../../lib/i18n.svelte";
-  import Banner from "./Banner.svelte";
+  import Banner from "../../../components/ui/Banner.svelte";
   /** `sends`: you write here; `reads`: you only read here; `answers`: an approval or a question waits on you. */
   let { view, kind = "sends" }: { view: ClientView; kind?: "sends" | "reads" | "answers" } = $props();
   let away = $state(false);

@@ -20,7 +20,6 @@ struct BrainChip: View {
         } content: {
             BrainPicker(servers: servers)
         }
-        .composerTip(tr("brain.chip.help"))
         .task { servers = await app.localServerModels() }
     }
 

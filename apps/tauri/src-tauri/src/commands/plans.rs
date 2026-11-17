@@ -44,6 +44,7 @@ pub fn plan_steps(app: &AppHandle, nook_id: &str, message_id: &str) -> Vec<PlanS
                 "remember" if !tools::text(&a.input, "replaces").is_empty() => "vervangt",
                 "forget" => "vergeet",
                 "delete_event" | "delete_reminder" => "verwijdert",
+                "app_menu_command" => nook_core::i18n::tr("menucommando", "menu command"),
                 _ => "",
             };
             PlanStep {

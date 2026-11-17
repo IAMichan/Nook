@@ -2250,13 +2250,12 @@ private struct ChatsDetail: View, Equatable {
                     Text(entry.name)
                         .font(NookTheme.TextStyle.title)
                         .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
+                        .nookTipWhenCut(entry.name)
                         .underline(nameHovering)
                 }
                 .buttonStyle(.nookPlain)
                 .onHover { nameHovering = $0 }
                 .pointerStyle(.link)
-                .nookTip(tr("chats.info.open"))
                 HStack(spacing: NookTheme.Spacing.xs) {
                     if let typingLine = typing.line(entry.id) {
                         // Someone typing says so where the chat's details are, as a chat app's header does.
@@ -2380,7 +2379,6 @@ private struct ChatsDetail: View, Equatable {
             placeholder: route == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
             sendSymbol: route == nil ? "doc.on.doc" : "arrow.up",
             sendLabel: route == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
-            readyNotice: route == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
             recipient: entry.name,
             quote: editing.map { BubbleQuote(sender: tr("chat.editing"), text: $0.text, mine: true) }
                 ?? replyingTo?.quote(contact: entry.name),

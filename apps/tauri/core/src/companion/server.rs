@@ -20,6 +20,7 @@ use super::live;
 use super::models::*;
 use super::push;
 use super::relay_push;
+use super::scopes;
 use super::seal::{self, Direction};
 use super::store::CompanionStore;
 use crate::store::NookStore;
@@ -378,6 +379,10 @@ impl CompanionServer {
         let written = pending.clone();
         let writer = async move {
             while let Some(frame) = rx.recv().await {
+                // An empty frame is the server's own: close this connection (`close_streams`).
+                if frame.is_empty() {
+                    return;
+                }
                 let failed = writer_half.write_all(&frame).await.is_err();
                 written.fetch_sub(1, Ordering::SeqCst);
                 if failed {
@@ -443,7 +448,12 @@ impl CompanionServer {
         let plain = super::transport::unpack(&plain).ok()?;
         let request: CompanionRequest = serde_json::from_slice(&plain).ok()?;
         let compress = request.compression == Some(true);
-        let sealed = |response: CompanionResponse| Self::seal_response(&response, &key, &claimed, compress);
+        // Only what this phone may see, and only the features it may use (`scopes::redact`); looked up when sealing, so
+        // a phone that pairs with this very request gets its new scopes.
+        let sealed = |response: CompanionResponse| {
+            let response = scopes::redact(response, &self.store.scopes_of(&claimed));
+            Self::seal_response(&response, &key, &claimed, compress)
+        };
         let seconds = now.timestamp_millis() as f64 / 1000.0;
 
         // A phone that bound its device key signs every request with it (`device_key`): without a valid signature the
@@ -457,6 +467,14 @@ impl CompanionServer {
                     });
                 }
             }
+        }
+
+        // A request outside what this phone may do (`CompanionScopes.allows`).
+        if !pairing && !scopes::allows(request.op, &self.store.scopes_of(&claimed)) {
+            return sealed(CompanionResponse {
+                message: Some("scope".into()),
+                ..CompanionResponse::failure(&request.id, CompanionError::NotAllowedFromPhone)
+            });
         }
 
         // A repeat of a request that changes something (its answer got lost, or it waited in the phone's outbox): the
@@ -519,6 +537,7 @@ impl CompanionServer {
                 peers.retain(|_, p| p.device != claimed);
                 let mut peer = live::Peer::new(claimed.clone(), key.clone(), request.id.clone(), tx.clone(), pending.clone());
                 peer.compression = compress;
+                peer.scopes = self.store.scopes_of(&claimed);
                 peer.foreground = request.foreground.unwrap_or(false);
                 peers.insert(connection, peer);
                 drop(peers);
@@ -750,6 +769,22 @@ impl CompanionServer {
         told
     }
 
+    /// Changes what a paired phone may do and ends its live connections, so it connects again and learns what it may
+    /// do now (`CompanionStore.setScopes`, `dropStreams`).
+    pub fn set_scopes(&self, device: &str, granted: &scopes::Scopes) {
+        self.store.set_scopes(device, granted);
+        self.close_streams(device);
+    }
+
+    /// Ends a phone's live connections.
+    fn close_streams(&self, device: &str) {
+        let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+        for peer in peers.values().filter(|p| p.device == device) {
+            let _ = peer.tx.send(Vec::new());
+        }
+        peers.retain(|_, p| p.device != device);
+    }
+
     /// Starts the task that sends the live phones what changed, unless it runs.
     fn ensure_ticker(&self) {
         let mut ticker = self.ticker.lock().unwrap_or_else(|e| e.into_inner());
@@ -863,7 +898,8 @@ fn array(value: &Option<Value>) -> Vec<Value> {
 
 /// Seals `update` for `peer` and hands it to its writer; false when the connection is gone.
 fn send_update(peer: &live::Peer, update: &CompanionResponse) -> bool {
-    let Some(frame) = CompanionServer::seal_response(update, &peer.key, &peer.device, peer.compression) else { return false };
+    let update = scopes::redact(update.clone(), &peer.scopes);
+    let Some(frame) = CompanionServer::seal_response(&update, &peer.key, &peer.device, peer.compression) else { return false };
     peer.pending.fetch_add(1, Ordering::SeqCst);
     peer.tx.send(frame).is_ok()
 }

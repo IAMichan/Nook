@@ -3,7 +3,7 @@
 // the chat's app takes (`InboxChatDigest.abilities`), and the one way to send an action (`inboxAct`).
 import { abilities, companion, readState, type CallResult, type InboxAction, type InboxChatDigest, type InboxLine } from "../../lib/companion";
 import { tr } from "../../lib/i18n.svelte";
-import type { MenuItem } from "./ui/Menu.svelte";
+import type { MenuItem } from "../../components/ui/Menu.svelte";
 
 /** A destructive step asked about first, as the `Dialog` shows it. */
 export interface ChatConfirm { title: string; message: string; button: string; run: () => void }

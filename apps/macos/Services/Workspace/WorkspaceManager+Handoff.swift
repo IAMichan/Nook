@@ -264,18 +264,28 @@ extension WorkspaceManager {
 
     /// What you picked in the agent menu of a session: a model from the next turn on, or another account or agent with a
     /// summary of what happened. Returns what it came to, so the menu can say why nothing changed.
+    /// `stopIfBusy`: another account or agent picked while the agent works stops the turn, moves the session there and
+    /// goes on where it stopped (`switchAfterStop`); without it the pick is turned down until the agent is idle.
     @discardableResult
     func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String,
-                        resumeIfLimited: Bool = false) -> SelectionTransition {
+                        resumeIfLimited: Bool = false, stopIfBusy: Bool = false) -> SelectionTransition {
         guard let run = run(id) else { return .reject("busy") }
+        let otherPlace = provider != run.provider || profileID != run.profileID
+        // Picking the agent and account in use again calls off a switch still waiting for the turn to stop.
+        if !otherPlace, pendingSwitches[id] != nil { pendingSwitches[id] = nil }
+        let picked = model
         // "Auto" keeps the model in use (none on another agent) and lets the next turn pick (see `applyAutoModel`); any
         // other model is your own choice again.
         let auto = model.trimmingCharacters(in: .whitespacesAndNewlines) == AutoModel.id
         let model = auto ? (provider == run.provider ? run.model : "") : model
         if (run.autoModel == true) != auto { update(id) { $0.autoModel = auto ? true : nil } }
-        // While a turn runs only the model changes (see `configure`); another agent or account waits until it is idle.
+        // While a turn runs only the model changes (see `configure`); another agent or account waits until it is idle,
+        // or with `stopIfBusy` stops the turn for it.
         if !canTransfer(id) {
-            guard provider == run.provider, profileID == run.profileID else { return .reject("busy") }
+            if otherPlace {
+                guard stopIfBusy, executable(provider) != nil else { return .reject(stopIfBusy ? "unavailable" : "busy") }
+                return switchAfterStop(id, provider: provider, profileID: profileID, model: picked)
+            }
             let clean = model.trimmingCharacters(in: .whitespacesAndNewlines)
             guard clean != run.model else { return .reuse }
             configure(id, model: clean)
@@ -287,7 +297,7 @@ extension WorkspaceManager {
             targetProvider: provider, targetProfile: profileID, targetModel: model,
             sameAccountHome: accountHome(run.profileID) == accountHome(profileID), available: executable(provider) != nil)
         switch transition {
-        case .reuse, .reject: break
+        case .reuse, .reject, .switchAfterStop: break
         case .applyOnNextTurn:
             let before = switchEndpoint(run)
             update(id) {
@@ -304,6 +314,52 @@ extension WorkspaceManager {
             }
         }
         return transition
+    }
+
+    // MARK: Switch while the agent works
+
+    /// Another agent or account picked while a turn runs: the timeline says the turn stops for it, the turn stops, and
+    /// once it has (`applyPendingSwitch`, from `sendPendingNow` or `sendQueued`) the session moves there with the usual
+    /// handoff and goes on where it stopped. A turn already ending (its snapshot still being made) is not stopped: the
+    /// switch waits for it and the session stays idle after.
+    private func switchAfterStop(_ id: UUID, provider: RunProvider, profileID: String, model: String) -> SelectionTransition {
+        guard let run = run(id) else { return .reject("busy") }
+        let working = run.status.isActive
+        let target = switchTargetName(provider: provider, profileID: profileID, from: run)
+        let repick = pendingSwitches[id] != nil
+        pendingSwitches[id] = PendingSwitch(provider: provider, profileID: profileID, model: model,
+                                            resume: working || pendingSwitches[id]?.resume == true)
+        if working {
+            append(id, RunEvent(kind: .system, text: tr("ws.switch.stopping", target), tool: "switch-stop"))
+            if !repick { stop(id) }
+        }
+        // A stop that ended at once (a turn still waiting for a free place, no process) switches now.
+        applyPendingSwitch(id)
+        return .switchAfterStop
+    }
+
+    /// "Codex", or "Claude Code · Work" for another account of the same agent.
+    private func switchTargetName(provider: RunProvider, profileID: String, from run: WorkspaceRun) -> String {
+        guard provider == run.provider, let account = accountName(profileID) else { return provider.displayName }
+        return provider.displayName + " · " + account
+    }
+
+    /// Carries out a switch that waited for the turn to stop. It goes on where the turn was stopped, unless a message of
+    /// yours waits to go out now (that is what the new agent gets) or the turn had ended by itself.
+    func applyPendingSwitch(_ id: UUID) {
+        guard let pending = pendingSwitches[id], canTransfer(id), let run = run(id) else { return }
+        pendingSwitches[id] = nil
+        let stopped = run.status == .stopped
+        let target = switchTargetName(provider: pending.provider, profileID: pending.profileID, from: run)
+        let result = applySelection(id, provider: pending.provider, profileID: pending.profileID, model: pending.model,
+                                    resumeIfLimited: true)
+        if case .reject = result {
+            append(id, RunEvent(kind: .error, text: tr("agents.switch.unavailable", pending.provider.displayName)))
+            return
+        }
+        guard pending.resume, stopped, pendingSendNow[id] == nil, self.run(id)?.status.isActive != true else { return }
+        append(id, RunEvent(kind: .system, text: tr("ws.switch.continuing", target), tool: "resume"))
+        send(id, text: UsageLimits.resumeMessage)
     }
 
     // MARK: Merge back

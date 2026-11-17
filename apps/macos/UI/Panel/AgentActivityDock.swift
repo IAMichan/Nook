@@ -601,7 +601,7 @@ struct BackgroundCommandRows: View {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(command.isRunning ? NookTheme.paper.opacity(0.85)
                                              : (command.failed ? NookTheme.textSecondary : NookTheme.textTertiary))
-                            .lineLimit(1)
+                            .nookTipWhenCut(command.title)
                             .truncationMode(.tail)
                         if command.isRunning, let now = activity[command.id] {
                             BackgroundCommandActivityLabel(activity: now)
@@ -614,7 +614,6 @@ struct BackgroundCommandRows: View {
                         Image(icon: "text.alignleft")
                             .font(NookTheme.font(9, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)
-                            .nookTip(tr("ws.background.hasOutput"))
                     }
                     SubagentElapsed(command: command.reading(activity[command.id]))
                     DisclosureChevron(open: expanded, size: 8)
@@ -623,7 +622,6 @@ struct BackgroundCommandRows: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(command.command)
             if expanded { detail(command) }
         }
         .background(NookTheme.shape(NookTheme.Radius.control)

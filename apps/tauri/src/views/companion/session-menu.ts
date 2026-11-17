@@ -3,7 +3,7 @@
 import type { SessionDigest } from "../../lib/companion";
 import { menuEntries, type MenuEntry } from "../../lib/companion-sessions";
 import { tr } from "../../lib/i18n.svelte";
-import type { MenuItem } from "./ui/Menu.svelte";
+import type { MenuItem } from "../../components/ui/Menu.svelte";
 
 export interface SessionMenuHandlers {
   /** An action that goes straight to the computer. */

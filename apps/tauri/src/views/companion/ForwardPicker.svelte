@@ -4,8 +4,8 @@
   import { MAX_FORWARD, type InboxChatDigest, type InboxLine } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
-  import SearchField from "./ui/SearchField.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import SearchField from "../../components/ui/SearchField.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { line, chats, from, onsend, onclose }: {
     line: InboxLine; chats: InboxChatDigest[]; from: string; onsend: (targets: string[]) => void; onclose: () => void;

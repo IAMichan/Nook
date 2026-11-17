@@ -6,21 +6,21 @@
   import { onMount } from "svelte";
   import { companion, has, may, relative, Feature, type ClientView, type LineComment, type PullAction, type PullDetail, type PullDigest, type PullThread, type LaunchOptions } from "../../lib/companion";
   import { ATTENTIONS, SORTS, STATES, counted, sections, type Attention, type PullGrouping, type PullSort, type PullState } from "../../lib/companion-pulls";
-  import SearchField from "./ui/SearchField.svelte";
+  import SearchField from "../../components/ui/SearchField.svelte";
   import { lineComment, positions } from "../../lib/patch";
   import { renderMarkdown } from "../../lib/markdown";
   import { richContent } from "../../lib/rich";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import FileCard from "./ui/FileCard.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Dialog from "./ui/Dialog.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ComposerPill from "./ui/ComposerPill.svelte";
   import AgentMark from "./ui/AgentMark.svelte";
-  import Banner from "./ui/Banner.svelte";
+  import Banner from "../../components/ui/Banner.svelte";
 
   let { view, session, onclose, took, onstarted }: { view: ClientView; session?: string; onclose: () => void; took: (v: ClientView) => void; onstarted: (id: string) => void } = $props();
 

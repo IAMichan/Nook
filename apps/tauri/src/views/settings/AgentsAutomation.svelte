@@ -80,11 +80,11 @@
     if (typeof picked === "string" && editing?.target.type === "newSession") editing.target.projectPath = picked;
   }
 
-  function setDestination(kind: "newSession" | "existingSession") {
+  function setDestination(kind: ScheduledTask["target"]["type"]) {
     if (!editing || editing.target.type === kind) return;
     editing.target = kind === "newSession"
       ? { type: "newSession", projectPath: projects[0] ?? "", provider: (workspace.settings?.defaultProvider ?? "claude") as RunProvider, profileId: null }
-      : { type: "existingSession", id: sessions[0]?.id ?? "", fresh: false };
+      : kind === "nook" ? { type: "nook" } : { type: "existingSession", id: sessions[0]?.id ?? "", fresh: false };
   }
 
   async function save() {
@@ -163,7 +163,7 @@
           {:else if t.rule.type === "once" && t.lastRun}<span>{tr("Klaar", "Done")}</span>{/if}
           {#if t.lastSession && t.sessionTitle}<button class="link" onclick={() => openSession(t.lastSession!)}>{t.sessionTitle}</button>{/if}
         </div>
-        {#if t.lastError && t.lastStatus !== "succeeded"}<div class="meta faint">{reasonLabel(t.lastError)}</div>{/if}
+        {#if t.lastError && (t.lastStatus !== "succeeded" || t.lastError === "sched.nook.nothingNew")}<div class="meta faint">{reasonLabel(t.lastError)}</div>{/if}
         {#if t.rule.type === "webhook"}
           <div class="hook">
             {#if t.webhookUrl}
@@ -192,7 +192,7 @@
   {#if editing}
     <div class="editor">
       <label class="row"><span>{tr("Naam", "Name")}</span><input bind:value={editing.title} placeholder={tr("Bijvoorbeeld: ochtendcheck", "For example: morning check")} /></label>
-      <label class="col"><span>{tr("Prompt voor de agent", "Prompt for the agent")}</span><textarea rows="4" bind:value={editing.prompt}></textarea></label>
+      <label class="col"><span>{editing.target.type === "nook" ? tr("Wat Nook elke run doet", "What Nook does on each run") : tr("Prompt voor de agent", "Prompt for the agent")}</span><textarea rows="4" bind:value={editing.prompt}></textarea></label>
 
       <label class="row"><span>{tr("Wanneer", "When")}</span>
         <select bind:value={preset}>
@@ -225,12 +225,16 @@
       {/if}
 
       <label class="row"><span>{tr("Waar runs heen gaan", "Where runs go")}</span>
-        <select value={editing.target.type} onchange={(e) => setDestination((e.target as HTMLSelectElement).value as "newSession" | "existingSession")}>
+        <select value={editing.target.type} onchange={(e) => setDestination((e.target as HTMLSelectElement).value as ScheduledTask["target"]["type"])}>
           <option value="newSession">{tr("Elke run een nieuwe sessie", "New session each run")}</option>
           <option value="existingSession">{tr("Eén sessie", "One session")}</option>
+          <option value="nook">{tr("Nook Chat beantwoordt het", "Nook Chat answers it")}</option>
         </select>
       </label>
-      {#if editing.target.type === "newSession"}
+      {#if editing.target.type === "nook"}
+        <label class="check"><input type="checkbox" role="switch" bind:checked={editing.quiet} /> {tr("Alleen melden als er iets nieuws is", "Only speak up for something new")}</label>
+        <p class="faint note">{tr("Elke run is een eigen gesprek in Nook Chat. Nook zoekt zelf op en zet antwoorden en acties klaar; niets wordt verstuurd of veranderd zonder jouw OK.", "Each run is a conversation of its own in Nook Chat. Nook looks things up and prepares replies and actions; nothing is sent or changed without your OK.")}</p>
+      {:else if editing.target.type === "newSession"}
         <div class="row"><span>{tr("Projectmap", "Project folder")}</span>
           <span class="inline">
             <select bind:value={editing.target.projectPath}>

@@ -50,12 +50,11 @@ extension AgentRunPanel {
                 Text(run.title)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
+                    .nookTipWhenCut(run.title)
                     .onTapGesture(count: 2) {
                         titleDraft = run.title
                         renaming = true
                     }
-                    .nookTip(tr("ws.title.renameHelp"))
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
                 ComposerDropdown(width: 248, scrolls: true) {
@@ -84,7 +83,6 @@ extension AgentRunPanel {
                         .foregroundStyle(NookTheme.textSecondary)
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(tr("ws.remote.terminal", remote.host))
                 // On another machine the session panel does not dock, so its usage is the ring here.
                 SessionUsageButton(source: SessionUsageSource(runID: runID)).toolbarGroup()
             } else {
