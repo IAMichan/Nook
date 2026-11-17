@@ -306,7 +306,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 
-- [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
+- [x] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
 
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 
