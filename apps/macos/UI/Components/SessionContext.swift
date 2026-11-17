@@ -84,6 +84,18 @@ final class ComposerInbox: ObservableObject {
         ToastCenter.shared.success(tr("browser.pick.added", element.name))
     }
 
+    /// A spot clicked in a PDF beside the session, as a snippet tile with a picture of the area around it. Several
+    /// clicked before the composer took the first keep them all.
+    func add(pdfPoint point: PickedPdfPoint, image: ImageAttachment?, to target: SessionContextTarget) {
+        let id = PickedPdfPoint.idPrefix + String(UUID().uuidString.prefix(8)).lowercased()
+        let snippet = Delivery.Snippet(ref: point.reference(id: id), content: point.snippet)
+        var pending = delivery.flatMap { $0.target == target ? $0 : nil } ?? Delivery(target: target, text: "")
+        pending.snippets.append(snippet)
+        if let image { pending.images.append(image) }
+        delivery = pending
+        ToastCenter.shared.success(tr("browser.pick.added", point.name))
+    }
+
     /// What is meant for this composer, once; nil when it is meant for another session.
     func take(run: UUID?, directory: String) -> Delivery? {
         guard let delivery else { return nil }

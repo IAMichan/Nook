@@ -139,6 +139,7 @@ enum OutputText {
 /// One output, shown as what it is, with what you can do with it underneath.
 private struct OutputViewer: View {
     let output: SessionOutput
+    @Environment(\.sessionContextTarget) private var session
 
     var body: some View {
         VStack(spacing: 0) {
@@ -163,8 +164,15 @@ private struct OutputViewer: View {
         case .document:
             if let path = output.path { DocumentPreview(path: path, version: output.date) }
         case .pdf:
-            // Written again: Quick Look reads it again, as the file viewer in the side panel shows it.
-            if let path = output.path { QuickLookView(url: URL(fileURLWithPath: path)).id(output.date) }
+            // Written again: read again, as the file viewer in the side panel shows it. Beside a session a click on a
+            // spot hands it to the composer.
+            if let path = output.path {
+                if let session {
+                    PdfPointView(url: URL(fileURLWithPath: path), session: session).id(output.date)
+                } else {
+                    QuickLookView(url: URL(fileURLWithPath: path)).id(output.date)
+                }
+            }
         case .image:
             if let path = output.path { ImagePreview(path: path, version: output.date) } else { missing }
         case .video:

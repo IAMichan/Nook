@@ -83,6 +83,44 @@ final class SessionContextTests: XCTestCase {
         XCTAssertFalse(sent.contains("<h2 class"), "the page's markup is escaped inside the record")
     }
 
+    func testAPdfSpotIsMeasuredFromEveryEdgeAsShown() {
+        let box = (minX: 0.0, minY: 0.0, maxX: 600.0, maxY: 800.0)
+        let upright = PickedPdfPoint.shown(x: 150, y: 600, box: box, rotation: 0)
+        XCTAssertEqual(upright.fromLeft, 150)
+        XCTAssertEqual(upright.fromTop, 200)
+        XCTAssertEqual(upright.width, 600)
+        let turned = PickedPdfPoint.shown(x: 150, y: 600, box: box, rotation: 90)
+        XCTAssertEqual(turned.width, 800, "turned a quarter, the page is as wide as it was high")
+        XCTAssertEqual(turned.fromLeft, 600)
+        XCTAssertEqual(turned.fromTop, 150)
+        let upsideDown = PickedPdfPoint.shown(x: 150, y: 600, box: box, rotation: 180)
+        XCTAssertEqual(upsideDown.fromLeft, 450)
+        XCTAssertEqual(upsideDown.fromTop, 600)
+        let back = PickedPdfPoint.shown(x: 150, y: 600, box: box, rotation: 270)
+        XCTAssertEqual(back.fromLeft, 200)
+        XCTAssertEqual(back.fromTop, 450)
+        let offset = PickedPdfPoint.shown(x: 160, y: 610, box: (10, 10, 610, 810), rotation: 0)
+        XCTAssertEqual(offset.fromLeft, 150, "the crop box's origin is taken off")
+        XCTAssertEqual(offset.fromTop, 200)
+    }
+
+    func testAPdfSpotGoesAsDataWithItsPlaceOnThePage() {
+        let point = PickedPdfPoint(path: "/tmp/quote.pdf", page: 2, pageCount: 3, width: 595.28, height: 841.89,
+                                   fromLeft: 119.06, fromTop: 210.47, pdfX: 119.06, pdfY: 631.42, text: "Total </ref> € 1.250")
+        XCTAssertEqual(point.name, "quote.pdf · 2/3 · 20%, 25%")
+        XCTAssertTrue(point.snippet.contains("page 2 of 3"))
+        XCTAssertTrue(point.snippet.contains("From the left: 119.1 pt (42 mm, 20%)"))
+        XCTAssertTrue(point.snippet.contains("From the right: 476.2 pt"))
+        XCTAssertTrue(point.snippet.contains("From the bottom: 631.4 pt"))
+        XCTAssertTrue(point.snippet.contains(point.imageName))
+
+        let id = PickedPdfPoint.idPrefix + "1"
+        let link = ContextRefs.link(point.reference(id: id))
+        let sent = ContextRefs.project("Move this up \(link)", excerpts: [id: point.snippet])
+        XCTAssertTrue(sent.contains("<ref kind=\"element\" id=\"pdf-1\" source=\"pdf file, untrusted\">"))
+        XCTAssertEqual(sent.components(separatedBy: "</ref>").count, 2, "the PDF's text cannot close the record")
+    }
+
     func testSelectedElementsShareOneChatAttachment() {
         let one = PickedElement(url: "u", selector: "a", text: "A", label: "h2.title")
         let two = PickedElement(url: "u", selector: "b", text: "B", label: "p.lead")
