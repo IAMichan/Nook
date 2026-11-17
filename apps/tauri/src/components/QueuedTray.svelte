@@ -2,7 +2,7 @@
   // Questions waiting for the answer Nook is writing, in the tray above the composer (the Mac's `QueuedMessagesStrip`):
   // a header that folds the list, then each question with its place in line. Under the pointer a row shows Send now,
   // Remove and, with more than one, Move up and Move down.
-  import Ico from "../views/companion/ui/Ico.svelte";
+  import Ico from "./ui/Ico.svelte";
   import { tr } from "../lib/i18n.svelte";
   import type { MessageQueue } from "../lib/types";
 
