@@ -80,6 +80,25 @@ fn translations_keep_placeholders() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
+/// The catalog files are joined in file-name order, so an English text in two files must say the same in both;
+/// otherwise renaming a file would change what Nook shows.
+#[test]
+fn a_text_in_two_catalogs_has_one_translation() {
+    let mut seen = std::collections::HashMap::new();
+    let mut bad = Vec::new();
+    for rows in catalog::ALL {
+        for &(en, de, fr, es) in rows.iter() {
+            if let Some(&earlier) = seen.get(en) {
+                if earlier != (de, fr, es) {
+                    bad.push(en.to_string());
+                }
+            }
+            seen.insert(en, (de, fr, es));
+        }
+    }
+    assert!(bad.is_empty(), "translated differently in two catalog files:\n{}", bad.join("\n"));
+}
+
 // MARK: Dutch text outside tr/trf (FD-04 in docs/WINDOWS-PARITY.md)
 
 /// Files whose Dutch string literals are data, not text Nook shows: keyword patterns that read what the user typed,
