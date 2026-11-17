@@ -37,6 +37,19 @@ export interface ScheduledTask {
   quiet?: boolean;
   /** The ready-made task this is (the secretary's). */
   preset?: string | null;
+  /** For Nook: what each run carries out by itself (`workspace::autonomy`). */
+  autonomy?: NookAutonomy;
+}
+
+export type NookAutonomy = "ask" | "decide" | "auto";
+
+/** The levels with their name and what they mean, as the Mac's editor shows them. */
+export function autonomyLevels(): { id: NookAutonomy; label: string; detail: string }[] {
+  return [
+    { id: "ask", label: tr("Vraag mij", "Ask me"), detail: tr("Nook zet antwoorden, afspraken en andere stappen klaar; elke stap wacht op jouw klik.", "Nook prepares replies, appointments and other steps; each one waits for your click.") },
+    { id: "decide", label: tr("Nook beslist", "Nook decides"), detail: tr("Nook voert wat duidelijk routine is zelf uit (een kort antwoord aan wie schreef, een herinnering) en laat de rest voor jou staan, met een korte reden.", "Nook carries out what is clearly routine by itself (a quick reply to someone who wrote, a reminder) and leaves the rest for you, with a short reason.") },
+    { id: "auto", label: tr("Gewoon doen", "Do it"), detail: tr("Nook verstuurt de berichten die het klaarzette en voert de wijzigingen zelf uit. Jij leest achteraf alleen wat het deed.", "Nook sends the messages it prepared and makes the changes by itself. You only read afterwards what it did.") },
+  ];
 }
 
 export interface TaskView extends ScheduledTask {

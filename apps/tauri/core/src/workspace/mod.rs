@@ -4,6 +4,7 @@
 pub mod acp;
 pub mod antigravity;
 pub mod attention;
+pub mod autonomy;
 pub mod bridge;
 pub mod bridge_nook;
 pub mod codex_app_server;

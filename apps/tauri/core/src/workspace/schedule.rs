@@ -277,6 +277,18 @@ pub struct ScheduledTask {
     /// The ready-made task this is (the secretary's), by an id that does not change with the app's language.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// For Nook: what each run carries out by itself. A row without a level, or with one this version does not know,
+    /// asks: it must not start acting by itself.
+    #[serde(default, deserialize_with = "autonomy_or_ask", skip_serializing_if = "is_ask")]
+    pub autonomy: super::autonomy::NookAutonomy,
+}
+
+fn autonomy_or_ask<'de, D: Deserializer<'de>>(d: D) -> Result<super::autonomy::NookAutonomy, D::Error> {
+    Ok(serde_json::from_value(Value::deserialize(d)?).unwrap_or_default())
+}
+
+fn is_ask(level: &super::autonomy::NookAutonomy) -> bool {
+    *level == super::autonomy::NookAutonomy::Ask
 }
 
 fn epoch() -> DateTime<Utc> {
@@ -301,6 +313,7 @@ impl ScheduledTask {
             created_at: now,
             quiet: false,
             preset: None,
+            autonomy: Default::default(),
         }
     }
 

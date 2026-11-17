@@ -94,6 +94,10 @@ pub struct NookRun {
     pub note: String,
     /// A quiet run that finds nothing new answers `nook_schedule::NOTHING_NEW` and leaves no conversation.
     pub quiet: bool,
+    /// What the run carries out by itself after its answer (`autonomy`), already lowered for a run from outside.
+    pub autonomy: super::autonomy::NookAutonomy,
+    /// A webhook delivery started it: the judge is strict.
+    pub from_outside: bool,
 }
 
 impl SessionHost for Arc<Manager> {
@@ -467,8 +471,10 @@ impl Scheduler {
                 // "Run now" by hand always answers; a quiet check on its schedule only speaks up for something new.
                 let quiet = task.quiet && trigger != ScheduleTrigger::Manual;
                 let since = if trigger == ScheduleTrigger::Schedule { previous } else { None };
-                let note = nook_schedule::run_note(&task.title, since, quiet, trigger == ScheduleTrigger::Webhook);
-                let run = NookRun { task: id, title: task.title.clone(), prompt: prompt.to_string(), note, quiet };
+                let from_outside = trigger == ScheduleTrigger::Webhook;
+                let autonomy = task.autonomy.effective(trigger);
+                let note = nook_schedule::run_note(&task.title, since, quiet, from_outside, autonomy);
+                let run = NookRun { task: id, title: task.title.clone(), prompt: prompt.to_string(), note, quiet, autonomy, from_outside };
                 if let Err(e) = host.ask_nook(run) {
                     self.finish(id, ScheduledRunStatus::Failed, Some(e), now, tz);
                 }
@@ -779,6 +785,22 @@ mod tests {
         s.finish_run(task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T09:05:00Z"), &Utc);
         assert_eq!(s.run_now(&FakeHost::default(), true, task.id, &profile, utc("2026-03-02T09:06:00Z"), &Utc), RunNow::Started);
         assert_eq!(s.task(task.id).unwrap().last_error.as_deref(), Some(reason::NO_BRAIN));
+    }
+
+    #[test]
+    fn a_nook_run_carries_the_level_the_user_chose() {
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let mut task = ScheduledTask::new("Replies", "Answer Lisa", ScheduleRule::Webhook, ScheduledTaskTarget::Nook, now);
+        task.autonomy = crate::workspace::autonomy::NookAutonomy::Auto;
+        let task = s.save_task(task, now, &Utc);
+        let host = NookHost(Mutex::default());
+        assert_eq!(s.run_now(&host, true, task.id, &profile, now, &Utc), RunNow::Started);
+        let runs = host.0.lock().unwrap();
+        assert_eq!(runs[0].autonomy, crate::workspace::autonomy::NookAutonomy::Auto);
+        assert!(!runs[0].from_outside);
+        assert!(runs[0].note.contains("Nook itself carries out the steps"));
     }
 
     #[test]

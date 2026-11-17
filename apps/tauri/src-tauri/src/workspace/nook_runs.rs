@@ -7,8 +7,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{Local, Utc};
+use nook_core::brain::action_gate;
 use nook_core::brain::service;
 use nook_core::nooks::Conversation;
+use nook_core::nooks::{PlanState, StepState};
+use nook_core::workspace::autonomy::{self, AutonomyStep, NookAutonomy};
 use nook_core::workspace::manager::Manager;
 use nook_core::workspace::models::{NewRunConfig, PermissionPolicy, RunStatus};
 use nook_core::workspace::nook_schedule;
@@ -70,6 +73,12 @@ fn start(app: &AppHandle, run: NookRun) -> Result<(), String> {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let (status, error) = watch(&app, &nook_id, reply.as_deref(), run.quiet).await;
+        // The steps the user lets this task carry out by itself run now; the rest waits in the conversation.
+        if status == ScheduledRunStatus::Succeeded && error.is_none() && run.autonomy != NookAutonomy::Ask {
+            if let Some(reply) = reply.as_deref() {
+                carry_out(&app, &nook_id, reply, &run).await;
+            }
+        }
         if let Some(auto) = app.try_state::<AutomationState>() {
             auto.scheduler.finish_run(run.task, status, error, Utc::now(), &Local);
         }
@@ -124,4 +133,114 @@ async fn watch(app: &AppHandle, nook_id: &str, reply: Option<&str>, quiet: bool)
     });
     chat::updated(app, nook_id);
     (ScheduledRunStatus::Succeeded, None)
+}
+
+/// Carries out what the task may do by itself (`AppModel+Autonomy` on the Mac): the unattended steps at once (`auto`)
+/// or after Nook's judge found them routine (`decide`). Everything else stays in the plan for the user's click. Each
+/// step runs through the plan runner, which writes the audit log, and the answer ends with what ran and what waits.
+async fn carry_out(app: &AppHandle, nook_id: &str, reply: &str, run: &NookRun) {
+    let state = app.state::<AppState>();
+    let Some(message) = state.with_chat(|c| c.get(nook_id)?.messages.iter().find(|m| m.id == reply).cloned()) else { return };
+    if message.plan_state != Some(PlanState::Pending) || message.actions.is_empty() {
+        return;
+    }
+    let ctx = crate::tools::ToolCtx::new(app, "").in_nook(nook_id);
+    let all = crate::tools::all_tools(&ctx);
+    let mut indices = vec![];
+    let mut steps = vec![];
+    for (index, action) in message.actions.iter().enumerate() {
+        let included = message.action_included.get(index).copied().unwrap_or(true);
+        let clean = message.action_problems.get(index).is_none_or(Vec::is_empty);
+        let open = !message.action_states.get(index).is_some_and(StepState::is_finished);
+        if !(included && clean && open) {
+            continue;
+        }
+        let schema = all.iter().find(|t| t.name == action.tool).map(|t| t.schema.clone()).unwrap_or_default();
+        let detail: Vec<String> = action_gate::fields(&action.input, &schema).iter().map(|f| format!("{}: {}", f.label, f.value)).collect();
+        let recipient =
+            ["to", "name", "chat", "repo"].iter().map(|k| crate::tools::text(&action.input, k)).find(|v| !v.is_empty()).unwrap_or_default();
+        indices.push(index);
+        steps.push(AutonomyStep {
+            tool: action.tool.clone(),
+            summary: crate::tools::summarize(&action.tool, &action.input),
+            detail: detail.join("\n"),
+            recipient,
+        });
+    }
+    if steps.is_empty() {
+        return;
+    }
+    let (run_now, to_judge) = autonomy::split(&steps, run.autonomy);
+    let mut chosen: std::collections::BTreeSet<usize> = run_now.iter().copied().collect();
+    let mut reasons: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    for (i, step) in steps.iter().enumerate() {
+        if !run_now.contains(&i) && !to_judge.contains(&i) {
+            reasons.insert(i, autonomy::waiting_reason(&step.tool).to_string());
+        }
+    }
+    if !to_judge.is_empty() {
+        let task = app.try_state::<AutomationState>().and_then(|a| a.scheduler.task(run.task));
+        let prompt_text = task.map(|t| t.prompt).unwrap_or_else(|| run.prompt.clone());
+        let numbered: Vec<(usize, &AutonomyStep)> = to_judge.iter().map(|&i| (i + 1, &steps[i])).collect();
+        let prompt = autonomy::judge_prompt(&run.title, &prompt_text, &numbered, run.from_outside);
+        let settings = state.settings();
+        let env = service::BrainEnv {
+            key: state.key_for(settings.provider),
+            memory_gb: crate::brain::memory_gb(),
+            country: crate::brain::country(),
+            timezone: crate::brain::timezone(),
+        };
+        // No answer from the judge (no brain, a timeout): every step waits, as it would without the setting.
+        let answer = tokio::time::timeout(Duration::from_secs(90), service::complete(&settings, &env, autonomy::JUDGE_SYSTEM, &prompt))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        let verdicts = autonomy::verdicts(&answer);
+        for &i in &to_judge {
+            match verdicts.get(&(i + 1)) {
+                Some(v) if v.run => {
+                    chosen.insert(i);
+                }
+                Some(v) if !v.reason.is_empty() => {
+                    reasons.insert(i, v.reason.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+    let (mut ran, mut failed) = (0, 0);
+    if !chosen.is_empty() {
+        state.store.audit("scheduled_autonomy", &format!("{} ({})", run.title, run.autonomy.id()), "");
+        let chosen_actions: Vec<usize> = chosen.iter().map(|&i| indices[i]).collect();
+        let before = message.action_included.clone();
+        let included: Vec<bool> = (0..message.actions.len()).map(|i| chosen_actions.contains(&i)).collect();
+        let _ = crate::commands::plans::run_plan(app, nook_id, reply, &included, None, &[]).await;
+        let after = state.with_chat(|c| c.get(nook_id)?.messages.iter().find(|m| m.id == reply).cloned());
+        if let Some(after) = after {
+            for &i in &chosen_actions {
+                match after.action_states.get(i) {
+                    Some(StepState::Done(_) | StepState::Verified(_)) => ran += 1,
+                    Some(StepState::Failed(_)) => failed += 1,
+                    _ => {}
+                }
+            }
+        }
+        // What was left for the user is theirs to run: switched on as it was, and the plan open again.
+        let remains = (0..message.actions.len()).any(|i| !chosen_actions.contains(&i) && before.get(i).copied().unwrap_or(true));
+        chat::update(app, nook_id, reply, |m| {
+            m.action_included =
+                (0..m.actions.len()).map(|i| chosen_actions.contains(&i) || before.get(i).copied().unwrap_or(true)).collect();
+            if remains && matches!(m.plan_state, Some(PlanState::Done(_))) {
+                m.plan_state = Some(PlanState::Pending);
+            }
+        });
+    }
+    let waiting: Vec<(String, Option<String>)> =
+        (0..steps.len()).filter(|i| !chosen.contains(i)).map(|i| (steps[i].summary.clone(), reasons.get(&i).cloned())).collect();
+    let block = autonomy::note(ran, failed, &waiting, run.autonomy);
+    if !block.is_empty() {
+        chat::update(app, nook_id, reply, |m| m.text.push_str(&block));
+    }
+    state.save_chat();
 }
