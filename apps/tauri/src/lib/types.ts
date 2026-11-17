@@ -4,7 +4,7 @@ import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, Source
 import type { TaskStep } from "./task-steps";
 
 export type ProviderId =
-  | "claude" | "claudeCode" | "openai" | "gemini" | "grok" | "mistral" | "groq"
+  | "claude" | "claudeCode" | "codexCLI" | "geminiCLI" | "grokCLI" | "kimiCLI" | "vibeCLI" | "openai" | "gemini" | "grok" | "mistral" | "groq"
   | "openrouter" | "deepseek" | "qwen" | "moonshot" | "ollama" | "lmstudio";
 
 export interface ProviderInfo {
@@ -12,6 +12,10 @@ export interface ProviderInfo {
   title: string;
   isLocal: boolean;
   needsKey: boolean;
+  /** Thinks through a coding agent's own sign-in (Claude Code, Codex, Gemini CLI, Grok, Kimi Code, Vibe), no key. */
+  isSubscription: boolean;
+  cliCommand: string | null;
+  loginCommand: string | null;
   keyPlaceholder: string;
   keyUrl: string;
   defaultModel: string;
