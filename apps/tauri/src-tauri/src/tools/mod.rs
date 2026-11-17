@@ -10,6 +10,7 @@
 
 mod agents;
 mod browser;
+mod browser_tab;
 mod calls;
 mod charts;
 mod clipboard;
@@ -152,6 +153,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(memory::Memory),
         Box::new(web::Web),
         Box::new(browser::NookBrowser),
+        Box::new(browser_tab::Browser),
         Box::new(charts::Charts),
         Box::new(schedule::Schedule),
         Box::new(settings::SettingsTools),
