@@ -544,7 +544,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
 - [x] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
-- [ ] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer · M
+- [x] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer: a message continues the session in Nook (a copy while the terminal still works) and *End* ends its process, as on the Mac; steering a running terminal turn is not possible there either · M
 - [ ] **CO-11** Android Keystore for secrets (TAURI.md ○) · M
 
 ## 8. Not portable: Mac-only parts and the Windows alternative
