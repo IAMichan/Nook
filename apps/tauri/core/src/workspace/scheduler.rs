@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::arrivals::{self, ArrivalQueue, ArrivedMessage, MessageTrigger};
 use super::manager::Manager;
 use super::models::{ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider, RunStatus};
 use super::nook_schedule;
@@ -134,6 +135,8 @@ struct State {
     running: HashMap<Uuid, (Option<Uuid>, ScheduleTrigger)>,
     logs: HashMap<Uuid, DeliveryLog>,
     rates: HashMap<Uuid, RateWindow>,
+    /// Per message task, what it admitted and what still waits for a run.
+    arrivals: HashMap<Uuid, ArrivalQueue>,
 }
 
 pub struct Scheduler {
@@ -171,7 +174,7 @@ impl Scheduler {
         for t in &mut tasks {
             if !t.enabled {
                 t.next_run = None;
-            } else if t.next_run.is_none() && !t.rule.is_webhook() {
+            } else if t.next_run.is_none() && !t.rule.waits_for_event() {
                 t.next_run = t.planned_run(now, true, tz);
             }
         }
@@ -256,6 +259,7 @@ impl Scheduler {
         s.queue.forget(id);
         s.logs.remove(&id);
         s.rates.remove(&id);
+        s.arrivals.remove(&id);
         self.save(&s);
         let _ = self.secrets.remove(&secret_account(id));
     }
@@ -315,7 +319,7 @@ impl Scheduler {
             let mut changed = false;
             for i in 0..s.tasks.len() {
                 let t = s.tasks[i].clone();
-                if !t.enabled || t.rule.is_webhook() || s.gate.is_running(t.id) || t.is_done() {
+                if !t.enabled || t.rule.waits_for_event() || s.gate.is_running(t.id) || t.is_done() {
                     continue;
                 }
                 let Some(at) = t.next_run else {
@@ -352,6 +356,78 @@ impl Scheduler {
                 tz,
             );
         }
+        self.drain_messages(host, profile, now, tz);
+    }
+
+    // MARK: Messages
+
+    /// New messages from someone else (every chat app hands them here): every task on whose message trigger they match
+    /// runs with them, once per message. What comes while the task runs waits for its next run.
+    pub fn messages_arrived<Tz: TimeZone>(
+        &self,
+        host: &dyn SessionHost,
+        enabled: bool,
+        messages: &[ArrivedMessage],
+        profile: DefaultProfile<'_>,
+        now: DateTime<Utc>,
+        tz: &Tz,
+    ) {
+        if !enabled || messages.is_empty() {
+            return;
+        }
+        {
+            let mut s = self.lock();
+            let tasks: Vec<(Uuid, MessageTrigger)> = s
+                .tasks
+                .iter()
+                .filter(|t| t.enabled)
+                .filter_map(|t| t.rule.message_trigger().map(|trigger| (t.id, trigger.clone())))
+                .collect();
+            for (id, trigger) in tasks {
+                let queue = s.arrivals.entry(id).or_default();
+                let fresh = queue.admit(messages, &trigger);
+                if !fresh.is_empty() {
+                    queue.enqueue(fresh, false);
+                }
+            }
+        }
+        self.drain_messages(host, profile, now, tz);
+    }
+
+    /// Starts a run with the next batch for every message task that is free and has messages waiting. A batch that
+    /// could not start goes back first in line.
+    fn drain_messages<Tz: TimeZone>(&self, host: &dyn SessionHost, profile: DefaultProfile<'_>, now: DateTime<Utc>, tz: &Tz) {
+        let batches: Vec<(Uuid, String, Vec<ArrivedMessage>)> = {
+            let mut s = self.lock();
+            let free: Vec<(Uuid, MessageTrigger, String)> = s
+                .tasks
+                .iter()
+                .filter(|t| t.enabled && !s.gate.is_running(t.id))
+                .filter_map(|t| t.rule.message_trigger().map(|trigger| (t.id, trigger.clone(), t.prompt.clone())))
+                .collect();
+            free.into_iter()
+                .filter_map(|(id, trigger, prompt)| {
+                    let batch = s.arrivals.get_mut(&id)?.take_batch(&trigger);
+                    (!batch.is_empty()).then_some((id, prompt, batch))
+                })
+                .collect()
+        };
+        for (id, prompt, batch) in batches {
+            // No firing key by time for messages: the queue admits a message once, and two batches in one second
+            // must not become one.
+            let key = format!("{id}:message:{}", Uuid::new_v4());
+            let text = arrivals::message_prompt(&prompt, &batch);
+            if !self.fire(host, id, &key, ScheduleTrigger::Message, &text, profile, now, tz) {
+                if let Some(queue) = self.lock().arrivals.get_mut(&id) {
+                    queue.enqueue(batch, true);
+                }
+            }
+        }
+    }
+
+    /// How many messages wait for a task's next run.
+    pub fn waiting_messages(&self, id: Uuid) -> usize {
+        self.lock().arrivals.get(&id).map_or(0, |q| q.waiting().len())
     }
 
     /// "Run now" from the list: the task's own prompt, once, if it is free.
@@ -449,7 +525,7 @@ impl Scheduler {
                     return true;
                 }
                 // What comes from outside must not work with rights you gave that session for yourself.
-                if trigger == ScheduleTrigger::Webhook && permission != PermissionPolicy::Ask {
+                if trigger.is_from_outside() && permission != PermissionPolicy::Ask {
                     self.finish(id, ScheduledRunStatus::Failed, Some(reason::WEBHOOK_RIGHTS.into()), now, tz);
                     return true;
                 }
@@ -471,9 +547,10 @@ impl Scheduler {
                 // "Run now" by hand always answers; a quiet check on its schedule only speaks up for something new.
                 let quiet = task.quiet && trigger != ScheduleTrigger::Manual;
                 let since = if trigger == ScheduleTrigger::Schedule { previous } else { None };
-                let from_outside = trigger == ScheduleTrigger::Webhook;
+                let from_outside = trigger.is_from_outside();
                 let autonomy = task.autonomy.effective(trigger);
-                let note = nook_schedule::run_note(&task.title, since, quiet, from_outside, autonomy);
+                let message = trigger == ScheduleTrigger::Message;
+                let note = nook_schedule::run_note(&task.title, since, quiet, from_outside, message, autonomy);
                 let run = NookRun { task: id, title: task.title.clone(), prompt: prompt.to_string(), note, quiet, autonomy, from_outside };
                 if let Err(e) = host.ask_nook(run) {
                     self.finish(id, ScheduledRunStatus::Failed, Some(e), now, tz);
@@ -518,7 +595,7 @@ impl Scheduler {
         if let Some(index) = s.tasks.iter().position(|t| t.id == id) {
             let started = s.tasks[index].last_run;
             let mut row = s.tasks[index].finishing(status, error, now, tz);
-            if row.rule.is_webhook() {
+            if row.rule.waits_for_event() {
                 row.next_run = None;
             }
             // `finishing` stamps the end time; the list shows when the run started.
@@ -801,6 +878,52 @@ mod tests {
         assert_eq!(runs[0].autonomy, crate::workspace::autonomy::NookAutonomy::Auto);
         assert!(!runs[0].from_outside);
         assert!(runs[0].note.contains("Nook itself carries out the steps"));
+    }
+
+    fn arrived(chat: &str, text: &str, id: &str) -> ArrivedMessage {
+        ArrivedMessage {
+            chat_id: format!("whatsapp:{chat}"),
+            app: "whatsapp".into(),
+            chat: chat.into(),
+            sender: chat.into(),
+            text: text.into(),
+            date: utc("2026-03-02T08:00:00Z"),
+            is_group: false,
+            id: id.into(),
+        }
+    }
+
+    #[test]
+    fn a_matching_message_starts_its_task_once_and_the_rest_waits_for_the_next_run() {
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let trigger = MessageTrigger::new(vec![], "Lisa", vec![], false);
+        let mut task = ScheduledTask::new("Replies", "Prepare a reply", ScheduleRule::Message { trigger }, ScheduledTaskTarget::Nook, now);
+        task.autonomy = crate::workspace::autonomy::NookAutonomy::Auto;
+        let task = s.save_task(task, now, &Utc);
+        assert_eq!(task.next_run, None, "a message task never runs on a timer");
+        let host = NookHost(Mutex::default());
+        s.messages_arrived(&host, false, &[arrived("Lisa", "hoi", "1")], &profile, now, &Utc);
+        assert!(host.0.lock().unwrap().is_empty(), "nothing runs while scheduled tasks are off");
+        s.messages_arrived(&host, true, &[arrived("Jan", "hoi", "2"), arrived("Lisa", "hoi", "1")], &profile, now, &Utc);
+        {
+            let runs = host.0.lock().unwrap();
+            assert_eq!(runs.len(), 1);
+            assert!(runs[0].prompt.contains("chat=\"Lisa\"") && !runs[0].prompt.contains("Jan"));
+            assert!(runs[0].from_outside && runs[0].note.contains("started because a new message arrived"));
+            assert_eq!(runs[0].autonomy, crate::workspace::autonomy::NookAutonomy::Decide, "someone else's message never skips the judge");
+        }
+        // While it runs, a new message waits; the same message again is not new.
+        s.messages_arrived(&host, true, &[arrived("Lisa", "hoi", "1"), arrived("Lisa", "nog iets", "3")], &profile, now, &Utc);
+        assert_eq!(host.0.lock().unwrap().len(), 1);
+        assert_eq!(s.waiting_messages(task.id), 1);
+        s.finish_run(task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T08:01:00Z"), &Utc);
+        assert_eq!(s.task(task.id).unwrap().next_run, None);
+        s.tick(&host, true, &profile, utc("2026-03-02T08:01:30Z"), &Utc);
+        let runs = host.0.lock().unwrap();
+        assert_eq!(runs.len(), 2);
+        assert!(runs[1].prompt.contains("nog iets"));
     }
 
     #[test]

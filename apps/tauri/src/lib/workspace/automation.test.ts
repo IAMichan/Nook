@@ -11,6 +11,11 @@ describe("scheduled task editor", () => {
     expect(ruleFor("weekdays", values)).toEqual({ type: "fixedTime", hour: 7, minute: 5, weekdays: [2, 3, 4, 5, 6] });
     expect(ruleFor("weekdays", { ...values, weekdays: [6, 2] })).toEqual({ type: "fixedTime", hour: 7, minute: 5, weekdays: [2, 6] });
     expect(ruleFor("webhook", values)).toEqual({ type: "webhook" });
+    const message = ruleFor("message", { ...values, apps: "WhatsApp, ", from: " Lisa ", keywords: "invoice, payment", groups: false });
+    expect(message).toEqual({ type: "message", trigger: { apps: ["whatsapp"], from: "Lisa", keywords: ["invoice", "payment"], groups: false } });
+    expect(presetOf(message)).toBe("message");
+    expect(editorValues(message)).toMatchObject({ apps: "whatsapp", from: "Lisa", keywords: "invoice, payment" });
+    expect(ruleLabel(message)).toBe("On a new message in whatsapp from Lisa about invoice, payment");
     const once = ruleFor("once", values);
     expect(once.type).toBe("once");
     expect(editorValues(once).at).toBe("2099-01-02T03:04");

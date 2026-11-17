@@ -30,6 +30,17 @@ export const table: Table = {
   "Titles": { de: "Titel", fr: "Titres", es: "Títulos" },
   "Give new sessions a short title automatically": { de: "Neuen Sitzungen automatisch einen kurzen Titel geben", fr: "Donner automatiquement un titre court aux nouvelles sessions", es: "Dar automáticamente un título corto a las sesiones nuevas" },
   "The chosen brain writes a title from the first message. Until then, and when it gives nothing usable, you see the first line. A name you give yourself always wins; double-click a session's title to rename it.": { de: "Das gewählte Gehirn schreibt einen Titel aus der ersten Nachricht. Bis dahin, und wenn nichts Brauchbares kommt, siehst du die erste Zeile. Ein Name, den du selbst gibst, gewinnt immer; doppelklicke auf den Titel einer Sitzung, um ihn zu ändern.", fr: "Le cerveau choisi écrit un titre à partir du premier message. D’ici là, et s’il ne donne rien d’utilisable, tu vois la première ligne. Un nom que tu donnes toi-même l’emporte toujours ; double-clique sur le titre d’une session pour le renommer.", es: "El cerebro elegido escribe un título a partir del primer mensaje. Hasta entonces, y si no da nada útil, ves la primera línea. Un nombre que pongas tú siempre gana; haz doble clic en el título de una sesión para cambiarlo." },
+  // Automations that start on a message
+  "On a new message": { de: "Bei einer neuen Nachricht", fr: "À un nouveau message", es: "Con un mensaje nuevo" },
+  "in {apps}": { de: "in {apps}", fr: "dans {apps}", es: "en {apps}" },
+  "from {from}": { de: "von {from}", fr: "de {from}", es: "de {from}" },
+  "about {words}": { de: "über {words}", fr: "sur {words}", es: "sobre {words}" },
+  "Empty: every app. For example: whatsapp": { de: "Leer: jede App. Zum Beispiel: whatsapp", fr: "Vide : toutes les applis. Par exemple : whatsapp", es: "Vacío: cualquier app. Por ejemplo: whatsapp" },
+  "Empty: anyone": { de: "Leer: alle", fr: "Vide : n’importe qui", es: "Vacío: cualquiera" },
+  "Words": { de: "Wörter", fr: "Mots", es: "Palabras" },
+  "Empty: any message. Separated by commas": { de: "Leer: jede Nachricht. Durch Kommas getrennt", fr: "Vide : n’importe quel message. Séparés par des virgules", es: "Vacío: cualquier mensaje. Separadas por comas" },
+  "Group chats too": { de: "Auch Gruppenchats", fr: "Aussi les groupes", es: "También chats de grupo" },
+  "Runs as soon as a matching message from someone else comes in, once per message. What arrives while the task runs waits for the next run. The message reaches Nook as data, never as an instruction. Only WhatsApp for now.": { de: "Läuft, sobald eine passende Nachricht von jemand anderem eingeht, einmal pro Nachricht. Was eingeht, während die Aufgabe läuft, wartet auf den nächsten Lauf. Die Nachricht erreicht Nook als Daten, nie als Auftrag. Vorerst nur WhatsApp.", fr: "S’exécute dès qu’un message correspondant de quelqu’un d’autre arrive, une fois par message. Ce qui arrive pendant l’exécution attend la suivante. Le message arrive chez Nook comme des données, jamais comme une consigne. Pour l’instant seulement WhatsApp.", es: "Se ejecuta en cuanto llega un mensaje que encaja de otra persona, una vez por mensaje. Lo que llega mientras la tarea se ejecuta espera a la siguiente ejecución. El mensaje llega a Nook como datos, nunca como orden. Por ahora solo WhatsApp." },
   // What an automation for Nook carries out by itself (autonomy)
   "Ask me": { de: "Mich fragen", fr: "Me demander", es: "Preguntarme" },
   "Nook decides": { de: "Nook entscheidet", fr: "Nook décide", es: "Nook decide" },

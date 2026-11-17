@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{Local, Utc};
+use nook_core::workspace::arrivals::ArrivedMessage;
 use nook_core::workspace::delegation::Links;
 use nook_core::workspace::handoff::HandoffStore;
 use nook_core::workspace::models::RunProvider;
@@ -107,6 +108,34 @@ pub async fn tick(app: &AppHandle) {
     if changed {
         let _ = app.emit("automation-changed", ());
     }
+}
+
+/// New messages from someone else, from any chat app: every automation whose message trigger they match runs with
+/// them (`Scheduler::messages_arrived`). A source kept on this computer never reaches an external brain, also not
+/// through an automation, so its messages are dropped here while such a brain is chosen.
+pub fn messages_arrived(app: &AppHandle, messages: Vec<ArrivedMessage>) {
+    let Some(auto) = app.try_state::<AutomationState>() else { return };
+    let private = app.state::<AppState>().settings().private_sources();
+    let messages: Vec<ArrivedMessage> = messages.into_iter().filter(|m| !private.contains(&m.app)).collect();
+    if messages.is_empty() || !auto.scheduler.tasks().iter().any(|t| t.enabled && t.rule.is_message()) {
+        return;
+    }
+    let (Some(ws), scheduler, enabled) = (app.try_state::<WorkspaceState>(), auto.scheduler.clone(), auto.settings().scheduled_tasks)
+    else {
+        return;
+    };
+    let manager = ws.manager.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let app2 = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let profile = |p: RunProvider| default_profile(&app2, p);
+            let host = super::nook_runs::AppHost { manager, app: app2.clone() };
+            scheduler.messages_arrived(&host, enabled, &messages, &profile, Utc::now(), &Local);
+        })
+        .await;
+        let _ = app.emit("automation-changed", ());
+    });
 }
 
 /// Starts, moves or stops the webhook listener after a change of the settings. Loopback only (127.0.0.1).

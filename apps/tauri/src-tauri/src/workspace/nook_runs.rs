@@ -83,6 +83,8 @@ fn start(app: &AppHandle, run: NookRun) -> Result<(), String> {
             auto.scheduler.finish_run(run.task, status, error, Utc::now(), &Local);
         }
         let _ = app.emit("automation-changed", ());
+        // Messages that came in while this run went on start the next one now, not at the next tick.
+        super::automation::tick(&app).await;
     });
     Ok(())
 }
