@@ -541,7 +541,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     let to = AppData.string(input["to"]).trimmingCharacters(in: .whitespaces)
                     return "WhatsApp → \(WhatsAppConnector.shownName(to)): \(AppData.string(input["message"]))"
                 },
-                tag: { _ in ("sends", .caution) },
+                tag: { _ in (tr("plan.tag.sends"), .caution) },
                 run: { [weak self] input in
                     let chat = AppData.string(input["to"])
                     let found = await self?.recipient(chat)

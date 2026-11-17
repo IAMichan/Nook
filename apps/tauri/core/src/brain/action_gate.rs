@@ -71,6 +71,7 @@ fn label(key: &str) -> String {
         "subject" => "Het onderwerp",
         "id" => "Het id",
         "event" => "Het oordeel",
+        "pulls" => "De pull requests",
         "text" => "De tekst",
         "what" => "Wat vergeten moet worden",
         other => other,
@@ -137,6 +138,11 @@ pub fn problems(tool: &str, input: &Value, schema: &Value) -> Vec<String> {
                 problems.push(format!("Dit commando voer ik niet uit: {}", assessment.note));
             }
         }
+    }
+
+    // A batch merge lists every pull request it touches, so the plan shows exactly what gets merged.
+    if tool == "github_merge_prs" {
+        problems.extend(crate::connectors::pull_batch_merge::problems(input.get("pulls")));
     }
 
     // Velden met een vaste betekenis.
@@ -233,6 +239,7 @@ fn short_label(key: &str) -> String {
         "id" => "Id",
         "labels" => "Labels",
         "state" => "Status",
+        "pulls" => "Pull requests",
         "text" => "Tekst",
         "what" => "Wat",
         "kind" => "Soort",
@@ -429,10 +436,15 @@ mod tests {
         let link = json!({"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]});
         assert_eq!(problems("open_url", &json!({"url": "file:///etc/passwd"}), &link), vec!["Alleen https-links mogen."]);
         assert!(problems("open_url", &json!({"url": "https://nook.app"}), &link).is_empty());
+        assert_eq!(problems("open_in_nook_browser", &json!({"url": "http://nook.app"}), &link), vec!["Alleen https-links mogen."]);
+        assert!(problems("open_in_nook_browser", &json!({"url": "https://nook.app"}), &link).is_empty());
         let mail = json!({"properties": {"to": {"type": "string"}, "subject": {"type": "string"}}});
         assert_eq!(problems("compose_mail", &json!({"to": "lisa", "subject": "Hoi"}), &mail), vec!["lisa is geen geldig mailadres."]);
         let command = json!({"properties": {"command": {"type": "string"}}});
         assert!(problems("run_command", &json!({"command": "rm -rf ~"}), &command)[0].starts_with("Dit commando voer ik niet uit"));
+        let batch = json!({"type": "object", "properties": {"pulls": {"type": "string"}}, "required": ["pulls"]});
+        assert!(problems("github_merge_prs", &json!({"pulls": "acme/app#1, acme/app#2"}), &batch).is_empty());
+        assert!(!problems("github_merge_prs", &json!({"pulls": "acme/app#1, not-a-pr"}), &batch).is_empty());
     }
 
     #[test]

@@ -81,7 +81,7 @@ final class ChatInboxConnector: ContextSource {
                 description: "The user's chats in WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Teams, Slack, LinkedIn, Discord and other chat apps, as Nook has them: from each app Nook links, the user's own sent messages included (\"You\"); from an app Nook only reads notifications of, only what came in. With query: the messages in every chat that hold all its words, the user's own too, newest first. Without chat and query: the recent chats, newest first, with unread counts and the newest message. With chat (a name, optionally with app): that chat's messages.",
                 schema: ["type": "object", "properties": [
                     "query": ["type": "string", "description": "Words to find in the messages of every chat, sent and received. Optional."],
-                    "chat": ["type": "string", "description": "The chat's name (a person or group). Leave empty for the overview."],
+                    "chat": ["type": "string", "description": "The chat's name (a person or group), number, or id when a name fits several chats. Leave empty for the overview."],
                     "app": ["type": "string", "description": "Only this app: telegram, instagram, messenger, signal, messages, slack, discord, teams…"],
                     "limit": ["type": "integer", "description": "How many messages of the chat (default 20, at most 50)."]
                 ]],
@@ -132,7 +132,7 @@ final class ChatInboxConnector: ContextSource {
                 name: "chat_send",
                 description: "Sends a message from the user's own account to an existing chat in one of their chat apps (WhatsApp, Telegram, Slack, Teams, Messages, Instagram, Messenger, Signal…), the way the user would answer it in Nook's Chats tab. Use when the user asks to message or answer someone in a chat app. Write the message as the user would, in their language and tone, without a signature. A reply answers the chat's newest messages: read the chat first with chat_inbox, and when its newest message is days old, tell the user so instead of answering it as if it were new. The user sees the exact text and chat and approves before anything is sent.",
                 schema: ["type": "object", "properties": [
-                    "to": ["type": "string", "description": "The chat's name (a person or group) as chat_inbox shows it."],
+                    "to": ["type": "string", "description": "The chat's name (a person or group) as chat_inbox shows it, its number, or its id when a name fits several chats."],
                     "app": ["type": "string", "description": "The chat's app as chat_inbox shows it: whatsapp, telegram, slack, teams, messages, instagram… Give it whenever the chat's app is known."],
                     "message": ["type": "string", "description": "The full text to send."],
                 ], "required": ["to", "message"]],
@@ -143,7 +143,7 @@ final class ChatInboxConnector: ContextSource {
                     let name = app.isEmpty ? tr("chats.source.title") : (MessagingApps.app(named: app)?.name ?? app)
                     return tr("chats.tool.send", name, to, AppData.string(input["message"]))
                 },
-                tag: { _ in ("sends", .caution) },
+                tag: { _ in (tr("plan.tag.sends"), .caution) },
                 run: { input in
                     let capture = ChatCaptureService.shared
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()

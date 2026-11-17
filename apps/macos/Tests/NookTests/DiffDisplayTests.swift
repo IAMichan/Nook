@@ -227,4 +227,29 @@ final class ScratchProjectsTests: XCTestCase {
         ScratchProjects.discardIfEmpty(empty, root: root)
         XCTAssertFalse(FileManager.default.fileExists(atPath: empty))
     }
+
+    func testRecreateIfMissing() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("scratch-recreate-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // A missing scratch directory directly under `root` is recreated.
+        let missing = root.appendingPathComponent("2026-11-17-plan-a1b2c3").path
+        XCTAssertTrue(ScratchProjects.recreateIfMissing(missing, root: root))
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: missing, isDirectory: &isDir) && isDir.boolValue)
+
+        // Calling again when it already exists returns false and leaves its contents intact.
+        let file = missing + "/notes.md"
+        try "kept".write(toFile: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(ScratchProjects.recreateIfMissing(missing, root: root))
+        XCTAssertEqual(try String(contentsOfFile: file, encoding: .utf8), "kept")
+
+        // A regular file at a scratch path is not replaced; paths outside `root` or nested paths are untouched.
+        let fileAtPath = root.appendingPathComponent("2026-11-17-file-d4e5f6").path
+        try "data".write(toFile: fileAtPath, atomically: true, encoding: .utf8)
+        XCTAssertFalse(ScratchProjects.recreateIfMissing(fileAtPath, root: root))
+        XCTAssertFalse(ScratchProjects.recreateIfMissing(root.appendingPathComponent("nested/sub").path, root: root))
+        XCTAssertFalse(ScratchProjects.recreateIfMissing("/tmp/not-scratch-\(UUID().uuidString)", root: root))
+    }
 }

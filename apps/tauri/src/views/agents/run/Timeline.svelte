@@ -18,6 +18,7 @@
     onretry,
     onimplement,
     openFile,
+    onrun,
   }: {
     run: WorkspaceRun;
     events: RunEvent[];
@@ -26,6 +27,7 @@
     onretry: () => void;
     onimplement: (plan: string) => void;
     openFile?: (path: string) => void;
+    onrun?: (command: string, title: string | null) => void;
   } = $props();
 
   let open = $state(new Set<string>());
@@ -187,10 +189,10 @@
     {#snippet eventView(e: RunEvent)}
       <div data-event={e.id}>
         {#if e.kind === "assistant" && e.tool === "plan"}
-          <PlanCard text={e.text} canAct={!active && latestPlan === e.id && !answered(e)} onimplement={() => onimplement(e.text)} />
+          <PlanCard text={e.text} canAct={!active && latestPlan === e.id && !answered(e)} onimplement={() => onimplement(e.text)} baseFolder={run.workingDirectory} {onrun} />
         {:else}
           <EventRow event={e} expanded={expanded.has(e.id)} toggle={() => toggleEvent(e.id)} highlighted={current === e.id}
-            {openFile} onrevert={e.kind === "user" && onrevert ? () => onrevert?.(e) : undefined} />
+            {openFile} baseFolder={run.workingDirectory} {onrun} onrevert={e.kind === "user" && onrevert ? () => onrevert?.(e) : undefined} />
         {/if}
       </div>
     {/snippet}

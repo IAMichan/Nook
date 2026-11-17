@@ -50,25 +50,8 @@ export const routeViews: Partial<Record<Route, () => Promise<ViewModule>>> = {
 };
 
 
-/// The Settings pages, in the order of the sidebar (`SettingsSection` on the Mac).
-export const settingsSections = [
-  "overview", "general", "appearance", "voice", "games", "shortcuts", "brain", "assistant", "memory", "instructions", "autocomplete", "agents",
-  "archive", "accounts", "companion", "privacy", "maintenance", "about",
-] as const;
-export type SettingsSectionId = (typeof settingsSections)[number];
-
-/// Other names a button elsewhere may use for a Settings page.
-const sectionAliases: Record<string, SettingsSectionId> = {
-  start: "overview", connections: "accounts", sound: "voice", iphone: "companion", gamer: "games",
-  look: "appearance", theme: "appearance", keys: "shortcuts", keybindings: "shortcuts", updates: "maintenance",
-};
-
-/// The Settings page a stored or requested name stands for; Overview for anything unknown.
-export function settingsSection(value: string | null | undefined): SettingsSectionId {
-  if (!value) return "overview";
-  if ((settingsSections as readonly string[]).includes(value)) return value as SettingsSectionId;
-  return Object.prototype.hasOwnProperty.call(sectionAliases, value) ? sectionAliases[value] : "overview";
-}
+/// The Settings subjects and the names that lead to them live in `settings-pages.ts`.
+export { settingsSection, settingsSections, type SettingsSectionId } from "./settings-pages";
 
 /// Folds case and accents, so "geluid" finds "Geluid" and "reglages" finds "Réglages".
 function fold(text: string): string {

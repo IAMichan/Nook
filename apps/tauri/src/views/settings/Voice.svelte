@@ -1,6 +1,9 @@
 <script lang="ts">
-  // Stem en geluid: praten en voorlezen, de spraakherkenning, "Hé Nook", overal dicteren (Flow), de Notetaker,
-  // geluiden (ook je eigen) en hoe Nook zich gedraagt in meetings en als je je scherm deelt.
+  // Voice, sound and the bar's quiet behaviour, shown one part at a time where the Mac has them: Notifications › Sound
+  // & voice (talking and reading aloud, "Hey Nook", the Notetaker, sounds, also your own), Notifications (how big a
+  // notice is), Typing › Dictation (speech recognition, dictating anywhere with Flow) and General › Bar & windows (how
+  // Nook behaves in meetings and while you share your screen).
+  let { part }: { part: "sound" | "notices" | "dictation" | "quiet" } = $props();
   import { nook } from "../../lib/state.svelte";
   import { services, type FlowView, type ServicePrefs, type VoiceInfo, type SpeechEngine, type FlowSettings, type QuietView } from "../../lib/services";
   import type { QuietBehavior } from "../../lib/types";
@@ -92,14 +95,14 @@
   }
 </script>
 
-<h2>{tr("Stem en geluid", "Voice and sound")}</h2>
 
-{#if caps?.microphone || caps?.speechOutput}
+
+{#if part === "sound" && (caps?.microphone || caps?.speechOutput)}
   <h3>{tr("Praten", "Talk")}</h3>
   <div class="group">
     <label class="row">
       <span>{tr("Lees antwoorden voor als ik iets zeg", "Read answers aloud when I say something")}</span>
-      <input type="checkbox" checked={s.speakAnswers} disabled={!caps?.speechOutput} onchange={(e) => nook.saveSettings({ speakAnswers: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={s.speakAnswers} disabled={!caps?.speechOutput} onchange={(e) => nook.saveSettings({ speakAnswers: e.currentTarget.checked })} />
     </label>
     {#if caps?.speechOutput}
       <div class="row"><span>{tr("Hoe Nook klinkt", "How Nook sounds")}</span><button onclick={test}>{tr("Laat horen", "Play")}</button></div>
@@ -108,14 +111,14 @@
     {/if}
     <label class="row">
       <span>{tr("Luister naar “Hé Nook”", "Listen for “Hey Nook”")}</span>
-      <input type="checkbox" checked={s.wakeWord} disabled={!caps?.wakeWord} onchange={(e) => nook.saveSettings({ wakeWord: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={s.wakeWord} disabled={!caps?.wakeWord} onchange={(e) => nook.saveSettings({ wakeWord: e.currentTarget.checked })} />
     </label>
     {#if !caps?.wakeWord}<p class="faint note">{caps?.notes?.wakeWord}</p>{/if}
     {#if s.shortcuts.talk}<p class="faint note">{tr("Praten: druk {keys} of de microfoon naast het invoerveld. Na een stilte stopt Nook vanzelf.", "Talk: press {keys} or the microphone next to the input field. After a silence Nook stops by itself.", { keys: s.shortcuts.talk })}</p>{/if}
   </div>
 {/if}
 
-{#if prefs && caps?.microphone}
+{#if part === "dictation" && prefs && caps?.microphone}
   <h3>{tr("Spraakherkenning", "Speech recognition")}</h3>
   <div class="group">
     {#each engines.filter((e) => !e.when || e.when()) as engine (engine.id)}
@@ -140,22 +143,22 @@
   </div>
 {/if}
 
-{#if flow && caps?.flow}
+{#if part === "dictation" && flow && caps?.flow}
   <h3>{tr("Overal dicteren", "Dictate anywhere")}</h3>
   <div class="group">
     <label class="row">
       <span>{tr("Overal dicteren", "Dictate anywhere")}<br /><small class="faint">{tr("Houd {key} vast, praat en laat los: je woorden staan waar je typt, in elke app. Twee keer tikken is handsfree.", "Hold {key}, talk and let go: your words appear where you type, in any app. Tap twice for hands-free.", { key: flow.settings.key })}</small></span>
-      <input type="checkbox" checked={flow.settings.enabled} onchange={(e) => saveFlow({ enabled: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={flow.settings.enabled} onchange={(e) => saveFlow({ enabled: e.currentTarget.checked })} />
     </label>
     {#if flow.settings.enabled}
       <label class="row"><span>{tr("Toets", "Key")}</span><input value={flow.settings.key} onchange={(e) => saveFlow({ key: e.currentTarget.value })} /></label>
       <label class="row">
         <span>{tr("Netjes maken door Nook", "Tidy up by Nook")}<br /><small class="faint">{tr("Haalt eh, herhalingen en verbeteringen weg (\"om 3 uur, nee 4 uur\" → \"om 4 uur\"). Met je eigen brein. In terminals en code-editors blijft het letterlijk.", "Removes ums, repetitions and corrections (\"at 3, no 4\" → \"at 4\"). With your own brain. In terminals and code editors it stays verbatim.")}</small></span>
-        <input type="checkbox" checked={flow.settings.cleanup} onchange={(e) => saveFlow({ cleanup: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" checked={flow.settings.cleanup} onchange={(e) => saveFlow({ cleanup: e.currentTarget.checked })} />
       </label>
       <label class="row">
         <span>{tr("Promptmodus", "Prompt mode")}<br /><small class="faint">{tr("Wat je zegt wordt een duidelijke opdracht voor een agent: doel, context, stappen, grenzen, klaar als.", "What you say becomes a clear task for an agent: goal, context, steps, limits, done when.")}</small></span>
-        <input type="checkbox" checked={flow.settings.promptMode} onchange={(e) => saveFlow({ promptMode: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" checked={flow.settings.promptMode} onchange={(e) => saveFlow({ promptMode: e.currentTarget.checked })} />
       </label>
       <label class="row">
         <span>{tr("Plakken in", "Paste in")}</span>
@@ -166,7 +169,7 @@
       </label>
       <label class="row">
         <span>{tr("Geschiedenis bewaren", "Keep history")}<br /><small class="faint">{tr("De laatste 200 dicteringen, alleen op deze computer.", "The last 200 dictations, only on this computer.")}</small></span>
-        <input type="checkbox" checked={flow.settings.keepHistory} onchange={(e) => saveFlow({ keepHistory: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" checked={flow.settings.keepHistory} onchange={(e) => saveFlow({ keepHistory: e.currentTarget.checked })} />
       </label>
       <div class="col">
         <span>{tr("Woordenboek", "Dictionary")}</span>
@@ -189,7 +192,7 @@
   </div>
 {/if}
 
-{#if prefs && caps?.microphone}
+{#if part === "sound" && prefs && caps?.microphone}
   <h3>{tr("Notetaker", "Notetaker")}</h3>
   <div class="group">
     <label class="row">
@@ -200,23 +203,25 @@
   </div>
 {/if}
 
-{#if caps?.desktop}
+{#if part === "notices" && caps?.desktop}
   <h3>{tr("Meldingen", "Notices")}</h3>
   <div class="group">
     <label class="row">
-      <span>{tr("Grootte van meldingen", "Notice size")}<br /><small class="faint">{tr("Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk.", "For every agent that is done, gets stuck or waits for you, in the terminal or in the workspace. Detailed shows a card with the summary and what changed; compact one narrow line in the bar.")}</small></span>
-      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" })}>
+      <span>{tr("Grootte van meldingen", "Notice size")}<br /><small class="faint">{tr("Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk; systeemmelding een melding van het systeem, met Toestaan en Weigeren bij een vraag.", "For every agent that is done, gets stuck or waits for you, in the terminal or in the workspace. Detailed shows a card with the summary and what changed; compact one narrow line in the bar; system notification a notification of the system, with Allow and Deny on a request.")}</small></span>
+      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" | "system" })}>
         <option value="detailed">{tr("Uitgebreid", "Detailed")}</option>
         <option value="compact">{tr("Compact", "Compact")}</option>
+        <option value="system">{tr("Systeemmelding", "System notification")}</option>
       </select>
     </label>
     <p class="faint note">{tr("Met Oké verdwijnt een melding meteen. Anders gaat hij na een paar seconden vanzelf weg, behalve zolang je pointer op de balk staat.", "With OK a notice disappears right away. Otherwise it goes away by itself after a few seconds, except while your pointer is on the bar.")}</p>
   </div>
 {/if}
 
+{#if part === "sound"}
 <h3>{tr("Geluiden", "Sounds")}</h3>
 <div class="group">
-  <label class="row"><span>{tr("Geluid als Nook of een agent op je wacht of klaar is", "Sound when Nook or an agent waits for you or is done")}</span><input type="checkbox" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Geluid als Nook of een agent op je wacht of klaar is", "Sound when Nook or an agent waits for you or is done")}</span><input type="checkbox" role="switch" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
   <div class="row">
     <span>{tr("Laat horen", "Play")}</span>
     <span class="inline">
@@ -232,7 +237,8 @@
     </div>
   {/if}
 </div>
-{#if caps?.desktop}
+{/if}
+{#if part === "quiet" && caps?.desktop}
   <h3>{tr("Meetings en scherm delen", "Meetings and screen sharing")}</h3>
   <div class="group">
     <label class="row">
@@ -250,16 +256,16 @@
     </label>
     <label class="row">
       <span>{tr("Afspraken in je agenda tellen mee", "Calendar events count too")}<br /><small class="faint">{tr("Een afspraak die nu bezig is geldt ook als meeting, niet alleen een gesprek. Afspraken van een hele dag tellen niet.", "An event happening now also counts as a meeting, not just a call. All-day events don't count.")}</small></span>
-      <input type="checkbox" checked={s.quietUseCalendar} onchange={(e) => nook.saveSettings({ quietUseCalendar: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={s.quietUseCalendar} onchange={(e) => nook.saveSettings({ quietUseCalendar: e.currentTarget.checked })} />
     </label>
     {#if caps.captureExclusion}
       <label class="row">
         <span>{tr("Nook altijd buiten schermdelen houden", "Always keep Nook out of screen sharing")}<br /><small class="faint">{tr("Nook komt nooit in een gedeeld scherm, schermafbeelding of opname, ook niet in de eerste seconden voordat Nook het delen ziet. Jij ziet hem gewoon.", "Nook never appears in a shared screen, screenshot or recording, not even in the first seconds before Nook notices the sharing. You still see it.")}</small></span>
-        <input type="checkbox" checked={s.hideFromCaptures} onchange={(e) => nook.saveSettings({ hideFromCaptures: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" checked={s.hideFromCaptures} onchange={(e) => nook.saveSettings({ hideFromCaptures: e.currentTarget.checked })} />
       </label>
       <label class="row">
         <span>{tr("Nook tonen in je schermafbeeldingen", "Show Nook in your screenshots")}<br /><small class="faint">{tr("Het Knipprogramma van Windows telt niet als scherm delen, dus Nook staat op je schermafbeeldingen en op opnames die je daarmee maakt. Werkt niet als Nook altijd buiten schermdelen blijft.", "Windows' Snipping Tool doesn't count as screen sharing, so Nook shows up in your screenshots and recordings made with it. Doesn't work if Nook always stays out of screen sharing.")}</small></span>
-        <input type="checkbox" checked={s.showInScreenshots} onchange={(e) => nook.saveSettings({ showInScreenshots: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" checked={s.showInScreenshots} onchange={(e) => nook.saveSettings({ showInScreenshots: e.currentTarget.checked })} />
       </label>
     {/if}
     <div class="row">

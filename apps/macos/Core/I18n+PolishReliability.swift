@@ -4,6 +4,8 @@ import Foundation
 
 let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chat.stalled": "Nook kreeg een tijd lang niets meer terug van het brein en is gestopt met wachten. Stel je vraag gerust opnieuw.",
+        "chat.unfinished": "Dit antwoord werd niet afgemaakt. Stel je vraag gerust opnieuw.",
         "ws.rpc.timedOut": "De agent gaf geen antwoord op %@. Nook heeft hem gestopt; je volgende bericht start hem opnieuw.",
         "sync.last": "Laatst bijgewerkt %@",
         "sync.never": "Nog niet bijgewerkt",
@@ -16,6 +18,8 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Diagnose kopiëren",
     ],
     .en: [
+        "chat.stalled": "Nook heard nothing back from the brain for a while and stopped waiting. Feel free to ask again.",
+        "chat.unfinished": "This answer was not finished. Feel free to ask again.",
         "ws.rpc.timedOut": "The agent did not answer %@ in time. Nook stopped it; your next message starts it again.",
         "sync.last": "Last synced %@",
         "sync.never": "Not synced yet",
@@ -28,6 +32,8 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Copy diagnostics",
     ],
     .de: [
+        "chat.stalled": "Nook hat eine Weile nichts mehr vom Gehirn gehört und nicht länger gewartet. Stell deine Frage gern noch einmal.",
+        "chat.unfinished": "Diese Antwort wurde nicht fertig. Stell deine Frage gern noch einmal.",
         "ws.rpc.timedOut": "Der Agent hat auf %@ nicht rechtzeitig geantwortet. Nook hat ihn gestoppt; deine nächste Nachricht startet ihn neu.",
         "sync.last": "Zuletzt aktualisiert %@",
         "sync.never": "Noch nicht aktualisiert",
@@ -40,6 +46,8 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Diagnose kopieren",
     ],
     .fr: [
+        "chat.stalled": "Nook n’a plus rien reçu du cerveau pendant un moment et a cessé d’attendre. N’hésitez pas à reposer la question.",
+        "chat.unfinished": "Cette réponse n’a pas été terminée. N’hésitez pas à reposer la question.",
         "ws.rpc.timedOut": "L'agent n'a pas répondu à %@ à temps. Nook l'a arrêté ; ton prochain message le relance.",
         "sync.last": "Dernière synchronisation %@",
         "sync.never": "Pas encore synchronisé",
@@ -52,6 +60,8 @@ let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
         "diagnostics.copy": "Copier le diagnostic",
     ],
     .es: [
+        "chat.stalled": "Nook no recibió nada del cerebro durante un rato y dejó de esperar. Vuelve a preguntar cuando quieras.",
+        "chat.unfinished": "Esta respuesta no se terminó. Vuelve a preguntar cuando quieras.",
         "ws.rpc.timedOut": "El agente no respondió a %@ a tiempo. Nook lo detuvo; tu próximo mensaje lo vuelve a iniciar.",
         "sync.last": "Última sincronización %@",
         "sync.never": "Aún sin sincronizar",

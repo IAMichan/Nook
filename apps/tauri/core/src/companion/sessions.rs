@@ -135,6 +135,8 @@ pub fn hub_session(session: &AgentSession, approvals: &[ApprovalRequest], questi
             updated: seconds(session.updated.or(session.started)),
             excerpt: session.last_reply.clone(),
             items,
+            // A message from the phone continues it in Nook, as the Mac answers it (`AppModel.canReply`).
+            can_send: Some(can_continue_in_nook(session)),
             // An agent in a terminal whose process is known can be ended from the phone (it saves its conversation).
             actions: (session.pid.is_some() || session.id.starts_with("proc-")).then(|| vec!["end".to_string()]),
             ..Default::default()
@@ -142,6 +144,14 @@ pub fn hub_session(session: &AgentSession, approvals: &[ApprovalRequest], questi
         active: matches!(session.status, AgentStatus::Running | AgentStatus::Waiting),
         free_answers: questions.iter().map(|q| q.id.clone()).collect(),
     }
+}
+
+/// Nook can continue this terminal session itself (`AppModel.canTakeOver`): an agent whose conversations it resumes,
+/// a folder, and a conversation it can find (its id, or its transcript).
+pub fn can_continue_in_nook(session: &AgentSession) -> bool {
+    crate::agents::AgentKind::from_agent_name(&session.name).and_then(crate::workspace::models::RunProvider::continues).is_some()
+        && !session.cwd.is_empty()
+        && (!session.session_id.is_empty() || !session.transcript_path.is_empty())
 }
 
 /// Zoals [`can_allow`], maar rechtstreeks uit de invoer van de tool (voor een melding).
@@ -259,5 +269,13 @@ mod tests {
         assert_eq!(s.digest.items.len(), 1);
         assert!(s.digest.items[0].can_allow, "git status is veilig");
         assert!(s.active);
+        assert_eq!(s.digest.can_send, Some(true), "a message from the phone continues it in Nook");
+
+        let elsewhere = AgentSession { cwd: String::new(), ..session.clone() };
+        assert_eq!(hub_session(&elsewhere, &[], &[]).digest.can_send, Some(false), "no folder to continue in");
+        let unknown = AgentSession { session_id: String::new(), ..session.clone() };
+        assert!(!can_continue_in_nook(&unknown), "no conversation to continue");
+        let cursor = AgentSession { name: "Cursor".into(), ..session };
+        assert!(!can_continue_in_nook(&cursor), "Nook does not resume Cursor's own conversations");
     }
 }

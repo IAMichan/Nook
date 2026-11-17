@@ -1,6 +1,7 @@
 // Dezelfde vormen als de Rust-structs in nook-core (serde, camelCase).
 import type { AutocompleteSettings } from "./autocomplete";
 import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, SourceScope } from "./brain";
+import type { TaskStep } from "./task-steps";
 
 export type ProviderId =
   | "claude" | "claudeCode" | "codexCLI" | "geminiCLI" | "grokCLI" | "kimiCLI" | "vibeCLI" | "openai" | "gemini" | "grok" | "mistral" | "groq"
@@ -36,7 +37,7 @@ export interface Settings {
   hideWhenIdle: boolean;
   panelLarge: boolean;
   /// How large an agent notice is in the bar: a card ("detailed") or one line in the bar ("compact").
-  agentNotice: "detailed" | "compact";
+  agentNotice: "detailed" | "compact" | "system";
   sounds: boolean;
   speakAnswers: boolean;
   wakeWord: boolean;
@@ -168,6 +169,8 @@ export interface ChatMessage {
   scopeLabel: string;
   notices: string[];
   charts: ChatChart[];
+  /** The plan Nook works through (`update_plan`), as a checklist above the answer. */
+  tasks?: TaskStep[];
   mails: MailDraft[];
   actions: PlannedAction[];
   planState: PlanState | null;

@@ -88,7 +88,6 @@
   }
 </script>
 
-<h2>{tr("Brein", "Brain")}</h2>
 <p class="muted">{tr("Lokaal eerst: met Ollama of LM Studio verlaat niets je computer en kost het niets per vraag. Een externe AI kies je bewust; Nook schakelt nooit zelf naar de cloud.", "Local first: with Ollama or LM Studio nothing leaves your computer and nothing costs per question. You choose an external AI on purpose; Nook never switches to the cloud by itself.")}</p>
 <div class="providers">
   {#each providers as p (p.id)}
@@ -132,7 +131,7 @@
     {/if}
     {#if modelError}<p class="err">{modelError}</p>{/if}
     {#if s.provider === "claude"}
-      <label class="row"><span>{tr("Zoeken op het web", "Search the web")}</span><input type="checkbox" checked={s.webSearch} onchange={(e) => nook.saveSettings({ webSearch: e.currentTarget.checked })} /></label>
+      <label class="row"><span>{tr("Zoeken op het web", "Search the web")}</span><input type="checkbox" role="switch" checked={s.webSearch} onchange={(e) => nook.saveSettings({ webSearch: e.currentTarget.checked })} /></label>
     {/if}
   </div>
 {/if}
@@ -144,9 +143,9 @@
 
 <h3>{tr("Antwoorden", "Answers")}</h3>
 <div class="group">
-  <label class="row"><span>{tr("Eerst bewijs zoeken, dan antwoorden", "Find evidence first, then answer")}<br /><span class="faint small">{tr("Nook haalt eerst de relevante zinnen uit je bronnen en antwoordt alleen daarmee.", "Nook first pulls the relevant sentences from your sources and answers only with those.")}</span></span><input type="checkbox" checked={s.evidenceFirst} onchange={(e) => nook.saveSettings({ evidenceFirst: e.currentTarget.checked })} /></label>
-  <label class="row"><span>{tr("Antwoorden controleren", "Check answers")}<br /><span class="faint small">{tr("Een antwoord dat niet op de bronnen steunt, vraagt Nook één keer opnieuw.", "If an answer isn't backed by the sources, Nook asks once more.")}</span></span><input type="checkbox" checked={s.checkAnswers} onchange={(e) => nook.saveSettings({ checkAnswers: e.currentTarget.checked })} /></label>
-  <label class="row"><span>{tr("Vraag over geselecteerde tekst", "Ask about selected text")}<br /><span class="faint small">{tr("Selecteer woorden waar dan ook in Nook (een bericht, een antwoord, een pull request) en een kleine balk erboven beantwoordt, legt uit of vertaalt ze meteen, zonder de chat te openen.", "Select words anywhere in Nook (a message, an answer, a pull request) and a small bar above them answers, explains or translates them right there, without opening the chat.")}</span></span><input type="checkbox" checked={s.selectionAsk !== false} onchange={(e) => nook.saveSettings({ selectionAsk: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Eerst bewijs zoeken, dan antwoorden", "Find evidence first, then answer")}<br /><span class="faint small">{tr("Nook haalt eerst de relevante zinnen uit je bronnen en antwoordt alleen daarmee.", "Nook first pulls the relevant sentences from your sources and answers only with those.")}</span></span><input type="checkbox" role="switch" checked={s.evidenceFirst} onchange={(e) => nook.saveSettings({ evidenceFirst: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Antwoorden controleren", "Check answers")}<br /><span class="faint small">{tr("Een antwoord dat niet op de bronnen steunt, vraagt Nook één keer opnieuw.", "If an answer isn't backed by the sources, Nook asks once more.")}</span></span><input type="checkbox" role="switch" checked={s.checkAnswers} onchange={(e) => nook.saveSettings({ checkAnswers: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Vraag over geselecteerde tekst", "Ask about selected text")}<br /><span class="faint small">{tr("Selecteer woorden waar dan ook in Nook (een bericht, een antwoord, een pull request) en een kleine balk erboven beantwoordt, legt uit of vertaalt ze meteen, zonder de chat te openen.", "Select words anywhere in Nook (a message, an answer, a pull request) and a small bar above them answers, explains or translates them right there, without opening the chat.")}</span></span><input type="checkbox" role="switch" checked={s.selectionAsk !== false} onchange={(e) => nook.saveSettings({ selectionAsk: e.currentTarget.checked })} /></label>
   <div class="row">
     <span>{tr("Werkt dit brein?", "Does this brain work?")}{#if testResult}<br /><span class="small" class:ok={testResult.ok} class:err={!testResult.ok}>{testResult.text}</span>{/if}</span>
     <button onclick={test} disabled={testing}>{testing ? tr("Testen…", "Testing…") : tr("Test", "Test")}</button>

@@ -14,7 +14,7 @@ use nook_core::brain::service::{self, BrainEnv, BrainRequest};
 use nook_core::brain::sources::{self, SourceScope};
 use nook_core::brain::suggestions::{self, Recovery};
 use nook_core::brain::{
-    action_gate, chart, follow_ups, intent::ChatIntent, research, undo, ChatTurn, LoopTool, PlannedAction, PromptImage,
+    action_gate, chart, conversation_window, follow_ups, intent::ChatIntent, research, undo, ChatTurn, LoopTool, PlannedAction, PromptImage,
 };
 use nook_core::nooks::{ChatMessage, PlanState, StepState};
 use nook_core::settings::Settings;
@@ -230,8 +230,10 @@ fn ask_with(
     }
     let message_id = answer.id.clone();
     let hidden = settings.private_sources();
+    // As much of the conversation as this brain's window has room for, older turns shortened or folded into a recap.
+    let window = conversation_window::Limits::fitting(&service::profile_for(&settings, crate::brain::memory_gb()));
     let history = state.with_chat(|c| {
-        let history = c.get(nook_id).map(|conv| conv.history_hiding(12, &hidden)).unwrap_or_default();
+        let history = c.get(nook_id).map(|conv| conv.window_hiding(&window, &hidden)).unwrap_or_default();
         let mut question = ChatMessage::user(&text);
         question.images = images.iter().map(|i| format!("data:{};base64,{}", i.media_type, i.base64)).collect();
         question.attachment = attachment.as_ref().map(|a| a.name.clone());
@@ -469,7 +471,7 @@ pub async fn answer_question(
     // Wat Nook onthoudt en wat bij deze vraag hoort; een vervolgvraag haalt ook terug met de vraag ervoor.
     let mut recalled = vec![];
     if settings.use_memory && scope.allows(sources::MEMORY) {
-        let recall_text = match history.iter().rev().find(|t| t.from_user) {
+        let recall_text = match conversation_window::without_recap(history).iter().rev().find(|t| t.from_user) {
             Some(previous) => format!("{text}\n{}", previous.text),
             None => text.to_string(),
         };
@@ -575,6 +577,13 @@ pub async fn answer_question(
     });
 
     let mut request = text.to_string();
+    // Every brain gets the text in the pictures, read on this computer: one that cannot see still knows what they show.
+    if !images.is_empty() {
+        let described = crate::services::screen::describe_images(app, &images).await;
+        if !described.is_empty() {
+            request += &format!("\n\n{described}");
+        }
+    }
     if let Ok(note) = ASK_NOTE.try_with(Clone::clone) {
         request += &format!("\n\n({note})");
     }
@@ -785,6 +794,7 @@ pub async fn answer_question(
         m.notices.extend(notices);
         m.offers = offers;
         m.streaming = false;
+        m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
         m.status.clear();
         if has_actions {
             m.action_states = vec![StepState::Pending; action_list.len()];
@@ -831,6 +841,7 @@ fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, s
     let recovery = serde_json::to_value(Recovery::for_error(error, &settings.selection())).ok();
     update(app, nook_id, message_id, |m| {
         m.streaming = false;
+        m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
         m.status.clear();
         if m.text.is_empty() {
             m.text = error.into();
@@ -914,8 +925,9 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
         message.retrieval.iter().filter(|s| s.outcome == Outcome::Empty).filter_map(|s| s.source_id.clone()).collect();
     brain.memory.learn_sources(&terms, &useful, &empty);
 
+    let plain = conversation_window::without_recap(history);
     let user_turns: Vec<String> =
-        history.iter().filter(|t| t.from_user).map(|t| t.text.clone()).chain(std::iter::once(question.to_string())).collect();
+        plain.iter().filter(|t| t.from_user).map(|t| t.text.clone()).chain(std::iter::once(question.to_string())).collect();
     if actions.iter().any(|a| a.tool == "remember" || a.tool == "forget") {
         brain.memory.end_reflection(nook_id, user_turns.len());
         return;
@@ -929,7 +941,7 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
     // Geleerd uit een antwoord met een bron die alleen op dit apparaat mag: blijft ook op dit apparaat.
     let local_only = settings.is_local_brain() && !settings.local_only_sources.is_empty() && message.used(&settings.local_only_sources);
     let answers: Vec<String> =
-        history.iter().filter(|t| !t.from_user).map(|t| t.text.clone()).chain(std::iter::once(message.text.clone())).collect();
+        plain.iter().filter(|t| !t.from_user).map(|t| t.text.clone()).chain(std::iter::once(message.text.clone())).collect();
     brain.memory.begin_reflection(nook_id);
     let (app, nid, mid) = (app.clone(), nook_id.to_string(), message_id.to_string());
     tauri::async_runtime::spawn(async move {
@@ -997,6 +1009,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
             conv.busy = false;
             for m in conv.messages.iter_mut().filter(|m| m.streaming) {
                 m.streaming = false;
+                m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
                 m.status.clear();
                 for step in m.retrieval.iter_mut().filter(|s| s.outcome == Outcome::Running) {
                     step.outcome = Outcome::Failed(nook_core::brain::retrieval::INTERRUPTED.into());

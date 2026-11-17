@@ -16,7 +16,6 @@
   }
 </script>
 
-<h2>Gamer Mode</h2>
 <p class="muted">
   {tr(
     "Terwijl Valorant voorop staat, maakt Nook af en toe een schermafbeelding van je eigen scherm en laat het brein dat je koos die lezen. Nook leest nooit het geheugen van de game en stuurt er niets naartoe.",
@@ -27,7 +26,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("Gamer Mode aan", "Gamer Mode enabled")}</span>
-      <input type="checkbox" checked={prefs.enabled} disabled={!canSee} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={prefs.enabled} disabled={!canSee} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Kijk elke", "Look every")}</span>
@@ -39,7 +38,7 @@
     </label>
     <label class="row">
       <span>{tr("Laat nieuwe coaching zien als melding", "Show new coaching as a notice")}</span>
-      <input type="checkbox" checked={prefs.notify} onchange={(e) => save({ notify: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={prefs.notify} onchange={(e) => save({ notify: e.currentTarget.checked })} />
     </label>
   </div>
   <p class="faint note">

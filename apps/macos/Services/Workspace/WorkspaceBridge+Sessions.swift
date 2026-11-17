@@ -13,7 +13,8 @@ extension WorkspaceBridge {
     /// New sessions, for a script (`nook start`) or an agent: one, or up to 20 in one call.
     /// Without a folder they work beside the caller in its own folder or worktree; `worktree` or
     /// `base` gives each a worktree of its own, `scratch` a folder without a project; without a task one starts idle.
-    /// They ask like any other session (you raise their rights yourself), and their timeline says who started them.
+    /// They ask like any other session unless the caller gives `rights` (never more than its own), run on the agent's
+    /// default account unless it names one in `account`, and their timeline says who started them.
     func sessionStart(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
         guard let app else { return .error("Nook is not ready.") }
         let workspace = app.workspace
@@ -29,7 +30,9 @@ extension WorkspaceBridge {
         }
         let defaults = workspace.settings.sessionDefaults(for: folder)
         var providers: [RunProvider] = []
-        for session in plan.sessions {
+        var choices: [StartChoice] = []
+        for (index, session) in plan.sessions.enumerated() {
+            let which = plan.sessions.count == 1 ? "" : " (session \(index + 1))"
             let name = session.agent.lowercased()
             guard let provider = name.isEmpty ? defaults.provider
                     : RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) else {
@@ -37,6 +40,21 @@ extension WorkspaceBridge {
             }
             guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed.") }
             providers.append(provider)
+            // The account: the one named, else the agent's first connected one (your preferred account first).
+            let accounts = app.profiles.profiles(for: provider.kind)
+            var profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+            if !session.account.isEmpty {
+                let named = accounts.map { (id: $0.id, label: AccountLabel.name($0, app: app)) }
+                guard let id = BridgeSessionArguments.account(session.account, among: named) else {
+                    let list = named.map { "\($0.id) (\($0.label))" }.joined(separator: ", ")
+                    return .error("Unknown \(provider.displayName) account \"\(session.account)\"\(which); its accounts: \(list).")
+                }
+                profileID = id
+            }
+            switch BridgeSessionArguments.rights(session.rights, caller: caller.permission, offered: provider.capabilities.policies) {
+            case .success(let permission): choices.append(StartChoice(profileID: profileID, permission: permission))
+            case .failure(let error): return .error(error.message + which)
+            }
         }
         if case .refuse(let reason) = verdict(.sessionStart, caller) { return .error(Self.refusal(reason)) }
         do {
@@ -45,8 +63,9 @@ extension WorkspaceBridge {
                     let names = Array(Set(providers.map(\.displayName))).sorted().joined(separator: ", ")
                     let title = plan.sessions.count == 1 ? tr("bridge.approval.start", caller.agent, providers[0].displayName)
                         : tr("bridge.approval.startMany", caller.agent, plan.sessions.count, names)
-                    let items = plan.sessions.map { session in
+                    let items = zip(plan.sessions, choices).map { session, choice in
                         "- " + (session.task.isEmpty ? session.title + " " + tr("bridge.approval.startIdle") : session.task)
+                            + Self.accountRightsNote(session, choice, app: app)
                     }
                     let allowed = await ask(caller, tool: .sessionStart, title: title,
                                             detail: Self.placeLine(plan.place, folder: folder) + "\n\n" + items.joined(separator: "\n"),
@@ -57,8 +76,9 @@ extension WorkspaceBridge {
                     }
                 }
                 var started: [[String: Any]] = []
-                for (session, provider) in zip(plan.sessions, providers) {
-                    started.append(await startOne(session, provider: provider, place: plan.place, folder: folder, caller: caller, app: app))
+                for ((session, provider), choice) in zip(zip(plan.sessions, providers), choices) {
+                    started.append(await startOne(session, provider: provider, choice: choice, place: plan.place, folder: folder,
+                                                  caller: caller, app: app))
                 }
                 let ok = started.contains { $0["sessionId"] != nil }
                 let data = try? JSONSerialization.data(withJSONObject: ["sessions": started],
@@ -72,7 +92,24 @@ extension WorkspaceBridge {
     }
 
     /// One session of a `session_start` call: its answer, with the id and link, or the error why it did not start.
-    private func startOne(_ session: BridgeSessionArguments.Start.Session, provider: RunProvider,
+    /// The account and rights one session of a `session_start` call runs with, checked before the approval card.
+    struct StartChoice {
+        var profileID: String
+        var permission: PermissionPolicy
+    }
+
+    /// " · Account Work · Allow everything" on the approval card, for what the caller chose itself.
+    @MainActor
+    static func accountRightsNote(_ session: BridgeSessionArguments.Start.Session, _ choice: StartChoice, app: AppModel) -> String {
+        var parts: [String] = []
+        if !session.account.isEmpty, let profile = app.profiles.profile(id: choice.profileID) {
+            parts.append(tr("bridge.approval.startAccount", AccountLabel.name(profile, app: app)))
+        }
+        if session.rights != nil { parts.append(choice.permission.label) }
+        return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
+    }
+
+    private func startOne(_ session: BridgeSessionArguments.Start.Session, provider: RunProvider, choice: StartChoice,
                           place: BridgeSessionArguments.Start.Place, folder: String, caller: BridgeCaller,
                           app: AppModel) async -> [String: Any] {
         let workspace = app.workspace
@@ -82,8 +119,8 @@ extension WorkspaceBridge {
         config.title = session.title
         config.startsIdle = session.task.isEmpty
         config.provider = provider
-        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
-        config.permission = provider.capabilities.policies.contains(.ask) ? .ask : (provider.capabilities.policies.first ?? .ask)
+        config.profileID = choice.profileID
+        config.permission = choice.permission
         config.mode = session.plan && provider.capabilities.planMode ? .plan : .agent
         config.startedBy = Self.startedBy(caller)
         var projectPath = folder

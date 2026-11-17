@@ -75,15 +75,15 @@
         <option value={0}>{tr("Nooit", "Never")}</option><option value={1}>{tr("1 dag", "1 day")}</option>{#each [7, 30, 90] as n (n)}<option value={n}>{tr("{n} dagen", "{n} days", { n })}</option>{/each}
       </select>
     </label>
-    <label class="check"><input type="checkbox" bind:checked={s.showCost} onchange={save} /> {tr("Kosten tonen die agents zelf melden", "Show the costs agents report themselves")}</label>
-    <label class="check"><input type="checkbox" bind:checked={s.autoResumeLimited} onchange={save} /> {tr("Na een gebruikslimiet vanzelf verdergaan zodra die vrij is", "After a usage limit, carry on by itself once it resets")}</label>
-    <label class="check"><input type="checkbox" bind:checked={s.steerByDefault} onchange={save} /> {tr("Een bericht tijdens een beurt stuurt de agent bij (Ctrl+Enter zet het in de wachtrij)", "A message during a turn steers the agent (Ctrl+Enter queues it)")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={s.showCost} onchange={save} /> {tr("Kosten tonen die agents zelf melden", "Show the costs agents report themselves")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={s.autoResumeLimited} onchange={save} /> {tr("Na een gebruikslimiet vanzelf verdergaan zodra die vrij is", "After a usage limit, carry on by itself once it resets")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={s.steerByDefault} onchange={save} /> {tr("Een bericht tijdens een beurt stuurt de agent bij (Ctrl+Enter zet het in de wachtrij)", "A message during a turn steers the agent (Ctrl+Enter queues it)")}</label>
     <p class="faint note">{tr("Wat 'Nieuwe sessie' voorstelt. Kies je daar iets anders, dan onthoudt Nook dat. Rechten die een agent niet ondersteunt, vallen terug op 'Bewerkingen toestaan'.", "What 'New session' suggests. If you pick something else there, Nook remembers it. Permissions an agent doesn't support fall back to 'Allow edits'.")}</p>
   </div>
 
   <h3>{tr("Werkruimte voor agents", "Workspace for agents")}</h3>
   <div class="group">
-    <label class="check"><input type="checkbox" bind:checked={s.agentTools} onchange={save} /> {tr("Agents mogen de terminal, browser en pull requests van Nook gebruiken", "Agents may use Nook's terminal, browser and pull requests")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={s.agentTools} onchange={save} /> {tr("Agents mogen de terminal, browser en pull requests van Nook gebruiken", "Agents may use Nook's terminal, browser and pull requests")}</label>
     <div class="row"><span>{tr("Ook voor agents buiten Nook", "Also for agents outside Nook")}</span>
       <span class="inline">
         {#each ["claude", "codex", "gemini"] as p (p)}
