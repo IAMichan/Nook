@@ -36,7 +36,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Chat tables: text columns with digits in a name don't become a chart (`ChartRescue.tableNumber`). **Tauri:** ✓. **Where:** `core/src/brain/chart.rs`
 
-- `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps`. **Tauri:** ✓. **Where:** `core/src/brain/`
+- `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` (up to three next steps under an answer, two on a card, with the Mac's prompt). **Tauri:** ✓. **Where:** `core/src/brain/`
 
 - `ClaudeCodeBrain`. **Tauri:** ◐ (not tested with a real `claude`). **Where:** `core/src/brain/claude_code.rs`
 
@@ -59,6 +59,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 - `MessageTrust`: phishing and scam scoring (a brand from another domain, look-alike domains, log-in, payment and deadline pressure, prizes, gift cards, the "new number" story; less for someone the user wrote with), a WARNING line above a WhatsApp chat the brain reads or finds, and the Mac's phishing rule in the system prompt. **Tauri:** ◐ (the Mac's cases unit-tested; WhatsApp is the only chat and mail reader in Tauri so far: other chat apps and mail get the marker when their readers land in section 5; owed replies and reply suggestions are CH-39). **Where:** `core/src/brain/message_trust.rs`, `whatsapp::lines_with_trust`
 
 - `ModelProfile`, `ModelAdvisor`, `ModelDownload` (one-click Ollama install). **Tauri:** ✓. **Where:** `core/src/brain/profile.rs`, `model_download.rs`
+
+- Nook Chat titles (`nameAfterFirstAnswer`, `ConversationTitle`): after a Nook's first answer the chosen brain writes a two-to-five-word title, only while the title is still the question's own; a local brain skips it while another answer runs. **Tauri:** ◐ (prompt and cleaning unit-tested; not run against a live brain). **Where:** `core/src/brain/conversation_title.rs`, `name_after_first_answer` in `commands/chat.rs`
 
 - Nook's own browser from Nook Chat (`read_nook_browser`, `open_in_nook_browser`): reads the open page without starting the browser; opens `https://` addresses after approval in the chat's plan and brings the browser window forward. **Tauri:** ◐ (`https` check and page formatting unit-tested; compiles for Windows; not run inside the app window). **Where:** `core/src/workspace/browser.rs`, `src-tauri/src/tools/browser.rs`
 

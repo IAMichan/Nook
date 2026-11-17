@@ -49,6 +49,7 @@ pub mod chat_image;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod claude_code;
 pub mod command_risk;
+pub mod conversation_title;
 pub mod conversation_window;
 pub mod conversations;
 pub mod dates;

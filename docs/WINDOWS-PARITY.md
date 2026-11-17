@@ -246,9 +246,9 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-05** OCR for images sent to brains that can't see images (`ChatImage`) · S
 
-- [ ] **BR-06** Brain-written title after the first answer (`nameAfterFirstAnswer`) · S
+- [x] **BR-06** Brain-written title after the first answer (`nameAfterFirstAnswer`) · S
 
-- [ ] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
+- [x] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
 
 - [x] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
 
