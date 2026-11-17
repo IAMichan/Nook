@@ -121,6 +121,8 @@ export interface MemoryOverview {
   items: MemoryItem[];
   learnedWords: number;
   importable: [string, number][];
+  /** The MCP memory server still connected (id, name): no longer needed once its graph is imported. */
+  oldServer?: [string, string] | null;
   localOnlySource: boolean;
 }
 
