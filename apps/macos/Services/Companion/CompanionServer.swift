@@ -942,7 +942,9 @@ final class CompanionServer: ObservableObject {
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970,
                              turn: workspace.turnIdentity(run.id),
-                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory),
+                             agentID: run.provider.rawValue,
+                             modelChoice: run.autoModel == true ? AutoModel.id : run.model)
     }
 }
 

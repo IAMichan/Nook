@@ -181,6 +181,9 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     /// "Main thread" on or off: the agent hands its work to sub-threads that report back (`MainThread` on the Mac). The
     /// Mac lists the one that applies, only for an agent that may delegate.
     case mainThreadOn, mainThreadOff
+    /// Runs the session on another model from its next turn, as the model menu of the Mac's composer: `text` is one of
+    /// the agent's `LaunchOptions.Agent.models` ids ("" for the agent's own default). The agent and account stay.
+    case model
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -554,6 +557,12 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The project the Mac's Agents list groups this session under (`InboxProject.key`): an agent's own worktree under
     /// the repository it was made from, "" for none (a scratch folder, your home). nil from an older Mac: `folder` then.
     var project: String? = nil
+    /// The agent as `LaunchOptions.Agent.id`, so the phone can offer that agent's models; nil from an older Mac and for
+    /// an agent outside Nook.
+    var agentID: String? = nil
+    /// The model you chose for the session (a `LaunchOptions.Model` id, "" for the agent's default), unlike `model`,
+    /// which is the one it runs on; nil from an older Mac and for an agent outside Nook.
+    var modelChoice: String? = nil
 }
 
 extension SessionDigest {
