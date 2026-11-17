@@ -122,8 +122,8 @@ pub fn chats(json: &Value) -> Vec<ServiceChat> {
             let mut names = HashMap::new();
             let mut members = vec![];
             for person in &people {
-                let name = text(person.get("fullName").unwrap_or(&Value::Null))
-                    .or_else(|| text(person.get("username").unwrap_or(&Value::Null)));
+                let name =
+                    text(person.get("fullName").unwrap_or(&Value::Null)).or_else(|| text(person.get("username").unwrap_or(&Value::Null)));
                 if let (Some(pid), Some(name)) = (person.get("id").and_then(Value::as_str), &name) {
                     names.insert(pid.to_string(), name.clone());
                 }
@@ -131,8 +131,8 @@ pub fn chats(json: &Value) -> Vec<ServiceChat> {
                     members.extend(name);
                 }
             }
-            let account = text(chat.get("account").unwrap_or(&Value::Null))
-                .or_else(|| text(chat.pointer("/user/username").unwrap_or(&Value::Null)));
+            let account =
+                text(chat.get("account").unwrap_or(&Value::Null)).or_else(|| text(chat.pointer("/user/username").unwrap_or(&Value::Null)));
             Some(ServiceChat {
                 id,
                 app: source.to_string(),
@@ -261,8 +261,11 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
             }
             item.edited = message.get("isEdited").and_then(Value::as_bool) == Some(true);
             if !mine && chat.is_group {
-                let mentions: Vec<&str> =
-                    message.get("mentions").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+                let mentions: Vec<&str> = message
+                    .get("mentions")
+                    .and_then(Value::as_array)
+                    .map(|m| m.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default();
                 item.mentions_me = chat.me.as_deref().is_some_and(|me| mentions.contains(&me));
             }
             Some(item)
@@ -310,9 +313,17 @@ pub enum LiveEvent {
     Ready,
     Subscribed,
     /// A chat (by its id there) has something new; with the message when the change is to one message.
-    Changed { chat: String, message: Option<String> },
+    Changed {
+        chat: String,
+        message: Option<String>,
+    },
     /// Someone in a chat is typing for `seconds`; 0 says they stopped.
-    Typing { chat: String, person: String, name: String, seconds: f64 },
+    Typing {
+        chat: String,
+        person: String,
+        name: String,
+        seconds: f64,
+    },
     Other,
 }
 

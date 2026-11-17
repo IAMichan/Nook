@@ -32,10 +32,11 @@ enum MailSender {
     static func deliver(_ draft: MailDraft, send: Bool) async throws {
         let to = addresses(draft.to)
         let cc = addresses(draft.cc)
+        let bcc = addresses(draft.bcc)
         let from = addresses(draft.from).first ?? ""
         if send {
             guard !to.isEmpty else { throw NookError(tr("mail.send.noRecipient")) }
-            if let wrong = (to + cc).first(where: { !isValidAddress($0) }) {
+            if let wrong = (to + cc + bcc).first(where: { !isValidAddress($0) }) {
                 throw NookError(tr("mail.send.invalidAddress", wrong))
             }
         }
@@ -46,7 +47,7 @@ enum MailSender {
             try? Data(CalendarInvite.ics(event).utf8).write(to: URL(fileURLWithPath: file), options: .atomic)
         }
         await launchMail()
-        let result = await ScriptText.run(script(draft, to: to, cc: cc, from: from, send: send), timeout: sendTimeout)
+        let result = await ScriptText.run(script(draft, to: to, cc: cc, bcc: bcc, from: from, send: send), timeout: sendTimeout)
         if let error = result.errorNumber {
             throw NookError(message(for: error, send: send))
         }
@@ -54,13 +55,16 @@ enum MailSender {
 
     /// The AppleScript that makes the message. The sender is only set when Mail has an account with that address:
     /// otherwise Mail would send from an address it cannot send from.
-    static func script(_ draft: MailDraft, to: [String], cc: [String], from: String, send: Bool) -> String {
+    static func script(_ draft: MailDraft, to: [String], cc: [String], bcc: [String] = [], from: String, send: Bool) -> String {
         var recipients = ""
         for address in to {
             recipients += "\n        make new to recipient at end of to recipients with properties {address:\(ScriptText.quote(address))}"
         }
         for address in cc {
             recipients += "\n        make new cc recipient at end of cc recipients with properties {address:\(ScriptText.quote(address))}"
+        }
+        for address in bcc {
+            recipients += "\n        make new bcc recipient at end of bcc recipients with properties {address:\(ScriptText.quote(address))}"
         }
         var sender = ""
         if !from.isEmpty {
@@ -84,7 +88,7 @@ enum MailSender {
         // An answer to a received mail goes out as Mail's own reply to it (same thread, same account); a message Mail no
         // longer finds gets a new mail, as before.
         let reply = draft.replyTo.isEmpty ? "" : MailActions.replyScript(id: draft.replyTo, body: draft.body, subject: draft.subject.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                                                    to: to, cc: cc, openWindow: !send) + "\n"
+                                                                                    to: to, cc: cc, bcc: bcc, openWindow: !send) + "\n"
         let make = draft.replyTo.isEmpty ? fresh : reply + "    if m is missing value then\n    \(fresh)\n    end if"
         return """
         tell application "Mail"\(guardAccount)

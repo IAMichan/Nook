@@ -63,6 +63,11 @@
     { "name": "pullAct reply", "core": false, "json": { "id": "PA1", "sent": 1700000301, "op": "pullAct", "item": "https://github.com/o/r/pull/1", "pullAction": { "kind": "reply", "thread": "line-12", "body": "Fixed." } } },
     { "name": "pullAct close", "core": false, "json": { "id": "PA2", "sent": 1700000302, "op": "pullAct", "item": "https://github.com/o/r/pull/1", "pullAction": { "kind": "close" } } },
     { "name": "notifySettings", "core": false, "json": { "id": "NO1", "sent": 1700000303, "op": "notifySettings" } },
-    { "name": "notifySet", "core": false, "json": { "id": "NO2", "sent": 1700000304, "op": "notifySet", "notify": { "enabled": true, "kinds": ["approval", "question"], "onlyWhenAway": true, "includeTitle": false, "quietFrom": 22, "quietTo": 7, "quietAllowsUrgent": true } } }
+    { "name": "notifySet", "core": false, "json": { "id": "NO2", "sent": 1700000304, "op": "notifySet", "notify": { "enabled": true, "kinds": ["approval", "question"], "onlyWhenAway": true, "includeTitle": false, "quietFrom": 22, "quietTo": 7, "quietAllowsUrgent": true } } },
+    { "name": "nookComposer", "core": false, "json": { "id": "NC1", "sent": 1700000305, "op": "nookComposer", "conversation": "C1" } },
+    { "name": "nookComposerSet access", "core": false, "json": { "id": "NC2", "sent": 1700000306, "op": "nookComposerSet", "text": "access", "item": "ask", "allow": true, "conversation": "C1" } },
+    { "name": "suggestionAct run", "core": false, "json": { "id": "SA1", "sent": 1700000307, "op": "suggestionAct", "item": "agent:S1", "text": "run" } },
+    { "name": "manage editQueued", "core": false, "json": { "id": "MQ1", "sent": 1700000308, "op": "manage", "session": "S1", "item": "editQueued", "text": "Then add a test", "items": ["Q1"] } },
+    { "name": "history by id", "core": false, "json": { "id": "HI1", "sent": 1700000309, "op": "history", "items": ["S2"] } }
   ]
 }

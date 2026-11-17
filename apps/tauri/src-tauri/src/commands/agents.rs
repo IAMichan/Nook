@@ -45,12 +45,8 @@ pub fn agents_overview(app: AppHandle, state: State<'_, AgentsState>) -> Overvie
 
 /// Beslist over een toestemmingsvraag, waar hij ook vandaan kwam.
 #[tauri::command]
-pub fn agents_decide(app: AppHandle, state: State<'_, AgentsState>, id: String, decision: ApprovalDecision) -> Res<()> {
-    if let Some(request) = id.strip_prefix("hook-") {
-        state.hub.decide(request, decision);
-        return Ok(());
-    }
-    crate::workspace::decide_approval(&app, &id, decision)
+pub fn agents_decide(app: AppHandle, id: String, decision: ApprovalDecision) -> Res<()> {
+    crate::agents::decide(&app, &id, decision)
 }
 
 #[tauri::command]

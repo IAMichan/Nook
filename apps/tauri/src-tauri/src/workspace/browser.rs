@@ -128,6 +128,8 @@ impl Browser {
         if let Some(window) = app.get_webview_window(LABEL) {
             window.navigate(parsed).map_err(|e| e.to_string())?;
             let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
         } else {
             let state = self.state.clone();
             let pending = self.pending.clone();
@@ -267,6 +269,19 @@ impl Browser {
     pub async fn console(&self, app: &AppHandle) -> Vec<String> {
         let Ok(raw) = self.evaluate(app, "JSON.stringify(window.__nookConsole || [])").await else { return vec![] };
         serde_json::from_str(&raw).unwrap_or_default()
+    }
+
+    /// A JPEG of what the page shows now, at most `max_width` pixels wide, with the page's address.
+    pub async fn screenshot(&self, app: &AppHandle, max_width: u32) -> Result<(Vec<u8>, String), String> {
+        let state = self.state();
+        let window = app
+            .get_webview_window(LABEL)
+            .filter(|_| state.open)
+            .ok_or("There is no page open in Nook's browser. Open one with browser_open first.")?;
+        let png = super::snapshot::png(&window).await?;
+        let (jpeg, _, _) =
+            tauri::async_runtime::spawn_blocking(move || super::snapshot::shrink(&png, max_width)).await.map_err(|e| e.to_string())??;
+        Ok((jpeg, state.url))
     }
 
     pub fn close(&self, app: &AppHandle) {

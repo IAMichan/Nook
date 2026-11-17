@@ -4,7 +4,8 @@
   import { untrack } from "svelte";
   import { agents } from "../../../lib/agents.svelte";
   import { tr } from "../../../lib/i18n.svelte";
-  import { projectName, workspaceApi, type RunEvent } from "../../../lib/workspace/api";
+  import { toast } from "../../../lib/toast.svelte";
+  import { projectName, toolsApi, workspaceApi, type RunEvent } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
   import Icon from "../../../components/Icon.svelte";
@@ -88,6 +89,16 @@
     changesFile = file;
     view = "changes";
   }
+
+  async function runCode(command: string, title: string | null) {
+    if (!run?.workingDirectory) return;
+    try {
+      await toolsApi.openTerminal(run.workingDirectory, command, title);
+      agents.select("terminals");
+    } catch (e) {
+      toast.error(tr("Kon terminal niet openen", "Could not open terminal"), e);
+    }
+  }
 </script>
 
 {#if !run}
@@ -120,7 +131,7 @@
       <Changes {run} file={changesFile} onclose={() => (view = "chat")} />
     {:else}
       <Timeline {run} {events} asking={!!question} onrevert={askRevert} onretry={() => workspace.act(() => workspaceApi.retry(runId))}
-        onimplement={implement} openFile={(p) => openChanges(p)} />
+        onimplement={implement} openFile={(p) => openChanges(p)} onrun={runCode} />
 
       <div class="thread-column foot">
       {#if approvals.length}

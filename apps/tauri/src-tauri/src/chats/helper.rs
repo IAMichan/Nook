@@ -308,10 +308,5 @@ pub struct HelperStatus {
 #[tauri::command]
 pub fn chat_helper_status(state: tauri::State<'_, crate::connectors::Connectors>) -> HelperStatus {
     let helper = &state.chat_helper;
-    HelperStatus {
-        built: ChatHelper::binary().is_some(),
-        running: helper.is_running(),
-        live: helper.is_live(),
-        problem: helper.problem(),
-    }
+    HelperStatus { built: ChatHelper::binary().is_some(), running: helper.is_running(), live: helper.is_live(), problem: helper.problem() }
 }

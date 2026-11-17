@@ -152,6 +152,11 @@ impl ScreenReader for LinuxScreen {
         self.has_atspi() || self.has_ocr()
     }
 
+    fn read_image_text(&self, rgba: &[u8], width: u32, height: u32) -> Option<String> {
+        let languages = self.ocr.as_ref()?;
+        imaging::png(rgba, width, height).ok().and_then(|png| imaging::ocr(&png, languages).ok())
+    }
+
     fn status(&self) -> String {
         match (self.has_atspi(), self.x11.is_some(), self.ocr.is_some()) {
             (true, _, _) => String::new(),

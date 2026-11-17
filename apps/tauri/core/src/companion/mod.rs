@@ -22,6 +22,7 @@ pub mod models;
 pub mod pull_digest;
 pub mod push;
 pub mod relay;
+pub mod relay_push;
 pub mod remote_digest;
 pub mod seal;
 pub mod server;
@@ -254,6 +255,80 @@ mod tests {
 
         server.stop();
         assert_eq!(server.state(), ServerState::Stopped);
+    }
+
+    /// Push through the relay (`relay_push`): an Android phone registers its Firebase token and its notification goes
+    /// sealed to the relay's `/v1/push`, which the phone (and only the phone) opens; an iPhone follows the route.
+    #[tokio::test]
+    async fn pushes_go_sealed_through_the_relay() {
+        use super::push::{PushEvent, PushKind, PushSettings};
+        use super::relay_push::{self, PushRoute};
+        let relay = crate::connectors::testserver::TestServer::start(vec![("POST /v1/push", 200, r#"{"apns":200}"#.into())]).await;
+        let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+        let server = CompanionServer::new(store.clone(), Arc::new(NoSessions), None, "pc".into());
+        store.set_enabled(true);
+        store.set_push_settings(PushSettings { enabled: true, ..Default::default() });
+        let now = chrono::Utc::now();
+        let key = store.begin_pairing(now);
+        let android = store.complete_pairing("Pixel", now).unwrap();
+        let event = PushEvent {
+            kind: PushKind::Approval,
+            session: "S1".into(),
+            item: Some("P1".into()),
+            agent: "Claude Code".into(),
+            title: "geheim".into(),
+            can_allow: false,
+        };
+
+        // A Firebase token registers through `register` with "fcm"; without a relay nothing can go.
+        let fcm = format!("dQw4w9WgXcQ:APA91b{}", "x".repeat(140));
+        let register =
+            CompanionRequest { text: Some(fcm.clone()), item: Some("fcm".into()), ..CompanionRequest::new(CompanionOp::Register) };
+        let frame = seal::seal(&serde_json::to_vec(&register).unwrap(), &key, &android.id, seal::Direction::Request);
+        let reply = server.respond(&frame).await.unwrap();
+        let answer: CompanionResponse = serde_json::from_slice(
+            &super::transport::unpack(&seal::open(&FrameReader::default().feed(&reply)[0], &key, seal::Direction::Response).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(answer.ok);
+        assert_eq!(answer.message.as_deref(), Some("nopush"), "no relay yet");
+        assert_eq!(store.device(&android.id).unwrap().push_service.as_deref(), Some("fcm"));
+        assert_eq!(server.notify(event.clone(), 0, true).await, Some(super::push::PushSkip::Disabled));
+
+        // With a relay in use (and no Apple key) the route starts on the relay and the push goes out sealed.
+        server.set_reach(server::Reach { relay: format!("http://127.0.0.1:{}", relay.port), ..Default::default() });
+        assert_eq!(server.push_route(), PushRoute::Own, "a build without Nook's relay starts on your own key");
+        server.set_build_relay(true);
+        assert_eq!(server.push_route(), PushRoute::Relay);
+        assert_eq!(server.notify(event.clone(), 0, true).await, None);
+        let sent = relay.received.lock().unwrap().clone();
+        assert_eq!(sent.len(), 1);
+        let body: relay_push::RelayPushRequest = serde_json::from_str(&sent[0].body).unwrap();
+        assert_eq!(body.service.as_deref(), Some("fcm"));
+        assert_eq!(body.token, fcm);
+        assert_eq!(body.room, super::transport::relay_room(&key));
+        assert!(!sent[0].body.contains("S1") && !sent[0].body.contains("geheim"), "the relay sees no ids or words");
+        let envelope = serde_json::to_vec(&body.sealed).unwrap();
+        let content = relay_push::open(&envelope, &relay_push::push_key(&key)).expect("the phone opens it");
+        assert_eq!((content.session.as_str(), content.item.as_deref()), ("S1", Some("P1")));
+        assert_eq!(content.mac.as_deref(), Some(android.id.as_str()));
+        assert!(server.last_push().unwrap_or_default().contains("Pixel: ok"));
+
+        // An iPhone on your own key route without a key is told so; the Android phone still goes through the relay.
+        store.set_push_route(PushRoute::Own);
+        let now = chrono::Utc::now();
+        store.begin_pairing(now);
+        let iphone = store.complete_pairing("iPhone", now).unwrap();
+        store.set_push_token(&iphone.id, Some("ab".repeat(32)), Some(true));
+        assert_eq!(server.notify(event.clone(), 1, true).await, Some(super::push::PushSkip::Disabled), "no way for the iPhone");
+        store.set_push_route(PushRoute::Relay);
+        let second = PushEvent { item: Some("P2".into()), ..event };
+        assert_eq!(server.notify(second, 0, true).await, None);
+        let sent = relay.received.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3, "both phones through the relay");
+        let apple: relay_push::RelayPushRequest = serde_json::from_str(&sent[2].body).unwrap();
+        assert!(apple.service.is_none() && apple.token == "ab".repeat(32));
     }
 
     #[tokio::test]
@@ -494,7 +569,12 @@ mod tests {
             );
             assert_eq!(first.app_version.as_deref(), Some("1.2.3"));
             assert_eq!(first.protocol_version, Some(PROTOCOL_VERSION));
+            assert_eq!(first.oldest_phone, Some(OLDEST_PHONE));
         }
+        // The computer keeps what the phone said it runs, for Settings.
+        let device = &store.devices()[0];
+        assert_eq!(device.protocol_version, Some(PROTOCOL_VERSION));
+        assert_eq!(device.app_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
 
         // An approval answered elsewhere: the list follows by itself.
         phone.decide("S1", "p1", false).await;

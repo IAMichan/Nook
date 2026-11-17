@@ -87,7 +87,11 @@ impl Session {
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Step {
     /// Fields to fill in (a phone number, a code, a password).
-    Input { id: String, instructions: String, fields: Vec<Field> },
+    Input {
+        id: String,
+        instructions: String,
+        fields: Vec<Field>,
+    },
     /// Signing in on the app's own website, in the sign-in window: what to collect once the address matches. `extract`
     /// is the step's own script that finds the `special` values (Slack's token) in the page.
     Browser {
@@ -100,8 +104,14 @@ pub enum Step {
         extract: Option<String>,
     },
     /// Something to show while the login waits (a QR code, a code to type on the phone).
-    Display { id: String, instructions: String, show: Display },
-    Complete { instructions: String },
+    Display {
+        id: String,
+        instructions: String,
+        show: Display,
+    },
+    Complete {
+        instructions: String,
+    },
 }
 
 impl Step {
@@ -381,11 +391,7 @@ pub fn has_cookies(collect: &[Collect], values: &HashMap<String, String>) -> boo
 
 /// The request headers a step asks for that the page itself sets (all but "Cookie"), in lower case.
 pub fn page_headers(collect: &[Collect]) -> Vec<String> {
-    collect
-        .iter()
-        .filter(|c| c.source == Source::Header && !c.name.eq_ignore_ascii_case("cookie"))
-        .map(|c| c.name.to_lowercase())
-        .collect()
+    collect.iter().filter(|c| c.source == Source::Header && !c.name.eq_ignore_ascii_case("cookie")).map(|c| c.name.to_lowercase()).collect()
 }
 
 /// A cookie of the site the step started on, or of a domain it belongs to (".instagram.com").
@@ -622,14 +628,14 @@ mod tests {
 
     fn browser_step() -> Value {
         json!({"type": "cookies", "stepID": "s1", "url": "https://www.instagram.com/accounts/login/",
-               "userAgent": "UA", "expectedFinalURLRegex": "^https://www\\.instagram\\.com/$",
-               "fields": [
-                   {"id": "sessionid", "type": "cookie", "name": "sessionid"},
-                   {"id": "csrf", "type": "header", "name": "X-CSRFToken", "pattern": "^[a-z0-9]+$"},
-                   {"id": "jar", "type": "header", "name": "Cookie", "required": false},
-                   {"id": "ls", "type": "local_storage", "name": "token"},
-                   {"id": "tok", "type": "special", "name": "token"}
-               ]})
+        "userAgent": "UA", "expectedFinalURLRegex": "^https://www\\.instagram\\.com/$",
+        "fields": [
+            {"id": "sessionid", "type": "cookie", "name": "sessionid"},
+            {"id": "csrf", "type": "header", "name": "X-CSRFToken", "pattern": "^[a-z0-9]+$"},
+            {"id": "jar", "type": "header", "name": "Cookie", "required": false},
+            {"id": "ls", "type": "local_storage", "name": "token"},
+            {"id": "tok", "type": "special", "name": "token"}
+        ]})
     }
 
     #[test]
@@ -672,7 +678,8 @@ mod tests {
         assert!(step(&json!({"type": "cookies", "stepID": "x", "url": "http://insecure"})).is_none(), "https only");
         let qr = step(&json!({"type": "display_and_wait", "stepID": "q", "display": {"type": "qr", "data": "2@abc"}})).unwrap();
         assert_eq!(qr, Step::Display { id: "q".into(), instructions: String::new(), show: Display::Qr("2@abc".into()) });
-        let input = step(&json!({"type": "user_input", "stepID": "i", "fields": [{"id": "pw", "type": "password", "optional": true}]})).unwrap();
+        let input =
+            step(&json!({"type": "user_input", "stepID": "i", "fields": [{"id": "pw", "type": "password", "optional": true}]})).unwrap();
         let Step::Input { fields, .. } = input else { panic!() };
         assert!(fields[0].is_secret && fields[0].is_optional && fields[0].label == "pw");
         let failed = session(&json!({"loginSessionID": "L", "bridgeID": "b", "status": "failed", "error": {"message": "nope"}})).unwrap();
@@ -736,8 +743,9 @@ mod tests {
         assert!(script.contains(r#"["x-csrftoken","a\"b"]"#));
         assert!(script.contains(PAGE_STATE));
         assert!(extract_script("findToken()").contains("await (findToken())"));
-        let answer = json!({"address": "https://slack.com/", "storage": {"t": "1"}, "headers": {"x": "2"}, "special": {"tok": "3", "n": 4}})
-            .to_string();
+        let answer =
+            json!({"address": "https://slack.com/", "storage": {"t": "1"}, "headers": {"x": "2"}, "special": {"tok": "3", "n": 4}})
+                .to_string();
         let read = PageRead::parse(&answer).unwrap();
         assert_eq!(read.special.get("tok").map(String::as_str), Some("3"));
         assert!(!read.special.contains_key("n"));

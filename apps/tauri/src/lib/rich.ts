@@ -25,7 +25,28 @@ export function splitMath(text: string): ({ text: string } | { math: string; dis
 }
 
 let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
+let katexReady: Promise<typeof import("katex").default> | null = null;
 let count = 0;
+
+export async function renderMermaid(code: string): Promise<string | null> {
+  try {
+    mermaidReady ??= import("mermaid").then((m) => {
+      m.default.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict", fontFamily: "inherit" });
+      return m.default;
+    });
+    const mermaid = await mermaidReady;
+    const { svg } = await mermaid.render(`nook-diagram-${++count}`, code);
+    return svg;
+  } catch {
+    return null;
+  }
+}
+
+export async function renderKatex(tex: string, display = true): Promise<string> {
+  katexReady ??= Promise.all([import("katex"), import("katex/dist/katex.min.css")]).then(([k]) => k.default);
+  const katex = await katexReady;
+  return katex.renderToString(tex, { displayMode: display, throwOnError: false, output: "html" });
+}
 
 /** Draws the diagrams and math inside an element that holds rendered Markdown. */
 export async function enhance(root: HTMLElement): Promise<void> {
@@ -64,9 +85,9 @@ export async function enhance(root: HTMLElement): Promise<void> {
       figure.innerHTML = typeset(code.textContent ?? "", true);
       (code.closest(".code-block") ?? code.parentElement)?.replaceWith(figure);
     }
-    // Math in the text, never in code.
+    // Math in the text, never in code or in a mail card.
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.parentElement?.closest("code, pre, .katex") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+      acceptNode: (n) => (n.parentElement?.closest("code, pre, .katex, .mail") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
     });
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);

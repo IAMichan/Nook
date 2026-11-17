@@ -140,13 +140,15 @@ impl BridgeTool {
             Self::PullRequestCreate => tr("Pull request", "Pull request"),
             Self::SessionList => tr("Nook-sessies", "Nook sessions"),
             Self::SessionRead => tr("Lees sessie", "Read session"),
-            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend
+            t @ (Self::NookTools
+            | Self::NookUse
+            | Self::NookChatList
+            | Self::NookChatRead
+            | Self::NookChatSend
             | Self::ChatList
             | Self::ChatRead
             | Self::ChatSend
-            | Self::TakeOverScreen) => {
-                super::bridge_nook::label(t)
-            }
+            | Self::TakeOverScreen) => super::bridge_nook::label(t),
         }
     }
 

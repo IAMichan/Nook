@@ -35,7 +35,6 @@
   }
 </script>
 
-<h2>{tr("Instructies", "Instructions")}</h2>
 <h3>{tr("Antwoordstijl", "Answer style")}</h3>
 <div class="group">
   <label class="row">

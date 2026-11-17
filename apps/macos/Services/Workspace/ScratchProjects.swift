@@ -70,4 +70,13 @@ enum ScratchProjects {
         guard isScratch(path, root: root), (try? fileManager.contentsOfDirectory(atPath: path))?.isEmpty == true else { return }
         try? fileManager.removeItem(atPath: path)
     }
+
+    /// Recreates a missing scratch folder for an existing session (e.g. if an empty folder was removed earlier),
+    /// leaving existing paths, non-directory entries, and non-scratch paths untouched.
+    @discardableResult
+    static func recreateIfMissing(_ path: String, root: URL = NookPaths.scratchDirectory,
+                                  fileManager: FileManager = .default) -> Bool {
+        guard isScratch(path, root: root), !fileManager.fileExists(atPath: path) else { return false }
+        return (try? fileManager.createDirectory(atPath: path, withIntermediateDirectories: true)) != nil
+    }
 }
