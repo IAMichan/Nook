@@ -30,6 +30,7 @@ pub enum Kind {
     Github,
     Notion,
     Clipboard,
+    Network,
     Web,
     Chats,
     ChatWrite,
@@ -57,7 +58,7 @@ pub struct ChatIntent {
 }
 
 /// Volgorde als er meerdere passen: eerst wat er gemaakt moet worden, dan waar het over gaat.
-const PRIORITY: [Kind; 23] = [
+const PRIORITY: [Kind; 24] = [
     Kind::Memory,
     Kind::Chart,
     Kind::MailWrite,
@@ -79,6 +80,7 @@ const PRIORITY: [Kind; 23] = [
     Kind::Files,
     Kind::Browser,
     Kind::Clipboard,
+    Kind::Network,
     Kind::Web,
     Kind::Screen,
 ];
@@ -112,6 +114,7 @@ pub fn tools_for(kind: Kind) -> &'static [&'static str] {
         ],
         Kind::Notion => &["notion_search", "notion_read_page"],
         Kind::Clipboard => &["read_clipboard"],
+        Kind::Network => &["network_status"],
         Kind::Memory => &["remember", "forget", "recall_memory"],
         Kind::Web => &["get_weather", "search_web", "read_webpage"],
         Kind::ChatWrite => &["whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
@@ -306,6 +309,9 @@ impl ChatIntent {
         if has(rx!(r"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert")) {
             kinds.push(Kind::Clipboard);
         }
+        if has(rx!(r"\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b")) {
+            kinds.push(Kind::Network);
+        }
         if has(rx!(
             r"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"
         )) {
@@ -442,5 +448,12 @@ mod tests {
         for text in ["Is PR 12 al gemerged?", "Which pull requests are open?", "Is this PR mergeable?"] {
             assert!(!ChatIntent::detect(text).tools().contains(&"github_merge_prs"), "{text}");
         }
+    }
+
+    #[test]
+    fn network_status_detection() {
+        assert_eq!(ChatIntent::detect("Wat is mijn IP adres op dit moment?").tools().first(), Some(&"network_status"));
+        assert_eq!(ChatIntent::detect("what is my ip").tools().first(), Some(&"network_status"));
+        assert!(!ChatIntent::detect("Wat kost een ipad").tools().contains(&"network_status"));
     }
 }

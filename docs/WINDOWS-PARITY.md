@@ -184,11 +184,11 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-20** `get_settings`, `change_setting`, `open_settings` with the settings catalog (`AppModel+SettingsTools`, `SettingsCatalog`) → `src-tauri/src/tools/settings.rs`, `core/src/settings_catalog.rs` · M
 - [ ] **BR-21** `find_time` with buffers, time-of-day preference and weekends (`MeetingTimes`, `Availability`) · S
-- [ ] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
+- [x] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
 - [x] **BR-23** `github_merge_prs` (batch merge) · S
 - [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
 - [ ] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
-- [ ] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
+- [x] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 - [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L
@@ -198,14 +198,14 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 ### 3.5 Chat UI (Nook tab)
 
 - [ ] **BR-40** Sources: cited excerpt on hover or click with highlighted lines, dot for cited and dimmed uncited sources, mail sources by sender, strip model-written "Sources:" lists (`ChatSourcesView`, aa6afaa94) · M
-- [ ] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
+- [x] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 - [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 - [ ] **BR-45** Conversation list like the Mac: Conversations/Scheduled header tabs, For you card, one-line settled rows, hover card, archive shelf, multi-select, mark unread (`NookConversationList`) · M
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 - [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
-- [ ] **BR-48** Zip archives, folders and pasted paths as attachments · S
+- [x] **BR-48** Zip archives, folders and pasted paths as attachments · S
 - [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 

@@ -15,4 +15,5 @@ pub const ROWS: &[Row] = &[
         "Demasiadas pull requests a la vez ({count}); máximo {limit}.",
     ),
     ("Not a pull request: {list}.", "Kein Pull Request: {list}.", "Pas une pull request : {list}.", "No es una pull request: {list}."),
+    ("This draft no longer exists.", "Dieser Entwurf existiert nicht mehr.", "Ce brouillon n’existe plus.", "Este borrador ya no existe."),
 ];
