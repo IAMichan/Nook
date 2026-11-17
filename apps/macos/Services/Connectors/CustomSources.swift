@@ -162,7 +162,7 @@ final class CustomSourcesConnector: CloudConnectorConfig {
                 let message = CloudHelp.short((input["message"] as? String) ?? "", 70)
                 return "\(name)" + (to.isEmpty ? "" : " → \(to)") + ": \(message)"
             },
-            tag: { _ in ("sends", .caution) },
+            tag: { _ in (tr("plan.tag.sends"), .caution) },
             run: { [weak self] input in
                 guard let self, self.isActive else { throw CloudHelp.notSetUp(self?.title ?? "Custom sources") }
                 guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
