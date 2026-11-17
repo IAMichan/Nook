@@ -71,6 +71,8 @@ pub mod research;
 pub mod retrieval;
 pub mod service;
 pub mod sources;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod subscription;
 pub mod suggestions;
 pub mod system_report;
 pub mod task_steps;

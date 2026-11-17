@@ -280,6 +280,11 @@ fn not_ready(settings: &Settings) -> String {
         AIProvider::Ollama => "Kies eerst een model voor Ollama bij Instellingen › Brein.".into(),
         AIProvider::ClaudeCode => "Claude Code staat niet op deze computer. Installeer het en log in met `claude`, of kies een ander brein bij Instellingen › Brein.".into(),
         AIProvider::Claude => "Er is nog geen Anthropic API-sleutel. Plak hem bij Instellingen › Brein.".into(),
+        other if other.is_subscription() => nook_core::i18n::trf(
+            "{name} staat niet op deze computer of is niet ingelogd. Stel het in bij Instellingen › Brein, of kies een ander brein.",
+            "{name} is not on this computer or not signed in. Set it up in Settings › Brain, or choose another brain.",
+            &[("name", &other.title())],
+        ),
         other => format!("Er is nog geen sleutel of model voor {}. Kies ze bij Instellingen › Brein.", other.title()),
     }
 }
