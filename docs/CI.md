@@ -175,4 +175,6 @@ start a new release from `main` instead of re-running. A tag made with this toke
 workflow's own token does not); `plan` sees that the tag's release is already published and stops.
 
 The installer window's background is `apps/macos/Config/DMG/background.png` (and `@2x`), drawn by
-`scripts/generate_dmg_background.py`; `apps/macos/Config/DMG/settings.py` lays out the window with `dmgbuild`.
+`scripts/generate_dmg_background.py`; `apps/macos/Config/DMG/settings.py` lays out the window with `dmgbuild`. The
+Windows installers (setup .exe and .msi) show the same Nook side panel, drawn by
+`scripts/generate_windows_installer_art.py` into `apps/tauri/src-tauri/windows/`.

@@ -69,6 +69,12 @@ npm run tauri dev          # run with hot reload
 npm run tauri build        # installer (Windows: .msi and .exe, Linux: .deb and .AppImage)
 ```
 
+The Windows installers look like the Mac's: a dark Nook side panel on the welcome and finish pages, the app icon in
+the header, and the setup's text in English, Dutch, German, French or Spanish (picked from the Windows language). The
+app icon (`src-tauri/icons/icon.ico` and the PNGs next to it) comes from `scripts/generate_app_icon.swift`, which also
+draws the Mac and iPhone icons; the installer images in `src-tauri/windows/` come from
+`scripts/generate_windows_installer_art.py`. Run both from the repository root after changing the icon.
+
 Android (`src-tauri/gen/android` is in the repo, with a custom `MainActivity`; requires the Android SDK, NDK 27, and
 `NDK_HOME`). The CI job **Android** produces an unsigned APK.
 
