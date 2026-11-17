@@ -238,7 +238,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-01** Budgeted conversation window: the newest turn gets up to two thirds, shortened turns end in "…" (`Brain/ConversationWindow.swift`); Tauri sends a fixed last 12 turns (`commands/chat.rs`) → `core/src/brain/conversation_window.rs`, used by `service.rs` and `claude_code.rs` · M
 
-- [ ] **BR-02** Subscription brains through Codex, Gemini, Grok, Kimi and Mistral Vibe CLIs (`Brain/SubscriptionBrain.swift`); Tauri has only `ClaudeCode` → `core/src/brain/subscription.rs`, new `provider.rs` variants · M
+- [x] **BR-02** Subscription brains through Codex, Gemini, Grok, Kimi and Mistral Vibe CLIs (`Brain/SubscriptionBrain.swift`); Tauri has only `ClaudeCode` → `core/src/brain/subscription.rs`, new `provider.rs` variants · M
 
 - [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 
