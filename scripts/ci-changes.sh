@@ -37,7 +37,7 @@ paths_for() {
     # node --test for the scripts the community workflows load (PR overview, welcome).
     github_scripts) echo ".github/scripts/" ;;
     # lychee: relative links and #anchors in Markdown. A renamed heading or moved file breaks links elsewhere too.
-    docs) echo "*.md" ;;
+    docs) echo "*.md scripts/docs-merge-layout.py scripts/docs-merge-layout.test.py" ;;
     # GitHub's dependency review: new dependencies with known vulnerabilities or a disallowed license.
     dependencies) echo "*package.json *package-lock.json *Cargo.toml *Cargo.lock *Package.swift *Package.resolved *go.mod *go.sum apps/macos/project.yml apps/ios/project.yml" ;;
   esac

@@ -9,6 +9,7 @@
 //! `nook_core::brain::retrieval::reference_line` in zijn uitvoer; een https-link in een regel werkt ook.
 
 mod agents;
+mod browser;
 mod calls;
 mod charts;
 mod clipboard;
@@ -149,6 +150,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(connectors::Sources),
         Box::new(memory::Memory),
         Box::new(web::Web),
+        Box::new(browser::NookBrowser),
         Box::new(charts::Charts),
         Box::new(settings::SettingsTools),
         Box::new(plan::Plan),

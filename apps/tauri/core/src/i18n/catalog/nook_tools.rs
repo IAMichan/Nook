@@ -126,6 +126,31 @@ pub const ROWS: &[Row] = &[
         "{agent} démarré dans {folder} | id de session {id}",
         "{agent} iniciado en {folder} | id de sesión {id}",
     ),
+    // Nook's own browser from Nook Chat (`tools::browser`).
+    (
+        "No page is open in Nook's browser.",
+        "In Nooks Browser ist keine Seite geöffnet.",
+        "Aucune page n'est ouverte dans le navigateur de Nook.",
+        "No hay ninguna página abierta en el navegador de Nook.",
+    ),
+    (
+        "Only https addresses can be opened.",
+        "Nur https-Adressen können geöffnet werden.",
+        "Seules les adresses https peuvent être ouvertes.",
+        "Solo se pueden abrir direcciones https.",
+    ),
+    (
+        "Opened {url} in Nook's browser",
+        "{url} in Nooks Browser geöffnet",
+        "Ouvert {url} dans le navigateur de Nook",
+        "Abierto {url} en el navegador de Nook",
+    ),
+    (
+        "The browser runs on your computer, not on your phone.",
+        "Der Browser läuft auf deinem Computer, nicht auf deinem Telefon.",
+        "Le navigateur tourne sur ton ordinateur, pas sur ton téléphone.",
+        "El navegador se ejecuta en tu ordenador, no en tu teléfono.",
+    ),
     // Running a command in Nook's terminal (`tools::terminal`, `commands::plans`).
     ("review", "prüfen", "revue", "revisión"),
     ("No command was given.", "Es wurde kein Befehl angegeben.", "Aucune commande n'a été fournie.", "No se indicó ningún comando."),
