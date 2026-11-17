@@ -46,7 +46,6 @@
   }
 </script>
 
-<h2>{tr("Companion", "Companion")}</h2>
 <p class="muted">
   {tr(
     "Laat een gekoppelde telefoon in je eigen wifi zien welke sessies je nodig hebben, en laat je goedkeuren, antwoorden, een bericht sturen of stoppen. Werkt met Nook Companion op de iPhone en met Nook op Android. Alles gaat versleuteld; riskante goedkeuringen (zoals onbekende commando’s) kun je vanaf de telefoon alleen weigeren.",

@@ -39,7 +39,6 @@
   });
 </script>
 
-<h2>{tr("Algemeen", "General")}</h2>
 <div class="group">
   <label class="row">
     <span>{tr("Taal van Nook", "Language")}</span>

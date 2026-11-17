@@ -1,6 +1,9 @@
 <script lang="ts">
-  // Stem en geluid: praten en voorlezen, de spraakherkenning, "Hé Nook", overal dicteren (Flow), de Notetaker,
-  // geluiden (ook je eigen) en hoe Nook zich gedraagt in meetings en als je je scherm deelt.
+  // Voice, sound and the bar's quiet behaviour, shown one part at a time where the Mac has them: Notifications › Sound
+  // & voice (talking and reading aloud, "Hey Nook", the Notetaker, sounds, also your own), Notifications (how big a
+  // notice is), Typing › Dictation (speech recognition, dictating anywhere with Flow) and General › Bar & windows (how
+  // Nook behaves in meetings and while you share your screen).
+  let { part }: { part: "sound" | "notices" | "dictation" | "quiet" } = $props();
   import { nook } from "../../lib/state.svelte";
   import { services, type FlowView, type ServicePrefs, type VoiceInfo, type SpeechEngine, type FlowSettings, type QuietView } from "../../lib/services";
   import type { QuietBehavior } from "../../lib/types";
@@ -92,9 +95,9 @@
   }
 </script>
 
-<h2>{tr("Stem en geluid", "Voice and sound")}</h2>
 
-{#if caps?.microphone || caps?.speechOutput}
+
+{#if part === "sound" && (caps?.microphone || caps?.speechOutput)}
   <h3>{tr("Praten", "Talk")}</h3>
   <div class="group">
     <label class="row">
@@ -115,7 +118,7 @@
   </div>
 {/if}
 
-{#if prefs && caps?.microphone}
+{#if part === "dictation" && prefs && caps?.microphone}
   <h3>{tr("Spraakherkenning", "Speech recognition")}</h3>
   <div class="group">
     {#each engines.filter((e) => !e.when || e.when()) as engine (engine.id)}
@@ -140,7 +143,7 @@
   </div>
 {/if}
 
-{#if flow && caps?.flow}
+{#if part === "dictation" && flow && caps?.flow}
   <h3>{tr("Overal dicteren", "Dictate anywhere")}</h3>
   <div class="group">
     <label class="row">
@@ -189,7 +192,7 @@
   </div>
 {/if}
 
-{#if prefs && caps?.microphone}
+{#if part === "sound" && prefs && caps?.microphone}
   <h3>{tr("Notetaker", "Notetaker")}</h3>
   <div class="group">
     <label class="row">
@@ -200,7 +203,7 @@
   </div>
 {/if}
 
-{#if caps?.desktop}
+{#if part === "notices" && caps?.desktop}
   <h3>{tr("Meldingen", "Notices")}</h3>
   <div class="group">
     <label class="row">
@@ -214,6 +217,7 @@
   </div>
 {/if}
 
+{#if part === "sound"}
 <h3>{tr("Geluiden", "Sounds")}</h3>
 <div class="group">
   <label class="row"><span>{tr("Geluid als Nook of een agent op je wacht of klaar is", "Sound when Nook or an agent waits for you or is done")}</span><input type="checkbox" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
@@ -232,7 +236,8 @@
     </div>
   {/if}
 </div>
-{#if caps?.desktop}
+{/if}
+{#if part === "quiet" && caps?.desktop}
   <h3>{tr("Meetings en scherm delen", "Meetings and screen sharing")}</h3>
   <div class="group">
     <label class="row">

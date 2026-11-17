@@ -57,8 +57,8 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 
 ### 2.1 Settings window
 
-- [ ] **UI-01** Same pages and groups as the Mac: 17 pages in Nook, Intelligence, Agents, Connect, System, pages with several subjects behind a tab bar (#1572, #1641); Tauri has 18 pages in 7 groups → `views/Settings.svelte`, `lib/shell-routes.ts` · M
-- [ ] **UI-02** One shared tab bar for a page's subjects (`SettingsPartTabs`) · S
+- [x] **UI-01** Same pages and groups as the Mac: 17 pages in Nook, Intelligence, Agents, Connect, System, pages with several subjects behind a tab bar (#1572, #1641); Tauri has 18 pages in 7 groups → `views/Settings.svelte`, `lib/shell-routes.ts` · M
+- [x] **UI-02** One shared tab bar for a page's subjects (`SettingsPartTabs`) · S
 - [ ] **UI-03** Search over about 170 settings by their on-screen name, with the page path, scrolling to and lighting the row (`SettingsSearch`, `SettingsHighlight`) · M
 - [ ] **UI-04** Attention counts on sidebar rows · S
 - [ ] **UI-05** Restore defaults per page with a confirmation (`SettingsRestore`) · S

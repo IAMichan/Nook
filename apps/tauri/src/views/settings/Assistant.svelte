@@ -34,7 +34,6 @@
   }
 </script>
 
-<h2>{tr("Assistent", "Assistant")}</h2>
 
 <h3>{tr("Wat Nook ziet", "What Nook sees")}</h3>
 <div class="group">

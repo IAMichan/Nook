@@ -17,17 +17,16 @@
       id: "brain", icon: "brain", title: tr("Brein", "Brain"), todo: !brainReady,
       detail: brainReady ? (nook.info?.brainLabel ?? tr("Klaar", "Ready")) : tr("Kies een gratis lokaal model of een AI-aanbieder", "Choose a free local model or an AI provider"),
     },
-    { id: "accounts", icon: "link", title: tr("Accounts & koppelingen", "Accounts & connections"), detail: tr("Mail, agenda, GitHub en je chat-apps", "Mail, calendar, GitHub and your chat apps") },
+    { id: "connections", icon: "link", title: tr("Accounts & koppelingen", "Accounts & connections"), detail: tr("Mail, agenda, GitHub en je chat-apps", "Mail, calendar, GitHub and your chat apps") },
     { id: "agents", icon: "terminal", title: "Coding agents", detail: tr("Claude Code, Codex, Gemini CLI en meer", "Claude Code, Codex, Gemini CLI and more") },
     { id: "assistant", icon: "sparkle", title: tr("Assistent", "Assistant"), detail: tr("Wat Nook voor je doet en hoe", "What Nook does for you, and how") },
     { id: "memory", icon: "memory", title: tr("Geheugen", "Memory"), detail: tr("Wat Nook over je weet", "What Nook knows about you") },
-    { id: "voice", icon: "voice", title: tr("Stem en geluid", "Voice & sound"), detail: tr("Praten en voorlezen", "Talking and reading aloud") },
+    { id: "sound", icon: "voice", title: tr("Stem en geluid", "Voice & sound"), detail: tr("Praten en voorlezen", "Talking and reading aloud") },
     { id: "privacy", icon: "hand", title: tr("Privacy & beveiliging", "Privacy & security"), detail: tr("Wat Nook mag zien en versturen", "What Nook may see and send") },
     { id: "general", icon: "settings", title: tr("Algemeen", "General"), detail: tr("Taal, sneltoetsen en opstarten", "Language, shortcuts and startup") },
   ]);
 </script>
 
-<h2>{tr("Overzicht", "Overview")}</h2>
 
 <h3>{tr("Heeft je aandacht nodig", "Needs your attention")}</h3>
 <div class="group">

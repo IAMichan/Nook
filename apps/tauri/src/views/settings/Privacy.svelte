@@ -47,7 +47,6 @@
   }
 </script>
 
-<h2>{tr("Privacy & beveiliging", "Privacy & security")}</h2>
 <h3>{tr("Gekoppelde accounts en diensten", "Linked accounts and services")}</h3>
 <p class="muted">{tr("Alles waar Nook bij is ingelogd. Met Beheer open je de koppeling om hem uit te zetten of te verwijderen; verwijderen wist ook de sleutel of het token uit je sleutelhanger.", "Everything Nook is signed in to. Manage opens the link, where you can switch it off or remove it; removing also deletes its key or token from your keychain.")}</p>
 {#each linked as item (item.id)}
