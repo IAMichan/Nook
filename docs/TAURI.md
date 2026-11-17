@@ -20,6 +20,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | `ToolRunner` (tool loop, recovery, cache, JSON in text) | ✓ | `core/src/brain/tool_loop.rs` |
 | Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |
+| `ConversationWindow` (the conversation sized to the brain: newest turn up to two thirds, recent turns whole, older ones shortened with "…", the rest folded into a recap of earlier questions that intent and research leave out) | ✓ | `core/src/brain/conversation_window.rs`, `Conversation::window_hiding` in `core/src/nooks.rs`, used by `commands/chat.rs`, `service.rs` (Claude Code and small local models get it as text) |
 | `ModelProfile`, `ModelAdvisor`, `ModelDownload` (one-click Ollama install) | ✓ | `core/src/brain/profile.rs`, `model_download.rs` |
 | `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` | ✓ | `core/src/brain/` |
 | `Research`, `Retrieval` (searching on its own, numbered sources) | ✓ | `core/src/brain/research.rs`, `retrieval.rs` |
