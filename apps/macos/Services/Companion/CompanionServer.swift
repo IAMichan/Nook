@@ -58,7 +58,7 @@ final class CompanionServer: ObservableObject {
         // The chats follow too (`pushChats`): a new message, someone typing, or Nook writing in one of its conversations.
         watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange,
                                                      ChatCaptureService.shared.objectWillChange, ChatTypingCenter.shared.objectWillChange,
-                                                     app.chat.objectWillChange)
+                                                     app.chat.objectWillChange, ChatActionSuggestions.shared.objectWillChange)
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
         // The open Nook conversation follows faster: while Nook writes, the phone gets its words as the Mac shows them,
@@ -477,6 +477,10 @@ final class CompanionServer: ObservableObject {
                         update.inboxTyping = current.typing
                         update.inboxChat = chat
                         update.inboxMore = current.more
+                        if current.lines != peer.sentChatLines, let entry = inboxEntry(chat) {
+                            // A new message in the chat the phone shows: what Nook could do for it (gated).
+                            lookForSuggestion(chat: entry, app: app)
+                        }
                         peer.sentChatLines = current.lines
                         peer.sentChatTyping = current.typing
                         changed = true
@@ -518,6 +522,8 @@ final class CompanionServer: ObservableObject {
                     continue
                 }
                 read[conversation] = lines(found)
+                // Nook's answer just ended: what it could do next (gated, so once per answer).
+                Self.lookForSuggestion(conversation: uuid, app: app)
             }
             guard let messages = read[conversation], messages != peer.sentMessages else { continue }
             // The network has not taken the last updates yet (a slow or shaky connection): wait, and send everything
@@ -594,6 +600,13 @@ final class CompanionServer: ObservableObject {
             return CompanionResponse(id: request.id, ok: true)
         }
         guard let entries = await timelineEntries(session, app: app) else { return .failure(request.id, .unknownSession) }
+        // The phone shows the session's composer: a suggestion for the next message is written as the Mac's composer on
+        // screen asks for one (gated the same way, at most once per turn).
+        if let id = UUID(uuidString: session) {
+            app.workspace.requestNextPrompt(id, composerEmpty: true)
+            // And what Nook could do next for it, as the suggestion bar over the Mac's composer looks.
+            Self.lookForSuggestion(session: id, app: app)
+        }
         if let peer {
             peer.watch = session
             peer.sentTimeline = entries
@@ -621,6 +634,11 @@ final class CompanionServer: ObservableObject {
                     guard let session = peer.watch, let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID,
                           mayPush(peer), let entries = await timelineEntries(session, app: app),
                           peer.watch == session, entries != peer.sentTimeline else { continue }
+                    // A turn that just ended: its suggestion for the next message, as the composer on the Mac asks.
+                    if let run = UUID(uuidString: session) {
+                        app.workspace.requestNextPrompt(run, composerEmpty: true)
+                        Self.lookForSuggestion(session: run, app: app)
+                    }
                     let change = TimelineDelta.delta(from: peer.sentTimeline, to: entries)
                     // A tail too big for one answer goes whole instead, which `newestFitting` already cut to size.
                     let fits = CompanionPolicy.newestFitting(change.entries).count == change.entries.count
@@ -818,6 +836,14 @@ final class CompanionServer: ObservableObject {
             return chatAct(request, app: app)
         case .chatSearch:
             return chatSearch(request, app: app)
+        case .nookComposer:
+            return await nookComposer(request, app: app)
+        case .nookComposerSet:
+            // Changing what Nook may do and read acts for you, as managing a session does.
+            guard scopes(of: deviceID).contains(.operate) else { return .failure(request.id, .notAllowedFromPhone) }
+            return await setNookComposer(request, app: app)
+        case .suggestionAct:
+            return suggestionAct(request, app: app)
         case .home:
             return home(request, app: app)
         case .usage:
@@ -929,6 +955,14 @@ final class CompanionServer: ObservableObject {
         let query = CompanionHistory.clean(request.text)
         let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }
         let candidates: [WorkspaceRun]
+        // Sessions by their ids (a sub-thread or a parent from a session's lineage that the live list leaves out),
+        // archived ones too, as the Lineage control opens them: one page, no cursor.
+        if let ids = request.items, !ids.isEmpty {
+            let wanted = Set(ids.prefix(LineageDigest.limit).compactMap(UUID.init(uuidString:)))
+            let now = Date()
+            return CompanionResponse(id: request.id, ok: true,
+                                     sessions: workspace.runs.filter { wanted.contains($0.id) }.map { digest($0, workspace: workspace, now: now) })
+        }
         if query.isEmpty {
             candidates = Array(runs.dropFirst(CompanionHistory.liveCount))
         } else {

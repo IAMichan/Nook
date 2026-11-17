@@ -148,6 +148,36 @@ enum SessionAnswers {
     }
 }
 
+/// A session related to another one (`SessionDigest.lineage`), as one row of the Mac's Lineage control.
+struct LineageDigest: Codable, Equatable, Identifiable, Sendable {
+    /// How it relates to the session that lists it.
+    enum Role: String, Codable, Sendable {
+        /// The session that delegated this one, or that this one was forked or compared from.
+        case parentAgent, parentThread
+        case fork, comparison, subThread, sideChat
+    }
+
+    /// Where it is in its work, as the control's rows say it.
+    enum Status: String, Codable, Sendable {
+        case working, approval, question, done, failed, stopped
+
+        /// It still works or waits for you.
+        var isLive: Bool { self == .working || self == .approval || self == .question }
+        /// It waits for you: the amber of every list.
+        var needsYou: Bool { self == .approval || self == .question }
+    }
+
+    var id: String
+    var title: String
+    var role: Role
+    var status: Status
+    /// A delegated task that ended: under "Previous agents", folded, on the Mac.
+    var previous: Bool? = nil
+
+    /// At most this many travel with one session; the newest are kept.
+    static let limit = 20
+}
+
 extension QueuedDigest {
     /// A queued message as it travels: its words cut at `limit`.
     static func clipped(id: String, text: String) -> QueuedDigest {
@@ -160,5 +190,5 @@ extension SessionAction {
     /// The actions that came with the Agents tab (`CompanionFeature.agentsTab`): a Mac lists them only with that feature.
     static let agentsTab: Set<SessionAction> = [.pin, .unpin, .settle, .reopen, .markUnread, .fork, .retry, .restartAgent,
                                                  .regenerateTitle, .delete, .deleteWithWorktree, .setEffort, .setMode,
-                                                 .setModel, .unqueue]
+                                                 .setModel, .unqueue, .editQueued, .moveQueued, .sendQueuedNow]
 }

@@ -182,6 +182,13 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// conversations whose title or last answer hold words (`text`, empty for all; `allow` true searches the archive
     /// instead; `conversationsFound` in the answer).
     case chatAct, chatSearch
+    /// The choices of Nook's composer (`CompanionFeature.nookComposer`, `CompanionNookComposer.swift`): read them
+    /// (`nookComposer` in the answer, for `conversation` when one is open), and change one (`text` the kind, `item` the
+    /// choice, `allow` on or off; the new ones in the answer).
+    case nookComposer, nookComposerSet
+    /// What Nook could do next (`CompanionFeature.actionSuggestions`, `CompanionSuggestions.swift`): run the steps on
+    /// offer for a conversation, or put them away (`item` its key, `text` a `SuggestionAct`).
+    case suggestionAct
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -205,6 +212,11 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     /// agent's default), the mode ("agent" or "plan"), or the model id. And a message waiting in line taken out (`text` its
     /// id, `SessionDigest.queued`).
     case setEffort, setMode, setModel, unqueue
+    /// A message waiting in line, as the Mac's queue tray handles it: its words changed (`items` its id, `text` the new
+    /// words), moved to another place in the line (`items` its id, `text` the place from 0), or sent now, ahead of the rest
+    /// (`items` its id: it steers a running turn, or starts the next one, as the tray's arrow does). The Mac lists each
+    /// only while it applies; a phone from before them leaves the names out.
+    case editQueued, moveQueued, sendQueuedNow
     /// Runs the session on another model from its next turn, as the model menu of the Mac's composer: `text` is one of
     /// the agent's `LaunchOptions.Agent.models` ids ("" for the agent's own default). The agent and account stay.
     case model
@@ -296,6 +308,10 @@ enum CompanionFeature {
     /// `ChatDigest` (pinned, archived, unread, created, scheduled, queued), `conversationsArchived`, a question to a
     /// busy conversation that waits in line instead of stopping the answer, and pictures with `ask`.
     static let nookChats = "nookChats"
+    /// Nook's composer has the Mac's model, access and source choices (`CompanionNookComposer.swift`).
+    static let nookComposer = "nookComposer"
+    /// What Nook could do next shows in a session, a chat with Nook and a chat of your apps (`CompanionSuggestions.swift`).
+    static let actionSuggestions = "actionSuggestions"
     /// The Agents tab does what the Mac's does (`CompanionSessions.swift`): more `SessionAction`s, the list's shelves
     /// (`SessionDigest.pinned`, `settled`, `snoozedUntil`), "Always allow" (`CompanionRequest.decision`), several
     /// questions and multi-select (`SessionDigest.Item.questions`, `CompanionRequest.answers`), the composer's effort,
@@ -304,7 +320,8 @@ enum CompanionFeature {
     static let agentsTab = "agentsTab"
     static let all = [agentsTab, workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey, chatActions, nookChats, pullActions, notifySettings]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey, chatActions, nookChats, pullActions, notifySettings,
+                      nookComposer, actionSuggestions]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -552,6 +569,10 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var conversationsFound: [ChatDigest]? = nil
     /// With `conversations` (`CompanionFeature.nookChats`): how many conversations wait in the archive.
     var conversationsArchived: Int? = nil
+    /// The choices of Nook's composer, for `nookComposer` and after `nookComposerSet` (`CompanionFeature.nookComposer`).
+    var nookComposer: NookComposerDigest? = nil
+    /// The steps on offer after `suggestionAct`, as they are now (nil once put away).
+    var suggestion: ActionSuggestionDigest? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -666,6 +687,17 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The model you chose for the session (a `LaunchOptions.Model` id, "" for the agent's default), unlike `model`,
     /// which is the one it runs on; nil from an older Mac and for an agent outside Nook.
     var modelChoice: String? = nil
+    /// The message you will likely send next, as the Mac's composer shows it in grey after a finished turn
+    /// (`NextPromptSuggestion`); nil while there is none, and from an older Mac. Cut at `nextPromptLimit`.
+    var nextPrompt: String? = nil
+    /// The sessions related to this one, as the Lineage control in the Mac's session header lists them
+    /// (`LineageGroups`): its parent, the forks and comparisons made from it, the tasks it delegated (working, then ended)
+    /// and its side chats. Nil when there are none, and from an older Mac.
+    var lineage: [LineageDigest]? = nil
+    /// What Nook could do next for this session's last turn (`CompanionFeature.actionSuggestions`).
+    var suggestion: ActionSuggestionDigest? = nil
+
+    static let nextPromptLimit = 600
 }
 
 extension SessionDigest {
@@ -743,6 +775,8 @@ struct ChatDigest: Codable, Equatable, Identifiable, Sendable {
     var scheduled: Bool? = nil
     /// The questions that wait in line for the answer Nook is writing, oldest first (at most `NookChatSections.maxQueued`).
     var queued: [String]? = nil
+    /// What Nook could do next for its last answer (`CompanionFeature.actionSuggestions`).
+    var suggestion: ActionSuggestionDigest? = nil
 }
 
 /// One message of a Nook chat.
@@ -798,6 +832,8 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     var account: String? = nil
     /// Its app says something about the chat itself (members, a description, a bio): `inboxInfo` has it.
     var hasInfo: Bool? = nil
+    /// What Nook could do next for what was said in the chat (`CompanionFeature.actionSuggestions`).
+    var suggestion: ActionSuggestionDigest? = nil
 }
 
 /// A chat's own picture (a contact's or a group's photo), as a small square JPEG.

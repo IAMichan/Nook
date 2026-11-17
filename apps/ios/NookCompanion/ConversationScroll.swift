@@ -114,6 +114,10 @@ struct ConversationScroll<Content: View, Floating: View, Dock: View>: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { dock(control) }
         }
+        // A conversation gets the whole height on the phone, as a chat app gives it: the tabs step aside while you read
+        // and write, and come back with the list (the back button, or a swipe). What waits elsewhere still reaches you
+        // through pushes, and the tabs keep their counts for when you are back.
+        .toolbar(.hidden, for: .tabBar)
     }
 }
 
