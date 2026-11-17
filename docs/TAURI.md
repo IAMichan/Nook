@@ -108,6 +108,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Zip archives, folders and pasted paths as attachments (`ZipText`, `FileText.folder`, `askAbout`): a zip lists its files and gives the text of the readable ones (read in memory, refused above 500 MB unpacked, 2 MB a file, 400,000 characters); a folder lists its files without hidden folders and build output; a path dropped on the main window or pasted into the field is attached, only from the home folder and never hidden folders, app data or key files. **Tauri:** ◐ (zip, folder and the path rules unit-tested; dropping and pasting not tried in the running app or on Windows). **Where:** `core/src/attachments.rs`, `read_attachment_path` in `commands/brain.rs`, `lib/paths.ts`, `components/Composer.svelte`
 
+- Working indicator and error card in Nook Chat (`TypingIndicator`, `ChatErrorCard`): a pulsing dot, the current step shimmering (still when motion is reduced), the elapsed time from three seconds on, also under text that is still streaming; an answer that could not be made becomes a calm card with what happened by the fix it offers, the fix, Try again, and the raw message behind Details. **Tauri:** ◐ (labels and explanations unit-tested; checked with svelte-check, not seen in the running app). **Where:** `components/WorkingIndicator.svelte`, `lib/working.ts`, `components/MessageView.svelte`
+
 ## Connectors
 
 - `@chat` (WhatsApp chat next to the chat), sending via WhatsApp Web. **Tauri:** ○. **Where:** Possible through a WebView2 (Windows) or WebKitGTK (Linux) pane, as the Mac's `EmbeddedApps`/`WhatsAppWeb`; not built yet (CH-73)
