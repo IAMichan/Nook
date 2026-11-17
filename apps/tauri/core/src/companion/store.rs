@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::keep_awake::KeepAwakeMode;
 use super::models::{base64url_decode, base64url_encode, is_control, PairedDevice, KEY_LENGTH, PAIRING_WINDOW};
 use super::push::PushSettings;
+use super::relay_push::PushRoute;
 use crate::secrets::SecretStore;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -28,6 +29,8 @@ struct Stored {
     /// Reaching this computer away from home through a relay (Settings › Companion › Away from home).
     relay: RelaySettings,
     keep_awake: KeepAwakeMode,
+    /// How pushes reach the phones; none until chosen (`relay_push::PushRoute::default_for`).
+    push_route: Option<PushRoute>,
 }
 
 /// Whose relay, and whether it is on (`CompanionRelayClient` settings on the Mac).
@@ -212,6 +215,7 @@ impl CompanionStore {
             last_seen: Some(now),
             push_token: None,
             push_production: None,
+            push_service: None,
             device_key: None,
         };
         self.with(
@@ -226,15 +230,31 @@ impl CompanionStore {
     }
 
     pub fn set_push_token(&self, id: &str, token: Option<String>, production: Option<bool>) {
+        self.set_push(id, token, production, None);
+    }
+
+    /// The phone's push token, its environment and whose it is (`service`: none for Apple, "fcm" for Firebase).
+    pub fn set_push(&self, id: &str, token: Option<String>, production: Option<bool>, service: Option<&str>) {
         self.with(
             |s| {
                 if let Some(d) = s.devices.iter_mut().find(|d| d.id == id) {
                     d.push_production = if token.is_none() { None } else { production };
+                    d.push_service = token.as_ref().and(service.map(Into::into));
                     d.push_token = token;
                 }
             },
             true,
         );
+    }
+
+    /// How pushes reach the phones; `build_has_relay` decides the first choice (`PushRoute::default_for`).
+    pub fn push_route(&self, build_has_relay: bool) -> PushRoute {
+        let stored = self.with(|s| s.push_route, false);
+        stored.unwrap_or_else(|| PushRoute::default_for(self.can_push(), build_has_relay))
+    }
+
+    pub fn set_push_route(&self, route: PushRoute) {
+        self.with(|s| s.push_route = Some(route), true);
     }
 
     /// The public half of a phone's device key (`device_key`), once it bound one.

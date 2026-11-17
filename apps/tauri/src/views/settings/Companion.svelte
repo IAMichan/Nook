@@ -124,7 +124,7 @@
 
     {#if info.away}<CompanionAway {info} onchange={(i) => (info = i)} />{/if}
 
-    <h3>{tr("Meldingen op de iPhone", "Notifications on iPhone")}</h3>
+    <h3>{tr("Meldingen op je telefoon", "Notifications on your phone")}</h3>
     {#if info.push}<CompanionPush {info} onchange={(i) => (info = i)} />{/if}
   {/if}
 {/if}
