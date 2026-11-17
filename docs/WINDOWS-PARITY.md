@@ -55,6 +55,10 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 `SettingsSidebar.swift`, `SettingsSearch.swift`, `UI/Panel`, `UI/Character`, `NotchRootView.swift`, `AppDelegate.swift`.
 `Brain/SettingsPanes.swift` is not Nook's Settings but the table of macOS System Settings panes (see UI-13).
 
+Visual audit (2026-11-17): every Settings page and the Nook, Agents and Chats tabs were rendered on both sides (Mac
+offscreen through `NSHostingView`, Tauri through Vite with a stubbed backend and default settings) and compared. UI-77…UI-87
+are the visible differences that no item listed yet; the rest were already covered by UI-01…UI-75, BR, AG, CH and SV items.
+
 ### 2.1 Settings window
 
 - [ ] **UI-01** Same pages and groups as the Mac: 17 pages in Nook, Intelligence, Agents, Connect, System, pages with several subjects behind a tab bar (#1572, #1641); Tauri has 18 pages in 7 groups → `views/Settings.svelte`, `lib/shell-routes.ts` · M
@@ -93,6 +97,15 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 - [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M
 - [ ] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L
 
+- [ ] **UI-77** Settings controls drawn as on the Mac: a switch for every on/off row (Tauri draws checkboxes), capsule pickers with up/down chevrons instead of native selects, segmented controls for two to four choices (appearance, background work, privacy level, tone; Tauri draws tiles or a select), small grey capsule buttons, and the Mac's compact row height (Tauri rows are about a third taller); found in the visual audit, builds on UI-10 · M
+- [ ] **UI-78** Section headings as on the Mac: a bold title with an optional grey line under it and an action on the right ("Open setup", "Add account"); Tauri draws small grey labels · S
+- [ ] **UI-79** Appearance in the Mac's order: preview with mood picker (UI-56), Style cards Minimal / Classic / Playful with a face colour row, a "Face and finish" fold, "Nook as buddy" (small moments, tone, a sample line, birthday, breathe now; moved here from Assistant, see UI-21), Theme as a segmented control above the theme grid (UI-70), a "Text and layout" fold; Tauri shows appearance tiles, accent colour and density · M
+- [ ] **UI-80** Assistant rows as on the Mac: "Search the web when needed", the Double Tap section (UI-21), "What Nook may do" as Ask / Small / More (BR-10) instead of the "Do small things right away" checkbox, and the note that points to Brain when the brain runs locally · S
+- [ ] **UI-81** Typing › Complete as on the Mac: the first tab has "Type less, in every app" and "In Nook's composers" (next prompt AG-70, reply suggestions in chats, actions from conversations, the model for suggestions, how your message goes on, SV-60) with the no-local-model warning; Tauri's sliders and keys belong under Style and context · M
+- [ ] **UI-82** Brain page layout as on the Mac: the "Choose a brain" card on top, "Where Nook thinks" Local / External, models recommended for this computer's memory with Install, a connection test row, an "All models and runtimes" fold, then "Quality of the local brain" (evidence first, check answers, measure); Tauri starts with the Answers rows (with UI-20) · M
+- [ ] **UI-83** Services page as on the Mac: a search field over the connections, "Nothing linked yet" with suggested service tiles and Sign in, "Add connection" in the section heading, and a Music section (Spotify row, keep listening history, clear it, look up lyrics online; features in SV-31, SV-36, SV-37); Tauri shows only the intro until something is linked · M
+- [ ] **UI-84** Memory as on the Mac: "What Nook remembers (n)" with a field to add one, each memory with when it was seen, how sure and how often used, learned sources with a count, and Forget all · S
+
 ### 2.3 Main window
 
 - [ ] **UI-35** Split view (a second tab beside the current one) and a tab torn off into its own window, reopened after a restart (`PanelSplit`, `TabWindowController`) · L
@@ -103,6 +116,9 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 - [ ] **UI-40** Cheat sheet as an overlay on its own key, not only in Settings · S
 - [ ] **UI-41** Tooltips in Nook's own look, only when text is cut off; feedback on every refresh click (#1656, #1657, #1630) · M
 - [ ] **UI-42** Starter grid two per row with an arrow on hover, checked against `NookStarters` · S
+- [ ] **UI-85** Window sidebar head and foot as on the Mac (`PanelSidebar`): no orb at the top left (Nook lives in the bar), search, talk and the sidebar toggle in the head (back and forward on Agents, UI-36), the tab switcher with a label only on the open tab; footer Settings, Pull requests, Automation, Usage on the left and refresh/update on the right (UI-38); Tauri shows the orb, a workspace and a games icon and a status dot · S
+- [ ] **UI-86** Agent session rows as on the Mac: project badge and name with age, the title, branch, +/− line counts, the agent's icon and a state such as Done; filter, folder and new-session buttons beside the search; the new-session composer with the agent's icon as picker, + and microphone inside it and the worktree choice below (Tauri shows text chips and a Start session button; with AG-90…AG-96) · M
+- [ ] **UI-87** Nook chat composer footer as on the Mac: +, model, access level (BR-10) and sources inside the composer; Tauri puts "Automatic" and the model under it · S
 
 ### 2.4 Bar, tray and taskbar (the Windows equivalents of notch, menu bar and Dock)
 
