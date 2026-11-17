@@ -271,6 +271,29 @@ impl CompanionOp {
 /// The protocol this side speaks (`CompanionProtocol.version`): 3 added pull requests, files with a message, snoozing
 /// to a moment and `limitResetsAt`. Unknown fields are ignored, so a newer Mac's answers still read.
 pub const PROTOCOL_VERSION: i64 = 3;
+/// The oldest phone this computer still works with (`CompanionProtocol.oldestPhone`), sent as `oldestPhone`.
+pub const OLDEST_PHONE: i64 = 1;
+/// What a side that sends no version speaks (`CompanionProtocol.unversioned`).
+pub const UNVERSIONED: i64 = 1;
+
+/// An app version as it may be shown (`CompanionProtocol.cleanVersion`): printable, at most 40 characters; `None` when
+/// nothing is left.
+pub fn clean_version(text: Option<&str>) -> Option<String> {
+    let kept: String = text?.chars().filter(|c| !c.is_control()).collect();
+    let clean = kept.trim();
+    (!clean.is_empty()).then(|| clean.chars().take(40).collect())
+}
+
+/// Seen from the computer: this computer still works with a phone that sent `phone` (`None`: one from before versions)
+/// (`CompanionCompatibility.phoneSupported`).
+pub fn phone_supported(phone: Option<i64>) -> bool {
+    phone.unwrap_or(UNVERSIONED) >= OLDEST_PHONE
+}
+
+/// A phone that works, but speaks an older protocol than this computer (`CompanionCompatibility.phoneBehind`).
+pub fn phone_behind(phone: Option<i64>) -> bool {
+    phone_supported(phone) && phone.unwrap_or(UNVERSIONED) < PROTOCOL_VERSION
+}
 
 /// What a Mac can do beyond the first version of the protocol (`CompanionFeature`). The phone only offers what the Mac
 /// lists in `CompanionResponse::features`.
@@ -1146,10 +1169,19 @@ pub struct PairedDevice {
     pub push_token: Option<String>,
     #[serde(default)]
     pub push_production: Option<bool>,
+    /// Whose token it is: none for Apple's (an iPhone), "fcm" for Firebase (Nook on Android), whose pushes always go
+    /// through the relay (`relay_push`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_service: Option<String>,
     /// The public half of the phone's device key (X9.63, base64; `device_key`): once set, only requests signed with it
     /// are taken. `None` until the phone bound one (an older app never does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_key: Option<String>,
+    /// What the phone said it runs (`CompanionProtocol`): its protocol and app version; `None` until it said so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
 }
 
 impl PairedDevice {
@@ -1161,6 +1193,20 @@ impl PairedDevice {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn versions_as_the_mac_reads_them() {
+        assert_eq!(clean_version(Some("  1.4.0\u{7}\n")), Some("1.4.0".into()));
+        assert_eq!(clean_version(Some(" \u{1b} ")), None);
+        assert_eq!(clean_version(None), None);
+        assert_eq!(clean_version(Some(&"9".repeat(60))).map(|v| v.len()), Some(40));
+        assert!(phone_supported(None), "a phone before versions is version 1");
+        assert!(phone_supported(Some(OLDEST_PHONE)));
+        assert!(!phone_supported(Some(OLDEST_PHONE - 1)));
+        assert!(phone_behind(None) == (UNVERSIONED < PROTOCOL_VERSION));
+        assert!(!phone_behind(Some(PROTOCOL_VERSION)));
+        assert!(!phone_behind(Some(OLDEST_PHONE - 1)), "too old is not merely behind");
+    }
 
     fn key() -> Vec<u8> {
         (0u8..32).collect()
@@ -1399,7 +1445,8 @@ mod tests {
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["nookAction"]["kind"], "pin");
         let answer: CompanionResponse =
-            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3})).unwrap();
+            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3}))
+                .unwrap();
         assert_eq!(answer.conversations_archived, Some(3));
         assert!(answer.conversations_found.is_some());
     }

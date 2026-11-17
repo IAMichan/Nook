@@ -413,15 +413,18 @@ enum LocalHTTP {
     }
 
     private static func connectionError(_ error: URLError, provider: AIProvider) -> Error {
+        // A server on this Mac that is not running or too slow stays that way for the next few seconds: no new try
+        // (`BrainRetry`). A cloud service that dropped the connection or timed out usually answers the next one.
         switch error.code {
         case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost:
-            if provider.isLocalServer { return NookError(tr("brain.unavailable.server", provider.title)) }
-            return NookError("Cannot reach \(provider.title).")
+            if provider.isLocalServer { return NookError(tr("brain.unavailable.server", provider.title), kind: .config) }
+            return NookError("Cannot reach \(provider.title).", kind: .network)
         case .timedOut:
-            return NookError(provider.isLocalServer
-                ? "\(provider.title) took too long. A smaller model answers faster; choose one in Settings › Brain."
-                : "\(provider.title) did not answer in time.")
+            return provider.isLocalServer
+                ? NookError("\(provider.title) took too long. A smaller model answers faster; choose one in Settings › Brain.")
+                : NookError("\(provider.title) did not answer in time.", kind: .network)
         default:
+            if provider.isLocalServer, error.code != .cancelled { return NookError(error.localizedDescription, kind: .config) }
             return error
         }
     }
@@ -429,9 +432,11 @@ enum LocalHTTP {
     private static func statusError(_ status: Int, object: [String: Any], provider: AIProvider, model: String) -> NookError {
         let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? (object["error"] as? String) ?? "status \(status)"
         switch status {
-        case 401, 403: return NookError("\(provider.title) rejected the API key: \(message)")
-        case 404: return NookError("Model \(model) was not found on \(provider.title). Select a different model in Settings › Brain.")
-        case 429: return NookError("Rate limit reached on \(provider.title). Please wait a moment.")
+        case 401, 403: return NookError("\(provider.title) rejected the API key: \(message)", kind: .auth)
+        case 404: return NookError("Model \(model) was not found on \(provider.title). Select a different model in Settings › Brain.", kind: .config)
+        case 429: return NookError("Rate limit reached on \(provider.title). Please wait a moment.", kind: .rateLimited)
+        // An overloaded or briefly unavailable service (500, 502, 503, 529…) passes by itself; a server on this Mac does not.
+        case 500...599: return NookError("\(provider.title): \(message)", kind: provider.isLocalServer ? .other : .network)
         default: return NookError("\(provider.title): \(message)")
         }
     }

@@ -185,4 +185,75 @@ final class ToolLoopTests: XCTestCase {
         XCTAssertTrue(stream.feed(#"{"type":"stream_event","event":{"type":"message_start"}}"#))
         XCTAssertEqual(stream.text, "")
     }
+
+    /// A model whose first rounds fail with the given errors, then answers.
+    private final class FlakyModel: ModelConversation {
+        var failures: [Error]
+        var attempts = 0
+        var streamed: [String] = []
+        init(_ failures: [Error]) { self.failures = failures }
+
+        func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
+            attempts += 1
+            if !failures.isEmpty {
+                onText?("Half a sen")
+                throw failures.removeFirst()
+            }
+            onText?("The whole answer.")
+            return ModelTurn(text: "The whole answer.", calls: [])
+        }
+        func addResults(_ results: [(call: ToolCallRequest, output: String, isError: Bool)]) {}
+        func addInstruction(_ text: String) {}
+    }
+
+    func testTransientFailureAsksTheRoundAgain() async throws {
+        let model = FlakyModel([NookError("Overloaded", kind: .network), NookError("Slow down", kind: .rateLimited)])
+        let runner = ToolRunner(tools: [])
+        runner.retryDelays = [0, 0]
+        var retries: [Int] = []
+        runner.onRetry = { attempt, _ in retries.append(attempt) }
+        var shown = ""
+        let plan = try await runner.run(model) { shown = $0 }
+        XCTAssertEqual(model.attempts, 3)
+        XCTAssertEqual(retries, [1, 2])
+        XCTAssertEqual(plan.text, "The whole answer.")
+        XCTAssertEqual(shown, "The whole answer.", "the new try writes over what the failed one streamed")
+    }
+
+    func testRejectedKeyIsNotAskedAgain() async {
+        let model = FlakyModel([NookError("Key rejected", kind: .auth)])
+        let runner = ToolRunner(tools: [])
+        runner.retryDelays = [0, 0]
+        do {
+            _ = try await runner.run(model)
+            XCTFail("a rejected key fails at once")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Key rejected")
+        }
+        XCTAssertEqual(model.attempts, 1)
+    }
+
+    func testRetriesAreLimited() async {
+        let model = FlakyModel(Array(repeating: NookError("Down", kind: .network), count: 5))
+        let runner = ToolRunner(tools: [])
+        runner.retryDelays = [0, 0]
+        do {
+            _ = try await runner.run(model)
+            XCTFail("a service that stays down ends with its error")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Down")
+        }
+        XCTAssertEqual(model.attempts, 3)
+    }
+
+    func testBrainRetryKnowsWhatPasses() {
+        XCTAssertTrue(BrainRetry.isTransient(NookError("529", kind: .network)))
+        XCTAssertTrue(BrainRetry.isTransient(NookError("429", kind: .rateLimited)))
+        XCTAssertTrue(BrainRetry.isTransient(URLError(.networkConnectionLost)))
+        XCTAssertFalse(BrainRetry.isTransient(NookError("401", kind: .auth)))
+        XCTAssertFalse(BrainRetry.isTransient(NookError("404", kind: .config)))
+        XCTAssertFalse(BrainRetry.isTransient(NookError("refused")))
+        XCTAssertFalse(BrainRetry.isTransient(CancellationError()))
+        XCTAssertFalse(BrainRetry.isTransient(URLError(.cancelled)))
+    }
 }

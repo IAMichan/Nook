@@ -116,6 +116,21 @@ releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`
 - A newer release **without a signature**, or a build **without a public key**, is never installed: Settings shows the
   release with a **Download** link instead. Builds up to 0.1.0-beta.2 carry no key and need this one manual download.
 
+### Windows and Linux (the Tauri app)
+
+The Windows setup (`Nook-<version>-Windows-setup.exe`) and the Linux AppImage (`Nook-<version>-Linux.AppImage`) follow
+the same rules with the same key; `nook_core::updates` is the port of `ReleaseUpdateCore.swift` with the same tests.
+
+- `tauri.yml` stamps `NOOK_RELEASE_VERSION` (the full version; the installer's own version has no beta suffix),
+  `NOOK_RELEASE_REPOSITORY` and `NOOK_UPDATE_PUBLIC_KEY` into a release build (`updates::this_build`). A CI build has
+  none and offers no updates.
+- The release's *Attach Windows and Linux* job signs both files with `scripts/sign-update.sh` (OpenSSL 3, the same raw
+  base64 keys and `.sig` format as `sign-update.swift`) and uploads `<file>.sig`; *Publish the release* waits for both.
+  Without the key the release fails, as it does for the Mac.
+- The `.msi` and `.deb` are left to the package manager that installed them; Nook updates what its own setup or
+  AppImage put there.
+- The app side (checking, downloading, the steps and the button) is SV-01 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md).
+
 ### Setting up the signing key (once, for maintainers)
 
 1. On a Mac, run `swift scripts/sign-update.swift generate`. It prints a private and a public key (base64 of the raw

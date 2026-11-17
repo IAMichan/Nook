@@ -785,17 +785,20 @@ struct InboxChatView: View {
     private func footer(_ scroll: ConversationScrollControl) -> some View {
         if chat?.canSend == true {
             ComposerDock {
+                // What Nook could do for what was said here, above the field as on the Mac.
+                if let suggestion = client.shownSuggestion(chat?.suggestion) { SuggestionCard(suggestion: suggestion) }
                 VStack(spacing: 0) {
                     if let replyingTo {
                         ComposerTray(edge: .top) { replyTray(replyingTo) }
                             .transition(.opacity.combined(with: .offset(y: 8)))
                     }
                     InboxAttachmentTray(attachments: $attachments)
-                    composer(scroll).zIndex(1)
+                    composer(scroll).keepsDraft($text, for: .chat(chatID)).zIndex(1)
                 }
             }
         } else if let chat {
             ComposerDock(offline: .reads) {
+                if let suggestion = client.shownSuggestion(chat.suggestion) { SuggestionCard(suggestion: suggestion) }
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     Label {
                         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {

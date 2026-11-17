@@ -60,7 +60,7 @@
 <div class="group">
   <label class="row">
     <span>{tr("Bereik deze computer buiten de deur", "Reach this computer away from home")}</span>
-    <input type="checkbox" checked={away.relay.enabled} onchange={(e) => setRelay(e.currentTarget.checked, own)} />
+    <input type="checkbox" role="switch" checked={away.relay.enabled} onchange={(e) => setRelay(e.currentTarget.checked, own)} />
   </label>
   {#if away.relay.enabled}
     {#if away.nookRelay}
@@ -124,7 +124,7 @@
   {#if away.backgroundSupported}
     <label class="row">
       <span>{tr("Houd Nook draaiend", "Keep Nook running")}</span>
-      <input type="checkbox" checked={away.background} onchange={(e) => run(() => companion.setBackground(e.currentTarget.checked))} />
+      <input type="checkbox" role="switch" checked={away.background} onchange={(e) => run(() => companion.setBackground(e.currentTarget.checked))} />
     </label>
     <p class="faint note">
       {tr(

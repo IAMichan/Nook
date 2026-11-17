@@ -33,6 +33,39 @@ extension CompanionClient {
         await perform(CompanionRequest(op: .chatSearch, text: words, allow: archive), quiet: true)
     }
 
+    /// The model, access and sources of Nook's composer, for `conversation` (nil for a new chat).
+    func loadNookComposer(conversation: String?) async {
+        guard can(CompanionFeature.nookComposer), allows(.nookChat), !Self.isDemo else { return }
+        var request = CompanionRequest(op: .nookComposer)
+        request.conversation = conversation
+        if let digest = await perform(request, quiet: true)?.nookComposer { nookComposer = digest }
+    }
+
+    /// One choice of Nook's composer changed on the Mac, after your tap (`NookComposerChange`); the Mac answers with all
+    /// of them as they are now.
+    func setNookComposer(_ change: NookComposerChange, item: String = "", on: Bool = true, conversation: String?) async {
+        guard can(CompanionFeature.nookComposer), allows(.operate) else { return }
+        var request = CompanionRequest(op: .nookComposerSet, text: change.rawValue, allow: on)
+        request.item = item
+        request.conversation = conversation
+        if let digest = await perform(request)?.nookComposer { nookComposer = digest }
+    }
+
+    /// *Do it* or the cross on what Nook could do next (`CompanionFeature.actionSuggestions`), after your tap. The cross
+    /// hides it here at once; the Mac's lists bring the new state either way.
+    func actOnSuggestion(_ suggestion: ActionSuggestionDigest, _ act: SuggestionAct) async {
+        if act == .dismiss { dismissedSuggestions.insert(suggestion.conversation + "|" + (suggestion.steps.first?.text ?? "")) }
+        guard can(CompanionFeature.actionSuggestions), !Self.isDemo else { return }
+        await perform(CompanionRequest(op: .suggestionAct, item: suggestion.conversation, text: act.rawValue))
+    }
+
+    /// A suggestion to show: one the Mac offers that was not put away here.
+    func shownSuggestion(_ suggestion: ActionSuggestionDigest?) -> ActionSuggestionDigest? {
+        guard let suggestion, can(CompanionFeature.actionSuggestions) || Self.isDemo,
+              !dismissedSuggestions.contains(suggestion.conversation + "|" + (suggestion.steps.first?.text ?? "")) else { return nil }
+        return suggestion
+    }
+
     /// Something done to one of Nook's conversations as on the Mac, after your own tap: true when the Mac did it. The Mac
     /// answers with the list as it is after it; a refusal says why in `notice`.
     @discardableResult

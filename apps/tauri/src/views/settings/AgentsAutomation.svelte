@@ -123,13 +123,13 @@
 {#if view}
   <h3>{tr("Titels", "Titles")}</h3>
   <div class="group">
-    <label class="check"><input type="checkbox" bind:checked={view.settings.autoTitles} onchange={saveSettings} /> {tr("Geef nieuwe sessies vanzelf een korte titel", "Give new sessions a short title automatically")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={view.settings.autoTitles} onchange={saveSettings} /> {tr("Geef nieuwe sessies vanzelf een korte titel", "Give new sessions a short title automatically")}</label>
     <p class="faint note">{tr("Het gekozen brein schrijft een titel uit het eerste bericht. Tot dan, en als het niets bruikbaars geeft, zie je de eerste regel. Een naam die je zelf geeft, wint altijd; dubbelklik op de titel van een sessie om hem te wijzigen.", "The chosen brain writes a title from the first message. Until then, and when it gives nothing usable, you see the first line. A name you give yourself always wins; double-click a session's title to rename it.")}</p>
   </div>
 
   <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
   <div class="group">
-    <label class="check"><input type="checkbox" bind:checked={view.settings.scheduledTasks} onchange={saveSettings} /> {tr("Geplande taken toestaan", "Allow scheduled tasks")}</label>
+    <label class="check"><input type="checkbox" role="switch" bind:checked={view.settings.scheduledTasks} onchange={saveSettings} /> {tr("Geplande taken toestaan", "Allow scheduled tasks")}</label>
     <label class="row"><span>{tr("Poort voor webhooks (0 = uit)", "Port for webhooks (0 = off)")}</span>
       <input class="port" inputmode="numeric" bind:value={portDraft} onchange={savePort} disabled={!view.settings.scheduledTasks} />
     </label>
@@ -147,7 +147,7 @@
     {#each view.tasks as t (t.id)}
       <div class="task" class:off={!t.enabled}>
         <div class="line">
-          <input type="checkbox" title={tr("Aan", "Enabled")} checked={t.enabled} onchange={(e) => act(() => automationApi.setEnabled(t.id, (e.target as HTMLInputElement).checked))} />
+          <input type="checkbox" role="switch" title={tr("Aan", "Enabled")} checked={t.enabled} onchange={(e) => act(() => automationApi.setEnabled(t.id, (e.target as HTMLInputElement).checked))} />
           <strong>{t.title || tr("Taak zonder naam", "Untitled task")}</strong>
           <span class="faint">{ruleLabel(t.rule)}</span>
           <span class="spacer"></span>
@@ -208,7 +208,7 @@
         {#if preset === "weekdays"}
           <div class="days">
             {#each weekdayOrder as d (d)}
-              <label class="day"><input type="checkbox" checked={values.weekdays.includes(d)} onchange={(e) => { values.weekdays = (e.target as HTMLInputElement).checked ? [...values.weekdays, d] : values.weekdays.filter((x) => x !== d); }} /> {weekdayShort(d)}</label>
+              <label class="day"><input class="box" type="checkbox" checked={values.weekdays.includes(d)} onchange={(e) => { values.weekdays = (e.target as HTMLInputElement).checked ? [...values.weekdays, d] : values.weekdays.filter((x) => x !== d); }} /> {weekdayShort(d)}</label>
             {/each}
           </div>
           <p class="faint note">{tr("Geen dag gekozen is maandag tot en met vrijdag.", "No day chosen means Monday to Friday.")}</p>

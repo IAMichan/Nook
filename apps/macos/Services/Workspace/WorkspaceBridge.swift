@@ -1094,10 +1094,20 @@ final class WorkspaceBridge: ObservableObject {
             let models = workspace.modelChoices(for: provider).filter { !$0.isLegacy && !$0.needsUpdate }.map(\.id)
             if !models.isEmpty { line += " · models: " + models.joined(separator: ", ") }
             line += " · rights: " + provider.capabilities.policies.map(\.rawValue).joined(separator: ", ")
+            // The accounts session_start can name: id (label), the connected ones marked, the default first.
+            if installed, let app {
+                let connected = Set(app.connectedProfiles(for: provider).map(\.id))
+                let first = app.connectedProfiles(for: provider).first?.id
+                let accounts = app.profiles.profiles(for: provider.kind).sorted { $0.id == first && $1.id != first }.map { profile in
+                    "\(profile.id) (\(AccountLabel.name(profile, app: app))\(profile.id == first ? ", default" : "")"
+                        + (connected.contains(profile.id) ? "" : ", not logged in") + ")"
+                }
+                if accounts.count > 1 { line += " · accounts: " + accounts.joined(separator: ", ") }
+            }
             lines.append(line)
         }
         lines.append("")
-        lines.append("A task never has more rights than you. research, review and design tasks run in Plan mode.")
+        lines.append("A task or started session never has more rights than you. research, review and design tasks run in Plan mode.")
         return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
     }
 

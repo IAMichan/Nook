@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use nook_core::agents::ipc::{self, BoxStream};
 use nook_core::agents::models::{AgentApproval, ApprovalOrigin};
@@ -96,6 +97,7 @@ impl Bridge {
     fn finish(&self, app: &AppHandle, id: &str, allowed: bool, message: &str) -> bool {
         let Some(waiter) = lock(&self.waiters).remove(id) else { return false };
         lock(&self.pending).retain(|r| r.id != id);
+        crate::agents::approval_gone(app, &format!("bridge-{id}"));
         let _ = app.emit("agent-approval-gone", serde_json::json!({"id": format!("bridge-{id}"), "message": message}));
         let _ = waiter.send(allowed);
         true
@@ -125,8 +127,9 @@ impl Bridge {
         let (tx, rx) = tokio::sync::oneshot::channel();
         lock(&self.waiters).insert(id.clone(), tx);
         lock(&self.pending).push(request.clone());
-        let _ = app.emit("agent-approval", Self::approval(&request));
-        crate::agents::open_bar(app);
+        let approval = Self::approval(&request);
+        let _ = app.emit("agent-approval", &approval);
+        crate::agents::present_approval(app, &approval);
         match tokio::time::timeout(APPROVAL_TIMEOUT, rx).await {
             Ok(Ok(allowed)) => allowed,
             _ => {
@@ -302,9 +305,7 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::TerminalStop => terminal_stop(app, a, &caller),
         BridgeTool::BrowserOpen => browser_open(app, a, &caller).await,
         BridgeTool::BrowserRead => browser_read(app).await,
-        BridgeTool::BrowserScreenshot => {
-            Err("Nook cannot take a screenshot of its browser on this platform yet. Use browser_read to check the page's text and console instead.".into())
-        }
+        BridgeTool::BrowserScreenshot => browser_screenshot(app, a).await,
         BridgeTool::OrchestratorCapabilities
         | BridgeTool::DelegateTask
         | BridgeTool::TaskStatus
@@ -640,6 +641,17 @@ async fn browser_read(app: &AppHandle) -> Result<ToolResult, String> {
     text +=
         &format!("\n\n## Console errors and warnings\n{}", if console.is_empty() { "none".into() } else { console[start..].join("\n") });
     Ok(ToolResult::text(text))
+}
+
+async fn browser_screenshot(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let (jpeg, url) = ws.browser.screenshot(app, super::snapshot::width(a.get("max_width").and_then(Value::as_i64))).await?;
+    Ok(ToolResult {
+        text: format!("Screenshot of {url}"),
+        image_base64: Some(base64::engine::general_purpose::STANDARD.encode(jpeg)),
+        image_mime_type: Some("image/jpeg".into()),
+        is_error: false,
+    })
 }
 
 // MARK: Pull request

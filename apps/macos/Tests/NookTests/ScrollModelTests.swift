@@ -183,4 +183,35 @@ final class ScrollModelTests: XCTestCase {
         m.jumpedToEnd()
         XCTAssertFalse(m.isFreeAfterUserScroll)
     }
+
+    // MARK: Held height of the last rows
+
+    func testHeldHeightNeverShrinksWhileHolding() {
+        var held = HeldHeight()
+        XCTAssertEqual(held.height(natural: 500, width: 600, key: 1, holds: true), 500)
+        // A thought folds into "Ran 3 commands": the rows keep their height, with room under them.
+        XCTAssertEqual(held.height(natural: 420, width: 600, key: 1, holds: true), 500)
+        // The next output fills the room first, then grows past it.
+        XCTAssertEqual(held.height(natural: 480, width: 600, key: 1, holds: true), 500)
+        XCTAssertEqual(held.height(natural: 560, width: 600, key: 1, holds: true), 560)
+        XCTAssertEqual(held.height(natural: 540, width: 600, key: 1, holds: true), 560)
+    }
+
+    func testHeldHeightLetsGo() {
+        var held = HeldHeight()
+        _ = held.height(natural: 500, width: 600, key: 1, holds: true)
+        // You stopped following, or the agent is done.
+        XCTAssertEqual(held.height(natural: 400, width: 600, key: 1, holds: false), 400)
+        XCTAssertEqual(held.height(natural: 380, width: 600, key: 1, holds: true), 380)
+        // A new turn, or a block opened or closed.
+        XCTAssertEqual(held.height(natural: 300, width: 600, key: 2, holds: true), 300)
+    }
+
+    func testHeldHeightIsPerWidth() {
+        var held = HeldHeight()
+        _ = held.height(natural: 500, width: 600, key: 1, holds: true)
+        // A narrower window wraps the rows taller, a wider one shorter: each width keeps its own.
+        XCTAssertEqual(held.height(natural: 300, width: 900, key: 1, holds: true), 300)
+        XCTAssertEqual(held.height(natural: 450, width: 600, key: 1, holds: true), 500)
+    }
 }

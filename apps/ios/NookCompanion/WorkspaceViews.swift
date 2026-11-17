@@ -187,7 +187,7 @@ struct SessionFilesView: View {
                                          message: String(localized: "This file cannot be shown on the phone."))
                         }
                     } else if let text = digest.text {
-                        Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(Theme.paper).textSelection(.enabled)
+                        Text(text).font(Theme.mono(12)).foregroundStyle(Theme.paper).textSelection(.enabled)
                         if digest.truncated == true {
                             Text("Only the start of this file is shown.").font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
                         }
@@ -200,11 +200,25 @@ struct SessionFilesView: View {
                                 SessionFilesView(sessionID: sessionID, path: path.isEmpty ? entry.name : path + "/" + entry.name,
                                                  size: entry.size)
                             } label: {
-                                Label(entry.name, systemImage: entry.isFolder ? "folder" : Self.symbol(entry.name))
-                                    .font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, Theme.Spacing.xs)
+                                // A row as in the Mac's file list: the kind, the name, a file's size, and where it leads.
+                                HStack(spacing: Theme.Spacing.md) {
+                                    Image(icon: entry.isFolder ? "folder" : Self.symbol(entry.name))
+                                        .font(Theme.TextStyle.detail)
+                                        .foregroundStyle(entry.isFolder ? Theme.textSecondary : Theme.textTertiary)
+                                        .frame(width: 20)
+                                    Text(verbatim: entry.name).font(Theme.TextStyle.body).foregroundStyle(Theme.paper)
+                                        .lineLimit(1).truncationMode(.middle)
+                                    Spacer(minLength: Theme.Spacing.sm)
+                                    if !entry.isFolder, let size = entry.size {
+                                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).monospacedDigit()
+                                    }
+                                    Image(icon: "chevron.right").font(Theme.font(10, .semibold)).foregroundStyle(Theme.textTertiary)
+                                }
+                                .frame(minHeight: 40)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(RowPress())
                         }
                     }
                 } else if failed {
@@ -217,7 +231,14 @@ struct SessionFilesView: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.vertical, Theme.Spacing.lg)
         }
-        .navigationTitle(path.isEmpty ? String(localized: "Files") : (path.split(separator: "/").last.map(String.init) ?? path))
+        // The panel's quiet bar title, as every other screen: the file or folder, and the folder it is in under it.
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                SheetTitle(title: path.isEmpty ? String(localized: "Files") : (path.split(separator: "/").last.map(String.init) ?? path),
+                           subtitle: path.split(separator: "/").dropLast().joined(separator: "/"))
+            }
+        }
         .screen()
         .task {
             digest = await client.loadFiles(sessionID, path: path)
@@ -256,7 +277,7 @@ struct SessionTerminalsView: View {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Label(terminal.title, systemImage: terminal.running ? "play.circle" : "stop.circle")
                                 .font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
-                            Text(terminal.output).font(.system(.caption2, design: .monospaced)).foregroundStyle(Theme.textTertiary).textSelection(.enabled)
+                            Text(terminal.output).font(Theme.mono(11)).foregroundStyle(Theme.textTertiary).textSelection(.enabled)
                         }
                     }
                 } else if failed {
@@ -269,7 +290,8 @@ struct SessionTerminalsView: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.vertical, Theme.Spacing.lg)
         }
-        .navigationTitle("Terminals")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: String(localized: "Terminals")) } }
         .screen()
         .task {
             while !Task.isCancelled {

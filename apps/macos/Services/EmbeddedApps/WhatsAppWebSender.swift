@@ -78,7 +78,7 @@ extension EmbeddedAppStore {
                     let to = AppData.string(input["to"]).trimmingCharacters(in: .whitespaces)
                     return "WhatsApp Web → \(to): \(AppData.string(input["message"]))"
                 },
-                tag: { _ in ("sends", .caution) },
+                tag: { _ in (tr("plan.tag.sends"), .caution) },
                 run: { input in
                     let name = try await EmbeddedAppStore.shared.sendWhatsApp(AppData.string(input["message"]), to: AppData.string(input["to"]))
                     return "WhatsApp message sent to \(name) through WhatsApp Web."

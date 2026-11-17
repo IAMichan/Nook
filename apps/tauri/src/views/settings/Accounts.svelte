@@ -4,6 +4,8 @@
   // alles wat je kunt toevoegen (één kaartvorm, met een label dat zegt hoe: inloggen, een sleutel of MCP).
   // Een nieuwe dienst krijgt een rij en een kaart in deze vormen, en een stappenvenster als hij stappen nodig heeft;
   // nooit een eigen sectie.
+  // Settings shows it in two parts, as the Mac's `ConnectionsPage`: Chat apps (the chat apps on this device, WhatsApp)
+  // and Services (everything else).
   import {
     connectorsApi, connectorEvents, health, inCategory, matchesQuery, summary,
     type ConnectorInfo, type Overview, type RemoteView, type ServiceView,
@@ -21,6 +23,7 @@
   import WatchedPulls from "../connectors/WatchedPulls.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
+  let { part = "services" }: { part?: "chats" | "services" } = $props();
   let overview = $state<Overview | null>(null);
   let sheet = $state<ServiceView | null>(null);
   let query = $state("");
@@ -76,7 +79,6 @@
   const hasCatalogue = $derived(!!github || oneClick.length + withKey.length + shownPresets.length > 0 || showGitlab || showCustomMcp);
 
   // On this device: WhatsApp live, and what the Mac can that this platform cannot.
-  const showWhatsApp = $derived(shows("local", "WhatsApp live"));
   const local = $derived((overview?.local ?? []).filter((l) => shows("local", `${l.title} ${l.reason}`)));
 
   async function toggle(id: string, on: boolean) {
@@ -148,10 +150,11 @@
   }
 </script>
 
-<h2>{tr("Accounts & koppelingen", "Accounts & connections")}</h2>
 <p class="muted">{tr("Verbind een dienst en Nook kan er meteen mee werken. Inloggen gebeurt op de site van de dienst zelf; sleutels en tokens blijven in de kluis van je systeem. Elke koppeling laat zien wat Nook ermee kan lezen en doen; schrijven gebeurt altijd pas na jouw Uitvoeren.", "Connect a service and Nook can work with it right away. Signing in happens on the service's own site; keys and tokens stay in your system's keychain. Each connection shows what Nook can read and do with it; writing only ever happens after you press Run.")}</p>
 
-{#if overview}
+{#if part === "chats"}
+  <WhatsApp />
+{:else if overview}
   <input class="search" placeholder={tr("Zoek een koppeling of wat hij kan", "Search for a connection or what it can do")} bind:value={query} />
   <CategoryChips bind:selected={category} />
 
@@ -178,9 +181,8 @@
   <!-- Right below your connected services, once a GitHub account is connected (as on the Mac). -->
   {#if byId.get("github")?.configured}<WatchedPulls />{/if}
 
-  {#if showWhatsApp || local.length}
+  {#if local.length}
     <h3>{tr("Op dit apparaat", "On this device")}</h3>
-    {#if showWhatsApp}<WhatsApp />{/if}
     {#if local.length}
       <div class="group">
         {#each local as l (l.id)}
@@ -252,7 +254,7 @@
       {/if}
     </div>
     <p class="faint small">{tr("Eén kaart, één klik. Inloggen gebeurt op de site van de dienst zelf; bij een sleutel laat Nook stap voor stap zien waar je die vindt; MCP koppelt elk ander programma. Tools van een MCP-server die alleen lezen gebruikt Nook bij een antwoord; al het andere wordt een actie die pas na jouw Uitvoeren gebeurt.", "One card, one click. Signing in happens on the service's own site; for a key Nook shows step by step where to find it; MCP connects any other program. Read-only tools from an MCP server are used in an answer; everything else becomes an action that only happens after you press Run.")}</p>
-  {:else if !hasYours && !showWhatsApp && !local.length}
+  {:else if !hasYours && !local.length}
     <p class="faint empty">{tr("Niets gevonden voor “{query}”. Probeer een andere naam, of voeg het als MCP-server toe.", "Nothing found for “{query}”. Try another name, or add it as an MCP server.", { query: query.trim() })}</p>
   {/if}
 {/if}
@@ -275,7 +277,7 @@
     {:else}
       <HealthPill health={h} />
     {/if}
-    <input type="checkbox" checked={info?.on ?? true} title={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
+    <input type="checkbox" role="switch" checked={info?.on ?? true} title={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
   </div>
 {/snippet}
 

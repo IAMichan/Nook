@@ -129,7 +129,11 @@ extension AgentRunPanel {
                         }
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    ConversationRows(items: shownBlocks, eager: eager) { block in
+                    // While you follow the agent at work, its last rows never get shorter: what folds away into
+                    // "Ran 3 commands" leaves room instead of bouncing the conversation down.
+                    ConversationRows(items: shownBlocks, eager: eager,
+                                     holdsHeight: active && scroll.shouldFollowEnd && !finding,
+                                     holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start)) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
@@ -364,6 +368,17 @@ extension AgentRunPanel {
         }
         let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(events)) : nil
         return AgentAnnouncements.snapshot(events, status: status, step: step)
+    }
+
+    /// What lets go of the held height of the last rows (`HeldHeight`): a new turn, a block or event opened or closed,
+    /// earlier turns drawn above.
+    static func holdKey(turn: UUID?, open: Set<String>, expanded: Set<UUID>, start: Int) -> Int {
+        var hasher = Hasher()
+        hasher.combine(turn)
+        hasher.combine(open)
+        hasher.combine(expanded)
+        hasher.combine(start)
+        return hasher.finalize()
     }
 
     /// Whether the block you read is held in place (`TimelineReadingAnchor`): you read back, so not while the view

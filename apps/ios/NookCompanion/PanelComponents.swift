@@ -587,7 +587,7 @@ struct ComposerPill: View {
             } else if let symbol {
                 Image(icon: symbol).font(Theme.font(12, .medium))
             }
-            Text(text).lineLimit(1)
+            if !text.isEmpty { Text(text).lineLimit(1) }
             if showsChevron {
                 Image(icon: "chevron.down").font(Theme.font(9, .bold)).opacity(0.6)
             }
@@ -693,5 +693,37 @@ struct SuggestionGrid: View {
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }
         }
+    }
+}
+
+// MARK: Drafts
+
+extension View {
+    /// Keeps what is typed in `text` for `place` (`PhoneDrafts`), as the Mac keeps a composer's draft: it is back when
+    /// you return, also after the app was closed, and gone once it is sent or cleared. Nil keeps nothing.
+    func keepsDraft(_ text: Binding<String>, for place: PhoneDrafts.Place?) -> some View {
+        modifier(KeepsDraft(text: text, place: place))
+    }
+}
+
+private struct KeepsDraft: ViewModifier {
+    @Binding var text: String
+    let place: PhoneDrafts.Place?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { restore() }
+            .onChange(of: place) { _, _ in restore() }
+            .onChange(of: text) { _, text in
+                guard let place else { return }
+                PhoneDrafts().set(text, for: place)
+            }
+    }
+
+    /// Fills an empty field with the draft; what the screen opened with (a prompt link, a shared text) stays.
+    private func restore() {
+        guard let place, text.isEmpty else { return }
+        let draft = PhoneDrafts().text(place)
+        if !draft.isEmpty { text = draft }
     }
 }

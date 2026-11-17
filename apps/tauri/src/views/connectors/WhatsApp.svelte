@@ -101,7 +101,7 @@
   <div class="group">
     <label class="row">
       <span class="head"><ServiceIcon domain="whatsapp.com" title="WhatsApp" /><span><strong>{tr("WhatsApp koppelen", "Connect WhatsApp")}</strong><br /><span class="faint small">{tr("Nieuwe berichten in Nook, antwoorden vanuit Nook, en Nook mag na jouw OK een bericht sturen.", "New messages in Nook, replies from Nook, and Nook may send a message after your OK.")}</span></span></span>
-      <input type="checkbox" checked={view.settings.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={view.settings.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
     </label>
     {#if view.settings.enabled}
       <div class="row">
@@ -116,12 +116,12 @@
           <p class="muted">{tr("Open WhatsApp op je telefoon › Instellingen › Gekoppelde apparaten › Apparaat koppelen, en scan deze code.", "Open WhatsApp on your phone › Settings › Linked devices › Link a device, and scan this code.")}</p>
         </div>
       {/if}
-      <label class="row"><span>{tr("Nieuwe berichten melden", "Notify about new messages")}<br /><span class="faint small">{tr("Met de laatste regels van de chat en een veld om meteen te antwoorden.", "With the last lines of the chat and a field to reply right away.")}</span></span><input type="checkbox" checked={view.settings.notify} onchange={(e) => save({ notify: e.currentTarget.checked })} /></label>
+      <label class="row"><span>{tr("Nieuwe berichten melden", "Notify about new messages")}<br /><span class="faint small">{tr("Met de laatste regels van de chat en een veld om meteen te antwoorden.", "With the last lines of the chat and a field to reply right away.")}</span></span><input type="checkbox" role="switch" checked={view.settings.notify} onchange={(e) => save({ notify: e.currentTarget.checked })} /></label>
       {#if view.settings.notify}
         <!-- De regel per soort chat, en daaronder elke chat apart: luider of stiller dan zijn soort. -->
-        <label class="row"><span>{tr("Groepen stil", "Mute groups")}<br /><span class="faint small">{tr("Een groep meldt zich alleen als iemand je noemt.", "A group only notifies you when someone mentions you.")}</span></span><input type="checkbox" checked={view.settings.muteGroups} onchange={(e) => save({ muteGroups: e.currentTarget.checked })} /></label>
-        <label class="row"><span>{tr("Statussen stil", "Mute statuses")}<br /><span class="faint small">{tr("Statusupdates van je contacten melden zich niet.", "Status updates from your contacts don't notify you.")}</span></span><input type="checkbox" checked={view.settings.muteStatus} onchange={(e) => save({ muteStatus: e.currentTarget.checked })} /></label>
-        <label class="row"><span>{tr("Kanalen stil", "Mute channels")}<br /><span class="faint small">{tr("Kanalen die je volgt melden zich niet.", "Channels you follow don't notify you.")}</span></span><input type="checkbox" checked={view.settings.muteChannels} onchange={(e) => save({ muteChannels: e.currentTarget.checked })} /></label>
+        <label class="row"><span>{tr("Groepen stil", "Mute groups")}<br /><span class="faint small">{tr("Een groep meldt zich alleen als iemand je noemt.", "A group only notifies you when someone mentions you.")}</span></span><input type="checkbox" role="switch" checked={view.settings.muteGroups} onchange={(e) => save({ muteGroups: e.currentTarget.checked })} /></label>
+        <label class="row"><span>{tr("Statussen stil", "Mute statuses")}<br /><span class="faint small">{tr("Statusupdates van je contacten melden zich niet.", "Status updates from your contacts don't notify you.")}</span></span><input type="checkbox" role="switch" checked={view.settings.muteStatus} onchange={(e) => save({ muteStatus: e.currentTarget.checked })} /></label>
+        <label class="row"><span>{tr("Kanalen stil", "Mute channels")}<br /><span class="faint small">{tr("Kanalen die je volgt melden zich niet.", "Channels you follow don't notify you.")}</span></span><input type="checkbox" role="switch" checked={view.settings.muteChannels} onchange={(e) => save({ muteChannels: e.currentTarget.checked })} /></label>
         <button class="link" onclick={() => (perChat = !perChat)}>{perChat ? "▾" : "▸"} {tr("Per chat", "Per chat")} <span class="faint small">· {tr("Kies per persoon, groep, status of kanaal: volgens de regel hierboven, altijd melden, of nooit.", "Choose per person, group, status or channel: by the rule above, always notify, or never.")}</span></button>
         {#if perChat}
           {#if all.length === 0}
@@ -150,7 +150,7 @@
           {/if}
         {/if}
       {/if}
-      <label class="row"><span>{tr("Leesbevestiging bij antwoorden", "Read receipt when replying")}<br /><span class="faint small">{tr("Als je antwoordt of op Gelezen klikt, zie je bericht als gelezen op WhatsApp. Nooit alleen omdat het binnenkwam.", "When you reply or click Mark as read, the message shows as read on WhatsApp. Never just because it came in.")}</span></span><input type="checkbox" checked={view.settings.markReadOnReply} onchange={(e) => save({ markReadOnReply: e.currentTarget.checked })} /></label>
+      <label class="row"><span>{tr("Leesbevestiging bij antwoorden", "Read receipt when replying")}<br /><span class="faint small">{tr("Als je antwoordt of op Gelezen klikt, zie je bericht als gelezen op WhatsApp. Nooit alleen omdat het binnenkwam.", "When you reply or click Mark as read, the message shows as read on WhatsApp. Never just because it came in.")}</span></span><input type="checkbox" role="switch" checked={view.settings.markReadOnReply} onchange={(e) => save({ markReadOnReply: e.currentTarget.checked })} /></label>
       <button class="link" onclick={() => (advanced = !advanced)}>{advanced ? "▾" : "▸"} {tr("Geavanceerd", "Advanced")}</button>
       {#if advanced}
         <div class="row">
@@ -167,7 +167,7 @@
         </div>
         <div class="row"><span>{tr("Poort van Nooks webhook (127.0.0.1)", "Port of Nook's webhook (127.0.0.1)")}</span><input type="number" min="1024" max="65535" value={view.settings.port} onchange={(e) => save({ port: Number(e.currentTarget.value) })} /></div>
         {#if view.desktop && view.settings.gateway === "gowa"}
-          <label class="row"><span>{tr("GOWA automatisch starten met Nook", "Start GOWA automatically with Nook")}<br /><span class="faint small">{view.gowaRunning ? tr("GOWA draait.", "GOWA is running.") : tr("Nook start GOWA alleen op deze computer, op 127.0.0.1, zonder media te downloaden.", "Nook starts GOWA only on this computer, on 127.0.0.1, without downloading media.")}</span></span><input type="checkbox" checked={view.settings.autoStart} onchange={(e) => save({ autoStart: e.currentTarget.checked })} /></label>
+          <label class="row"><span>{tr("GOWA automatisch starten met Nook", "Start GOWA automatically with Nook")}<br /><span class="faint small">{view.gowaRunning ? tr("GOWA draait.", "GOWA is running.") : tr("Nook start GOWA alleen op deze computer, op 127.0.0.1, zonder media te downloaden.", "Nook starts GOWA only on this computer, on 127.0.0.1, without downloading media.")}</span></span><input type="checkbox" role="switch" checked={view.settings.autoStart} onchange={(e) => save({ autoStart: e.currentTarget.checked })} /></label>
           {#if view.settings.autoStart}
             <div class="row"><span>{tr("Pad naar GOWA", "Path to GOWA")}</span><input value={view.settings.gowaPath} placeholder="~/gowa/whatsapp" onchange={(e) => save({ gowaPath: e.currentTarget.value })} /></div>
           {/if}
