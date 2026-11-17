@@ -444,8 +444,8 @@ private struct ChangeRow: View {
                 Text(change.title)
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
                     .truncationMode(.tail)
+                    .nookTipWhenCut(change.title)
                 Spacer(minLength: 4)
                 Text(NookDates.ago(change.date))
                     .font(NookTheme.TextStyle.detail)
@@ -461,6 +461,5 @@ private struct ChangeRow: View {
         .buttonStyle(.nookPlain)
         .disabled(url == nil)
         .onHover { hovering = $0 }
-        .nookTip(change.title + " · " + change.author)
     }
 }

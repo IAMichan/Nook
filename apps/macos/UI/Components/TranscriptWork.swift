@@ -158,13 +158,12 @@ struct TranscriptStepDetail: View {
             Text(error)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
                 .truncationMode(.tail)
+                .nookTipWhenCut(error)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, TranscriptStyle.workIndent)
                 .padding(.bottom, NookTheme.Spacing.xxs)
-                .nookTip(error)
         }
         if open, let tasks, !tasks.isEmpty {
             TaskListRows(steps: tasks)
@@ -365,7 +364,7 @@ struct TranscriptLiveLine: View {
                     TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
                                        label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
                                        live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
-                        .nookTip(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
+                        .nookTip(help ?? "")
                     if let progress, activity.isStep { WorkProgressMark(progress: progress) }
                 }
             }
@@ -552,10 +551,8 @@ struct ModelSwitchDivider: View {
                 Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
                 endpoint(change.to, model: true, effort: true)
             }
-            .nookTip(ModelSwitchText.plain(change))
         } else {
             TimelineSystemDivider(label: words(change.from) + " → " + words(change.to)) { EmptyView() }
-                .nookTip(ModelSwitchText.plain(change))
         }
     }
 
@@ -608,6 +605,7 @@ struct ModelSwitchDivider: View {
                 .fontWeight(.medium)
                 .foregroundStyle(brand?.style ?? AnyShapeStyle(NookTheme.textSecondary))
         }
-        .nookTip([account?.label ?? endpoint.agent, text].joined(separator: " · "))
+        // The account shows only as a badge on the logo: its name on hover.
+        .nookTip(account.map { [$0.label, text].joined(separator: " · ") } ?? "")
     }
 }

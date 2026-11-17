@@ -2,7 +2,7 @@
   // A changed file as a card (the iPhone's review screen): name, folder, kind and counts; open for its patch.
   import type { Snippet } from "svelte";
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   import PatchView from "./PatchView.svelte";
   let { path, kind, added, removed, patch, truncated, oncomment, extra, open = $bindable(false) }: {
     path: string; kind?: string; added?: number; removed?: number; patch?: string; truncated?: boolean;

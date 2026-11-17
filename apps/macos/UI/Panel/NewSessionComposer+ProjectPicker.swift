@@ -52,13 +52,11 @@ extension NewSessionComposer {
             } content: {
                 projectMenuContent
             }
-            .composerTip(tr("compose.noProject.help"))
         } else if remoteMachine == nil {
             Button(action: chooseNoProject) {
                 HoverUnderlinedLabel(title: tr("compose.startWithoutProject"), color: NookTheme.textSecondary)
             }
             .buttonStyle(.nookPlain)
-            .composerTip(tr("ws.new.noProjectDetail"))
         }
     }
 
@@ -77,7 +75,6 @@ extension NewSessionComposer {
             } content: {
                 projectMenuContent
             }
-            .composerTip(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             Text("?").foregroundStyle(NookTheme.paper)
             if inspecting {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)

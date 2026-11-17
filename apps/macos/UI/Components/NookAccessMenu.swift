@@ -21,7 +21,6 @@ struct NookAccessMenu: View {
                 }
             }
         }
-        .composerTip(access.detail + " · " + tr("nookAccess.switch"))
         .keyCommands(["composer.access": {
             settings.nookAccess = settings.nookAccess.next
             return true

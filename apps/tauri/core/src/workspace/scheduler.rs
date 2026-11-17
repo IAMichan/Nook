@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use super::manager::Manager;
 use super::models::{ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider, RunStatus};
+use super::nook_schedule;
 use super::schedule::{
     self, effective_permission, reason, FireLedger, RunGate, ScheduleTrigger, ScheduledRunStatus, ScheduledTask, ScheduledTaskTarget,
     WebhookQueue,
@@ -75,6 +76,24 @@ pub trait SessionHost: Send + Sync {
     fn session(&self, id: Uuid) -> Option<(RunStatus, Option<String>, PermissionPolicy)>;
     /// Starts the next turn in an existing session with a new conversation (`fresh`) or as a follow-up.
     fn send_to(&self, id: Uuid, text: &str, fresh: bool, note: &str) -> Result<(), String>;
+    /// Asks Nook Chat a task's prompt in a conversation of its own, with `note` for the brain only. The app reports
+    /// the end through [`Scheduler::finish_run`]. A host without Nook Chat (tests, the agents' own manager) has none.
+    fn ask_nook(&self, run: NookRun) -> Result<(), String> {
+        let _ = run;
+        Err(reason::NO_BRAIN.into())
+    }
+}
+
+/// A run of a task for Nook Chat itself, as the scheduler hands it to the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NookRun {
+    pub task: Uuid,
+    pub title: String,
+    pub prompt: String,
+    /// What the brain reads beside the prompt (`nook_schedule::run_note`), never shown.
+    pub note: String,
+    /// A quiet run that finds nothing new answers `nook_schedule::NOTHING_NEW` and leaves no conversation.
+    pub quiet: bool,
 }
 
 impl SessionHost for Arc<Manager> {
@@ -366,7 +385,7 @@ impl Scheduler {
         now: DateTime<Utc>,
         tz: &Tz,
     ) -> bool {
-        let task = {
+        let (task, previous) = {
             let mut s = self.lock();
             let Some(index) = s.tasks.iter().position(|t| t.id == id) else { return false };
             if !s.ledger.claim(key) {
@@ -376,6 +395,7 @@ impl Scheduler {
                 return false;
             }
             let row = &mut s.tasks[index];
+            let previous = row.last_run;
             row.last_run = Some(now);
             row.last_status = Some(ScheduledRunStatus::Running);
             row.last_error = None;
@@ -383,7 +403,7 @@ impl Scheduler {
             let task = row.clone();
             s.running.insert(id, (None, trigger));
             self.save(&s);
-            task
+            (task, previous)
         };
         match &task.target {
             ScheduledTaskTarget::NewSession { project_path, provider, profile_id } => {
@@ -443,8 +463,26 @@ impl Scheduler {
                     Err(e) => self.finish(id, ScheduledRunStatus::Failed, Some(e), now, tz),
                 }
             }
+            ScheduledTaskTarget::Nook => {
+                // "Run now" by hand always answers; a quiet check on its schedule only speaks up for something new.
+                let quiet = task.quiet && trigger != ScheduleTrigger::Manual;
+                let since = if trigger == ScheduleTrigger::Schedule { previous } else { None };
+                let note = nook_schedule::run_note(&task.title, since, quiet, trigger == ScheduleTrigger::Webhook);
+                let run = NookRun { task: id, title: task.title.clone(), prompt: prompt.to_string(), note, quiet };
+                if let Err(e) = host.ask_nook(run) {
+                    self.finish(id, ScheduledRunStatus::Failed, Some(e), now, tz);
+                }
+            }
         }
         true
+    }
+
+    /// The end of a run the app carries (a run of Nook Chat's own): its status and, when it failed or found nothing
+    /// new, why.
+    pub fn finish_run<Tz: TimeZone>(&self, id: Uuid, status: ScheduledRunStatus, error: Option<String>, now: DateTime<Utc>, tz: &Tz) {
+        if self.is_running(id) {
+            self.finish(id, status, error, now, tz);
+        }
     }
 
     /// A started session that is no longer active ends the run of its task.
@@ -682,6 +720,77 @@ mod tests {
         assert_eq!(row.last_run, Some(utc("2026-03-02T08:10:00Z")));
         assert_eq!(row.next_run, Some(utc("2026-03-02T08:41:00Z")), "the interval counts from the end of the run");
         assert!(row.last_session.is_some());
+    }
+
+    struct NookHost(Mutex<Vec<NookRun>>);
+
+    impl SessionHost for NookHost {
+        fn start_session(&self, _: NewRunConfig) -> Result<Uuid, String> {
+            Err("no sessions".into())
+        }
+
+        fn session(&self, _: Uuid) -> Option<(RunStatus, Option<String>, PermissionPolicy)> {
+            None
+        }
+
+        fn send_to(&self, _: Uuid, _: &str, _: bool, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn ask_nook(&self, run: NookRun) -> Result<(), String> {
+            self.0.lock().unwrap().push(run);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_task_for_nook_asks_nook_chat_and_waits_for_the_app_to_end_it() {
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let mut task =
+            ScheduledTask::new("Check", "Anything new?", ScheduleRule::Interval { seconds: 1800 }, ScheduledTaskTarget::Nook, now);
+        task.quiet = true;
+        let task = s.save_task(task, now, &Utc);
+        let host = NookHost(Mutex::default());
+        s.tick(&host, true, &profile, utc("2026-03-02T08:30:00Z"), &Utc);
+        {
+            let runs = host.0.lock().unwrap();
+            assert_eq!(runs.len(), 1);
+            assert_eq!(runs[0].prompt, "Anything new?");
+            assert!(runs[0].quiet && runs[0].note.contains(nook_schedule::NOTHING_NEW));
+            assert!(!runs[0].note.contains("previous run"), "the first run has nothing to compare with");
+        }
+        // No session to watch: the run stays until the app ends it.
+        s.tick(&host, true, &profile, utc("2026-03-02T09:30:00Z"), &Utc);
+        assert!(s.is_running(task.id));
+        assert_eq!(host.0.lock().unwrap().len(), 1);
+        s.finish_run(task.id, ScheduledRunStatus::Succeeded, Some(reason::NOTHING_NEW.into()), utc("2026-03-02T08:32:00Z"), &Utc);
+        let row = s.task(task.id).unwrap();
+        assert_eq!(row.last_status, Some(ScheduledRunStatus::Succeeded));
+        assert_eq!(row.next_run, Some(utc("2026-03-02T09:02:00Z")));
+        s.tick(&host, true, &profile, utc("2026-03-02T09:02:00Z"), &Utc);
+        assert!(host.0.lock().unwrap()[1].note.contains("The previous run was at"));
+        // "Run now" always answers, also for a quiet task.
+        s.finish_run(task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T09:03:00Z"), &Utc);
+        assert_eq!(s.run_now(&host, true, task.id, &profile, utc("2026-03-02T09:04:00Z"), &Utc), RunNow::Started);
+        assert!(!host.0.lock().unwrap()[2].quiet);
+        // A host without Nook Chat fails the run with the reason the list shows.
+        s.finish_run(task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T09:05:00Z"), &Utc);
+        assert_eq!(s.run_now(&FakeHost::default(), true, task.id, &profile, utc("2026-03-02T09:06:00Z"), &Utc), RunNow::Started);
+        assert_eq!(s.task(task.id).unwrap().last_error.as_deref(), Some(reason::NO_BRAIN));
+    }
+
+    #[test]
+    fn a_nook_target_survives_a_round_trip() {
+        let now = utc("2026-03-02T08:00:00Z");
+        let mut task = ScheduledTask::new("Check", "x", ScheduleRule::Webhook, ScheduledTaskTarget::Nook, now);
+        task.preset = Some("secretary.morning".into());
+        let json = serde_json::to_value(&task).unwrap();
+        assert_eq!(json["target"], serde_json::json!({"type": "nook"}));
+        assert!(json.get("quiet").is_none(), "only a quiet task stores the flag");
+        let back: ScheduledTask = serde_json::from_value(json).unwrap();
+        assert_eq!(back, task);
     }
 
     #[test]

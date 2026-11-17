@@ -9,8 +9,8 @@
   import { haptic } from "../../lib/haptics";
   import NavBar from "./ui/NavBar.svelte";
   import FileCard from "./ui/FileCard.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
 
   let { session, onback, oncomment, took }: { session: string; onback: () => void; oncomment: (block: string) => void; took: (v: ClientView) => void } = $props();
   let files = $state<DiffFile[] | null>(null);

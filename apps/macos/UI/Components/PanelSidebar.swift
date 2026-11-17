@@ -253,8 +253,9 @@ private struct PanelSidebarTabButton: View {
                 Button(tr("split.toWindow")) { TabWindowController.shared.open(tab, app: AppModel.shared) }
             }
         }
-        // Below the tab: the bar sits right under the title bar's row, so above would cover its buttons.
-        .nookTip("\(title) (\(shortcut))", edge: .bottom)
+        // Below the tab: the bar sits right under the title bar's row, so above would cover its buttons. Only a bare icon
+        // needs its name; a named tab shows it.
+        .nookTip("\(title) (\(shortcut))", edge: .bottom, enabled: !named)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(beside ? tr("split.beside") : "")

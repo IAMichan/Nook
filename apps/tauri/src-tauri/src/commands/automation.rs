@@ -102,7 +102,8 @@ pub async fn automation_run_task(app: AppHandle, task: String) -> Res<RunNow> {
     let app2 = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let profile = |p: RunProvider| automation::default_profile(&app2, p);
-        scheduler.run_now(&manager, enabled, task, &profile, Utc::now(), &Local)
+        let host = crate::workspace::nook_runs::AppHost { manager, app: app2.clone() };
+        scheduler.run_now(&host, enabled, task, &profile, Utc::now(), &Local)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -165,12 +166,12 @@ pub fn workspace_delegation(app: AppHandle, state: State<'_, AutomationState>, r
 }
 
 /// Delegates a task from a session to a child session (for the bridge's `delegate_task`).
-#[allow(dead_code)]
 pub fn delegate(app: &AppHandle, parent: Uuid, request: delegation::Request) -> Res<Uuid> {
     let manager = app.state::<WorkspaceState>().manager.clone();
     let auto = app.state::<AutomationState>();
     let profile = |p: RunProvider| automation::default_profile(app, p);
+    let typed = !request.title.trim().is_empty();
     let child = delegation::delegate(&manager, &auto.links, parent, request, &profile)?;
-    automation::title_new_session(app, child, false);
+    automation::title_new_session(app, child, typed);
     Ok(child)
 }

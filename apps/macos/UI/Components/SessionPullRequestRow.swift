@@ -62,7 +62,7 @@ struct SessionPullRequestRow: View {
                         HStack(spacing: NookTheme.Spacing.xs) {
                             Text(verbatim: "#\(link.number)").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary)
                             if let ci, let outcome = PullRequestCheck.Outcome(ci), !link.conflicted, link.state != .draft {
-                                CheckOutcomeGlyph(outcome: outcome).nookTip(tr("agents.pulls.status." + outcome.rawValue))
+                                CheckOutcomeGlyph(outcome: outcome)
                             }
                             if watching {
                                 Image(icon: "eye")
@@ -83,7 +83,6 @@ struct SessionPullRequestRow: View {
         .padding(.trailing, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm)
         .hoverRowFill(radius: NookTheme.Radius.card)
-        .nookTip(link.url)
         .hoverCard(arrowEdge: .leading) {
             HoverCard(title: link.title ?? "#\(link.number)") {
                 if let head = link.headBranch, let base = link.baseBranch {

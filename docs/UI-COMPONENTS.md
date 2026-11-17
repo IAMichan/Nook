@@ -162,6 +162,11 @@ Nook has one visual language, and the repository guards it in three places:
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` (started by `ci.yml`) runs it on every pull request that touches the app.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
+4. **The Tauri app** has the same two guards in `npm test` (`apps/tauri/src/theme/`): `theme-tokens.test.ts` reads
+   `NookPalette.swift` and `NookTheme.swift` and fails when a color of `nookDark`/`nookLight`, a `Radius`, a `Spacing`
+   step, a `TextStyle` or a `Motion` duration differs from the variables in `src/app.css`; `ui-lint.test.ts` fails when
+   a `.svelte` file writes a color literal, a font size or a radius in px outside its script. Older files keep the
+   counts in `ui-baseline.json` and may only go down (UI-76). Change a token on both sides in the same pull request.
 
 When a file genuinely draws its own colors (a brand mark, a chart palette, Nook's face), add it to the allow-list in
 both `UIConsistencyTests.ownColors` and `OWN_COLORS` in `scripts/ui-lint.sh`, with the reason in a comment; never
@@ -199,9 +204,13 @@ The checklist for a new or changed view:
 - A notification card says its state in `NookCard.status` (a tinted pill at the end of its header, colored by its
   `DoneTone`) and an agent's changed lines in `NookCard.changes`; its `context` keeps only who and where.
 - The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
-- Every string through `tr("key")` in all five languages, and a `.nookTip` (or `.help`) and accessibility label on a
-  symbol-only control or menu (`ToolbarIconButton` and `NookIconButton` set both from their label). In lists, sidebars
-  and toolbars prefer `.nookTip`: AppKit's `.help` waits about a second and never swaps instantly.
+- Every string through `tr("key")` in all five languages, and a `.nookTip` and accessibility label on a symbol-only
+  control or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
+- A tooltip only where it is needed, never by default. It belongs on: a symbol-only control (its name); text that is
+  cut short (`.nookTipWhenCut`); a disabled control (why it is disabled); a lone mark with no words beside it that
+  say the same. Never on a whole row, card or tab, a control with a visible label, metadata (dates, authors, counts,
+  branches, line counts), or a mark next to text that already says it. An explanation a setting needs is an ⓘ
+  (`SettingsInfoButton`, `SettingInfoLabel`) or a footnote, not a hover.
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
 - A key that runs a command (send, find, the command palette, a new session, undo…) is a keybinding command, offered
@@ -438,6 +447,47 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 
 Workspace-only blocks (`InfoRow`, `WSSectionTitle`, `StatusBadge`) live in
 `UI/Workspace/WorkspaceComponents.swift`; `WSEmptyState`, used by the iPhone too, is in `UI/Shared/PanelParts.swift`.
+
+## The Tauri app's components — `apps/tauri/src/components/ui`
+
+The Tauri app (Windows, Linux, Android) builds its views from the same parts, as Svelte components next to their Swift
+names. Each takes its colors, type, radii and spacing from the variables in `src/app.css` (the twins of `NookTheme`)
+and draws the desktop look by default; inside the companion (`.phone`, `views/companion/ui/phone.css`) it takes the
+iPhone's look, so the phone and the desktop share one component. Use these instead of drawing a dialog, menu, sheet or
+switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the twins still to build.
+
+| Svelte | Swift | Use |
+| --- | --- | --- |
+| `ConfirmedButton.svelte`, `ask()` in `lib/confirm.svelte.ts` | `ConfirmedButton`, `.confirmDelete` | Anything that cannot be undone asks first: the question as the title, what is lost under it, the red button and Cancel (bold, so Return never removes anything). `ConfirmedButton` is the button; `await ask({ question, detail, confirmTitle })` is for handlers and menu items. `ConfirmHost.svelte` (mounted once in `App.svelte`) shows one question at a time. Never `window.confirm`; `confirm.test.ts` fails on it |
+| `Dialog.svelte` | `confirmationDialog`, `.alert` | A question with a visible title, a message, maybe a field, and its buttons, the answer first and Cancel last. Escape closes it, Return in the field takes the bold button |
+| `Sheet.svelte` | `.sheet` | A sheet over the page: a centered card on the desktop, sliding up on the phone. Escape and a click beside it close it |
+| `Menu.svelte` | `NookMenuItems`, the iPhone's menus | A menu near what was clicked: sections, a checkmark on the chosen row, destructive rows in coral, an optional row of quick reactions |
+| `Toggle.svelte` | `Toggle` in a settings row | An on/off switch, mint when on |
+| `SearchField.svelte` | `NookSearchField` | The search field, with a clear button once something is typed |
+| `EmptyState.svelte` | `WSEmptyState` | An empty page: an icon, a title, a line and maybe one action |
+| `Banner.svelte` | `Banner` | An icon in its color and a line on a card, optionally a button |
+| `StatusPill.svelte`, `PulseDot.svelte` | `StatusBadgeLabel`, `PulseDot` | A session's state as a mark and a word in its color; the pulsing dot while it works |
+| `TabBar.svelte` | the iPhone's tab bar | Tabs along the bottom, each with its icon, name and count |
+| `Ico.svelte` | `NookIcon` | A Lucide icon in the text color around it |
+| `tip.ts` (`use:tip={label}`) | `.nookTip` | The fast tooltip: after a 150 ms rest, swapping at once to the next control within 400 ms, closing on leave, click, scroll or key, drawn once on the body so nothing clips it, flipped and clamped at the window's edge (`placeTip`). It names an icon-only control for screen readers too. Never the browser's `title` tooltip |
+| `HoverCard.svelte` | `HoverCard` | A detail card on hover that stays while the pointer is on the view or the card, and a moment after; a line inside closes it through `close` |
+| `Skeleton.svelte`, `PatientSpinner.svelte`, `BusyLine.svelte`, `Spinner.svelte` | `NookSkeleton`/`NookSkeletonLines`, `PatientSpinner`, `BusyLine` | Loading: a breathing placeholder in the shape to come where the layout is known; otherwise a spinner that waits 350 ms before it fades in; a running status line with a small spinner |
+| `CountBadge.svelte` | `NookCountBadge` | How many wait for you: a small amber count, nothing at zero |
+| `FilterChip.svelte`, `ChipFlow.svelte` | `NookFilterChip`, `ChipFlow` | A chip in a row of filters (accent when chosen, optional count and state mark); chips wrapping onto as many rows as needed |
+| `StatTile.svelte` | `NookStatTile` | One number with its label and a line under it |
+| `Tag.svelte` | `NookTag` | A short word on a soft chip, tinted or grey, `small` or `regular`; a status is a `StatusPill`, not a tag |
+| `SectionLabel.svelte` | `NookSectionLabel` | A group's name in a list or on a page, with an optional trailing control |
+| `ListEmptyNote.svelte`, `LoadFailedNote.svelte` | `ListEmptyNote`, `LoadFailedNote` | The one line of an empty list; a part that failed to load, with its reason in soft coral, a retry and an optional extra button |
+| `IconDetailRow.svelte` | `IconDetailRow` | A small icon in its color, a title, lines under it (a `path` cut in the middle, `cutMiddle`) and a trailing slot |
+| `IconButton.svelte`, `CopyIconButton.svelte`, `RefreshIconButton.svelte`, `TabCloseButton.svelte` | `NookIconButton`, `CopyIconButton`/`CopiedMoment`, `RefreshIconButton`, `TabCloseButton` | Symbol buttons with their name as tooltip: copy turns into a checkmark for 1.5 s (a second click restarts it); refresh turns its arrows while it runs, never a spinner in its place; the small × of a tab. Never a hand-rolled `copied` flag |
+| `hover-row`, `hover-reveal` classes (`ui.css`) | `.hoverRowFill`, `.revealOnHover` | A row that lifts under the pointer (`selected` when chosen); a control inside it that shows only under the pointer or with the keyboard, and cannot be clicked while hidden |
+| `DisclosureChevron.svelte` | `DisclosureChevron` | The chevron of a section that folds, turning from right to down |
+| `ProjectIconView.svelte`, `lib/project-icon.ts` | `ProjectIconView`, `ProjectIcon` | A project's icon: emoji, monogram on a tint or image, read from the Mac's stored string; without one its initials on the tint picked from its name (FNV-1a, the same as the Mac) |
+| `QRCodeView.svelte` | `QRCodeView` | The one QR code for a phone to scan, from the backend's SVG or an image, on a light card with a label for screen readers |
+| `ImageModal.svelte` | `ImageModal` | A picture shown big over a dimmed window; a click or Escape closes it, an optional button opens the file in the system's viewer |
+| `TimelineNewDivider.svelte`, `TimelineEarlierRow.svelte` | `TimelineNewDivider`, `TimelineEarlierRow` | "New since your last visit" above what came in; "Show earlier messages" between hairlines at the top of a conversation that opened with only its latest turns |
+| `DropdownTileGrid.svelte` | `DropdownTileGrid`, `DropdownTile`, `DropdownNote` | The big choices on top of a dropdown as tinted tiles in a grid of three, with an optional tip line |
+| `components/NoticeOk.svelte` | `NookAcknowledgeButton` | The OK of a notice, with its countdown ring while it closes by itself |
 
 ## Shortcut cheat sheet
 
