@@ -8,9 +8,9 @@
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
   import SettingsRow from "./ui/SettingsRow.svelte";
-  import Toggle from "./ui/Toggle.svelte";
+  import Toggle from "../../components/ui/Toggle.svelte";
   import AgentMark from "./ui/AgentMark.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
 
   let { view, took, onclose, onlocal, onswitch, onadd }: {
     view: ClientView; took: (v: ClientView) => void; onclose: () => void; onlocal?: () => void; onswitch?: (id: string) => void; onadd?: () => void;

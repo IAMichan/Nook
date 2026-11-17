@@ -42,12 +42,14 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 
 pub mod action_gate;
 pub mod answer_images;
+pub mod app_menu;
 pub mod calendar_invite;
 pub mod chart;
 pub mod chat_image;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod claude_code;
 pub mod command_risk;
+pub mod conversation_title;
 pub mod conversation_window;
 pub mod conversations;
 pub mod dates;
@@ -58,6 +60,7 @@ pub mod intent;
 pub mod local_intent;
 pub mod meeting_times;
 pub mod memory;
+pub mod message_trust;
 pub mod model_download;
 pub mod network_guard;
 pub mod prepare;

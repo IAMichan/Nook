@@ -166,12 +166,12 @@ pub fn workspace_delegation(app: AppHandle, state: State<'_, AutomationState>, r
 }
 
 /// Delegates a task from a session to a child session (for the bridge's `delegate_task`).
-#[allow(dead_code)]
 pub fn delegate(app: &AppHandle, parent: Uuid, request: delegation::Request) -> Res<Uuid> {
     let manager = app.state::<WorkspaceState>().manager.clone();
     let auto = app.state::<AutomationState>();
     let profile = |p: RunProvider| automation::default_profile(app, p);
+    let typed = !request.title.trim().is_empty();
     let child = delegation::delegate(&manager, &auto.links, parent, request, &profile)?;
-    automation::title_new_session(app, child, false);
+    automation::title_new_session(app, child, typed);
     Ok(child)
 }

@@ -11,6 +11,8 @@
   import { tr } from "../lib/i18n.svelte";
   import type { Target } from "../lib/inbox";
   import Icon from "./Icon.svelte";
+  import { agentApi, type AgentProfile } from "../lib/agents";
+  import { glanceLimits, tone } from "../lib/glance-limits";
 
   let { onopen }: { onopen: (target: Target) => void } = $props();
 
@@ -54,6 +56,14 @@
     };
   });
 
+  // Per signed-in account its fullest plan window: what you would run out of first.
+  let profiles = $state<AgentProfile[]>([]);
+  $effect(() => {
+    if (local) agentApi.profiles().then((p) => (profiles = p)).catch(() => {});
+  });
+  const limits = $derived(local ? glanceLimits(agents.overview?.planUsage, agents.overview?.profilePlanUsage ?? {}, profiles) : []);
+  const fullest = $derived(limits[0]?.used ?? 0);
+
   const title = (s: (typeof busy)[number]) => s.summary || s.lastPrompt || s.project || s.name;
 </script>
 
@@ -85,6 +95,19 @@
     </button>
   {/if}
 
+  {#if limits.length}
+    <button class="card" onclick={() => onopen({ kind: "workspace", page: "usage" })}>
+      <span class="head"><Icon name="chart" size={14} /><span>{tr("Limieten", "Limits")}</span>
+        {#if tone(fullest) !== "calm"}<span class="status {tone(fullest)}">{tr("Bijna vol", "Nearly full")}</span>{/if}</span>
+      {#each limits.slice(0, 3) as limit (limit.id)}
+        <span class="limit">
+          <span class="line"><span class="ellipsis">{limit.name} · {limit.window === "5h" ? tr("5 uur", "5 hours") : tr("week", "week")}</span><span class="pct {tone(limit.used)}">{limit.used}%</span></span>
+          <span class="bar"><span class="fill {tone(limit.used)}" style:width="{Math.min(100, limit.used)}%"></span></span>
+        </span>
+      {/each}
+    </button>
+  {/if}
+
   {#if track}
     <div class="card music" role="button" tabindex="0" onclick={() => onopen({ kind: "route", route: "music" })}
       onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen({ kind: "route", route: "music" }); } }}>
@@ -111,6 +134,15 @@
   .line .ellipsis { flex: 1; }
   .who { flex: none; font: var(--text-caption); }
   .quiet { font: var(--text-detail); color: var(--text2); }
+  .status { margin-left: auto; font: var(--text-caption); }
+  .status.warning, .pct.warning { color: var(--amber); }
+  .status.error, .pct.error { color: var(--coral); }
+  .limit { display: flex; flex-direction: column; gap: var(--space-4); }
+  .pct { flex: none; font-variant-numeric: tabular-nums; font: var(--text-caption); color: var(--text-strong); }
+  .bar { height: 4px; border-radius: var(--radius-pill); background: var(--line); overflow: hidden; }
+  .fill { display: block; height: 100%; background: var(--text2); }
+  .fill.warning { background: var(--amber); }
+  .fill.error { background: var(--coral); }
   .more { font: var(--text-caption); }
   .now { display: flex; align-items: center; gap: var(--space-12); min-width: 0; }
   .now img { width: 36px; height: 36px; flex: none; border-radius: var(--radius-chip); object-fit: cover; }

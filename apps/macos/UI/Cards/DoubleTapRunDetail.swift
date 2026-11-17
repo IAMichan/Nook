@@ -124,10 +124,9 @@ struct DoubleTapRunDetail: View {
                     Text(check.value)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textStrong)
-                        .lineLimit(allChecks ? 12 : 5)
+                        .nookTipWhenCut(check.value, lines: allChecks ? 12 : 5)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                        .nookTip(check.value)
                 }
                 .padding(.horizontal, NookTheme.Spacing.scaled(NookTheme.Spacing.md))
                 .padding(.vertical, NookTheme.Spacing.scaled(NookTheme.Spacing.sm))

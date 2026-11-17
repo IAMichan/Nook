@@ -2,8 +2,8 @@
   // Under the header of every tab (`ConnectionLine`): why the computer cannot be reached, once it has been away a moment.
   import { tr } from "../../../lib/i18n.svelte";
   import { messageTime, newerMac, versionNotice, writingWaits, type ClientView } from "../../../lib/companion";
-  import Ico from "./Ico.svelte";
-  import Banner from "./Banner.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import Banner from "../../../components/ui/Banner.svelte";
   let { view }: { view: ClientView } = $props();
   let away = $state(false);
   const notice = $derived(view.phase === "connected" ? versionNotice(view) : null);

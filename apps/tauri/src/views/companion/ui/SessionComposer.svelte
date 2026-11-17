@@ -4,7 +4,7 @@
   // sits under the field.
   import type { Snippet } from "svelte";
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   import DictationButton from "./DictationButton.svelte";
 
   let {

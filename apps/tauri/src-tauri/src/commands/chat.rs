@@ -14,9 +14,10 @@ use nook_core::brain::service::{self, BrainEnv, BrainRequest};
 use nook_core::brain::sources::{self, SourceScope};
 use nook_core::brain::suggestions::{self, Recovery};
 use nook_core::brain::{
-    action_gate, chart, conversation_window, follow_ups, intent::ChatIntent, research, undo, ChatTurn, LoopTool, PlannedAction, PromptImage,
+    action_gate, chart, conversation_title, conversation_window, follow_ups, intent::ChatIntent, research, undo, ChatTurn, LoopTool,
+    PlannedAction, PromptImage,
 };
-use nook_core::nooks::{ChatMessage, PlanState, StepState};
+use nook_core::nooks::{ChatMessage, Conversation, PlanState, StepState};
 use nook_core::settings::Settings;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -643,7 +644,8 @@ pub async fn answer_question(
             return;
         }
     };
-    let (mut body, offers) = follow_ups::split(&plan.text);
+    // A card's own answer has room for two offers, the chat for three.
+    let (mut body, offers) = follow_ups::split_limited(&plan.text, if card.is_some() { follow_ups::CARD_LIMIT } else { follow_ups::LIMIT });
 
     // Een klein brein verzint soms een getal, tijd of adres. Nook vergelijkt die met alles wat het kreeg, en laat het
     // antwoord opnieuw schrijven als er een nergens staat.
@@ -815,6 +817,9 @@ pub async fn answer_question(
     finish(app, nook_id);
 
     learn_after_answer(app, text, history, nook_id, message_id, &actions);
+    if card.is_none() {
+        name_after_first_answer(app, nook_id, message_id);
+    }
     // Onthouden of vergeten waar je eigen woorden om vragen, en kleine veilige dingen als dat aan staat, gebeuren meteen.
     if can_run_without_asking(&settings, &actions, text) && problems.iter().all(Vec::is_empty) {
         let included = vec![true; actions.len()];
@@ -892,6 +897,49 @@ pub fn asks_for(request: &str, action: &PlannedAction) -> bool {
         }
         _ => false,
     }
+}
+
+/// After a Nook's first answer: the chosen brain gives it a short title ("Offer from Infaris") in place of the first
+/// words of the question, so the list reads at a glance. Only while the title is still the one the question gave: a
+/// name you gave it stays. In the background; on failure the title stays as it was.
+fn name_after_first_answer(app: &AppHandle, nook_id: &str, message_id: &str) {
+    let state = app.state::<AppState>();
+    let seed = state.with_chat(|c| {
+        let conv = c.get(nook_id)?;
+        let mut questions = conv.messages.iter().filter(|m| m.from_user);
+        let first = questions.next()?;
+        let answer = conv.messages.iter().find(|m| m.id == message_id).filter(|m| !m.is_error && !m.text.is_empty())?;
+        (questions.next().is_none() && conv.title == Conversation::title_from(&first.text))
+            .then(|| (conv.title.clone(), first.text.clone(), answer.text.clone()))
+    });
+    let Some((seed, question, answer)) = seed else { return };
+    let (app, nid) = (app.clone(), nook_id.to_string());
+    tauri::async_runtime::spawn(async move {
+        // Let the next question go first, as a reflection does.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let state = app.state::<AppState>();
+        let settings = state.settings();
+        // A model on this computer runs one thing at a time: a title never waits for, or holds up, an answer.
+        if settings.is_local_brain() && state.with_chat(|c| c.conversations.iter().any(|conv| conv.busy)) {
+            return;
+        }
+        let env = env(&app, &settings);
+        let prompt = conversation_title::prompt(&question, &answer);
+        let reply =
+            tokio::time::timeout(Duration::from_secs(45), service::complete(&settings, &env, conversation_title::SYSTEM, &prompt)).await;
+        let Some(title) = reply.ok().and_then(Result::ok).as_deref().and_then(conversation_title::clean) else { return };
+        let renamed = state.with_chat(|c| match c.get_mut(&nid) {
+            Some(conv) if conv.title == seed => {
+                conv.title = title;
+                true
+            }
+            _ => false,
+        });
+        if renamed {
+            state.save_chat();
+            updated(&app, &nid);
+        }
+    });
 }
 
 /// Na een antwoord: welke bronnen antwoordden (geciteerd) en welke niets vonden, en af en toe een reflectie op wat de

@@ -11,13 +11,13 @@
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
   import IconButton from "./ui/IconButton.svelte";
-  import SearchField from "./ui/SearchField.svelte";
+  import SearchField from "../../components/ui/SearchField.svelte";
   import SessionNotice from "./ui/SessionNotice.svelte";
   import ShelfHeader from "./ui/ShelfHeader.svelte";
   import AgentRow from "./ui/AgentRow.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import Sheet from "./ui/Sheet.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
+  import Sheet from "../../components/ui/Sheet.svelte";
   import PullRequests from "./PullRequests.svelte";
   import SnoozePicker from "./SnoozePicker.svelte";
   import WaitingRow from "./ui/WaitingRow.svelte";

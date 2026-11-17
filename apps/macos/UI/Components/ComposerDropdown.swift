@@ -708,7 +708,6 @@ struct ModeToggle: View {
         }
         .buttonStyle(.nookPlain)
         .fixedSize()
-        .composerTip(mode.help + " · " + tr("compose.modeSwitch"))
     }
 }
 

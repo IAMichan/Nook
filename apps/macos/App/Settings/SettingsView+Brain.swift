@@ -68,16 +68,17 @@ extension SettingsView {
 
             // On this Mac, or an online service. Each section below follows from the one before it.
             Section {
-                Picker(tr("settings.brain.where"), selection: brainKind) {
+                Picker(selection: brainKind) {
                     Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
                     Text(tr("settings.brain.externalChoice")).tag(BrainKind.external)
+                } label: {
+                    SettingInfoLabel(tr("settings.brain.where"), info: tr("settings.brain.localDefault"))
                 }
                 .pickerStyle(.segmented)
-                .nookTip(tr("settings.brain.localDefault"))
             } header: {
                 SettingsSectionTitle(tr("brain.step.where"))
             } footer: {
-                // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
+                // Local needs no warning (its explanation is behind the ⓘ); leaving the Mac is said out loud.
                 if !settings.isLocalBrain {
                     SettingNote(tr("settings.brain.externalWarning"), tone: .warning)
                 }
@@ -126,9 +127,8 @@ extension SettingsView {
                             }
                         }
                     } label: {
-                        SettingText("settings.brain.provider")
+                        SettingInfoLabel(info: brainExplanation) { SettingText("settings.brain.provider") }
                     }
-                    .nookTip(brainExplanation)
                 } header: {
                     SettingsSectionTitle(tr("brain.step.service"))
                 }

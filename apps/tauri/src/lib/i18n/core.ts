@@ -3,6 +3,9 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "Nearly full": { de: "Fast voll", fr: "Presque plein", es: "Casi lleno" },
+  "5 hours": { de: "5 Stunden", fr: "5 heures", es: "5 horas" },
+  "week": { de: "Woche", fr: "semaine", es: "semana" },
   // Windows and loading
   "Nook bar": { de: "Nook-Leiste", fr: "Barre Nook", es: "Barra de Nook" },
   // Work Nook does on its own: the Scheduled tab, the run bar and the "Scheduled run" marker
@@ -530,6 +533,9 @@ export const table: Table = {
   "Companion": { de: "Companion", fr: "Compagnon", es: "Companion" },
   "Nook on your phone": { de: "Nook auf deinem Handy", fr: "Nook sur ton téléphone", es: "Nook en tu móvil" },
   "Make Nook yours": { de: "Mach Nook zu deinem", fr: "Fais de Nook le tien", es: "Haz tuyo Nook" },
+  "New since your last visit": { de: "Neu seit deinem letzten Besuch", fr: "Nouveau depuis ta dernière visite", es: "Nuevo desde tu última visita" },
+  "Show earlier messages": { de: "Frühere Nachrichten zeigen", fr: "Afficher les messages précédents", es: "Mostrar mensajes anteriores" },
+  "Image": { de: "Bild", fr: "Image", es: "Imagen" },
 
   // Markdown blocks
   "Preview": { de: "Vorschau", fr: "Aperçu", es: "Vista previa" },

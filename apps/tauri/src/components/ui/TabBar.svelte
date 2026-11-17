@@ -1,21 +1,22 @@
-<script lang="ts">
-  // The computer's tabs along the bottom (the iPhone's tab bar): Nook, Agents and Chats, each with what waits there.
-  import type { CompanionTab } from "../../../lib/companion";
-  import { tr } from "../../../lib/i18n.svelte";
+<script lang="ts" module>
+  export interface TabBarTab<T extends string = string> { id: T; icon: string; label: string; count?: number }
+</script>
+
+<script lang="ts" generics="T extends string">
+  // Tabs along the bottom (the iPhone's tab bar): each with its icon, its name and what waits there.
+  import { tr } from "../../lib/i18n.svelte";
   import Ico from "./Ico.svelte";
-  let { tabs, tab, counts, onpick }: { tabs: CompanionTab[]; tab: CompanionTab; counts: Record<CompanionTab, number>; onpick: (t: CompanionTab) => void } = $props();
-  const icon = (t: CompanionTab) => (t === "home" ? "sparkles" : t === "agents" ? "layers" : "messages-square");
-  const label = (t: CompanionTab) => (t === "home" ? "Nook" : t === "agents" ? "Agents" : "Chats");
+  let { tabs, tab, onpick }: { tabs: TabBarTab<T>[]; tab: T; onpick: (t: T) => void } = $props();
 </script>
 
 <nav class="bar" aria-label={tr("Tabs", "Tabs")}>
-  {#each tabs as t (t)}
-    <button class:on={tab === t} aria-current={tab === t ? "page" : undefined} onclick={() => onpick(t)}>
+  {#each tabs as t (t.id)}
+    <button class:on={tab === t.id} aria-current={tab === t.id ? "page" : undefined} onclick={() => onpick(t.id)}>
       <span class="icon">
-        <Ico name={icon(t)} size={24} stroke={tab === t ? 2.2 : 1.8} fill={tab === t ? "currentColor" : "none"} />
-        {#if counts[t] > 0}<span class="badge">{counts[t]}</span>{/if}
+        <Ico name={t.icon} size={24} stroke={tab === t.id ? 2.2 : 1.8} fill={tab === t.id ? "currentColor" : "none"} />
+        {#if (t.count ?? 0) > 0}<span class="badge">{t.count}</span>{/if}
       </span>
-      <span class="label">{label(t)}</span>
+      <span class="label">{t.label}</span>
     </button>
   {/each}
 </nav>

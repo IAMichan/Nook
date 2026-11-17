@@ -1,7 +1,7 @@
 <script lang="ts">
   // A row of Settings (`SettingsRow`): an icon on a soft tile, a title and a detail, and what goes on the right.
   import type { Snippet } from "svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { icon, title, detail, tint = "var(--text2)", destructive = false, onclick, trailing }: {
     icon: string; title: string; detail?: string; tint?: string; destructive?: boolean; onclick?: () => void; trailing?: Snippet;
   } = $props();

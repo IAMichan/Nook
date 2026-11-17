@@ -52,6 +52,10 @@ BR Nook Chat and the brain, AG coding agents, CH chat apps and connectors, SV sy
 - [ ] **FD-04** Rust error and status messages in five languages: about 550 Dutch-only strings (about 307 in `core/src`, 248 in `src-tauri/src`; most in `workspace/manager.rs`, `commands/workspace.rs`, `commands/connectors.rs`, `commands/chat.rs`, `companion/client.rs`, `connectors/oauth.rs`, `brain/action_gate.rs`) wrapped in `tr`/`trf` with catalog rows; a test that fails on new Dutch literals · L
   - Progress: `i18n::tests::no_new_dutch_text_outside_tr` fails on Dutch literals outside `tr`/`trf`; `DUTCH_LEFT` in `core/src/i18n/tests.rs` lists what each file still has and only goes down. Done: `workspace/manager.rs`, `commands/workspace.rs`.
 - [ ] **FD-05** Shared desktop components in `src/components/ui/`: move Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner and StatusPill out of `views/companion/ui/`, and add the Svelte twins of `NookTooltip`/`HoverCard`, `ConfirmedButton` (replaces the remaining `confirm()` calls), `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton` (with feedback), `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron`, `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`/`ModelPickerDropdown`, `EmojiBrowser`, `ImageModal`, `QRCodeView`, `NookAcknowledgeButton`; list them next to their Swift names in UI-COMPONENTS.md · L
+  - [x] Part 1: Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner, StatusPill (with `Ico` and `PulseDot`) moved to `src/components/ui/` with a desktop look and the phone look inside `.phone`; `ConfirmedButton` and `ask()` replace the last `confirm()` calls
+  - [x] Part 2: `NookTooltip`/`HoverCard`, `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton`, `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron` (logic in `lib/ui-parts.ts` with tests)
+  - [x] Part 3: `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`, `ImageModal`, `QRCodeView` (the Companion and WhatsApp QR codes use it), `NookAcknowledgeButton` (already `components/NoticeOk.svelte`)
+  - [ ] Part 4: `ModelPickerDropdown` (one picker for the agents and Nook's brain) and `EmojiBrowser` (needs Unicode's emoji list as data and shared frequently-used emoji)
 
 - [x] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
 
@@ -153,6 +157,8 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-84** Memory as on the Mac: "What Nook remembers (n)" with a field to add one, each memory with when it was seen, how sure and how often used, learned sources with a count, and Forget all · S
 
+- [ ] **UI-88** Settings › Companion laid out as the Mac's Settings › iPhone (`CompanionSettings`, `CompanionSetupSheets`): paired phones as `ConnectionRow`s under a `ConnectionListHeader` with "+ Pair", each with its app version and status ("Needs an update"), opening to the outdated or behind note, "What this iPhone may do" (`CompanionScopeToggles`) and the details; pairing in a `PairPhoneSheet` with numbered steps (the app, what it may do, the code, Nook seeing the phone arrive) instead of the inline code and the "next phone" switches on the page; *Send through* as a segmented control; Tauri draws all of this inline with checkboxes today (CO-03, CO-06, CO-09 built on that page). Needs FD-05 · M
+
 ### 2.3 Main window
 
 - [ ] **UI-35** Split view (a second tab beside the current one) and a tab torn off into its own window, reopened after a restart (`PanelSplit`, `TabWindowController`) · L
@@ -223,7 +229,9 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **UI-74** Colour-blind diff colours; switches for math rendering and the rich composer · S
 
-- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom; radii and motion tokens (springs, reduced motion) checked against `NookTheme` · M
+- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom (radii, spacing, text styles, colors and motion durations are now checked against `NookTheme` by `src/theme/theme-tokens.test.ts`) · M
+
+- [ ] **UI-76** No inline colors, font sizes or radii in Svelte: bring `src/theme/ui-baseline.json` (149 files: 161 colors, 563 font sizes, 215 radii at the start) to zero by moving each to the theme's variables; `ui-lint.test.ts` already stops new ones · L
 ## 3. Nook Chat and the brain (BR)
 
 ### 3.1 Brain core and providers
@@ -234,15 +242,15 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 
-- [ ] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
+- [x] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
 
 - [x] **BR-05** OCR for images sent to brains that can't see images (`ChatImage`) · S
 
-- [ ] **BR-06** Brain-written title after the first answer (`nameAfterFirstAnswer`) · S
+- [x] **BR-06** Brain-written title after the first answer (`nameAfterFirstAnswer`) · S
 
-- [ ] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
+- [x] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
 
-- [ ] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
+- [x] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
 
 - [x] **BR-09** Nested command judging (`sh -c`, `xargs`, `find -exec`) in `command_risk.rs` with the Mac's tests · S
 
@@ -287,7 +295,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L
 
-- [ ] **BR-30** `list_app_menu`, `app_menu_command` through a UI Automation menu walk (`AppMenu`) · M
+- [x] **BR-30** `list_app_menu`, `app_menu_command` through a UI Automation menu walk (`AppMenu`) · M
 
 - [ ] **BR-31** `read_browser_tab` through the extension (CH-60) or UI Automation (`BrowserTabReader`) · M
 
@@ -299,7 +307,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 
-- [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
+- [x] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
 
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 
@@ -307,11 +315,11 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 
-- [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
+- [x] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
 
 - [x] **BR-48** Zip archives, folders and pasted paths as attachments · S
 
-- [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
+- [x] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
@@ -348,9 +356,9 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 
-- [ ] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` · M
+- [x] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` (a task's question is not yet passed to its parent; the sub-thread strip is AG-100…) · M
 
-- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M
+- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M (built except `account` and `rights` per session; no idle start without a first message, no `nook://` session links yet)
 
 - [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
 
@@ -551,8 +559,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **CH-01** One inbox for all apps (`ChatInbox`, `InboxThread`, `BridgedChat`, `ChatBridge`): `core/src/chats/{inbox,bridge,store}.rs`; move WhatsApp onto it first · L
 
 - [ ] **CH-02** Nook's chat helper (`apps/chatd`, `ChatHelper`, `ChatServiceData`, `ChatLiveStream`, `ChatLinker`): build `nook-chatd.exe` in CI, child-process manager in `src-tauri/src/chats/helper.rs`, `/v1` client and `/v1/ws` live line in `core/src/chats/chatd.rs`. This unlocks Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack · L
-
-- [ ] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
+  - Done: the helper's child-process manager (Job Object on Windows), the `/v1` client, the `/v1/ws` live line and its bridge into the shared inbox. Open: building `nook-chatd.exe` in CI and shipping it beside `nook.exe` (`externalBin`). Its Go code is portable, but the Signal connector needs libsignal's Rust library for `x86_64-pc-windows-*`. That library builds BoringSSL with cmake, and go-sqlite3 and webp need cgo through MinGW, so it needs a Windows runner to prove.
+- [x] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
 
 - [ ] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
 
@@ -847,7 +855,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 
-- [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
+- [x] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 
 - [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
 

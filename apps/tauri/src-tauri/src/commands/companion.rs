@@ -3,6 +3,8 @@
 use chrono::{DateTime, Utc};
 use nook_core::companion::client::ClientSnapshot;
 use nook_core::companion::push::PushSettings;
+#[cfg(desktop)]
+use nook_core::companion::scopes;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -13,6 +15,8 @@ use crate::companion::{self, Companion};
 pub struct DeviceView {
     id: String,
     name: String,
+    /// What it may do (`CompanionScope` names).
+    scopes: Vec<String>,
     paired_at: DateTime<Utc>,
     last_seen: Option<DateTime<Utc>>,
     push: bool,
@@ -47,6 +51,8 @@ pub struct CompanionInfo {
     hosts: Vec<String>,
     devices: Vec<DeviceView>,
     pairing: Option<PairingView>,
+    /// What the phone that pairs next may do (`CompanionScope` names), chosen next to the code.
+    pending_scopes: Vec<String>,
     push: Option<PushView>,
     /// Reaching this computer away from home, and keeping it reachable (Settings › Companion › Always reachable).
     away: Option<AwayView>,
@@ -129,6 +135,7 @@ fn info(c: &Companion) -> CompanionInfo {
                 // A phone that never said its version is not called out of date (as on the Mac).
                 let known = d.protocol_version.is_some();
                 DeviceView {
+                    scopes: scopes::names(&d.granted_scopes()),
                     outdated: known && !nook_core::companion::phone_supported(d.protocol_version),
                     behind: known && nook_core::companion::phone_behind(d.protocol_version),
                     id: d.id,
@@ -141,6 +148,7 @@ fn info(c: &Companion) -> CompanionInfo {
             })
             .collect(),
         pairing,
+        pending_scopes: scopes::names(&store.pending_scopes()),
         push: Some(PushView {
             settings: store.push(),
             key_id: store.apns_ids().0,
@@ -176,6 +184,7 @@ fn info(_: &Companion) -> CompanionInfo {
         hosts: Vec::new(),
         devices: Vec::new(),
         pairing: None,
+        pending_scopes: Vec::new(),
         push: None,
         away: None,
     }
@@ -246,6 +255,23 @@ pub fn companion_remove_device(companion: State<'_, Companion>, id: String) -> C
     }
     #[cfg(not(desktop))]
     let _ = id;
+    info(&companion)
+}
+
+/// What a paired phone may do (`device`), or the phone that pairs next (none); unknown names are dropped. A paired
+/// phone's live connection ends, so it learns what it may do now.
+#[tauri::command]
+pub fn companion_set_scopes(companion: State<'_, Companion>, device: Option<String>, scopes: Vec<String>) -> CompanionInfo {
+    #[cfg(desktop)]
+    {
+        let granted = scopes::parse(Some(&scopes));
+        match device {
+            Some(id) => companion.server.set_scopes(&id, &granted),
+            None => companion.server.store().set_pending_scopes(granted),
+        }
+    }
+    #[cfg(not(desktop))]
+    let _ = (device, scopes);
     info(&companion)
 }
 

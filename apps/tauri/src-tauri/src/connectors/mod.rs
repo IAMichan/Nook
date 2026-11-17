@@ -20,6 +20,8 @@ pub struct Connectors {
     pub hub: Arc<ConnectorHub>,
     pub github: Arc<GitHub>,
     pub whatsapp: Arc<whatsapp::WhatsAppLink>,
+    /// Nook's chat helper (Telegram, Signal, Messenger, Instagram, X, LinkedIn, Slack), read into the same inbox.
+    pub chat_helper: Arc<crate::chats::helper::ChatHelper>,
 }
 
 impl Connectors {
@@ -91,7 +93,8 @@ pub fn setup(app: &AppHandle) {
         let _ = handle.emit("whatsapp-receipt", &chat);
     });
 
-    app.manage(Connectors { env: env.clone(), hub: hub.clone(), github, whatsapp: whatsapp.clone() });
+    let chat_helper = crate::chats::helper::setup(app, env.chats.clone());
+    app.manage(Connectors { env: env.clone(), hub: hub.clone(), github, whatsapp: whatsapp.clone(), chat_helper });
     // Verversen en luisteren draaien op de runtime van Tauri.
     tauri::async_runtime::spawn(async move {
         // Saved at most every few seconds, and only when something changed.
@@ -115,6 +118,7 @@ pub fn shutdown(app: &AppHandle) {
         c.whatsapp.stop_gowa();
         // Files fetched for the WhatsApp card never outlive Nook.
         c.whatsapp.clear_files();
+        c.chat_helper.stop();
         let _ = c.env.chats.save();
     }
 }

@@ -129,10 +129,9 @@ struct RunInspector: View {
                     .disabled(files.isEmpty)
                     Button(tr("ws.git.commit")) { if embedded { app.viewModel.open(.commit(runID)) } else { showCommit = true } }
                         .disabled(files.isEmpty || run.status.isActive)
-                        .nookTip(run.status.isActive ? tr("ws.error.busy") : tr("ws.git.commit.help"))
+                        .nookTip(tr("ws.error.busy"), enabled: run.status.isActive)
                     Button(tr("ws.git.push")) { push() }
                         .disabled(busy || run.status.isActive || snapshot?.status?.detached == true)
-                        .nookTip(tr("ws.git.push.help"))
                     Menu {
                         Button(tr("ws.git.pullRequest")) { if embedded { app.viewModel.open(.pullRequest(runID)) } else { showPullRequest = true } }
                         if run.isolation == .worktree && workspace.worktreeExists(run) {
@@ -283,8 +282,8 @@ struct FileChangeRow: View {
             Text(file.path)
                 .font(NookTheme.mono(11.5))
                 .foregroundStyle(WS.text)
-                .lineLimit(1)
                 .truncationMode(.head)
+                .nookTipWhenCut(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
             Spacer(minLength: 4)
             if let added = file.added { Text("+\(added)").foregroundStyle(NookTheme.diffAdded.opacity(0.85)) }
             if let removed = file.removed, removed > 0 { Text("−\(removed)").foregroundStyle(NookTheme.diffRemoved.opacity(0.85)) }
@@ -293,6 +292,5 @@ struct FileChangeRow: View {
         .padding(.vertical, 3)
         .padding(.horizontal, NookTheme.Spacing.xs)
         .contentShape(Rectangle())
-        .nookTip(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
     }
 }

@@ -49,19 +49,19 @@ struct PullRequestsPanel: View {
     private var grouping: PullRequestGrouping { PullRequestGrouping(rawValue: groupingRaw) ?? .involvement }
     @AppStorage("nook.pulls.sort") private var sortRaw = PullRequestSort.attention.rawValue
     private var sort: PullRequestSort { PullRequestSort(rawValue: sortRaw) ?? .attention }
-    /// The accounts with only the pull requests that match the filter.
-    private var shown: [AccountPullRequests] { filter.apply(accounts) }
+    /// What the list draws, worked out again only when the lists, the filter, the sort or the grouping change: not on a
+    /// refresh that changed nothing, a spinner, or a tick.
+    @State private var layouts = LastValue<PullRequestListLayout.Inputs, PullRequestListLayout>()
+    @State private var selectable = LastValue<[AccountPullRequests], [PullRequestOpenRequest]>()
+    private var layout: PullRequestListLayout {
+        layouts.value(for: .init(accounts: accounts, filter: filter, sort: sort, grouping: grouping), PullRequestListLayout.init)
+    }
     /// Watched entries that no account could search, still in the watch list.
     private var unreadable: [String] {
         let readers = accounts.filter { $0.error == nil }
         guard !readers.isEmpty else { return [] }
         return watching.entries.filter { entry in readers.allSatisfy { $0.unreadable.contains(entry) } }
     }
-    /// Open pull requests that wait for your review, each once.
-    private var waitingCount: Int {
-        Set(accounts.flatMap { $0.reviews.filter { $0.state == .open }.map(\.id) }).count
-    }
-
     /// From this width the pull request opens beside the list instead of in its place.
     private static let splitWidth: CGFloat = 860
     /// The side panel: half the page at first, as wide as you drag it after (remembered; 0 is "half"),
@@ -202,7 +202,7 @@ struct PullRequestsPanel: View {
 
     private func list(selected: String?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            PanelListHeader(tr("agents.footer.pullRequests"), count: waitingCount) {
+            PanelListHeader(tr("agents.footer.pullRequests"), count: layout.waitingForYou) {
                 if !store.showsProgress, let read = store.lastRead {
                     PullRequestFreshness(date: read)
                 }
@@ -223,14 +223,14 @@ struct PullRequestsPanel: View {
             } else if accounts.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                 empty(symbol: "checkmark.circle", title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
-                // Filtered once per redraw: the empty check, the count and the rows below all read this.
-                let shown = self.shown
+                // Worked out once per change: the empty check, the counts and the rows below all read this.
+                let layout = self.layout
                 // What asks something of you, first: a chip each, counting it, that narrows the list to it.
-                PullRequestAttentionBar(filter: $filterStore.filter, accounts: accounts)
-                searchRow
+                PullRequestAttentionBar(filter: $filterStore.filter, counts: layout.attention)
+                searchRow(facets: layout.facets)
                 PullRequestCloseSweepBar()
                 if !unreadable.isEmpty { unreadableNote }
-                if shown.allSatisfy({ $0.isEmpty && $0.error == nil }) {
+                if layout.isEmpty {
                     if filter.isActive {
                         empty(symbol: "line.3.horizontal.decrease.circle", title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
                             filter = PullRequestFilter()
@@ -240,18 +240,14 @@ struct PullRequestsPanel: View {
                         empty(symbol: "checkmark.circle", title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
                     }
                 } else {
-                    // The times on the rows move on with the clock, as on the Agents list.
-                    TimelineView(.nookTicks(every: 30)) { context in
                     ScrollView(showsIndicators: false) {
                         // Lazy, and flat: the headings and rows of every group are its direct children, so only the
-                        // rows in sight are built, however many pull requests you watch.
+                        // rows in sight are built, however many pull requests you watch. The times on the rows move on
+                        // with the clock by themselves (`PullRequestOpenedTime`), so a tick redraws no list.
                         LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            if filter.isActive { matchCount(shown).padding(.bottom, NookTheme.Spacing.sm) }
-                            ForEach(shown) { account in
-                                // An account without matches stays out of a filtered list, unless it has an error to show.
-                                if !filter.isActive || !account.isEmpty || account.error != nil {
-                                    accountSection(account, showName: accounts.count > 1, selected: selected, now: context.date)
-                                }
+                            if filter.isActive { matchCount(layout).padding(.bottom, NookTheme.Spacing.sm) }
+                            ForEach(layout.sections) { section in
+                                accountSection(section, showName: accounts.count > 1, selected: selected)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,8 +256,7 @@ struct PullRequestsPanel: View {
                     // ⇧- or ⌘-clicked rows: merge or close them together. It floats over the list with nothing behind it,
                     // so the rows stay in sight under and beside it, and the last ones scroll clear of it.
                     .safeAreaInset(edge: .bottom, spacing: 0) {
-                        PullRequestSelectionBar(shown: Self.requests(in: shown))
-                    }
+                        PullRequestSelectionBar(shown: selectable.value(for: layout.shown) { Self.requests(in: $0) })
                     }
                 }
             }
@@ -289,23 +284,20 @@ struct PullRequestsPanel: View {
 
     /// The toolbar: the search (which also takes `label:bug`, `author:ada`, `review:approved` …), then Sort and
     /// Filters. Involvement, which used to be tabs, is a filter there too.
-    private var searchRow: some View {
-        PullRequestSearchBar(filter: $filterStore.filter, accounts: accounts, prompt: tr("agents.pulls.search"),
+    private func searchRow(facets: PullRequestFacets) -> some View {
+        PullRequestSearchBar(filter: $filterStore.filter, accounts: accounts, facets: facets, prompt: tr("agents.pulls.search"),
                              watching: !watching.entries.isEmpty, focus: $searching, onEscape: { searching = false }) {
             PullRequestSortMenu(sort: Binding(get: { sort }, set: { sortRaw = $0.rawValue }),
                                 grouping: Binding(get: { grouping }, set: { groupingRaw = $0.rawValue }))
         }
         // ⌘F jumps to the search field.
         .keyCommand("chat.find") { searching = true }
-        .nookTip(tr("agents.pulls.searchHelp"))
     }
 
     /// "12 of 40 shown · Clear", while something narrows the list.
-    private func matchCount(_ shown: [AccountPullRequests]) -> some View {
-        let all = Set(accounts.flatMap { $0.mine + $0.reviews + $0.watched }.map(\.id)).count
-        let shownCount = Set(shown.flatMap { $0.mine + $0.reviews + $0.watched }.map(\.id)).count
-        return HStack(spacing: NookTheme.Spacing.sm) {
-            Text(tr("agents.pulls.shownOf", shownCount, all)).monospacedDigit()
+    private func matchCount(_ layout: PullRequestListLayout) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Text(tr("agents.pulls.shownOf", layout.shownCount, layout.allCount)).monospacedDigit()
             Button(tr("agents.pulls.clearFilter")) { filter = PullRequestFilter() }
                 .buttonStyle(.nookPlain)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -335,9 +327,8 @@ struct PullRequestsPanel: View {
     /// An account's part of the list: its name (with more than one account), an error if reading it failed, then its
     /// groups. No stack of its own: the rows are children of the list's lazy stack, so only the ones in sight are built.
     @ViewBuilder
-    private func accountSection(_ account: AccountPullRequests, showName: Bool, selected: String?, now: Date) -> some View {
-        // Where each row stands in a stack, worked out once for the whole account instead of once per row.
-        let stacks = PullRequestStack.positions(in: items(of: account.id))
+    private func accountSection(_ section: PullRequestListLayout.Section, showName: Bool, selected: String?) -> some View {
+        let account = section.account
         if showName {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if account.login.isEmpty {
@@ -363,20 +354,16 @@ struct PullRequestsPanel: View {
                     .padding(.top, NookTheme.Spacing.sm)
             }
         }
-        switch grouping {
-        case .involvement:
-            // The ones waiting for you first, then yours, then the rest of what you watch.
-            ForEach(account.byRole(sort: sort)) { group in
-                rowGroup(key: account.id + " role:" + group.role.rawValue, symbol: Self.symbol(group.role),
-                         title: tr("agents.pulls.group." + group.role.rawValue), rows: group.rows, account: account.id,
-                         showRepo: true, stacks: stacks, selected: selected, now: now)
-            }
-        case .repository:
-            // Every pull request of a repository together, whatever brought it into the list; the heading counts
-            // the ones waiting for your review.
-            ForEach(account.byRepo(sort: sort)) { repo in
-                rowGroup(key: account.id + " " + repo.repo, symbol: "folder", title: repo.repo, rows: repo.rows,
-                         account: account.id, showRepo: false, waiting: repo.waiting, stacks: stacks, selected: selected, now: now)
+        // By role: the ones waiting for you first, then yours, then the rest of what you watch. By repository: every
+        // pull request of a repository together, whatever brought it into the list; the heading counts the ones
+        // waiting for your review.
+        ForEach(section.groups) { group in
+            if let role = group.role {
+                rowGroup(key: group.id, symbol: Self.symbol(role), title: tr("agents.pulls.group." + role.rawValue),
+                         rows: group.rows, account: account.id, showRepo: true, stacks: section.stacks, selected: selected)
+            } else {
+                rowGroup(key: group.id, symbol: "folder", title: group.repo ?? "", rows: group.rows, account: account.id,
+                         showRepo: false, waiting: group.waiting, stacks: section.stacks, selected: selected)
             }
         }
     }
@@ -420,7 +407,7 @@ struct PullRequestsPanel: View {
     @ViewBuilder
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
                           showRepo: Bool, waiting: Int = 0, stacks: [String: (index: Int, count: Int, merged: Int)],
-                          selected: String?, now: Date) -> some View {
+                          selected: String?) -> some View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
         Button {
             withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
@@ -442,14 +429,13 @@ struct PullRequestsPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
         if open {
             ForEach(rows) { row in
                 // A line between two pull requests, as on GitHub, so each one reads as its own item.
                 if row.id != rows.first?.id { NookRowSeparator() }
                 PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
-                               selected: selected == row.item.id, stack: stacks[row.item.id], now: now) {
+                               selected: selected == row.item.id, stack: stacks[row.item.id]) {
                     self.open(account, row.item)
                 }
                 .equatable()

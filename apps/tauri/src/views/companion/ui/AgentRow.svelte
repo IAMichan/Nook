@@ -3,8 +3,8 @@
   // and branch under it. Touch and hold for what you can do with it.
   import { age, needsYouState, type SessionDigest } from "../../../lib/companion";
   import AgentMark from "./AgentMark.svelte";
-  import StatusPill from "./StatusPill.svelte";
-  import Ico from "./Ico.svelte";
+  import StatusPill from "../../../components/ui/StatusPill.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { session, onopen, onhold }: { session: SessionDigest; onopen: () => void; onhold?: (r: DOMRect) => void } = $props();
   const needs = $derived(session.items.length > 0 || needsYouState(session.attention));
   const pill = $derived(needs || session.attention === "working" || session.attention === "ready");

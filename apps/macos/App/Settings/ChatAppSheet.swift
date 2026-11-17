@@ -135,8 +135,9 @@ struct ChatAppSheet: View {
             // Not linkable in this Nook: still a step, in the same shape as every other app, that says so in plain
             // words and points at the way its chats come in anyway. What a developer would do sits behind the hover.
             SetupStep(number: 1, title: tr("chats.link.unavailableTitle", name)) {
-                SettingNote(tr("chats.link.notYet", name, name))
-                    .nookTip(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
+                SettingInfoLabel(info: ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "") {
+                    SettingNote(tr("chats.link.notYet", name, name))
+                }
             }
         }
         // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
