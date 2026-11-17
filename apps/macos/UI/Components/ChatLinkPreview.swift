@@ -190,7 +190,6 @@ private struct ChatRemotePicture: View {
                         Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
                     }
                 }
-                .nookTip(label)
                 .accessibilityLabel("\(label): \(url.lastPathComponent)")
             } else if failed {
                 ChatLinkCard(url: url)

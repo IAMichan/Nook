@@ -242,7 +242,6 @@ private struct ChatsInfoTile: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .nookTip(help)
         .accessibilityLabel(help)
     }
 }

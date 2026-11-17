@@ -5,7 +5,7 @@
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import NookMark from "./ui/NookMark.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { view, onchange, adding = false, oncancel }: { view: ClientView; onchange: (v: ClientView) => void; adding?: boolean; oncancel?: () => void } = $props();
   let text = $state("");

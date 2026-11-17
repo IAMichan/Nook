@@ -110,8 +110,6 @@ struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
     @Environment(\.sessionContextTarget) private var session
-    /// When the page last heard from GitHub, said in the menu's tooltip.
-    var fetchedAt: Date? = nil
     var onRefresh: (() -> Void)? = nil
     /// Your login with the account this page reads with; empty when unknown.
     var viewer = ""
@@ -242,8 +240,7 @@ struct PullRequestMoreMenu: View {
                 }
             }
         }
-        .nookTip(fetchedAt.map { tr("agents.pr.action.more") + " · " + tr("agents.pulls.updatedAgo", AgentFormat.short(Date().timeIntervalSince($0))) }
-              ?? tr("agents.pr.action.more"))
+        .nookTip(tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .disabled(state.sending)
     }
@@ -396,7 +393,6 @@ struct PullRequestActionPanel: View {
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.nookPlain)
-        .nookTip(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
@@ -432,9 +428,6 @@ struct PullRequestActionPanel: View {
                             }
                         }
                         .buttonStyle(.nookPlain)
-                        // The button's own tip covers the chip's, so it carries the description too.
-                        .nookTip(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name)
-                              + (label.description.isEmpty ? "" : "\n" + label.description))
                     }
                 }
             } else {

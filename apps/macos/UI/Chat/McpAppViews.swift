@@ -29,7 +29,6 @@ struct McpAppBlock: View {
             if let link = resource.link {
                 Button(tr("ws.mcpApp.open")) { NSWorkspace.shared.open(link) }
                     .controlSize(.small)
-                    .nookTip(link.absoluteString)
             } else if session.closed || session.left {
                 HStack(spacing: 8) {
                     Text(session.left ? tr("ws.mcpApp.left") : tr("ws.mcpApp.closed", session.reference.tool))

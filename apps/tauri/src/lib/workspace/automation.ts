@@ -13,7 +13,9 @@ export type ScheduleRule =
 
 export type ScheduledTaskTarget =
   | { type: "newSession"; projectPath: string; provider: RunProvider; profileId: string | null }
-  | { type: "existingSession"; id: string; fresh: boolean };
+  | { type: "existingSession"; id: string; fresh: boolean }
+  /** Nook Chat answers each run itself, in a conversation of its own (`schedule_task` from the chat). */
+  | { type: "nook" };
 
 export type ScheduledRunStatus = "running" | "succeeded" | "failed" | "skipped";
 
@@ -31,6 +33,10 @@ export interface ScheduledTask {
   nextRun: string | null;
   lastSession: string | null;
   createdAt: string;
+  /** For Nook: only speak up when something new needs the user. */
+  quiet?: boolean;
+  /** The ready-made task this is (the secretary's). */
+  preset?: string | null;
 }
 
 export interface TaskView extends ScheduledTask {
@@ -152,6 +158,10 @@ export function reasonLabel(reason: string | null): string | null {
     "sched.error.interrupted": tr("Onderbroken door een herstart van Nook.", "Interrupted by a restart of Nook."),
     "sched.error.noSession": tr("De sessie bestaat niet meer.", "The session no longer exists."),
     "sched.error.badTarget": tr("De taak heeft geen geldige map of agent.", "The task has no valid folder or agent."),
+    "sched.error.noBrain": tr("Nook Chat heeft nog geen brein. Kies er een in Instellingen.", "Nook Chat has no brain yet. Choose one in Settings."),
+    "sched.error.nookTimeout": tr("Nook Chat deed er te lang over; de run is gestopt.", "Nook Chat took too long; the run was stopped."),
+    "sched.error.nookEmpty": tr("Nook Chat gaf geen antwoord. Open het gesprek om te zien waarom.", "Nook Chat gave no answer. Open the conversation to see why."),
+    "sched.nook.nothingNew": tr("Niets nieuws dat jou nodig heeft.", "Nothing new that needs you."),
     "sched.error.webhookRights": tr(
       "Een webhook mag alleen naar een sessie die om toestemming vraagt: wat van buiten komt, krijgt niet de rechten die je die sessie gaf.",
       "A webhook may only go to a session that asks for approval: what comes from outside does not get the rights you gave that session.",

@@ -39,7 +39,6 @@ extension NewSessionComposer {
                 }
             }
         }
-        .composerTip(tr("ws.new.accountPinned"))
     }
 
     var modeMenu: some View {

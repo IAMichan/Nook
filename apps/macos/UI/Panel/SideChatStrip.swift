@@ -40,13 +40,11 @@ struct SideChatStrip: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("ws.side.open"))
             Button(tr("ws.side.bringBack")) { workspace.mergeBack(chat.id) }
                 .buttonStyle(.nookPlain)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(workspace.canTransfer(chat.id) ? NookTheme.iris : NookTheme.textTertiary)
                 .disabled(!workspace.canTransfer(chat.id))
-                .nookTip(tr("ws.side.bringBack.help"))
         }
     }
 }

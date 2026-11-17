@@ -161,7 +161,6 @@ private struct EmojiCell: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .nookTip(emoji.name)
         .accessibilityLabel(emoji.name)
     }
 }

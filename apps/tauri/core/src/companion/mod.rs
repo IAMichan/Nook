@@ -24,6 +24,7 @@ pub mod push;
 pub mod relay;
 pub mod relay_push;
 pub mod remote_digest;
+pub mod scopes;
 pub mod seal;
 pub mod server;
 pub mod sessions;
@@ -226,7 +227,7 @@ mod tests {
         let s = phone.refresh().await;
         assert!(s.features.contains(&feature::DEVICE_KEY.to_string()) && s.features.contains(&feature::STREAM.to_string()));
         assert!(!s.features.contains(&feature::TIMELINE.to_string()));
-        assert_eq!(s.scopes, None);
+        assert_eq!(s.scopes, Some(scopes::names(&scopes::all())), "a new pairing may do everything by default");
         let (s, answer) =
             phone.call(client::ClientCall { op: Some(CompanionOp::Timeline), session: Some("S1".into()), ..Default::default() }).await;
         assert!(answer.is_none());
@@ -241,6 +242,19 @@ mod tests {
         // `call` with `list` answers like a refresh.
         let (_, answer) = phone.call(client::ClientCall { op: Some(CompanionOp::List), ..Default::default() }).await;
         assert_eq!(answer.and_then(|a| a.sessions).map(|s| s.len()), Some(2));
+
+        // Scopes per phone: one that may only approve sees no sessions, gets no music and is refused a message.
+        let device = store.devices()[0].id.clone();
+        server.set_scopes(&device, &[scopes::CompanionScope::Approve].into());
+        let s = phone.refresh().await;
+        assert_eq!(s.scopes, Some(vec!["approve".to_string()]));
+        assert!(s.sessions.is_empty());
+        let s = phone.send("S1", "nog iets").await;
+        assert!(s.notice.is_some(), "a message needs operate");
+        phone.clear_notice();
+        assert!(!workspace.log.lock().unwrap().iter().any(|l| l == "send S1 nog iets"));
+        server.set_scopes(&device, &scopes::all());
+        assert_eq!(phone.refresh().await.sessions.len(), 2);
 
         let actions: Vec<String> = audit.audit_entries(50, "companion").into_iter().map(|e| e.tool).collect();
         for action in ["companion_paired", "companion_deny", "companion_allow", "companion_answer", "companion_send", "companion_stop"] {
