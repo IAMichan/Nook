@@ -34,7 +34,6 @@ struct DevServerStrip: View {
                             Image(icon: "dot.radiowaves.left.and.right")
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(NookTheme.textTertiary)
-                                .nookTip(tr("agents.servers.help"))
                             ForEach(servers) { server in
                                 // `address` is published, unlike the web view's own URL.
                                 let open = URL(string: browser.address)?.port == server.port
@@ -49,7 +48,6 @@ struct DevServerStrip: View {
                                         .background(NookTheme.shape(NookTheme.Radius.control).fill(open ? NookTheme.smoke : NookTheme.field))
                                 }
                                 .buttonStyle(.nookPlain)
-                                .nookTip(server.url.absoluteString)
                                 if server.pid > 0 { stopButton(server) }
                             }
                         }

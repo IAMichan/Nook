@@ -46,8 +46,37 @@ NOOK_XCODE_SCHEME=NookScenarios \
 TEST_RUNNER_CFFIXED_USER_HOME="$HOME_DIR" \
 TEST_RUNNER_NOOK_SCENARIO_HOME="$HOME_DIR" \
 TEST_RUNNER_NOOK_SCENARIO_OUT="$OUT_DIR" \
-  "$APP_DIR/scripts/xcode.sh" test "${ONLY[@]}" -parallel-testing-enabled NO >"$OUT_DIR/xcodebuild.log" 2>&1
+  "$APP_DIR/scripts/xcode.sh" test "${ONLY[@]}" -parallel-testing-enabled NO >"$OUT_DIR/xcodebuild.log" 2>&1 &
+XCODE_PID=$!
+
+# On GitHub's macOS 15 runners xcodebuild never exits after the last scenario: the test process is gone, but xcodebuild
+# and its DTServiceHub keep waiting until the step times out. So once the top test suite has reported, xcodebuild gets
+# NOOK_SCENARIO_EXIT_GRACE seconds (default 60) to finish, then it is stopped and the suite's own verdict counts.
+LOG="$OUT_DIR/xcodebuild.log"
+GRACE="${NOOK_SCENARIO_EXIT_GRACE:-60}"
+SUITE_DONE='^Test Suite '\''(All tests|Selected tests)'\'' (passed|failed) at'
+FINISHED_AT=""
+STOPPED=0
+while kill -0 "$XCODE_PID" 2>/dev/null; do
+  if [ -z "$FINISHED_AT" ] && grep -qE "$SUITE_DONE" "$LOG" 2>/dev/null; then FINISHED_AT=$SECONDS; fi
+  if [ -n "$FINISHED_AT" ] && [ $((SECONDS - FINISHED_AT)) -ge "$GRACE" ]; then
+    echo "xcodebuild still running ${GRACE}s after the last scenario; stopping it." | tee -a "$LOG" >&2
+    pkill -TERM -P "$XCODE_PID" 2>/dev/null
+    kill -TERM "$XCODE_PID" 2>/dev/null
+    sleep 5
+    pkill -KILL -P "$XCODE_PID" 2>/dev/null
+    kill -KILL "$XCODE_PID" 2>/dev/null
+    STOPPED=1
+    break
+  fi
+  sleep 2
+done
+wait "$XCODE_PID"
 XCODE_STATUS=$?
+if [ "$STOPPED" = 1 ]; then
+  # 65 is what xcodebuild itself returns when a test failed.
+  if grep -qE '^Test Suite '\''(All tests|Selected tests)'\'' passed at' "$LOG"; then XCODE_STATUS=0; else XCODE_STATUS=65; fi
+fi
 
 if [ ! -f "$OUT_DIR/report.json" ]; then
   # Nothing ran: the build failed or the test process did not start.

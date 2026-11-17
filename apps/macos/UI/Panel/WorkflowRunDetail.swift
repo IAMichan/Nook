@@ -341,6 +341,5 @@ private struct WorkflowJobRow: View {
         }
         .buttonStyle(.nookPlain)
         .hoverRowFill($hovering, rest: NookTheme.rowRest)
-        .nookTip(tr("actions.job.open"))
     }
 }

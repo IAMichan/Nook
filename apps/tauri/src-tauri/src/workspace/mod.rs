@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod bridge_cli;
 #[cfg(desktop)]
 pub mod browser;
+pub mod nook_runs;
 #[cfg(desktop)]
 pub mod snapshot;
 #[cfg(desktop)]
@@ -181,6 +182,8 @@ fn on_event(app: &AppHandle, event: ManagerEvent) {
             let _ = app.emit("agent-question-gone", Gone { id, message: None });
         }
         ManagerEvent::TurnFinished(run, last) => {
+            #[cfg(desktop)]
+            bridge::tasks::turn_finished(app, &run);
             if run.status == RunStatus::Stopped {
                 return;
             }

@@ -454,8 +454,8 @@ extension AgentRunPanel {
     }
 
     /// The agent with its account and the model. A running agent with `liveSettings` switches at once, Codex and
-    /// Antigravity from the next turn; another account or agent moves the session there with a summary of what happened (shown in the timeline),
-    /// which waits until the agent is idle.
+    /// Antigravity from the next turn; another account or agent moves the session there with a summary of what happened (shown in the timeline).
+    /// Picked while the agent works, the turn stops first and the session goes on there after the handoff.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let picked = run.model.isEmpty ? nil
@@ -464,10 +464,9 @@ extension AgentRunPanel {
         // On Auto: "Auto · Claude Sonnet 5.5", the model it picked last.
         let model = run.autoModel == true ? [tr("auto.model"), picked].compactMap { $0 }.joined(separator: " · ") : picked
         let chosenModel = run.autoModel == true ? AutoModel.id : run.model
-        let idle = workspace.canTransfer(runID)
         // The agents its project switched off are not offered to move to; the session's own agent always is.
         let allowed = app.connectedProviders(in: run.projectPath)
-        let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
+        let providers = allowed.contains(run.provider) ? allowed : [run.provider] + allowed
         return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning(run) != nil) {
             ComposerPill(agent: run.provider.displayName, account: AccountTag.badge(profile, app: app),
                          text: model ?? run.provider.displayName,
@@ -475,15 +474,29 @@ extension AgentRunPanel {
                          badge: subThreadsOn(run) ? ("app.connected.to.app.below.fill", tr("compose.mainThread.on")) : nil,
                          showsChevron: false)
         } content: {
-            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle,
-                             footer: AnyView(options(run)),
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel,
+                             footer: AnyView(pickerFooter(run)),
                              trailing: reasoning(run).map { AnyView(ModelPickerReasoning(effort: $0)) }) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
                 let chosen = option ?? (provider == run.provider ? chosenModel : workspace.settings.model(for: provider))
-                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
+                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true,
+                                         stopIfBusy: true)
             }
         }
-        .composerTip(run.resolvedModel ?? tr("ws.new.model"))
+    }
+
+    /// The session's options, and while the agent works a word on what picking another account or agent does then.
+    private func pickerFooter(_ run: WorkspaceRun) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if run.status.isActive {
+                Label(tr("compose.switchWhileBusy"), icon: "stop.circle")
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding([.horizontal, .top], NookTheme.Spacing.sm)
+            }
+            options(run)
+        }
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {

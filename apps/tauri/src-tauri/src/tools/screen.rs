@@ -1,15 +1,58 @@
-//! Het scherm als bron: de tekst van alle vensters, één app lezen, welke apps er draaien en welke voor staat.
+//! Het scherm als bron: de tekst van alle vensters, één app lezen, welke apps er draaien, welke voor staat en menu-opdrachten.
 
-use nook_core::brain::LoopTool;
-use nook_core::services::screen as rules;
+use std::time::Duration;
 
-use serde_json::json;
-use tauri::Manager;
+use nook_core::brain::{app_menu, LoopTool};
+use nook_core::platform::{MenuCommandOutcome, RunningApp};
+use nook_core::services::{fuzzy, screen as rules};
+
+use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
 
 use super::{text, ToolCtx, ToolSource};
 use crate::services::Services;
 
 pub struct Screen;
+
+fn match_running<'a>(apps: &'a [RunningApp], wanted: &str) -> Option<&'a RunningApp> {
+    let names: Vec<String> = apps.iter().flat_map(|a| [a.name.clone(), a.id.clone()]).collect();
+    let best = fuzzy::best(wanted, &names)?;
+    apps.iter().find(|a| a.name == best || a.id == best)
+}
+
+fn ensure_menu_target(app: &AppHandle, query: &str) -> Result<(String, u32), String> {
+    let wanted = query.trim();
+    if wanted.is_empty() {
+        return Err("App name is missing.".into());
+    }
+    if rules::is_excluded(wanted) {
+        return Err(format!("Nook does not control {wanted}."));
+    }
+    let services = app.state::<Services>();
+    let running = services.platform.screen.running_apps();
+    if let Some(found) = match_running(&running, wanted) {
+        if rules::is_excluded(&found.name) || rules::is_excluded(&found.id) {
+            return Err(format!("Nook does not control {}.", found.name));
+        }
+        return Ok((found.name.clone(), found.pid));
+    }
+    if !crate::platform::capabilities().open_apps {
+        return Err(format!("{wanted} is not running."));
+    }
+    services.platform.system.open_app(wanted)?;
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(100));
+        let apps = services.platform.screen.running_apps();
+        if let Some(found) = match_running(&apps, wanted) {
+            if rules::is_excluded(&found.name) || rules::is_excluded(&found.id) {
+                return Err(format!("Nook does not control {}.", found.name));
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            return Ok((found.name.clone(), found.pid));
+        }
+    }
+    Err(format!("{wanted} did not start."))
+}
 
 #[async_trait::async_trait]
 impl ToolSource for Screen {
@@ -22,7 +65,7 @@ impl ToolSource for Screen {
         if !services.platform.screen.available() {
             return vec![];
         }
-        let (a, b, c, d) = (ctx.app.clone(), ctx.app.clone(), ctx.app.clone(), ctx.app.clone());
+        let (a, b, c, d, e) = (ctx.app.clone(), ctx.app.clone(), ctx.app.clone(), ctx.app.clone(), ctx.app.clone());
         vec![
             LoopTool::read(
                 "read_screen",
@@ -93,7 +136,83 @@ impl ToolSource for Screen {
                     }
                 },
             ),
+            LoopTool::read(
+                "list_app_menu",
+                "Lists the menu commands of any desktop app (File > New Folder, Edit > Copy, Format > Bold …), started first when it is closed. Use this before app_menu_command when the user asks to do something in an app that has no tool of its own. Pass a filter word (e.g. \"save\", \"export\", \"new\") to see only matching commands.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "app": {"type": "string", "description": "Name of the app, e.g. \"Notepad\", \"Firefox\" or \"Slack\"."},
+                        "filter": {"type": "string", "description": "Optional word to narrow the list, e.g. \"delete\"."}
+                    },
+                    "required": ["app"]
+                }),
+                move |input| {
+                    let app = e.clone();
+                    async move {
+                        let name = text(&input, "app");
+                        let filter = text(&input, "filter");
+                        let (process, lines) = tauri::async_runtime::spawn_blocking(move || -> Result<(String, Vec<String>), String> {
+                            let (process, pid) = ensure_menu_target(&app, &name)?;
+                            let lines = app.state::<Services>().platform.screen.list_app_menu(pid)?;
+                            Ok((process, lines))
+                        })
+                        .await
+                        .map_err(|e| nook_core::NookError(e.to_string()))?
+                        .map_err(nook_core::NookError)?;
+                        let filter = (!filter.is_empty()).then_some(filter);
+                        Ok(app_menu::describe(&lines, &process, filter.as_deref(), app_menu::DEFAULT_LIMIT))
+                    }
+                },
+            ),
+            LoopTool::action(
+                "app_menu_command",
+                "Runs one menu command in any desktop app, exactly as the user would pick it from the menu bar, after the user approved it. This is how Nook acts in apps without a tool of their own (export, new folder, save as, archive …). Get the exact path from list_app_menu first; select the right item in the app first when the command works on a selection.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "app": {"type": "string", "description": "Name of the app, e.g. \"Notepad\"."},
+                        "path": {"type": "array", "items": {"type": "string"}, "description": "Menu titles from the menu bar down to the item, e.g. [\"File\", \"Save As...\"], exactly as list_app_menu shows them."}
+                    },
+                    "required": ["app", "path"]
+                }),
+            ),
         ]
+    }
+
+    fn summarize(&self, tool: &str, input: &Value) -> Option<String> {
+        if tool != "app_menu_command" {
+            return None;
+        }
+        let app = text(input, "app");
+        let label = if app.is_empty() { "App" } else { &app };
+        let path = app_menu::path(&input["path"]).join(" › ");
+        Some(format!("{label}: {path}"))
+    }
+
+    async fn execute(&self, ctx: &ToolCtx, tool: &str, input: &Value) -> Option<Result<String, String>> {
+        if tool != "app_menu_command" {
+            return None;
+        }
+        let name = text(input, "app");
+        let path = app_menu::path(&input["path"]);
+        let problems = app_menu::problems(&name, &path);
+        if !problems.is_empty() {
+            return Some(Err(problems.join("; ")));
+        }
+        let app = ctx.app.clone();
+        let joined = path.join(" › ");
+        let result = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+            let (process, pid) = ensure_menu_target(&app, &name)?;
+            match app.state::<Services>().platform.screen.click_app_menu(pid, &path)? {
+                MenuCommandOutcome::Done => Ok(format!("{process}: {joined} done")),
+                MenuCommandOutcome::Disabled => Err(format!("{joined} is not available in {process} right now (nothing selected?).")),
+                MenuCommandOutcome::NotFound => Err(format!("{process} has no menu item {joined}. Check the path with list_app_menu.")),
+            }
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+        Some(result)
     }
 
     async fn context(&self, ctx: &ToolCtx) -> Option<String> {

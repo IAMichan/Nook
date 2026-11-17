@@ -60,7 +60,6 @@ struct FreshConversationStrip: View {
             Button(tr("ws.fresh.keep"), action: keep)
                 .buttonStyle(.nookPlain)
                 .foregroundStyle(NookTheme.iris)
-                .nookTip(tr("ws.fresh.keep.help"))
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textSecondary)
@@ -85,7 +84,6 @@ struct ResourceWaitStrip: View {
                 Button(tr("ws.governor.letGoOn")) { AgentGovernor.shared.letGoOn(runID) }
                     .buttonStyle(.nookPlain)
                     .foregroundStyle(NookTheme.iris)
-                    .nookTip(tr("ws.governor.letGoOn.help"))
             }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
@@ -194,7 +192,6 @@ struct WorkProgressMark: View {
                     .monospacedDigit()
                     .fixedSize()
             }
-            .nookTip(tr("ws.progress.reported.help", percent))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(tr("ws.progress.reported.help", percent))
         } else if let end = progress.estimatedEnd, let expected = progress.expected, end > progress.started {
@@ -486,10 +483,9 @@ struct PullRequestWatchStrip: View {
                 Text(branch)
                     .font(NookTheme.mono(10.5))
                     .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
+                    .nookTipWhenCut(branch)
                     .truncationMode(.middle)
                     .layoutPriority(-1)
-                    .nookTip(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
             }
         }
     }
@@ -512,7 +508,7 @@ struct PullRequestWatchStrip: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(ci + " · " + tr("ws.prwatch.ciHelp"))
+            .nookTip(ci + " · " + tr("ws.prwatch.ciHelp"), enabled: ciOutcome != .failing)
             .accessibilityLabel(ci)
             .popover(isPresented: $showsCI, arrowEdge: .top) {
                 CIChecksPopover(pullRequest: url).frame(width: 680, height: 440)
@@ -603,7 +599,7 @@ struct BranchTrayRow: View {
             .frame(minWidth: PullRequestWatchStrip.stateColumn, alignment: .leading)
             Text(branch)
                 .font(NookTheme.mono(10.5))
-                .lineLimit(1)
+                .nookTipWhenCut(branch)
                 .truncationMode(.middle)
             Spacer(minLength: NookTheme.Spacing.sm)
         }
@@ -611,7 +607,6 @@ struct BranchTrayRow: View {
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
         .opacity(isCurrent ? 1 : 0.72)
-        .nookTip(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
     }
 }
 
@@ -655,7 +650,6 @@ struct BackgroundCommandActivityLabel: View {
         }
         .font(NookTheme.TextStyle.caption)
         .foregroundStyle(activity.state == .gone ? NookTheme.coralSoft : NookTheme.textTertiary)
-        .nookTip(tr("ws.background.activity.help"))
     }
 
     private var color: Color {
@@ -731,7 +725,6 @@ struct BackgroundCommandLink: View {
         }
         .buttonStyle(.nookPlain)
         .padding(.leading, TranscriptStyle.workIndent)
-        .nookTip(tr("ws.background.showInBar"))
         .accessibilityLabel(tr("ws.background.showInBar"))
     }
 }

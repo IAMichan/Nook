@@ -46,7 +46,7 @@ struct MusicOutputButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(tr("music.output.help"))
+        .nookTip(tr("music.output.help"), enabled: compact || current == nil || (namesOnlyAway && !away))
         .accessibilityLabel(current.map { tr("music.output.playsOn", $0.name) } ?? tr("music.output.title"))
         .accessibilityHint(tr("music.output.help"))
         .popover(isPresented: $open, arrowEdge: .top) {

@@ -154,7 +154,6 @@ struct PlanReview: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(showsSettledSteps ? tr("chat.plan.hideSteps") : tr("chat.plan.showSteps"))
         .accessibilityLabel(settledSummary)
     }
 

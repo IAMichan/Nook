@@ -304,7 +304,7 @@
           const t = e.target as HTMLElement;
           if (overlay && t.closest(".item") && !t.closest(".actions") && !t.closest(".menu-trigger")) showList = false;
         }}>
-        {#if route === "chat" && showList}<NookList />{/if}
+        {#if route === "chat" && showList}<NookList onopen={openTarget} />{/if}
       </div>
       <div class="footer">
         <button class="ghost icon-button" class:on={route === "settings"} aria-current={route === "settings" ? "page" : undefined} onclick={() => navigate("settings")} title={tr("Instellingen (Ctrl+,)", "Settings (Ctrl+,)")} aria-label={tr("Instellingen", "Settings")}><Icon name="settings" size={16} /></button>
@@ -328,7 +328,7 @@
             const t = e.target as HTMLElement;
             if (t.closest(".item") && !t.closest(".menu") && !t.closest(".menu-trigger")) showList = false;
           }}>
-            <NookList />
+            <NookList onopen={openTarget} />
           </div>
         {/if}
         <div class="chatpane">

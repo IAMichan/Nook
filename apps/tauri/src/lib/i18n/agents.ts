@@ -36,11 +36,17 @@ export const table: Table = {
   "Just a moment…": { de: "Einen Moment…", fr: "Un instant…", es: "Un momento…" },
   "Usage": { de: "Nutzung", fr: "Utilisation", es: "Uso" },
   "All terminals": { de: "Alle Terminals", fr: "Tous les terminaux", es: "Todos los terminales" },
-  "End {name} in {project} and continue here? The agent keeps its conversation, so Nook picks up where it left off.": {
-    de: "{name} in {project} beenden und hier weitermachen? Der Agent behält sein Gespräch, sodass Nook dort weitermacht, wo er war.",
-    fr: "Terminer {name} dans {project} et continuer ici ? L'agent garde sa conversation, Nook reprend donc là où il en était.",
-    es: "¿Terminar {name} en {project} y seguir aquí? El agente conserva su conversación, así que Nook sigue donde lo dejó.",
+  "End {name} in {project} and continue here?": {
+    de: "{name} in {project} beenden und hier weitermachen?",
+    fr: "Terminer {name} dans {project} et continuer ici ?",
+    es: "¿Terminar {name} en {project} y seguir aquí?",
   },
+  "The agent keeps its conversation, so Nook picks up where it left off.": {
+    de: "Der Agent behält sein Gespräch, sodass Nook dort weitermacht, wo er war.",
+    fr: "L'agent garde sa conversation, Nook reprend donc là où il en était.",
+    es: "El agente conserva su conversación, así que Nook sigue donde lo dejó.",
+  },
+  "End and continue here": { de: "Beenden und hier weitermachen", fr: "Terminer et continuer ici", es: "Terminar y seguir aquí" },
 
   // Short times
   "now": { de: "jetzt", fr: "maintenant", es: "ahora" },
@@ -77,10 +83,11 @@ export const table: Table = {
   "Thinking": { de: "Denkschritte", fr: "Réflexion", es: "Razonamiento" },
   "Reading conversation…": { de: "Gespräch wird gelesen…", fr: "Lecture de la conversation…", es: "Leyendo la conversación…" },
   "Nothing in this conversation yet.": { de: "Noch nichts in diesem Gespräch.", fr: "Rien dans cette conversation pour l'instant.", es: "Todavía no hay nada en esta conversación." },
-  "End {name} in {project}? The agent keeps its conversation, so you can continue later.": {
-    de: "{name} in {project} beenden? Der Agent behält sein Gespräch, sodass du später weitermachen kannst.",
-    fr: "Terminer {name} dans {project} ? L'agent garde sa conversation, tu pourras donc continuer plus tard.",
-    es: "¿Terminar {name} en {project}? El agente conserva su conversación, así que puedes seguir más tarde.",
+  "End {name} in {project}?": { de: "{name} in {project} beenden?", fr: "Terminer {name} dans {project} ?", es: "¿Terminar {name} en {project}?" },
+  "The agent keeps its conversation, so you can continue later.": {
+    de: "Der Agent behält sein Gespräch, sodass du später weitermachen kannst.",
+    fr: "L'agent garde sa conversation, tu pourras donc continuer plus tard.",
+    es: "El agente conserva su conversación, así que puedes seguir más tarde.",
   },
   "Nook sees that {name} is running, but can't follow along. Take it over: the old session closes and the conversation continues here, with approvals and stopping from Nook.": {
     de: "Nook sieht, dass {name} läuft, kann aber nicht mitlesen. Übernimm ihn: Die alte Sitzung wird geschlossen und das Gespräch geht hier weiter, mit Freigaben und Stoppen aus Nook.",
@@ -202,6 +209,7 @@ export const table: Table = {
     fr: "Annuler l'exécution n°{number} de {workflow} ?",
     es: "¿Cancelar la ejecución n.º {number} de {workflow}?",
   },
+  "Cancel run": { de: "Run abbrechen", fr: "Annuler l'exécution", es: "Cancelar ejecución" },
   "Back": { de: "Zurück", fr: "Retour", es: "Atrás" },
   "Close": { de: "Schließen", fr: "Fermer", es: "Cerrar" },
   "attempt {n}": { de: "Versuch {n}", fr: "tentative {n}", es: "intento {n}" },

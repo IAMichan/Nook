@@ -95,7 +95,6 @@ struct PullRequestFilterMenu: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .nookTip(tr("agents.pulls.filters"))
     }
 
     private func kindRow(_ row: Kind) -> some View {
@@ -366,7 +365,6 @@ struct PullRequestSortMenu: View {
                                 title: tr("agents.pulls.grouping." + option.rawValue), chosen: grouping == option) { grouping = option }
             }
         }
-        .nookTip(tr("agents.pulls.sortHelp"))
     }
 
     private static func symbol(_ sort: PullRequestSort) -> String {
@@ -544,7 +542,6 @@ struct PullRequestAttentionBar: View {
                                    selected: on, mark: AnyView(Circle().fill(Self.tint(attention)).frame(width: 6, height: 6))) {
                         withAnimation(NookTheme.hover) { filter.attention = on ? nil : attention }
                     }
-                    .nookTip(tr(on ? "agents.pulls.attention.showAll" : "agents.pulls.attention.showOnly"))
                 }
                 Spacer(minLength: 0)
             }

@@ -144,10 +144,9 @@ struct CardView: View {
                 Text("· " + card.sources.prefix(5).joined(separator: ", "))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
                     .truncationMode(.tail)
+                    .nookTipWhenCut(card.sources.joined(separator: ", "))
                     .layoutPriority(-1)
-                    .nookTip(card.sources.joined(separator: ", "))
             }
             Spacer(minLength: NookTheme.Spacing.md)
             if let changes = card.changes { CardLineChanges(changes: changes) }
@@ -282,7 +281,6 @@ struct CardView: View {
                        placeholder: card.inputPrompt ?? tr("chat.followupPrompt"),
                        sendSymbol: card.replyCopiesTo == nil ? "arrow.up" : "doc.on.doc",
                        sendLabel: card.replyCopiesTo.map { tr("chats.reply.copy", $0) } ?? tr("card.send"),
-                       readyNotice: card.replyCopiesTo.map { tr("chats.draft.readyCopy", $0) } ?? tr("chats.draft.ready"),
                        outgoing: card.sending.map { ChatSending(text: $0) },
                        recipient: card.chatReply ? card.title : nil,
                        quote: replyingTo?.quote(contact: card.title),

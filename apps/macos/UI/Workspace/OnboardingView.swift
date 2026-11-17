@@ -175,7 +175,7 @@ struct OnboardingView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(titles[index])
+                .nookTip(titles[index], enabled: !named)
                 .accessibilityLabel(titles[index])
                 .layoutPriority(current ? 1 : 0)
             }

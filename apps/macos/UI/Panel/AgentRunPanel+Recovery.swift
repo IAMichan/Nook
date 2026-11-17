@@ -29,18 +29,14 @@ extension AgentRunPanel {
                         .fixedSize()
                 }
                 .foregroundStyle(NookTheme.textSecondary)
-                .nookTip(canGoOn ? tr("ws.recovery.stoppedDetail") : tr("ws.recovery.noResume"))
                 .accessibilityElement(children: .combine)
                 if canGoOn {
                     NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(runID) }
-                        .nookTip(tr("ws.action.retry.help"))
                     SmallPrimaryButton(title: tr("ws.action.goOn"), compact: true) {
                         _ = workspace.send(runID, text: UsageLimits.resumeMessage)
                     }
-                    .nookTip(tr("ws.action.goOn.help"))
                 } else {
                     SmallPrimaryButton(title: tr("ws.action.retry"), compact: true) { workspace.retry(runID) }
-                        .nookTip(tr("ws.action.retry.help"))
                 }
             }
             .padding(.leading, NookTheme.Spacing.lg)
@@ -105,16 +101,12 @@ extension AgentRunPanel {
             }
             if canGoOn {
                 NookGhostButton(title: tr("ws.action.retryFromLast")) { workspace.retry(runID) }
-                    .nookTip(tr("ws.action.retry.help"))
                 NookPrimaryButton(title: tr("ws.action.goOn")) { _ = workspace.send(runID, text: UsageLimits.resumeMessage) }
-                    .nookTip(tr("ws.action.goOn.help"))
             } else if fixFirst {
                 // Signing in again or updating the agent is the main action; it runs the turn again itself.
                 NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
-                    .nookTip(tr("ws.action.retry.help"))
             } else {
                 NookPrimaryButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
-                    .nookTip(tr("ws.action.retry.help"))
             }
             // The login ran out: sign in again in the browser, and the turn runs again once you are back.
             if run.status == .failed, AgentSignInFailure.needsSignIn(run.statusDetail),

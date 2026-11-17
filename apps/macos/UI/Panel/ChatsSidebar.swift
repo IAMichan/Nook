@@ -278,7 +278,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(count > 0 ? "\(title): \(count)" : title)
+        .nookTip(count > 0 ? "\(title): \(count)" : title, enabled: compact)
         .accessibilityLabel(count > 0 ? "\(title), \(count)" : title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -315,13 +315,12 @@ struct ChatReadLine: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             ChatReadMark(state: state)
                 .frame(minWidth: 16)
-                .nookTip(line)
+                .nookTip(line, enabled: fit != .full)
             if fit == .full {
                 Text(line)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
-                    .nookTip(explanation)
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             if state.isUnread {
@@ -384,7 +383,6 @@ struct ChatReadStatus: View {
             .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .pointerStyle(.link)
-            .nookTip("\(tr("chats.markReadInApp", appName)): \(explanation)")
             .accessibilityLabel(tr("chats.markReadInApp", appName))
         case .read:
             ChatTicks(count: 2, tint: NookTheme.mint)
@@ -438,7 +436,7 @@ struct ChatMarkButton: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .fixedSize()
-        .nookTip(showsTitle ? help : "\(title): \(help)")
+        .nookTip("\(title): \(help)", enabled: !showsTitle)
         .accessibilityLabel(showsTitle ? help : "\(title): \(help)")
     }
 

@@ -1113,6 +1113,29 @@ pub fn lines(messages: &[Message], chat_name: &str) -> String {
     lines_in(messages, chat_name, &chrono::Local)
 }
 
+/// Whether what they wrote last in a chat looks like phishing or a scam (`brain::message_trust`): their newest three
+/// messages, judged by the chat's name and whether the user ever wrote here. The Mac's `InboxThread.trust`.
+pub fn trust(messages: &[Message], chat_name: &str) -> crate::brain::message_trust::Verdict {
+    let mut incoming: Vec<&Message> = messages.iter().filter(|m| !m.from_me).collect();
+    incoming.sort_by_key(|m| m.date);
+    let recent: Vec<&str> = incoming.iter().rev().take(3).rev().map(|m| m.text.as_str()).collect();
+    if recent.is_empty() {
+        return Default::default();
+    }
+    crate::brain::message_trust::assess(chat_name, "", &recent.join("\n"), messages.iter().any(|m| m.from_me))
+}
+
+/// The chat's messages for the brain, under a warning when they look like phishing or a scam.
+pub fn lines_with_trust(messages: &[Message], chat_name: &str) -> String {
+    let marker = trust(messages, chat_name).marker();
+    let lines = lines(messages, chat_name);
+    if marker.is_empty() {
+        lines
+    } else {
+        format!("{marker}\n{lines}")
+    }
+}
+
 /// De gesprekken met iets nieuws, voor de context en het overzicht.
 pub fn overview(conversations: &[Conversation], limit: usize) -> String {
     conversations
@@ -1141,6 +1164,28 @@ pub fn overview(conversations: &[Conversation], limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scam_chat_is_marked_for_the_brain() {
+        use chrono::TimeZone;
+        let at = chrono::Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+        let scam = vec![Message::new(
+            "1",
+            "x@s.whatsapp.net",
+            "x",
+            "",
+            "Hoi pap, dit is mijn nieuwe nummer. Kun je dit even voor me betalen?",
+            at,
+            false,
+        )];
+        assert!(trust(&scam, "+31 6 87654321").is_suspicious());
+        assert!(lines_with_trust(&scam, "+31 6 87654321").starts_with("WARNING likely phishing or scam"));
+        let mut known = scam.clone();
+        known.push(Message::new("0", "x@s.whatsapp.net", "me", "", "Hoi!", at - chrono::Duration::days(30), true));
+        assert!(!trust(&known, "Daan").is_suspicious(), "someone the user wrote with before");
+        let fine = vec![Message::new("2", "x@s.whatsapp.net", "x", "", "Zullen we zaterdag eten?", at, false)];
+        assert_eq!(lines_with_trust(&fine, "Lisa"), lines(&fine, "Lisa"));
+    }
 
     fn msg(id: &str, chat: &str, at: i64, from_me: bool, mention: bool) -> Message {
         let mut m = Message::new(id, chat, chat, "Lisa", "hoi", DateTime::from_timestamp(1_800_000_000 + at, 0).unwrap(), from_me);

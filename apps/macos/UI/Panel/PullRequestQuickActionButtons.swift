@@ -114,8 +114,6 @@ struct PullRequestQuickActionButtons: View {
         .onHover { inside in
             if inside { hovered = action } else if hovered == action { hovered = nil }
         }
-        .nookTip(tr(phase == .waiting ? "agents.pulls.quick.unqueueHelp"
-                 : action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
     }
