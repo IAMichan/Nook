@@ -41,6 +41,8 @@ export interface MailDraft {
   id: string;
   to: string;
   cc: string;
+  /** Blind copy recipients; empty when the user asked for none. */
+  bcc: string;
   subject: string;
   body: string;
   attachments?: string[];
@@ -199,6 +201,8 @@ export const brainApi = {
   mailSend: (nookId: string, draft: MailDraft) => invoke<void>("mail_send", { nookId, draft }),
   mailOpen: (nookId: string, draft: MailDraft) => invoke<void>("mail_open", { nookId, draft }),
   mailOpenInvite: (nookId: string, draft: MailDraft) => invoke<void>("mail_open_invite", { nookId, draft }),
+  /** A mail card from a ```mail block in an answer (not stored with the chat): Send (`send`) or Open in mail app. */
+  mailBlockOpen: (draft: MailDraft, send: boolean) => invoke<void>("mail_block_open", { draft, send }),
 
   readAttachment: (name: string, base64: string) => invoke<Attachment>("read_attachment", { name, base64 }),
   /** A dropped or pasted path: a picture, or the text of a file, zip archive or folder. */

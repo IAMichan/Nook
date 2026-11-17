@@ -3,6 +3,7 @@
   // uitkomst, gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels en het einde van een beurt.
   import Icon from "../../../components/Icon.svelte";
   import Markdown from "../../../components/Markdown.svelte";
+  import MarkdownBody from "../../../components/MarkdownBody.svelte";
   import { tr, locale } from "../../../lib/i18n.svelte";
   import type { RunEvent } from "../../../lib/workspace/api";
   import { toolLabel } from "../../../lib/workspace/timeline";
@@ -73,7 +74,7 @@
   {:else if event.kind === "assistant"}
     <!-- The agent's answer has no bubble at all. -->
     <div class="turn assistant">
-      <div class="msg assistant"><Markdown text={event.text} {baseFolder} {onrun} /></div>
+      <div class="msg assistant"><MarkdownBody text={event.text} {baseFolder} {onrun} /></div>
       <div class="meta">
         <span>{time}</span>
         <button class="metab" title={tr("Kopieer", "Copy")} aria-label={tr("Kopieer antwoord", "Copy answer")} onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
