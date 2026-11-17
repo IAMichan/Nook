@@ -6,7 +6,7 @@
       { "id": "S1", "title": "Fix the build", "agent": "Claude Code", "attention": "approval", "folder": "app", "branch": "main",
         "updated": 1700000000, "excerpt": "Running tests", "items": [
           { "id": "I1", "kind": "approval", "title": "Run npm test", "detail": "Bash", "canAllow": true, "options": [] } ] } ] } },
-    { "name": "helloVersioned", "core": true, "json": { "id": "C", "ok": true, "macName": "Studio", "sessions": [],
+    { "name": "helloVersioned", "core": true, "json": { "id": "C", "ok": true, "macName": "Studio", "platform": "windows", "sessions": [],
       "features": ["start", "stream", "retry"], "protocolVersion": 2, "oldestPhone": 1, "appVersion": "1.4.0",
       "scopes": ["read", "approve"], "relay": "" } },
     { "name": "staleWithClock", "core": false, "json": { "id": "D", "ok": false, "error": "stale", "macTime": 1700000300 } },

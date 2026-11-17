@@ -851,6 +851,8 @@ final class CompanionServer: ObservableObject {
         response.protocolVersion = CompanionProtocol.version
         response.oldestPhone = CompanionProtocol.oldestPhone
         response.appVersion = CompanionProtocol.appVersion
+        // What this computer is, so a phone paired with Nook on Windows or Linux too shows each with its own icon.
+        response.platform = CompanionPlatform.wireMac
         return response
     }
 

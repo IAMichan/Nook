@@ -41,6 +41,7 @@
     { "name": "pullWork", "core": false, "json": { "id": "R28", "sent": 1700000036, "op": "pullWork", "pullWork": { "url": "https://github.com/o/r/pull/1", "agent": "claude", "task": "Fix the review comments" } } },
     { "name": "history", "core": false, "json": { "id": "R29", "sent": 1700000037, "op": "history", "text": "checkout", "item": "cursor-2" } },
     { "name": "fileData", "core": false, "json": { "id": "R30", "sent": 1700000038, "op": "fileData", "session": "S1", "item": "README.md", "text": "0" } },
-    { "name": "entry", "core": false, "json": { "id": "R31", "sent": 1700000039, "op": "entry", "session": "S1", "item": "E7" } }
+    { "name": "entry", "core": false, "json": { "id": "R31", "sent": 1700000039, "op": "entry", "session": "S1", "item": "E7" } },
+    { "name": "bindKey", "core": false, "json": { "id": "R32", "sent": 1700000040, "op": "bindKey", "text": "BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKiss" } }
   ]
 }

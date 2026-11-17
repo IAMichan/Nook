@@ -28,7 +28,7 @@
     {#if title}<div class="title">{title}</div>{/if}
     {#each sections.filter((s) => s.length) as section, i (i)}
       {#if i > 0 || title}<div class="gap"></div>{/if}
-      {#each section as item (item.label)}
+      {#each section as item, j (j)}
         {#if item.onselect}
           <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { item.onselect?.(); onclose(); }}>
             <span class="check">{#if item.checked}<Ico name="check" size={14} stroke={2.6} />{/if}</span>

@@ -112,9 +112,9 @@ export interface ClientView {
   /** How the phone reached the computer last: "lan", "tailnet", "internet" or "relay". */
   route?: string;
   /** Every paired computer; one is active. */
-  macs?: { id: string; name: string; active: boolean }[];
+  macs?: { id: string; name: string; active: boolean; platform?: string }[];
   /** The other paired computers' sessions, as they had them when last asked. */
-  others?: { id: string; name: string; reachable: boolean; sessions: SessionDigest[] }[];
+  others?: { id: string; name: string; platform?: string; reachable: boolean; sessions: SessionDigest[] }[];
   /** What waits to be sent while the computer is away. */
   outbox?: { id: string; op: string; session?: string | null; conversation?: string | null; item?: string | null; text: string; queuedAt: number }[];
 }
@@ -458,6 +458,62 @@ export function matchesSession(session: SessionDigest, query: string): boolean {
 /** Sessions waiting on you: the count on the Agents tab. */
 export function needingYou(sessions: SessionDigest[]): number {
   return sessions.filter((s) => s.items.length > 0 || needsYouState(s.attention)).length;
+}
+
+/** What kind of computer a pairing is (`CompanionPlatform`): what it said, a Mac when it never did (an older Mac). */
+export type ComputerKind = "mac" | "windows" | "linux" | "other";
+
+export function computerKind(platform?: string | null): ComputerKind {
+  const p = (platform ?? "").trim().toLowerCase();
+  if (!p || p === "macos" || p === "mac" || p === "darwin") return "mac";
+  if (p === "windows" || p === "linux") return p;
+  return "other";
+}
+
+/** The computer's icon: the laptop for a Mac, the monitor for a PC (as the iPhone draws them). */
+export function computerIcon(platform?: string | null): string {
+  return computerKind(platform) === "mac" ? "laptop" : "monitor";
+}
+
+/** "your Mac", or "your computer" for Nook on Windows or Linux: where the computer's name is not known yet. */
+export function fallbackComputerName(platform?: string | null, title = false): string {
+  if (computerKind(platform) === "mac") return title ? tr("Je Mac", "Your Mac") : tr("je Mac", "your Mac");
+  return title ? tr("Je computer", "Your computer") : tr("je computer", "your computer");
+}
+
+/** One paired computer in the quick switcher: its state and how much waits there. */
+export interface ComputerChoice {
+  id: string;
+  name: string;
+  platform: string;
+  active: boolean;
+  /** Live (the active one connected) or answered the last check (another); null while not checked yet. */
+  reachable: boolean | null;
+  waiting: number;
+}
+
+/** Every paired computer for the quick switcher, from the live list of the active one and the last check of the others. */
+export function computerChoices(view: ClientView): ComputerChoice[] {
+  return (view.macs ?? []).map((m) => {
+    const other = view.others?.find((o) => o.id === m.id);
+    return {
+      id: m.id,
+      name: m.name,
+      platform: m.platform ?? "macos",
+      active: m.active,
+      reachable: m.active ? view.phase === "connected" : other ? other.reachable : null,
+      waiting: needingYou(m.active ? view.sessions : other?.sessions ?? []),
+    };
+  });
+}
+
+/** A computer's line in the switcher: "Live · 2 waiting on you", "Offline", "Online"; empty when there is nothing to say. */
+export function computerStatus(c: ComputerChoice): string {
+  const state = c.active
+    ? c.reachable ? tr("Live", "Live") : tr("Niet verbonden", "Not connected")
+    : c.reachable === null ? null : c.reachable ? tr("Online", "Online") : tr("Offline", "Offline");
+  const waits = c.waiting > 0 ? tr("{n} wachten op je", "{n} waiting on you", { n: c.waiting }) : null;
+  return [state, waits].filter(Boolean).join(" · ");
 }
 
 /** Chats with something unread: the count on the Chats tab. */

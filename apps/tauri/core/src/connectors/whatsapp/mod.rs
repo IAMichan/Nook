@@ -602,6 +602,17 @@ impl Inbox {
         }
     }
 
+    /// Unread by hand: a read chat counts one unread message again. False when the chat is not here or was unread.
+    pub fn mark_unread(&mut self, chat: &str) -> bool {
+        match self.conversations.get_mut(&jid::normalized(chat)) {
+            Some(c) if c.unread == 0 => {
+                c.unread = 1;
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn rename(&mut self, chat: &str, name: &str) {
         if name.is_empty() {
             return;

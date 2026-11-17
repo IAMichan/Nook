@@ -1019,6 +1019,37 @@ pub fn parse_files(items: &[Value]) -> Vec<PullRequestFile> {
         .collect()
 }
 
+/// A review with comments on lines (`POST /repos/{repo}/pulls/{number}/reviews`), at `commit`, the head that was read:
+/// what the phone sends through the companion. `comments` are in GitHub's shape (`companion::pull_digest`). Only after
+/// the user's own tap; the caller writes it to the action log.
+#[allow(clippy::too_many_arguments)]
+pub async fn review_with_comments(
+    env: &Env,
+    token: &str,
+    repo: &str,
+    number: i64,
+    event: &str,
+    body: &str,
+    commit: &str,
+    comments: Vec<Value>,
+) -> CResult<()> {
+    let mut payload = json!({"event": event, "commit_id": commit, "comments": comments});
+    if !body.is_empty() {
+        payload["body"] = json!(body);
+    }
+    let url = format!("{}/repos/{repo}/pulls/{number}/reviews", api());
+    env.http.json("POST", &url, &super::github::headers(token), Some(&payload), "GitHub").await.map(|_| ())
+}
+
+/// The pull requests of a branch, open and closed (`GET /repos/{repo}/pulls?head=owner:branch`), as GitHub lists them.
+pub async fn branch_pulls(env: &Env, token: &str, repo: &str, branch: &str) -> CResult<Vec<Value>> {
+    let owner = repo.split('/').next().unwrap_or_default();
+    let head: String = url::form_urlencoded::byte_serialize(format!("{owner}:{branch}").as_bytes()).collect();
+    let url = format!("{}/repos/{repo}/pulls?state=all&per_page=20&head={head}", api());
+    let found = env.http.json("GET", &url, &super::github::headers(token), None, "GitHub").await?;
+    Ok(list(&found).to_vec())
+}
+
 /// The body of `PUT /repos/{repo}/pulls/{number}/merge`. With `sha`, GitHub only merges that exact head.
 pub fn merge_body(method: &str, sha: Option<&str>) -> Value {
     let mut body = json!({"merge_method": method});

@@ -158,19 +158,26 @@ pub fn ask(
     images: Vec<PromptImage>,
     attachment: Option<Attachment>,
 ) -> Result<Option<String>, String> {
-    ask_with(app, nook_id, raw, images, attachment, None, None)
+    ask_with(app, nook_id, raw, images, attachment, None, None, true)
+}
+
+/// A question from the companion phone: answered like one typed here, but it never brings the main window to the
+/// front on this computer (the Mac's `ask` with `reveal: false`), so "show agents" goes to the brain instead.
+pub fn ask_from_phone(app: &AppHandle, nook_id: &str, raw: &str, images: Vec<PromptImage>) -> Result<Option<String>, String> {
+    ask_with(app, nook_id, raw, images, None, None, None, false)
 }
 
 /// A question with a hidden note for the brain beside it (asking about a selection: the quote is material).
 pub fn ask_with_note(app: &AppHandle, nook_id: &str, raw: &str, note: String) -> Result<Option<String>, String> {
-    ask_with(app, nook_id, raw, vec![], None, None, Some(note))
+    ask_with(app, nook_id, raw, vec![], None, None, Some(note), true)
 }
 
 /// A prompt a card wrote (its button, not the user's words): answered like any question, but within `run`.
 pub fn ask_from_card(app: &AppHandle, nook_id: &str, text: &str, run: CardRun) -> Result<Option<String>, String> {
-    ask_with(app, nook_id, text, vec![], None, Some(run), None)
+    ask_with(app, nook_id, text, vec![], None, Some(run), None, true)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ask_with(
     app: &AppHandle,
     nook_id: &str,
@@ -179,6 +186,7 @@ fn ask_with(
     attachment: Option<Attachment>,
     card: Option<CardRun>,
     note: Option<String>,
+    reveal: bool,
 ) -> Result<Option<String>, String> {
     let mut text = raw.trim().to_string();
     if text.is_empty() && images.is_empty() && attachment.is_none() {
@@ -197,7 +205,9 @@ fn ask_with(
     }
     // Korte vaste opdrachten doet Nook zelf, meteen.
     if images.is_empty() && attachment.is_none() && card.is_none() {
-        if let Some(intent) = LocalIntent::parse(&text, &|name| tools::find_app(app, name)) {
+        let intent = LocalIntent::parse(&text, &|name| tools::find_app(app, name))
+            .filter(|intent| reveal || !matches!(intent, LocalIntent::ShowTab(_)));
+        if let Some(intent) = intent {
             if let Some(answer) = quick(app, &intent) {
                 quick_reply(app, nook_id, &text, answer);
                 return Ok(None);

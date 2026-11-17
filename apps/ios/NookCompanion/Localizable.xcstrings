@@ -2539,35 +2539,6 @@
         }
       }
     },
-    "Choose ‘Pair an iPhone’: Nook shows a code for five minutes." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wähle ‚iPhone koppeln‘: Nook zeigt fünf Minuten lang einen Code."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige «Vincular un iPhone»: Nook muestra un código durante cinco minutos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choisissez « Associer un iPhone » : Nook affiche un code pendant cinq minutes."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies ‘Koppel een iPhone’: Nook toont vijf minuten een code."
-          }
-        }
-      }
-    },
     "Clear" : {
       "localizations" : {
         "de" : {
@@ -3860,34 +3831,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze sessie beëindigen?"
-          }
-        }
-      }
-    },
-    "Everything between your iPhone and your Mac is encrypted end to end." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alles zwischen deinem iPhone und deinem Mac ist Ende-zu-Ende-verschlüsselt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todo lo que pasa entre tu iPhone y tu Mac está cifrado de extremo a extremo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tout ce qui passe entre votre iPhone et votre Mac est chiffré de bout en bout."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alles tussen je iPhone en je Mac is end-to-end versleuteld."
           }
         }
       }
@@ -7575,35 +7518,6 @@
         }
       }
     },
-    "On your Mac, open Nook › Settings › iPhone companion and turn it on." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffne auf deinem Mac Nook › Einstellungen › iPhone-Companion und schalte ihn ein."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En tu Mac, abre Nook › Ajustes › Companion de iPhone y actívalo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sur votre Mac, ouvrez Nook › Réglages › Compagnon iPhone et activez-le."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open op je Mac Nook › Instellingen › iPhone-companion en zet hem aan."
-          }
-        }
-      }
-    },
     "One hour" : {
       "localizations" : {
         "de" : {
@@ -8005,34 +7919,6 @@
         }
       }
     },
-    "Pair another Mac" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weiteren Mac koppeln"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Emparejar otro Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jumeler un autre Mac"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Koppel nog een Mac"
-          }
-        }
-      }
-    },
     "Pairing" : {
       "localizations" : {
         "de" : {
@@ -8057,35 +7943,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koppelen"
-          }
-        }
-      }
-    },
-    "Pairing failed: %@ The code works once, for five minutes; make a new one on your Mac." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Koppeln fehlgeschlagen: %@ Der Code gilt einmal, fünf Minuten lang; erstelle auf deinem Mac einen neuen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La vinculación falló: %@ El código sirve una vez, durante cinco minutos; crea uno nuevo en tu Mac."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jumelage échoué : %@ Le code fonctionne une fois, pendant cinq minutes ; créez-en un nouveau sur votre Mac."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Koppelen mislukt: %@ De code werkt één keer, vijf minuten lang; maak op je Mac een nieuwe."
           }
         }
       }
@@ -9137,35 +8994,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardado en Fotos."
-          }
-        }
-      }
-    },
-    "Scan it here. Your phone and Mac need to be on the same Wi‑Fi." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scanne ihn hier. Telefon und Mac müssen im selben WLAN sein."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Escanéalo aquí. Tu teléfono y tu Mac deben estar en la misma Wi‑Fi."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scannez-le ici. Votre téléphone et votre Mac doivent être sur le même Wi‑Fi."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scan hem hier. Je telefoon en Mac moeten op hetzelfde wifi zitten."
           }
         }
       }
@@ -11241,34 +11069,6 @@
         }
       }
     },
-    "This iPhone is paired with as many Macs as it can keep. Unpair one first." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieses iPhone ist schon mit so vielen Macs gekoppelt, wie es sich merken kann. Entkopple zuerst einen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este iPhone ya está emparejado con tantos Mac como puede guardar. Desempareja uno primero."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cet iPhone est jumelé avec autant de Mac qu’il peut en garder. Dissociez-en un d’abord."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deze iPhone is al met zoveel Macs gekoppeld als hij kan bewaren. Ontkoppel er eerst een."
-          }
-        }
-      }
-    },
     "This is risky or unknown: it can only be allowed on your Mac." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11773,63 +11573,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ontkoppelen"
-          }
-        }
-      }
-    },
-    "Unpair from this Mac" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Von diesem Mac entkoppeln"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desvincular de este Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dissocier de ce Mac"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ontkoppel van deze Mac"
-          }
-        }
-      }
-    },
-    "Unpair from this Mac?" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Von diesem Mac trennen?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Desvincular de este Mac?"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dissocier de ce Mac ?"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ontkoppelen van deze Mac?"
           }
         }
       }
@@ -13358,34 +13101,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jij"
-          }
-        }
-      }
-    },
-    "You can pair again with the code in Nook on your Mac." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du kannst mit dem Code in Nook auf dem Mac erneut koppeln."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Puedes vincular de nuevo con el código en Nook en tu Mac."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vous pouvez jumeler à nouveau avec le code dans Nook sur votre Mac."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je kunt opnieuw koppelen met de code in Nook op je Mac."
           }
         }
       }
@@ -15497,34 +15212,6 @@
         }
       }
     },
-    "Nook and your Mac" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nook und dein Mac"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nook y tu Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nook et votre Mac"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nook en je Mac"
-          }
-        }
-      }
-    },
     "Expanded" : {
       "localizations" : {
         "de" : {
@@ -16781,6 +16468,538 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hier verschijnen je chats"
+          }
+        }
+      }
+    },
+    "Pair another computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiteren Computer koppeln"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emparejar otro ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jumeler un autre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppel nog een computer"
+          }
+        }
+      }
+    },
+    "Unpair from this computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von diesem Computer trennen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desvincular de este ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dissocier de cet ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontkoppelen van deze computer"
+          }
+        }
+      }
+    },
+    "Unpair from this computer?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von diesem Computer trennen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desvincular de este ordenador?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dissocier de cet ordinateur ?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontkoppelen van deze computer?"
+          }
+        }
+      }
+    },
+    "You can pair again with the code in Nook on your computer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du kannst mit dem Code in Nook auf deinem Computer erneut koppeln."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes vincular de nuevo con el código en Nook en tu ordenador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pouvez jumeler à nouveau avec le code dans Nook sur votre ordinateur."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je kunt opnieuw koppelen met de code in Nook op je computer."
+          }
+        }
+      }
+    },
+    "Open Nook on your computer: on a Mac, Settings › iPhone companion; on Windows or Linux, Settings › Companion. Turn it on." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne Nook auf deinem Computer: auf einem Mac Einstellungen › iPhone-Companion, unter Windows oder Linux Einstellungen › Companion. Schalte ihn ein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Nook en tu ordenador: en un Mac, Ajustes › Companion de iPhone; en Windows o Linux, Ajustes › Companion. Actívalo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Nook sur votre ordinateur : sur un Mac, Réglages › Compagnon iPhone ; sous Windows ou Linux, Réglages › Companion. Activez-le."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Nook op je computer: op een Mac Instellingen › iPhone-companion, op Windows of Linux Instellingen › Companion. Zet hem aan."
+          }
+        }
+      }
+    },
+    "Choose ‘Pair an iPhone’ on a Mac, or ‘Pair a phone’ on Windows or Linux: Nook shows a code for five minutes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle ‚iPhone koppeln‘ auf einem Mac oder ‚Telefon koppeln‘ unter Windows oder Linux: Nook zeigt fünf Minuten lang einen Code."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige «Vincular un iPhone» en un Mac, o «Emparejar un teléfono» en Windows o Linux: Nook muestra un código durante cinco minutos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez « Associer un iPhone » sur un Mac, ou « Appairer un téléphone » sous Windows ou Linux : Nook affiche un code pendant cinq minutes."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies ‘Koppel een iPhone’ op een Mac, of ‘Koppel een telefoon’ op Windows of Linux: Nook toont vijf minuten een code."
+          }
+        }
+      }
+    },
+    "Scan it here. Your phone and computer need to be on the same Wi‑Fi." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne ihn hier. Telefon und Computer müssen im selben WLAN sein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanéalo aquí. Tu teléfono y tu ordenador deben estar en la misma Wi‑Fi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannez-le ici. Votre téléphone et votre ordinateur doivent être sur le même Wi‑Fi."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan hem hier. Je telefoon en computer moeten op hetzelfde wifi zitten."
+          }
+        }
+      }
+    },
+    "Pairing failed: %@ The code works once, for five minutes; make a new one on your computer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppeln fehlgeschlagen: %@ Der Code gilt einmal, fünf Minuten lang; erstelle auf deinem Computer einen neuen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La vinculación falló: %@ El código sirve una vez, durante cinco minutos; crea uno nuevo en tu ordenador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jumelage échoué : %@ Le code fonctionne une fois, pendant cinq minutes ; créez-en un nouveau sur votre ordinateur."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppelen mislukt: %@ De code werkt één keer, vijf minuten lang; maak op je computer een nieuwe."
+          }
+        }
+      }
+    },
+    "This iPhone is paired with as many computers as it can keep. Unpair one first." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses iPhone ist schon mit so vielen Computern gekoppelt, wie es sich merken kann. Entkopple zuerst einen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone ya está emparejado con tantos ordenadores como puede guardar. Desempareja uno primero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet iPhone est jumelé avec autant d’ordinateurs qu’il peut en garder. Dissociez-en un d’abord."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze iPhone is al met zoveel computers gekoppeld als hij kan bewaren. Ontkoppel er eerst een."
+          }
+        }
+      }
+    },
+    "Everything between your iPhone and your computer is encrypted end to end." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles zwischen deinem iPhone und deinem Computer ist Ende-zu-Ende-verschlüsselt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo lo que pasa entre tu iPhone y tu ordenador está cifrado de extremo a extremo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout ce qui passe entre votre iPhone et votre ordinateur est chiffré de bout en bout."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles tussen je iPhone en je computer is end-to-end versleuteld."
+          }
+        }
+      }
+    },
+    "your computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "deinen Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tu ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "votre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "je computer"
+          }
+        }
+      }
+    },
+    "Your computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je computer"
+          }
+        }
+      }
+    },
+    "Nook and your computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook und dein Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook y tu ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook et votre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en je computer"
+          }
+        }
+      }
+    },
+    "Nook on your computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur votre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je computer"
+          }
+        }
+      }
+    },
+    "Computers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordinateurs"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computers"
+          }
+        }
+      }
+    },
+    "Live" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En directo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En direct"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live"
+          }
+        }
+      }
+    },
+    "Online" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En línea"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En ligne"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online"
+          }
+        }
+      }
+    },
+    "Offline" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors ligne"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        }
+      }
+    },
+    "Switch to another computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu einem anderen Computer wechseln"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar a otro ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer à un autre ordinateur"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissel naar een andere computer"
           }
         }
       }

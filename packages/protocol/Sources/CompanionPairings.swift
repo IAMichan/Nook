@@ -1,6 +1,7 @@
 import Foundation
 
-// The Macs this phone is paired with (docs/COMPANION.md, "Several Macs"). One of them is active: the phone keeps its live
+// The computers this phone is paired with (docs/COMPANION.md, "Several computers"): Macs, and Nook on Windows or Linux
+// (`PairedMac.platform`). One of them is active: the phone keeps its live
 // connection to that one, and checks the others now and then for what waits there. Each Mac keeps its own key, routes,
 // outbox and features, stored under its id (the public identifier of its key, `PairedDevice.identifier`), so a message
 // written to one Mac can never go to another.
@@ -15,6 +16,11 @@ struct PairedMac: Codable, Equatable, Identifiable, Sendable {
     var key: String
     var routes: [CompanionRoute]
     var pairedAt: Double
+    /// What the computer said it is (`CompanionResponse.platform`); nil until it said, and for a Mac that does not.
+    var platform: String? = nil
+
+    /// The kind of computer, a Mac when it never said.
+    var kind: CompanionPlatform { CompanionPlatform(platform) }
 
     init(link: PairingLink, routes: [CompanionRoute]? = nil, pairedAt: Date = Date()) {
         id = PairedDevice.identifier(forKey: link.key)
@@ -55,8 +61,9 @@ struct CompanionPairings: Codable, Equatable, Sendable {
     /// a Mac that paired anew (a new key, the same name and address) replaces the old pairing too, since that key is dead.
     /// False when the list is full.
     @discardableResult
-    mutating func add(_ link: PairingLink, routes: [CompanionRoute]? = nil, now: Date = Date()) -> Bool {
-        let mac = PairedMac(link: link, routes: routes, pairedAt: now)
+    mutating func add(_ link: PairingLink, routes: [CompanionRoute]? = nil, platform: String? = nil, now: Date = Date()) -> Bool {
+        var mac = PairedMac(link: link, routes: routes, pairedAt: now)
+        mac.platform = platform
         let replaced = macs.firstIndex { $0.id == mac.id || ($0.name == mac.name && $0.host.lowercased() == mac.host.lowercased()) }
         if let replaced {
             macs[replaced] = mac
@@ -84,6 +91,15 @@ struct CompanionPairings: Codable, Equatable, Sendable {
     mutating func setRoutes(_ routes: [CompanionRoute], for id: String) {
         guard let index = macs.firstIndex(where: { $0.id == id }) else { return }
         macs[index].routes = routes
+    }
+
+    /// Keeps what the computer said it is; false when nothing changed.
+    @discardableResult
+    mutating func setPlatform(_ platform: String?, for id: String) -> Bool {
+        guard let platform, !platform.isEmpty, let index = macs.firstIndex(where: { $0.id == id }),
+              macs[index].platform != platform else { return false }
+        macs[index].platform = platform
+        return true
     }
 
     mutating func rename(_ id: String, to name: String) {

@@ -390,6 +390,9 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var ok: Bool
     var error: CompanionError?
     var macName: String?
+    /// What kind of computer answers (`CompanionPlatform`: "macos", "windows" or "linux"), with `hello`, `list` and
+    /// `subscribe`; nil from an older Mac, which is a Mac.
+    var platform: String? = nil
     var sessions: [SessionDigest]?
     var message: String?
     /// `CompanionFeature` values this Mac understands; nil from a Mac that only knows the first version.
@@ -464,6 +467,35 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
     }
+}
+
+/// What kind of computer a phone is paired with: a Mac, or Nook on Windows or Linux (`CompanionResponse.platform`).
+/// The phone names it and shows its icon by it; a computer that does not say is a Mac (it predates Nook elsewhere).
+enum CompanionPlatform: String, CaseIterable, Sendable {
+    case mac = "macos"
+    case windows
+    case linux
+    /// A platform this phone does not know yet.
+    case other
+
+    /// What this Mac says it is.
+    static let wireMac = CompanionPlatform.mac.rawValue
+
+    init(_ text: String?) {
+        guard let text = text?.trimmingCharacters(in: .whitespaces).lowercased(), !text.isEmpty else { self = .mac; return }
+        switch text {
+        case "macos", "mac", "darwin": self = .mac
+        case "windows": self = .windows
+        case "linux": self = .linux
+        default: self = .other
+        }
+    }
+
+    var isMac: Bool { self == .mac }
+
+    /// The icon of this kind of computer, named the SF Symbol way (drawn through `Image(icon:)`: Lucide's laptop for a
+    /// Mac, its monitor for a PC).
+    var symbol: String { isMac ? "laptopcomputer" : "display" }
 }
 
 /// What the phone is told about a session that matters now. Titles and excerpts are cut: the phone is not a log viewer.

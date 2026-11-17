@@ -53,7 +53,7 @@ apps/tauri/
 | Talking and reading aloud | ✓ | ✓ (whisper.cpp or a chosen service; espeak-ng) | — |
 | "Hey Nook" | ✓ | — | — |
 | Dictation everywhere (Flow) and the Notetaker | ✓ | ✓ (X11; system audio via PulseAudio/PipeWire) | — |
-| Companion | server for the iPhone app, reachable away from home (relay, Tailscale), kept awake and running | server for the iPhone app, reachable away from home (relay, Tailscale), kept awake and running | phone side |
+| Companion | server for the iPhone and Android app with what a Mac offers (live sessions, starting them, Nook chat, Home, Chats, pull requests), reachable away from home (relay, Tailscale), kept awake and running | same as Windows | phone side |
 
 ## Building
 

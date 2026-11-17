@@ -17,6 +17,16 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertNil(PairingLink.parse("nook://pair?h=a&p=70000&k=\(Base64URL.encode(key))"))
     }
 
+    func testResponsePlatformIsOptional() throws {
+        let old = try JSONDecoder().decode(CompanionResponse.self, from: Data(#"{"id":"A","ok":true,"macName":"Studio"}"#.utf8))
+        XCTAssertNil(old.platform)
+        XCTAssertEqual(CompanionPlatform(old.platform), .mac, "an older Mac does not say")
+        let pc = try JSONDecoder().decode(CompanionResponse.self, from: Data(#"{"id":"B","ok":true,"platform":"linux"}"#.utf8))
+        XCTAssertEqual(CompanionPlatform(pc.platform), .linux)
+        let written = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        XCTAssertNil(written["platform"], "left out when unknown")
+    }
+
     func testBase64URLRoundTrip() {
         for length in 0..<12 {
             let data = Data((0..<length).map { _ in UInt8.random(in: 0...255) })
