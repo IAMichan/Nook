@@ -376,35 +376,137 @@ struct SessionUsageCard: View {
     }
 }
 
-/// "Context 62% · 5h 38% · W 12%": the folded card's line, each number in its tone.
+/// The folded card's line, what needs attention first. While all is calm: "Context 62% · 5h 38% · W 12%", quiet. Once a
+/// limit or the context needs attention, the most urgent one leads as a tinted tag with when it frees up ("● Week 95% ·
+/// resets in 2d 3h"), followed only by the others that need attention too; the calm ones wait in the open card.
 struct SessionUsageSummary: View {
     let snapshot: SessionUsageSnapshot
 
-    private var items: [(label: String, value: String, tint: Color)] {
-        var items: [(label: String, value: String, tint: Color)] = []
-        if let context = snapshot.context {
-            items.append((tr("usage.session.context"), ContextMeter.percentText(context.fraction),
-                          snapshot.contextLevel == .normal ? NookTheme.textSecondary : snapshot.contextTint))
+    private typealias Item = (label: String, value: String, tint: Color)
+
+    /// What leads: the fullest limit once it is amber or coral, unless the context needs attention while that limit is
+    /// only amber (the same choice as the header's ring, `SessionUsageRing`).
+    private enum Lead {
+        case limit(QuotaLimit)
+        case context(ContextUsage)
+    }
+
+    private var contextNeedsAttention: Bool {
+        snapshot.context != nil && (snapshot.contextLevel != .normal || snapshot.compactFirst == true)
+    }
+
+    private var lead: Lead? {
+        let limit = snapshot.limits.max { $0.percent < $1.percent }
+            .flatMap { UsageTone.level(used: UsageLimitRows.used($0)) == .calm ? nil : $0 }
+        if let limit, UsageTone.level(used: UsageLimitRows.used(limit)) == .error || !contextNeedsAttention {
+            return .limit(limit)
         }
-        for line in snapshot.limitLines {
-            items.append((line.short, "\(line.used)%", UsageTone.level(used: line.used) == .calm ? NookTheme.textSecondary
-                                                         : UsageTone.text(used: line.used)))
+        if contextNeedsAttention, let context = snapshot.context { return .context(context) }
+        return nil
+    }
+
+    private var contextItem: Item? {
+        snapshot.context.map { (tr("usage.session.context"), ContextMeter.percentText($0.fraction),
+                                snapshot.contextLevel == .normal ? NookTheme.textSecondary : snapshot.contextTint) }
+    }
+
+    private func limitItem(_ line: UsageLimits.ChipLine) -> Item {
+        (line.short, "\(line.used)%", UsageTone.level(used: line.used) == .calm ? NookTheme.textSecondary
+                                         : UsageTone.text(used: line.used))
+    }
+
+    /// Everything, for the calm line.
+    private var calmItems: [Item] {
+        (contextItem.map { [$0] } ?? []) + snapshot.limitLines.map(limitItem)
+    }
+
+    /// Beside the lead: only what needs attention too.
+    private func others(_ lead: Lead) -> [Item] {
+        var items: [Item] = []
+        if case .limit = lead, contextNeedsAttention, let contextItem { items.append(contextItem) }
+        var skipped = false
+        for line in snapshot.limitLines where UsageTone.level(used: line.used) != .calm {
+            if case .limit(let limit) = lead, !skipped,
+               line.short == UsageLimits.shortWindow(limit.duration, fallback: limit.window),
+               line.used == UsageLimitRows.used(limit) {
+                skipped = true
+                continue
+            }
+            items.append(limitItem(line))
         }
         return items
     }
 
     var body: some View {
-        let parts = items
         HStack(spacing: NookTheme.Spacing.sm) {
-            ForEach(parts.indices, id: \.self) { index in
-                if index > 0 { Text("·").foregroundStyle(NookTheme.textTertiary) }
-                Text(parts[index].label).foregroundStyle(NookTheme.textTertiary)
-                    + Text(" \(parts[index].value)").foregroundStyle(parts[index].tint)
+            if let lead {
+                SessionUsageLeadTag(lead: leadParts(lead))
+                line(others(lead))
+            } else {
+                line(calmItems)
             }
         }
         .font(NookTheme.TextStyle.caption.monospacedDigit())
         .lineLimit(1)
         .fixedSize()
+    }
+
+    private func leadParts(_ lead: Lead) -> SessionUsageLeadTag.Parts {
+        switch lead {
+        case .limit(let limit):
+            let used = UsageLimitRows.used(limit)
+            return .init(label: limit.window, value: "\(used)%", tint: UsageTone.text(used: used),
+                         fill: UsageTone.fill(used: used), resetsAt: limit.note == nil ? limit.resetsAt : nil)
+        case .context(let context):
+            return .init(label: tr("usage.session.context"), value: ContextMeter.percentText(context.fraction),
+                         tint: snapshot.contextTint, fill: snapshot.contextTint, resetsAt: nil)
+        }
+    }
+
+    @ViewBuilder
+    private func line(_ parts: [Item]) -> some View {
+        if !parts.isEmpty {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                ForEach(parts.indices, id: \.self) { index in
+                    if index > 0 { Text("·").foregroundStyle(NookTheme.textTertiary) }
+                    Text(parts[index].label).foregroundStyle(NookTheme.textTertiary)
+                        + Text(" \(parts[index].value)").foregroundStyle(parts[index].tint)
+                }
+            }
+        }
+    }
+}
+
+/// The folded card's lead: a dot, the window's name, how full it is and when it frees up, on a soft wash of its tone.
+private struct SessionUsageLeadTag: View {
+    struct Parts {
+        var label: String
+        var value: String
+        var tint: Color
+        var fill: Color
+        var resetsAt: Date?
+    }
+
+    let lead: Parts
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Circle().fill(lead.fill).frame(width: 6, height: 6)
+            Text(lead.label).foregroundStyle(NookTheme.textSecondary)
+            Text(lead.value).fontWeight(.semibold).foregroundStyle(lead.tint)
+            if lead.resetsAt != nil {
+                // Counts down by the minute without the card reading the usage again.
+                TimelineView(.nookTicks(every: 60)) { context in
+                    if let reset = AgentFormat.resetsIn(lead.resetsAt, now: context.date) {
+                        Text("· \(reset)").foregroundStyle(NookTheme.textTertiary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, 2)
+        .roundedBackground(lead.fill.opacity(0.14), radius: NookTheme.Radius.chip)
+        .accessibilityElement(children: .combine)
     }
 }
 
