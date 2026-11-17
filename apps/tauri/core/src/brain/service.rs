@@ -510,11 +510,17 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
     let wanted_refs: Vec<&str> = wanted.iter().map(String::as_str).collect();
     let mut preferred = wanted.clone();
     preferred.extend(research::companions(&wanted_refs));
-    let offered: Vec<LoopTool> = if !small || profile.rich_prompt || gated {
+    let mut offered: Vec<LoopTool> = if !small || profile.rich_prompt || gated {
         with_companions(prioritized(all, text, profile.max_tools, &preferred), all)
     } else {
         vec![]
     };
+    // A brain strong enough to work in many steps always gets its checklist; a small model would only lose time on it.
+    if (!small || profile.rich_prompt) && !offered.is_empty() && !offered.iter().any(|t| t.name == super::task_steps::TOOL) {
+        if let Some(plan) = all.iter().find(|t| t.name == super::task_steps::TOOL) {
+            offered.push(plan.clone());
+        }
+    }
     // Zoeken door de dienst zelf (Claude's web_search, Claude Code's WebSearch) volgt dezelfde regel als Nooks eigen
     // webtools: alleen als de bron Web voor deze vraag mag.
     let web_allowed = settings.web_search

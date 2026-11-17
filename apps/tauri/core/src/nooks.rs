@@ -113,6 +113,8 @@ pub struct ChatMessage {
     pub scope_label: String,
     pub notices: Vec<String>,
     pub charts: Vec<ChatChart>,
+    /// The plan Nook works through (`update_plan`), shown as a checklist above the answer.
+    pub tasks: Vec<crate::brain::task_steps::TaskStep>,
     pub mails: Vec<MailDraft>,
     pub actions: Vec<PlannedAction>,
     pub plan_state: Option<PlanState>,
@@ -145,6 +147,7 @@ impl Default for ChatMessage {
             scope_label: String::new(),
             notices: vec![],
             charts: vec![],
+            tasks: vec![],
             mails: vec![],
             actions: vec![],
             plan_state: None,
@@ -457,6 +460,7 @@ impl NookChat {
         for c in &mut chat.conversations {
             for m in &mut c.messages {
                 m.streaming = false;
+                m.tasks = crate::brain::task_steps::settled(&m.tasks);
             }
         }
         chat.active_id = stored.active.filter(|id| chat.conversations.iter().any(|c| &c.id == id));

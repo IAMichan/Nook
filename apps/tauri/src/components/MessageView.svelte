@@ -10,6 +10,7 @@
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
   import type { ChatMessage } from "../lib/types";
+  import TaskChecklist from "./TaskChecklist.svelte";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
   import PlanCard from "./PlanCard.svelte";
@@ -110,6 +111,7 @@
     <div class="bubble">{message.text}</div>
   {:else}
     <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
+    {#if message.tasks?.length}<TaskChecklist steps={message.tasks} live={message.streaming} />{/if}
     {#if message.streaming && !text}
       <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
