@@ -329,13 +329,14 @@ enum TimelinePresentation {
     }
 
     /// A turn starts at each message of yours, where the agent woke up by itself after background work, and at news about
-    /// a watched pull request that came after the turn before it had ended (`isNews`); anything before the first one is
-    /// a turn of its own.
+    /// a watched pull request or a change to the session itself that came after the turn before it had ended (`isNews`,
+    /// `isSessionChange`); anything before the first one is a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
         var ended = false
         for event in events {
-            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty || ended && isNews(event) {
+            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty
+                || ended && (isNews(event) || isSessionChange(event)) {
                 turns.append([event])
                 ended = false
             } else {
@@ -358,6 +359,15 @@ enum TimelinePresentation {
         event.kind == .system && event.tool == "prwatch"
     }
 
+    /// A change Nook made to the session between turns: another agent, account or model (`switch`), the summary handed to
+    /// it (`handoff`), going on by itself after a switch or a limit (`resume`), a new conversation (`clear`). It starts a
+    /// turn of its own after a finished turn, so it stays in sight between the turns instead of folding into "Worked
+    /// for…" of the turn before (above that turn's answer, as if it had happened during it).
+    static func isSessionChange(_ event: RunEvent) -> Bool {
+        guard event.kind == .system, let tool = event.tool else { return false }
+        return ["switch", "handoff", "resume", "clear"].contains(tool)
+    }
+
     private static func present(_ turn: [RunEvent], open: Bool,
                                 tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         guard let first = turn.first else { return [] }
@@ -372,7 +382,10 @@ enum TimelinePresentation {
         let between = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
         // Files it handed you and pages it showed you stay in view next to its answer: they are what the work made, not
         // part of it.
-        func isShown(_ event: RunEvent) -> Bool { SharedFiles.isShare(event) || event.kind == .page }
+        // So does the line that this turn was stopped to switch to another agent or account.
+        func isShown(_ event: RunEvent) -> Bool {
+            SharedFiles.isShare(event) || event.kind == .page || event.kind == .system && event.tool == "switch-stop"
+        }
         let shared = between.filter(isShown)
         let work = between.filter { !isShown($0) }
         guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn, tally: tally) }

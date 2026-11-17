@@ -80,7 +80,6 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.noJobs.openWorkflowFile": "Workflow file",
         "actions.noJobs.openRun": "Run on GitHub",
         "actions.loading": "Loading runs…",
-        "actions.job.open": "Show steps and log",
     ],
     .nl: [
         "actions.title": "Actions",
@@ -159,7 +158,6 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.noJobs.openWorkflowFile": "Workflowbestand",
         "actions.noJobs.openRun": "Run op GitHub",
         "actions.loading": "Runs laden…",
-        "actions.job.open": "Stappen en log tonen",
     ],
     .de: [
         "actions.title": "Actions",
@@ -238,7 +236,6 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.noJobs.openWorkflowFile": "Workflow-Datei",
         "actions.noJobs.openRun": "Lauf auf GitHub",
         "actions.loading": "Läufe werden geladen…",
-        "actions.job.open": "Schritte und Log anzeigen",
     ],
     .fr: [
         "actions.title": "Actions",
@@ -317,7 +314,6 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.noJobs.openWorkflowFile": "Fichier du workflow",
         "actions.noJobs.openRun": "Exécution sur GitHub",
         "actions.loading": "Chargement des exécutions…",
-        "actions.job.open": "Afficher les étapes et le journal",
     ],
     .es: [
         "actions.title": "Actions",
@@ -396,6 +392,5 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.noJobs.openWorkflowFile": "Archivo del workflow",
         "actions.noJobs.openRun": "Ejecución en GitHub",
         "actions.loading": "Cargando ejecuciones…",
-        "actions.job.open": "Mostrar pasos y registro",
     ],
 ]

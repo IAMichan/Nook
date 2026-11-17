@@ -45,15 +45,17 @@ struct TokenSettingsSection: View {
 
     var body: some View {
         Section {
-            Toggle(tr("settings.ws.idleCompaction"), isOn: $ws.idleCompaction)
-                .nookTip(tr("settings.ws.idleCompaction.help"))
+            Toggle(isOn: $ws.idleCompaction) {
+                SettingInfoLabel(tr("settings.ws.idleCompaction"), info: tr("settings.ws.idleCompaction.help"))
+            }
                 .onChange(of: ws.idleCompaction) { _, _ in app.workspace.idleCompactionSettingChanged() }
-            Picker(tr("settings.ws.autoCompact"), selection: $ws.autoCompactTokens) {
+            Picker(selection: $ws.autoCompactTokens) {
                 ForEach(SizeCompaction.choices, id: \.self) { tokens in
                     Text(tokens == 0 ? tr("settings.ws.autoCompact.off") : "\(tokens / 1000)K tokens").tag(tokens)
                 }
+            } label: {
+                SettingInfoLabel(tr("settings.ws.autoCompact"), info: tr("settings.ws.autoCompact.help"))
             }
-            .nookTip(tr("settings.ws.autoCompact.help"))
             SettingNote(tr("tuning.nookDoes"))
         } header: {
             SettingsSectionTitle(tr("tuning.nook.title"))
@@ -108,8 +110,9 @@ private struct TuningAdviceRow: View {
             }
             HStack(spacing: NookTheme.Spacing.md) {
                 if item.appliesInNook {
-                    Toggle(tr("tuning.inNook"), isOn: $applied)
-                        .nookTip(tr("tuning.inNook.help"))
+                    Toggle(isOn: $applied) {
+                        SettingInfoLabel(tr("tuning.inNook"), info: tr("tuning.inNook.help"))
+                    }
                 }
                 Spacer()
                 if let snippet = item.snippet { CopyGhostButton { snippet } }

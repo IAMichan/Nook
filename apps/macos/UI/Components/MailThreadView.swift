@@ -249,7 +249,6 @@ struct MailMessageCard: View {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
-            .nookTip(MailDates.full(message.date))
     }
 
     /// "to Lisa, Bram · cc Anna": the names, the addresses in the tooltip.
@@ -366,7 +365,6 @@ struct MailMessageCard: View {
                             .padding(.horizontal, NookTheme.Spacing.sm)
                             .padding(.vertical, NookTheme.Spacing.xs)
                             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
-                            .nookTip(tr("chats.mail.attachmentInMail"))
                     }
                 }
             }

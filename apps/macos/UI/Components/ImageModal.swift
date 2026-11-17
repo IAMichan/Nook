@@ -29,7 +29,6 @@ struct ImageModal: View {
                           onClick: onClose)
                 .roundedClip(NookTheme.Radius.control)
                 .padding(fills ? NookTheme.Spacing.xxl : NookTheme.Spacing.sm)
-                .nookTip(tr("chat.photo.zoomHint"))
                 .accessibilityElement()
                 .accessibilityLabel(name)
                 .accessibilityAddTraits(.isImage)
@@ -97,7 +96,6 @@ struct ImageModalButton<Label: View>: View {
                 }
             }
         }
-        .nookTip(preview == nil ? name : tr("card.video.enlarge"))
         .accessibilityLabel(preview == nil ? name : "\(tr("card.video.enlarge")): \(name)")
     }
 

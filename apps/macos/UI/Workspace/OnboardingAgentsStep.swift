@@ -130,6 +130,5 @@ struct OnboardingAgentsStep: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md)
         .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
-        .nookTip(AgentPathFormat.tilde(candidate.path))
     }
 }

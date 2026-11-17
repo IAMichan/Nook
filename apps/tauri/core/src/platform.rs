@@ -40,6 +40,14 @@ pub struct Capture {
     pub height: u32,
 }
 
+/// Outcome of invoking a menu command in another app (`app_menu_command`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuCommandOutcome {
+    Done,
+    Disabled,
+    NotFound,
+}
+
 /// Leest wat er op het scherm staat: UI Automation/OCR op Windows, AT-SPI op Linux. Op Android kan dat niet.
 pub trait ScreenReader: Send + Sync {
     fn available(&self) -> bool;
@@ -72,6 +80,19 @@ pub trait ScreenReader: Send + Sync {
     }
     fn running_apps(&self) -> Vec<RunningApp> {
         vec![]
+    }
+    /// Lists enabled menu items (`"File > Save"`, `"File > Export > PDF"`) of an app by process id.
+    fn list_app_menu(&self, _pid: u32) -> Result<Vec<String>, String> {
+        Err(crate::i18n::tr("Menu's van apps lezen kan op dit platform niet.", "Reading app menus is not supported on this platform.")
+            .into())
+    }
+    /// Brings the app's window to front and invokes the menu item at `path`.
+    fn click_app_menu(&self, _pid: u32, _path: &[String]) -> Result<MenuCommandOutcome, String> {
+        Err(crate::i18n::tr(
+            "Menu-opdrachten uitvoeren kan op dit platform niet.",
+            "Running app menu commands is not supported on this platform.",
+        )
+        .into())
     }
     /// Of [`capture_screen`](Self::capture_screen) kan, zonder hem te maken.
     fn can_capture(&self) -> bool {

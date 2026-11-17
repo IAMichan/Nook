@@ -1,6 +1,6 @@
 <script lang="ts">
   // A header's icon button (`NookIconButton`): 40×40, no fill, the glyph in text2.
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { icon, label, onclick, disabled = false }: { icon: string; label: string; onclick: () => void; disabled?: boolean } = $props();
 </script>
 

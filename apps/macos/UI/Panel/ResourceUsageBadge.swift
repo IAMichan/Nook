@@ -15,7 +15,6 @@ struct ResourceUsageBadge: View {
                 Text(usage.label)
                     .font(NookTheme.TextStyle.label.monospacedDigit())
                     .foregroundStyle(usage.cpuPercent > 300 ? NookTheme.amber : NookTheme.textTertiary)
-                    .nookTip(tr("ws.header.resources", usage.processes))
                     .transition(.opacity)
             }
         }

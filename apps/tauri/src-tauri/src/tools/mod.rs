@@ -20,6 +20,7 @@ mod loops;
 mod mail;
 mod memory;
 mod plan;
+mod schedule;
 mod screen;
 mod settings;
 mod system;
@@ -153,6 +154,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(browser::NookBrowser),
         Box::new(browser_tab::Browser),
         Box::new(charts::Charts),
+        Box::new(schedule::Schedule),
         Box::new(settings::SettingsTools),
         Box::new(plan::Plan),
         Box::new(mail::Mail),

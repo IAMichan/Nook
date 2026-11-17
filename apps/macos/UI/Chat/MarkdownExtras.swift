@@ -77,10 +77,8 @@ struct MarkdownImageBlock: View {
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
-                .nookTip(source)
             } else {
                 ChatMessagePicture(image: image, missing: false, name: name) { file }
-                    .nookTip(alt.isEmpty ? source : alt)
             }
         }
         .task(id: source + (fileLinkBase ?? "")) {

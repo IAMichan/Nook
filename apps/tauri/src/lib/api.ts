@@ -14,6 +14,8 @@ export const api = {
   listModels: (providerId: ProviderId) => invoke<string[]>("list_models", { providerId }),
   keyStatus: (providerId: ProviderId) => invoke<string | null>("key_status", { providerId }),
   setKey: (providerId: ProviderId, key: string) => invoke<string | null>("set_key", { providerId, key }),
+  /** Sign in on OpenRouter's page instead of pasting a key; resolves with the new key, masked. */
+  openrouterSignIn: () => invoke<string | null>("openrouter_sign_in"),
 
   nooks: (archived = false) => invoke<ConversationSummary[]>("nooks_list", { archived }),
   searchNooks: (query: string) => invoke<ConversationSummary[]>("nooks_search", { query }),

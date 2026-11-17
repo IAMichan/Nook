@@ -10,6 +10,7 @@
     type RunAction, type RunDetail, type RunJob, type WorkflowRun,
   } from "../../../lib/actions";
   import { tr } from "../../../lib/i18n.svelte";
+  import { ask } from "../../../lib/confirm.svelte";
   import RunSkeleton from "./RunSkeleton.svelte";
   import type { PullRequestCheck } from "../../../lib/pulls";
   import CheckLog from "../pulls/CheckLog.svelte";
@@ -74,7 +75,10 @@
   });
 
   async function act(action: RunAction) {
-    if (action === "cancel" && !confirm(tr("Run #{number} van {workflow} annuleren?", "Cancel run #{number} of {workflow}?", { number: run.number, workflow: run.workflow }))) return;
+    if (action === "cancel" && !(await ask({
+      question: tr("Run #{number} van {workflow} annuleren?", "Cancel run #{number} of {workflow}?", { number: run.number, workflow: run.workflow }),
+      confirmTitle: tr("Annuleer run", "Cancel run"),
+    }))) return;
     busy = action;
     actionError = null;
     try {

@@ -163,7 +163,8 @@ struct NookSearchLauncher: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(help ?? prompt)
+        // Only the bare magnifier needs a name; the full field shows its prompt.
+        .nookTip(help ?? prompt, enabled: compact)
         .accessibilityLabel(help ?? prompt)
     }
 }
@@ -302,7 +303,7 @@ struct PanelNoticeBar<Trailing: View>: View {
         let notice = NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
                                 actions: actions, countdown: countdown, paused: paused, wraps: floating, onOK: onOK,
                                 trailing: trailing)
-            .nookTip(help ?? title)
+            .nookTip(help ?? "")
         if floating {
             notice
                 .toastBubble(tone: tone ?? NookTheme.textSecondary, maxWidth: NookToastView.maxWidth)
@@ -400,7 +401,7 @@ struct PanelRequestNotice: View {
         }
         .padding(.vertical, NookTheme.Spacing.xs)
         .padding(.trailing, NookTheme.Spacing.xs)
-        .nookTip(help ?? title)
+        .nookTip(help ?? "")
         .accessibilityElement(children: .contain)
         .toastBubble(tone: tone, maxWidth: NookToastView.maxWidth)
     }

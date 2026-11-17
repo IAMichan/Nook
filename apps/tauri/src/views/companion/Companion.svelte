@@ -23,9 +23,9 @@
   import InboxChat from "./InboxChat.svelte";
   import SettingsSheet from "./SettingsSheet.svelte";
   import ShareSheet from "./ShareSheet.svelte";
-  import TabBar from "./ui/TabBar.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import Sheet from "./ui/Sheet.svelte";
+  import TabBar from "../../components/ui/TabBar.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
+  import Sheet from "../../components/ui/Sheet.svelte";
   import NookMark from "./ui/NookMark.svelte";
   import { parsePromptLink, type PromptLink } from "../../lib/prompt-link";
   import { looksLikePairingLink } from "../../lib/companion";
@@ -302,6 +302,9 @@
     agents: needingYou(view?.sessions ?? []),
     chats: unreadChats(inbox),
   });
+  const tabIcons: Record<CompanionTab, string> = { home: "sparkles", agents: "layers", chats: "messages-square" };
+  const tabLabels: Record<CompanionTab, string> = { home: "Nook", agents: "Agents", chats: "Chats" };
+  const barTabs = $derived(tabs.map((t) => ({ id: t, icon: tabIcons[t], label: tabLabels[t], count: counts[t] })));
 
   /** Every paired computer, checked on the active one, with its icon (a Mac or a PC), whether it is live or can be
    * reached, and what waits there: the quick switcher under the title and the top of the orb's menu read the same. */
@@ -367,7 +370,7 @@
       {/if}
     </div>
     {#if tabs.length > 1}
-      <div class="tabbar"><TabBar {tabs} {tab} {counts} onpick={(t) => { if (t === tab) screens[t] = null; tab = t; }} /></div>
+      <div class="tabbar"><TabBar tabs={barTabs} {tab} onpick={(t) => { if (t === tab) screens[t] = null; tab = t; }} /></div>
     {/if}
   {/if}
 

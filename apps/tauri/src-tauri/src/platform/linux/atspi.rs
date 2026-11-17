@@ -4,24 +4,30 @@
 
 use std::time::{Duration, Instant};
 
+use nook_core::brain::app_menu;
+use nook_core::platform::MenuCommandOutcome;
 use zbus::{block_on, Connection, OwnedObjectPath, OwnedVariant};
 
 const REGISTRY: &str = "org.a11y.atspi.Registry";
 const ROOT: &str = "/org/a11y/atspi/accessible/root";
 const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
+const ACTION: &str = "org.a11y.atspi.Action";
 const TEXT: &str = "org.a11y.atspi.Text";
 
 const DOCUMENT: &str = "org.a11y.atspi.Document";
 
 // Rollen (ATSPI_ROLE_*).
+const ROLE_CHECK_MENU_ITEM: u32 = 8;
 const ROLE_FRAME: u32 = 23;
 const ROLE_DIALOG: u32 = 16;
 const ROLE_WINDOW: u32 = 69;
 const ROLE_PASSWORD: u32 = 40;
 const ROLE_MENU: u32 = 33;
 const ROLE_MENU_BAR: u32 = 34;
+const ROLE_MENU_ITEM: u32 = 35;
 const ROLE_PAGE_TAB: u32 = 36;
 const ROLE_POPUP_MENU: u32 = 41;
+const ROLE_RADIO_MENU_ITEM: u32 = 45;
 const ROLE_TOOL_BAR: u32 = 63;
 const ROLE_SCROLL_BAR: u32 = 48;
 const ROLE_ENTRY: u32 = 78;
@@ -32,8 +38,10 @@ const NAMED: [u32; 12] = [43, 29, 56, 32, 37, 44, 62, 27, 7, 88, 83, 101];
 
 // Toestanden (ATSPI_STATE_*), bitnummers.
 const STATE_ACTIVE: u32 = 1;
+const STATE_ENABLED: u32 = 8;
 const STATE_SHOWING: u32 = 25;
 const STATE_ICONIFIED: u32 = 15;
+const STATE_SENSITIVE: u32 = 24;
 
 /// Een element: busnaam en objectpad.
 type Node = (String, OwnedObjectPath);
@@ -305,6 +313,127 @@ impl Atspi {
         }
         for child in self.children(node) {
             self.scan_browser_chrome(&child, depth + 1, budget, deadline, url, doc_title, tabs, doc_node);
+        }
+    }
+
+    fn is_menu_role(role: u32) -> bool {
+        matches!(role, ROLE_MENU | ROLE_MENU_ITEM | ROLE_CHECK_MENU_ITEM | ROLE_RADIO_MENU_ITEM)
+    }
+
+    fn is_enabled(&self, node: &Node) -> bool {
+        let states = self.states(node);
+        Self::has(&states, STATE_ENABLED) && Self::has(&states, STATE_SENSITIVE)
+    }
+
+    fn frame_for_pid(&self, pid: u32) -> Option<Frame> {
+        let mut frames: Vec<Frame> = self.frames().into_iter().filter(|f| f.pid == pid).collect();
+        frames.sort_by_key(|f| (!f.active, !f.showing));
+        frames.into_iter().next()
+    }
+
+    fn find_menu_bars(&self, node: &Node, depth: usize, deadline: Instant, out: &mut Vec<Node>) {
+        if depth > 10 || Instant::now() > deadline || out.len() >= 8 {
+            return;
+        }
+        let role = self.role(node);
+        if role == ROLE_MENU_BAR {
+            out.push(node.clone());
+            return;
+        }
+        if role == ROLE_PASSWORD {
+            return;
+        }
+        for child in self.children(node) {
+            self.find_menu_bars(&child, depth + 1, deadline, out);
+        }
+    }
+
+    fn menu_children(&self, node: &Node) -> Vec<Node> {
+        let mut out = Vec::new();
+        for child in self.children(node) {
+            let role = self.role(&child);
+            if Self::is_menu_role(role) {
+                out.push(child);
+            } else if role == ROLE_POPUP_MENU {
+                for sub in self.children(&child) {
+                    if Self::is_menu_role(self.role(&sub)) {
+                        out.push(sub);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn walk_menu(&self, node: &Node, prefix: &[String], depth: usize, deadline: Instant, out: &mut Vec<String>) {
+        if depth >= app_menu::MAX_DEPTH || Instant::now() > deadline || out.len() >= 400 {
+            return;
+        }
+        for child in self.menu_children(node) {
+            if !self.is_enabled(&child) {
+                continue;
+            }
+            let label = app_menu::clean_label(&self.name(&child));
+            if label.is_empty() {
+                continue;
+            }
+            let mut next = prefix.to_vec();
+            next.push(label);
+            let sub = self.menu_children(&child);
+            if !sub.is_empty() && depth + 1 < app_menu::MAX_DEPTH {
+                self.walk_menu(&child, &next, depth + 1, deadline, out);
+            } else if depth >= 1 {
+                out.push(next.join(" > "));
+            }
+        }
+    }
+
+    pub fn list_app_menu(&self, pid: u32) -> Vec<String> {
+        let Some(frame) = self.frame_for_pid(pid) else { return vec![] };
+        let deadline = Instant::now() + Duration::from_millis(3500);
+        let mut bars = Vec::new();
+        self.find_menu_bars(&frame.node, 0, deadline, &mut bars);
+        let mut out = Vec::new();
+        for bar in bars {
+            self.walk_menu(&bar, &[], 0, deadline, &mut out);
+        }
+        out
+    }
+
+    pub fn click_app_menu(&self, pid: u32, path: &[String]) -> Result<MenuCommandOutcome, String> {
+        if path.is_empty() {
+            return Ok(MenuCommandOutcome::NotFound);
+        }
+        let Some(frame) = self.frame_for_pid(pid) else {
+            return Ok(MenuCommandOutcome::NotFound);
+        };
+        let deadline = Instant::now() + Duration::from_millis(3000);
+        let mut bars = Vec::new();
+        self.find_menu_bars(&frame.node, 0, deadline, &mut bars);
+        let mut current = None;
+        for bar in bars {
+            if let Some(found) = self.menu_children(&bar).into_iter().find(|n| app_menu::label_matches(&self.name(n), &path[0])) {
+                current = Some(found);
+                break;
+            }
+        }
+        let Some(mut node) = current else {
+            return Ok(MenuCommandOutcome::NotFound);
+        };
+        for segment in &path[1..] {
+            let Some(next) = self.menu_children(&node).into_iter().find(|n| app_menu::label_matches(&self.name(n), segment)) else {
+                return Ok(MenuCommandOutcome::NotFound);
+            };
+            node = next;
+        }
+        if !self.is_enabled(&node) {
+            return Ok(MenuCommandOutcome::Disabled);
+        }
+        let ok: Option<bool> = self.call(&node, ACTION, "DoAction", &(0i32,));
+        if ok == Some(true) {
+            Ok(MenuCommandOutcome::Done)
+        } else {
+            Err("Menu command action failed.".into())
         }
     }
 }
