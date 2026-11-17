@@ -84,6 +84,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | Reading the screen (`ScreenReader`, `ScreenContext`, `AppTextReader`) | ✓ Linux (AT-SPI, X11, tesseract) · ◐ Windows (UI Automation, OCR) · — Android | `core/src/services/screen.rs`, `platform/` |
+| App menus (`AppMenu`): `list_app_menu`, `app_menu_command` (always approved in the plan; path parsing, `&` mnemonic cleaning, validation and listing unit-tested) | ◐ Windows (Win32 `HMENU` + UI Automation, compiled for Windows, not run on a Windows PC) · ◐ Linux (AT-SPI menu walk and `DoAction`, not tested against a live desktop) · — Android | `core/src/brain/app_menu.rs`, `src-tauri/src/tools/screen.rs`, `platform/windows/menu.rs`, `platform/linux/atspi.rs` |
 | Screen region | ◐ (no annotating, pasting back or Ask, SV-74) | `services/part.rs` |
 | Look Along, Think Along (answers in the app's language, not that of Nook's own question) | ◐ (no backoff up to 2 h kept across restarts and not the Mac's full nudge filter, SV-17) | `core/src/services/think_along.rs` |
 | Music (`NowPlayingService`, Music tab) | ◐ now playing and controls only: MPRIS on Linux, Windows media controls (only compiled); no Spotify, search, queue, playlists, library, history, lyrics or output picker (SV-30…SV-39) | `platform/linux/mpris.rs`, `platform/windows/media.rs` |

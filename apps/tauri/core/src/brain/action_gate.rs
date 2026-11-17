@@ -180,6 +180,11 @@ pub fn problems(tool: &str, input: &Value, schema: &Value) -> Vec<String> {
             }
         }
     }
+    if tool == "app_menu_command" {
+        let app = input["app"].as_str().unwrap_or("");
+        let path = super::app_menu::path(&input["path"]);
+        problems.extend(super::app_menu::problems(app, &path));
+    }
     problems
 }
 
