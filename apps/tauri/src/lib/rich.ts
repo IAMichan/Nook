@@ -85,9 +85,9 @@ export async function enhance(root: HTMLElement): Promise<void> {
       figure.innerHTML = typeset(code.textContent ?? "", true);
       (code.closest(".code-block") ?? code.parentElement)?.replaceWith(figure);
     }
-    // Math in the text, never in code.
+    // Math in the text, never in code or in a mail card.
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.parentElement?.closest("code, pre, .katex") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+      acceptNode: (n) => (n.parentElement?.closest("code, pre, .katex, .mail") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
     });
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);

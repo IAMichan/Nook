@@ -244,6 +244,7 @@ pub fn mail_update(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()>
     }
     current.to = draft.to;
     current.cc = draft.cc;
+    current.bcc = draft.bcc;
     current.subject = draft.subject;
     current.body = draft.body;
     current.state = "draft".into();
@@ -259,6 +260,7 @@ pub fn mail_send(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
     let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
     current.to = draft.to;
     current.cc = draft.cc;
+    current.bcc = draft.bcc;
     current.subject = draft.subject;
     current.body = draft.body;
     match tools::send_mail(&app, &mut current) {
@@ -279,6 +281,7 @@ pub fn mail_open(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
     let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
     current.to = draft.to;
     current.cc = draft.cc;
+    current.bcc = draft.bcc;
     current.subject = draft.subject;
     current.body = draft.body;
     tools::open_mail(&app, &mut current)?;
@@ -292,11 +295,26 @@ pub fn mail_open_invite(app: AppHandle, nook_id: String, draft: MailDraft) -> Re
         .ok_or_else(|| nook_core::i18n::tr("Dit concept bestaat niet meer.", "This draft no longer exists."))?;
     current.to = draft.to;
     current.cc = draft.cc;
+    current.bcc = draft.bcc;
     current.subject = draft.subject;
     current.body = draft.body;
     tools::open_invite(&app, &mut current)?;
     set_draft(&app, &nook_id, &message_id, current);
     Ok(())
+}
+
+/// A mail card from a ```mail block (or a quoted mail) in an answer: it is not stored with the chat, so it goes
+/// straight to the mail app. `send` is the user's click on Send (checked and logged); otherwise Open in mail app.
+#[tauri::command]
+pub fn mail_block_open(app: AppHandle, draft: MailDraft, send: bool) -> Res<()> {
+    let mut draft = MailDraft { invite: None, attachments: Vec::new(), ..draft };
+    if send {
+        tools::send_mail(&app, &mut draft)?;
+        app.state::<AppState>().store.audit("send_mail", &format!("{} · {}", draft.to, draft.subject), "naar het mailprogramma");
+        Ok(())
+    } else {
+        tools::open_mail(&app, &mut draft)
+    }
 }
 
 // Bijlagen, bronkiezer, startvragen

@@ -12,7 +12,7 @@
   import TaskChecklist from "./TaskChecklist.svelte";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
-  import Markdown from "./Markdown.svelte";
+  import MarkdownBody from "./MarkdownBody.svelte";
   import PlanCard from "./PlanCard.svelte";
   import SourcesView from "./SourcesView.svelte";
 
@@ -96,7 +96,7 @@
     {#if message.streaming && !text}
       <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
-      <Markdown {text} />
+      <MarkdownBody {text} />
       {#if !message.streaming && !message.isError}
         <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
       {/if}

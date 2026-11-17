@@ -159,7 +159,8 @@ final class TokenSavingsTests: XCTestCase {
     /// Every request of a session carries the note, and the tool list until tool search defers it. A new tool or rule
     /// earns its bytes: raise a budget here only with a reason in the commit.
     func testBridgeBudget() throws {
-        XCTAssertLessThanOrEqual(BridgeLaunch.instructions.utf8.count, 1_400, "the bridge note")
+        // 1_500: the ```mail block line (a mail the user sends from a card) is the one rule no tool description can carry.
+        XCTAssertLessThanOrEqual(BridgeLaunch.instructions.utf8.count, 1_500, "the bridge note")
         XCTAssertLessThanOrEqual(RemoteBridge.instructions.utf8.count, 700, "the note for another machine")
         let tools = try JSONSerialization.data(withJSONObject: BridgeTool.allCases.map(\.definition), options: [.sortedKeys])
         // 33,741 bytes for 43 tools on 2026-11-07. Claude Code defers them behind tool search; Codex and the ACP agents

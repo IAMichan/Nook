@@ -3,6 +3,7 @@
   import { agentApi, type ChatMessage } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
   import Markdown from "../../components/Markdown.svelte";
+  import MarkdownBody from "../../components/MarkdownBody.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import { toast } from "../../lib/toast.svelte";
   import { toolsApi } from "../../lib/workspace/api";
@@ -44,7 +45,7 @@
     {#if m.kind === "thinking"}
       <details class="thinking"><summary>{tr("Denkstappen", "Thinking")}</summary><div class="thinking-body"><Markdown text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} /></div></details>
     {:else}
-      <div class="msg {m.kind}"><Markdown text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} /></div>
+      <div class="msg {m.kind}">{#if m.kind === "assistant"}<MarkdownBody text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} />{:else}<Markdown text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} />{/if}</div>
     {/if}
   {:else}
     {#if loading}<p class="faint">{tr("Gesprek lezen…", "Reading conversation…")}</p>{:else if path}<p class="faint">{tr("Nog niets in dit gesprek.", "Nothing in this conversation yet.")}</p>{/if}
