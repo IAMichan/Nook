@@ -257,6 +257,8 @@ game. Events can also be logged by hand.
 
 - Routes (`CompanionEndpoints`): the `.local` name and every LAN and Tailscale address in the code (`&a=`) and in each `hello`/`list` answer; an address in 100.64/10 counts as Tailscale only when its interface is named after it or `tailscale ip -4` names it. **Tauri:** ✓. **Where:** `core/src/companion/server.rs` (`Reach`), `src-tauri/src/companion/reach.rs`
 
+- Scopes per phone (`CompanionScopes`): read, approve, operate, chats, music and Nook chat, chosen before pairing and per paired phone in Settings › Companion; the server refuses a request outside them (`scope`), leaves out of every answer and live update what the phone may not see, lists only the features it may use, and ends its live connection when they change; a phone paired before scopes may do everything. **Tauri:** ✓ (behaviour; the Settings view is drawn in the current Tauri Companion page, not yet as the Mac's pairing sheet and phone rows: UI-88). **Where:** `core/src/companion/scopes.rs`, `server.rs`, `store.rs`, `src/views/settings/CompanionScopes.svelte`
+
 - Secrets in the Android Keystore. **Tauri:** ○ (private app folder without backup). **Where:** `platform/secrets.rs`
 
 - Sessions in a terminal from the phone (`CompanionAgents.send`, `end`): a message continues the session in Nook (Claude Code, Codex, Gemini CLI; a copy while the terminal still works, `--fork-session`), with pictures; `canSend` says when it can; *End* ends the process. **Tauri:** ✓ (not run with a real phone). **Where:** `core/src/companion/sessions.rs` (`can_continue_in_nook`), `src-tauri/src/companion/backend.rs`, `remote.rs`, `commands/workspace.rs` (`continue_live`)

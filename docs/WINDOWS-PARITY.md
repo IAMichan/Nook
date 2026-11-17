@@ -153,6 +153,8 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-84** Memory as on the Mac: "What Nook remembers (n)" with a field to add one, each memory with when it was seen, how sure and how often used, learned sources with a count, and Forget all · S
 
+- [ ] **UI-88** Settings › Companion laid out as the Mac's Settings › iPhone (`CompanionSettings`, `CompanionSetupSheets`): paired phones as `ConnectionRow`s under a `ConnectionListHeader` with "+ Pair", each with its app version and status ("Needs an update"), opening to the outdated or behind note, "What this iPhone may do" (`CompanionScopeToggles`) and the details; pairing in a `PairPhoneSheet` with numbered steps (the app, what it may do, the code, Nook seeing the phone arrive) instead of the inline code and the "next phone" switches on the page; *Send through* as a segmented control; Tauri draws all of this inline with checkboxes today (CO-03, CO-06, CO-09 built on that page). Needs FD-05 · M
+
 ### 2.3 Main window
 
 - [ ] **UI-35** Split view (a second tab beside the current one) and a tab torn off into its own window, reopened after a restart (`PanelSplit`, `TabWindowController`) · L
@@ -846,7 +848,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 
-- [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
+- [x] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 
 - [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
 

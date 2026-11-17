@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  withScope,
   applyConversation, applyTimeline, computerChoices, computerIcon, computerKind, computerStatus, type ClientView, attentionWord, resumePoint, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
   chatKinds, chatsGroup, filterChats, groupChats, mergeInboxLines, pollChoice, pollVoting, prependInboxLines, readState, type InboxLine, type InboxPoll,
@@ -238,5 +239,13 @@ describe("companion", () => {
     expect(pollChoice(poll, "Mon")).toEqual([]);
     expect(pollChoice({ ...poll, multiple: true }, "Tue")).toEqual(["Mon", "Tue"]);
     expect(pollVoting(poll, ["Tue"]).options).toEqual([{ text: "Mon", votes: 1, chosen: false }, { text: "Tue", votes: 2, chosen: true }]);
+  });
+});
+
+describe("withScope", () => {
+  it("switches one scope and keeps the Mac's order", () => {
+    expect(withScope(["music", "read"], "approve", true)).toEqual(["read", "approve", "music"]);
+    expect(withScope(["read", "approve", "music"], "read", false)).toEqual(["approve", "music"]);
+    expect(withScope([], "nookChat", false)).toEqual([]);
   });
 });
