@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{dates, short, ConnectorError};
+use crate::brain::meeting_times;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,6 +174,132 @@ pub fn event_lines(entries: &[AgendaEntry]) -> String {
         .join("\n")
 }
 
+fn json_number(input: &Value, key: &str) -> Option<f64> {
+    if let Some(v) = input.get(key).and_then(|v| v.as_f64()) {
+        return Some(v);
+    }
+    input.get(key).and_then(|v| v.as_str()).and_then(|s| s.trim().parse::<f64>().ok())
+}
+
+fn json_bool(input: &Value, key: &str) -> Option<bool> {
+    if let Some(v) = input.get(key).and_then(|v| v.as_bool()) {
+        return Some(v);
+    }
+    match input.get(key).and_then(|v| v.as_str()).map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        _ => None,
+    }
+}
+
+/// Parses `find_time` input into a `meeting_times::Request`, clamping bounds and defaulting to 60 min over 7 days.
+pub fn find_time_request(input: &Value, now: DateTime<Utc>) -> Result<meeting_times::Request, ConnectorError> {
+    let from_text = super::text(input, "from").trim().to_string();
+    let to_text = super::text(input, "to").trim().to_string();
+    let from = dates::parse(&from_text).unwrap_or(now).max(dates::start_of_day(now));
+    let mut to = match dates::parse(&to_text) {
+        Some(t) if to_text.len() == 10 => dates::add_days(t, 1),
+        Some(t) => t,
+        None => dates::add_days(from, 7),
+    };
+    to = to.min(from + Duration::days(meeting_times::MAX_DAYS));
+    if to <= from {
+        return Err(ConnectorError::new("to must be after from."));
+    }
+
+    let mins = json_number(input, "duration_minutes").unwrap_or(60.0).clamp(5.0, 12.0 * 60.0);
+    let mut request = meeting_times::Request::new(from, to, Duration::seconds((mins * 60.0).round() as i64));
+    request.count = json_number(input, "count").unwrap_or(3.0).round().max(1.0) as usize;
+    if let Some(start) = meeting_times::minutes(input["day_start"].as_str()) {
+        request.day_start = start;
+    }
+    if let Some(end) = meeting_times::minutes(input["day_end"].as_str()) {
+        request.day_end = end;
+    }
+    if request.day_end <= request.day_start {
+        request.day_end = (request.day_start + mins.round() as i32).min(24 * 60);
+    }
+    let buffer_mins = json_number(input, "buffer_minutes").unwrap_or(0.0).clamp(0.0, 120.0);
+    request.buffer = Duration::seconds((buffer_mins * 60.0).round() as i64);
+    request.weekends = json_bool(input, "weekends").unwrap_or(false);
+    request.preference = meeting_times::Preference::from_text(input["prefer"].as_str());
+    Ok(request)
+}
+
+/// Formats concrete free slots from `meeting_times::find` for `find_time`.
+pub fn find_time(
+    request: &meeting_times::Request,
+    checked: &[String],
+    entries: &[AgendaEntry],
+    problems: &[String],
+    now: DateTime<Utc>,
+) -> String {
+    // All-day items and events marked "free" do not block, as in check_availability.
+    let busy: Vec<meeting_times::Busy> =
+        entries.iter().filter(|e| !e.all_day && e.busy).map(|e| meeting_times::Busy { start: e.start, end: e.end }).collect();
+    let slots = meeting_times::find(request, &busy, now);
+
+    let clock = |v: i32| format!("{:02}:{:02}", v / 60, v % 60);
+    let mins = request.duration.num_minutes();
+    let buf_mins = request.buffer.num_minutes();
+    let mut header = format!(
+        "Looking for {mins} minutes between {} and {}, {}–{}",
+        dates::long(request.from),
+        dates::long(request.to),
+        clock(request.day_start),
+        clock(request.day_end)
+    );
+    if !request.weekends {
+        header.push_str(", weekdays only");
+    }
+    if buf_mins > 0 {
+        header.push_str(&format!(", {buf_mins} minutes buffer around other appointments"));
+    }
+    if request.preference != meeting_times::Preference::Any {
+        header.push_str(&format!(", {} first", request.preference.as_str()));
+    }
+    header.push('.');
+
+    let mut lines = vec![header];
+    lines.push(if checked.is_empty() {
+        "Checked: none (no calendar connected or access not granted): these times are not checked against anything.".into()
+    } else {
+        format!("Checked: {}.", checked.join("; "))
+    });
+    if !problems.is_empty() {
+        lines.push(format!("Could not read: {}.", problems.join("; ")));
+    }
+    if slots.is_empty() {
+        lines.push(
+            "No free time of that length in this window. Offer a longer period, other hours, the weekend or a shorter duration.".into(),
+        );
+    } else {
+        lines.push("Options:".into());
+        for (index, slot) in slots.iter().enumerate() {
+            lines.push(format!(
+                "{}. {} {}–{} | start {} | end {}",
+                index + 1,
+                dates::day(slot.start),
+                dates::time(slot.start),
+                dates::time(slot.end),
+                dates::iso(slot.start),
+                dates::iso(slot.end)
+            ));
+        }
+        let all_day: Vec<&AgendaEntry> = entries.iter().filter(|e| e.all_day).collect();
+        if !all_day.is_empty() {
+            lines.push(format!(
+                "All-day items in this period (they do not block, judge for yourself): {}.",
+                all_day.iter().take(6).map(|e| format!("{} {}", dates::day(e.start), short(&e.title, 60))).collect::<Vec<_>>().join("; ")
+            ));
+        }
+        lines.push(
+            "Give the options as a short list the user can pick from (or take the first when they asked you to just plan it).".into(),
+        );
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +356,70 @@ mod tests {
         assert_eq!(capped - from, Duration::days(14));
         assert!(period(&serde_json::json!({"from": "gisteren"})).is_err());
         assert!(period(&serde_json::json!({"from": "2026-10-13T10:00", "to": "2026-10-13T09:00"})).is_err());
+    }
+
+    #[test]
+    fn find_time_request_reads_options_and_clamps() {
+        let now = at("2026-11-16T08:00");
+        let req = find_time_request(
+            &serde_json::json!({
+                "duration_minutes": 45,
+                "from": "2026-11-16",
+                "to": "2026-11-18",
+                "count": 2,
+                "day_start": "10:00",
+                "day_end": "16:00",
+                "prefer": "afternoon",
+                "buffer_minutes": 15,
+                "weekends": true
+            }),
+            now,
+        )
+        .unwrap();
+        assert_eq!(req.duration, Duration::minutes(45));
+        assert_eq!(req.from, at("2026-11-16T00:00"));
+        assert_eq!(req.to, at("2026-11-19T00:00"));
+        assert_eq!(req.count, 2);
+        assert_eq!(req.day_start, 600);
+        assert_eq!(req.day_end, 960);
+        assert_eq!(req.preference, meeting_times::Preference::Afternoon);
+        assert_eq!(req.buffer, Duration::minutes(15));
+        assert!(req.weekends);
+
+        // Inverted window fails.
+        assert!(find_time_request(&serde_json::json!({"from": "2026-11-18", "to": "2026-11-17"}), now).is_err());
+    }
+
+    #[test]
+    fn find_time_formats_options_and_ignores_free_and_all_day() {
+        let now = at("2026-11-16T08:00");
+        let req = find_time_request(
+            &serde_json::json!({
+                "duration_minutes": 60,
+                "from": "2026-11-16",
+                "to": "2026-11-16",
+                "count": 2,
+                "prefer": "morning",
+                "buffer_minutes": 15
+            }),
+            now,
+        )
+        .unwrap();
+        let mut free_entry = entry("Tentative", "2026-11-16T09:00", "2026-11-16T10:00");
+        free_entry.busy = false;
+        let mut all_day_entry = entry("Conference", "2026-11-16T00:00", "2026-11-17T00:00");
+        all_day_entry.all_day = true;
+        let busy_entry = entry("Standup", "2026-11-16T09:00", "2026-11-16T09:30");
+
+        let out = find_time(&req, &["Werk (ICS)".into()], &[free_entry, all_day_entry, busy_entry], &[], now);
+        assert!(out.contains("Looking for 60 minutes"), "{out}");
+        assert!(out.contains("weekdays only, 15 minutes buffer around other appointments, morning first."), "{out}");
+        assert!(out.contains("Checked: Werk (ICS)."), "{out}");
+        // Busy 09:00-09:30 + 15m buffer blocks until 09:45; first option starts 09:45-10:45.
+        assert!(out.contains("1. maandag 16 november 2026 09:45–10:45 | start "), "{out}");
+        assert!(
+            out.contains("All-day items in this period (they do not block, judge for yourself): maandag 16 november 2026 Conference."),
+            "{out}"
+        );
     }
 }

@@ -169,8 +169,8 @@ pub enum ChatMode {
     Muted,
 }
 
-pub use crate::chats::{ChatKind, ChatMedia as Media, Receipt};
 use crate::chats::{BridgedChat, ChatInbox, InboxMessage, InboxStore, InboxThread};
+pub use crate::chats::{ChatKind, ChatMedia as Media, Receipt};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -471,8 +471,7 @@ impl Inbox {
         }
         let key = Self::key(&chat);
         let kind = jid::kind(&chat);
-        let (known_name, known_unread) =
-            self.store.read(|inbox| inbox.threads.get(&key).map(|t| (t.name.clone(), t.unread))).unzip();
+        let (known_name, known_unread) = self.store.read(|inbox| inbox.threads.get(&key).map(|t| (t.name.clone(), t.unread))).unzip();
         // In een privégesprek noemt de ander het: nooit je eigen naam op je eigen bericht.
         let person = (kind == ChatKind::Person && !message.from_me && !message.sender_name.is_empty()).then(|| message.sender_name.clone());
         let given = name.map(str::to_string).or_else(|| message.chat_name.clone()).filter(|n| !jid::is_placeholder_name(&chat, n));
@@ -551,11 +550,8 @@ impl Inbox {
                     changed = inbox.threads.get(k).and_then(|t| t.chat_id.clone());
                 }
             }
-            let known: HashSet<String> = keys
-                .iter()
-                .filter_map(|k| inbox.threads.get(k))
-                .flat_map(|t| t.messages.iter().map(|m| m.id.clone()))
-                .collect();
+            let known: HashSet<String> =
+                keys.iter().filter_map(|k| inbox.threads.get(k)).flat_map(|t| t.messages.iter().map(|m| m.id.clone())).collect();
             (changed, known)
         });
         // Not here yet: kept a little while for the message itself (only ids never seen; a few hundred at most).

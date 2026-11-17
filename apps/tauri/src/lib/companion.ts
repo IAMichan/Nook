@@ -84,7 +84,7 @@ export interface CompanionInfo {
   state: ServerState | null;
   computerName: string;
   hosts: string[];
-  devices: { id: string; name: string; pairedAt: string; lastSeen: string | null; push: boolean }[];
+  devices: PairedDeviceView[];
   pairing: { url: string; qrSvg: string; host: string; until: string } | null;
   push: {
     settings: PushSettings;
@@ -105,6 +105,18 @@ export interface CompanionInfo {
 
 /** How pushes reach the phones (`RelayPushClient.Route`). */
 export type PushRoute = "relay" | "own";
+/** A paired phone as Settings shows it: `appVersion` is null until the phone said it; `outdated` means this computer no
+ * longer works with its app, `behind` that it works but misses what this Nook added since. */
+export interface PairedDeviceView {
+  id: string;
+  name: string;
+  pairedAt: string;
+  lastSeen: string | null;
+  push: boolean;
+  appVersion: string | null;
+  outdated: boolean;
+  behind: boolean;
+}
 
 export type RelayStatus =
   | { state: "off" }

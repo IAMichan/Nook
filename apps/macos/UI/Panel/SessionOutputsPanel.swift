@@ -4,8 +4,8 @@ import WebKit
 import AVKit
 
 /// The outputs tab in a session's side (or bottom) panel: what the agent produced (see SessionOutputs). Its task list,
-/// the plans it proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a
-/// page as it renders, Markdown formatted, an image as the image. The panel's tab bar is its header.
+/// the plans it proposed, and the designs, documents, PDFs and images it wrote, each shown the way it is meant to be seen:
+/// a page as it renders, Markdown formatted, a PDF page by page, an image as the image. The panel's tab bar is its header.
 struct SessionOutputsPanel: View {
     let outputs: [SessionOutput]
     @Binding var selection: String?
@@ -118,6 +118,7 @@ enum OutputText {
         case .plan: return tr("ws.outputs.kind.plan")
         case .design: return tr("ws.outputs.kind.design")
         case .document: return tr("ws.outputs.kind.document")
+        case .pdf: return tr("ws.outputs.kind.pdf")
         case .image: return tr("ws.outputs.kind.image")
         case .video: return tr("ws.outputs.kind.video")
         }
@@ -129,6 +130,7 @@ enum OutputText {
         case .plan: return "list.bullet.clipboard"
         case .design: return "paintbrush.pointed"
         case .document: return "doc.richtext"
+        case .pdf: return "doc"
         case .image: return "photo"
         case .video: return "play.rectangle"
         }
@@ -161,6 +163,9 @@ private struct OutputViewer: View {
             }
         case .document:
             if let path = output.path { DocumentPreview(path: path, version: output.date) }
+        case .pdf:
+            // Written again: Quick Look reads it again, as the file viewer in the side panel shows it.
+            if let path = output.path { QuickLookView(url: URL(fileURLWithPath: path)).id(output.date) }
         case .image:
             if let path = output.path { ImagePreview(path: path, version: output.date) } else { missing }
         case .video:

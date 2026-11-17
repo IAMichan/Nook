@@ -104,7 +104,7 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "start": return tr("Overzicht", "Overview");
     case "general": return tr("Algemeen", "General");
     case "notch": return tr("Balk en vensters", "Bar & windows");
-    case "appearance": return tr("Weergave", "Appearance");
+    case "appearance": return tr("Uiterlijk", "Appearance");
     case "notifications": return tr("Meldingen", "Notifications");
     case "sound": return tr("Geluid en stem", "Sound & voice");
     case "shortcuts": return tr("Sneltoetsen", "Shortcuts");
