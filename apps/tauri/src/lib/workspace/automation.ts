@@ -9,7 +9,16 @@ export type ScheduleRule =
   | { type: "interval"; seconds: number }
   | { type: "fixedTime"; hour: number; minute: number; weekdays: number[] }
   | { type: "webhook" }
-  | { type: "once"; at: string };
+  | { type: "once"; at: string }
+  /** As soon as a new message arrives that matches (`workspace::arrivals::MessageTrigger`). */
+  | { type: "message"; trigger: MessageTrigger };
+
+export interface MessageTrigger {
+  apps: string[];
+  from: string;
+  keywords: string[];
+  groups: boolean;
+}
 
 export type ScheduledTaskTarget =
   | { type: "newSession"; projectPath: string; provider: RunProvider; profileId: string | null }
@@ -37,6 +46,19 @@ export interface ScheduledTask {
   quiet?: boolean;
   /** The ready-made task this is (the secretary's). */
   preset?: string | null;
+  /** For Nook: what each run carries out by itself (`workspace::autonomy`). */
+  autonomy?: NookAutonomy;
+}
+
+export type NookAutonomy = "ask" | "decide" | "auto";
+
+/** The levels with their name and what they mean, as the Mac's editor shows them. */
+export function autonomyLevels(): { id: NookAutonomy; label: string; detail: string }[] {
+  return [
+    { id: "ask", label: tr("Vraag mij", "Ask me"), detail: tr("Nook zet antwoorden, afspraken en andere stappen klaar; elke stap wacht op jouw klik.", "Nook prepares replies, appointments and other steps; each one waits for your click.") },
+    { id: "decide", label: tr("Nook beslist", "Nook decides"), detail: tr("Nook voert wat duidelijk routine is zelf uit (een kort antwoord aan wie schreef, een herinnering) en laat de rest voor jou staan, met een korte reden.", "Nook carries out what is clearly routine by itself (a quick reply to someone who wrote, a reminder) and leaves the rest for you, with a short reason.") },
+    { id: "auto", label: tr("Gewoon doen", "Do it"), detail: tr("Nook verstuurt de berichten die het klaarzette en voert de wijzigingen zelf uit. Jij leest achteraf alleen wat het deed.", "Nook sends the messages it prepared and makes the changes by itself. You only read afterwards what it did.") },
+  ];
 }
 
 export interface TaskView extends ScheduledTask {
@@ -88,7 +110,14 @@ export function weekdayShort(day: number): string {
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** The simple choices of the editor, like the Mac: every N minutes, every day or some weekdays at a time, once, webhook. */
-export type Preset = "interval" | "daily" | "weekdays" | "once" | "webhook";
+export type Preset = "interval" | "daily" | "weekdays" | "once" | "webhook" | "message";
+
+type EditorValues = { minutes: number; time: string; weekdays: number[]; at: string; apps?: string; from?: string; keywords?: string; groups?: boolean };
+
+/** A comma-separated field as a list. */
+function list(text: string): string[] {
+  return text.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 export function presetOf(rule: ScheduleRule): Preset {
   if (rule.type === "fixedTime") return rule.weekdays.length ? "weekdays" : "daily";
@@ -96,7 +125,7 @@ export function presetOf(rule: ScheduleRule): Preset {
 }
 
 /** The rule for a preset with the editor's values. Weekdays without a day chosen run Monday to Friday. */
-export function ruleFor(preset: Preset, v: { minutes: number; time: string; weekdays: number[]; at: string }): ScheduleRule {
+export function ruleFor(preset: Preset, v: EditorValues): ScheduleRule {
   const [h, m] = v.time.split(":").map((x) => Number(x));
   const hour = Number.isFinite(h) ? h : 9;
   const minute = Number.isFinite(m) ? m : 0;
@@ -111,12 +140,20 @@ export function ruleFor(preset: Preset, v: { minutes: number; time: string; week
       return { type: "once", at: new Date(v.at).toISOString() };
     case "webhook":
       return { type: "webhook" };
+    case "message":
+      return { type: "message", trigger: { apps: list(v.apps ?? "").map((a) => a.toLowerCase()), from: (v.from ?? "").trim(), keywords: list(v.keywords ?? ""), groups: !!v.groups } };
   }
 }
 
 /** What the editor shows for a rule (the inverse of `ruleFor`). */
-export function editorValues(rule: ScheduleRule): { minutes: number; time: string; weekdays: number[]; at: string } {
-  const out = { minutes: 60, time: "09:00", weekdays: [] as number[], at: localInput(new Date(Date.now() + 3600_000)) };
+export function editorValues(rule: ScheduleRule): Required<EditorValues> {
+  const out: Required<EditorValues> = { minutes: 60, time: "09:00", weekdays: [], at: localInput(new Date(Date.now() + 3600_000)), apps: "", from: "", keywords: "", groups: false };
+  if (rule.type === "message") {
+    out.apps = rule.trigger.apps.join(", ");
+    out.from = rule.trigger.from;
+    out.keywords = rule.trigger.keywords.join(", ");
+    out.groups = rule.trigger.groups;
+  }
   if (rule.type === "interval") out.minutes = Math.max(MINIMUM_INTERVAL_MINUTES, Math.round(rule.seconds / 60));
   if (rule.type === "fixedTime") {
     out.time = `${pad(rule.hour)}:${pad(rule.minute)}`;
@@ -146,6 +183,14 @@ export function ruleLabel(rule: ScheduleRule): string {
       return tr("Eén keer, {when}", "Once, {when}", { when: new Date(rule.at).toLocaleString() });
     case "webhook":
       return tr("Vanuit een webhook", "From a webhook");
+    case "message": {
+      const t = rule.trigger;
+      const parts = [tr("Bij een nieuw bericht", "On a new message")];
+      if (t.apps.length) parts.push(tr("in {apps}", "in {apps}", { apps: t.apps.join(", ") }));
+      if (t.from) parts.push(tr("van {from}", "from {from}", { from: t.from }));
+      if (t.keywords.length) parts.push(tr("over {words}", "about {words}", { words: t.keywords.join(", ") }));
+      return parts.join(" ");
+    }
   }
 }
 

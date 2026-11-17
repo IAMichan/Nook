@@ -71,6 +71,21 @@ pub fn setup(app: &AppHandle) {
     });
     let handle = app.clone();
     whatsapp.on_arrived(move |arrived| {
+        // Automations that start on a message (BR-16). WhatsApp reports one notifying arrival with the chat's newest
+        // text; the shared chat inbox hands every other app's messages to the same entry point.
+        crate::workspace::automation::messages_arrived(
+            &handle,
+            vec![nook_core::workspace::arrivals::ArrivedMessage {
+                chat_id: format!("whatsapp:{}", arrived.chat),
+                app: "whatsapp".into(),
+                chat: arrived.name.clone(),
+                sender: arrived.name.clone(),
+                text: arrived.preview.clone(),
+                date: chrono::Utc::now(),
+                is_group: arrived.chat.ends_with("@g.us"),
+                id: String::new(),
+            }],
+        );
         let _ = handle.emit("whatsapp-message", &arrived);
     });
     let handle = app.clone();

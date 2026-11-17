@@ -8,6 +8,7 @@
 use chrono::{Local, Utc};
 use nook_core::brain::LoopTool;
 use nook_core::i18n::{tr, trf};
+use nook_core::workspace::autonomy::NookAutonomy;
 use nook_core::workspace::nook_schedule::{self, Change};
 use nook_core::workspace::schedule::{ScheduledTask, ScheduledTaskTarget};
 use serde_json::{json, Value};
@@ -25,14 +26,24 @@ const UPDATE: &str = "update_scheduled_task";
 
 fn schedule_fields() -> serde_json::Map<String, Value> {
     let fields = json!({
-        "schedule": {"type": "string", "enum": nook_schedule::KINDS, "description": "daily (every day at time), weekdays (Monday to Friday at time), weekly (on days at time), interval (every every_minutes), once (at)."},
+        "schedule": {"type": "string", "enum": nook_schedule::KINDS, "description": "daily (every day at time), weekdays (Monday to Friday at time), weekly (on days at time), interval (every every_minutes), once (at), message (as soon as a new message arrives that matches apps, from and keywords)."},
         "time": {"type": "string", "description": "For daily, weekdays and weekly: the time as HH:mm (24 hours), e.g. 08:00."},
         "days": {"type": "array", "items": {"type": "string"}, "description": "For weekly: weekday names, e.g. [\"monday\", \"friday\"]."},
         "every_minutes": {"type": "integer", "description": format!("For interval: minutes between runs, at least {}.", nook_schedule::MINIMUM_MINUTES)},
         "at": {"type": "string", "description": "For once: the moment, e.g. 2026-11-20T09:00 (the user's own time)."},
-        "quiet": {"type": "boolean", "description": "Only speak up when something new needs the user (no conversation otherwise). Default: true for interval, false for an overview at a set time."}
+        "apps": {"type": "array", "items": {"type": "string"}, "description": "For message: the apps to listen to, e.g. [\"whatsapp\"]. Empty: every app."},
+        "from": {"type": "string", "description": "For message: part of the person's or chat's name, e.g. \"Lisa\". Empty: anyone."},
+        "keywords": {"type": "array", "items": {"type": "string"}, "description": "For message: words of which one must be in the message, e.g. [\"invoice\", \"payment\"]. Empty: any message."},
+        "groups": {"type": "boolean", "description": "For message: group chats count too (default false)."},
+        "quiet": {"type": "boolean", "description": "Only speak up when something new needs the user (no conversation otherwise). Default: true for interval, false for an overview at a set time."},
+        "autonomy": autonomy_schema()
     });
     fields.as_object().cloned().unwrap_or_default()
+}
+
+/// The `autonomy` field of the automation tools.
+fn autonomy_schema() -> Value {
+    json!({"type": "string", "enum": NookAutonomy::ALL.map(NookAutonomy::id), "description": "What Nook carries out by itself after each run: ask (default: every step waits for the user), decide (Nook carries out the routine steps itself and asks for the rest), auto (Nook carries out every step it may do unattended: messages, calendar, reminders, notes, comments). Deleting, merging, commands, settings and payments always wait for the user. Set it only as the user asks: \"without asking me\", \"send it yourself\", \"you decide\" are decide or auto."})
 }
 
 fn schedule_schema() -> Value {
@@ -68,6 +79,9 @@ fn describe(change: &Change) -> String {
     }
     if let Some(enabled) = change.enabled {
         parts.push(if enabled { tr("hervatten", "resume") } else { tr("pauzeren", "pause") }.to_string());
+    }
+    if let Some(level) = change.autonomy {
+        parts.push(level.label().to_string());
     }
     if let Some(quiet) = change.quiet {
         parts.push(
@@ -114,13 +128,13 @@ impl ToolSource for Schedule {
         vec![
             LoopTool::action(
                 SCHEDULE_TASK,
-                "Creates an automation: a task Nook Chat runs by itself on a schedule (every day, on weekdays, on certain days, every so many minutes, or once), each run in a conversation of its own in Nook Chat. It works for anything Nook can read or do: mail, chats, the calendar, reminders and open loops, files, pull requests, coding agents, the web and connected services. Use it when the user asks Nook to do something regularly or later (\"check my mail every morning at 8 and draft the replies\", \"every Friday an overview of my week\", \"every evening: which pull requests wait for me\"). Write prompt as the complete request Nook gets on each run, in the user's language, with everything they asked for. Each run works as the user's secretary: it says what matters and prepares every step as a proposal the user approves. The user approves the automation itself with a click. Do not use it for a single reminder or a recurring calendar event. For a full personal secretary across everything, use set_up_secretary.",
+                "Creates an automation: a task Nook Chat runs by itself on a schedule (every day, on weekdays, on certain days, every so many minutes, or once), each run in a conversation of its own in Nook Chat. It works for anything Nook can read or do: mail, chats, the calendar, reminders and open loops, files, pull requests, coding agents, the web and connected services. Use it when the user asks Nook to do something regularly or later (\"check my mail every morning at 8 and draft the replies\", \"every Friday an overview of my week\", \"every evening: which pull requests wait for me\"), or as soon as something happens: schedule message runs the moment a new message arrives in a chat app, filtered by app, sender and words (\"as soon as Lisa writes on WhatsApp, prepare a reply\"). Write prompt as the complete request Nook gets on each run, in the user's language, with everything they asked for. Each run works as the user's secretary: it says what matters and prepares every step as a proposal. With autonomy ask (the default) the user approves each step; with decide Nook carries out the routine steps itself and asks for the rest; with auto it carries out every step it may do unattended and only asks for the rest. The user approves the automation itself with a click. Do not use it for a single reminder or a recurring calendar event. For a full personal secretary across everything, use set_up_secretary.",
                 schedule_schema(),
             ),
             LoopTool::action(
                 SECRETARY,
                 "Sets up Nook as the user's personal secretary in one step: three automations across everything Nook can see (mail, chats, calendar, reminders, open loops, pull requests, coding agents): a briefing every morning at 08:00, a quiet check on weekdays at 13:00 that only speaks up when something new needs the user, and a wrap-up on weekdays at 17:30 that prepares tomorrow. Each run says what matters and prepares every reply and action for the user to approve. Use it when the user asks for a secretary, a personal assistant that keeps track of everything, or a daily routine across all their stuff.",
-                json!({"type": "object", "properties": {}, "required": []}),
+                json!({"type": "object", "properties": {"autonomy": autonomy_schema()}, "required": []}),
             ),
             LoopTool::read(
                 LIST,
@@ -156,11 +170,14 @@ impl ToolSource for Schedule {
             SECRETARY => {
                 let lines: Vec<String> =
                     nook_schedule::secretary().iter().map(|d| format!("{} ({})", d.title, nook_schedule::summary(&d.rule))).collect();
-                Some(trf(
-                    "Persoonlijke secretaris instellen: {tasks}",
-                    "Set up the personal secretary: {tasks}",
-                    &[("tasks", &lines.join("; "))],
-                ))
+                let level = NookAutonomy::parse(&text(input, "autonomy")).unwrap_or_default();
+                Some(
+                    trf(
+                        "Persoonlijke secretaris instellen: {tasks}",
+                        "Set up the personal secretary: {tasks}",
+                        &[("tasks", &lines.join("; "))],
+                    ) + &nook_schedule::level_suffix(level),
+                )
             }
             LIST => Some(tr("Automatiseringen bekijken", "Read automations").to_string()),
             UPDATE => {
@@ -185,7 +202,7 @@ impl ToolSource for Schedule {
     async fn execute(&self, ctx: &ToolCtx, tool: &str, input: &Value) -> Option<Result<String, String>> {
         let result = match tool {
             SCHEDULE_TASK => schedule(&ctx.app, input),
-            SECRETARY => secretary(&ctx.app),
+            SECRETARY => secretary(&ctx.app, NookAutonomy::parse(&text(input, "autonomy")).unwrap_or_default()),
             UPDATE => update(&ctx.app, input),
             _ => return None,
         };
@@ -205,15 +222,16 @@ fn schedule(app: &AppHandle, input: &Value) -> Result<String, String> {
     let next = task.next_run.map(|at| format!(" The first run is at {}.", at.with_timezone(&Local).to_rfc3339())).unwrap_or_default();
     let quiet = if task.quiet { " It only speaks up when something new needs the user." } else { "" };
     Ok(format!(
-        "Saved the automation \"{}\" ({}).{next}{quiet} Each run is a conversation of its own in Nook Chat; whatever it prepares waits there for the user's approval. The user changes, pauses or removes it in Settings › Agents › Automation.{}",
+        "Saved the automation \"{}\" ({}).{next}{quiet} After each run {}. Each run is a conversation of its own in Nook Chat. The user changes, pauses or removes it in Settings › Agents › Automation.{}",
         task.title,
         nook_schedule::describe(&task.rule),
+        task.autonomy.describe(),
         off_note(&auto)
     ))
 }
 
 /// The secretary's three tasks; one that exists already (the same preset) is left as it is.
-fn secretary(app: &AppHandle) -> Result<String, String> {
+fn secretary(app: &AppHandle, level: NookAutonomy) -> Result<String, String> {
     let auto = state(app)?;
     let existing = auto.scheduler.tasks();
     let mut added = vec![];
@@ -221,7 +239,9 @@ fn secretary(app: &AppHandle) -> Result<String, String> {
         if existing.iter().any(|t| t.preset.is_some() && t.preset == draft.preset) {
             continue;
         }
-        let task = auto.scheduler.save_task(draft.task(Utc::now()), Utc::now(), &Local);
+        let mut task = draft.task(Utc::now());
+        task.autonomy = level;
+        let task = auto.scheduler.save_task(task, Utc::now(), &Local);
         let quiet = if task.quiet { ", only when something new needs the user" } else { "" };
         added.push(format!("{} ({}{quiet})", task.title, nook_schedule::describe(&task.rule)));
     }
@@ -254,10 +274,11 @@ fn update(app: &AppHandle, input: &Value) -> Result<String, String> {
     changed(app);
     let now = auto.scheduler.task(found.id).unwrap_or(found);
     let mut line = format!(
-        "Updated the automation \"{}\": {}, {}.",
+        "Updated the automation \"{}\": {}, {}; after a run {}.",
         now.title,
         nook_schedule::describe(&now.rule),
-        if now.enabled { "on" } else { "paused" }
+        if now.enabled { "on" } else { "paused" },
+        now.autonomy.describe()
     );
     if let Some(next) = now.next_run.filter(|_| now.enabled) {
         line += &format!(" Next run at {}.", next.with_timezone(&Local).to_rfc3339());
