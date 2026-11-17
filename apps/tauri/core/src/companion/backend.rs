@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 
-use super::models::SessionDigest;
+use super::models::{CompanionRequest, CompanionResponse, SessionDigest};
 
 /// Een sessie zoals de backend hem geeft. De teksten mogen lang zijn: de server knipt ze met
 /// [`CompanionPolicy::excerpt`](super::models::CompanionPolicy::excerpt), sorteert op `updated` en stuurt er hoogstens 25.
@@ -34,6 +34,26 @@ pub trait CompanionBackend: Send + Sync {
     /// Een bericht van jou aan de agent: meteen als de sessie rust, anders in de wachtrij.
     async fn send(&self, session: &str, text: &str) -> Result<(), String>;
     async fn stop(&self, session: &str) -> Result<(), String>;
+
+    /// What this computer can do beyond approve, answer, send and stop (`feature` names), as the Mac lists
+    /// `CompanionFeature.all`. The server adds what it does itself (`stream`, `liveTimeline`, `retry`, …) when the
+    /// backend makes it possible. A phone only offers what is listed.
+    fn features(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    /// Answers an op beyond the first version (`home`, `timeline`, `chats`, `inbox`, `pulls`, …) for the phone
+    /// `device`, the way the Mac's `CompanionServer` answers it. `None`: this computer cannot do it (the server
+    /// answers `badRequest`). The response's `id` is set by the server.
+    async fn extra(&self, _request: &CompanionRequest, _device: &str) -> Option<CompanionResponse> {
+        None
+    }
+
+    /// A counter that moves when something a live phone sees may have changed (a session, a conversation, a chat), so
+    /// the server looks again at once instead of at its next tick. 0 when the backend does not say.
+    fn generation(&self) -> u64 {
+        0
+    }
 }
 
 /// Zolang de app nog geen agents heeft: geen sessies, en elke actie zegt dat.

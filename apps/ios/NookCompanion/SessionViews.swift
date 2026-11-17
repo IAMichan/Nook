@@ -32,6 +32,8 @@ struct SessionDetailView: View {
     @State private var loadingEarlier = false
     /// The Mac was asked for a session the list does not hold yet (one just started, a link from a notification).
     @State private var lookedUp = false
+    /// The screen's width, so the title in the bar stays clear of the buttons beside it (`SessionHeaderTitle.width`).
+    @State private var barWidth: CGFloat = 0
 
     var body: some View {
         if let session {
@@ -85,10 +87,11 @@ struct SessionDetailView: View {
                 // The Mac's session header: "folder / title ⌄", the title opening what you can do with the session, and
                 // the agent and branch under it.
                 ToolbarItem(placement: .principal) {
+                    let width = SessionHeaderTitle.width(bar: barWidth, buttons: trailingButtons)
                     if hasActions(session) {
-                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true) }
+                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true, maxWidth: width) }
                     } else {
-                        SessionHeaderTitle(session: session, opens: false)
+                        SessionHeaderTitle(session: session, opens: false, maxWidth: width)
                     }
                 }
                 if client.can(CompanionFeature.diff) {
@@ -115,6 +118,8 @@ struct SessionDetailView: View {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
             .screen()
+            .background { GeometryReader { proxy in Color.clear.onAppear { barWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, new in barWidth = new } } }
             .modifier(SessionWorkspaceMenu(sessionID: sessionID))
             .navigationDestination(isPresented: $reviewing) {
                 // A comment on a line goes into this session's message, under what you wrote.
@@ -137,6 +142,10 @@ struct SessionDetailView: View {
                         composerFocused = true
                     }
                 }
+            }
+            // The models of this session's agent, for the model menu in the composer (the same list as a new session's).
+            .task(id: actions(session).contains(.model)) {
+                if actions(session).contains(.model), client.launchOptions == nil { await client.loadLaunchOptions() }
             }
             .onDisappear {
                 if client.visibleSession == sessionID { client.visibleSession = nil }
@@ -232,6 +241,8 @@ struct SessionDetailView: View {
             // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
             // the turn can take a message, a choice under the text says whether it steers now or waits.
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                // What waits in line for after this turn, each with a way out (`CompanionFeature.agentsTab`).
+                QueuedMessagesStrip(session: session)
                 ImageTray(images: $images)
                 FileTray(files: $files)
                 HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
@@ -239,13 +250,25 @@ struct SessionDetailView: View {
                     if client.can(CompanionFeature.images) {
                         AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
                     }
-                    if steerable(session) {
-                        SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
+                    // The Mac composer's mode, effort and model as one quiet choice (`agentsTab`), or only its model menu
+                    // from a Mac that has just that.
+                    let controls = SessionControlsMenu.shows(session, client: client)
+                    let models = controls ? nil : sessionModels(session)
+                    if steerable(session) || controls || models != nil {
+                        SessionComposer(text: $message,
+                                        prompt: !steerable(session) ? "Message to the agent"
+                                            : steerByDefault ? "Steer the agent" : "Message for after this turn",
                                         canSend: true, busy: stoppable(session),
                                         onStop: canStop(session) ? { confirmStop = true } : nil,
                                         focus: $composerFocused,
                                         onSend: { send(session, scroll) }) {
-                            steerMenu
+                            if steerable(session) { steerMenu }
+                            if controls {
+                                if steerable(session) { ComposerDivider() }
+                                SessionControlsMenu(session: session)
+                            } else if let models {
+                                modelMenu(session, models)
+                            }
                         }
                     } else {
                         SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
@@ -317,6 +340,36 @@ struct SessionDetailView: View {
         .accessibilityLabel("While the agent works")
     }
 
+    /// The models the session's agent can switch to, as the Mac's composer offers them; nil when there is no choice
+    /// (an older Mac, an agent outside Nook, an agent with one model).
+    private func sessionModels(_ session: SessionDigest) -> [LaunchOptions.Model]? {
+        guard actions(session).contains(.model), let agent = session.agentID,
+              let models = client.launchOptions?.agents.first(where: { $0.id == agent })?.models, models.count > 1 else { return nil }
+        return models
+    }
+
+    /// The model, as the Mac's composer menu: another one runs from the next turn, in the same conversation.
+    private func modelMenu(_ session: SessionDigest, _ models: [LaunchOptions.Model]) -> some View {
+        let chosen = session.modelChoice ?? ""
+        return Menu {
+            ForEach(models) { option in
+                Button { manage(session, .model, text: option.id) } label: {
+                    if chosen == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                }
+            }
+        } label: {
+            ComposerPill(symbol: "cpu", text: models.first { $0.id == chosen }?.name ?? session.model ?? models.first?.name ?? "")
+        }
+        .disabled(client.isOffline)
+        .accessibilityLabel("Model")
+    }
+
+    /// The buttons on the right of the bar: the changes, and the files, terminals and pull requests menu.
+    private var trailingButtons: Int {
+        (client.can(CompanionFeature.diff) ? 1 : 0)
+            + (client.can(CompanionFeature.workspace) || client.can(CompanionFeature.pullRequests) ? 1 : 0)
+    }
+
     private func stoppable(_ session: SessionDigest) -> Bool {
         ["working", "approval", "input"].contains(session.attention)
     }
@@ -347,34 +400,45 @@ struct SessionDetailView: View {
             if canStop(session), stoppable(session) {
                 Button(role: .destructive) { confirmStop = true } label: { Label("Stop", systemImage: "stop.circle") }
             }
-            if actions.contains(.end) {
-                Button(role: .destructive) { confirmEnd = true } label: { Label("End session", systemImage: "xmark.circle") }
-            }
-            if actions.contains(.unsnooze) {
-                Button { manage(session, .unsnooze) } label: { Label("Cancel snooze", systemImage: "alarm") }
-            } else if actions.contains(.snoozeHour) {
-                Menu {
-                    Button("One hour") { manage(session, .snoozeHour) }
-                    Button("This evening") { manage(session, .snoozeEvening) }
-                    Button("Tomorrow morning") { manage(session, .snoozeTomorrow) }
-                    SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
-                } label: { Label("Snooze", systemImage: "clock") }
-            }
-            if actions.contains(.mainThreadOn) {
-                Button { manage(session, .mainThreadOn) } label: { Label("Make main thread", systemImage: "arrow.triangle.branch") }
-            } else if actions.contains(.mainThreadOff) {
-                Button { manage(session, .mainThreadOff) } label: { Label("Stop main thread", systemImage: "arrow.triangle.branch") }
-            }
-            if actions.contains(.rename) {
-                Button { newName = session.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
-            }
-            if actions.contains(.archive) {
-                Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
+            // The Mac's header menu, in its order (`SessionMenu.header`), on a Mac with the Agents tab.
+            if client.can(CompanionFeature.agentsTab) {
+                SessionActionsMenu(session: session, place: .header)
+            } else {
+                legacyActions(session, actions)
             }
         } label: {
             label()
         }
         .accessibilityHint("Shows what you can do with this session")
+    }
+
+    /// The menu of a Mac without the Agents tab: stop or end, snooze, main thread, rename, archive.
+    @ViewBuilder
+    private func legacyActions(_ session: SessionDigest, _ actions: [SessionAction]) -> some View {
+        if actions.contains(.end) {
+            Button(role: .destructive) { confirmEnd = true } label: { Label("End session", systemImage: "xmark.circle") }
+        }
+        if actions.contains(.unsnooze) {
+            Button { manage(session, .unsnooze) } label: { Label("Cancel snooze", systemImage: "alarm") }
+        } else if actions.contains(.snoozeHour) {
+            Menu {
+                Button("One hour") { manage(session, .snoozeHour) }
+                Button("This evening") { manage(session, .snoozeEvening) }
+                Button("Tomorrow morning") { manage(session, .snoozeTomorrow) }
+                SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
+            } label: { Label("Snooze", systemImage: "clock") }
+        }
+        if actions.contains(.mainThreadOn) {
+            Button { manage(session, .mainThreadOn) } label: { Label("Make main thread", systemImage: "arrow.triangle.branch") }
+        } else if actions.contains(.mainThreadOff) {
+            Button { manage(session, .mainThreadOff) } label: { Label("Stop main thread", systemImage: "arrow.triangle.branch") }
+        }
+        if actions.contains(.rename) {
+            Button { newName = session.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
+        }
+        if actions.contains(.archive) {
+            Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
+        }
     }
 }
 
@@ -383,6 +447,21 @@ struct SessionDetailView: View {
 private struct SessionHeaderTitle: View {
     let session: SessionDigest
     let opens: Bool
+    var maxWidth: CGFloat = widest
+
+    /// The most the title takes, on an iPad too.
+    static let widest: CGFloat = 260
+    /// Room per bar button (a glass button and its share of the capsule), and from a button to the screen's edge and to the title.
+    private static let button: CGFloat = 48
+    private static let margins: CGFloat = 24
+
+    /// How wide the title may be: centered in the bar, so as wide as the screen less the busier side on both sides, so it
+    /// never runs under the back button or the buttons on the right.
+    static func width(bar: CGFloat, buttons: Int) -> CGFloat {
+        guard bar > 0 else { return widest }
+        let side = margins + button * CGFloat(max(buttons, 1))
+        return max(96, min(widest, bar - 2 * side))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -404,7 +483,7 @@ private struct SessionHeaderTitle: View {
                     .lineLimit(1).truncationMode(.middle)
             }
         }
-        .frame(maxWidth: 260)
+        .frame(maxWidth: maxWidth)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -534,6 +613,18 @@ struct ItemView: View {
                         }
                     }
                 }
+                // "Always allow" where the agent can remember it, as the Mac's third button (`CompanionFeature.agentsTab`).
+                if item.canAllow, item.canAlways == true, client.can(CompanionFeature.agentsTab) {
+                    Button {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true, always: true) }
+                    } label: {
+                        Label("Always allow", systemImage: "checkmark.seal")
+                            .font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .roundedBackground(Theme.smoke, radius: Theme.Radius.control)
+                    }
+                    .buttonStyle(PressFade())
+                }
                 if !item.canAllow {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
@@ -546,7 +637,11 @@ struct ItemView: View {
                     Task { await client.decide(session, item: item, allow: false, reason: reason) }
                 }
             case .question:
-                if item.canAllow {
+                // Several questions, or several answers to one: one at a time, as the Mac's card (`agentsTab`).
+                if client.can(CompanionFeature.agentsTab), let questions = item.questions, !questions.isEmpty,
+                   questions.count > 1 || questions[0].multiSelect {
+                    QuestionFlow(session: session, item: item, questions: questions)
+                } else if item.canAllow {
                     VStack(spacing: Theme.Spacing.sm) {
                         ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                             QuestionOptionRow(title: option, number: number) {
@@ -635,6 +730,14 @@ struct NewSessionView: View {
     @State private var model = ""
     /// Pictures that go with the task.
     @State private var images: [CompanionImage] = []
+    /// A file that goes with the task (`CompanionFeature.attachments`).
+    @State private var files: [CompanionFile] = []
+    /// The Agents tab's choices (`CompanionFeature.agentsTab`): a name of your own, the reasoning effort ("" the agent's
+    /// default), the access (never more than "allow edits"), and the branch a new worktree starts from.
+    @State private var title = ""
+    @State private var effort = ""
+    @State private var permission = ""
+    @State private var baseBranch = ""
     @State private var loaded = false
     @State private var prepared = false
     @State private var starting = false
@@ -699,7 +802,14 @@ struct NewSessionView: View {
                                symbol: "wifi.slash")
                             .appearsAfterDelay()
                     }
+                    if client.can(CompanionFeature.agentsTab) {
+                        TextField("Name (optional)", text: $title)
+                            .font(Theme.TextStyle.body).foregroundStyle(Theme.paper)
+                            .padding(.horizontal, Theme.Spacing.lg).frame(minHeight: 44)
+                            .roundedBackground(Theme.field, radius: Theme.Radius.control)
+                    }
                     ImageTray(images: $images)
+                    FileTray(files: $files)
                     VStack(spacing: 0) {
                         SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,
                                         canSend: canStart, sending: starting, focus: $focused, onSend: start) {
@@ -711,6 +821,14 @@ struct NewSessionView: View {
                             if client.can(CompanionFeature.images) {
                                 ComposerDivider()
                                 AttachPictureButton(images: $images)
+                            }
+                            if client.can(CompanionFeature.agentsTab), client.can(CompanionFeature.attachments) {
+                                ComposerDivider()
+                                AttachFileButton(files: $files, images: images)
+                            }
+                            if let agent = chosenAgent, (agent.efforts?.count ?? 0) > 1 || (agent.permissions?.count ?? 0) > 1 {
+                                ComposerDivider()
+                                choicesMenu(agent)
                             }
                             if chosenAgent?.canPlan == true {
                                 ComposerDivider()
@@ -758,7 +876,7 @@ struct NewSessionView: View {
     private func heading(_ options: LaunchOptions) -> some View {
         Menu {
             ForEach(options.projects) { option in
-                Button { withAnimation(Theme.reveal) { project = option.path } } label: {
+                Button { withAnimation(Theme.reveal) { project = option.path; baseBranch = option.defaultBase ?? "" } } label: {
                     if project == option.path {
                         Label(option.name, systemImage: "checkmark")
                     } else {
@@ -798,8 +916,10 @@ struct NewSessionView: View {
                 Button {
                     withAnimation(Theme.reveal) {
                         agent = option.id
-                        // Another agent starts on its own default model.
+                        // Another agent starts on its own default model, effort and access.
                         model = option.defaultModel ?? ""
+                        effort = option.defaultEffort ?? ""
+                        permission = option.defaultPermission ?? ""
                     }
                 } label: {
                     if agent == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
@@ -807,6 +927,57 @@ struct NewSessionView: View {
             }
         } label: {
             ComposerPill(agent: chosenAgent?.name ?? agent, text: chosenAgent?.name ?? "")
+        }
+    }
+
+    /// Effort and access for the new session, as the Mac composer's picker offers them; access never above "allow edits".
+    private func choicesMenu(_ agent: LaunchOptions.Agent) -> some View {
+        Menu {
+            if let efforts = agent.efforts, efforts.count > 1 {
+                Section("Effort") {
+                    ForEach(efforts) { level in
+                        Button { effort = level.id } label: {
+                            if effort == level.id { Label(level.name, systemImage: "checkmark") } else { Text(level.name) }
+                        }
+                    }
+                }
+            }
+            if let permissions = agent.permissions, permissions.count > 1, !plan {
+                Section("Access") {
+                    ForEach(permissions) { level in
+                        Button { permission = level.id } label: {
+                            if permission == level.id { Label(level.name, systemImage: "checkmark") } else { Text(level.name) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            ComposerPill(symbol: "slider.horizontal.3", text: choicesSummary(agent))
+        }
+        .accessibilityLabel("Effort and access")
+    }
+
+    /// "High · Allow edits": the effort (when not the default) and the access.
+    private func choicesSummary(_ agent: LaunchOptions.Agent) -> String {
+        let parts = [effort.isEmpty ? nil : agent.efforts?.first { $0.id == effort }?.name,
+                     agent.permissions?.first { $0.id == permission }?.name].compactMap { $0 }
+        return parts.isEmpty ? String(localized: "Options") : parts.joined(separator: " · ")
+    }
+
+    /// The branch a new worktree starts from, as the Mac's composer offers it.
+    @ViewBuilder
+    private var baseMenu: some View {
+        if worktree, let branches = chosenProject?.branches, branches.count > 1 {
+            Menu {
+                ForEach(branches, id: \.self) { branch in
+                    Button { baseBranch = branch } label: {
+                        if baseBranch == branch { Label(branch, systemImage: "checkmark") } else { Text(branch) }
+                    }
+                }
+            } label: {
+                ComposerPill(symbol: "arrow.triangle.branch", text: baseBranch.isEmpty ? (chosenProject?.defaultBase ?? "") : baseBranch)
+            }
+            .accessibilityLabel("Base branch")
         }
     }
 
@@ -828,6 +999,7 @@ struct NewSessionView: View {
             } else {
                 ComposerPill(symbol: "folder", text: String(localized: "Current checkout"), showsChevron: false)
             }
+            baseMenu
             Spacer(minLength: Theme.Spacing.md)
             if let chosenProject {
                 Text(Self.tilde(chosenProject.path)).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
@@ -846,7 +1018,10 @@ struct NewSessionView: View {
             ?? link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
         plan = options.defaultPlan
         worktree = options.defaultWorktree
+        baseBranch = options.projects.first { $0.path == project }?.defaultBase ?? ""
         model = options.agents.first { $0.id == agent }?.defaultModel ?? ""
+        effort = options.agents.first { $0.id == agent }?.defaultEffort ?? ""
+        permission = options.agents.first { $0.id == agent }?.defaultPermission ?? ""
         // A link only fills in the task; you read it and start the session yourself.
         if let link, task.isEmpty { task = link.text }
         focused = true
@@ -856,14 +1031,22 @@ struct NewSessionView: View {
         guard canStart, !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         starting = true
         failure = nil
-        let launch = LaunchRequest(agent: agent, project: project, task: task, title: nil,
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var launch = LaunchRequest(agent: agent, project: project, task: task, title: name.isEmpty ? nil : name,
                                    plan: plan && chosenAgent?.canPlan == true,
                                    worktree: worktree && chosenProject?.canWorktree == true,
                                    model: chosenAgent?.models == nil ? nil : model,
                                    mainThread: mainThread && chosenAgent?.canMainThread == true ? true : nil)
+        // The Agents tab's choices, only where the Mac offers them (an older Mac keeps its defaults).
+        if client.can(CompanionFeature.agentsTab), let chosen = chosenAgent {
+            if chosen.efforts != nil { launch.effort = effort }
+            if chosen.permissions != nil, !permission.isEmpty { launch.permission = permission }
+            if launch.worktree, chosenProject?.branches?.contains(baseBranch) == true { launch.baseBranch = baseBranch }
+        }
         let pictures = images
+        let attached = files
         Task {
-            let delivery = await client.start(launch, images: pictures)
+            let delivery = await client.start(launch, images: pictures, files: attached)
             starting = false
             switch delivery {
             case .sent(let response):

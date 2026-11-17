@@ -17,6 +17,16 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertNil(PairingLink.parse("nook://pair?h=a&p=70000&k=\(Base64URL.encode(key))"))
     }
 
+    func testResponsePlatformIsOptional() throws {
+        let old = try JSONDecoder().decode(CompanionResponse.self, from: Data(#"{"id":"A","ok":true,"macName":"Studio"}"#.utf8))
+        XCTAssertNil(old.platform)
+        XCTAssertEqual(CompanionPlatform(old.platform), .mac, "an older Mac does not say")
+        let pc = try JSONDecoder().decode(CompanionResponse.self, from: Data(#"{"id":"B","ok":true,"platform":"linux"}"#.utf8))
+        XCTAssertEqual(CompanionPlatform(pc.platform), .linux)
+        let written = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        XCTAssertNil(written["platform"], "left out when unknown")
+    }
+
     func testBase64URLRoundTrip() {
         for length in 0..<12 {
             let data = Data((0..<length).map { _ in UInt8.random(in: 0...255) })
@@ -155,6 +165,19 @@ final class CompanionModelsTests: XCTestCase {
         // Actions travel as names: a phone that predates these two leaves them out instead of failing.
         XCTAssertEqual(SessionAction(rawValue: "mainThreadOn"), .mainThreadOn)
         XCTAssertEqual(SessionAction(rawValue: "mainThreadOff"), .mainThreadOff)
+    }
+
+    func testModelSwitchTravelsAndOldMacsStillDecode() throws {
+        XCTAssertEqual(SessionAction(rawValue: "model"), .model)
+        let digest = SessionDigest(id: "s", title: "Fix", agent: "Codex", attention: "idle", folder: "nook", branch: nil,
+                                   updated: 1, excerpt: "", items: [], agentID: "codex", modelChoice: "gpt-5.5")
+        let decoded = try JSONDecoder().decode(SessionDigest.self, from: JSONEncoder().encode(digest))
+        XCTAssertEqual(decoded.agentID, "codex")
+        XCTAssertEqual(decoded.modelChoice, "gpt-5.5")
+        let old = Data(#"{"id":"s","title":"Fix","agent":"Codex","attention":"idle","folder":"nook","updated":1,"excerpt":"","items":[]}"#.utf8)
+        let fromOldMac = try JSONDecoder().decode(SessionDigest.self, from: old)
+        XCTAssertNil(fromOldMac.agentID, "a Mac that predates it")
+        XCTAssertNil(fromOldMac.modelChoice)
     }
 
     func testInboxCodable() throws {

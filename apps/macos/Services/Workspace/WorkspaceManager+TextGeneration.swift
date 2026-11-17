@@ -115,7 +115,7 @@ extension WorkspaceManager {
         let once = Once()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                func finish(_ answer: [String: Any]?) {
+                @Sendable func finish(_ answer: [String: Any]?) {
                     if once.claim() {
                         client.stop()
                         continuation.resume(returning: answer)

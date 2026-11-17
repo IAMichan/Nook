@@ -110,6 +110,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.tool.nook_chat_list": "Nook Chat conversations",
         "bridge.tool.nook_chat_read": "Read Nook Chat",
         "bridge.tool.nook_chat_send": "Write in Nook Chat",
+        "bridge.tool.chat_list": "Chats",
+        "bridge.tool.chat_read": "Read chat",
+        "bridge.tool.chat_send": "Send chat message",
         "bridge.tool.take_over_screen": "Take over screen",
     ],
     .nl: [
@@ -218,6 +221,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.tool.nook_chat_list": "Gesprekken in Nook Chat",
         "bridge.tool.nook_chat_read": "Lees Nook Chat",
         "bridge.tool.nook_chat_send": "Schrijf in Nook Chat",
+        "bridge.tool.chat_list": "Chats",
+        "bridge.tool.chat_read": "Lees chat",
+        "bridge.tool.chat_send": "Stuur chatbericht",
         "bridge.tool.take_over_screen": "Scherm overnemen",
     ],
     .de: [
@@ -326,6 +332,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.tool.nook_chat_list": "Unterhaltungen in Nook Chat",
         "bridge.tool.nook_chat_read": "Nook Chat lesen",
         "bridge.tool.nook_chat_send": "In Nook Chat schreiben",
+        "bridge.tool.chat_list": "Chats",
+        "bridge.tool.chat_read": "Chat lesen",
+        "bridge.tool.chat_send": "Chatnachricht senden",
         "bridge.tool.take_over_screen": "Bildschirm übernehmen",
     ],
     .fr: [
@@ -434,6 +443,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.tool.nook_chat_list": "Conversations Nook Chat",
         "bridge.tool.nook_chat_read": "Lire Nook Chat",
         "bridge.tool.nook_chat_send": "Écrire dans Nook Chat",
+        "bridge.tool.chat_list": "Discussions",
+        "bridge.tool.chat_read": "Lire la discussion",
+        "bridge.tool.chat_send": "Envoyer un message",
         "bridge.tool.take_over_screen": "Prendre le contrôle de l'écran",
     ],
     .es: [
@@ -542,6 +554,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.tool.nook_chat_list": "Conversaciones de Nook Chat",
         "bridge.tool.nook_chat_read": "Leer Nook Chat",
         "bridge.tool.nook_chat_send": "Escribir en Nook Chat",
+        "bridge.tool.chat_list": "Chats",
+        "bridge.tool.chat_read": "Leer chat",
+        "bridge.tool.chat_send": "Enviar mensaje de chat",
         "bridge.tool.take_over_screen": "Tomar el control de la pantalla",
     ]
 ]

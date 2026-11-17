@@ -34,7 +34,7 @@ enum CompanionScopes {
     /// The one table of what each op needs. Every `CompanionOp` has an entry (`CompanionScopesTests`).
     static let table: [CompanionOp: Requirement] = [
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
-        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
+        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always, .bindKey: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
         .pulls: .scope(.read), .pull: .scope(.read), .history: .scope(.read), .entry: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
@@ -42,13 +42,18 @@ enum CompanionScopes {
         .manage: .scope(.operate),
         // Reviewing, merging and working on a pull request act for you, as sending and starting do.
         .pullAct: .scope(.operate), .pullWork: .scope(.operate),
+        // The notification settings: what they are is part of what the phone reads; changing them, for every paired
+        // phone, acts for you as managing a session does.
+        .notifySettings: .scope(.read), .notifySet: .scope(.operate),
         // What a project holds goes further than a session's own changes.
         .terminals: .scope(.operate), .files: .scope(.operate), .fileData: .scope(.operate),
         .inbox: .scope(.chats), .inboxChat: .scope(.chats), .inboxSend: .scope(.chats), .inboxMark: .scope(.chats),
         .watchChat: .scope(.chats), .avatars: .scope(.chats),
+        .inboxAct: .scope(.chats), .inboxOlder: .scope(.chats), .inboxMedia: .scope(.chats), .inboxInfo: .scope(.chats),
+        .inboxSearch: .scope(.chats),
         .music: .scope(.music),
         .chats: .scope(.nookChat), .chat: .scope(.nookChat), .ask: .scope(.nookChat), .chatStop: .scope(.nookChat),
-        .watchConversation: .scope(.nookChat),
+        .watchConversation: .scope(.nookChat), .chatAct: .scope(.nookChat), .chatSearch: .scope(.nookChat),
     ]
 
     /// The scope each `CompanionFeature` belongs to; a feature not listed is about the connection and always offered.
@@ -59,8 +64,8 @@ enum CompanionScopes {
         CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
         CompanionFeature.history: .read, CompanionFeature.filePreview: .operate, CompanionFeature.fullTranscript: .read,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
-        CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats, CompanionFeature.appIcons: .chats,
-        CompanionFeature.liveConversation: .nookChat,
+        CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats, CompanionFeature.appIcons: .chats, CompanionFeature.chatActions: .chats, CompanionFeature.pullActions: .read, CompanionFeature.notifySettings: .read,
+        CompanionFeature.liveConversation: .nookChat, CompanionFeature.nookChats: .nookChat,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.
@@ -95,6 +100,7 @@ enum CompanionScopes {
             response.usage = nil
             response.pulls = nil
             response.pull = nil
+            response.notify = nil
             response.cursor = nil
         }
         if !granted.contains(.operate) {
@@ -109,6 +115,11 @@ enum CompanionScopes {
             response.inboxTyping = nil
             response.inboxChat = nil
             response.avatars = nil
+            response.inboxMedia = nil
+            response.inboxInfo = nil
+            response.inboxBefore = nil
+            response.inboxMore = nil
+            response.inboxFound = nil
         }
         if !granted.contains(.nookChat) {
             response.conversations = nil
@@ -116,6 +127,8 @@ enum CompanionScopes {
             response.messagesConversation = nil
             response.messagesAfter = nil
             response.messageAppend = nil
+            response.conversationsFound = nil
+            response.conversationsArchived = nil
         }
         if let features = response.features {
             response.features = features.filter { featureScopes[$0].map(granted.contains) ?? true }

@@ -119,7 +119,8 @@ extension WorkspaceBridge {
 
         guard action else {
             do {
-                let output = try await spec.run(input)
+                // Chats of an app kept on this Mac stay out of what the agent reads.
+                let output = try await BridgeChats.$withheldApps.withValue(keptOnMac(app)) { try await spec.run(input) }
                 audit(.nookUse, caller, name, "gelezen")
                 return BridgeRPC.ToolResult(text: shielded(output, app))
             } catch {
@@ -138,13 +139,37 @@ extension WorkspaceBridge {
                 return .error(Self.refusal(.action))
             }
         }
-        let outcome = await app.perform([PlannedAction(tool: name, input: input)])
+        let outcome = await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
+            await app.perform([PlannedAction(tool: name, input: input)])
+        }
         if let failure = outcome.failure {
             audit(.nookUse, caller, name, "mislukt: \(failure)")
             return .error(failure)
         }
         audit(.nookUse, caller, name, "uitgevoerd")
         return BridgeRPC.ToolResult(text: shielded(outcome.results.joined(separator: "\n"), app))
+    }
+
+    // MARK: The user's chat apps
+
+    /// `chat_list`, `chat_read` and `chat_send`: Nook's own chat tools under names for agents, run through `nook_use`, so a
+    /// read is filtered and an action approved exactly as there, for every chat app alike.
+    func chats(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
+        guard let app else { return .error("Nook is not ready.") }
+        guard let name = BridgeChats.nookTool(for: tool),
+              let use = BridgeChats.nookUseArguments(for: tool, arguments) else { return .error("Unknown chat tool.") }
+        if let problem = BridgeChats.problem(for: tool, arguments) { return .error(problem) }
+        guard agentTools(app).contains(where: { $0.name == name }) else {
+            let offered = app.allTools.contains { $0.name == name }
+            return .error(offered ? BridgeChats.keptOnMac : BridgeChats.unavailable)
+        }
+        var result = await nookUse(use, caller, context)
+        guard tool == .chatList, !result.isError else { return result }
+        let writable = BridgeChats.$withheldApps.withValue(keptOnMac(app)) { ChatInboxConnector.writableApps() }
+        result.text += "\n\n" + (writable.isEmpty ? "chat_send cannot write in any of these apps yet; they are read only."
+            : "chat_send can write in chats of \(writable.joined(separator: ", ")); chats of other apps are read only.")
+            + " Nook Chat itself: nook_chat_list and nook_chat_send."
+        return result
     }
 
     // MARK: Nook Chat

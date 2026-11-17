@@ -5,12 +5,14 @@
 //! with a computer that lists `retry`). Pairings live in the app's secret store.
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use super::device_key;
 use super::models::*;
 use super::seal::{self, Direction};
 use super::transport::{self, Conn, Route};
@@ -86,10 +88,16 @@ impl HostResolver for DnsResolver {
     }
 }
 
-fn sealed_frame(link: &PairingLink, req: &CompanionRequest) -> Result<Vec<u8>, ClientError> {
+/// A request, sealed and framed; signed with `signer` (the private device key) for a computer that holds its public half.
+fn sealed_frame(link: &PairingLink, req: &CompanionRequest, signer: Option<&[u8]>) -> Result<Vec<u8>, ClientError> {
     let device_id = PairedDevice::identifier(&link.key);
     let plain = serde_json::to_vec(req).map_err(|_| ClientError::BadResponse)?;
-    FrameReader::frame(&seal::seal(&plain, &link.key, &device_id, Direction::Request)).ok_or(ClientError::BadResponse)
+    let mut sealed = seal::seal(&plain, &link.key, &device_id, Direction::Request);
+    if let Some(private) = signer {
+        // Unsigned it would only be refused: better to say the key is gone.
+        sealed = device_key::sign(&sealed, private).ok_or(ClientError::Storage)?;
+    }
+    FrameReader::frame(&sealed).ok_or(ClientError::BadResponse)
 }
 
 fn open_frame(link: &PairingLink, frame: &[u8]) -> Result<CompanionResponse, ClientError> {
@@ -99,9 +107,14 @@ fn open_frame(link: &PairingLink, frame: &[u8]) -> Result<CompanionResponse, Cli
 }
 
 /// One request over one open connection: the frame out, the first whole frame back.
-async fn exchange_on(conn: &mut Conn, link: &PairingLink, req: &CompanionRequest) -> Result<CompanionResponse, ClientError> {
+async fn exchange_on(
+    conn: &mut Conn,
+    link: &PairingLink,
+    req: &CompanionRequest,
+    signer: Option<&[u8]>,
+) -> Result<CompanionResponse, ClientError> {
     let attempt = async {
-        conn.send(&sealed_frame(link, req)?).await?;
+        conn.send(&sealed_frame(link, req, signer)?).await?;
         let mut reader = FrameReader::default();
         loop {
             let bytes = conn.recv().await?;
@@ -120,10 +133,12 @@ async fn exchange_on(conn: &mut Conn, link: &PairingLink, req: &CompanionRequest
 }
 
 /// Sends a request with this pairing over the first route that answers; the route that did comes back with the answer.
+/// `signer` is the private device key once the computer holds its public half (`device_key`).
 pub async fn request(
     link: &PairingLink,
     routes: &[Route],
     req: &CompanionRequest,
+    signer: Option<&[u8]>,
     resolver: &dyn HostResolver,
 ) -> Result<(CompanionResponse, Route), ClientError> {
     let mut last = ClientError::Unreachable(format!("{} niet gevonden", link.host));
@@ -135,7 +150,7 @@ pub async fn request(
                 continue;
             }
         };
-        match exchange_on(&mut conn, link, req).await {
+        match exchange_on(&mut conn, link, req, signer).await {
             Ok(r) => return Ok((r, route.clone())),
             Err(e) if e.is_unreachable() => last = e,
             Err(e) => return Err(e),
@@ -182,6 +197,14 @@ struct StoredPairing {
     features: Vec<String>,
     #[serde(default)]
     push_token: Option<String>,
+    #[serde(default)]
+    device_key: Option<String>,
+    #[serde(default)]
+    key_bound: bool,
+    #[serde(default)]
+    key_refused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    platform: Option<String>,
 }
 
 /// A push key for the phone's notification service (`RelayPush.pushKey`): derived from a pairing key, so the service
@@ -214,11 +237,31 @@ struct Pairing {
     features: Vec<String>,
     /// The push token this computer has from the phone (FCM), so it is registered again only when it changes.
     push_token: Option<String>,
+    /// This phone's private device key for this computer (`device_key`, base64), made when the computer lists
+    /// `feature::DEVICE_KEY`; it lives in the secret store with the rest of the pairing and goes with it.
+    device_key: Option<String>,
+    /// The computer holds the key's public half: every request to it is signed.
+    key_bound: bool,
+    /// The computer holds another key for this pairing ("other"): only pairing again helps, so it is not asked again.
+    key_refused: bool,
+    /// What the computer said it is (`CompanionResponse::platform`: "macos", "windows", "linux"); none until it said,
+    /// and from an older Mac.
+    platform: Option<String>,
 }
 
 impl Pairing {
     fn id(&self) -> String {
         PairedDevice::identifier(&self.link.key)
+    }
+
+    /// The private device key to sign with, once the computer holds its public half.
+    fn signer(&self) -> Option<Vec<u8>> {
+        use base64::Engine;
+        if !self.key_bound {
+            return None;
+        }
+        // A bound key that cannot be read signs nothing; `sealed_frame` then refuses rather than send unsigned.
+        Some(self.device_key.as_deref().and_then(|k| base64::engine::general_purpose::STANDARD.decode(k).ok()).unwrap_or_default())
     }
 
     /// Every way to the computer, the last one that worked first and the relay last (`CompanionRoutes.rank`).
@@ -258,6 +301,10 @@ impl Pairing {
             outbox: self.outbox.clone(),
             features: self.features.clone(),
             push_token: self.push_token.clone(),
+            device_key: self.device_key.clone(),
+            key_bound: self.key_bound,
+            key_refused: self.key_refused,
+            platform: self.platform.clone(),
         }
     }
 
@@ -270,6 +317,10 @@ impl Pairing {
             outbox: s.outbox,
             features: s.features,
             push_token: s.push_token,
+            device_key: s.device_key,
+            key_bound: s.key_bound,
+            key_refused: s.key_refused,
+            platform: s.platform,
         })
     }
 
@@ -284,6 +335,14 @@ impl Pairing {
         if let Some(features) = &response.features {
             self.features = features.clone();
         }
+        if let Some(platform) = response.platform.as_deref().map(str::trim).filter(|p| !p.is_empty() && p.len() <= 32) {
+            self.platform = Some(platform.to_ascii_lowercase());
+        }
+    }
+
+    /// What kind of computer this is for the interface: what it said, "macos" for one that never did (an older Mac).
+    fn platform(&self) -> String {
+        self.platform.clone().unwrap_or_else(|| "macos".into())
     }
 }
 
@@ -303,6 +362,8 @@ pub struct MacSummary {
     pub id: String,
     pub name: String,
     pub active: bool,
+    /// "macos", "windows" or "linux" (`Pairing::platform`), for its icon and how the phone names it.
+    pub platform: String,
 }
 
 /// What another paired computer had when it was last asked (its sessions, under "On <Mac>" in the Agents list).
@@ -311,6 +372,7 @@ pub struct MacSummary {
 pub struct OtherMac {
     pub id: String,
     pub name: String,
+    pub platform: String,
     pub reachable: bool,
     pub sessions: Vec<SessionDigest>,
 }
@@ -373,7 +435,18 @@ pub struct ClientCall {
     pub images: Option<Vec<CompanionImage>>,
     pub pull_action: Option<serde_json::Value>,
     pub pull_work: Option<serde_json::Value>,
+    /// The notification settings of `notifySet` (`feature::NOTIFY_SETTINGS`).
+    pub notify: Option<serde_json::Value>,
     pub items: Option<Vec<String>>,
+    /// Files with `inboxSend` (`CompanionFile`, `feature::CHAT_ACTIONS`).
+    pub attachments: Option<Vec<CompanionFile>>,
+    /// What `inboxAct` does in the chat `item` (`InboxAction`).
+    pub chat_action: Option<InboxAction>,
+    /// What `chatAct` does to the Nook conversation `conversation` (`NookChatAction`, `feature::NOOK_CHATS`).
+    pub nook_action: Option<serde_json::Value>,
+    /// "always" with `decide`, and every question's answer with `answer` (`feature::AGENTS_TAB`).
+    pub decision: Option<String>,
+    pub answers: Option<std::collections::BTreeMap<String, Vec<String>>>,
 }
 
 struct Inner {
@@ -420,6 +493,8 @@ pub struct CompanionClient {
     resolver: Arc<dyn HostResolver>,
     inner: Mutex<Inner>,
     app_version: String,
+    /// A `bindKey` request is on its way (`bind_device_key`): no second one meanwhile.
+    binding: AtomicBool,
 }
 
 impl CompanionClient {
@@ -455,7 +530,13 @@ impl CompanionClient {
             others: Vec::new(),
         };
         inner.clear_computer();
-        let client = Self { secrets, resolver, inner: Mutex::new(inner), app_version: env!("CARGO_PKG_VERSION").into() };
+        let client = Self {
+            secrets,
+            resolver,
+            inner: Mutex::new(inner),
+            app_version: env!("CARGO_PKG_VERSION").into(),
+            binding: AtomicBool::new(false),
+        };
         let _ = client.save();
         let _ = client.secrets.remove(PAIRING_ACCOUNT);
         client
@@ -496,7 +577,7 @@ impl CompanionClient {
                 .pairings
                 .iter()
                 .enumerate()
-                .map(|(n, p)| MacSummary { id: p.id(), name: p.link.mac_name.clone(), active: n == i.active })
+                .map(|(n, p)| MacSummary { id: p.id(), name: p.link.mac_name.clone(), active: n == i.active, platform: p.platform() })
                 .collect(),
             others: i.others.clone(),
             outbox: current
@@ -554,12 +635,22 @@ impl CompanionClient {
         if full {
             return self.snapshot();
         }
-        let candidate =
-            Pairing { link: parsed.clone(), endpoints: vec![], last_route: None, outbox: vec![], features: vec![], push_token: None };
+        let candidate = Pairing {
+            link: parsed.clone(),
+            endpoints: vec![],
+            last_route: None,
+            outbox: vec![],
+            features: vec![],
+            push_token: None,
+            device_key: None,
+            key_bound: false,
+            key_refused: false,
+            platform: None,
+        };
         let mut hello = CompanionRequest::versioned(CompanionOp::Hello, &self.app_version);
         hello.text = Some(device_name.into());
         hello.compression = Some(true);
-        let result = request(&parsed, &candidate.routes(), &hello, &*self.resolver).await;
+        let result = request(&parsed, &candidate.routes(), &hello, None, &*self.resolver).await;
         {
             let mut i = self.lock();
             match result {
@@ -592,6 +683,7 @@ impl CompanionClient {
             }
         }
         let _ = self.save();
+        self.bind_device_key().await;
         self.snapshot()
     }
 
@@ -668,7 +760,7 @@ impl CompanionClient {
             let mut r = CompanionRequest::new(CompanionOp::Register);
             r.item = Some("fcm".into());
             r.text = Some(token.into());
-            if let Ok((response, _)) = request(&p.link, &p.routes(), &r, &*self.resolver).await {
+            if let Ok((response, _)) = request(&p.link, &p.routes(), &r, p.signer().as_deref(), &*self.resolver).await {
                 if response.ok {
                     done += 1;
                     if let Some(stored) = self.lock().pairings.iter_mut().find(|x| x.id() == p.id()) {
@@ -695,19 +787,21 @@ impl CompanionClient {
         for p in others {
             let mut list = CompanionRequest::versioned(CompanionOp::List, &self.app_version);
             list.compression = Some(true);
-            let result = request(&p.link, &p.routes(), &list, &*self.resolver).await;
+            let result = request(&p.link, &p.routes(), &list, p.signer().as_deref(), &*self.resolver).await;
             let (reachable, sessions) = match &result {
                 Ok((r, _)) if r.ok => (true, r.sessions.clone().unwrap_or_default()),
                 _ => (false, Vec::new()),
             };
+            let mut platform = p.platform();
             if let Ok((r, route)) = &result {
                 let mut i = self.lock();
                 if let Some(stored) = i.pairings.iter_mut().find(|x| x.id() == p.id()) {
                     stored.learn(r);
                     stored.last_route = Some(route.clone());
+                    platform = stored.platform();
                 }
             }
-            found.push(OtherMac { id: p.id(), name: p.link.mac_name.clone(), reachable, sessions });
+            found.push(OtherMac { id: p.id(), name: p.link.mac_name.clone(), platform, reachable, sessions });
         }
         self.lock().others = found;
         let _ = self.save();
@@ -754,8 +848,38 @@ impl CompanionClient {
             }
             r.images = Some(images).filter(|i| !i.is_empty());
         }
+        // Files likewise: within the limits, and with the pictures within what one frame carries.
+        if let Some(files) = call.attachments {
+            let sizes: Option<Vec<usize>> = files.iter().map(CompanionFile::size).collect();
+            let pictures: usize = r.images.iter().flatten().map(|i| i.jpeg.len() * 3 / 4).sum();
+            let fits = sizes.is_some_and(|s| s.iter().sum::<usize>() + pictures <= CompanionFile::MAX_TOGETHER);
+            if files.len() > CompanionFile::MAX_COUNT || !fits {
+                self.lock().notice = Some("Dat bestand is te groot om vanaf de telefoon te sturen.".into());
+                return (self.snapshot(), None);
+            }
+            r.attachments = Some(files).filter(|f| !f.is_empty());
+        }
+        if op == CompanionOp::InboxAct && !call.chat_action.as_ref().is_some_and(InboxAction::is_complete) {
+            self.lock().notice = Some("De computer weigerde dit.".into());
+            return (self.snapshot(), None);
+        }
+        // At most one page of photos per request, as the computer answers them.
+        if op == CompanionOp::InboxMedia && call.items.as_ref().is_some_and(|i| i.len() > InboxMedia::BATCH) {
+            self.lock().notice = Some("De computer weigerde dit.".into());
+            return (self.snapshot(), None);
+        }
+        r.chat_action = call.chat_action;
+        r.nook_action = call.nook_action;
+        // The Agents tab's choices go only to a computer that reads them.
+        if self.has(feature::AGENTS_TAB) {
+            r.decision = call.decision;
+            r.answers = call.answers;
+        }
         r.pull_action = call.pull_action;
         r.pull_work = call.pull_work;
+        if self.has(feature::NOTIFY_SETTINGS) {
+            r.notify = call.notify;
+        }
         r.items = call.items;
         // What you write waits, as on the iPhone (`CompanionOutbox`): a message to a session or to a chat, a new session,
         // a question to Nook. Approvals, answers and stops mean something only now and never wait.
@@ -793,7 +917,7 @@ impl CompanionClient {
     /// a repeat with its first answer). Stops at the first that cannot get through; a refusal is taken out and said.
     async fn drain(&self) {
         loop {
-            let (link, routes, next) = {
+            let (link, routes, next, signer) = {
                 let mut i = self.lock();
                 let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
                 let Some(p) = i.current_mut() else { return };
@@ -809,7 +933,7 @@ impl CompanionClient {
                     }
                     return;
                 };
-                let next = (p.link.clone(), p.routes(), q.request.clone());
+                let next = (p.link.clone(), p.routes(), q.request.clone(), p.signer());
                 if expired {
                     i.notice = Some("Wat te lang op je computer wachtte, is niet verstuurd.".into());
                 }
@@ -818,7 +942,7 @@ impl CompanionClient {
             let mut again = next.clone();
             again.sent = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
             again.compression = Some(true);
-            match request(&link, &routes, &again, &*self.resolver).await {
+            match request(&link, &routes, &again, signer.as_deref(), &*self.resolver).await {
                 Ok((response, _)) => {
                     let mut i = self.lock();
                     if let Some(p) = i.current_mut() {
@@ -868,10 +992,10 @@ impl CompanionClient {
         foreground: impl Fn() -> bool,
         mut on_update: impl FnMut(ClientSnapshot, CompanionResponse),
     ) -> Result<(), ClientError> {
-        let (link, routes, id_of) = {
+        let (link, routes, id_of, signer) = {
             let i = self.lock();
             let Some(p) = i.current() else { return Err(ClientError::Closed) };
-            (p.link.clone(), p.routes(), p.id())
+            (p.link.clone(), p.routes(), p.id(), p.signer())
         };
         let mut conn = None;
         let mut last = ClientError::Unreachable(format!("{} niet gevonden", link.host));
@@ -889,7 +1013,7 @@ impl CompanionClient {
         subscribe.foreground = Some(foreground());
         subscribe.compression = Some(true);
         let id = subscribe.id.clone();
-        conn.send(&sealed_frame(&link, &subscribe)?).await?;
+        conn.send(&sealed_frame(&link, &subscribe, signer.as_deref())?).await?;
 
         let mut frames = FrameReader::default();
         let mut ping = tokio::time::interval(PING_EVERY);
@@ -904,7 +1028,7 @@ impl CompanionClient {
             let Some(bytes) = bytes else {
                 let mut p = CompanionRequest::new(CompanionOp::Ping);
                 p.foreground = Some(foreground());
-                conn.send(&sealed_frame(&link, &p)?).await?;
+                conn.send(&sealed_frame(&link, &p, signer.as_deref())?).await?;
                 continue;
             };
             for frame in frames.feed(&bytes) {
@@ -957,6 +1081,8 @@ impl CompanionClient {
                     first = false;
                     let _ = self.save();
                     self.drain().await;
+                    // Bound now, this connection still signs nothing: the next one does.
+                    self.bind_device_key().await;
                 }
             }
             if frames.overflowed() {
@@ -970,12 +1096,12 @@ impl CompanionClient {
     }
 
     async fn exchange_full(&self, mut req: CompanionRequest) -> (ClientSnapshot, Option<CompanionResponse>, Option<ClientError>) {
-        let Some((link, routes)) = self.lock().current().map(|p| (p.link.clone(), p.routes())) else {
+        let Some((link, routes, signer)) = self.lock().current().map(|p| (p.link.clone(), p.routes(), p.signer())) else {
             return (self.snapshot(), None, None);
         };
         req.compression = Some(true);
         let op = req.op;
-        let result = request(&link, &routes, &req, &*self.resolver).await;
+        let result = request(&link, &routes, &req, signer.as_deref(), &*self.resolver).await;
         let mut refresh = false;
         let mut answer = None;
         let mut error = None;
@@ -1015,6 +1141,9 @@ impl CompanionClient {
                             response.message.clone().filter(|m| response.error == Some(CompanionError::Failed) && !m.trim().is_empty());
                         i.notice = Some(said.unwrap_or_else(|| {
                             match response.error {
+                                Some(CompanionError::NotAllowedFromPhone) if response.message.as_deref() == Some("signature") => {
+                                    KEY_REFUSED
+                                }
                                 Some(CompanionError::NotAllowedFromPhone) => "Dat kan niet vanaf de telefoon: open het op je computer.",
                                 Some(CompanionError::UnknownItem | CompanionError::UnknownSession) => {
                                     refresh = true;
@@ -1040,6 +1169,7 @@ impl CompanionClient {
             if !matches!(op, CompanionOp::Send | CompanionOp::Start | CompanionOp::Ask) {
                 self.drain().await;
             }
+            self.bind_device_key().await;
         }
         if refresh {
             let notice = self.lock().notice.clone();
@@ -1047,6 +1177,57 @@ impl CompanionClient {
             self.lock().notice = notice;
         }
         (self.snapshot(), answer, error)
+    }
+}
+
+const KEY_REFUSED: &str = "Je computer kent een andere sleutel voor deze telefoon. Koppel opnieuw met de code op je computer.";
+
+impl CompanionClient {
+    /// Tells the active computer this phone's device key (`CompanionOp::BindKey`) once it lists `feature::DEVICE_KEY`;
+    /// from its "bound" on, every request to it is signed. "other" means it already holds a different key for this
+    /// pairing: only pairing again helps.
+    async fn bind_device_key(&self) {
+        use base64::Engine;
+        const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+        let (link, routes, id, private) = {
+            let mut i = self.lock();
+            let Some(p) = i.current_mut() else { return };
+            if p.key_bound || p.key_refused || !p.features.iter().any(|f| f == feature::DEVICE_KEY) {
+                return;
+            }
+            if p.device_key.is_none() {
+                p.device_key = device_key::generate().map(|k| B64.encode(k));
+            }
+            let Some(private) = p.device_key.as_deref().and_then(|k| B64.decode(k).ok()) else { return };
+            (p.link.clone(), p.routes(), p.id(), private)
+        };
+        let Some(public) = device_key::public_key(&private) else { return };
+        if self.binding.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // The key is kept before the computer hears it, so the one it binds is never lost.
+        let _ = self.save();
+        let mut bind = CompanionRequest::new(CompanionOp::BindKey);
+        bind.text = Some(B64.encode(public));
+        let result = request(&link, &routes, &bind, None, &*self.resolver).await;
+        self.binding.store(false, Ordering::SeqCst);
+        let Ok((response, _)) = result else { return };
+        {
+            let mut i = self.lock();
+            let active = i.current().map(Pairing::id).as_deref() == Some(id.as_str());
+            let Some(p) = i.pairings.iter_mut().find(|p| p.id() == id) else { return };
+            match response.message.as_deref() {
+                Some("bound") if response.ok => p.key_bound = true,
+                Some("other") if response.ok => {
+                    p.key_refused = true;
+                    if active {
+                        i.notice = Some(KEY_REFUSED.into());
+                    }
+                }
+                _ => return,
+            }
+        }
+        let _ = self.save();
     }
 }
 

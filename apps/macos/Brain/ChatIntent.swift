@@ -432,8 +432,8 @@ struct ChatIntent: Equatable {
     /// Tools per kind, the most useful first. Action tools come before the lookups that support them.
     static let toolsByKind: [Kind: [String]] = [
         .reminder: ["create_reminder", "list_reminders", "search_reminders", "complete_reminder"],
-        .event: ["create_event", "update_event", "list_events", "check_availability"],
-        .availability: ["check_availability", "list_events"],
+        .event: ["create_event", "find_time", "update_event", "list_events", "check_availability"],
+        .availability: ["check_availability", "find_time", "list_events"],
         .note: ["create_note", "search_notes", "read_note", "list_notes"],
         .todo: ["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
         .mailWrite: ["compose_mail", "inbox_mail", "search_contacts", "search_mail", "read_mail"],

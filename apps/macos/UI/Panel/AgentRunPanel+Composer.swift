@@ -294,6 +294,11 @@ extension AgentRunPanel {
                                   agentPIDs: { workspace.agentPIDs(runID) },
                                   settleGone: { workspace.settleGoneBackgroundCommand(runID, $0) })
             }
+            // What Nook could do for what was said here (another agent on a side task, a reminder), once the turn ended.
+            ActionSuggestionBar(turn: app.agentSuggestionTurn(runID), busy: active,
+                                place: app.agentActionPlace(runID), lines: { [app, runID] in app.agentActionLines(runID) },
+                                act: { [app] in await app.runDraftActions($0) },
+                                adjust: { [app] in app.adjustSuggestedAction($0) })
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.
             VStack(spacing: 0) {

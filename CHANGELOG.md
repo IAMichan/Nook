@@ -12,6 +12,18 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- A Windows or Linux PC is now a full computer for the iPhone and Android companion, like a Mac: sessions follow live,
+  you can start sessions and read their whole conversation, chat with Nook, see Home, usage and music, use the Chats
+  tab (WhatsApp) and review and merge pull requests (GitHub). With several computers paired, the name under the tab
+  title switches between them in one tap, showing which is live and what waits on each, and each computer shows with
+  its own icon.
+
+- Coding agents can now use your chat apps directly through Nook's MCP: `chat_list`, `chat_read` and `chat_send` work
+  with every chat Nook links (WhatsApp, Messages, Telegram, Slack, Teams, Signal and more; WhatsApp on Windows and
+  Linux). Every message waits for your approval with the exact text, whatever rights the agent has. Together with
+  `nook_chat_*` an agent can read a chat, ask Nook about it and send a reply, and an assistant in another app gets
+  the same tools at the **Full** access level.
+
 - The changelog keeps up with the releases by itself: once a release is public, the release workflow opens a pull
   request that moves the **Unreleased** entries it shipped under its version and merges it when `Check` passes. Entries
   merged while the release was building wait for the next one, and a stable release gathers its betas into one

@@ -35,13 +35,19 @@
   import { activeMac, cacheFor, kept, recordTimeline, saveSoon } from "../../lib/companion-cache";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
   import OfflineNote from "./ui/OfflineNote.svelte";
+  import SessionPrompt from "./SessionPrompt.svelte";
+  import QuestionFlow from "./QuestionFlow.svelte";
+  import { HEADER_MENU } from "../../lib/companion-sessions";
+  import { sessionMenu } from "./session-menu";
 
-  let { view, id, fallback, onback, act, took }: {
+  let { view, id, fallback, onback, onopen, act, took }: {
     view: ClientView;
     id: string;
     /** An older session the live list does not hold (from `history`), shown until a message moves it back. */
     fallback?: SessionDigest;
     onback: () => void;
+    /** Another session to open (a fork of this one). */
+    onopen?: (id: string) => void;
     act: (f: () => Promise<ClientView>) => Promise<void>;
     took: (v: ClientView) => void;
   } = $props();
@@ -172,6 +178,45 @@
     haptic(allow ? "success" : "warning");
     act(() => companion.decide(session.id, target.id, allow));
   }
+  // "Always allow" and every question at once (`agentsTab`).
+  const agentsTab = $derived(has(view, Feature.agentsTab));
+  async function allowAlways(target: DigestItem) {
+    if (!session) return;
+    haptic("success");
+    const r = await companion.call({ op: "decide", session: session.id, item: target.id, allow: true, decision: "always" });
+    took(r.view);
+  }
+  async function answerAll(answers: Record<string, string[]>) {
+    if (!session || !item) return;
+    const r = await companion.call({ op: "answer", session: session.id, item: item.id, answers });
+    took(r.view);
+  }
+  const flow = $derived(agentsTab && item?.kind === "question" && !!item.questions?.length
+    && (item.questions.length > 1 || item.questions[0].multiSelect) ? item.questions : null);
+  let prompt = $state<"rename" | "delete" | "end" | null>(null);
+  let controlsMenu = $state<DOMRect | null>(null);
+  const controls = $derived(session?.controls ?? null);
+  const controlActions = $derived(["setMode", "setEffort", "setModel"].filter((a) => actions.has(a)));
+  const controlsWord = $derived.by(() => {
+    if (!controls) return "";
+    const parts: string[] = [];
+    if (controls.mode === "plan") parts.push(tr("Plan", "Plan"));
+    const effort = controls.effort ? controls.efforts?.find((e) => e.id === controls.effort)?.name : undefined;
+    if (effort) parts.push(effort);
+    if (!parts.length) { const m = controls.models?.find((x) => x.id === (controls.model ?? ""))?.name; if (m) parts.push(m); }
+    return parts.length ? parts.join(" · ") : tr("Opties", "Options");
+  });
+  const controlSections = $derived.by<MenuItem[][]>(() => {
+    if (!controls) return [];
+    return [
+      actions.has("setMode") && controls.mode ? [
+        { label: tr("Agent", "Agent"), checked: controls.mode === "agent", onselect: () => manage("setMode", "agent") },
+        { label: tr("Plan", "Plan"), checked: controls.mode === "plan", onselect: () => manage("setMode", "plan") },
+      ] : [],
+      actions.has("setEffort") ? (controls.efforts ?? []).map((e) => ({ label: e.name, detail: e.id ? undefined : tr("Inspanning", "Effort"), checked: e.id === (controls.effort ?? ""), onselect: () => manage("setEffort", e.id) })) : [],
+      actions.has("setModel") ? (controls.models ?? []).map((m) => ({ label: m.name, checked: m.id === (controls.model ?? ""), onselect: () => manage("setModel", m.id) })) : [],
+    ];
+  });
   function denyWithReason(text: string) {
     if (!session || !item) return;
     reason = "";
@@ -195,13 +240,26 @@
     haptic();
     const r = await companion.call({ op: "manage", session: session.id, item: action, text });
     took(r.view);
-    if (r.response && (action === "archive" || action === "end")) onback();
+    if (r.response && (action === "archive" || action === "end" || action === "delete" || action === "deleteWithWorktree")) onback();
+    return r.response;
   }
 
   const actions = $derived(new Set(session && has(view, Feature.manage) && canOperate ? (session.actions ?? []) : []));
   const canStopIt = $derived(!!session && canOperate && session.canSend !== false && canStop(session.attention));
   const menuSections = $derived.by<MenuItem[][]>(() => {
     if (!session) return [];
+    // The Mac's header menu, in its order (`HEADER_MENU`), on a computer with the Agents tab.
+    if (agentsTab) {
+      return [
+        canStopIt ? [{ label: tr("Stop", "Stop"), icon: "circle-stop", destructive: true, onselect: () => (dialog = { kind: "stop" }) }] : [],
+        ...sessionMenu(HEADER_MENU, session, [...actions], {
+          run: (action) => void manage(action),
+          ask: (kind) => (prompt = kind),
+          pickTime: () => (picking = true),
+          fork: async () => { const created = (await manage("fork"))?.created; if (created) onopen?.(created); },
+        }),
+      ];
+    }
     const snooze: MenuItem[] = actions.has("unsnooze")
       ? [{ label: tr("Snooze opheffen", "Cancel snooze"), icon: "alarm-clock", onselect: () => manage("unsnooze") }]
       : [
@@ -296,8 +354,13 @@
               <DecisionButton kind="deny" label={tr("Weiger", "Deny")} onclick={() => decide(item, false)} />
               {#if item.canAllow}<DecisionButton kind="allow" label={tr("Sta toe", "Allow")} onclick={() => decide(item, true)} />{/if}
             </div>
+            {#if agentsTab && item.canAllow && item.canAlways}
+              <button class="always press" onclick={() => allowAlways(item)}><Ico name="badge-check" size={15} />{tr("Altijd toestaan", "Always allow")}</button>
+            {/if}
             {#if !item.canAllow}<span class="note"><Ico name="lock" size={12} />{tr("Dit is riskant of onbekend: toestaan kan alleen op je Mac.", "This is risky or unknown: it can only be allowed on your Mac.")}</span>{/if}
             <SessionComposer bind:value={reason} placeholder={tr("Of weiger met een reden", "Or deny with a reason")} onsend={denyWithReason} />
+          {:else if flow}
+            <QuestionFlow questions={flow} onsend={answerAll} />
           {:else if item.canAllow}
             <div class="options">
               {#each item.options as option, i (option)}
@@ -322,6 +385,16 @@
         {:else if session.canSend === false}
           <div class="fieldcard"><Ico name="terminal" size={12} />{tr("Deze agent draait in een terminal op je Mac; beantwoord hem daar.", "This agent runs in a terminal on your Mac; answer it there.")}</div>
         {:else}
+          {#if session.queued?.length}
+            <div class="line">
+              <span class="linehead">{tr("Wacht op deze beurt", "Waiting for this turn")}</span>
+              {#each session.queued as q (q.id)}
+                <div class="qrow"><Ico name="clock" size={11} /><span class="qtext">{q.text}</span>
+                  {#if actions.has("unqueue")}<button class="qremove" aria-label={tr("Uit de wachtrij halen", "Remove from the queue")} onclick={() => manage("unqueue", q.id)}><Ico name="x" size={12} /></button>{/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
           <ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />
           <div class="withphoto">
           {#if canPicture}<PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={tooLarge} />{/if}
@@ -331,6 +404,14 @@
             onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
             {#snippet controls()}
               <ComposerPill label={steer ? tr("Nu bijsturen", "Steer now") : tr("Na deze beurt", "After this turn")} icon={steer ? "corner-down-right" : "list"} onclick={(e) => (steerMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />
+              {#if agentsTab && controlActions.length}<ComposerPill label={controlsWord} icon="cpu" onclick={(e) => (controlsMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />{/if}
+            {/snippet}
+          </SessionComposer>
+        {:else if agentsTab && controlActions.length}
+          <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending} canSend={!offline || writingWaits(view)}
+            onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
+            {#snippet controls()}
+              <ComposerPill label={controlsWord} icon="cpu" onclick={(e) => (controlsMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())} />
             {/snippet}
           </SessionComposer>
         {:else}
@@ -359,6 +440,10 @@
   ]]} />
 {/if}
 {#if menu}<Menu sections={menuSections} anchor={menu} onclose={() => (menu = null)} />{/if}
+{#if controlsMenu}<Menu title={tr("Modus, inspanning en model", "Mode, effort and model")} sections={controlSections} anchor={controlsMenu} onclose={() => (controlsMenu = null)} />{/if}
+{#if prompt && session}
+  <SessionPrompt kind={prompt} {session} onclose={() => (prompt = null)} onrun={(action, text) => void manage(action, text)} />
+{/if}
 {#if steerMenu}
   <Menu title={tr("Terwijl de agent werkt", "While the agent works")} anchor={steerMenu} onclose={() => (steerMenu = null)} sections={[[
     { label: tr("Nu bijsturen", "Steer now"), icon: "corner-down-right", checked: steer, onselect: () => setSteer(true) },
@@ -426,6 +511,12 @@
   .qnote { display: flex; align-items: center; gap: 4px; font: var(--pt-caption); color: var(--text3); }
   .qnote button { margin-left: 8px; color: var(--coral) !important; font: var(--pt-caption) !important; }
   .withphoto { display: flex; align-items: flex-end; gap: 6px; }
+  .always { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border-radius: 10px; background: var(--smoke) !important; color: var(--paper) !important; font: var(--pt-label) !important; }
+  .line { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+  .linehead { font: var(--pt-caption); color: var(--text3); padding: 0 4px; }
+  .qrow { display: flex; align-items: center; gap: 6px; padding-left: 10px; background: var(--field); border-radius: 8px; color: var(--text3); }
+  .qtext { flex: 1; min-width: 0; font: var(--pt-detail); color: var(--text2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+  .qremove { width: 44px; height: 36px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2) !important; }
   .grow { flex: 1; min-width: 0; }
   .fieldcard { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }
   @keyframes rise { from { transform: translateY(16px); opacity: 0; } }

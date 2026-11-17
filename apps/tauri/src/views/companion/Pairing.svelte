@@ -39,9 +39,9 @@
     }
   }
   const steps = [
-    tr("Open op je Mac Nook › Instellingen › iPhone-companion en zet hem aan.", "On your Mac, open Nook › Settings › iPhone companion and turn it on."),
-    tr("Kies ‘Koppel een iPhone’: Nook toont vijf minuten een code.", "Choose ‘Pair an iPhone’: Nook shows a code for five minutes."),
-    tr("Scan hem hier. Je telefoon en Mac moeten op hetzelfde wifi zitten.", "Scan it here. Your phone and Mac need to be on the same Wi‑Fi."),
+    tr("Open Nook op je computer: op een Mac Instellingen › iPhone-companion, op Windows of Linux Instellingen › Companion. Zet hem aan.", "Open Nook on your computer: on a Mac, Settings › iPhone companion; on Windows or Linux, Settings › Companion. Turn it on."),
+    tr("Kies ‘Koppel een iPhone’ op een Mac, of ‘Koppel een telefoon’ op Windows of Linux: Nook toont vijf minuten een code.", "Choose ‘Pair an iPhone’ on a Mac, or ‘Pair a phone’ on Windows or Linux: Nook shows a code for five minutes."),
+    tr("Scan hem hier. Je telefoon en computer moeten op hetzelfde wifi zitten.", "Scan it here. Your phone and computer need to be on the same Wi‑Fi."),
   ];
 </script>
 
@@ -69,7 +69,7 @@
     {/if}
   </div>
   {#if adding}<button class="ghost press" onclick={oncancel}>{tr("Annuleer", "Cancel")}</button>{/if}
-  <p class="foot"><Ico name="shield" size={13} />{tr("Alles tussen je iPhone en je Mac is end-to-end versleuteld.", "Everything between your phone and your Mac is encrypted end to end.")}</p>
+  <p class="foot"><Ico name="shield" size={13} />{tr("Alles tussen je telefoon en je computer is end-to-end versleuteld.", "Everything between your phone and your computer is encrypted end to end.")}</p>
 </div>
 
 <style>

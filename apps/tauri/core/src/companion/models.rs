@@ -235,6 +235,29 @@ pub enum CompanionOp {
     RequestUpdate,
     /// The pictures of chats (`items`; `avatars` in the answer, `feature::AVATARS`).
     Avatars,
+    /// The phone's own device key (`device_key`, `feature::DEVICE_KEY`): `text` is its public half (X9.63, base64). The
+    /// computer keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it already
+    /// holds a different one (the phone has to pair again).
+    BindKey,
+    /// The Chats tab as on the Mac (`feature::CHAT_ACTIONS`, `CompanionChats.swift`): an action in a chat (`item`,
+    /// `chatAction`; answered like `inboxChat`, with `inbox`), older messages of a chat (`item`, `text` the oldest message
+    /// the phone has; `inboxLines` with `inboxBefore`), the photos of messages (`item`, `items` the messages, at most
+    /// `InboxMedia::BATCH`; `inboxMedia`), a chat's info (`item`; `inboxInfo`) and the chats that hold words (`text`;
+    /// `inboxFound`).
+    InboxAct,
+    InboxOlder,
+    InboxMedia,
+    InboxInfo,
+    InboxSearch,
+    /// Nook's conversations as on the Mac's Nook tab (`feature::NOOK_CHATS`, `CompanionNookChats.swift`): an action on
+    /// one (`conversation`, `nookAction`; answered with `conversations`), and the conversations that hold words (`text`;
+    /// `allow` true searches the archive; `conversationsFound`).
+    ChatAct,
+    ChatSearch,
+    /// The computer's notification settings for its phones (`feature::NOTIFY_SETTINGS`, `CompanionNotifySettings`): read
+    /// them (`notify` in the answer), and change them for every paired phone (`notify` in the request).
+    NotifySettings,
+    NotifySet,
 }
 
 impl CompanionOp {
@@ -280,6 +303,32 @@ pub mod feature {
     pub const ROUTES: &str = "routes";
     pub const RELAY: &str = "relay";
     pub const COMPRESSION: &str = "compression";
+    /// The computer takes `bindKey` and from then on wants the phone's requests signed (`device_key`).
+    pub const DEVICE_KEY: &str = "deviceKey";
+    /// The computer takes files with `send` and `start` (`CompanionRequest::attachments`).
+    pub const ATTACHMENTS: &str = "attachments";
+    /// The Chats tab does what the Mac's does (`CompanionChats.swift`): `inboxAct`, `inboxOlder`, `inboxMedia`,
+    /// `inboxInfo`, `inboxSearch`, pictures and files with `inboxSend`, every list (chats, status, channels) and what each
+    /// chat takes (`abilities` on its digest).
+    pub const CHAT_ACTIONS: &str = "chatActions";
+    /// The Nook tab does what the Mac's does (`CompanionNookChats.swift`): `chatAct`, `chatSearch`, the list's flags on a
+    /// conversation's digest, `conversationsArchived`, a question to a busy conversation that waits in line, and
+    /// pictures with `ask`.
+    pub const NOOK_CHATS: &str = "nookChats";
+    /// The Agents tab does what the Mac's does (`CompanionSessions.swift`): more `SessionAction`s, the list's shelves
+    /// (`pinned`, `settled`, `snoozedUntil` on a digest), "Always allow" (`decision`), several questions and multi-select
+    /// (`questions` on an item, `answers`), the composer's choices (`controls`), the queue (`queued`), and effort, access,
+    /// base branch and files for a new session.
+    pub const AGENTS_TAB: &str = "agentsTab";
+    /// The Pull requests page does what the Mac's does (`CompanionPullRequests.swift`): labels, opened time, comments
+    /// and checks on a row, the Summary's side info, the conversation and threads, and the menu's actions (`actions` on
+    /// the detail, the new `CompanionPullAction` kinds).
+    pub const PULL_ACTIONS: &str = "pullActions";
+    /// The computer answers `notifySettings` and takes `notifySet`.
+    pub const NOTIFY_SETTINGS: &str = "notifySettings";
+    pub const CLOCK: &str = "clock";
+    pub const REVOKE: &str = "revoke";
+    pub const RESUME: &str = "resume";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -297,6 +346,14 @@ pub struct LaunchRequest {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_thread: Option<bool>,
+    /// The reasoning effort ("" the agent's default), the access and the base branch of a new worktree
+    /// (`feature::AGENTS_TAB`); none keeps the Mac's choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
 }
 
 /// Eén aanvraag van de telefoon. `id` is uniek per aanvraag; `sent` is de klok van de telefoon (seconden sinds 1970).
@@ -344,12 +401,31 @@ pub struct CompanionRequest {
     /// The new session of `pullWork` (`PullWorkRequest`), passed through likewise.
     #[serde(default, rename = "pullWork", skip_serializing_if = "Option::is_none")]
     pub pull_work: Option<serde_json::Value>,
+    /// The notification settings `notifySet` changes to (`CompanionNotifySettings`), passed through; the computer checks them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<serde_json::Value>,
     /// The chats of `avatars`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<String>>,
     /// This phone opens compressed answers (`CompanionWire`); a Mac without `compression` ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression: Option<bool>,
+    /// Files with `send`, `start` or `inboxSend` (`CompanionFile`, `feature::ATTACHMENTS`, `feature::CHAT_ACTIONS`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<CompanionFile>>,
+    /// What `inboxAct` does in the chat `item`.
+    #[serde(default, rename = "chatAction", skip_serializing_if = "Option::is_none")]
+    pub chat_action: Option<InboxAction>,
+    /// What `chatAct` does to the Nook conversation `conversation` (`NookChatAction`), passed through as the interface
+    /// wrote it; the computer checks it.
+    #[serde(default, rename = "nookAction", skip_serializing_if = "Option::is_none")]
+    pub nook_action: Option<serde_json::Value>,
+    /// With `decide` (`feature::AGENTS_TAB`): "always" allows it and what is like it from now on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<String>,
+    /// With `answer` (`feature::AGENTS_TAB`): every question's answer by question id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<std::collections::BTreeMap<String, Vec<String>>>,
 }
 
 /// Where the computer can be reached (`CompanionEndpoint`), as it says with `hello`, `list` and `subscribe`.
@@ -379,6 +455,220 @@ impl CompanionImage {
     }
 }
 
+/// A file that goes with a message (`CompanionFile`): its name and its bytes in base64, at most `MAX_BYTES`, at most
+/// `MAX_COUNT` per message, and with the pictures at most `MAX_TOGETHER`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompanionFile {
+    pub name: String,
+    pub data: String,
+}
+
+impl CompanionFile {
+    pub const MAX_BYTES: usize = 150 * 1024;
+    pub const MAX_COUNT: usize = 1;
+    pub const MAX_TOGETHER: usize = 180 * 1024;
+
+    /// How many bytes it holds, when it decodes and is within the limit.
+    pub fn size(&self) -> Option<usize> {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&self.data).ok()?;
+        (!bytes.is_empty() && bytes.len() <= Self::MAX_BYTES && !self.name.trim().is_empty()).then_some(bytes.len())
+    }
+}
+
+/// What can be done in one chat besides reading it (`InboxAbility`), as the computer lists it per chat in the digest's
+/// `abilities`. A name this side does not know (from a newer Mac) is ignored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InboxAbility {
+    Reply,
+    React,
+    Edit,
+    Delete,
+    DeleteForMe,
+    MarkReadInApp,
+    MarkUnreadInApp,
+    PinInApp,
+    MuteInApp,
+    Archive,
+    DeleteChat,
+    Vote,
+    Photo,
+    File,
+}
+
+impl InboxAbility {
+    /// The abilities in `names`, the unknown ones left out.
+    pub fn parse(names: &[String]) -> Vec<InboxAbility> {
+        names.iter().filter_map(|n| serde_json::from_value(serde_json::Value::String(n.clone())).ok()).collect()
+    }
+}
+
+/// What `inboxAct` does (`InboxAction.Kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InboxActionKind {
+    React,
+    Edit,
+    Delete,
+    DeleteForMe,
+    Vote,
+    Forward,
+    Pin,
+    PinInApp,
+    MuteInApp,
+    Archive,
+    DeleteChat,
+    Remove,
+    MarkReadInNook,
+    MarkReadInApp,
+    MarkUnread,
+}
+
+/// One thing the phone does in a chat of the Chats tab (`InboxAction`), after your own tap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxAction {
+    pub kind: InboxActionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<bool>,
+}
+
+impl InboxAction {
+    /// The most chats one message is forwarded to at once, as on the Mac.
+    pub const MAX_TARGETS: usize = 10;
+
+    /// Whether the action carries what it needs (`InboxAction.isComplete`); the computer checks again what the app takes.
+    pub fn is_complete(&self) -> bool {
+        let message = self.message.as_deref().is_some_and(|m| !m.is_empty());
+        match self.kind {
+            InboxActionKind::React => message && self.emoji.as_deref().is_some_and(|e| !e.is_empty() && e.chars().count() <= 8),
+            InboxActionKind::Edit => message && CompanionPolicy::clean_message(self.text.as_deref().unwrap_or("")).is_some(),
+            InboxActionKind::Delete | InboxActionKind::DeleteForMe => message,
+            InboxActionKind::Vote => message && self.choices.as_ref().is_some_and(|c| c.len() <= 32),
+            InboxActionKind::Forward => message && self.targets.as_ref().is_some_and(|t| !t.is_empty() && t.len() <= Self::MAX_TARGETS),
+            InboxActionKind::Pin | InboxActionKind::PinInApp | InboxActionKind::MuteInApp => self.value.is_some(),
+            InboxActionKind::Archive
+            | InboxActionKind::DeleteChat
+            | InboxActionKind::Remove
+            | InboxActionKind::MarkReadInNook
+            | InboxActionKind::MarkReadInApp
+            | InboxActionKind::MarkUnread => true,
+        }
+    }
+
+    /// What the chat's app has to take for this action; none for what Nook does by itself.
+    pub fn needs(&self) -> Option<InboxAbility> {
+        match self.kind {
+            InboxActionKind::React => Some(InboxAbility::React),
+            InboxActionKind::Edit => Some(InboxAbility::Edit),
+            InboxActionKind::Delete => Some(InboxAbility::Delete),
+            InboxActionKind::Vote => Some(InboxAbility::Vote),
+            InboxActionKind::PinInApp => Some(InboxAbility::PinInApp),
+            InboxActionKind::MuteInApp => Some(InboxAbility::MuteInApp),
+            InboxActionKind::Archive => Some(InboxAbility::Archive),
+            InboxActionKind::DeleteChat => Some(InboxAbility::DeleteChat),
+            InboxActionKind::MarkReadInApp
+            | InboxActionKind::DeleteForMe
+            | InboxActionKind::Forward
+            | InboxActionKind::Pin
+            | InboxActionKind::Remove
+            | InboxActionKind::MarkReadInNook
+            | InboxActionKind::MarkUnread => None,
+        }
+    }
+}
+
+/// A poll in a chat (`InboxPoll`): its question, its options with their votes and whether you chose them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxPoll {
+    pub question: String,
+    pub options: Vec<InboxPollOption>,
+    /// More than one option may be chosen.
+    pub multiple: bool,
+    /// The counts are known.
+    pub counted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxPollOption {
+    pub text: String,
+    pub votes: i64,
+    pub chosen: bool,
+}
+
+/// One line of a chat's details (`InboxChatInfo.Detail`): `key` says what it is, `value` is as the app says it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxChatDetail {
+    pub key: String,
+    pub value: String,
+}
+
+/// What a chat's app says about the chat itself (`InboxChatInfo`, the answer to `inboxInfo`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxChatInfo {
+    pub chat: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
+    pub members: Vec<String>,
+    pub admins: Vec<String>,
+    pub admins_only: bool,
+    pub details: Vec<InboxChatDetail>,
+    pub blocked: bool,
+    pub bot: bool,
+    pub verified: bool,
+}
+
+/// A photo of a chat message (`InboxMedia`, the answer to `inboxMedia`): `jpeg` in base64, `version` as the line's
+/// `thumb` was when it was made.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxMedia {
+    pub line: String,
+    pub version: String,
+    pub jpeg: String,
+}
+
+impl InboxMedia {
+    /// How many photos one `inboxMedia` request asks for.
+    pub const BATCH: usize = 3;
+}
+
+/// Paging back through a chat on the phone (`InboxPaging`): the computer sends the newest messages that fit, and older
+/// pages on request (`inboxOlder`). Lines are the `InboxLine`s as they came (JSON with an `id`).
+pub mod inbox_paging {
+    use serde_json::Value;
+
+    fn id(line: &Value) -> Option<&str> {
+        line.get("id").and_then(Value::as_str)
+    }
+
+    /// The phone's messages after the computer sent the newest ones again (`latest`): the older messages the phone paged
+    /// back to stay before them, so a new message does not throw away what you scrolled back to read.
+    pub fn merge(latest: &[Value], kept: &[Value]) -> Vec<Value> {
+        let Some(first) = latest.first().and_then(id) else { return latest.to_vec() };
+        match kept.iter().position(|l| id(l) == Some(first)) {
+            Some(index) if index > 0 => kept[..index].iter().chain(latest).cloned().collect(),
+            _ => latest.to_vec(),
+        }
+    }
+
+    /// An older page (`page`, the messages before `before`) put before the phone's messages.
+    pub fn prepend(page: &[Value], before: &str, kept: &[Value]) -> Vec<Value> {
+        let Some(index) = kept.iter().position(|l| id(l) == Some(before)) else { return kept.to_vec() };
+        let known: std::collections::HashSet<&str> = kept.iter().filter_map(id).collect();
+        page.iter().filter(|l| id(l).is_none_or(|i| !known.contains(i))).chain(&kept[index..]).cloned().collect()
+    }
+}
+
 impl CompanionRequest {
     /// Een nieuwe aanvraag met een uniek id (hoofdletters, zoals `UUID().uuidString`) en de klok van nu.
     pub fn new(op: CompanionOp) -> Self {
@@ -401,8 +691,14 @@ impl CompanionRequest {
             images: None,
             pull_action: None,
             pull_work: None,
+            notify: None,
             items: None,
             compression: None,
+            attachments: None,
+            chat_action: None,
+            nook_action: None,
+            decision: None,
+            answers: None,
         }
     }
 
@@ -435,6 +731,10 @@ pub struct CompanionResponse {
     pub error: Option<CompanionError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mac_name: Option<String>,
+    /// What kind of computer answers (`CompanionPlatform`: "macos", "windows" or "linux"), with `hello`, `list` and
+    /// `subscribe`; none from an older Mac. The phone names it and shows its icon by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Vec<SessionDigest>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -492,6 +792,9 @@ pub struct CompanionResponse {
     /// `ChatAppend`: Nook's new words at the end of its last message, passed through to the interface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_append: Option<serde_json::Value>,
+    /// The computer's clock with a `stale` refusal, so the phone can correct for its own (`feature::CLOCK`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_time: Option<f64>,
     /// The order of the updates on a kept connection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<i64>,
@@ -505,6 +808,9 @@ pub struct CompanionResponse {
     pub pulls: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull: Option<serde_json::Value>,
+    /// The notification settings of `notifySettings` and `notifySet` (`CompanionNotifySettings`), passed through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<serde_json::Value>,
     /// `[TerminalDigest]`, `FolderDigest`, `FileChunk` and `[ChatAvatar]`, passed through to the interface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminals: Option<serde_json::Value>,
@@ -528,6 +834,26 @@ pub struct CompanionResponse {
     pub endpoints: Option<Vec<CompanionEndpoint>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<String>,
+    /// With `inboxOlder`: `inboxLines` is the page before this message, not the newest messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_before: Option<String>,
+    /// The photos of `inboxMedia`; a message without one (any more) is left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_media: Option<Vec<InboxMedia>>,
+    /// The chat's info of `inboxInfo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_info: Option<InboxChatInfo>,
+    /// The chats `inboxSearch` found, the best first (`[InboxChatDigest]`, passed through to the interface).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_found: Option<serde_json::Value>,
+    /// With `inboxChat`, `inboxOlder` and a watched chat: the chat's app may have older messages than these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_more: Option<bool>,
+    /// The Nook conversations `chatSearch` found (`[ChatDigest]`, passed through), and how many wait in the archive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversations_found: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversations_archived: Option<i64>,
 }
 
 impl CompanionResponse {
@@ -562,6 +888,12 @@ pub struct DigestItem {
     /// A question's option previews (a mock-up or code per option, empty for one without); nil when none has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub option_previews: Option<Vec<String>>,
+    /// "Always allow" is offered (`feature::AGENTS_TAB`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_always: Option<bool>,
+    /// Every question of a question item (`SessionQuestion`), passed through to the interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub questions: Option<serde_json::Value>,
 }
 
 /// Wat de telefoon over een sessie hoort. Titels en uittreksels zijn ingekort: de telefoon is geen logboek.
@@ -596,6 +928,22 @@ pub struct SessionDigest {
     /// The turn that runs now, sent back with a Stop or a steer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<String>,
+    /// Where it sits in the Mac's Agents list (`feature::AGENTS_TAB`): pinned, settled, snoozed until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<f64>,
+    /// The folder it works in, in full, for "Copy path".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The composer's effort, mode and model (`SessionControls`) and the messages in line (`[QueuedDigest]`), passed
+    /// through to the interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controls: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued: Option<serde_json::Value>,
 }
 
 /// Sessies die op jou wachten (een goedkeuring of een vraag), voor het getal op het icoon.
@@ -674,6 +1022,11 @@ impl DeliveryLog {
         }
         true
     }
+
+    /// Forgets `id`, so the same request may come again (it failed in passing).
+    pub fn forget(&mut self, id: &str) {
+        self.ids.retain(|i| i != id);
+    }
 }
 
 /// Hoogstens `limit` aanvragen per `window` seconden (`RateWindow`). De klok wordt meegegeven.
@@ -727,6 +1080,23 @@ impl RequestGuard {
         }
         None
     }
+
+    /// For a request whose id already has an answer (`CommandReceipts`): it must still be fresh and within the rate,
+    /// but being a repeat is the point.
+    pub fn admit_retry(&mut self, request: &CompanionRequest, now: f64) -> Option<CompanionError> {
+        if (now - request.sent).abs() > FRESHNESS {
+            return Some(CompanionError::Stale);
+        }
+        if !self.rate.admit(now) {
+            return Some(CompanionError::RateLimited);
+        }
+        None
+    }
+
+    /// A request that failed in passing may come again with the same id.
+    pub fn forget(&mut self, request: &CompanionRequest) {
+        self.seen.forget(&request.id);
+    }
 }
 
 pub struct CompanionPolicy;
@@ -776,6 +1146,10 @@ pub struct PairedDevice {
     pub push_token: Option<String>,
     #[serde(default)]
     pub push_production: Option<bool>,
+    /// The public half of the phone's device key (X9.63, base64; `device_key`): once set, only requests signed with it
+    /// are taken. `None` until the phone bound one (an older app never does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_key: Option<String>,
 }
 
 impl PairedDevice {
@@ -951,6 +1325,9 @@ mod tests {
             worktree: false,
             model: None,
             main_thread: Some(true),
+            effort: None,
+            permission: None,
+            base_branch: None,
         });
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["protocolVersion"], PROTOCOL_VERSION);
@@ -977,6 +1354,21 @@ mod tests {
     }
 
     #[test]
+    fn notification_settings_travel_as_the_mac_reads_them() {
+        let mut r = CompanionRequest::new(CompanionOp::NotifySet);
+        r.notify = Some(serde_json::json!({"enabled": true, "kinds": ["approval"], "onlyWhenAway": true, "includeTitle": false,
+                                           "quietAllowsUrgent": true}));
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["op"], "notifySet");
+        assert_eq!(json["notify"]["kinds"][0], "approval");
+        let read = serde_json::to_value(CompanionRequest::new(CompanionOp::NotifySettings)).unwrap();
+        assert_eq!(read["op"], "notifySettings");
+        assert!(read.get("notify").is_none());
+        let answer: CompanionResponse = serde_json::from_str(r#"{"id":"1","ok":true,"notify":{"enabled":false,"kinds":[]}}"#).unwrap();
+        assert_eq!(answer.notify.unwrap()["enabled"], false);
+    }
+
+    #[test]
     fn pictures_and_pull_requests_travel_as_the_mac_reads_them() {
         use base64::Engine;
         let jpeg = |n: usize| {
@@ -994,6 +1386,153 @@ mod tests {
         assert_eq!(json["op"], "pullAct");
         assert_eq!(json["pullAction"]["kind"], "approve");
         assert!(json.get("images").is_none());
+    }
+
+    #[test]
+    fn nook_chat_actions_travel_as_the_mac_reads_them() {
+        assert_eq!(serde_json::to_value(CompanionOp::ChatAct).unwrap(), "chatAct");
+        assert_eq!(serde_json::to_value(CompanionOp::ChatSearch).unwrap(), "chatSearch");
+        assert!(CompanionOp::ChatAct.callable() && CompanionOp::ChatSearch.callable());
+        let mut r = CompanionRequest::new(CompanionOp::ChatAct);
+        r.conversation = Some("C1".into());
+        r.nook_action = Some(serde_json::json!({"kind": "pin", "value": true}));
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["nookAction"]["kind"], "pin");
+        let answer: CompanionResponse =
+            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3})).unwrap();
+        assert_eq!(answer.conversations_archived, Some(3));
+        assert!(answer.conversations_found.is_some());
+    }
+
+    #[test]
+    fn chat_actions_travel_as_the_mac_reads_them() {
+        assert_eq!(serde_json::to_value(CompanionOp::InboxAct).unwrap(), "inboxAct");
+        assert_eq!(serde_json::to_value(CompanionOp::InboxSearch).unwrap(), "inboxSearch");
+        assert!(CompanionOp::InboxOlder.callable() && CompanionOp::InboxMedia.callable() && CompanionOp::InboxInfo.callable());
+        let mut r = CompanionRequest::new(CompanionOp::InboxAct);
+        r.item = Some("wa:1".into());
+        r.chat_action = Some(InboxAction {
+            kind: InboxActionKind::DeleteForMe,
+            message: Some("m1".into()),
+            emoji: None,
+            text: None,
+            choices: None,
+            targets: None,
+            value: None,
+        });
+        r.attachments = Some(vec![CompanionFile { name: "a.pdf".into(), data: "AAEC".into() }]);
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["chatAction"], serde_json::json!({"kind": "deleteForMe", "message": "m1"}));
+        assert_eq!(json["attachments"][0]["name"], "a.pdf");
+        assert_eq!(serde_json::from_value::<CompanionRequest>(json).unwrap(), r);
+        // Every kind has the Mac's name.
+        for (kind, name) in [
+            (InboxActionKind::MarkReadInNook, "markReadInNook"),
+            (InboxActionKind::PinInApp, "pinInApp"),
+            (InboxActionKind::MuteInApp, "muteInApp"),
+            (InboxActionKind::DeleteChat, "deleteChat"),
+            (InboxActionKind::MarkUnread, "markUnread"),
+        ] {
+            assert_eq!(serde_json::to_value(kind).unwrap(), name);
+        }
+        assert_eq!(
+            InboxAbility::parse(&["react".into(), "deleteForMe".into(), "teleport".into(), "markUnreadInApp".into()]),
+            vec![InboxAbility::React, InboxAbility::DeleteForMe, InboxAbility::MarkUnreadInApp]
+        );
+    }
+
+    #[test]
+    fn chat_actions_say_whether_they_are_complete() {
+        let action = |kind, message: Option<&str>| InboxAction {
+            kind,
+            message: message.map(Into::into),
+            emoji: None,
+            text: None,
+            choices: None,
+            targets: None,
+            value: None,
+        };
+        let mut react = action(InboxActionKind::React, Some("m"));
+        assert!(!react.is_complete());
+        react.emoji = Some("👍".into());
+        assert!(react.is_complete() && react.needs() == Some(InboxAbility::React));
+        let mut edit = action(InboxActionKind::Edit, Some("m"));
+        edit.text = Some("  ".into());
+        assert!(!edit.is_complete());
+        edit.text = Some("fixed".into());
+        assert!(edit.is_complete());
+        let mut forward = action(InboxActionKind::Forward, Some("m"));
+        forward.targets = Some((0..11).map(|i| i.to_string()).collect());
+        assert!(!forward.is_complete());
+        forward.targets = Some(vec!["a".into()]);
+        assert!(forward.is_complete() && forward.needs().is_none());
+        let mut vote = action(InboxActionKind::Vote, Some("m"));
+        assert!(!vote.is_complete());
+        vote.choices = Some(vec![]);
+        assert!(vote.is_complete(), "an empty choice takes the vote back");
+        assert!(!action(InboxActionKind::Pin, None).is_complete());
+        assert!(action(InboxActionKind::Archive, None).is_complete());
+        assert!(!action(InboxActionKind::Delete, None).is_complete());
+    }
+
+    #[test]
+    fn chat_answers_read_like_swift_writes_them() {
+        let json = r#"{"id":"A","ok":true,"inboxBefore":"m5","inboxMore":true,
+            "inboxMedia":[{"line":"m1","version":"v2","jpeg":"\/9j\/"}],
+            "inboxInfo":{"chat":"wa:1","members":["Ann","Bob"],"admins":["Ann"],"adminsOnly":false,
+                "details":[{"key":"phone","value":"+31"}],"blocked":false,"bot":false,"verified":true},
+            "inboxFound":[{"id":"wa:1","app":"whatsapp","appName":"WhatsApp","name":"Ann","preview":"hi","last":1,
+                "unread":0,"canSend":true,"waitsInApp":false,"abilities":["react"],"kind":"chats","pinned":true}],
+            "inboxLines":[{"id":"m1","text":"","date":1,"sender":"Ann","fromMe":false,"reactions":[],"media":"photo",
+                "thumb":"v2","poll":{"question":"Q","options":[{"text":"a","votes":2,"chosen":true}],"multiple":false,"counted":true}}]}"#;
+        let r: CompanionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.inbox_before.as_deref(), Some("m5"));
+        assert_eq!(r.inbox_more, Some(true));
+        assert_eq!(r.inbox_media.as_ref().unwrap()[0], InboxMedia { line: "m1".into(), version: "v2".into(), jpeg: "/9j/".into() });
+        let info = r.inbox_info.clone().unwrap();
+        assert!(info.about.is_none() && info.verified && info.details[0].key == "phone");
+        assert_eq!(r.inbox_found.as_ref().unwrap()[0]["abilities"][0], "react");
+        let poll: InboxPoll = serde_json::from_value(r.inbox_lines.as_ref().unwrap()[0]["poll"].clone()).unwrap();
+        assert_eq!(poll.options[0], InboxPollOption { text: "a".into(), votes: 2, chosen: true });
+        // What is nil stays out, as Swift leaves it out.
+        let back = serde_json::to_value(&info).unwrap();
+        assert!(back.get("about").is_none());
+        assert_eq!(back["adminsOnly"], false);
+        let plain = serde_json::to_value(CompanionResponse::success("x")).unwrap();
+        for key in ["inboxBefore", "inboxMedia", "inboxInfo", "inboxFound", "inboxMore"] {
+            assert!(plain.get(key).is_none(), "{key}");
+        }
+    }
+
+    #[test]
+    fn files_stay_within_what_the_mac_takes() {
+        use base64::Engine;
+        let file = |n: usize| CompanionFile { name: "a.txt".into(), data: base64::engine::general_purpose::STANDARD.encode(vec![1u8; n]) };
+        assert_eq!(file(10).size(), Some(10));
+        assert_eq!(file(CompanionFile::MAX_BYTES + 1).size(), None);
+        assert_eq!(file(0).size(), None);
+        assert_eq!(CompanionFile { name: " ".into(), data: "AA==".into() }.size(), None);
+        assert_eq!(CompanionFile { name: "a".into(), data: "not base64!".into() }.size(), None);
+    }
+
+    #[test]
+    fn paging_keeps_what_you_scrolled_back_to() {
+        use serde_json::json;
+        let lines = |ids: &[&str]| ids.iter().map(|i| json!({ "id": i })).collect::<Vec<_>>();
+        let ids = |v: Vec<serde_json::Value>| v.iter().map(|l| l["id"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        // Paged back to 1..6; the newest come again from 4 with a new 7: 1..3 stay before them.
+        let kept = lines(&["1", "2", "3", "4", "5", "6"]);
+        assert_eq!(ids(inbox_paging::merge(&lines(&["4", "5", "6", "7"]), &kept)), ["1", "2", "3", "4", "5", "6", "7"]);
+        // No overlap, or the same start: the newest only.
+        assert_eq!(ids(inbox_paging::merge(&lines(&["8", "9"]), &kept)), ["8", "9"]);
+        assert_eq!(ids(inbox_paging::merge(&lines(&["1", "2"]), &kept)), ["1", "2"]);
+        assert!(inbox_paging::merge(&[], &kept).is_empty());
+        // An older page goes before the message it was asked before, without doubles.
+        let kept = lines(&["4", "5"]);
+        assert_eq!(ids(inbox_paging::prepend(&lines(&["1", "2", "4"]), "4", &kept)), ["1", "2", "4", "5"]);
+        assert_eq!(ids(inbox_paging::prepend(&lines(&["1"]), "9", &kept)), ["4", "5"]);
+        // A page asked before a later message drops what came before it.
+        assert_eq!(ids(inbox_paging::prepend(&lines(&["3"]), "5", &kept)), ["3", "5"]);
     }
 
     #[test]

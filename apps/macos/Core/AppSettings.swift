@@ -402,6 +402,26 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(suggestChatReply, forKey: "suggestChatReply") }
     }
 
+    /// Nook reads the newest messages of an open conversation (a chat, an agent's session, Nook Chat) and offers what it
+    /// can do for them above the field, such as starting an agent on a task (`ChatActionSuggestion`).
+    @Published var suggestChatActions: Bool {
+        didSet { UserDefaults.standard.set(suggestChatActions, forKey: "suggestChatActions") }
+    }
+    /// Who looks for those suggestions: `.agent` is the brain itself (the default), `.api` a model of its own, so a
+    /// fast or cheap one can look while the brain stays what it is (`actionSuggestionBrain`).
+    @Published var actionSuggestionModel: TextGenerator {
+        didSet { UserDefaults.standard.set(actionSuggestionModel.stored, forKey: "actionSuggestionModel") }
+    }
+
+    /// The brain a suggestion runs on: nil for the brain itself, otherwise the chosen model, routed through
+    /// `ScreenBrain.routed` so the whole look (tools, privacy filter, model) follows it. Nil too while its key is missing.
+    var actionSuggestionBrain: BrainSelection? {
+        actionSuggestionModel.brain(hasKey: { self.hasKey(for: $0) })
+    }
+
+    /// Whether suggestions can be looked for: their own model is set up, or the brain is ready.
+    var actionSuggestionsReady: Bool { actionSuggestionBrain != nil || brainReady }
+
     /// The built-in themes, then the imported ones.
     var themes: [NookColorTheme] { NookColorTheme.builtIn + customThemeCache }
 
@@ -700,7 +720,10 @@ final class AppSettings: ObservableObject {
 
     /// Whether Nook can reason. Local models or local server backends do not require an API key.
     var brainReady: Bool {
-        if let routed = ScreenBrain.routed { return !routed.model.isEmpty }
+        if let routed = ScreenBrain.routed {
+            if routed.runtime == .external, routed.provider.needsKey { return hasKey(for: routed.provider) && !routed.model.isEmpty }
+            return !routed.model.isEmpty || routed.runtime == .lmstudio
+        }
         if useLocal { return !localModel.isEmpty }
         switch provider {
         case .claude: return hasKey(for: .claude)
@@ -836,6 +859,8 @@ final class AppSettings: ObservableObject {
         MathText.renderingEnabled = defaults.object(forKey: "renderMath") as? Bool ?? true
         richComposer = defaults.object(forKey: "richComposer") as? Bool ?? true
         suggestChatReply = defaults.object(forKey: "suggestChatReply") as? Bool ?? true
+        suggestChatActions = defaults.object(forKey: "suggestChatActions") as? Bool ?? true
+        actionSuggestionModel = TextGenerator(stored: defaults.string(forKey: "actionSuggestionModel"))
         let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
         nookLook = storedLook
         NookAppearance.shared.look = storedLook

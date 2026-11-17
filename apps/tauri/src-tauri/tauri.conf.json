@@ -34,8 +34,10 @@
     "active": true,
     "targets": "all",
     "category": "Productivity",
-    "shortDescription": "Je persoonlijke agent",
-    "longDescription": "Nook is een persoonlijke assistent bovenaan je scherm: chatten met je eigen of een externe AI, Nooks, geheugen, je coding-agents en je koppelingen. Niets gebeurt zonder jouw OK.",
+    "copyright": "Copyright (c) 2026 Michan van der Hoek",
+    "homepage": "https://github.com/IAMichan/Nook",
+    "shortDescription": "Your buddy for everything that needs your attention",
+    "longDescription": "Nook is the one calm place for everything that needs your attention: people, coding agents, music, your calendar and more. You keep the overview and steer instead of chase, and nothing happens without your OK.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,7 +46,21 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" }
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "windows/nsis-sidebar.bmp",
+        "headerImage": "windows/nsis-header.bmp",
+        "uninstallerIcon": "icons/icon.ico",
+        "uninstallerHeaderImage": "windows/nsis-header.bmp",
+        "installMode": "currentUser",
+        "languages": ["English", "Dutch", "German", "French", "Spanish"],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "bannerPath": "windows/wix-banner.bmp",
+        "dialogImagePath": "windows/wix-dialog.bmp"
+      }
     },
     "linux": {
       "deb": { "depends": ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1"] }

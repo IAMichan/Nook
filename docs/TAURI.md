@@ -1,7 +1,7 @@
 # The Tauri app: what has been ported from the Mac
 
 `apps/tauri` brings Nook to Windows, Linux, and Android. The macOS app is the specification; this list tracks what is
-already there.
+already there. [WINDOWS-PARITY.md](WINDOWS-PARITY.md) is the checklist of everything still missing.
 
 ✓ = ported and tested in the app · ◐ = partial, or only compiled and not actually run · ○ = not yet · — = not possible on this platform
 
@@ -137,7 +137,8 @@ game. Events can also be logged by hand.
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | Companion protocol (`CompanionModels`, `CompanionSeal`, `CompanionPush`) | ✓ (test vectors) | `core/src/companion/` |
-| Companion server on Windows and Linux (pairing the iPhone app): all workspace and hook sessions; approve, answer, steer, stop | ✓ (sessions from a terminal: approve and answer only) | `core/src/companion/`, `src-tauri/src/companion/backend.rs` |
+| Companion server on Windows and Linux (pairing the iPhone app or Nook on Android) with what the Mac offers: a kept live connection (`subscribe`, `watch`, `watchChat`, `watchConversation`), retries (`CommandReceipts`), `platform`; starting sessions, conversations, history, manage, steer, pictures, diff, terminals and files; Home, usage, music; Nook chat; the Chats tab; pull requests | ✓ (sessions from a terminal: approve, answer and end; no snooze or main thread; Chats: WhatsApp; pull requests: GitHub, without *Work on this*; no Live Activities, `requestUpdate`, `appIcons`, `attachments`) | `core/src/companion/` (`server.rs`, `live.rs`, `*_digest.rs`), `src-tauri/src/companion/` (`backend.rs`, `remote.rs`, `home.rs`, `nook_chat.rs`, `inbox.rs`, `pulls.rs`) |
+| Device key (`CompanionDeviceKey`): the server lists `deviceKey`, keeps the phone's public half (`bindKey`) and refuses its unsigned requests; Android makes a key per pairing, binds it and signs every request | ✓ (end to end over TCP, and CryptoKit's signatures as test vectors) | `core/src/companion/device_key.rs` |
 | Push notifications via APNs | ◐ (not tested against Apple) | `core/src/companion/apns.rs` |
 | Routes (`CompanionEndpoints`): the `.local` name and every LAN and Tailscale address in the code (`&a=`) and in each `hello`/`list` answer; an address in 100.64/10 counts as Tailscale only when its interface is named after it or `tailscale ip -4` names it | ✓ | `core/src/companion/server.rs` (`Reach`), `src-tauri/src/companion/reach.rs` |
 | Away from home through a relay (`CompanionRelayClient`): a room per paired phone and one for the pairing window, the relay in the code (`&r=`) and in each answer, keep-alive, reconnect after sleep or on another network, *Test relay* | ✓ (end to end against a fake relay that speaks the real mux; Nook's relay from the build setting `NOOK_RELAY_URL`; setting up your own relay on Cloudflare from Settings is not ported: deploy `apps/relay` and enter its address) | `core/src/companion/relay.rs` |
@@ -148,6 +149,9 @@ game. Events can also be logged by hand.
 | Secrets in the Android Keystore | ○ (private app folder without backup) | `platform/secrets.rs` |
 
 ## To do
+
+The full list of what is still missing for a 1:1 match with the Mac, as numbered items to work through one by one, is
+[WINDOWS-PARITY.md](WINDOWS-PARITY.md).
 
 - Error messages written on the Rust side are still partly Dutch; the interface itself has the Mac's five languages.
 - Real testing on Windows and on an Android device.

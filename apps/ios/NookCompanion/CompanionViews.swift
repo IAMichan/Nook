@@ -116,7 +116,7 @@ struct RootView: View {
             case "pulls": router.tab = .pulls
             case "settings": router.tab = .settings
             case "chats": router.tab = .chats
-            case "chat": router.tab = .chats; inboxPath = ["w1"]
+            case "chat": router.tab = .chats; inboxPath = [UserDefaults.standard.string(forKey: "NookDemoChat") ?? "w1"]
             default: break
             }
         }
@@ -177,6 +177,7 @@ struct RootView: View {
             }
         }
         .sheet(item: $client.snoozing) { session in SnoozeSheet(session: session) }
+        .modifier(SessionPromptHost())
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(client.notice ?? "") }
@@ -336,9 +337,9 @@ struct PairingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
-                    PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
-                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.", last: true)
+                    PairingStep(number: 1, text: "Open Nook on your computer: on a Mac, Settings › iPhone companion; on Windows or Linux, Settings › Companion. Turn it on.")
+                    PairingStep(number: 2, text: "Choose ‘Pair an iPhone’ on a Mac, or ‘Pair a phone’ on Windows or Linux: Nook shows a code for five minutes.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and computer need to be on the same Wi‑Fi.", last: true)
                 }
                 .card()
 
@@ -373,7 +374,7 @@ struct PairingView: View {
             .padding(.bottom, Theme.Spacing.xxl)
 
             Label {
-                Text("Everything between your iPhone and your Mac is encrypted end to end.")
+                Text("Everything between your iPhone and your computer is encrypted end to end.")
             } icon: {
                 Image(icon: "lock.shield")
             }
@@ -489,6 +490,11 @@ struct SessionListView: View {
     @AppStorage("nook.companion.shelf.working") private var workingOpen = true
     @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
     @AppStorage("nook.companion.shelf.older") private var olderOpen = true
+    @AppStorage("nook.companion.shelf.pinned") private var pinnedOpen = true
+    @AppStorage("nook.companion.shelf.snoozed") private var snoozedOpen = true
+    @AppStorage("nook.companion.shelf.settled") private var settledOpen = false
+    /// Sessions that work and need nothing from you on a shelf of their own, as the Mac's "Show working". Remembered.
+    @AppStorage("nook.companion.showWorking") private var showWorking = true
     /// The recent sessions under their project's folder, as the Mac's Agents list with "Group by project" on. Remembered.
     @AppStorage("nook.companion.groupByProject") private var groupByProject = true
     /// The project folders folded away (`ProjectGroups.encode`); remembered.
@@ -512,19 +518,26 @@ struct SessionListView: View {
     private struct Lanes {
         var all: [SessionDigest] = []
         var needsYou: [SessionDigest] = []
+        var pinned: [SessionDigest] = []
         var working: [SessionDigest] = []
         var rest: [SessionDigest] = []
+        var snoozed: [SessionDigest] = []
+        var settled: [SessionDigest] = []
     }
 
+    /// The Mac's shelves (`SessionShelf`): Pinned, what needs you, the rest, Working, Snoozed and Settled. A Mac without
+    /// `CompanionFeature.agentsTab` pins, snoozes and settles nothing, so its sessions stay where they always were.
     private var lanes: Lanes {
         var lanes = Lanes(all: ordered)
+        let now = Date().timeIntervalSince1970
         for session in lanes.all {
-            if Self.needsYou(session) {
-                lanes.needsYou.append(session)
-            } else if session.attention == "working" {
-                lanes.working.append(session)
-            } else {
-                lanes.rest.append(session)
+            switch SessionShelf.of(session, showWorking: showWorking, now: now) {
+            case .needsYou: lanes.needsYou.append(session)
+            case .pinned: lanes.pinned.append(session)
+            case .working: lanes.working.append(session)
+            case .active: lanes.rest.append(session)
+            case .snoozed: lanes.snoozed.append(session)
+            case .settled: lanes.settled.append(session)
             }
         }
         return lanes
@@ -598,10 +611,15 @@ struct SessionListView: View {
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
-                    ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                group(String(localized: "Working"), working, open: $workingOpen)
+                group(String(localized: "Pinned"), lanes.pinned, open: $pinnedOpen)
+                if !needsYou.isEmpty {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                }
                 if groupByProject {
                     projectShelves(rest)
                 } else {
@@ -617,6 +635,9 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
+                group(String(localized: "Working"), working, open: $workingOpen)
+                group(String(localized: "Snoozed"), lanes.snoozed, open: $snoozedOpen)
+                group(String(localized: "Settled"), lanes.settled, open: $settledOpen)
                 olderShelves(restCount: rest.count)
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
@@ -716,6 +737,13 @@ struct SessionListView: View {
             })) {
                 Label("Group by project", systemImage: "folder")
             }
+            // The Mac's "Show working": sessions at work on a shelf of their own, or among the others.
+            Toggle(isOn: Binding(get: { showWorking }, set: { value in
+                Haptics.tap()
+                withAnimation(Theme.reveal) { showWorking = value }
+            })) {
+                Label("Show working", systemImage: "bolt")
+            }
         } label: {
             Image(icon: "line.3.horizontal.decrease")
                 .font(Theme.textFont(14, .medium))
@@ -775,7 +803,8 @@ struct SessionListView: View {
             .padding(.horizontal, Theme.Spacing.md)
             .contextMenu {
                 rowShortcuts(session)
-                SessionQuickActions(session: session)
+                // The Mac's row menu, in its order (`SessionMenu.row`).
+                SessionActionsMenu(session: session, place: .row)
             }
             .sessionSwipeActions(session)
     }

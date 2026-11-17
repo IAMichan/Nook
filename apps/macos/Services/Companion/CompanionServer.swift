@@ -32,6 +32,9 @@ final class CompanionServer: ObservableObject {
     private let queue = DispatchQueue(label: "nook.companion.server")
     /// Connections a phone subscribed on, at most one per phone.
     private(set) var streams: [CompanionPeer] = []
+    /// Phones that asked for every list of the Chats tab (`inbox` with `allow`, `CompanionFeature.chatActions`): they get
+    /// the status updates and channels too, which an older phone would mix in with the chats.
+    var inboxAllKinds: Set<String> = []
     /// Phones being removed: told so, and refused from that moment on, while their key lives on just long enough to seal
     /// the message that tells them.
     private var revoking: Set<String> = []
@@ -260,6 +263,14 @@ final class CompanionServer: ObservableObject {
             connection.cancel()
             return
         }
+        // A phone that bound its device key signs every request with it (`CompanionDeviceKey`): without a valid signature
+        // the pairing key alone (a copy of it) is not enough.
+        if !pairing, CompanionDeviceKey.needsSignature(request.op), let deviceKey = store.deviceKey(of: claimed),
+           !CompanionDeviceKey.verify(envelope: frame, publicKey: deviceKey) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "signature", "device": claimed])
+            send(.failure(request.id, .notAllowedFromPhone, message: "signature"), key: key, deviceID: claimed, on: connection)
+            return
+        }
         // Every answer to this request, and on a subscribe all that follows on it, compressed when large.
         let compress = request.compression == true
         peer.compression = compress
@@ -437,16 +448,18 @@ final class CompanionServer: ObservableObject {
     /// pass and only when a phone may see it, so a Mac without such a phone does no work here.
     private func pushChats() {
         guard let app, !streams.isEmpty else { return }
-        var inbox: CompanionResponse?
+        var inboxes: [Bool: CompanionResponse] = [:]
         var conversations: [ChatDigest]?
-        var lines: [String: (lines: [InboxLine], typing: [InboxTypist])?] = [:]
+        var lines: [String: (lines: [InboxLine], typing: [InboxTypist], more: Bool)?] = [:]
         for peer in streams {
             guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID, mayPush(peer) else { continue }
             let granted = scopes(of: deviceID)
             var update = CompanionResponse(id: id, ok: true)
             var changed = false
             if granted.contains(.chats) {
-                if inbox == nil { inbox = liveInbox(app: app) }
+                let allKinds = inboxAllKinds.contains(deviceID)
+                if inboxes[allKinds] == nil { inboxes[allKinds] = liveInbox(app: app, allKinds: allKinds) }
+                let inbox = inboxes[allKinds]
                 if let list = inbox?.inbox, list != peer.sentInbox {
                     // The first pass after subscribing only takes note: the phone asks for the inbox itself then.
                     if peer.sentInbox != nil {
@@ -463,6 +476,7 @@ final class CompanionServer: ObservableObject {
                         update.inboxLines = current.lines
                         update.inboxTyping = current.typing
                         update.inboxChat = chat
+                        update.inboxMore = current.more
                         peer.sentChatLines = current.lines
                         peer.sentChatTyping = current.typing
                         changed = true
@@ -474,6 +488,7 @@ final class CompanionServer: ObservableObject {
                 if let list = conversations, list != peer.sentConversations {
                     if peer.sentConversations != nil {
                         update.conversations = list
+                        update.conversationsArchived = archivedConversations(app)
                         changed = true
                     }
                     peer.sentConversations = list
@@ -697,6 +712,7 @@ final class CompanionServer: ObservableObject {
                 let allow = request.allow == true
                 // On a denial the request's text is the reason you gave with it.
                 if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow,
+                                                      always: request.decision == ApprovalChoice.always.rawValue,
                                                       reason: allow ? "" : request.text ?? "") {
                     return .failure(request.id, error)
                 }
@@ -714,7 +730,9 @@ final class CompanionServer: ObservableObject {
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
             _ = workspace.claimCommand(command, provisional: .decided)
-            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
+            // "Always allow" (`CompanionFeature.agentsTab`) where the agent can remember it; else allow this once.
+            let always = allow && request.decision == ApprovalChoice.always.rawValue && pending.canAlways
+            app.approvals.decide(run: runID, requestID: pending.id, allow ? (always ? .always : .allow) : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
             workspace.recordCommand(command, .decided)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
@@ -727,6 +745,8 @@ final class CompanionServer: ObservableObject {
             guard let question = workspace.questions[runID]?.first(where: { $0.id == request.item }) else {
                 return .failure(request.id, .unknownItem)
             }
+            // Every question at once, with multi-select (`CompanionFeature.agentsTab`).
+            if let answered = answerAll(request, runID: runID, pending: question, app: app) { return answered }
             guard question.questions.count == 1, let first = question.questions.first,
                   let text = CompanionPolicy.cleanMessage(request.text ?? "") else {
                 return .failure(request.id, .notAllowedFromPhone)
@@ -794,6 +814,10 @@ final class CompanionServer: ObservableObject {
             return ask(request, app: app)
         case .chatStop:
             return stopChat(request, app: app)
+        case .chatAct:
+            return chatAct(request, app: app)
+        case .chatSearch:
+            return chatSearch(request, app: app)
         case .home:
             return home(request, app: app)
         case .usage:
@@ -801,13 +825,24 @@ final class CompanionServer: ObservableObject {
         case .music:
             return music(request, app: app)
         case .inbox:
-            return inbox(request, app: app)
+            if request.allow == true { inboxAllKinds.insert(deviceID) } else { inboxAllKinds.remove(deviceID) }
+            return inbox(request, app: app, allKinds: request.allow == true)
         case .inboxChat:
             return await inboxChat(request, app: app)
         case .inboxSend:
             return await inboxSend(request, app: app)
         case .inboxMark:
-            return inboxMark(request, app: app)
+            return inboxMark(request, app: app, allKinds: inboxAllKinds.contains(deviceID))
+        case .inboxAct:
+            return await inboxAct(request, app: app, allKinds: inboxAllKinds.contains(deviceID))
+        case .inboxOlder:
+            return await inboxOlder(request, app: app)
+        case .inboxMedia:
+            return await inboxMedia(request)
+        case .inboxInfo:
+            return inboxInfo(request, app: app)
+        case .inboxSearch:
+            return inboxSearch(request, app: app)
         case .watchChat:
             return await watchChat(request, deviceID: deviceID, app: app)
         case .watchConversation:
@@ -822,12 +857,22 @@ final class CompanionServer: ObservableObject {
             return await pullAct(request, app: app)
         case .pullWork:
             return await pullWork(request, app: app)
+        case .notifySettings:
+            return notifySettings(request, deviceID: deviceID, app: app)
+        case .notifySet:
+            return notifySet(request, deviceID: deviceID, app: app)
         case .history:
             return history(request, app: app)
         case .fileData:
             return await fileData(request, app: app)
         case .entry:
             return await entry(request, app: app)
+        case .bindKey:
+            guard let text = request.text, let publicKey = Data(base64Encoded: text),
+                  CompanionDeviceKey.isValidPublicKey(publicKey) else { return .failure(request.id, .badRequest) }
+            let bound = CompanionStore.shared.bindKey(device: deviceID, publicKey: publicKey)
+            if bound { audit("device_key", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "") }
+            return CompanionResponse(id: request.id, ok: true, message: bound ? "bound" : "other")
         }
     }
 
@@ -837,6 +882,8 @@ final class CompanionServer: ObservableObject {
         response.protocolVersion = CompanionProtocol.version
         response.oldestPhone = CompanionProtocol.oldestPhone
         response.appVersion = CompanionProtocol.appVersion
+        // What this computer is, so a phone paired with Nook on Windows or Linux too shows each with its own icon.
+        response.platform = CompanionPlatform.wireMac
         return response
     }
 
@@ -901,22 +948,29 @@ final class CompanionServer: ObservableObject {
     private func digest(_ run: WorkspaceRun, workspace: WorkspaceManager, now: Date) -> SessionDigest {
         var items: [SessionDigest.Item] = []
         for pending in workspace.approvals[run.id] ?? [] {
-            items.append(.init(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
-                               detail: CompanionPolicy.excerpt(pending.tool), canAllow: canAllow(pending), options: []))
+            let allow = canAllow(pending)
+            var item = SessionDigest.Item(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
+                                          detail: CompanionPolicy.excerpt(pending.tool), canAllow: allow, options: [])
+            // "Always allow" where the agent can remember it, and only for what the phone may allow at all.
+            item.canAlways = allow && pending.canAlways ? true : nil
+            items.append(item)
         }
         for question in workspace.questions[run.id] ?? [] {
             let first = question.questions.first
             let single = question.questions.count == 1
             let options = single ? (first?.options ?? []) : []
-            items.append(.init(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
-                               detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
-                               options: options.map(\.label),
-                               optionPreviews: SessionDigest.Item.previews(options.map { QuestionPreview.display($0.preview) })))
+            var item = SessionDigest.Item(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
+                                          detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
+                                          options: options.map(\.label),
+                                          optionPreviews: SessionDigest.Item.previews(options.map { QuestionPreview.display($0.preview) }))
+            // Every question with multi-select, for a phone that answers them all (`CompanionFeature.agentsTab`).
+            item.questions = Self.questions(question)
+            items.append(item)
         }
         // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
         // also keep them all in memory.
         let lastAnswer = workspace.lastAnswer(run.id)
-        return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
+        var digest = SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
                              attention: String(describing: workspace.attention(run, unseen: false, now: now)),
                              folder: (run.workingDirectory as NSString).lastPathComponent, branch: run.branch,
                              updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
@@ -926,7 +980,13 @@ final class CompanionServer: ObservableObject {
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970,
                              turn: workspace.turnIdentity(run.id),
-                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory),
+                             agentID: run.provider.rawValue,
+                             modelChoice: run.autoModel == true ? AutoModel.id : run.model)
+        // The Agents tab's menus, shelves, composer choices and queue (`CompanionFeature.agentsTab`).
+        digest.actions = (digest.actions ?? []) + Self.tabActions(run, workspace: workspace).map(\.rawValue)
+        Self.addTabFields(&digest, run: run, workspace: workspace, now: now)
+        return digest
     }
 }
 

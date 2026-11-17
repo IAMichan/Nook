@@ -8,7 +8,7 @@ enum ChatTools {
     static let planTool = "update_plan"
 
     static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void, mailAddress: @escaping (String) async -> String? = { _ in nil },
-                      onPlan: @escaping ([RunTaskStep]) -> Void) -> [ToolSpec] {
+                      ownAddress: @escaping () -> String = { "" }, onPlan: @escaping ([RunTaskStep]) -> Void) -> [ToolSpec] {
         let point: [String: Any] = [
             "type": "object",
             "properties": [
@@ -62,7 +62,19 @@ enum ChatTools {
                         "from": ["type": "string", "description": "The user's own address to send from, only when they name one (\"vanuit mijn gmail\", \"from work@x.nl\"). Empty: the default account."],
                         "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
                         "body": ["type": "string", "description": "Full text of the email, excluding subject line."],
-                        "reply_to": ["type": "string", "description": "For a reply: the id of the mail it answers (the part after \"id:\" in inbox_mail, search_mail or read_mail). Empty for a new mail."]
+                        "reply_to": ["type": "string", "description": "For a reply: the id of the mail it answers (the part after \"id:\" in inbox_mail, search_mail or read_mail). Empty for a new mail."],
+                        "invite": [
+                            "type": "object",
+                            "description": "Makes this mail a real calendar invitation for everyone in to and cc (an invite.ics they accept or decline in their own calendar). Use it whenever the user plans a meeting, call or appointment with other people and wants them invited. Also put the appointment in the user's own calendar with create_event (same title and times).",
+                            "properties": [
+                                "title": ["type": "string", "description": "Title of the appointment."],
+                                "start": ["type": "string", "description": "Start, ISO 8601 with timezone (from find_time or check_availability)."],
+                                "end": ["type": "string", "description": "End, ISO 8601 with timezone. Default one hour after start."],
+                                "location": ["type": "string", "description": "Place or video link, optional."],
+                                "notes": ["type": "string", "description": "Agenda or details, optional."]
+                            ],
+                            "required": ["title", "start"]
+                        ]
                     ],
                     "required": ["subject", "body"]
                 ],
@@ -82,8 +94,21 @@ enum ChatTools {
                         from: ((input["from"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     )
                     draft.replyTo = MailActions.ids([(input["reply_to"] as? String) ?? ""]).first ?? ""
+                    var invited = ""
+                    if let fields = input["invite"] as? [String: Any] {
+                        let attendees = MailSender.addresses(draft.to) + MailSender.addresses(draft.cc)
+                        let organizer = draft.from.isEmpty ? ownAddress() : (MailSender.addresses(draft.from).first ?? "")
+                        guard let event = CalendarInvite.event(from: fields, attendees: attendees, organizer: organizer, parse: NookDates.parse) else {
+                            throw NookError("The invitation needs a title and a start time (ISO 8601).")
+                        }
+                        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nook-invites", isDirectory: true)
+                        draft.attachments.append(try CalendarInvite.write(event, in: folder))
+                        draft.invite = event
+                        invited = " It carries a calendar invitation (\(event.title), \(NookDates.iso(event.start))) for "
+                            + (attendees.isEmpty ? "nobody yet: the address is missing, say so" : attendees.joined(separator: ", ")) + "."
+                    }
                     onMail(draft)
-                    return "The email draft is displayed in chat. The user will review it and send it using the Send button."
+                    return "The email draft is displayed in chat. The user will review it and send it using the Send button." + invited
                 }
             ),
             ToolSpec(

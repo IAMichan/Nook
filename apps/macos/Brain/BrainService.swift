@@ -258,19 +258,22 @@ final class BrainService {
     /// "@nook …" in a chat: the chosen brain looks up what the request refers to ("what Gijs said in the mail") with the
     /// read tools and proposes what it asks to be done ("make a reminder for this") with the action tools, as Nook Chat
     /// does. Actions are never run here: they come back in the plan for the user's own click. The plan's text is the
-    /// message for the field. Nil when the brain is not ready.
-    func writeInChat(system: String, prompt: String, request: String, tools: [ToolSpec]) async throws -> BrainPlan? {
+    /// message for the field. `extra`: tools offered ahead of the rest (`ChatActionSuggestion.preferredTools`); `rounds`:
+    /// how many tool rounds it may take. Nil when
+    /// the brain is not ready.
+    func writeInChat(system: String, prompt: String, request: String, tools: [ToolSpec],
+                     preferring extra: [String] = [], rounds: Int = 6) async throws -> BrainPlan? {
         guard settings.brainReady else { return nil }
         let profile = settings.brainProfile
         // What the request is about, recognized on the Mac ("herinner me…" → create_reminder), goes first, as in the chat.
         let intent = ChatIntent.detect(request, history: [])
-        let preferred = intent.tools + ["search_mail", "read_mail", "chat_inbox", "list_events"]
+        let preferred = intent.tools + extra + ["search_mail", "read_mail", "chat_inbox", "list_events"]
         let offered = Self.withCompanions(Self.prioritized(tools, for: request, limit: min(profile.maxTools, 28),
                                                            preferred: preferred + Research.companions(of: preferred)),
                                           from: tools)
         let runner = ToolRunner(
             tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
-            limits: .init(rounds: 6, calls: 14, repairs: 2),
+            limits: .init(rounds: rounds, calls: 14, repairs: 2),
             validate: { tool, input, schema in ActionGate.problems(tool: tool, input: input, schema: schema, parseDate: NookDates.parse) },
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
@@ -397,11 +400,11 @@ final class BrainService {
         let conversation: ModelConversation
         switch selection.provider {
         case .claudeCode:
-            conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
+            conversation = ClaudeCodeBrain.conversation(model: selection.model, system: system,
                                                         prompt: Self.windowPrefix(history) + prompt,
                                                         allowWebSearch: webAllowed)
         case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
-            conversation = SubscriptionBrain.conversation(provider: selection.provider, model: settings.activeProviderModel,
+            conversation = SubscriptionBrain.conversation(provider: selection.provider, model: selection.model,
                                                           system: system,
                                                           prompt: Self.windowPrefix(history) + prompt,
                                                           allowWebSearch: webAllowed)
@@ -412,8 +415,8 @@ final class BrainService {
         case .claude:
             guard let key = settings.key(for: .claude), !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
             conversation = AnthropicConversation(
-                model: settings.model, system: system, history: history, prompt: prompt, images: images,
-                webSearchTool: webAllowed ? Self.webSearchTool(for: settings.model) : nil, maxTokens: 8192,
+                model: selection.model, system: system, history: history, prompt: prompt, images: images,
+                webSearchTool: webAllowed ? Self.webSearchTool(for: selection.model) : nil, maxTokens: 8192,
                 stream: { [weak self] body, onPartial in
                     guard let self else { throw CancellationError() }
                     return try await self.stream(body, key: key, onText: onPartial)
@@ -502,7 +505,7 @@ final class BrainService {
         let rank = Dictionary(preferred.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
         let wanted = tools.filter { rank[$0.name] != nil }.sorted { rank[$0.name]! < rank[$1.name]! }
         guard tools.count > limit else { return wanted + tools.filter { rank[$0.name] == nil } }
-        let core: Set<String> = ["compose_mail", "show_chart", "create_event", "create_reminder", "check_availability", "list_events", "read_screen", "add_open_loop", "app_menu_command"]
+        let core: Set<String> = ["compose_mail", "show_chart", "create_event", "create_reminder", "check_availability", "find_time", "list_events", "read_screen", "add_open_loop", "app_menu_command"]
         let words = Set(request.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 })
         func score(_ tool: ToolSpec) -> Int {
             let haystack = (tool.name.replacingOccurrences(of: "_", with: " ") + " " + tool.description).lowercased()
@@ -651,7 +654,7 @@ final class BrainService {
         } else if let first = intent.tools.first(where: { names.contains($0) }) {
             lines.append("For this request, \(first) is the most likely tool if the context does not already answer it.")
         }
-        let dated: Set<String> = ["create_event", "update_event", "create_reminder", "add_open_loop", "check_availability", "list_events"]
+        let dated: Set<String> = ["create_event", "update_event", "create_reminder", "add_open_loop", "check_availability", "find_time", "list_events"]
         if names.contains(where: { dated.contains($0) }) {
             lines.append(ChatIntent.dateSheet() + " Use these dates; dates are ISO 8601 with timezone offset.")
         }
@@ -739,7 +742,13 @@ final class BrainService {
         - Mouse and keyboard: when neither a tool nor a menu command can do it (a switch or option in System Settings, a setting in another app, a button in a window), read the window with read_ui and propose the clicks, typing and key presses with control_ui, naming elements by their exact label from read_ui (when read_ui shows little, look_ui gives a picture of the window and every text on it with its position, to click with x and y; drag and hover work too). The user approves each batch of steps; afterwards Nook reads the window again and you continue with the next batch until the goal is reached, then say what changed. For System Settings, open the pane first (control_ui action open with an x-apple.systempreferences: url, or click it in the sidebar, or type in its search field). Focus (Do Not Disturb), Wi-Fi and Bluetooth are switched on and off in Control Center (read_ui and control_ui with app \"Control Center\"): System Settings only configures them. App names work in any language. Nook's own settings go through change_setting, never through control_ui. Never type passwords, never act in a password or login dialog: ask the user to do that part.
         - Chats and other apps: search_messages / read_messages (iMessage and sms), search_whatsapp / read_whatsapp, search_bear / read_bear, search_things search the whole history of those apps, not only what is on screen. For unread chats or who is waiting for a reply ("heb ik chats openstaan?"), use whatsapp_open_chats / messages_open_chats. Other apps: read_app, files via search_files, and any connected MCP server.
         - When the user names a source ("in WhatsApp", "in my mail"), answer about that source only. If Nook could not read it, say so and why; never answer yes or no about it from other sources, and never present files, notes or code that merely mention its name as the answer.
-        - Calendar: use check_availability for free/busy checks across all calendars; list_events to inspect dates; create_event and update_event to manage events.
+        - Calendar: use check_availability for free/busy checks across all calendars; find_time to find concrete free times for something new (it returns exact start and end, never compute gaps yourself); list_events to inspect dates; create_event and update_event to manage events. Inviting other people: compose_mail to them with invite (a real calendar invitation they accept in their own calendar), next to create_event for the user's own calendar.
+        - Arranging things as a secretary (do the work, the user only approves):
+          - Meeting someone ("plan een afspraak met Jan", "find a time for lunch with Sara next week"): find their address (search_contacts, or mail and chats with them), call find_time with a fitting duration and window (a buffer for a meeting elsewhere), offer two or three options in one short list, and in the same answer prepare the first option: create_event plus compose_mail with invite, so one click books it. When they pick another option, change both.
+          - Planning a day or week ("plan mijn dag", "when do I fit in the report?"): read the open loops, reminders due and the calendar, call find_time for the work, and propose the blocks as create_event steps in one plan (most urgent first, breaks between long blocks), with a one-line overview of the day.
+          - Moving or cancelling: find the event (list_events), propose update_event or delete_event, and draft a short message to the people it affects (compose_mail, or the chat app they use).
+          - Follow-ups ("remind me if Jan does not answer", "chase the invoice on Friday"): add_open_loop or create_reminder with the due date, or a schedule_task once at that time with the check as prompt, so it is not forgotten.
+          - A request with several parts ("organize the team dinner": a date, a place, the invitations, a reminder): use update_plan, do every part you can with tools, and end with what the user still has to decide in one or two lines.
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
         - Step-by-step plan: for a request that takes several steps (three or more tool calls, research across several sources, a task with distinct parts), call update_plan first with every step, keep it current as each step finishes, and mark every step completed before you answer. The user sees it as a live checklist. Skip it for simple questions and single actions.
         - Coding Agents: list_agent_sessions and read_agent_session show the user's agent sessions in Nook (Claude Code, Codex, Gemini CLI and the others) and what they did; message_agent_session follows one up and start_agent_session starts a new one on a task (both are actions the user approves). list_remote_machines shows the machines sessions can run on over SSH, add_remote_machine adds one (an action the user approves), and start_agent_session with machine runs a session there. Never ask for an SSH password in the chat: the user types it in Nook itself.

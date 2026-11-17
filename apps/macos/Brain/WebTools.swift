@@ -136,9 +136,9 @@ final class WebTools {
     }
 
     // Constant patterns, compiled once. A regular expression is immutable and safe to share between threads.
-    nonisolated(unsafe) private static let resultLink = try? NSRegularExpression(
+    nonisolated private static let resultLink = try? NSRegularExpression(
         pattern: #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
-    nonisolated(unsafe) private static let resultSnippet = try? NSRegularExpression(
+    nonisolated private static let resultSnippet = try? NSRegularExpression(
         pattern: #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, options: [.dotMatchesLineSeparators])
 
     /// DuckDuckGo's HTML page: each result contains a link with class "result__a" and snippet text with class "result__snippet".

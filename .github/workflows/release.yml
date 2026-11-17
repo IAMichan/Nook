@@ -549,18 +549,14 @@ jobs:
           sha256sum -- * > SHA256SUMS-Windows-Linux.txt
           cat SHA256SUMS-Windows-Linux.txt
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -- *
-          # The page was written for the Mac; add the other downloads under it.
-          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          # The page already has the Windows and Linux buttons on top (scripts/release-notes.sh); add how to install them.
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
           {
             echo
-            echo "## Windows and Linux"
+            echo "## Install on Windows or Linux"
             echo
-            echo "Not code-signed yet: Windows SmartScreen asks for **More info › Run anyway** on the first launch."
-            echo
-            echo "- Windows: [installer (.exe)]($base/Nook-$VERSION-Windows-setup.exe) · [.msi]($base/Nook-$VERSION-Windows.msi)"
-            echo "- Linux: [.deb]($base/Nook-$VERSION-Linux.deb) · [.AppImage]($base/Nook-$VERSION-Linux.AppImage)"
-            echo "- [SHA-256 checksums]($base/SHA256SUMS-Windows-Linux.txt)"
+            echo "- **Windows:** run \`Nook-$VERSION-Windows-setup.exe\`. It is not code-signed yet, so SmartScreen asks for **More info › Run anyway** on the first launch."
+            echo "- **Linux:** make the AppImage executable (\`chmod +x Nook-$VERSION-Linux.AppImage\`) and open it, or install the .deb with \`sudo apt install ./Nook-$VERSION-Linux.deb\`."
           } >> notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
       - name: Build provenance

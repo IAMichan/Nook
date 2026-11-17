@@ -47,6 +47,7 @@ pub(super) async fn call(
         BridgeTool::NookChatList => nook_chat_list(app, a),
         BridgeTool::NookChatRead => nook_chat_read(app, a),
         BridgeTool::NookChatSend => nook_chat_send(app, a, caller, context).await,
+        BridgeTool::ChatList | BridgeTool::ChatRead | BridgeTool::ChatSend => chats(app, tool, a, caller, context).await,
         BridgeTool::TakeOverScreen => take_over_screen(app, a, caller, context).await,
         _ => Err("Unknown Nook tool.".into()),
     }
@@ -90,6 +91,35 @@ fn nook_tools(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, Str
 /// Text from the user's apps as an agent gets it.
 fn data(text: &str) -> ToolResult {
     ToolResult::text(nook_core::brain::text::wrap_untrusted(&rules::shielded(text)))
+}
+
+/// `chat_list`, `chat_read` and `chat_send`: Nook's own chat tools under names for agents, run through `nook_use`, so a
+/// read is shielded and a message approved exactly as there.
+async fn chats(
+    app: &AppHandle,
+    tool: BridgeTool,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    let (name, input) = rules::chat_use(tool, a)?;
+    if !agent_tools(app).iter().any(|(t, _)| t.name == name) {
+        let ctx = ToolCtx::new(app, "");
+        let offered = tools::all_tools(&ctx).iter().any(|t| t.name == name);
+        return Err(if offered {
+            "The user keeps their chats on this device (Settings › Privacy): agents cannot read or send them.".into()
+        } else {
+            "Nook has no chats for agents yet. Ask the user to link WhatsApp in Nook.".into()
+        });
+    }
+    let mut use_args = Map::new();
+    use_args.insert("tool".into(), Value::String(name.into()));
+    use_args.insert("arguments".into(), input);
+    let mut result = nook_use(app, &use_args, caller, context).await?;
+    if tool == BridgeTool::ChatList && !result.is_error {
+        result.text.push_str("\n\nchat_send can write in these WhatsApp chats. Nook Chat itself: nook_chat_list and nook_chat_send.");
+    }
+    Ok(result)
 }
 
 async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller, context: &Context) -> Result<ToolResult, String> {

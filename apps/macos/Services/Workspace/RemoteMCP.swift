@@ -21,8 +21,10 @@ enum RemoteAccessLevel: String, CaseIterable, Codable, Sendable {
         .orchestratorCapabilities, .nookChatList, .nookChatRead, .sessionWait,
     ]
     static let steering: Set<BridgeTool> = [.sessionSend, .sessionStart, .sessionQuestions, .sessionOrganize]
+    /// The user's chat apps sit here, reads included: they hold other people's messages, not Nook's own.
     static let apps: Set<BridgeTool> = [
-        .nookTools, .nookUse, .nookChatSend, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
+        .nookTools, .nookUse, .nookChatSend, .chatList, .chatRead, .chatSend, .scheduleTask, .updateScheduledTask,
+        .runScheduledTaskNow, .watchPullRequest,
     ]
 
     var tools: Set<BridgeTool> {

@@ -102,7 +102,7 @@ final class RetrievalLedger {
     private static var recent: [String: Cached] = [:]
     static var cacheLifetime: TimeInterval = 90
     /// Tools requiring fresh real-time data (live screen contents, pre-booking availability checks).
-    static let neverCached: Set<String> = ["read_screen", "check_availability", "list_open_loops"]
+    static let neverCached: Set<String> = ["read_screen", "check_availability", "find_time", "list_open_loops"]
 
     static func clearCache() { recent = [:] }
 

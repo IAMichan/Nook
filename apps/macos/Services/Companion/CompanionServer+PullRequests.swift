@@ -36,7 +36,10 @@ extension CompanionServer {
                    state: item.state == .open ? (item.draft ? "draft" : "open") : item.state.rawValue, ci: item.ci.rawValue,
                    review: item.review.rawValue, conflict: item.conflict, additions: item.additions, deletions: item.deletions,
                    updated: item.updated?.timeIntervalSince1970, group: group.rawValue, headBranch: item.headBranch,
-                   baseBranch: item.baseBranch)
+                   baseBranch: item.baseBranch, labels: item.labels.isEmpty ? nil : Array(item.labels.prefix(12)),
+                   labelColors: item.labelColors.isEmpty ? nil : item.labelColors.filter { item.labels.prefix(12).contains($0.key) },
+                   created: item.created?.timeIntervalSince1970, comments: item.comments, checksPassed: item.checksPassed,
+                   checksTotal: item.checksTotal)
     }
 
     static func digest(_ link: PullRequestLink) -> PullDigest {
@@ -64,7 +67,7 @@ extension CompanionServer {
             let detail = try await reader.read()
             var marks = PullRequestViewedFiles.load()
             PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
-            return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
+            return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url, github: reader.isGitHub))
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
         }
@@ -83,7 +86,7 @@ extension CompanionServer {
                 var marks = PullRequestViewedFiles.load()
                 PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
                 PullRequestViewedSync.toggle(action.kind == .viewed, file: file, detail: detail, accountID: reader.account, marks: &marks)
-                return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
+                return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url, github: reader.isGitHub))
             case .approve, .requestChanges, .comment:
                 let detail = try await reader.read()
                 if let head = action.head, !head.isEmpty, head != detail.headSHA {
@@ -102,13 +105,16 @@ extension CompanionServer {
                 try await reader.perform(review, detail: detail)
                 audit("pr_review", "\(detail.repo)#\(detail.number) · \(verdict.rawValue)" + (notes.isEmpty ? "" : " · \(notes.count) comments"))
                 let fresh = try await reader.read()
-                return CompanionResponse(id: request.id, ok: true, pull: Self.digest(fresh, url: reader.url))
+                return CompanionResponse(id: request.id, ok: true, pull: Self.digest(fresh, url: reader.url, github: reader.isGitHub))
             case .merge:
                 let merged = try await reader.merge(head: action.head ?? "", method: action.method.flatMap(PullRequestMergeMethod.init(rawValue:)))
                 audit("pr_merge", merged)
                 let fresh = try? await reader.read()
                 return CompanionResponse(id: request.id, ok: true, message: "merged",
-                                         pull: fresh.map { Self.digest($0, url: reader.url) })
+                                         pull: fresh.map { Self.digest($0, url: reader.url, github: reader.isGitHub) })
+            case .close, .reopen, .ready, .draft, .autoMergeOn, .autoMergeOff, .updateBranch, .rebaseBranch, .rerunFailed,
+                 .deleteBranch, .note, .reply, .resolve, .unresolve:
+                return try await menuAction(action, request: request, reader: reader)
             }
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
@@ -150,9 +156,67 @@ extension CompanionServer {
         }
     }
 
+    /// One of the Mac's menu actions (`PullDetailDigest.actions`), only when its menu would offer it now; the branch
+    /// actions only at the head the phone saw. Answered with the pull request as it is after it.
+    private func menuAction(_ action: CompanionPullAction, request: CompanionRequest, reader: PullReader) async throws -> CompanionResponse {
+        let detail = try await reader.read()
+        guard PullActionRules.allowed(Self.facts(detail, github: reader.isGitHub)).contains(action.kind) else {
+            return .failure(request.id, .notAllowedFromPhone)
+        }
+        if [.updateBranch, .rebaseBranch].contains(action.kind), action.head != detail.headSHA {
+            return .failure(request.id, .failed, message: tr("companion.phone.pr.movedOn"))
+        }
+        let body = action.reviewBody
+        let target = "\(detail.repo)#\(detail.number)"
+        switch action.kind {
+        case .rerunFailed:
+            try await reader.rerunFailed(Self.failedRuns(detail), repo: detail.repo)
+        case .reply, .resolve, .unresolve:
+            let thread = Self.conversation(detail).1.first { $0.id == action.thread }
+            let opener = detail.events.first { $0.id == action.thread }
+            guard let thread, let opener else { return .failure(request.id, .unknownItem) }
+            if action.kind == .reply {
+                guard thread.canReply, let rest = opener.restComment else { return .failure(request.id, .notAllowedFromPhone) }
+                try await reader.perform(.reply(to: rest.id, body: body), detail: detail)
+            } else {
+                let id = opener.threadID ?? detail.events.first { ($0.replyTo == opener.id) && $0.threadID != nil }?.threadID
+                guard thread.canResolve, let id else { return .failure(request.id, .notAllowedFromPhone) }
+                try await reader.perform(.setThreadResolved(threadID: id, resolved: action.kind == .resolve), detail: detail)
+            }
+        default:
+            guard let mapped = Self.forgeAction(action, detail: detail) else { return .failure(request.id, .badRequest) }
+            try await reader.perform(mapped, detail: detail)
+        }
+        audit("pr_" + action.kind.rawValue, target)
+        let fresh = try await reader.read()
+        return CompanionResponse(id: request.id, ok: true, pull: Self.digest(fresh, url: reader.url, github: reader.isGitHub))
+    }
+
+    /// The forge action of a menu action from the phone; nil for one that is not a single forge call.
+    static func forgeAction(_ action: CompanionPullAction, detail: PullRequestDetail) -> PullRequestAction? {
+        switch action.kind {
+        case .close: return .close
+        case .reopen: return .reopen
+        case .ready: return .markReady(nodeID: detail.nodeID)
+        case .draft: return .markDraft(nodeID: detail.nodeID)
+        case .autoMergeOn:
+            let preferred = PullRequestMergeMethod(rawValue: UserDefaults.standard.string(forKey: "agents.pr.mergeMethod") ?? "") ?? .merge
+            guard let method = action.method.flatMap(PullRequestMergeMethod.init(rawValue:)).flatMap({ detail.methods.contains($0) ? $0 : nil })
+                    ?? PullRequestQuickAction.mergeMethod(preferred: preferred, allowed: detail.methods) else { return nil }
+            return .enableAutoMerge(nodeID: detail.nodeID, method: method)
+        case .autoMergeOff: return .disableAutoMerge(nodeID: detail.nodeID)
+        case .updateBranch: return .updateBranch(headSHA: detail.headSHA)
+        case .rebaseBranch: return .rebaseBranch(nodeID: detail.nodeID, headSHA: detail.headSHA)
+        case .deleteBranch: return detail.headRepository.map { .deleteBranch(repository: $0, branch: detail.headBranch) }
+        case .note: return .comment(action.reviewBody)
+        case .approve, .requestChanges, .comment, .merge, .viewed, .unviewed, .rerunFailed, .reply, .resolve, .unresolve: return nil
+        }
+    }
+
     // MARK: Digests
 
-    static func digest(_ detail: PullRequestDetail, url: URL, viewed: PullRequestViewedFiles = .load(), now: Date = Date()) -> PullDetailDigest {
+    static func digest(_ detail: PullRequestDetail, url: URL, github: Bool = true, viewed: PullRequestViewedFiles = .load(),
+                       now: Date = Date()) -> PullDetailDigest {
         let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
         let files = detail.files.map { file -> PullDetailDigest.File in
             let mark: String
@@ -166,7 +230,7 @@ extension CompanionServer {
         }
         let preferred = PullRequestMergeMethod(rawValue: UserDefaults.standard.string(forKey: "agents.pr.mergeMethod") ?? "") ?? .merge
         let methods = detail.methods.sorted { ($0 == preferred ? 0 : 1) < ($1 == preferred ? 0 : 1) }.map(\.rawValue)
-        return PullDetailDigest(
+        var digest = PullDetailDigest(
             url: url.absoluteString, repo: detail.repo, number: detail.number, title: CompanionPolicy.clip(detail.title, limit: 300),
             body: CompanionPolicy.clip(detail.body, limit: PullDetailDigest.maxBody), author: detail.author,
             state: detail.state.rawValue, baseBranch: detail.baseBranch, headBranch: detail.headBranch, headSHA: detail.headSHA,
@@ -180,6 +244,84 @@ extension CompanionServer {
             verdicts: detail.verdicts.map { PullDetailDigest.Verdict(author: $0.author, approved: $0.approved) },
             methods: methods, blocker: blocker(detail)?.rawValue, verdictsAllowed: detail.features.verdicts,
             lineComments: detail.features.lineComments, fetched: now.timeIntervalSince1970)
+        digest.reviewers = detail.requestedReviewers + detail.requestedTeams.map { "@" + $0 }
+        digest.assignees = detail.assignees
+        digest.labels = detail.labels
+        digest.labelColors = detail.labelColors.isEmpty ? nil : detail.labelColors
+        digest.milestone = detail.milestone
+        digest.issues = detail.linkedIssues.prefix(20).map {
+            PullDetailDigest.Issue(repo: $0.repo, number: $0.number, title: CompanionPolicy.clip($0.title, limit: 200), open: $0.open,
+                                   url: $0.url?.absoluteString)
+        }
+        digest.autoMerge = detail.autoMerge.map { PullDetailDigest.AutoMerge(method: $0.method?.rawValue, by: $0.enabledBy) }
+        digest.behind = detail.mergeState == "behind"
+        digest.branchDeleted = detail.branchDeleted
+        digest.created = detail.created?.timeIntervalSince1970
+        digest.actions = PullActionRules.allowed(facts(detail, github: github)).map(\.rawValue)
+        let (notes, threads) = conversation(detail)
+        digest.conversation = notes
+        digest.threads = threads
+        return digest
+    }
+
+    /// What decides which of the Mac's menu actions the pull request takes now (`PullActionRules`), as its menu reads it.
+    static func facts(_ detail: PullRequestDetail, github: Bool) -> PullActionRules.Facts {
+        PullActionRules.Facts(state: detail.state.rawValue, hasNodeID: !detail.nodeID.isEmpty, canPush: detail.canPush,
+                              conflicted: detail.conflicted, behind: detail.mergeState == "behind", autoMergeOn: detail.autoMerge != nil,
+                              autoMergeAllowed: detail.autoMergeAllowed, hasHeadRepository: detail.headRepository != nil,
+                              branchDeleted: detail.branchDeleted, failedRuns: github ? failedRuns(detail).count : 0,
+                              draft: detail.features.draft, autoMerge: detail.features.autoMerge,
+                              updateBranch: detail.features.updateBranch, deleteBranch: detail.features.deleteBranch,
+                              threads: detail.features.threads, rerun: github)
+    }
+
+    /// The workflow runs of the failing checks, each once: what "Rerun failed checks" runs again.
+    static func failedRuns(_ detail: PullRequestDetail) -> [Int] {
+        var seen = Set<Int>()
+        return detail.checks.compactMap { check -> Int? in
+            guard check.outcome == .failing, let path = check.url?.path,
+                  let found = path.range(of: #"/actions/runs/\d+"#, options: .regularExpression),
+                  let id = Int(path[found].split(separator: "/").last ?? "") else { return nil }
+            return seen.insert(id).inserted ? id : nil
+        }
+    }
+
+    /// The conversation (comments, and reviews with words) and the threads on lines, as the Mac's Conversation tab
+    /// reads them, oldest first and cut to fit one answer.
+    static func conversation(_ detail: PullRequestDetail) -> ([PullDetailDigest.Note], [PullDetailDigest.Thread]) {
+        func note(_ event: PullRequestEvent, verdict: String? = nil) -> PullDetailDigest.Note {
+            PullDetailDigest.Note(id: event.id, author: event.author,
+                                  body: CompanionPolicy.clip(event.body, limit: PullDetailDigest.maxNoteBody),
+                                  date: event.date?.timeIntervalSince1970, verdict: verdict)
+        }
+        var notes: [PullDetailDigest.Note] = []
+        var threads: [PullDetailDigest.Thread] = []
+        var index: [String: Int] = [:]
+        for event in detail.events {
+            switch event.kind {
+            case .comment:
+                notes.append(note(event))
+            case .review(let state):
+                if !event.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || state != "COMMENTED" {
+                    notes.append(note(event, verdict: state))
+                }
+            case .lineComment(let path, let line):
+                let root = event.replyTo ?? event.id
+                if let at = index[root] {
+                    threads[at].comments.append(note(event))
+                    if event.threadID != nil, !threads[at].canResolve { threads[at].canResolve = detail.features.threads }
+                } else {
+                    index[root] = threads.count
+                    threads.append(PullDetailDigest.Thread(
+                        id: root, path: path, line: line, resolved: event.resolved, outdated: event.outdated,
+                        canReply: detail.features.threads && event.replyTo == nil && event.restComment != nil,
+                        canResolve: detail.features.threads && event.threadID != nil, comments: [note(event)]))
+                }
+            default:
+                break
+            }
+        }
+        return (Array(notes.suffix(PullDetailDigest.maxNotes)), Array(threads.suffix(PullDetailDigest.maxThreads)))
     }
 
     /// Why the phone cannot merge it, from the quick merge's own rule (`PullRequestQuickRunner.blocker`).
@@ -206,6 +348,9 @@ struct PullReader {
         item = open.item
         forge = PullRequestForges.client(account: open.account, path: open.item.repo)
     }
+
+    /// GitHub itself, not another forge's client: what workflow runs need.
+    var isGitHub: Bool { forge == nil }
 
     private func token() throws -> String {
         if forge != nil { return "" }
@@ -246,6 +391,21 @@ struct PullReader {
         } catch {
             AppModel.shared.store.audit(tool: action.auditTool, args: args, result: "error: " + error.localizedDescription)
             throw error
+        }
+    }
+
+    /// Runs the failed jobs of these workflow runs again (GitHub only), each written to the action log.
+    func rerunFailed(_ runs: [Int], repo: String) async throws {
+        let token = try token()
+        for run in runs {
+            let args = "\(repo) run \(run)"
+            do {
+                try await GitHubActions.perform(.rerunFailed, repo: repo, runID: run, token: token)
+                AppModel.shared.store.audit(tool: WorkflowRunAction.rerunFailed.auditTool, args: args, result: "ok")
+            } catch {
+                AppModel.shared.store.audit(tool: WorkflowRunAction.rerunFailed.auditTool, args: args, result: "error: " + error.localizedDescription)
+                throw error
+            }
         }
     }
 

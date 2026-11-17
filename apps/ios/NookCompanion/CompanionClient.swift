@@ -38,6 +38,8 @@ final class CompanionClient: ObservableObject {
     @Published var pendingShortcut: AppShortcut?
     /// The session whose snooze moment is being picked (`SnoozeSheet`, shown by `RootView`).
     @Published var snoozing: SessionDigest?
+    /// A session action that asks first (rename, delete, end), shown by `RootView` (`SessionPromptHost`).
+    @Published var sessionPrompt: SessionPrompt?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.
@@ -73,6 +75,13 @@ final class CompanionClient: ObservableObject {
     /// Nook's own chats, and the messages of each one that was opened.
     @Published private(set) var conversations: [ChatDigest] = []
     @Published private(set) var chatLines: [String: [ChatLine]] = [:]
+    /// With `CompanionFeature.nookChats`: the conversations the last search or the open archive found (`chatSearch`),
+    /// nil while neither is asked for, and how many wait in the archive.
+    @Published var nookFound: [ChatDigest]?
+    @Published private(set) var nookArchived = 0
+    /// Nook's home as the Mac's Nook tab shows it (`CompanionOp.home`): For you, the agenda, the limits, what plays and
+    /// where to start; nil until the Mac answered.
+    @Published private(set) var home: HomeDigest?
     /// False when the Mac said Nook has no brain set up, so chatting cannot work yet.
     @Published private(set) var brainReady = true
     /// The Mac's Chats tab: every chat app in one inbox, and the messages of each chat that was opened, by chat id.
@@ -82,6 +91,11 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var inboxTyping: [String: [InboxTypist]] = [:]
     /// Unread messages in every chat, for the badge on the Chats tab.
     var inboxUnread: Int { inbox.reduce(0) { $0 + $1.unread } }
+    /// With `CompanionFeature.chatActions`: whether a chat has older messages than the phone has, by chat id.
+    @Published private(set) var inboxMore: [String: Bool] = [:]
+    /// The chats the last search found (`inboxSearch`), and each chat's info as the Mac last said (`inboxInfo`).
+    @Published private(set) var inboxFound: [InboxChatDigest] = []
+    @Published private(set) var inboxInfo: [String: InboxChatInfo] = [:]
     /// Why the inbox may be empty: "chatsoff" (nothing is collected on the Mac) or "chatsaccess" (macOS does not let
     /// Nook read the notifications); nil when it is fine.
     @Published private(set) var inboxStatus: String?
@@ -101,8 +115,16 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var macs: [PairedMac] = []
     @Published private(set) var activeMacID: String?
     @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
+    /// Whether each other paired computer answered the last time it was checked (`refreshOthers`), by its id; a
+    /// computer not checked yet is missing.
+    @Published private(set) var otherReachable: [String: Bool] = [:]
     /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
     @Published var addingMac = false
+
+    /// What kind of computer the active one is (a Mac, or Nook on Windows or Linux); a Mac until it says.
+    var platform: CompanionPlatform { macs.first { $0.id == activeMacID }?.kind ?? .mac }
+    /// A `bindKey` request is on its way (`bindDeviceKey`): answers to hello, list and subscribe meanwhile send no second.
+    private var bindingKey = false
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
@@ -119,6 +141,8 @@ final class CompanionClient: ObservableObject {
     @Published var pullsAt: Date?
     @Published var linkedPulls: [String: [PullDigest]] = [:]
     @Published var pullDetails: [String: PullDetailDigest] = [:]
+    /// The Mac's notification settings for its phones (`CompanionFeature.notifySettings`), once read.
+    @Published var notify: CompanionNotifySettings?
     /// Sessions older than the live list (`CompanionOp.history`), paged in on request as the Mac's settled sessions;
     /// where the next page starts, and whether the last one came.
     @Published var olderSessions: [SessionDigest] = []
@@ -225,7 +249,7 @@ final class CompanionClient: ObservableObject {
                 let response = picked.answer
                 guard response.ok else { throw CompanionClientError.refused(response.error) }
                 var next = pairings
-                guard next.add(parsed, routes: candidates) else { throw CompanionClientError.tooManyMacs }
+                guard next.add(parsed, routes: candidates, platform: response.platform) else { throw CompanionClientError.tooManyMacs }
                 guard PairingStore.save(next) else { throw CompanionClientError.storage }
                 stopConnection()
                 cacheActiveSessions()
@@ -243,7 +267,7 @@ final class CompanionClient: ObservableObject {
                 await Notifications.requestAndRegister()
             } catch {
                 phase = link == nil ? .unpaired : .offline(error.localizedDescription)
-                notice = String(localized: "Pairing failed: \(error.localizedDescription) The code works once, for five minutes; make a new one on your Mac.")
+                notice = String(localized: "Pairing failed: \(error.localizedDescription) The code works once, for five minutes; make a new one on your computer.")
             }
         }
     }
@@ -279,6 +303,7 @@ final class CompanionClient: ObservableObject {
         CacheStore.remove(mac: id)
         PullCacheStore.remove(mac: id)
         ClockOffsets.forget(id)
+        DeviceKeyStore.forget(id)
         for entry in retries.waiting(for: id) { retries.remove(entry.id) }
         RetryStore.save(retries)
         pairings.remove(id)
@@ -312,6 +337,7 @@ final class CompanionClient: ObservableObject {
     private func cacheActiveSessions() {
         guard let id = pairings.active?.id else { return }
         otherSessions[id] = sessions
+        otherReachable[id] = phase == .connected
     }
 
     /// Takes in the active Mac: its pairing, routes, features and outbox; what was shown for the previous one goes.
@@ -324,7 +350,7 @@ final class CompanionClient: ObservableObject {
         macName = mac?.name ?? ""
         macs = pairings.macs
         activeMacID = mac?.id
-        if let id = mac?.id { otherSessions[id] = nil }
+        if let id = mac?.id { otherSessions[id] = nil; otherReachable[id] = nil }
         // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
         features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
         hasUnrecognizedMacFeatures = false
@@ -403,14 +429,27 @@ final class CompanionClient: ObservableObject {
         for mac in pairings.others {
             guard let key = mac.link?.key,
                   let picked = await RouteProbe.pick(mac.routes, key: key, makeRequest: { CompanionRequest.versioned(.list) }),
-                  picked.answer.ok, let list = picked.answer.sessions else { continue }
+                  picked.answer.ok, let list = picked.answer.sessions else {
+                otherReachable[mac.id] = false
+                continue
+            }
             // Only what that Mac lets this phone see comes back; an empty list is fine.
             otherSessions[mac.id] = list
+            otherReachable[mac.id] = true
+            learnPlatform(picked.answer.platform, for: mac.id)
             // Its notifications about what no longer waits go too; the badge stays the active Mac's.
             Notifications.clearAnswered(pending: DeliveredNotifications.pending(list), mac: mac.id, onlyMac: false, badge: nil)
         }
         let paired = Set(pairings.macs.map(\.id))
         for id in otherSessions.keys where !paired.contains(id) { otherSessions[id] = nil }
+        for id in otherReachable.keys where !paired.contains(id) { otherReachable[id] = nil }
+    }
+
+    /// Keeps what a computer said it is (`CompanionResponse.platform`) with its pairing, for its name and icon.
+    private func learnPlatform(_ platform: String?, for id: String) {
+        guard pairings.setPlatform(platform, for: id) else { return }
+        PairingStore.save(pairings)
+        macs = pairings.macs
     }
 
     // MARK: Staying connected
@@ -421,6 +460,8 @@ final class CompanionClient: ObservableObject {
         let wakeup = CompanionWakeup.onActive(backgroundedAt: backgroundedAt, now: Date())
         backgroundedAt = nil
         inFront = true
+        LiveActivities.shared.inFront = true
+        Task { await LiveActivities.shared.reconcile(sessions) }
         // Buttons on notifications that could not reach their Mac get another go, quietly.
         if !retries.entries.isEmpty { Task { await retryNotificationActions(mac: nil, quiet: true) } }
         guard link != nil else { return }
@@ -449,6 +490,7 @@ final class CompanionClient: ObservableObject {
     func appWentToBackground() {
         backgroundedAt = Date()
         inFront = false
+        LiveActivities.shared.inFront = false
         flushCache()
         // The Mac sends pushes again from now on (`CompanionFeature.foreground`); without this word it does after a few
         // seconds of silence anyway (`ForegroundPolicy`).
@@ -689,7 +731,7 @@ final class CompanionClient: ObservableObject {
 
     private func refreshInbox() async {
         guard phase == .connected, can(CompanionFeature.inbox) else { return }
-        await perform(CompanionRequest(op: .inbox), quiet: true)
+        await perform(inboxRequest, quiet: true)
     }
 
     /// What the Mac sent by itself over the live connection.
@@ -884,7 +926,7 @@ final class CompanionClient: ObservableObject {
         // The Live Activities follow the list (and the Mac gets the tokens it does not have yet).
         await LiveActivities.shared.reconcile(sessions)
         // The chats too, for the badge on the Chats tab.
-        if can(CompanionFeature.inbox) { await perform(CompanionRequest(op: .inbox), quiet: true) }
+        if can(CompanionFeature.inbox) { await perform(inboxRequest, quiet: true) }
     }
 
     /// The token iOS gave this app for pushes: kept, and sent to the Mac (sealed) so it can notify this phone.
@@ -922,16 +964,22 @@ final class CompanionClient: ObservableObject {
 
     /// `reason`: with a denial, what the agent is told (the Mac passes it on; an older Mac only denies).
     /// The approval leaves the screen at the tap (`settle`) and comes back only when the Mac could not take it.
-    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, reason: String = "") async {
+    /// `always`: "Always allow" (`CompanionFeature.agentsTab`), for an approval the agent can remember (`canAlways`).
+    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, always: Bool = false, reason: String = "") async {
         settle(item.id)
-        let response = await perform(CompanionRequest(op: .decide, session: session.id, item: item.id,
-                                                      text: allow || reason.isEmpty ? nil : reason, allow: allow))
+        var request = CompanionRequest(op: .decide, session: session.id, item: item.id,
+                                       text: allow || reason.isEmpty ? nil : reason, allow: allow)
+        if allow, always, can(CompanionFeature.agentsTab) { request.decision = ApprovalChoice.always.rawValue }
+        let response = await perform(request)
         if response == nil { unsettle(item.id) }
     }
 
-    func answer(_ session: SessionDigest, item: SessionDigest.Item, text: String) async {
+    /// `answers`: every question of the ask at once, by question id (`CompanionFeature.agentsTab`); `text` is then unused.
+    func answer(_ session: SessionDigest, item: SessionDigest.Item, text: String, answers: [String: [String]]? = nil) async {
         settle(item.id)
-        let response = await perform(CompanionRequest(op: .answer, session: session.id, item: item.id, text: text))
+        var request = CompanionRequest(op: .answer, session: session.id, item: item.id, text: answers == nil ? text : nil)
+        if can(CompanionFeature.agentsTab) { request.answers = answers }
+        let response = await perform(request)
         if response == nil { unsettle(item.id) }
     }
 
@@ -981,9 +1029,11 @@ final class CompanionClient: ObservableObject {
     }
 
     /// Manages a session from afar (rename, archive, snooze, end), as the Mac's Agents list does.
-    func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil) async {
-        guard can(CompanionFeature.manage) else { return }
-        await perform(CompanionRequest(op: .manage, session: session.id, item: action.rawValue, text: text))
+    /// The answer, so a fork can open the session it made (`created`).
+    @discardableResult
+    func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil) async -> CompanionResponse? {
+        guard can(CompanionFeature.manage) else { return nil }
+        return await perform(CompanionRequest(op: .manage, session: session.id, item: action.rawValue, text: text))
     }
 
     // MARK: Starting a session
@@ -1017,9 +1067,10 @@ final class CompanionClient: ObservableObject {
 
     /// Starts a session on the Mac (through the outbox, so it waits while the Mac cannot be reached). `.sent` carries the
     /// new session's id in `created`; `.refused` has the reason in `notice`.
-    func start(_ launch: LaunchRequest, images: [CompanionImage] = []) async -> Delivery {
+    func start(_ launch: LaunchRequest, images: [CompanionImage] = [], files: [CompanionFile] = []) async -> Delivery {
         await deliver(CompanionRequest(op: .start, launch: launch,
-                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images))
+                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images,
+                                       attachments: files.isEmpty || !can(CompanionFeature.attachments) ? nil : files))
     }
 
     // MARK: A session's conversation
@@ -1137,8 +1188,10 @@ final class CompanionClient: ObservableObject {
 
     /// Asks Nook; nil `conversationID` starts a new chat. Through the outbox, so a question waits while the Mac cannot be
     /// reached: `.waiting(id)` names the request, whose chat shows up in `askedConversations` once the Mac took it.
-    func ask(_ text: String, in conversationID: String?) async -> AskOutcome {
-        let request = CompanionRequest(op: .ask, text: text, conversation: conversationID)
+    func ask(_ text: String, in conversationID: String?, images: [CompanionImage] = []) async -> AskOutcome {
+        // Pictures only to a Mac that takes them with a question (`CompanionFeature.nookChats`).
+        let pictures = can(CompanionFeature.nookChats) && !images.isEmpty ? images : nil
+        let request = CompanionRequest(op: .ask, text: text, conversation: conversationID, images: pictures)
         switch await deliver(request) {
         case .sent(let response):
             await loadChats()
@@ -1175,7 +1228,13 @@ final class CompanionClient: ObservableObject {
 
     func loadInbox() async {
         guard await supports(CompanionFeature.inbox) else { return }
-        await perform(CompanionRequest(op: .inbox), quiet: true)
+        await perform(inboxRequest, quiet: true)
+    }
+
+    /// The Chats tab's list as this phone asks for it: with the status updates and channels too, for the app tabs, from a
+    /// Mac that lists them (`CompanionFeature.chatActions`).
+    private var inboxRequest: CompanionRequest {
+        CompanionRequest(op: .inbox, allow: can(CompanionFeature.chatActions) ? true : nil)
     }
 
     func loadInboxChat(_ chatID: String) async {
@@ -1269,6 +1328,53 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .inboxMark, item: chatID, allow: read))
     }
 
+    /// Pictures and files with your words to a chat whose app takes them (`InboxAbility.photo`, `.file`), through the
+    /// outbox like words alone.
+    func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil, images: [CompanionImage], files: [CompanionFile]) async -> Delivery {
+        var request = CompanionRequest(op: .inboxSend, item: chatID, text: text, replyTo: replyTo, images: images.isEmpty ? nil : images)
+        request.attachments = files.isEmpty ? nil : files
+        let delivery = await deliver(request)
+        if case .sent = delivery { await loadInbox() }
+        return delivery
+    }
+
+    /// Something done in a chat as on the Mac (`CompanionOp.inboxAct`), after your own tap: true when the Mac did it. The
+    /// Mac answers with the chat and the list as they are after it; a refusal says why in `notice`.
+    @discardableResult
+    func actInInbox(_ chatID: String, _ action: InboxAction) async -> Bool {
+        guard can(CompanionFeature.chatActions) else { return false }
+        var request = CompanionRequest(op: .inboxAct, item: chatID)
+        request.chatAction = action
+        return await perform(request) != nil
+    }
+
+    /// The messages before the oldest one the phone has of a chat, read back from its app where Nook has no more.
+    func loadOlderInbox(_ chatID: String) async {
+        guard can(CompanionFeature.chatActions), let oldest = inboxLines[chatID]?.first?.id else { return }
+        await perform(CompanionRequest(op: .inboxOlder, item: chatID, text: oldest), quiet: true)
+    }
+
+    /// A chat's info, as the Mac's chat info shows it.
+    func loadInboxInfo(_ chatID: String) async {
+        guard can(CompanionFeature.chatActions) else { return }
+        await perform(CompanionRequest(op: .inboxInfo, item: chatID), quiet: true)
+    }
+
+    /// The chats whose name, people or messages hold `words`, as the Mac's search finds them.
+    func searchInbox(_ words: String) async {
+        let words = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard can(CompanionFeature.chatActions), !words.isEmpty else {
+            if !inboxFound.isEmpty { inboxFound = [] }
+            return
+        }
+        await perform(CompanionRequest(op: .inboxSearch, text: words), quiet: true)
+    }
+
+    /// The photos of messages, asked for by `ChatMediaStore`.
+    func fetchInboxMedia(_ chatID: String, lines: [String]) async -> [InboxMedia] {
+        await perform(CompanionRequest(op: .inboxMedia, item: chatID, items: lines), quiet: true)?.inboxMedia ?? []
+    }
+
     func stopChat(_ conversationID: String) async {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
     }
@@ -1307,6 +1413,28 @@ final class CompanionClient: ObservableObject {
         ])
     }
 
+    // MARK: Device key
+
+    /// Tells the active Mac this phone's device key (`CompanionOp.bindKey`); from its "bound" on, every request to it is
+    /// signed. "other" means the Mac already holds a different key for this pairing (this phone lost its own): only
+    /// pairing again helps.
+    private func bindDeviceKey(_ id: String) async {
+        defer { bindingKey = false }
+        guard let publicKey = DeviceKeyStore.publicKey(for: id) else { return }
+        let response = await perform(CompanionRequest(op: .bindKey, text: publicKey.base64EncodedString()), quiet: true)
+        guard id == pairings.active?.id else { return }
+        switch response?.message {
+        case "bound":
+            DeviceKeyStore.markBound(id)
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "bound"])
+        case "other":
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "other"])
+            notice = String(localized: "Your Mac knows another key for this iPhone. Pair again with the code in Nook on your Mac.")
+        default:
+            break
+        }
+    }
+
     // MARK: Versions
 
     /// Opens Nook's update panel on the Mac, where the update waits for a click there; nothing is installed from the
@@ -1338,6 +1466,8 @@ final class CompanionClient: ObservableObject {
                 if !outbox.entries.isEmpty, !draining { Task { await drainOutbox() } }
                 if let message = response.message {
                     switch message {
+                    // A question to Nook waits in its conversation, where it shows (`ChatDigest.queued`).
+                    case "queued" where req.op == .ask: break
                     case "queued": notice = String(localized: "Queued: the session is still busy.")
                     case "nobrain": brainReady = false
                     default: break
@@ -1352,6 +1482,8 @@ final class CompanionClient: ObservableObject {
             switch response.error {
             case .notAllowedFromPhone where req.op == .inboxSend:
                 notice = String(localized: "Nook can only read this chat: answer it in its own app.")
+            case .notAllowedFromPhone where response.message == "signature":
+                notice = String(localized: "Your Mac knows another key for this iPhone. Pair again with the code in Nook on your Mac.")
             case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
             case .unknownSession where req.conversation != nil: notice = String(localized: "This chat is gone."); await loadChats()
             case .unknownItem where req.op == .inboxSend || req.op == .inboxMark:
@@ -1393,6 +1525,9 @@ final class CompanionClient: ObservableObject {
                 macs = pairings.macs
             }
         }
+        if req.op == .hello || req.op == .list || req.op == .subscribe, let id = pairings.active?.id {
+            learnPlatform(response.platform, for: id)
+        }
         // Only these answers report the Mac's feature list. Missing features on an older Mac clear this warning;
         // unrelated answers leave the last handshake result alone.
         if req.op == .hello || req.op == .list || req.op == .subscribe {
@@ -1413,6 +1548,12 @@ final class CompanionClient: ObservableObject {
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
             UserDefaults.standard.set(features, forKey: featuresKey)
+        }
+        // A Mac that takes device keys gets this phone's once, right after pairing (`CompanionDeviceKey`).
+        if response.features?.contains(CompanionFeature.deviceKey) == true, let id = pairings.active?.id,
+           !DeviceKeyStore.isBound(id), !bindingKey {
+            bindingKey = true
+            Task { await bindDeviceKey(id) }
         }
         if let endpoints = response.endpoints { learn(endpoints) }
         // The relay the Mac uses now ("" when none): the route through it follows.
@@ -1445,6 +1586,9 @@ final class CompanionClient: ObservableObject {
             if list != conversations { conversations = list }
             if cache.record(conversations: list) { scheduleCacheSave() }
         }
+        if let found = response.conversationsFound, req.op == .chatSearch, found != nookFound { nookFound = found }
+        if let archived = response.conversationsArchived, archived != nookArchived { nookArchived = archived }
+        if let home = response.home, home != self.home { self.home = home }
         if response.messages != nil || response.messageAppend != nil,
            let conversation = response.messagesConversation ?? response.created ?? req.conversation {
             takeMessages(response, conversation: conversation)
@@ -1458,15 +1602,26 @@ final class CompanionClient: ObservableObject {
             if can(CompanionFeature.appIcons) { ChatPictures.shared.updateAppIcons(Set(chats.map(\.app)), client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
-        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines {
-            inboxLines[chat] = lines
-            if cache.record(inboxLines: lines, chat: chat, at: Date()) { scheduleCacheSave() }
+        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item {
+            // An older page goes before what the phone has; the newest messages keep the older ones paged back to.
+            let kept = inboxLines[chat] ?? []
+            let next = response.inboxBefore.map { InboxPaging.prepend(lines, before: $0, to: kept) }
+                ?? InboxPaging.merge(latest: lines, into: kept)
+            if inboxLines[chat] != next {
+                inboxLines[chat] = next
+                // Only the newest messages are kept for when the Mac is away, as before.
+                if response.inboxBefore == nil, cache.record(inboxLines: lines, chat: chat, at: Date()) { scheduleCacheSave() }
+            }
+            if let more = response.inboxMore, inboxMore[chat] != more { inboxMore[chat] = more }
         }
+        if let found = response.inboxFound, found != inboxFound { inboxFound = found }
+        if let info = response.inboxInfo, inboxInfo[info.chat] != info { inboxInfo[info.chat] = info }
         takePulls(response, for: req)
+        if let notify = response.notify, self.notify != notify { self.notify = notify }
         if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
         if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }
         // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
-        if response.inboxLines != nil, let chat = response.inboxChat ?? req.item {
+        if response.inboxLines != nil, response.inboxBefore == nil, let chat = response.inboxChat ?? req.item {
             let typing = response.inboxTyping ?? []
             if inboxTyping[chat] ?? [] != typing { inboxTyping[chat] = typing }
         }
@@ -1575,7 +1730,11 @@ final class CompanionClient: ObservableObject {
         // The route is found with a list (any Mac answers it), so the request itself goes over one route only, once.
         guard let picked = await RouteProbe.pick(mac.id == pairings.active?.id ? routes : mac.routes, key: link.key,
                                                  makeRequest: { CompanionRequest.versioned(.list) }) else { return nil }
-        if picked.answer.ok, mac.id != pairings.active?.id, let list = picked.answer.sessions { otherSessions[mac.id] = list }
+        if picked.answer.ok, mac.id != pairings.active?.id, let list = picked.answer.sessions {
+            otherSessions[mac.id] = list
+            otherReachable[mac.id] = true
+            learnPlatform(picked.answer.platform, for: mac.id)
+        }
         var response = try? await exchange(request, link: link, route: picked.route)
         // Refused for the clock while the Mac said its time: once more, with the time corrected.
         if response?.error == .stale, CompanionClock.changed(clockBefore, ClockOffsets.offset(for: mac.id)) {
@@ -1734,7 +1893,7 @@ enum CompanionClientError: LocalizedError {
         case .badRequest: return String(localized: "Unreadable reply from your Mac.")
         case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
         case .closed: return String(localized: "The connection was lost.")
-        case .tooManyMacs: return String(localized: "This iPhone is paired with as many Macs as it can keep. Unpair one first.")
+        case .tooManyMacs: return String(localized: "This iPhone is paired with as many computers as it can keep. Unpair one first.")
         }
     }
 }
@@ -1963,9 +2122,10 @@ extension CompanionClient {
     func loadDemo() {
         let now = Date().timeIntervalSince1970
         macName = "MacBook Pro"
-        features = [CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
+        features = [CompanionFeature.agentsTab, CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
                     CompanionFeature.manage, CompanionFeature.steer, CompanionFeature.images, CompanionFeature.attachments,
-                    CompanionFeature.workspace, CompanionFeature.pullRequests]
+                    CompanionFeature.workspace, CompanionFeature.pullRequests, CompanionFeature.pullActions, CompanionFeature.notifySettings, CompanionFeature.chatActions,
+                    CompanionFeature.home, CompanionFeature.music, CompanionFeature.nookChats]
         pulls = [
             PullDigest(url: "https://github.com/example/nook/pull/1421", repo: "example/nook", number: 1421,
                        title: "Reset the relay backoff after wake", author: "you", state: "open", ci: "passing", review: "required",
@@ -1977,6 +2137,7 @@ extension CompanionClient {
                        headBranch: "feature/usage", baseBranch: "main"),
         ]
         linkedPulls["s2"] = [pulls[0]]
+        loadPullDemo(now: now)
         sessions = [
             SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
                           folder: "nook", branch: "feature/usage", updated: now - 60, excerpt: "",
@@ -1991,6 +2152,7 @@ extension CompanionClient {
             SessionDigest(id: "s5", title: "Write release notes", agent: "OpenCode", attention: "finished",
                           folder: "docs", branch: nil, updated: now - 90000, excerpt: "", items: []),
         ]
+        sessions = Self.demoAgentsTab(sessions, now: now)
         timelines["s2"] = [
             TimelineEntry(id: "t1", kind: .user, text: "The relay drops after the Mac sleeps. Can you find out why?", date: now - 600, failed: false),
             TimelineEntry(id: "t2", kind: .tool, text: "Read RelayClient.swift", date: now - 590, failed: false),
@@ -2027,17 +2189,56 @@ extension CompanionClient {
             """, date: now - 100, failed: false, clipped: true),
         ]
         conversations = [
-            ChatDigest(id: "c1", title: "Plan for tomorrow", updated: now - 3600, busy: false, waiting: false, preview: "You have three meetings…"),
+            ChatDigest(id: "c1", title: "Plan for tomorrow", updated: now - 3600, busy: false, waiting: false, preview: "You have three meetings…",
+                       unread: true),
             ChatDigest(id: "c2", title: "Mail from Anna", updated: now - 86000, busy: false, waiting: true, preview: "Shall I answer her?"),
+            ChatDigest(id: "c3", title: "Groceries for the weekend", updated: now - 86400 * 9, busy: false, waiting: false,
+                       preview: "Pasta, tomatoes, basil and a good olive oil.", pinned: true),
+            ChatDigest(id: "c4", title: "Release notes for 2.4", updated: now - 5400, busy: false, waiting: false,
+                       preview: "Here is a first draft with the three biggest changes."),
+            ChatDigest(id: "c5", title: "Train times to Utrecht", updated: now - 86400 * 3, busy: false, waiting: false,
+                       preview: "The 8:12 gets you there at 8:49."),
         ]
-        inbox = [
-            InboxChatDigest(id: "w1", app: "whatsapp", appName: "WhatsApp", name: "Anna de Vries", preview: "Zie je morgen!",
-                            last: now - 120, unread: 2, canSend: true, ticks: nil, waitsInApp: false),
-            InboxChatDigest(id: "w2", app: "telegram", appName: "Telegram", name: "Team Nook", preview: "Jan: de build is groen",
-                            last: now - 3000, unread: 0, canSend: false, ticks: nil, waitsInApp: false),
-            InboxChatDigest(id: "w3", app: "messages", appName: "Messages", name: "Pieter", preview: "Top, dank je",
-                            last: now - 90000, unread: 0, canSend: false, ticks: "read", waitsInApp: false),
-        ]
+        nookArchived = Self.demoArchive.count
+        home = HomeDigest(
+            lines: [.init(id: "h1", title: "Run swift test", subtitle: "Claude Code waits for your yes", icon: "agent:Claude Code", tone: "amber"),
+                    .init(id: "h2", title: "Design review at 14:00", subtitle: "In 25 minutes · Room 3", icon: "symbol:calendar", tone: "iris")],
+            events: [.init(id: "e1", title: "Design review", start: now + 1500, end: now + 4500, location: "Room 3", calendar: "Work"),
+                     .init(id: "e2", title: "Dinner with Anna", start: now + 18000, end: now + 23400, location: "", calendar: "Home")],
+            suggestions: ["Prepare me for the design review", "What did my agents finish today?", "Summarize my unread mail", "Plan my evening"],
+            track: .init(title: "Weightless", artist: "Marconi Union", album: "Weightless", app: "Music", playing: true, position: 80, duration: 480),
+            accounts: [.init(id: "a1", agent: "Claude", account: "Work", limits: [.init(label: "5-hour", percent: 42, resetsAt: now + 5400)]),
+                       .init(id: "a2", agent: "Codex", account: "Personal", limits: [.init(label: "Weekly", percent: 71, resetsAt: now + 86400 * 2)])])
+        // Every chat app takes what its app takes (`InboxAbility`), as the Mac would say.
+        let everything = InboxAbility.names(Set(InboxAbility.allCases))
+        var anna = InboxChatDigest(id: "w1", app: "whatsapp", appName: "WhatsApp", name: "Anna de Vries", preview: "Zie je morgen!",
+                                   last: now - 120, unread: 2, canSend: true, ticks: nil, waitsInApp: false)
+        anna.abilities = everything
+        anna.pinned = true
+        var team = InboxChatDigest(id: "w2", app: "telegram", appName: "Telegram", name: "Team Nook", preview: "Jan: de build is groen",
+                                   last: now - 3000, unread: 0, canSend: true, ticks: nil, waitsInApp: true)
+        team.abilities = everything
+        team.group = true
+        team.mutedInApp = true
+        team.hasInfo = true
+        var pieter = InboxChatDigest(id: "w3", app: "messages", appName: "Messages", name: "Pieter", preview: "Top, dank je",
+                                     last: now - 90000, unread: 0, canSend: false, ticks: "read", waitsInApp: false)
+        pieter.abilities = []
+        inbox = [anna, team, pieter]
+        var poll = InboxLine(id: "t3", text: "📊 Lunch vrijdag?", date: now - 3200, sender: "Jan", fromMe: false, reactions: [])
+        poll.poll = InboxPoll(question: "Lunch vrijdag?", options: [.init(text: "Pizza", votes: 3, chosen: true),
+                                                                    .init(text: "Sushi", votes: 1, chosen: false)],
+                              multiple: false, counted: true)
+        var notice = InboxLine(id: "t1", text: "Sanne is toegevoegd", date: now - 4000, sender: "", fromMe: false, reactions: [])
+        notice.notice = true
+        var edited = InboxLine(id: "t4", text: "De build is groen, release staat klaar", date: now - 3000, sender: "Jan",
+                               fromMe: false, reactions: ["🎉 2"])
+        edited.edited = true
+        edited.myReactions = ["🎉"]
+        inboxLines["w2"] = [notice,
+                            InboxLine(id: "t2", text: "Wie pakt de review?", date: now - 3600, sender: "Sanne", fromMe: false, reactions: []),
+                            poll, edited]
+        inboxMore["w2"] = true
         inboxLines["w1"] = [
             InboxLine(id: "l1", text: "Hoi! Ben je morgen op kantoor?", date: now - 900, sender: "Anna de Vries", fromMe: false,
                       attachment: nil, ticks: nil, quoteSender: nil, quoteText: nil, reactions: []),

@@ -212,6 +212,7 @@ impl CompanionStore {
             last_seen: Some(now),
             push_token: None,
             push_production: None,
+            device_key: None,
         };
         self.with(
             |s| {
@@ -234,6 +235,38 @@ impl CompanionStore {
             },
             true,
         );
+    }
+
+    /// The public half of a phone's device key (`device_key`), once it bound one.
+    pub fn device_key(&self, id: &str) -> Option<Vec<u8>> {
+        use base64::Engine;
+        let encoded = self.device(id)?.device_key?;
+        base64::engine::general_purpose::STANDARD.decode(encoded.as_bytes()).ok()
+    }
+
+    /// Keeps the phone's device key: the first one it sends for this pairing (trust on first use). True when it is the
+    /// one kept now (new, or the same again); false when the phone already bound another, which only pairing again
+    /// replaces.
+    pub fn bind_key(&self, id: &str, public_key: &[u8]) -> bool {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(public_key);
+        let (kept, changed) = self.with(
+            |s| match s.devices.iter_mut().find(|d| d.id == id) {
+                None => (false, false),
+                Some(d) => match &d.device_key {
+                    Some(bound) => (*bound == encoded, false),
+                    None => {
+                        d.device_key = Some(encoded.clone());
+                        (true, true)
+                    }
+                },
+            },
+            false,
+        );
+        if changed {
+            self.with(|_| (), true);
+        }
+        kept
     }
 
     /// Niet bij elke aanvraag opslaan: een minuut is precies genoeg voor "laatst gezien".

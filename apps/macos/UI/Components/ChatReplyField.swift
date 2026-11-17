@@ -83,6 +83,10 @@ struct ChatReplyField: View {
     private var replyTurn: ChatReplySuggestion.Turn?
     private var writeReply: (() async -> String?)?
     @ObservedObject private var replies = ChatReplySuggestions.shared
+    /// The chat's newest message, and how Nook reads the chat for what it could do (`ChatActionSuggestion`); nil
+    /// suggests nothing.
+    private var actionTurn: ChatActionSuggestion.Turn?
+    private var actionSource: (place: ChatActionSuggestion.Place, lines: () -> [ChatActionSuggestion.Line])?
     /// Who the message goes to and what they said last, for the grey rest of the sentence (`ComposerCompleter`).
     private var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
@@ -173,6 +177,16 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// What Nook could do for what was said in the chat (start an agent on a task, a reminder), above the field once it
+    /// has looked at `turn`, the newest message (`ActionSuggestionBar`). Runs through `runsActions`.
+    func suggestsActions(_ turn: ChatActionSuggestion.Turn?, place: ChatActionSuggestion.Place,
+                         lines: @escaping () -> [ChatActionSuggestion.Line]) -> Self {
+        var copy = self
+        copy.actionTurn = turn
+        copy.actionSource = (place, lines)
+        return copy
+    }
+
     /// ← and → in the empty field walk what waits to go: `walk` gets the direction (false when it has nothing to walk).
     func walksFiles(_ walk: @escaping (Int) -> Bool) -> Self {
         var copy = self
@@ -237,6 +251,11 @@ struct ChatReplyField: View {
                            undo: backToRequest, tweak: { rewrite($0.request) },
                            rewrite: { rewrite(steer) })
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            // What Nook could do for what was said, while its own draft is not on screen.
+            if outgoing == nil, !showsDraft, let act, let actionSource {
+                ActionSuggestionBar(turn: actionTurn, busy: drafting, place: actionSource.place, lines: actionSource.lines,
+                                    act: act, adjust: { AppModel.shared.adjustSuggestedAction($0) })
             }
             // Nook's own progress and a message on its way have their panel; any other notice (a failed rewrite or send)
             // stays a line above.
@@ -378,7 +397,8 @@ struct ChatReplyField: View {
                 .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
                 .onKeyPress(.escape) { () -> KeyPress.Result in
                     if suggestedReply != nil {
-                        replies.dismiss(replyTurn)
+                        // Dismissing publishes; key presses arrive while SwiftUI updates its views.
+                        DispatchQueue.main.async { [replyTurn] in replies.dismiss(replyTurn) }
                         return .handled
                     }
                     if ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: text)) != nil {
@@ -492,7 +512,8 @@ struct ChatReplyField: View {
     /// chat, so the send itself runs right after.
     private func returnKey(_ press: KeyPress) -> KeyPress.Result {
         if press.modifiers.contains(.option) || press.modifiers.contains(.shift) {
-            newline()
+            // The field takes the line at once and writes the draft back, so it too runs right after.
+            DispatchQueue.main.async { newline() }
         } else if menu.isOpen {
             chooseSelected()
         } else {
@@ -523,10 +544,14 @@ struct ChatReplyField: View {
     /// Tab chooses the menu's line; on the grey rest of the sentence Tab takes a word of it, ⇧Tab all of it.
     private func tabKey(_ press: KeyPress) -> KeyPress.Result {
         let all = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        // SwiftUI handles key presses while it updates its views, and these change the draft and the published
+        // suggestion, so the changes run right after.
         if let suggestedReply {
-            text = suggestedReply
-            replies.dismiss(replyTurn)
-            ComposerFieldStyle.placeCaret((suggestedReply as NSString).length, expecting: suggestedReply)
+            DispatchQueue.main.async { [replyTurn] in
+                text = suggestedReply
+                replies.dismiss(replyTurn)
+                ComposerFieldStyle.placeCaret((suggestedReply as NSString).length, expecting: suggestedReply)
+            }
             return .handled
         }
         if menu.isOpen, !all {
@@ -535,8 +560,10 @@ struct ChatReplyField: View {
         }
         guard let (value, caret) = ComposerInlineGhost.shared.acceptingText(
             all: all, in: text, editor: ComposerFieldStyle.focusedEditor(expecting: text)) else { return .ignored }
-        text = value
-        ComposerFieldStyle.placeCaret(caret, expecting: value)
+        DispatchQueue.main.async {
+            text = value
+            ComposerFieldStyle.placeCaret(caret, expecting: value)
+        }
         return .handled
     }
 
@@ -1019,22 +1046,37 @@ private struct DraftPanel: View {
 
 /// What Nook proposes to do under "@nook …", as a short numbered list with one button: Do it runs the steps, then
 /// each line says it is done, or the failure shows under them. The cross lets the proposal go.
-private struct DraftActions: View {
+/// What Nook proposes to do, each step on a row, with Do it, how running it went, and the cross that lets it go. Under
+/// "@nook …" in a chat's panel, and on its own above a conversation's field as a suggestion (`ActionSuggestionBar`).
+struct DraftActions: View {
     let actions: [ChatDraftAction]
     let run: ChatDraftActionRun
     let perform: (() -> Void)?
     let dismiss: () -> Void
+    /// The line on top; the suggestion names itself here.
+    var title = tr("chats.draft.actions")
+    /// Why Nook proposes it, in a line under the title; nil for none.
+    var reason: String? = nil
+    /// A second way, beside Do it: open the step to change it first (a new session's composer); nil for none.
+    var adjust: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(tr("chats.draft.actions"))
+                Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if run != .running {
                     ToolbarIconButton("xmark", tr(isDone ? "button.close" : "chats.draft.actions.dismiss"), dismiss)
                 }
+            }
+            if let reason, !reason.isEmpty {
+                Text(reason)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 ForEach(actions) { row($0) }
@@ -1090,6 +1132,10 @@ private struct DraftActions: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(2)
                     Spacer(minLength: NookTheme.Spacing.sm)
+                    if let adjust {
+                        NookGhostButton(title: tr("suggestActions.adjust"), symbol: "slider.horizontal.3", action: adjust)
+                            .fixedSize()
+                    }
                     NookPrimaryButton(title: tr("chats.draft.actions.run"), symbol: "checkmark", action: perform)
                         .fixedSize()
                 }
@@ -1501,6 +1547,24 @@ extension ComposerCompletion.Situation {
             .map { (fromMe: $0.fromMe || $0.local, sender: $0.sender, text: $0.copyText) }
         return Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text,
                     conversation: ComposerCompletion.conversation(Array(messages), contact: name))
+    }
+}
+
+extension ChatActionSuggestion {
+    /// The turn a chat's bubbles end on for a suggested step: its newest message, yours as well (you may be the one who
+    /// said what should be done), leaving out the lines about the group.
+    static func turn(chat: String, bubbles: [ChatBubble]) -> Turn? {
+        guard !chat.isEmpty, let last = bubbles.last(where: { $0.notice == nil }) else { return nil }
+        return Turn(conversation: chat, message: last.id, date: last.date)
+    }
+
+    /// A chat's newest messages as the brain reads them: you as "You", everyone else by name.
+    static func lines(_ bubbles: [ChatBubble], contact: String) -> [Line] {
+        bubbles.filter { $0.notice == nil && !$0.deleted }.suffix(30).map { bubble in
+            let mine = bubble.fromMe || bubble.local
+            return Line(speaker: mine ? tr("chat.you") : (bubble.sender.isEmpty ? contact : bubble.sender), text: bubble.copyText,
+                        id: bubble.id)
+        }
     }
 }
 

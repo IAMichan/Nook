@@ -135,7 +135,7 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "create_event",
-                description: "Creates a new calendar event. Only invoke when title and start time are clearly established.",
+                description: "Creates a new calendar event in the user's own calendar. Only invoke when title and start time are clearly established; when the user asks you to find or plan a time, get one from find_time first. Other people are invited with compose_mail and its invite field, in the same answer.",
                 schema: object([
                     "title": string("Title of the event."),
                     "start": string("Start time, ISO 8601 with timezone."),
@@ -168,7 +168,7 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "update_event",
-                description: "Updates an existing event: title, time, location, or notes. Use the ID from list_events or create_event output. Only supplied fields are updated; omitting end shifts the event preserving duration. Nook cannot invite attendees directly (macOS restriction): propose an email draft instead.",
+                description: "Updates an existing event: title, time, location, or notes. Use the ID from list_events or create_event output. Only supplied fields are updated; omitting end shifts the event preserving duration. macOS lets Nook not change attendees of an event: to invite people, write them a mail with compose_mail and its invite field (a real calendar invitation).",
                 schema: object([
                     "id": string("ID of the event."),
                     "title": string("New title, optional."),

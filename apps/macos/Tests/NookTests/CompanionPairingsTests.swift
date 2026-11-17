@@ -76,4 +76,36 @@ final class CompanionPairingsTests: XCTestCase {
         let back = try JSONDecoder().decode(CompanionPairings.self, from: JSONEncoder().encode(pairings))
         XCTAssertEqual(back, pairings)
     }
+
+    func testThePlatformIsKeptPerComputer() throws {
+        var pairings = CompanionPairings()
+        pairings.add(link(1))
+        pairings.add(link(2, name: "ThinkPad", host: "thinkpad.local"), platform: "windows")
+        let studio = pairings.macs[0].id
+        XCTAssertNil(pairings.macs[0].platform)
+        XCTAssertEqual(pairings.macs[0].kind, .mac, "a computer that never said is a Mac")
+        XCTAssertEqual(pairings.macs[1].kind, .windows)
+        XCTAssertTrue(pairings.setPlatform("linux", for: studio))
+        XCTAssertFalse(pairings.setPlatform("linux", for: studio), "nothing changed")
+        XCTAssertFalse(pairings.setPlatform(nil, for: studio), "an older answer does not forget it")
+        XCTAssertEqual(pairings.macs[0].kind, .linux)
+        let back = try JSONDecoder().decode(CompanionPairings.self, from: JSONEncoder().encode(pairings))
+        XCTAssertEqual(back, pairings)
+        // A list stored before computers said what they are still reads.
+        let old = try JSONSerialization.data(withJSONObject: ["macs": [["id": "a", "name": "Old", "host": "old.local", "port": 5000,
+                                                                       "key": "", "routes": [], "pairedAt": 0]]])
+        XCTAssertEqual(try JSONDecoder().decode(CompanionPairings.self, from: old).macs.first?.kind, .mac)
+    }
+
+    func testPlatformNamesAndSymbols() {
+        XCTAssertEqual(CompanionPlatform(nil), .mac)
+        XCTAssertEqual(CompanionPlatform("macos"), .mac)
+        XCTAssertEqual(CompanionPlatform("Windows"), .windows)
+        XCTAssertEqual(CompanionPlatform("linux"), .linux)
+        XCTAssertEqual(CompanionPlatform("android"), .other)
+        XCTAssertEqual(CompanionPlatform.mac.symbol, "laptopcomputer")
+        XCTAssertEqual(CompanionPlatform.windows.symbol, "display")
+        XCTAssertEqual(CompanionPlatform.linux.symbol, "display")
+        XCTAssertEqual(CompanionPlatform.wireMac, "macos")
+    }
 }

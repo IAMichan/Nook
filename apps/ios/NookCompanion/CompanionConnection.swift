@@ -106,13 +106,14 @@ final class CompanionChannel: @unchecked Sendable {
     /// A request, sealed for the Mac and framed. Its time is moved by what this phone's clock is off from that Mac's
     /// (`ClockOffsets`; the device id is the Mac's pairing id), so a phone with a wrong clock is not refused as stale.
     /// Every request says this phone opens compressed answers (`CompanionWire`): a Mac that compresses does so for its
-    /// large answers, an older one ignores it.
+    /// large answers, an older one ignores it. To a Mac that holds this phone's device key it goes signed (`DeviceKeyStore`).
     static func frame(_ request: CompanionRequest, key: Data, deviceID: String) throws -> Data {
         var request = request
         request.sent = CompanionClock.sent(request.sent, offset: ClockOffsets.offset(for: deviceID))
         request.compression = CompanionWire.available ? true : nil
         let sealed = try CompanionSeal.seal(try JSONEncoder().encode(request), pairingKey: key, deviceID: deviceID, direction: .request)
-        guard let framed = CompanionFrameReader.frame(sealed) else { throw CompanionClientError.badRequest }
+        guard let signed = DeviceKeyStore.signIfBound(sealed, id: deviceID),
+              let framed = CompanionFrameReader.frame(signed) else { throw CompanionClientError.badRequest }
         return framed
     }
 

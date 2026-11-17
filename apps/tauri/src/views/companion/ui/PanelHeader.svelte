@@ -9,10 +9,12 @@
   import ConnectionTitle from "./ConnectionTitle.svelte";
   import type { ClientView } from "../../../lib/companion";
 
-  let { title, view, onorb, ongear, onclose, buttons }: {
+  let { title, view, onorb, oncomputers, ongear, onclose, buttons }: {
     title: string;
     view: ClientView;
     onorb?: () => void;
+    /** With several computers paired, a tap on the line under the title opens the quick switcher there. */
+    oncomputers?: (r: DOMRect) => void;
     ongear?: () => void;
     onclose?: () => void;
     buttons?: Snippet;
@@ -21,13 +23,13 @@
 </script>
 
 <header>
-  <button class="orb" aria-label={tr("Nook en je Mac", "Nook and your Mac")} onclick={() => { mark?.poke(); onorb?.(); }}>
+  <button class="orb" aria-label={tr("Nook en je computer", "Nook and your computer")} onclick={() => { mark?.poke(); onorb?.(); }}>
     <NookMark bind:this={mark} size={30} />
     {#if view.phase === "offline"}<span class="away"></span>{/if}
   </button>
   <div class="titles">
     <h1>{title}</h1>
-    <ConnectionTitle {view} />
+    <ConnectionTitle {view} {oncomputers} />
   </div>
   {@render buttons?.()}
   {#if onclose}

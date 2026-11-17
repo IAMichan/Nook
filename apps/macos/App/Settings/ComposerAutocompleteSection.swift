@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Settings › Autocomplete › General › In Nook's composers: the suggested next prompt in an empty composer (the same switch
-/// as Settings › Sessions › Text generation), the suggested answer in an open chat's empty field (`ChatReplySuggestion`),
+/// as Settings › Sessions › Text generation), the suggested answer in an open chat's empty field (`ChatReplySuggestion`), the steps Nook offers from what a
+/// conversation says (`ChatActionSuggestion`),
 /// the rest of the sentence while you write to an agent or to Nook (`ComposerCompleter`) on its own switch, and the model it writes with: autocomplete's own, any local model on this Mac
 /// (the brain's MLX models, GGUF files), your subscription (Claude Code or Codex), or a model API of the brain's
 /// providers, with its model name and key as on the Text generation page.
@@ -19,6 +20,12 @@ struct ComposerAutocompleteSection: View {
             SettingToggle(tr("textgen.next.setting"), detail: tr("textgen.next.setting.detail"), isOn: $ws.suggestNextPrompt)
             SettingToggle(tr("chats.suggestReply.setting"), detail: tr("chats.suggestReply.setting.detail"),
                           isOn: $brain.suggestChatReply)
+            SettingToggle(tr("suggestActions.setting"), detail: tr("suggestActions.setting.detail"),
+                          isOn: $brain.suggestChatActions)
+            if brain.suggestChatActions {
+                TextGeneratorRow(label: "suggestActions.model", agentOption: "suggestActions.model.brain",
+                                 generator: $brain.actionSuggestionModel)
+            }
             SettingToggle(tr("autocomplete.composer.enable"), detail: tr("autocomplete.composer.enableDetail"),
                           isOn: $store.prefs.composerSuggestions)
             if store.prefs.composerSuggestions {

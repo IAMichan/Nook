@@ -8,7 +8,7 @@
   import DictationButton from "./DictationButton.svelte";
 
   let {
-    value = $bindable(""), placeholder, onsend, onstop, canSend = true, sending = false, minHeight = 32, controls, autofocus = false,
+    value = $bindable(""), placeholder, onsend, onstop, canSend = true, sending = false, minHeight = 32, controls, autofocus = false, attached = false,
   }: {
     value: string;
     placeholder: string;
@@ -20,10 +20,12 @@
     minHeight?: number;
     controls?: Snippet;
     autofocus?: boolean;
+    /** A picture or file waits to go: Send works without words. */
+    attached?: boolean;
   } = $props();
   let field = $state<HTMLTextAreaElement | null>(null);
   let focused = $state(false);
-  const typed = $derived(value.trim().length > 0);
+  const typed = $derived(value.trim().length > 0 || attached);
   $effect(() => { if (autofocus) field?.focus(); });
 
   function send() {
