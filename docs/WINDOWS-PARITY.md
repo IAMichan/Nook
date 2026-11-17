@@ -297,7 +297,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-30** `list_app_menu`, `app_menu_command` through a UI Automation menu walk (`AppMenu`) · M
 
-- [ ] **BR-31** `read_browser_tab` through the extension (CH-60) or UI Automation (`BrowserTabReader`) · M
+- [x] **BR-31** `read_browser_tab` through the extension (CH-60) or UI Automation (`BrowserTabReader`) · M *(UI Automation + Win/AT-SPI `BrowserTabReader` ported; extension hook waits on CH-60)*
 
 ### 3.5 Chat UI (Nook tab)
 

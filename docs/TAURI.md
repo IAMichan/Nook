@@ -180,6 +180,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Notetaker. **Tauri:** ◐ (no speaker recognition). **Where:** `core/src/services/notes.rs`
 
+- Reading open browser tabs (`OpenBrowserTab`, `BrowserTabReader`): `read_browser_tab` inspects running desktop browsers (Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox, Zen) for title, URL and page text, or background tab matches (query parsing, title suffix cleanup, URL normalization, formatting and missing-browser messages unit-tested; browser extension preference waits on CH-60). **Tauri:** ◐ Windows (UI Automation + OCR fallback, compiled for Windows, not run on a Windows PC) · ◐ Linux (AT-SPI `Document::GetAttributeValue("DocURL")` / address bar / text + X11 OCR fallback, not tested on a live desktop) · — Android. **Where:** `core/src/brain/open_browser_tab.rs`, `src-tauri/src/tools/browser_tab.rs`, `platform/windows/browser.rs`, `platform/linux/atspi.rs`
+
 - Reading the screen (`ScreenReader`, `ScreenContext`, `AppTextReader`). **Tauri:** ✓ Linux (AT-SPI, X11, tesseract) · ◐ Windows (UI Automation, OCR) · — Android. **Where:** `core/src/services/screen.rs`, `platform/`
 
 - Screen region. **Tauri:** ◐ (no annotating, pasting back or Ask, SV-74). **Where:** `services/part.rs`

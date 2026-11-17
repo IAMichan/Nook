@@ -338,6 +338,151 @@ impl ScreenReader for LinuxScreen {
     fn idle_seconds(&self) -> f64 {
         self.x11.as_ref().and_then(|x| x.idle_ms()).map(|ms| ms as f64 / 1000.0).unwrap_or(0.0)
     }
+
+    fn read_browser_tab(
+        &self,
+        browser: Option<&str>,
+        tab: Option<&str>,
+    ) -> Result<nook_core::brain::open_browser_tab::BrowserTabResult, String> {
+        use nook_core::brain::open_browser_tab::{self, BrowserSpec, BrowserTab, BrowserTabResult, TEXT_LIMIT};
+        let (parsed_browser, parsed_tab) = open_browser_tab::parse_query(tab.unwrap_or(""), browser.unwrap_or(""));
+        let frames = self.frames();
+
+        struct Candidate<'a> {
+            spec: &'static BrowserSpec,
+            title: String,
+            x_win: Option<x11::XWindow>,
+            frame: Option<atspi::Frame>,
+            _marker: std::marker::PhantomData<&'a ()>,
+        }
+
+        let mut candidates: Vec<Candidate<'_>> = Vec::new();
+        let mut x_list = self.x_windows();
+        if let Some(active_id) = self.x11.as_ref().and_then(|x| x.active()) {
+            if let Some(pos) = x_list.iter().position(|w| w.id == active_id) {
+                if pos > 0 {
+                    let active = x_list.remove(pos);
+                    x_list.insert(0, active);
+                }
+            }
+        }
+        for w in x_list {
+            if let Some(spec) = open_browser_tab::match_browser(&w.class) {
+                let frame = self.frame_for(&w, &frames);
+                candidates.push(Candidate { spec, title: w.title.clone(), x_win: Some(w), frame, _marker: std::marker::PhantomData });
+            }
+        }
+        if candidates.is_empty() {
+            let mut atspi_frames: Vec<atspi::Frame> = frames.iter().filter(|f| f.showing).cloned().collect();
+            atspi_frames.sort_by_key(|f| !f.active);
+            for f in atspi_frames {
+                if let Some(spec) = open_browser_tab::match_browser(&f.app) {
+                    candidates.push(Candidate {
+                        spec,
+                        title: f.title.clone(),
+                        x_win: None,
+                        frame: Some(f),
+                        _marker: std::marker::PhantomData,
+                    });
+                }
+            }
+        }
+
+        let mut running_all = Vec::new();
+        for c in &candidates {
+            let name = c.spec.name.to_string();
+            if !running_all.contains(&name) {
+                running_all.push(name);
+            }
+        }
+        if running_all.is_empty() {
+            return Ok(BrowserTabResult::NotFound { running: vec![] });
+        }
+
+        let filtered: Vec<&Candidate<'_>> = match parsed_browser {
+            Some(spec) => candidates.iter().filter(|c| c.spec.name == spec.name).collect(),
+            None => {
+                if browser.is_some_and(|s| !s.trim().is_empty()) {
+                    return Ok(BrowserTabResult::NotFound { running: running_all });
+                }
+                candidates.iter().collect()
+            }
+        };
+        if filtered.is_empty() {
+            return Ok(BrowserTabResult::NotFound { running: running_all });
+        }
+
+        let queried_names: Vec<String> = if parsed_browser.is_some() {
+            let mut v: Vec<String> = filtered.iter().map(|c| c.spec.name.to_string()).collect();
+            v.sort();
+            v.dedup();
+            v
+        } else {
+            running_all.clone()
+        };
+
+        for c in &filtered {
+            let mut active_title = open_browser_tab::clean_tab_title(&c.title, c.spec.name);
+            let inspect = c.frame.as_ref().and_then(|f| self.with_atspi(|a| a.inspect_browser(f, TEXT_LIMIT)));
+            let url = inspect.as_ref().map(|i| i.url.clone()).unwrap_or_default();
+            if active_title.is_empty() {
+                if let Some(doc_t) = inspect.as_ref().map(|i| i.doc_title.trim()).filter(|t| !t.is_empty()) {
+                    active_title = doc_t.to_string();
+                }
+            }
+
+            if let Some(query) = parsed_tab.as_deref() {
+                let active_matches =
+                    open_browser_tab::tab_matches(&active_title, &url, query) || open_browser_tab::tab_matches(&c.title, &url, query);
+                if !active_matches {
+                    if let Some(bg) = inspect.as_ref().and_then(|i| {
+                        i.tabs.iter().find(|t| open_browser_tab::tab_matches(t, "", query) && !t.eq_ignore_ascii_case(&active_title))
+                    }) {
+                        return Ok(BrowserTabResult::Found(BrowserTab {
+                            browser: c.spec.name.to_string(),
+                            title: bg.clone(),
+                            url: String::new(),
+                            visible: false,
+                            text: String::new(),
+                        }));
+                    }
+                    continue;
+                }
+            }
+
+            let mut text = inspect.map(|i| i.text).unwrap_or_default();
+            if text.trim().chars().count() < 20 {
+                if let Some(f) = c.frame.as_ref() {
+                    let full = self.with_atspi(|a| a.text(f, TEXT_LIMIT, 3000)).unwrap_or_default();
+                    if full.trim().chars().count() > text.trim().chars().count() {
+                        text = full;
+                    }
+                }
+            }
+            if text.trim().chars().count() < 20 {
+                if let Some(xw) = c.x_win.as_ref() {
+                    if let Some((ocr_text, _)) = self.ocr_window(xw) {
+                        if ocr_text.trim().chars().count() > text.trim().chars().count() {
+                            text = ocr_text;
+                        }
+                    }
+                }
+            }
+
+            if active_title.is_empty() && url.is_empty() && text.trim().is_empty() {
+                continue;
+            }
+            return Ok(BrowserTabResult::Found(BrowserTab {
+                browser: c.spec.name.to_string(),
+                title: active_title,
+                url,
+                visible: true,
+                text: open_browser_tab::cap_text(&text),
+            }));
+        }
+
+        Ok(BrowserTabResult::NotFound { running: queried_names })
+    }
 }
 
 pub struct LinuxMedia {
