@@ -490,6 +490,8 @@ private struct FilterChoiceRow: View {
 struct PullRequestSearchBar<Middle: View>: View {
     @Binding var filter: PullRequestFilter
     let accounts: [AccountPullRequests]
+    /// The Filters dropdown's counts, worked out once by the list (`PullRequestListLayout.facets`).
+    let facets: PullRequestFacets
     let prompt: String
     var watching = false
     var focus: FocusState<Bool>.Binding? = nil
@@ -501,7 +503,7 @@ struct PullRequestSearchBar<Middle: View>: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             NookSearchField(prompt: prompt, text: $filter.query, style: style, focus: focus, onEscape: onEscape)
             middle()
-            PullRequestFilterMenu(filter: $filter, facets: PullRequestFilter.facets(in: accounts, state: filter.state),
+            PullRequestFilterMenu(filter: $filter, facets: facets,
                                   accounts: accounts.map { (id: $0.id, name: $0.login.isEmpty ? $0.name : $0.name + " · @" + $0.login) },
                                   watching: watching)
         }
@@ -509,9 +511,9 @@ struct PullRequestSearchBar<Middle: View>: View {
 }
 
 extension PullRequestSearchBar where Middle == EmptyView {
-    init(filter: Binding<PullRequestFilter>, accounts: [AccountPullRequests], prompt: String, watching: Bool = false,
-         style: NookSearchField.Style = .panel) {
-        self.init(filter: filter, accounts: accounts, prompt: prompt, watching: watching, style: style) { EmptyView() }
+    init(filter: Binding<PullRequestFilter>, accounts: [AccountPullRequests], facets: PullRequestFacets, prompt: String,
+         watching: Bool = false, style: NookSearchField.Style = .panel) {
+        self.init(filter: filter, accounts: accounts, facets: facets, prompt: prompt, watching: watching, style: style) { EmptyView() }
     }
 }
 
@@ -522,17 +524,10 @@ extension PullRequestSearchBar where Middle == EmptyView {
 /// picker both use it, on the same `PullRequestFilterStore`.
 struct PullRequestAttentionBar: View {
     @Binding var filter: PullRequestFilter
-    let accounts: [AccountPullRequests]
-
-    /// What each chip counts: the list as every other filter leaves it.
-    private var counts: [PullRequestAttention: Int] {
-        var others = filter
-        others.attention = nil
-        return PullRequestAttention.counts(in: others.apply(accounts))
-    }
+    /// What each chip counts: the list as every other filter leaves it (`PullRequestListLayout.attention`).
+    let counts: [PullRequestAttention: Int]
 
     var body: some View {
-        let counts = self.counts
         let shown = PullRequestAttention.allCases.filter { (counts[$0] ?? 0) > 0 || filter.attention == $0 }
         if !shown.isEmpty {
             HStack(spacing: NookTheme.Spacing.xs) {
