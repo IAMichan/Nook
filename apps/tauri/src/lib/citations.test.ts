@@ -146,7 +146,7 @@ describe("renderAnswerMarkdown", () => {
   it("leaves citations in code and links untouched and leaves plain renderMarkdown intact", () => {
     const html = renderAnswerMarkdown("Use `[1]` and [link](https://nook.app) [1].", refs);
     expect(html).toContain("<code>[1]</code>");
-    expect(html).toContain('<a href="https://nook.app" data-external>link</a>');
+    expect(html).toContain('<a href="https://nook.app/" data-external title="https://nook.app/">link</a>');
     expect(renderMarkdown("Fact [1].")).toContain('<sup class="cite" data-cite="1">1</sup>');
   });
 });

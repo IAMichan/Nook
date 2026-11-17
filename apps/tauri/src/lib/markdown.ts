@@ -5,7 +5,7 @@ import { escapeHtml } from "@nook/web-ui/markdown";
 import { tr } from "./i18n.svelte";
 import { parseMarkdownBlocks, renderInlineMarkdown, isNumericColumn, type InlineOptions } from "./markdown-blocks";
 import { highlightCodeToHtml } from "./syntax";
-import { citationLabel, citationReferences, isOpenableUrl } from "./citations";
+import { citationLabel, citationReferences, isOpenableUrl, withoutSourceList } from "./citations";
 import { sourceGlyphSvg } from "./service-icons";
 import { sourceDomain } from "./sources";
 import type { SourceReference } from "./types";
@@ -96,4 +96,9 @@ export function answerCitation(references: SourceReference[]): (numbers: number[
     const domainAttr = domain ? ` data-icon-domain="${escapeHtml(domain)}"` : "";
     return `<button type="button" class="cite-pill" data-cites="${nums}"${openAttr}><span class="cite-ico"${domainAttr}>${sourceGlyphSvg(first.sourceId)}</span><span class="cite-label">${label}</span></button>`;
   };
+}
+
+/** A whole answer as HTML: without a model-written "Sources:" list, and with citation pills for `references`. */
+export function renderAnswerMarkdown(source: string, references: SourceReference[]): string {
+  return renderMarkdown(withoutSourceList(source), references.length ? { citation: answerCitation(references) } : {});
 }
