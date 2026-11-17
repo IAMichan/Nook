@@ -162,6 +162,11 @@ Nook has one visual language, and the repository guards it in three places:
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` (started by `ci.yml`) runs it on every pull request that touches the app.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
+4. **The Tauri app** has the same two guards in `npm test` (`apps/tauri/src/theme/`): `theme-tokens.test.ts` reads
+   `NookPalette.swift` and `NookTheme.swift` and fails when a color of `nookDark`/`nookLight`, a `Radius`, a `Spacing`
+   step, a `TextStyle` or a `Motion` duration differs from the variables in `src/app.css`; `ui-lint.test.ts` fails when
+   a `.svelte` file writes a color literal, a font size or a radius in px outside its script. Older files keep the
+   counts in `ui-baseline.json` and may only go down (UI-76). Change a token on both sides in the same pull request.
 
 When a file genuinely draws its own colors (a brand mark, a chart palette, Nook's face), add it to the allow-list in
 both `UIConsistencyTests.ownColors` and `OWN_COLORS` in `scripts/ui-lint.sh`, with the reason in a comment; never

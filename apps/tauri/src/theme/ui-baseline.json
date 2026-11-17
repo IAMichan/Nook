@@ -1,0 +1,747 @@
+{
+ "src/components/ChartView.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 3
+ },
+ "src/components/CommandPalette.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 0
+ },
+ "src/components/Composer.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 1
+ },
+ "src/components/HomeGlance.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/LazyView.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/MailDraftView.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 1
+ },
+ "src/components/MessageView.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 4
+ },
+ "src/components/ModelAdvice.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 2
+ },
+ "src/components/NookList.svelte": {
+  "color": 0,
+  "font": 13,
+  "radius": 0
+ },
+ "src/components/NoticeOk.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 0
+ },
+ "src/components/Onboarding.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 2
+ },
+ "src/components/OnOffSwitch.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/Orb.svelte": {
+  "color": 9,
+  "font": 1,
+  "radius": 1
+ },
+ "src/components/PlanCard.svelte": {
+  "color": 0,
+  "font": 8,
+  "radius": 2
+ },
+ "src/components/ShortcutField.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 0
+ },
+ "src/components/SourcePicker.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 1
+ },
+ "src/components/SourcesView.svelte": {
+  "color": 0,
+  "font": 8,
+  "radius": 2
+ },
+ "src/components/StarterGrid.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/Toast.svelte": {
+  "color": 1,
+  "font": 5,
+  "radius": 1
+ },
+ "src/components/ui/CountBadge.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/ui/Dialog.svelte": {
+  "color": 6,
+  "font": 4,
+  "radius": 2
+ },
+ "src/components/ui/EmptyState.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/ui/ImageModal.svelte": {
+  "color": 2,
+  "font": 0,
+  "radius": 0
+ },
+ "src/components/ui/Menu.svelte": {
+  "color": 7,
+  "font": 2,
+  "radius": 1
+ },
+ "src/components/ui/QRCodeView.svelte": {
+  "color": 1,
+  "font": 0,
+  "radius": 0
+ },
+ "src/components/ui/SearchField.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/components/ui/Sheet.svelte": {
+  "color": 2,
+  "font": 0,
+  "radius": 2
+ },
+ "src/components/ui/TabBar.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 0
+ },
+ "src/components/ui/Tag.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/components/ui/Toggle.svelte": {
+  "color": 4,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/agents/actions/Actions.svelte": {
+  "color": 0,
+  "font": 8,
+  "radius": 3
+ },
+ "src/views/agents/actions/DispatchSheet.svelte": {
+  "color": 1,
+  "font": 7,
+  "radius": 1
+ },
+ "src/views/agents/actions/RepoPicker.svelte": {
+  "color": 1,
+  "font": 5,
+  "radius": 2
+ },
+ "src/views/agents/actions/RepoTabs.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/agents/actions/RunSkeleton.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/agents/actions/RunView.svelte": {
+  "color": 0,
+  "font": 11,
+  "radius": 2
+ },
+ "src/views/agents/AgentAlerts.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 2
+ },
+ "src/views/agents/AgentsTab.svelte": {
+  "color": 0,
+  "font": 13,
+  "radius": 0
+ },
+ "src/views/agents/ApprovalCard.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 2
+ },
+ "src/views/agents/Conversation.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 0
+ },
+ "src/views/agents/DiffView.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 3
+ },
+ "src/views/agents/LiveDetail.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 0
+ },
+ "src/views/agents/PastDetail.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 0
+ },
+ "src/views/agents/pulls/CheckLog.svelte": {
+  "color": 0,
+  "font": 7,
+  "radius": 3
+ },
+ "src/views/agents/pulls/FilterMenu.svelte": {
+  "color": 1,
+  "font": 6,
+  "radius": 3
+ },
+ "src/views/agents/pulls/PullRequests.svelte": {
+  "color": 1,
+  "font": 10,
+  "radius": 2
+ },
+ "src/views/agents/pulls/PullRequestView.svelte": {
+  "color": 4,
+  "font": 14,
+  "radius": 6
+ },
+ "src/views/agents/QuestionCard.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 2
+ },
+ "src/views/agents/run/Changes.svelte": {
+  "color": 1,
+  "font": 9,
+  "radius": 2
+ },
+ "src/views/agents/run/EventRow.svelte": {
+  "color": 0,
+  "font": 17,
+  "radius": 1
+ },
+ "src/views/agents/run/HandOff.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 0
+ },
+ "src/views/agents/run/NewSession.svelte": {
+  "color": 1,
+  "font": 9,
+  "radius": 5
+ },
+ "src/views/agents/run/PlanCard.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 1
+ },
+ "src/views/agents/run/RunComposer.svelte": {
+  "color": 0,
+  "font": 13,
+  "radius": 0
+ },
+ "src/views/agents/run/RunPanel.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 0
+ },
+ "src/views/agents/run/Timeline.svelte": {
+  "color": 0,
+  "font": 8,
+  "radius": 0
+ },
+ "src/views/agents/UnifiedDiffView.svelte": {
+  "color": 1,
+  "font": 4,
+  "radius": 2
+ },
+ "src/views/Bar.svelte": {
+  "color": 3,
+  "font": 7,
+  "radius": 3
+ },
+ "src/views/Chats.svelte": {
+  "color": 0,
+  "font": 9,
+  "radius": 0
+ },
+ "src/views/Commands.svelte": {
+  "color": 0,
+  "font": 7,
+  "radius": 1
+ },
+ "src/views/companion/AgentsTab.svelte": {
+  "color": 4,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/companion/ChangesView.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 0
+ },
+ "src/views/companion/ChatInfo.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 1
+ },
+ "src/views/companion/ChatsTab.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 4
+ },
+ "src/views/companion/Companion.svelte": {
+  "color": 3,
+  "font": 1,
+  "radius": 1
+ },
+ "src/views/companion/ConversationScroll.svelte": {
+  "color": 2,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/companion/FilesView.svelte": {
+  "color": 1,
+  "font": 1,
+  "radius": 2
+ },
+ "src/views/companion/ForwardPicker.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/companion/HomeTab.svelte": {
+  "color": 2,
+  "font": 1,
+  "radius": 10
+ },
+ "src/views/companion/InboxChat.svelte": {
+  "color": 6,
+  "font": 3,
+  "radius": 13
+ },
+ "src/views/companion/MessageInfo.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/companion/NewSession.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 3
+ },
+ "src/views/companion/NookChat.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 2
+ },
+ "src/views/companion/Pairing.svelte": {
+  "color": 2,
+  "font": 3,
+  "radius": 2
+ },
+ "src/views/companion/PullRequests.svelte": {
+  "color": 1,
+  "font": 5,
+  "radius": 10
+ },
+ "src/views/companion/QuestionFlow.svelte": {
+  "color": 2,
+  "font": 4,
+  "radius": 3
+ },
+ "src/views/companion/SessionDetail.svelte": {
+  "color": 4,
+  "font": 3,
+  "radius": 9
+ },
+ "src/views/companion/SettingsSheet.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/companion/ShareSheet.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/companion/SnoozePicker.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 1
+ },
+ "src/views/companion/TerminalsView.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 1
+ },
+ "src/views/companion/TranscriptView.svelte": {
+  "color": 6,
+  "font": 2,
+  "radius": 4
+ },
+ "src/views/companion/ui/AgentMark.svelte": {
+  "color": 7,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/companion/ui/AgentRow.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/companion/ui/ComposerPill.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/companion/ui/DecisionButton.svelte": {
+  "color": 2,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/companion/ui/DictationButton.svelte": {
+  "color": 1,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/companion/ui/FileCard.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 1
+ },
+ "src/views/companion/ui/IconButton.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/companion/ui/ImageTray.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/companion/ui/NavBar.svelte": {
+  "color": 1,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/companion/ui/NookMark.svelte": {
+  "color": 10,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/companion/ui/PatchView.svelte": {
+  "color": 1,
+  "font": 2,
+  "radius": 0
+ },
+ "src/views/companion/ui/SessionComposer.svelte": {
+  "color": 6,
+  "font": 0,
+  "radius": 3
+ },
+ "src/views/companion/ui/SessionNotice.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/companion/ui/SettingsRow.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/companion/ui/WaitingRow.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/connectors/CatalogueCard.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 1
+ },
+ "src/views/connectors/CategoryChips.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/connectors/ChatAccounts.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/connectors/GitHubPanel.svelte": {
+  "color": 4,
+  "font": 17,
+  "radius": 0
+ },
+ "src/views/connectors/GitLabRow.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/connectors/GitLabSheet.svelte": {
+  "color": 1,
+  "font": 6,
+  "radius": 1
+ },
+ "src/views/connectors/HealthPill.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/connectors/McpAddSheet.svelte": {
+  "color": 1,
+  "font": 3,
+  "radius": 2
+ },
+ "src/views/connectors/McpServers.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 1
+ },
+ "src/views/connectors/ServiceIcon.svelte": {
+  "color": 1,
+  "font": 0,
+  "radius": 0
+ },
+ "src/views/connectors/ServiceSheet.svelte": {
+  "color": 1,
+  "font": 10,
+  "radius": 2
+ },
+ "src/views/connectors/WatchedPulls.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/connectors/WhatsApp.svelte": {
+  "color": 1,
+  "font": 4,
+  "radius": 2
+ },
+ "src/views/connectors/WhatsAppCard.svelte": {
+  "color": 1,
+  "font": 9,
+  "radius": 4
+ },
+ "src/views/games/GamerMode.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 0
+ },
+ "src/views/games/LogEvent.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/games/ValorantCoach.svelte": {
+  "color": 0,
+  "font": 12,
+  "radius": 0
+ },
+ "src/views/home/Customize.svelte": {
+  "color": 1,
+  "font": 6,
+  "radius": 1
+ },
+ "src/views/home/Essentials.svelte": {
+  "color": 3,
+  "font": 5,
+  "radius": 2
+ },
+ "src/views/home/Home.svelte": {
+  "color": 1,
+  "font": 9,
+  "radius": 0
+ },
+ "src/views/home/InboxCard.svelte": {
+  "color": 3,
+  "font": 14,
+  "radius": 3
+ },
+ "src/views/Main.svelte": {
+  "color": 2,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/NookHistory.svelte": {
+  "color": 0,
+  "font": 11,
+  "radius": 0
+ },
+ "src/views/services/Aside.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 2
+ },
+ "src/views/services/Ghost.svelte": {
+  "color": 2,
+  "font": 3,
+  "radius": 2
+ },
+ "src/views/services/Listening.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 1
+ },
+ "src/views/services/Music.svelte": {
+  "color": 10,
+  "font": 9,
+  "radius": 6
+ },
+ "src/views/services/RecordingBadge.svelte": {
+  "color": 3,
+  "font": 3,
+  "radius": 0
+ },
+ "src/views/services/ScreenPart.svelte": {
+  "color": 3,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/settings/Accounts.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 0
+ },
+ "src/views/settings/Agents.svelte": {
+  "color": 1,
+  "font": 3,
+  "radius": 3
+ },
+ "src/views/settings/AgentsAutomation.svelte": {
+  "color": 0,
+  "font": 12,
+  "radius": 0
+ },
+ "src/views/settings/AgentsWorkspace.svelte": {
+  "color": 0,
+  "font": 6,
+  "radius": 0
+ },
+ "src/views/settings/Appearance.svelte": {
+  "color": 8,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/settings/Assistant.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 0
+ },
+ "src/views/settings/Autocomplete.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 1
+ },
+ "src/views/settings/AutocompletePlayground.svelte": {
+  "color": 0,
+  "font": 5,
+  "radius": 3
+ },
+ "src/views/settings/Brain.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/settings/Companion.svelte": {
+  "color": 0,
+  "font": 2,
+  "radius": 1
+ },
+ "src/views/settings/CompanionPush.svelte": {
+  "color": 0,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/settings/General.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/settings/Maintenance.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/settings/Memory.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 0
+ },
+ "src/views/settings/Voice.svelte": {
+  "color": 0,
+  "font": 3,
+  "radius": 0
+ },
+ "src/views/Today.svelte": {
+  "color": 0,
+  "font": 7,
+  "radius": 1
+ },
+ "src/views/Workspace.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 1
+ },
+ "src/views/workspace/Browser.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 1
+ },
+ "src/views/workspace/Terminals.svelte": {
+  "color": 0,
+  "font": 4,
+  "radius": 2
+ },
+ "src/views/workspace/TerminalView.svelte": {
+  "color": 1,
+  "font": 0,
+  "radius": 1
+ },
+ "src/views/workspace/Usage.svelte": {
+  "color": 0,
+  "font": 1,
+  "radius": 0
+ },
+ "src/views/workspace/UsagePage.svelte": {
+  "color": 0,
+  "font": 11,
+  "radius": 5
+ },
+ "src/views/workspace/Worktrees.svelte": {
+  "color": 1,
+  "font": 6,
+  "radius": 2
+ }
+}
