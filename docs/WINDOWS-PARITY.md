@@ -240,7 +240,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-02** Subscription brains through Codex, Gemini, Grok, Kimi and Mistral Vibe CLIs (`Brain/SubscriptionBrain.swift`); Tauri has only `ClaudeCode` → `core/src/brain/subscription.rs`, new `provider.rs` variants · M
 
-- [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
+- [x] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 
 - [x] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
 

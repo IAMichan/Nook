@@ -10,6 +10,7 @@ pub mod companion;
 pub mod games;
 pub mod maintenance;
 pub mod plans;
+pub mod screen_work;
 pub mod selection_ask;
 pub mod workspace;
 pub mod workspace_tools;

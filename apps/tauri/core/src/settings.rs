@@ -85,6 +85,11 @@ pub struct Settings {
     pub screen_with_every_question: bool,
     /// Bronnen die alleen een lokaal brein mag lezen.
     pub local_only_sources: BTreeSet<String>,
+    /// Settings › Brain › Screen work: the model on this computer that reads the screen while an external brain answers
+    /// ("ollama:<model>", "lmstudio:<model>"; "" for none). See `brain::screen_brain`.
+    pub screen_brain: String,
+    /// The screen brain does not answer itself: it writes the chosen brain a filtered note (`brain::private_brief`).
+    pub screen_brain_relays: bool,
     pub evidence_first: bool,
     pub check_answers: bool,
     /// A small bar above words you select anywhere in Nook asks, explains or translates them (`SelectionAsk`).
@@ -196,6 +201,8 @@ impl Default for Settings {
             live_screen: false,
             screen_with_every_question: false,
             local_only_sources: BTreeSet::new(),
+            screen_brain: String::new(),
+            screen_brain_relays: false,
             evidence_first: false,
             check_answers: true,
             selection_ask: true,
@@ -287,6 +294,17 @@ impl Settings {
 
     pub fn is_local_brain(&self) -> bool {
         self.selection().is_local()
+    }
+
+    /// The model on this computer that does the screen work, while the chosen brain is external and the screen stays
+    /// here (`brain::screen_brain::worker`).
+    pub fn screen_worker(&self) -> Option<BrainSelection> {
+        crate::brain::screen_brain::worker(&self.selection(), self.local_only_sources.contains("screen"), &self.screen_brain)
+    }
+
+    /// The screen brain when it writes the chosen brain a note instead of answering itself.
+    pub fn relay_worker(&self) -> Option<BrainSelection> {
+        self.screen_worker().filter(|_| self.screen_brain_relays)
     }
 
     /// De bronnen die het actieve brein niet mag zien.

@@ -47,6 +47,10 @@ export interface Settings {
   liveScreen: boolean;
   screenWithEveryQuestion: boolean;
   localOnlySources: string[];
+  /** Settings › Brain › Screen work: "ollama:<model>" or "lmstudio:<model>", "" for none. */
+  screenBrain: string;
+  /** The screen brain writes the chosen brain a filtered note instead of answering itself. */
+  screenBrainRelays: boolean;
   evidenceFirst: boolean;
   checkAnswers: boolean;
   selectionAsk: boolean;
@@ -170,6 +174,8 @@ export interface ChatMessage {
   contextSources: string[];
   scopeLabel: string;
   notices: string[];
+  /** The filtered note this answer was written from: exactly what left this computer of what stays on it. */
+  privateBrief?: string;
   charts: ChatChart[];
   /** The plan Nook works through (`update_plan`), as a checklist above the answer. */
   tasks?: TaskStep[];

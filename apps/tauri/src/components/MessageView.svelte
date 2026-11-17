@@ -160,6 +160,12 @@
     {#if message.streaming && text && message.status}
       <WorkingIndicator status={message.status} since={message.date} />
     {/if}
+    {#if message.privateBrief && !message.streaming}
+      <details class="brief">
+        <summary>{tr("Wat deze computer heeft verlaten", "What left this computer")}</summary>
+        <p>{message.privateBrief}</p>
+      </details>
+    {/if}
     {#if !message.isError && message.recovery}
       <div class="offers">
         {#if message.recovery}<button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
@@ -193,6 +199,9 @@
   .details { font: var(--text-detail); color: var(--text3); padding: 4px 0; margin-top: 6px; }
   .raw { font: var(--text-label); color: var(--text3); white-space: pre-wrap; user-select: text; margin: 6px 0 0; padding: 10px; border-radius: var(--radius-control); background: var(--well, var(--smoke)); }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
+  .brief { margin-top: 8px; font: var(--text-detail); color: var(--text3); }
+  .brief summary { cursor: pointer; }
+  .brief p { margin: 6px 0 0; white-space: pre-wrap; }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
