@@ -213,7 +213,7 @@
   .ref-row.cited .ref-dot { background: var(--iris); }
   .ref-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .ref-title {
-    font-size: 12.5px;
+    font: var(--text-detail);
     color: var(--text2);
     white-space: nowrap;
     overflow: hidden;
@@ -221,12 +221,12 @@
   }
   .ref-row.cited .ref-title { color: var(--paper); }
   .ref-sub {
-    font-size: 11px;
+    font: var(--text-label);
     color: var(--text3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .ref-arrow { font-size: 10px; font-weight: 600; color: var(--text3); flex: none; }
+  .ref-arrow { font: var(--text-caption); font-weight: 600; color: var(--text3); flex: none; }
   .ref-row:hover .ref-arrow { color: var(--paper); }
 </style>

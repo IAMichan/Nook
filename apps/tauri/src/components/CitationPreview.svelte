@@ -171,7 +171,7 @@
   .origin {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font: var(--text-label);
     color: var(--text3);
     white-space: nowrap;
     overflow: hidden;
@@ -179,7 +179,7 @@
   }
   .open-btn {
     flex: none;
-    font-size: 11px;
+    font: var(--text-label);
     font-weight: 500;
     padding: 2px 8px;
     border-radius: var(--radius-control);
@@ -191,7 +191,7 @@
     filter: brightness(1.1);
   }
   .title {
-    font-size: 12.5px;
+    font: var(--text-detail);
     font-weight: 600;
     color: var(--paper);
     display: -webkit-box;
@@ -202,7 +202,7 @@
   }
   .empty {
     margin: 0;
-    font-size: 12px;
+    font: var(--text-detail);
     color: var(--text3);
   }
   .passage {
@@ -214,7 +214,7 @@
   .line {
     position: relative;
     padding-left: 10px;
-    font-size: 12px;
+    font: var(--text-detail);
     color: var(--text3);
     overflow-wrap: anywhere;
   }
@@ -235,7 +235,7 @@
     background: var(--iris);
   }
   .more {
-    font-size: 11px;
+    font: var(--text-label);
     color: var(--text3);
   }
 </style>
