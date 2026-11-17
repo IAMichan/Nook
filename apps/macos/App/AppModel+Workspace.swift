@@ -483,8 +483,8 @@ extension AppModel {
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
         CompanionNotifier.shared.turnFinished(run)
         recap.turnEnded(session: "run-" + run.id.uuidString)
-        // An agent may have pushed or opened a pull request: the list refreshes when you look next.
-        PullRequestStore.shared.markStale()
+        // An agent may have pushed or opened a pull request: the list reads it again shortly (see `followTurn`).
+        PullRequestStore.shared.followTurn()
         // The turn used part of the plan: show the limits as they are now.
         switch run.provider {
         case .claude: claudeUsage.refreshNow()
