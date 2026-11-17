@@ -143,7 +143,7 @@ final class ChatInboxConnector: ContextSource {
                     let name = app.isEmpty ? tr("chats.source.title") : (MessagingApps.app(named: app)?.name ?? app)
                     return tr("chats.tool.send", name, to, AppData.string(input["message"]))
                 },
-                tag: { _ in ("sends", .caution) },
+                tag: { _ in (tr("plan.tag.sends"), .caution) },
                 run: { input in
                     let capture = ChatCaptureService.shared
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()

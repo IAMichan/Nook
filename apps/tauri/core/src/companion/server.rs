@@ -19,6 +19,7 @@ use super::device_key;
 use super::live;
 use super::models::*;
 use super::push;
+use super::relay_push;
 use super::seal::{self, Direction};
 use super::store::CompanionStore;
 use crate::store::NookStore;
@@ -45,6 +46,10 @@ pub struct CompanionServer {
     /// De naam die de telefoon ziet ("Michaels pc").
     name: String,
     apns: super::apns::ApnsClient,
+    /// Posts sealed pushes to the relay (`relay_push`).
+    relay_http: reqwest::Client,
+    /// This build has a relay of Nook's own, so a new setup starts on the relay route (`PushRoute::default_for`).
+    build_relay: std::sync::atomic::AtomicBool,
     ledger: Mutex<push::PushLedger>,
     /// Hoe de laatste melding afliep, per toestel; voor Instellingen.
     last_push: Mutex<Option<String>>,
@@ -93,6 +98,8 @@ impl CompanionServer {
             audit,
             name,
             apns: Default::default(),
+            relay_http: reqwest::Client::builder().timeout(Duration::from_secs(15)).build().unwrap_or_default(),
+            build_relay: Default::default(),
             ledger: Mutex::new(Default::default()),
             last_push: Mutex::new(None),
             guards: Mutex::new(HashMap::new()),
@@ -119,6 +126,38 @@ impl CompanionServer {
     }
 
     /// The version of this app, told to phones so they can say when one side is behind (`CompanionCompatibility`).
+    /// This build has Nook's own relay (`NOOK_RELAY_URL`).
+    pub fn set_build_relay(&self, has: bool) {
+        self.build_relay.store(has, Ordering::Relaxed);
+    }
+
+    /// How pushes reach the phones now.
+    pub fn push_route(&self) -> relay_push::PushRoute {
+        self.store.push_route(self.build_relay.load(Ordering::Relaxed))
+    }
+
+    /// The relay's push endpoint, when a relay is in use (`RelayPushClient.reachable`): an Android phone needs it,
+    /// whatever the route for iPhones is.
+    fn relay_push_endpoint(&self) -> Option<String> {
+        relay_push::endpoint(&self.reach().relay)
+    }
+
+    /// A relay is in use that pushes can go through (`RelayPushClient.reachable`).
+    pub fn relay_push_reachable(&self) -> bool {
+        self.relay_push_endpoint().is_some()
+    }
+
+    /// Notifications go through the relay now (`RelayPushClient.active`).
+    pub fn relay_push_active(&self) -> bool {
+        self.push_route() == relay_push::PushRoute::Relay && self.relay_push_endpoint().is_some()
+    }
+
+    /// Notifications can go out at all: with the user's own APNs key, or sealed through the relay
+    /// (`CompanionNotifier.canSendAlerts`).
+    pub fn can_send_alerts(&self) -> bool {
+        self.store.can_push() || self.relay_push_active()
+    }
+
     pub fn set_app_version(&self, version: &str) {
         *self.app_version.lock().unwrap_or_else(|e| e.into_inner()) = Some(version.to_string());
     }
@@ -547,6 +586,20 @@ impl CompanionServer {
                 }
                 CompanionResponse { message: Some(if bound { "bound" } else { "other" }.into()), ..CompanionResponse::success(id) }
             }
+            CompanionOp::Register if request.item.as_deref() == Some(relay_push::FCM) => {
+                // Nook on Android: a Firebase token, whose pushes go through the relay (`RelayPushRequest.service`).
+                let Some(token) = request.text.as_deref().filter(|t| relay_push::valid_fcm_token(t)) else {
+                    return fail(CompanionError::BadRequest);
+                };
+                self.store.set_push(device_id, Some(token.to_string()), Some(true), Some(relay_push::FCM));
+                self.audit("push_registered", &self.store.device(device_id).map(|d| d.name).unwrap_or_default());
+                let ready = self.relay_push_endpoint().is_some() && self.store.push().enabled;
+                CompanionResponse {
+                    mac_name: Some(self.name.clone()),
+                    message: Some(if ready { "push" } else { "nopush" }.into()),
+                    ..CompanionResponse::success(id)
+                }
+            }
             CompanionOp::Register => {
                 // Het token komt in een URL op Apple's host: alleen hex.
                 let Some(token) = request.text.as_deref().filter(|t| push::valid_token(t)) else {
@@ -554,7 +607,7 @@ impl CompanionServer {
                 };
                 self.store.set_push_token(device_id, Some(token.to_lowercase()), Some(request.item.as_deref() != Some("development")));
                 self.audit("push_registered", &self.store.device(device_id).map(|d| d.name).unwrap_or_default());
-                let ready = self.store.can_push() && self.store.push().enabled;
+                let ready = self.can_send_alerts() && self.store.push().enabled;
                 CompanionResponse {
                     mac_name: Some(self.name.clone()),
                     message: Some(if ready { "push" } else { "nopush" }.into()),
@@ -1002,7 +1055,7 @@ impl CompanionServer {
     /// laatste wijziging); `away` = de gebruiker is niet bij de computer. Geeft de reden terug als er niets ging.
     pub async fn notify(&self, event: push::PushEvent, turn: i64, away: bool) -> Option<push::PushSkip> {
         let settings = self.store.push();
-        if !self.store.enabled() || !self.store.can_push() {
+        if !self.store.enabled() || !self.can_send_alerts() {
             return Some(push::PushSkip::Disabled);
         }
         let targets: Vec<PairedDevice> = self.store.devices().into_iter().filter(|d| d.push_token.is_some()).collect();
@@ -1057,17 +1110,47 @@ impl CompanionServer {
     }
 
     async fn deliver(&self, event: &push::PushEvent, turn: i64, devices: &[PairedDevice], test: bool) {
-        let Some(pem) = self.store.apns_pem() else { return };
+        let pem = self.store.apns_pem();
         let (key_id, team_id) = self.store.apns_ids();
         let (title, body) = self.words(event, test);
         let badge = digests(self.backend().sessions().await).iter().filter(|s| !s.items.is_empty()).count() as i64;
-        let payload = push::apns_payload(event, &title, &body, badge);
         let collapse = push::collapse_id(event, turn);
+        // Through the relay the text is sealed for each phone; Apple, Google and the relay see only "Nook needs you".
+        let endpoint = self.relay_push_endpoint();
+        let through_relay = self.relay_push_active();
         let mut summary = Vec::new();
         for device in devices {
             let Some(token) = &device.push_token else { continue };
             let production = device.push_production.unwrap_or(true);
-            let result = self.apns.send(&pem, &key_id, &team_id, &payload, token, production, &collapse).await;
+            // An Android phone (Firebase) is reached only through the relay, whatever the route for iPhones is.
+            let android = device.push_service.as_deref() == Some(relay_push::FCM);
+            let result = match (&endpoint, android || through_relay) {
+                (None, true) if android => {
+                    summary.push(format!(
+                        "{}: {}",
+                        device.name,
+                        crate::i18n::tr(
+                            "Android heeft een relay nodig (Instellingen › Companion › Altijd bereikbaar)",
+                            "Android needs a relay (Settings › Companion › Always reachable)"
+                        )
+                    ));
+                    continue;
+                }
+                (Some(url), true) => self.send_through_relay(url, event, &title, &body, badge, device, token, production, &collapse).await,
+                _ => match &pem {
+                    Some(pem) => {
+                        // Each phone is told which of its pairings this is (`mac`), so its buttons reach this computer.
+                        let mut payload = push::apns_payload(event, &title, &body, badge);
+                        payload["nook"]["mac"] = serde_json::json!(device.id);
+                        self.apns.send(pem, &key_id, &team_id, &payload, token, production, &collapse).await
+                    }
+                    None => super::apns::ApnsResult {
+                        outcome: push::Outcome::Configuration,
+                        status: 0,
+                        reason: Some(crate::i18n::tr("niet ingesteld", "not set up").into()),
+                    },
+                },
+            };
             summary.push(match result.outcome {
                 push::Outcome::Delivered => format!("{}: ok", device.name),
                 push::Outcome::DropToken => {
@@ -1086,6 +1169,51 @@ impl CompanionServer {
             store.audit(tool, &format!("{} · {}", event.kind.raw(), devices.len()), &summary);
         }
         *self.last_push.lock().unwrap_or_else(|e| e.into_inner()) = Some(summary);
+    }
+
+    /// Seals the notification for `device` and posts it to the relay (`RelayPushClient.send`).
+    #[allow(clippy::too_many_arguments)]
+    async fn send_through_relay(
+        &self,
+        url: &str,
+        event: &push::PushEvent,
+        title: &str,
+        body: &str,
+        badge: i64,
+        device: &PairedDevice,
+        token: &str,
+        production: bool,
+        collapse: &str,
+    ) -> super::apns::ApnsResult {
+        let failed =
+            |reason: &str| super::apns::ApnsResult { outcome: push::Outcome::Configuration, status: 0, reason: Some(reason.into()) };
+        let Some(key) = self.store.key(&device.id) else { return failed("no key") };
+        let content = relay_push::RelayPushContent::new(
+            title,
+            body,
+            push::push_category(event),
+            &event.session,
+            &event.session,
+            event.item.as_deref(),
+            badge,
+            Some(&device.id),
+        );
+        let envelope = relay_push::seal(&content, &key, &device.id);
+        let hidden = relay_push::collapse_id(collapse, &relay_push::push_key(&key));
+        let room = super::transport::relay_room(&key);
+        let Some(request) = relay_push::request(
+            &envelope,
+            &room,
+            token,
+            production,
+            Some(hidden),
+            push::is_urgent(event.kind),
+            device.push_service.as_deref(),
+        ) else {
+            return failed("could not seal");
+        };
+        let (outcome, status, reason) = relay_push::post(&self.relay_http, url, &request).await;
+        super::apns::ApnsResult { outcome, status, reason }
     }
 }
 

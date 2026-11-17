@@ -41,7 +41,10 @@ pub fn handle() -> Option<AppHandle> {
 pub fn setup(app: &AppHandle) {
     let _ = HANDLE.set(app.clone());
     let secrets = app.state::<AppState>().secrets.clone();
-    let env = Env::new(secrets, Arc::new(ConnectorStore::open_default()));
+    // One inbox for every chat app, kept in `chat-inbox.json` (an app whose messages stay in the app, WhatsApp through
+    // its gateway, is saved without them).
+    let chats = Arc::new(nook_core::chats::InboxStore::open_default());
+    let env = Env::with_chats(secrets, Arc::new(ConnectorStore::open_default()), chats.clone());
     let hub = ConnectorHub::new(env.store.clone());
     let github = GitHub::new(env.clone());
     let whatsapp = whatsapp::WhatsAppLink::new(env.clone(), cfg!(desktop));
@@ -76,6 +79,15 @@ pub fn setup(app: &AppHandle) {
     app.manage(Connectors { env: env.clone(), hub: hub.clone(), github, whatsapp: whatsapp.clone() });
     // Verversen en luisteren draaien op de runtime van Tauri.
     tauri::async_runtime::spawn(async move {
+        // Saved at most every few seconds, and only when something changed.
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if let Err(error) = chats.save() {
+                log::warn!("chat inbox not saved: {error}");
+            }
+        }
+    });
+    tauri::async_runtime::spawn(async move {
         mcp::connector::sync(&hub, &env);
         hub.start();
         whatsapp.start();
@@ -88,5 +100,6 @@ pub fn shutdown(app: &AppHandle) {
         c.whatsapp.stop_gowa();
         // Files fetched for the WhatsApp card never outlive Nook.
         c.whatsapp.clear_files();
+        let _ = c.env.chats.save();
     }
 }

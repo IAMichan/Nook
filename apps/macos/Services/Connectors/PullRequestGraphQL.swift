@@ -222,8 +222,10 @@ extension AccountPullRequests {
             if let found = watched[account.id] {
                 // The rows of entries whose search did not get through this time stay until it does.
                 let listed = Set(found.items.map(\.id))
+                // An open-only search (see `WatchedPullRequests.openOnly`) keeps the closed rows of the last full one.
                 let kept = account.watched.filter { item in
-                    !listed.contains(item.id) && found.failed.contains { PullRequestWatchList.covers($0, repo: item.repo) }
+                    !listed.contains(item.id) && (found.failed.contains { PullRequestWatchList.covers($0, repo: item.repo) }
+                        || found.openOnly && item.state != .open)
                 }
                 account.watched = found.items + kept
                 account.unreadable = found.unreadable
@@ -242,6 +244,8 @@ struct WatchedPullRequests: Equatable, Sendable {
     var unreadable: [String]
     /// Entries whose search did not get through this time (timed out, no connection); their last rows stay.
     var failed: [String] = []
+    /// Only the open pull requests were searched: the closed and merged rows shown before stay.
+    var openOnly = false
 }
 
 /// The organizations ("acme") and repositories ("acme/web") whose pull requests show in the list as well, beyond the
@@ -427,13 +431,14 @@ enum PullRequestGraphQL {
         return items.filter { seen.insert($0.id).inserted }
     }
 
-    /// The watched entries in one request: an open and a closed search per entry, aliased by position.
-    static func watchBody(_ entries: [String]) -> Data {
+    /// The watched entries in one request: an open and (unless `closed` is false) a closed search per entry, aliased by
+    /// position. Without the closed ones it is half the searches, cheap enough to run every minute while the list is open.
+    static func watchBody(_ entries: [String], closed includeClosed: Bool = true) -> Data {
         var declarations: [String] = []
         var fields: [String] = []
         var variables: [String: String] = [:]
         for (index, entry) in entries.enumerated() {
-            for closed in [false, true] {
+            for closed in includeClosed ? [false, true] : [false] {
                 let name = alias(index, closed: closed)
                 declarations.append("$\(name): String!")
                 fields.append("  \(name): search(query: $\(name), type: ISSUE, first: \(closed ? 20 : 50)) { nodes { ...row } }")

@@ -127,24 +127,28 @@ struct TranscriptConversation: View {
     let sessionID: String
     let entries: [TimelineEntry]
     let working: Bool
+    /// The message find shows now (`FindBar`): lit, so you see which one it is.
+    var found: String? = nil
     @State private var open: Set<String> = []
     /// Clipped entries whose full text is on its way from the Mac.
     @State private var fetching: Set<String> = []
 
     var body: some View {
         let rows = TranscriptRow.rows(entries, working: working)
+        // What each turn changed, for the card under its last answer (`PhoneTurnChanges`).
+        let changes = PhoneTurnChanges.byFinalAnswer(entries)
         // A plain stack, not a lazy one: a lazy stack guesses the height of rows it has not drawn yet and corrects it
         // once they come into view, and every correction moved the text you read. The conversation is paged (the
         // Mac sends the end, older pages on request) and a finished turn folds, so there are never many rows.
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             ForEach(rows) { row in
-                self.row(row).id(row.id)
+                self.row(row, changes: changes).id(row.id)
             }
         }
     }
 
     @ViewBuilder
-    private func row(_ row: TranscriptRow) -> some View {
+    private func row(_ row: TranscriptRow, changes: [String: [PhoneTurnChanges.File]]) -> some View {
         switch row {
         case .user(let entry):
             // Each turn starts as a block of its own, as on the Mac.
@@ -152,11 +156,16 @@ struct TranscriptConversation: View {
                 TranscriptUserMessage(text: text(entry), date: Date(timeIntervalSince1970: entry.date))
                 more(entry)
             }
+            .findLit(found == entry.id)
             .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
             .padding(.bottom, Theme.Spacing.xxs)
         case .answer(let entry, let isFinal):
-            answer(entry, isFinal: isFinal)
-                .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                answer(entry, isFinal: isFinal).findLit(found == entry.id)
+                // The files this turn changed, under its last answer, as on the Mac.
+                if let files = changes[entry.id] { TurnChangesCard(files: files) }
+            }
+            .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
         case .work(let id, let steps):
             work(id: id, steps: steps)
         case .notice(let entry):
@@ -287,6 +296,142 @@ struct TranscriptConversation: View {
         withAnimation(Theme.reveal) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
         }
+    }
+}
+
+// MARK: Find
+
+/// The bar over a conversation while you find in it: the words, "2 of 5", the previous and next match, and close.
+struct FindBar: View {
+    @Binding var text: String
+    let index: Int
+    let count: Int
+    let step: (Int) -> Void
+    let close: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(icon: "magnifyingglass").foregroundStyle(Theme.textTertiary)
+                TextField("Find in conversation", text: $text)
+                    .font(Theme.TextStyle.body).foregroundStyle(Theme.paper)
+                    .focused($focused)
+                    .submitLabel(.search)
+                    .onSubmit { step(-1) }
+                if !text.isEmpty {
+                    Text(count == 0 ? String(localized: "No matches") : String(localized: "\(index + 1) of \(count)"))
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).monospacedDigit().fixedSize()
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .frame(minHeight: 40)
+            .roundedBackground(Theme.field, radius: Theme.Radius.control)
+            button("chevron.up", label: "Previous match") { step(-1) }.disabled(count == 0)
+            button("chevron.down", label: "Next match") { step(1) }.disabled(count == 0)
+            button("xmark", label: "Close", action: close)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.canvas)
+        .onAppear { focused = true }
+    }
+
+    private func button(_ symbol: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(icon: symbol).font(Theme.font(13, .semibold)).foregroundStyle(Theme.textSecondary)
+                .frame(width: 36, height: 40).contentShape(Rectangle())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel(label)
+    }
+}
+
+extension View {
+    /// The message find shows now, lit with Nook's color behind it.
+    func findLit(_ lit: Bool) -> some View {
+        padding(lit ? Theme.Spacing.xs : 0)
+            .background {
+                if lit { Theme.shape(Theme.Radius.control).fill(Theme.iris.opacity(0.12)) }
+            }
+    }
+}
+
+// MARK: What a turn changed
+
+/// "3 files changed  +12 −4" under a turn's last answer, as the Mac's changed-files card: it opens to the files with
+/// their own counts, and a file to its patch.
+struct TurnChangesCard: View {
+    let files: [PhoneTurnChanges.File]
+    @State private var open = false
+    @State private var shown: Set<String> = []
+
+    var body: some View {
+        let added = files.reduce(0) { $0 + $1.added }
+        let removed = files.reduce(0) { $0 + $1.removed }
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                Haptics.tap()
+                withAnimation(Theme.reveal) { open.toggle() }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(icon: "doc.text").foregroundStyle(Theme.textTertiary)
+                    Text(files.count == 1 ? String(localized: "1 file changed") : String(localized: "\(files.count) files changed"))
+                        .foregroundStyle(Theme.textStrong)
+                    counts(added, removed)
+                    Spacer(minLength: 0)
+                    Image(icon: "chevron.down").font(Theme.font(9, .bold)).foregroundStyle(Theme.textTertiary)
+                        .rotationEffect(.degrees(open ? 0 : -90))
+                }
+                .font(Theme.TextStyle.label)
+                .padding(.horizontal, Theme.Spacing.md)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .accessibilityValue(open ? Text("Expanded") : Text("Collapsed"))
+            if open {
+                ForEach(files) { file in
+                    Divider().overlay(Theme.fieldStroke)
+                    Button {
+                        guard !file.patches.isEmpty else { return }
+                        withAnimation(Theme.reveal) {
+                            if shown.contains(file.id) { shown.remove(file.id) } else { shown.insert(file.id) }
+                        }
+                    } label: {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Text(verbatim: file.name).font(Theme.TextStyle.code).foregroundStyle(Theme.paper).lineLimit(1)
+                            Text(verbatim: (file.path as NSString).deletingLastPathComponent)
+                                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+                                .lineLimit(1).truncationMode(.head)
+                            Spacer(minLength: Theme.Spacing.sm)
+                            counts(file.added, file.removed).font(Theme.TextStyle.label)
+                        }
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressFade())
+                    if shown.contains(file.id) {
+                        TranscriptStepOutput(text: file.patches.joined(separator: "\n"), failed: false)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.bottom, Theme.Spacing.sm)
+                    }
+                }
+            }
+        }
+        .roundedBackground(Theme.field, radius: Theme.Radius.control)
+    }
+
+    private func counts(_ added: Int, _ removed: Int) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            if added > 0 { Text(verbatim: "+\(added)").foregroundStyle(Theme.mint) }
+            if removed > 0 { Text(verbatim: "−\(removed)").foregroundStyle(Theme.coral) }
+        }
+        .monospacedDigit()
     }
 }
 

@@ -44,6 +44,8 @@ sys-locale = "0.3"
 # The companion's phone side: large answers come compressed (raw DEFLATE, `CompanionWire`), and away from home it reaches
 # the Mac through the relay over a WebSocket (`CompanionRelay`).
 flate2 = "1"
+# Checks the Ed25519 signature of an app update (`Ed25519Verifier` on the Mac); already in the build through rustls.
+ring = "0.17"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 
 [target.'cfg(unix)'.dependencies]

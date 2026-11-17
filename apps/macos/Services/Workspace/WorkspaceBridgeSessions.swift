@@ -17,6 +17,10 @@ enum BridgeSessionArguments {
             var agent: String
             var model: String
             var plan: Bool
+            /// The account to run on: a profile id (`claude-work`) or its label (`Work`); empty is the agent's default.
+            var account = ""
+            /// The rights to start with; nil is the default ("Ask"). Never more than the caller's (`sessionStart` checks).
+            var rights: PermissionPolicy?
         }
 
         enum Place: Equatable, Sendable {
@@ -48,14 +52,21 @@ enum BridgeSessionArguments {
     /// `callerFolder`: where the calling agent works, the default place; empty for a script, which must name a folder.
     static func start(_ arguments: [String: Any], callerFolder: String) -> Result<Start, BridgeArgumentError> {
         // One session from the top-level fields, or several from `sessions`, which take those fields as their defaults.
-        let shared = session(arguments, defaults: nil)
+        let shared: Start.Session
+        switch session(arguments, defaults: nil) {
+        case .success(let value): shared = value
+        case .failure(let error): return .failure(error)
+        }
         var sessions: [Start.Session] = []
         if let list = arguments["sessions"] {
             guard let items = list as? [Any], !items.isEmpty else { return .failure(BridgeArgumentError("sessions must be a list of 1 to \(maxStart) sessions.")) }
             guard items.count <= maxStart else { return .failure(BridgeArgumentError("Start at most \(maxStart) sessions in one call.")) }
             for item in items {
                 guard let fields = item as? [String: Any] else { return .failure(BridgeArgumentError("Each item of sessions is an object with task and/or title.")) }
-                sessions.append(session(fields, defaults: shared))
+                switch session(fields, defaults: shared) {
+                case .success(let value): sessions.append(value)
+                case .failure(let error): return .failure(error)
+                }
             }
         } else {
             sessions = [shared]
@@ -92,12 +103,45 @@ enum BridgeSessionArguments {
         return .success(Start(sessions: sessions, place: place))
     }
 
-    private static func session(_ fields: [String: Any], defaults: Start.Session?) -> Start.Session {
-        Start.Session(task: BridgeArgs.string(fields["task"]) ?? "",
-                      title: BridgeArgs.string(fields["title"]) ?? "",
-                      agent: BridgeArgs.string(fields["agent"]) ?? defaults?.agent ?? "",
-                      model: BridgeArgs.string(fields["model"]) ?? defaults?.model ?? "",
-                      plan: BridgeArgs.bool(fields["plan"]) ?? defaults?.plan ?? false)
+    private static func session(_ fields: [String: Any], defaults: Start.Session?) -> Result<Start.Session, BridgeArgumentError> {
+        var rights = defaults?.rights
+        if let raw = BridgeArgs.string(fields["rights"]) {
+            guard let policy = PermissionPolicy(rawValue: raw) else {
+                let names = PermissionPolicy.allCases.map(\.rawValue).joined(separator: ", ")
+                return .failure(BridgeArgumentError("rights must be one of \(names)."))
+            }
+            rights = policy
+        }
+        return .success(Start.Session(task: BridgeArgs.string(fields["task"]) ?? "",
+                                      title: BridgeArgs.string(fields["title"]) ?? "",
+                                      agent: BridgeArgs.string(fields["agent"]) ?? defaults?.agent ?? "",
+                                      model: BridgeArgs.string(fields["model"]) ?? defaults?.model ?? "",
+                                      plan: BridgeArgs.bool(fields["plan"]) ?? defaults?.plan ?? false,
+                                      account: BridgeArgs.string(fields["account"]) ?? defaults?.account ?? "",
+                                      rights: rights))
+    }
+
+    /// The rights a started session gets: what it asked for, or "Ask". Refused when that is more than the caller has
+    /// (nil for a script the user ran: they approve the card) or when the agent does not offer it.
+    static func rights(_ requested: PermissionPolicy?, caller: PermissionPolicy?,
+                       offered: [PermissionPolicy]) -> Result<PermissionPolicy, BridgeArgumentError> {
+        guard let requested else { return .success(offered.contains(.ask) ? .ask : (offered.first ?? .ask)) }
+        if let caller, requested.rank > caller.rank {
+            return .failure(BridgeArgumentError("A session you start cannot have more rights than you (\(caller.rawValue))."))
+        }
+        guard offered.contains(requested) else {
+            let names = offered.map(\.rawValue).joined(separator: ", ")
+            return .failure(BridgeArgumentError("This agent does not offer \(requested.rawValue) rights; it offers \(names)."))
+        }
+        return .success(requested)
+    }
+
+    /// The account a session asks for, among the agent's accounts (`id`, `label` pairs): by id, or by label, ignoring
+    /// case. Nil when it names none of them.
+    static func account(_ requested: String, among accounts: [(id: String, label: String)]) -> String? {
+        let wanted = requested.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        return (accounts.first { $0.id.lowercased() == wanted } ?? accounts.first { $0.label.lowercased() == wanted })?.id
     }
 
     /// A git ref an agent may name as a base: `main`, `origin/main`, `release/1.2`. Never an option or a range.

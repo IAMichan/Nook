@@ -43,10 +43,11 @@ BR Nook Chat and the brain, AG coding agents, CH chat apps and connectors, SV sy
 
 - [ ] **FD-01** A real Windows 11 test machine (or VM with GPU and microphone) and a written smoke test per area in `docs/SCENARIOS.md` style; run the "compiled, never run" list (FD-02) on it · M
 - [ ] **FD-02** Verify on Windows what is only compiled today, and fix what breaks: autocomplete everywhere (`platform/windows/autocomplete.rs`), "Hey Nook" and dictation (`platform/windows/speech.rs`), screen reading and OCR (`platform/windows/screen.rs`), media controls (`platform/windows/media.rs`), quiet and screen sharing (`platform/windows/quiet.rs`), energy (`services/energy.rs`), system tools (`platform/windows/system.rs`), Flow and the Notetaker with a microphone and WASAPI loopback, the companion server (Task Scheduler, keep-awake, mDNS, APNs), agent notices, Selection Ask, Settings › Maintenance, global shortcut conflicts, named-pipe security for hooks and the MCP bridge (`core/src/agents/ipc.rs`) · L
-- [ ] **FD-03** Run the Tauri tests on `windows-latest` in CI, not only `cargo check` for the Windows target · M
+- [x] **FD-03** Run the Tauri tests on `windows-latest` in CI, not only `cargo check` for the Windows target. The `Windows checks` job in `tauri.yml` already ran clippy and `cargo test --workspace` there; it now also runs the interface tests, and the hook named pipe and `cmd /C` MCP servers have Windows tests · M
 - [ ] **FD-04** Rust error and status messages in five languages: about 550 Dutch-only strings (about 307 in `core/src`, 248 in `src-tauri/src`; most in `workspace/manager.rs`, `commands/workspace.rs`, `commands/connectors.rs`, `commands/chat.rs`, `companion/client.rs`, `connectors/oauth.rs`, `brain/action_gate.rs`) wrapped in `tr`/`trf` with catalog rows; a test that fails on new Dutch literals · L
+  - Progress: `i18n::tests::no_new_dutch_text_outside_tr` fails on Dutch literals outside `tr`/`trf`; `DUTCH_LEFT` in `core/src/i18n/tests.rs` lists what each file still has and only goes down. Done: `workspace/manager.rs`, `commands/workspace.rs`.
 - [ ] **FD-05** Shared desktop components in `src/components/ui/`: move Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner and StatusPill out of `views/companion/ui/`, and add the Svelte twins of `NookTooltip`/`HoverCard`, `ConfirmedButton` (replaces the remaining `confirm()` calls), `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton` (with feedback), `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron`, `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`/`ModelPickerDropdown`, `EmojiBrowser`, `ImageModal`, `QRCodeView`, `NookAcknowledgeButton`; list them next to their Swift names in UI-COMPONENTS.md · L
-- [ ] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
+- [x] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
 - [x] **FD-07** Correct TAURI.md where the audit found it wrong: WhatsApp Web inside Nook is possible through WebView2 (CH-73), and rows marked ✓ that miss parts listed here · S
 
 ## 2. Shell, Settings, look (UI)
@@ -55,10 +56,14 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 `SettingsSidebar.swift`, `SettingsSearch.swift`, `UI/Panel`, `UI/Character`, `NotchRootView.swift`, `AppDelegate.swift`.
 `Brain/SettingsPanes.swift` is not Nook's Settings but the table of macOS System Settings panes (see UI-13).
 
+Visual audit (2026-11-17): every Settings page and the Nook, Agents and Chats tabs were rendered on both sides (Mac
+offscreen through `NSHostingView`, Tauri through Vite with a stubbed backend and default settings) and compared. UI-77…UI-87
+are the visible differences that no item listed yet; the rest were already covered by UI-01…UI-75, BR, AG, CH and SV items.
+
 ### 2.1 Settings window
 
-- [ ] **UI-01** Same pages and groups as the Mac: 17 pages in Nook, Intelligence, Agents, Connect, System, pages with several subjects behind a tab bar (#1572, #1641); Tauri has 18 pages in 7 groups → `views/Settings.svelte`, `lib/shell-routes.ts` · M
-- [ ] **UI-02** One shared tab bar for a page's subjects (`SettingsPartTabs`) · S
+- [x] **UI-01** Same pages and groups as the Mac: 17 pages in Nook, Intelligence, Agents, Connect, System, pages with several subjects behind a tab bar (#1572, #1641); Tauri has 18 pages in 7 groups → `views/Settings.svelte`, `lib/shell-routes.ts` · M
+- [x] **UI-02** One shared tab bar for a page's subjects (`SettingsPartTabs`) · S
 - [ ] **UI-03** Search over about 170 settings by their on-screen name, with the page path, scrolling to and lighting the row (`SettingsSearch`, `SettingsHighlight`) · M
 - [ ] **UI-04** Attention counts on sidebar rows · S
 - [ ] **UI-05** Restore defaults per page with a confirmation (`SettingsRestore`) · S
@@ -93,6 +98,15 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 - [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M
 - [ ] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L
 
+- [ ] **UI-77** Settings controls drawn as on the Mac: a switch for every on/off row (Tauri draws checkboxes), capsule pickers with up/down chevrons instead of native selects, segmented controls for two to four choices (appearance, background work, privacy level, tone; Tauri draws tiles or a select), small grey capsule buttons, and the Mac's compact row height (Tauri rows are about a third taller); found in the visual audit, builds on UI-10 · M
+- [ ] **UI-78** Section headings as on the Mac: a bold title with an optional grey line under it and an action on the right ("Open setup", "Add account"); Tauri draws small grey labels · S
+- [ ] **UI-79** Appearance in the Mac's order: preview with mood picker (UI-56), Style cards Minimal / Classic / Playful with a face colour row, a "Face and finish" fold, "Nook as buddy" (small moments, tone, a sample line, birthday, breathe now; moved here from Assistant, see UI-21), Theme as a segmented control above the theme grid (UI-70), a "Text and layout" fold; Tauri shows appearance tiles, accent colour and density · M
+- [ ] **UI-80** Assistant rows as on the Mac: "Search the web when needed", the Double Tap section (UI-21), "What Nook may do" as Ask / Small / More (BR-10) instead of the "Do small things right away" checkbox, and the note that points to Brain when the brain runs locally · S
+- [ ] **UI-81** Typing › Complete as on the Mac: the first tab has "Type less, in every app" and "In Nook's composers" (next prompt AG-70, reply suggestions in chats, actions from conversations, the model for suggestions, how your message goes on, SV-60) with the no-local-model warning; Tauri's sliders and keys belong under Style and context · M
+- [ ] **UI-82** Brain page layout as on the Mac: the "Choose a brain" card on top, "Where Nook thinks" Local / External, models recommended for this computer's memory with Install, a connection test row, an "All models and runtimes" fold, then "Quality of the local brain" (evidence first, check answers, measure); Tauri starts with the Answers rows (with UI-20) · M
+- [ ] **UI-83** Services page as on the Mac: a search field over the connections, "Nothing linked yet" with suggested service tiles and Sign in, "Add connection" in the section heading, and a Music section (Spotify row, keep listening history, clear it, look up lyrics online; features in SV-31, SV-36, SV-37); Tauri shows only the intro until something is linked · M
+- [ ] **UI-84** Memory as on the Mac: "What Nook remembers (n)" with a field to add one, each memory with when it was seen, how sure and how often used, learned sources with a count, and Forget all · S
+
 ### 2.3 Main window
 
 - [ ] **UI-35** Split view (a second tab beside the current one) and a tab torn off into its own window, reopened after a restart (`PanelSplit`, `TabWindowController`) · L
@@ -103,6 +117,9 @@ Mac reference: `apps/macos/App/Settings/SettingsView.swift` (`SettingsSection`: 
 - [ ] **UI-40** Cheat sheet as an overlay on its own key, not only in Settings · S
 - [ ] **UI-41** Tooltips in Nook's own look, only when text is cut off; feedback on every refresh click (#1656, #1657, #1630) · M
 - [ ] **UI-42** Starter grid two per row with an arrow on hover, checked against `NookStarters` · S
+- [ ] **UI-85** Window sidebar head and foot as on the Mac (`PanelSidebar`): no orb at the top left (Nook lives in the bar), search, talk and the sidebar toggle in the head (back and forward on Agents, UI-36), the tab switcher with a label only on the open tab; footer Settings, Pull requests, Automation, Usage on the left and refresh/update on the right (UI-38); Tauri shows the orb, a workspace and a games icon and a status dot · S
+- [ ] **UI-86** Agent session rows as on the Mac: project badge and name with age, the title, branch, +/− line counts, the agent's icon and a state such as Done; filter, folder and new-session buttons beside the search; the new-session composer with the agent's icon as picker, + and microphone inside it and the worktree choice below (Tauri shows text chips and a Start session button; with AG-90…AG-96) · M
+- [ ] **UI-87** Nook chat composer footer as on the Mac: +, model, access level (BR-10) and sources inside the composer; Tauri puts "Automatic" and the model under it · S
 
 ### 2.4 Bar, tray and taskbar (the Windows equivalents of notch, menu bar and Dock)
 
@@ -140,7 +157,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.1 Brain core and providers
 
-- [ ] **BR-01** Budgeted conversation window: the newest turn gets up to two thirds, shortened turns end in "…" (`Brain/ConversationWindow.swift`); Tauri sends a fixed last 12 turns (`commands/chat.rs`) → `core/src/brain/conversation_window.rs`, used by `service.rs` and `claude_code.rs` · M
+- [x] **BR-01** Budgeted conversation window: the newest turn gets up to two thirds, shortened turns end in "…" (`Brain/ConversationWindow.swift`); Tauri sends a fixed last 12 turns (`commands/chat.rs`) → `core/src/brain/conversation_window.rs`, used by `service.rs` and `claude_code.rs` · M
 - [ ] **BR-02** Subscription brains through Codex, Gemini, Grok, Kimi and Mistral Vibe CLIs (`Brain/SubscriptionBrain.swift`); Tauri has only `ClaudeCode` → `core/src/brain/subscription.rs`, new `provider.rs` variants · M
 - [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 - [ ] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
@@ -213,11 +230,11 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 `browser_open`, `browser_read`, `pull_request_create`, `session_list`, `session_read`, `nook_tools`, `nook_use`,
 `nook_chat_list/read/send`, `chat_list/read/send`, `take_over_screen` (read-only).
 
-- [ ] **AG-01** `browser_screenshot`: defined but filtered out of `tools/list` in `src-tauri/src/workspace/bridge_cli.rs`; capture through the webview (WebView2 `CapturePreview`) · M
+- [x] **AG-01** `browser_screenshot`: offered in `tools/list`; WebView2 through the DevTools protocol (`Page.captureScreenshot`), WebKitGTK `get_snapshot`, WKWebView `takeSnapshot` (`src-tauri/src/workspace/snapshot.rs`) · M
 - [ ] **AG-02** `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for` on `src-tauri/src/workspace/browser.rs` (DOM refs, click and type through JS) · M
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 - [ ] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` · M
-- [ ] **AG-05** `session_start` (1–20 sessions), `session_send`, `session_wait` · M
+- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M
 - [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
 - [ ] **AG-07** `session_suggest` and the suggested-session card in the timeline · M
 - [ ] **AG-08** `render_page` (`RenderedPage`, `McpApps`, `McpUI`): a sandboxed page in the timeline · M
@@ -335,7 +352,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 5.1 Foundation (blocks almost every chat app)
 
-- [ ] **CH-01** One inbox for all apps (`ChatInbox`, `InboxThread`, `BridgedChat`, `ChatBridge`): `core/src/chats/{inbox,bridge,store}.rs`; move WhatsApp onto it first · L
+- [x] **CH-01** One inbox for all apps (`ChatInbox`, `InboxThread`, `BridgedChat`, `ChatBridge`): `core/src/chats/{inbox,bridge,store}.rs`; move WhatsApp onto it first · L
 - [ ] **CH-02** Nook's chat helper (`apps/chatd`, `ChatHelper`, `ChatServiceData`, `ChatLiveStream`, `ChatLinker`): build `nook-chatd.exe` in CI, child-process manager in `src-tauri/src/chats/helper.rs`, `/v1` client and `/v1/ws` live line in `core/src/chats/chatd.rs`. This unlocks Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack · L
 - [ ] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
 - [ ] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
@@ -444,6 +461,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 ### 6.1 Updates and telemetry
 
 - [ ] **SV-01** App updater: `tauri-plugin-updater` on GitHub Releases with signatures, check at launch, every 30 min and on wake, Update button (`AppUpdater`, `ReleaseUpdateCore`, `Ed25519Verifier`) → `src-tauri/src/updates.rs` · L
+  - Progress: `core/src/updates` (versions, channel, release choice, Ed25519 check, release notes, receipt) with the Mac's tests; the release signs the Windows setup and the AppImage (`scripts/sign-update.sh`) and stamps version and key into the build. Still to do: checking, downloading and installing in `src-tauri/src/updates.rs`, and the button and panel (with UI-38). The Mac checks every 4 minutes, not 30.
 - [ ] **SV-02** Stable/Beta channel (`ReleaseChannel`) · S
 - [ ] **SV-03** Update trial and rollback after a crash (`UpdateTrial`, `UpdateTrialRunner`) · M
 - [ ] **SV-04** Daily updates of GOWA, ACP agents and Antigravity (`ToolUpdates`) · M
@@ -521,7 +539,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 - [ ] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`) · S
 - [ ] **CO-05** Images with messages and new sessions (`CompanionImages`) · S
-- [ ] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`) · M
+- [x] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`); also Firebase pushes to Nook on Android (`register` with `fcm`) · M
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
 - [ ] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S

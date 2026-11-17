@@ -128,4 +128,111 @@ final class PhoneCoreTests: XCTestCase {
         XCTAssertEqual(ProjectGroups.decode(ProjectGroups.encode(folded)), ["nook", "site"])
         XCTAssertEqual(ProjectGroups.decode(""), [])
     }
+
+    // MARK: Drafts
+
+    private func drafts() -> PhoneDrafts {
+        let suite = "PhoneDraftsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return PhoneDrafts(defaults: defaults)
+    }
+
+    func testDraftsAreKeptPerPlace() {
+        let store = drafts()
+        store.set("Fix the relay", for: .session("s1"))
+        store.set("Hi Anna", for: .chat("w1"))
+        XCTAssertEqual(store.text(.session("s1")), "Fix the relay")
+        XCTAssertEqual(store.text(.chat("w1")), "Hi Anna")
+        XCTAssertEqual(store.text(.session("s2")), "")
+        XCTAssertEqual(store.text(.nookChat("s1")), "", "a session and a Nook chat with the same id keep their own drafts")
+    }
+
+    func testSendingOrClearingForgetsTheDraft() {
+        let store = drafts()
+        store.set("Ship it", for: .newSession)
+        store.set("  \n", for: .newSession)
+        XCTAssertEqual(store.text(.newSession), "")
+    }
+
+    func testTheOldestDraftsGoFirst() {
+        var store = drafts()
+        var clock = 0.0
+        store.now = { clock += 1; return Date(timeIntervalSince1970: clock) }
+        for index in 0...PhoneDrafts.limit { store.set("draft \(index)", for: .session("s\(index)")) }
+        XCTAssertEqual(store.text(.session("s0")), "", "past the limit the oldest draft goes")
+        XCTAssertEqual(store.text(.session("s1")), "draft 1")
+        XCTAssertEqual(store.text(.session("s\(PhoneDrafts.limit)")), "draft \(PhoneDrafts.limit)")
+    }
+
+    func testClearForgetsEveryDraft() {
+        let store = drafts()
+        store.set("a", for: .newNookChat)
+        store.clear()
+        XCTAssertEqual(store.text(.newNookChat), "")
+    }
+
+    // MARK: A session as Markdown
+
+    func testSessionMarkdownReadsAsTheMacsExport() {
+        let entries = [
+            TimelineEntry(id: "1", kind: .user, text: "Fix the relay", detail: nil, date: 0, failed: false),
+            TimelineEntry(id: "2", kind: .tool, text: "swift test\n--filter Relay", detail: "Bash", date: 1, failed: false),
+            TimelineEntry(id: "3", kind: .change, text: "", detail: "Sources/Relay.swift", date: 2, failed: false),
+            TimelineEntry(id: "4", kind: .notice, text: "Context compacted", detail: "compacted", date: 3, failed: false),
+            TimelineEntry(id: "5", kind: .assistant, text: "Done.", detail: nil, date: 4, failed: false),
+        ]
+        let markdown = SessionMarkdown.markdown(title: "Relay", agent: "Codex", folder: "nook", branch: "fix/relay", entries: entries)
+        XCTAssertEqual(markdown, """
+        # Relay
+
+        _Codex · nook · fix/relay_
+
+        ## You
+
+        Fix the relay
+
+        <details><summary>2 steps</summary>
+
+        - `swift test --filter Relay`
+        - `Sources/Relay.swift`
+
+        </details>
+
+        ## Codex
+
+        Done.
+
+        """)
+    }
+
+    // MARK: What a turn changed
+
+    func testTurnChangesGoUnderEachTurnsLastAnswer() {
+        func entry(_ id: String, _ kind: TimelineEntry.Kind, file: String? = nil, patch: String? = nil) -> TimelineEntry {
+            var entry = TimelineEntry(id: id, kind: kind, text: "", detail: file, date: 0, failed: false)
+            entry.output = patch
+            return entry
+        }
+        let entries = [
+            entry("u1", .user),
+            entry("c1", .change, file: "Sources/A.swift", patch: "--- a\n+++ b\n@@\n+one\n+two\n-old"),
+            entry("a1", .assistant),
+            entry("c2", .change, file: "Sources/A.swift", patch: "+three"),
+            entry("c3", .change, file: "README.md", patch: "-gone"),
+            entry("a2", .assistant),
+            entry("u2", .user),
+            entry("a3", .assistant),
+            entry("u3", .user),
+            entry("c4", .change, file: "B.swift", patch: "+x"),
+        ]
+        let turns = PhoneTurnChanges.byFinalAnswer(entries)
+        XCTAssertEqual(Set(turns.keys), ["a2"], "only a turn with an answer and changes gets a card, under its last answer")
+        let files = turns["a2"] ?? []
+        XCTAssertEqual(files.map(\.path), ["Sources/A.swift", "README.md"])
+        XCTAssertEqual(files.first?.added, 3)
+        XCTAssertEqual(files.first?.removed, 1)
+        XCTAssertEqual(files.first?.patches.count, 2)
+        XCTAssertEqual(files.last?.name, "README.md")
+    }
 }

@@ -81,7 +81,6 @@
   }
 </script>
 
-<h2>{tr("Geheugen", "Memory")}</h2>
 <p class="muted">{tr("Wat Nook over je weet. Zeg in de chat \"onthoud dat…\" of \"vergeet…\", of pas het hier aan.", "What Nook knows about you. Say \"remember that…\" or \"forget…\" in the chat, or change it here.")}</p>
 <div class="group">
   <label class="row"><span>{tr("Gebruik wat Nook weet bij elke vraag", "Use what Nook knows with every question")}</span><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /></label>

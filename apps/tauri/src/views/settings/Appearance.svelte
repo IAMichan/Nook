@@ -17,7 +17,6 @@
   const look = $derived(resolveTheme(s.theme, systemDark));
 </script>
 
-<h2>{tr("Weergave", "Appearance")}</h2>
 <h3>{tr("Thema", "Theme")}</h3>
 <div class="group">
   <div class="row">

@@ -283,11 +283,14 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "title": ["type": "string", "description": "Session title (required without task)."],
                 "agent": ["type": "string", "description": "Agent id (default: folder's)."],
                 "model": ["type": "string", "description": "Model id (default: folder's)."],
-                "plan": ["type": "boolean", "description": "Start in Plan mode."]
+                "plan": ["type": "boolean", "description": "Start in Plan mode."],
+                "account": ["type": "string", "description": "Account id or label (default: agent's; see orchestrator_capabilities)."],
+                "rights": ["type": "string", "enum": PermissionPolicy.allCases.map(\.rawValue),
+                           "description": "Starting rights (default ask; never above yours)."]
             ]
             return object(one.merging([
                 "sessions": ["type": "array", "minItems": 1, "maxItems": BridgeSessionArguments.maxStart, "items": ["type": "object"],
-                             "description": "Batch of session objects with task, title, agent, model, plan."],
+                             "description": "Batch of session objects with task, title, agent, model, plan, account, rights."],
                 "folder": ["type": "string", "description": "Absolute folder path (default: yours)."],
                 "worktree": ["type": "boolean", "description": "Create a new git worktree per session."],
                 "base": ["type": "string", "description": "Worktree base ref (e.g. origin/main)."],

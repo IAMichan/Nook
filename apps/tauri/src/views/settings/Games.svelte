@@ -16,7 +16,6 @@
   }
 </script>
 
-<h2>Gamer Mode</h2>
 <p class="muted">
   {tr(
     "Terwijl Valorant voorop staat, maakt Nook af en toe een schermafbeelding van je eigen scherm en laat het brein dat je koos die lezen. Nook leest nooit het geheugen van de game en stuurt er niets naartoe.",

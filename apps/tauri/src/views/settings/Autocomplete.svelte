@@ -11,17 +11,8 @@
   import { tr } from "../../lib/i18n.svelte";
 
   type Tab = "general" | "apps" | "style" | "playground" | "stats";
-  const tabs: { id: Tab; title: string }[] = $derived([
-    { id: "general", title: tr("Algemeen", "General") },
-    { id: "apps", title: tr("Apps", "Apps") },
-    { id: "style", title: tr("Stijl en context", "Style and context") },
-    { id: "playground", title: tr("Testen", "Try it") },
-    { id: "stats", title: tr("Statistiek", "Statistics") },
-  ]);
-  let tab = $state<Tab>((localStorage.getItem("autocomplete.tab") as Tab) ?? "general");
-  $effect(() => {
-    localStorage.setItem("autocomplete.tab", tab);
-  });
+  /// The subject of Settings › Typing this shows (`AutocompleteSettingsSection(page:)` on the Mac).
+  let { part: tab }: { part: Tab } = $props();
 
   const s = $derived(nook.settings!);
   const ac = $derived(s.autocomplete);
@@ -130,16 +121,12 @@
   const keyLabel = (k: string) => (k === "" ? tr("Uit", "Off") : k);
 </script>
 
-<h2>{tr("Aanvullen", "Autocomplete")}</h2>
 
 {#if !caps?.autocomplete}
   <p class="muted">{caps?.notes?.autocomplete ?? tr("Aanvullen in elke app kan (nog) alleen op Windows.", "Autocomplete in every app only works on Windows (for now).")}</p>
   <p class="faint note">{tr("De Testen-tab werkt wel: probeer daar hoe Nook je zinnen aanvult met je eigen model.", "The Try it tab does work: try there how Nook completes your sentences with your own model.")}</p>
 {/if}
 
-<div class="tabs">
-  {#each tabs as t (t.id)}<button class:on={tab === t.id} onclick={() => (tab = t.id)}>{t.title}</button>{/each}
-</div>
 
 {#if tab === "general"}
   <div class="group">
@@ -456,9 +443,6 @@
 {/if}
 
 <style>
-  .tabs { display: inline-flex; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 2px; margin-bottom: 8px; flex-wrap: wrap; }
-  .tabs button { border: none; background: none; color: var(--text2); padding: 4px 14px; }
-  .tabs button.on { background: var(--smoke); color: var(--paper); }
   .column { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
   .column textarea { width: 100%; box-sizing: border-box; }
   .detail { padding: 4px 0 10px 14px; border-bottom: 1px solid var(--line); }

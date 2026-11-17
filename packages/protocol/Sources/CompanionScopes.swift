@@ -54,6 +54,11 @@ enum CompanionScopes {
         .music: .scope(.music),
         .chats: .scope(.nookChat), .chat: .scope(.nookChat), .ask: .scope(.nookChat), .chatStop: .scope(.nookChat),
         .watchConversation: .scope(.nookChat), .chatAct: .scope(.nookChat), .chatSearch: .scope(.nookChat),
+        // Nook's composer choices are part of chatting with Nook; changing them also needs *operate*, which the Mac
+        // checks in the handler (`CompanionServer.setNookComposer`).
+        .nookComposer: .scope(.nookChat), .nookComposerSet: .scope(.nookChat),
+        // Running what Nook offers acts for you (an agent started, a reminder made), as managing a session does.
+        .suggestionAct: .scope(.operate),
     ]
 
     /// The scope each `CompanionFeature` belongs to; a feature not listed is about the connection and always offered.
@@ -66,6 +71,7 @@ enum CompanionScopes {
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
         CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats, CompanionFeature.appIcons: .chats, CompanionFeature.chatActions: .chats, CompanionFeature.pullActions: .read, CompanionFeature.notifySettings: .read,
         CompanionFeature.liveConversation: .nookChat, CompanionFeature.nookChats: .nookChat,
+        CompanionFeature.nookComposer: .nookChat, CompanionFeature.actionSuggestions: .operate,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.
@@ -129,6 +135,7 @@ enum CompanionScopes {
             response.messageAppend = nil
             response.conversationsFound = nil
             response.conversationsArchived = nil
+            response.nookComposer = nil
         }
         if let features = response.features {
             response.features = features.filter { featureScopes[$0].map(granted.contains) ?? true }

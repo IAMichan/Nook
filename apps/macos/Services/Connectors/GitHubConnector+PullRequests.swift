@@ -72,7 +72,7 @@ extension GitHubConnector {
                     }
                 },
                 tag: { input in
-                    ((input["event"] as? String) ?? "").uppercased() == "REQUEST_CHANGES" ? ("Blocks", .caution) : ("", .good)
+                    ((input["event"] as? String) ?? "").uppercased() == "REQUEST_CHANGES" ? (tr("plan.tag.blocks"), .caution) : ("", .good)
                 },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
@@ -123,7 +123,7 @@ extension GitHubConnector {
                     let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
                     return "GitHub: merge \(GitHubPR.ref(input)) (\(method))"
                 },
-                tag: { _ in ("Merge", .caution) },
+                tag: { _ in (tr("plan.tag.merge"), .caution) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
@@ -162,7 +162,7 @@ extension GitHubConnector {
                 summarize: { input in
                     PullRequestBatchMerge.summary(input["pulls"], method: GitHubPR.text(input, "method")?.lowercased() ?? "repository default")
                 },
-                tag: { _ in ("Merge", .caution) },
+                tag: { _ in (tr("plan.tag.merge"), .caution) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     return try await self.mergePullRequests(input)
@@ -174,7 +174,7 @@ extension GitHubConnector {
                 schema: GitHubPR.schema(),
                 kind: .action,
                 summarize: { input in "GitHub: close \(GitHubPR.ref(input))" },
-                tag: { _ in ("Close", .caution) },
+                tag: { _ in (tr("plan.tag.close"), .caution) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)

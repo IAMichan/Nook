@@ -268,7 +268,7 @@ struct PullRequestsPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // The last list shows at once; a stale one refreshes in the background, again every 30 seconds while open,
-        // and as soon as you come back to Nook. The slow searches follow at most every three minutes (see PullRequestStore).
+        // and as soon as you come back to Nook. The watched searches follow in the background (see PullRequestStore).
         .task {
             while !Task.isCancelled {
                 await store.refresh()
