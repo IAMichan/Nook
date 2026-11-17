@@ -12,6 +12,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- A Windows or Linux PC is now a full computer for the iPhone and Android companion, like a Mac: sessions follow live,
+  you can start sessions and read their whole conversation, chat with Nook, see Home, usage and music, use the Chats
+  tab (WhatsApp) and review and merge pull requests (GitHub). With several computers paired, the name under the tab
+  title switches between them in one tap, showing which is live and what waits on each, and each computer shows with
+  its own icon.
+
 - Coding agents can now use your chat apps directly through Nook's MCP: `chat_list`, `chat_read` and `chat_send` work
   with every chat Nook links (WhatsApp, Messages, Telegram, Slack, Teams, Signal and more; WhatsApp on Windows and
   Linux). Every message waits for your approval with the exact text, whatever rights the agent has. Together with

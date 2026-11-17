@@ -205,6 +205,9 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     /// agent's default), the mode ("agent" or "plan"), or the model id. And a message waiting in line taken out (`text` its
     /// id, `SessionDigest.queued`).
     case setEffort, setMode, setModel, unqueue
+    /// Runs the session on another model from its next turn, as the model menu of the Mac's composer: `text` is one of
+    /// the agent's `LaunchOptions.Agent.models` ids ("" for the agent's own default). The agent and account stay.
+    case model
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -460,6 +463,9 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var ok: Bool
     var error: CompanionError?
     var macName: String?
+    /// What kind of computer answers (`CompanionPlatform`: "macos", "windows" or "linux"), with `hello`, `list` and
+    /// `subscribe`; nil from an older Mac, which is a Mac.
+    var platform: String? = nil
     var sessions: [SessionDigest]?
     var message: String?
     /// `CompanionFeature` values this Mac understands; nil from a Mac that only knows the first version.
@@ -552,6 +558,35 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     }
 }
 
+/// What kind of computer a phone is paired with: a Mac, or Nook on Windows or Linux (`CompanionResponse.platform`).
+/// The phone names it and shows its icon by it; a computer that does not say is a Mac (it predates Nook elsewhere).
+enum CompanionPlatform: String, CaseIterable, Sendable {
+    case mac = "macos"
+    case windows
+    case linux
+    /// A platform this phone does not know yet.
+    case other
+
+    /// What this Mac says it is.
+    static let wireMac = CompanionPlatform.mac.rawValue
+
+    init(_ text: String?) {
+        guard let text = text?.trimmingCharacters(in: .whitespaces).lowercased(), !text.isEmpty else { self = .mac; return }
+        switch text {
+        case "macos", "mac", "darwin": self = .mac
+        case "windows": self = .windows
+        case "linux": self = .linux
+        default: self = .other
+        }
+    }
+
+    var isMac: Bool { self == .mac }
+
+    /// The icon of this kind of computer, named the SF Symbol way (drawn through `Image(icon:)`: Lucide's laptop for a
+    /// Mac, its monitor for a PC).
+    var symbol: String { isMac ? "laptopcomputer" : "display" }
+}
+
 /// What the phone is told about a session that matters now. Titles and excerpts are cut: the phone is not a log viewer.
 struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// What waits on you in this session.
@@ -625,6 +660,12 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var controls: SessionControls? = nil
     /// Messages that wait in line for after the turn, oldest first (`agentsTab`); nil when none wait.
     var queued: [QueuedDigest]? = nil
+    /// The agent as `LaunchOptions.Agent.id`, so the phone can offer that agent's models; nil from an older Mac and for
+    /// an agent outside Nook.
+    var agentID: String? = nil
+    /// The model you chose for the session (a `LaunchOptions.Model` id, "" for the agent's default), unlike `model`,
+    /// which is the one it runs on; nil from an older Mac and for an agent outside Nook.
+    var modelChoice: String? = nil
 }
 
 extension SessionDigest {

@@ -74,7 +74,7 @@ struct DiagnosisSheet: View {
         .tint(Theme.paper)
     }
 
-    private var macName: String { client.macName.isEmpty ? String(localized: "your Mac") : client.macName }
+    private var macName: String { client.macName.isEmpty ? client.fallbackComputerName : client.macName }
 
     private func check() async {
         guard !checking else { return }

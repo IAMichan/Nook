@@ -47,7 +47,7 @@
     { "name": "history", "core": false, "json": { "id": "R29", "sent": 1700000037, "op": "history", "text": "checkout", "item": "cursor-2" } },
     { "name": "fileData", "core": false, "json": { "id": "R30", "sent": 1700000038, "op": "fileData", "session": "S1", "item": "README.md", "text": "0" } },
     { "name": "entry", "core": false, "json": { "id": "R31", "sent": 1700000039, "op": "entry", "session": "S1", "item": "E7" } },
-    { "name": "bindKey", "core": false, "json": { "id": "BK", "sent": 1700000100, "op": "bindKey", "text": "BPublicKeyX963Base64" } },
+    { "name": "bindKey", "core": false, "json": { "id": "R32", "sent": 1700000040, "op": "bindKey", "text": "BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKiss" } },
     { "name": "inboxAct react", "core": false, "json": { "id": "IA1", "sent": 1700000101, "op": "inboxAct", "item": "whatsapp|anna", "chatAction": { "kind": "react", "message": "m1", "emoji": "👍" } } },
     { "name": "inboxAct forward", "core": false, "json": { "id": "IA2", "sent": 1700000102, "op": "inboxAct", "item": "whatsapp|anna", "chatAction": { "kind": "forward", "message": "m1", "targets": ["telegram|team"] } } },
     { "name": "inboxAct pin", "core": false, "json": { "id": "IA3", "sent": 1700000103, "op": "inboxAct", "item": "telegram|team", "chatAction": { "kind": "pinInApp", "value": true } } },

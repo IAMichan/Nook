@@ -23,8 +23,8 @@
   import { WA } from "./ui/whatsapp";
   import { fetchPictures } from "../../lib/avatars.svelte";
 
-  let { view, inbox, message, onorb, ongear, onopen, took, onrefresh }: {
-    view: ClientView; inbox: InboxChatDigest[]; message?: string; onorb: (r: DOMRect) => void; ongear: () => void;
+  let { view, inbox, message, onorb, oncomputers, ongear, onopen, took, onrefresh }: {
+    view: ClientView; inbox: InboxChatDigest[]; message?: string; onorb: (r: DOMRect) => void; oncomputers?: (r: DOMRect) => void; ongear: () => void;
     onopen: (id: string) => void; took: (v: ClientView) => void; onrefresh: () => void;
   } = $props();
   let query = $state("");
@@ -99,7 +99,7 @@
 <div class="tab">
   <div class="scroll">
     <div bind:this={header}>
-      <PanelHeader title={tr("Chats", "Chats")} {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {ongear} />
+      <PanelHeader title={tr("Chats", "Chats")} {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {oncomputers} {ongear} />
     </div>
     <div class="top">
       <ConnectionLine {view} />

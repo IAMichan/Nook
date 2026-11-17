@@ -32,6 +32,8 @@ struct SessionDetailView: View {
     @State private var loadingEarlier = false
     /// The Mac was asked for a session the list does not hold yet (one just started, a link from a notification).
     @State private var lookedUp = false
+    /// The screen's width, so the title in the bar stays clear of the buttons beside it (`SessionHeaderTitle.width`).
+    @State private var barWidth: CGFloat = 0
 
     var body: some View {
         if let session {
@@ -85,10 +87,11 @@ struct SessionDetailView: View {
                 // The Mac's session header: "folder / title ⌄", the title opening what you can do with the session, and
                 // the agent and branch under it.
                 ToolbarItem(placement: .principal) {
+                    let width = SessionHeaderTitle.width(bar: barWidth, buttons: trailingButtons)
                     if hasActions(session) {
-                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true) }
+                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true, maxWidth: width) }
                     } else {
-                        SessionHeaderTitle(session: session, opens: false)
+                        SessionHeaderTitle(session: session, opens: false, maxWidth: width)
                     }
                 }
                 if client.can(CompanionFeature.diff) {
@@ -115,6 +118,8 @@ struct SessionDetailView: View {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
             .screen()
+            .background { GeometryReader { proxy in Color.clear.onAppear { barWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, new in barWidth = new } } }
             .modifier(SessionWorkspaceMenu(sessionID: sessionID))
             .navigationDestination(isPresented: $reviewing) {
                 // A comment on a line goes into this session's message, under what you wrote.
@@ -137,6 +142,10 @@ struct SessionDetailView: View {
                         composerFocused = true
                     }
                 }
+            }
+            // The models of this session's agent, for the model menu in the composer (the same list as a new session's).
+            .task(id: actions(session).contains(.model)) {
+                if actions(session).contains(.model), client.launchOptions == nil { await client.loadLaunchOptions() }
             }
             .onDisappear {
                 if client.visibleSession == sessionID { client.visibleSession = nil }
@@ -241,24 +250,25 @@ struct SessionDetailView: View {
                     if client.can(CompanionFeature.images) {
                         AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
                     }
-                    if steerable(session) {
-                        SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
+                    // The Mac composer's mode, effort and model as one quiet choice (`agentsTab`), or only its model menu
+                    // from a Mac that has just that.
+                    let controls = SessionControlsMenu.shows(session, client: client)
+                    let models = controls ? nil : sessionModels(session)
+                    if steerable(session) || controls || models != nil {
+                        SessionComposer(text: $message,
+                                        prompt: !steerable(session) ? "Message to the agent"
+                                            : steerByDefault ? "Steer the agent" : "Message for after this turn",
                                         canSend: true, busy: stoppable(session),
                                         onStop: canStop(session) ? { confirmStop = true } : nil,
                                         focus: $composerFocused,
                                         onSend: { send(session, scroll) }) {
-                            steerMenu
-                            if SessionControlsMenu.shows(session, client: client) {
-                                ComposerDivider()
+                            if steerable(session) { steerMenu }
+                            if controls {
+                                if steerable(session) { ComposerDivider() }
                                 SessionControlsMenu(session: session)
+                            } else if let models {
+                                modelMenu(session, models)
                             }
-                        }
-                    } else if SessionControlsMenu.shows(session, client: client) {
-                        // The Mac composer's mode, effort and model, as one quiet choice under the text.
-                        SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
-                                        onStop: canStop(session) ? { confirmStop = true } : nil,
-                                        focus: $composerFocused, onSend: { send(session, scroll) }) {
-                            SessionControlsMenu(session: session)
                         }
                     } else {
                         SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
@@ -328,6 +338,36 @@ struct SessionDetailView: View {
                          text: steerByDefault ? String(localized: "Steer now") : String(localized: "After this turn"))
         }
         .accessibilityLabel("While the agent works")
+    }
+
+    /// The models the session's agent can switch to, as the Mac's composer offers them; nil when there is no choice
+    /// (an older Mac, an agent outside Nook, an agent with one model).
+    private func sessionModels(_ session: SessionDigest) -> [LaunchOptions.Model]? {
+        guard actions(session).contains(.model), let agent = session.agentID,
+              let models = client.launchOptions?.agents.first(where: { $0.id == agent })?.models, models.count > 1 else { return nil }
+        return models
+    }
+
+    /// The model, as the Mac's composer menu: another one runs from the next turn, in the same conversation.
+    private func modelMenu(_ session: SessionDigest, _ models: [LaunchOptions.Model]) -> some View {
+        let chosen = session.modelChoice ?? ""
+        return Menu {
+            ForEach(models) { option in
+                Button { manage(session, .model, text: option.id) } label: {
+                    if chosen == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                }
+            }
+        } label: {
+            ComposerPill(symbol: "cpu", text: models.first { $0.id == chosen }?.name ?? session.model ?? models.first?.name ?? "")
+        }
+        .disabled(client.isOffline)
+        .accessibilityLabel("Model")
+    }
+
+    /// The buttons on the right of the bar: the changes, and the files, terminals and pull requests menu.
+    private var trailingButtons: Int {
+        (client.can(CompanionFeature.diff) ? 1 : 0)
+            + (client.can(CompanionFeature.workspace) || client.can(CompanionFeature.pullRequests) ? 1 : 0)
     }
 
     private func stoppable(_ session: SessionDigest) -> Bool {
@@ -407,6 +447,21 @@ struct SessionDetailView: View {
 private struct SessionHeaderTitle: View {
     let session: SessionDigest
     let opens: Bool
+    var maxWidth: CGFloat = widest
+
+    /// The most the title takes, on an iPad too.
+    static let widest: CGFloat = 260
+    /// Room per bar button (a glass button and its share of the capsule), and from a button to the screen's edge and to the title.
+    private static let button: CGFloat = 48
+    private static let margins: CGFloat = 24
+
+    /// How wide the title may be: centered in the bar, so as wide as the screen less the busier side on both sides, so it
+    /// never runs under the back button or the buttons on the right.
+    static func width(bar: CGFloat, buttons: Int) -> CGFloat {
+        guard bar > 0 else { return widest }
+        let side = margins + button * CGFloat(max(buttons, 1))
+        return max(96, min(widest, bar - 2 * side))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -428,7 +483,7 @@ private struct SessionHeaderTitle: View {
                     .lineLimit(1).truncationMode(.middle)
             }
         }
-        .frame(maxWidth: 260)
+        .frame(maxWidth: maxWidth)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

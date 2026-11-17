@@ -211,6 +211,8 @@ pub fn companion_cancel_pairing(companion: State<'_, Companion>) -> CompanionInf
 pub fn companion_remove_device(companion: State<'_, Companion>, id: String) -> CompanionInfo {
     #[cfg(desktop)]
     {
+        // A phone connected live hears it first, so it says "pair again" instead of looking for this computer.
+        companion.server.revoke(&id);
         companion.server.store().remove(&id);
         companion::apply_relay(&companion);
     }

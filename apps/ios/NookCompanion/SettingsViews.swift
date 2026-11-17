@@ -13,7 +13,7 @@ struct SettingsView: View {
     @State private var confirmUnpair = false
     @State private var usage: UsageDigest?
 
-    private var macName: String { client.macName.isEmpty ? String(localized: "Your Mac") : client.macName }
+    private var macName: String { client.macName.isEmpty ? client.fallbackComputerTitle : client.macName }
 
     var body: some View {
         ScrollView {
@@ -22,13 +22,14 @@ struct SettingsView: View {
                     .padding(.horizontal, -Theme.Spacing.xl)
                 ConnectionLine()
 
-                SettingsGroup(title: String(localized: "Your Mac")) {
-                    SettingsRow(symbol: "laptopcomputer", title: macName, detail: connectionDetail) {
+                SettingsGroup(title: client.macs.count > 1 ? String(localized: "Computers") : client.fallbackComputerTitle) {
+                    SettingsRow(symbol: client.platform.symbol, title: macName, detail: connectionDetail) {
                         Circle().fill(client.phase == .connected ? Theme.mint : Theme.amber).frame(width: 8, height: 8)
                     }
                     if client.macs.count > 1 {
                         ForEach(client.macs.filter { $0.id != client.activeMacID }) { mac in
-                            SettingsButtonRow(symbol: "arrow.left.arrow.right", title: String(localized: "Switch to \(mac.name)")) {
+                            SettingsButtonRow(symbol: mac.kind.symbol, title: String(localized: "Switch to \(mac.name)"),
+                                              detail: client.computerStatus(mac)) {
                                 client.switchMac(to: mac.id)
                             }
                         }
@@ -85,8 +86,8 @@ struct SettingsView: View {
                 if client.scopes != nil { PhoneScopesGroup() }
 
                 SettingsGroup(title: String(localized: "Pairing")) {
-                    SettingsButtonRow(symbol: "plus", title: String(localized: "Pair another Mac")) { client.addingMac = true }
-                    SettingsButtonRow(symbol: "xmark.circle", title: String(localized: "Unpair from this Mac"), destructive: true) {
+                    SettingsButtonRow(symbol: "plus", title: String(localized: "Pair another computer")) { client.addingMac = true }
+                    SettingsButtonRow(symbol: "xmark.circle", title: String(localized: "Unpair from this computer"), destructive: true) {
                         confirmUnpair = true
                     }
                 }
@@ -94,7 +95,9 @@ struct SettingsView: View {
                 SettingsGroup(title: String(localized: "About")) {
                     SettingsRow(symbol: "info.circle", title: String(localized: "Nook Companion"), detail: appVersion)
                     if let mac = client.macAppVersion {
-                        SettingsRow(symbol: "laptopcomputer", title: String(localized: "Nook on your Mac"), detail: mac)
+                        SettingsRow(symbol: client.platform.symbol,
+                                    title: client.platform.isMac ? String(localized: "Nook on your Mac") : String(localized: "Nook on your computer"),
+                                    detail: mac)
                     }
                 }
             }
@@ -106,10 +109,10 @@ struct SettingsView: View {
         .screen()
         .task { usage = await client.loadUsage() }
         .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
-        .confirmationDialog("Unpair from this Mac?", isPresented: $confirmUnpair, titleVisibility: .visible) {
+        .confirmationDialog("Unpair from this computer?", isPresented: $confirmUnpair, titleVisibility: .visible) {
             Button("Unpair", role: .destructive) { client.unpair() }
         } message: {
-            Text("You can pair again with the code in Nook on your Mac.")
+            Text("You can pair again with the code in Nook on your computer.")
         }
     }
 
@@ -201,6 +204,7 @@ extension SettingsRow where Trailing == EmptyView {
 struct SettingsButtonRow: View {
     let symbol: String
     let title: String
+    var detail: String? = nil
     var destructive = false
     let action: () -> Void
 
@@ -209,7 +213,7 @@ struct SettingsButtonRow: View {
             Haptics.tap()
             action()
         } label: {
-            SettingsRow(symbol: symbol, title: title, tint: destructive ? Theme.coral : Theme.textSecondary) {
+            SettingsRow(symbol: symbol, title: title, detail: detail, tint: destructive ? Theme.coral : Theme.textSecondary) {
                 if !destructive {
                     Image(icon: "chevron.right").font(Theme.font(11, .semibold)).foregroundStyle(Theme.textTertiary)
                 }

@@ -115,8 +115,14 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var macs: [PairedMac] = []
     @Published private(set) var activeMacID: String?
     @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
+    /// Whether each other paired computer answered the last time it was checked (`refreshOthers`), by its id; a
+    /// computer not checked yet is missing.
+    @Published private(set) var otherReachable: [String: Bool] = [:]
     /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
     @Published var addingMac = false
+
+    /// What kind of computer the active one is (a Mac, or Nook on Windows or Linux); a Mac until it says.
+    var platform: CompanionPlatform { macs.first { $0.id == activeMacID }?.kind ?? .mac }
     /// A `bindKey` request is on its way (`bindDeviceKey`): answers to hello, list and subscribe meanwhile send no second.
     private var bindingKey = false
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
@@ -243,7 +249,7 @@ final class CompanionClient: ObservableObject {
                 let response = picked.answer
                 guard response.ok else { throw CompanionClientError.refused(response.error) }
                 var next = pairings
-                guard next.add(parsed, routes: candidates) else { throw CompanionClientError.tooManyMacs }
+                guard next.add(parsed, routes: candidates, platform: response.platform) else { throw CompanionClientError.tooManyMacs }
                 guard PairingStore.save(next) else { throw CompanionClientError.storage }
                 stopConnection()
                 cacheActiveSessions()
@@ -261,7 +267,7 @@ final class CompanionClient: ObservableObject {
                 await Notifications.requestAndRegister()
             } catch {
                 phase = link == nil ? .unpaired : .offline(error.localizedDescription)
-                notice = String(localized: "Pairing failed: \(error.localizedDescription) The code works once, for five minutes; make a new one on your Mac.")
+                notice = String(localized: "Pairing failed: \(error.localizedDescription) The code works once, for five minutes; make a new one on your computer.")
             }
         }
     }
@@ -331,6 +337,7 @@ final class CompanionClient: ObservableObject {
     private func cacheActiveSessions() {
         guard let id = pairings.active?.id else { return }
         otherSessions[id] = sessions
+        otherReachable[id] = phase == .connected
     }
 
     /// Takes in the active Mac: its pairing, routes, features and outbox; what was shown for the previous one goes.
@@ -343,7 +350,7 @@ final class CompanionClient: ObservableObject {
         macName = mac?.name ?? ""
         macs = pairings.macs
         activeMacID = mac?.id
-        if let id = mac?.id { otherSessions[id] = nil }
+        if let id = mac?.id { otherSessions[id] = nil; otherReachable[id] = nil }
         // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
         features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
         hasUnrecognizedMacFeatures = false
@@ -422,14 +429,27 @@ final class CompanionClient: ObservableObject {
         for mac in pairings.others {
             guard let key = mac.link?.key,
                   let picked = await RouteProbe.pick(mac.routes, key: key, makeRequest: { CompanionRequest.versioned(.list) }),
-                  picked.answer.ok, let list = picked.answer.sessions else { continue }
+                  picked.answer.ok, let list = picked.answer.sessions else {
+                otherReachable[mac.id] = false
+                continue
+            }
             // Only what that Mac lets this phone see comes back; an empty list is fine.
             otherSessions[mac.id] = list
+            otherReachable[mac.id] = true
+            learnPlatform(picked.answer.platform, for: mac.id)
             // Its notifications about what no longer waits go too; the badge stays the active Mac's.
             Notifications.clearAnswered(pending: DeliveredNotifications.pending(list), mac: mac.id, onlyMac: false, badge: nil)
         }
         let paired = Set(pairings.macs.map(\.id))
         for id in otherSessions.keys where !paired.contains(id) { otherSessions[id] = nil }
+        for id in otherReachable.keys where !paired.contains(id) { otherReachable[id] = nil }
+    }
+
+    /// Keeps what a computer said it is (`CompanionResponse.platform`) with its pairing, for its name and icon.
+    private func learnPlatform(_ platform: String?, for id: String) {
+        guard pairings.setPlatform(platform, for: id) else { return }
+        PairingStore.save(pairings)
+        macs = pairings.macs
     }
 
     // MARK: Staying connected
@@ -1502,6 +1522,9 @@ final class CompanionClient: ObservableObject {
                 macs = pairings.macs
             }
         }
+        if req.op == .hello || req.op == .list || req.op == .subscribe, let id = pairings.active?.id {
+            learnPlatform(response.platform, for: id)
+        }
         // Only these answers report the Mac's feature list. Missing features on an older Mac clear this warning;
         // unrelated answers leave the last handshake result alone.
         if req.op == .hello || req.op == .list || req.op == .subscribe {
@@ -1704,7 +1727,11 @@ final class CompanionClient: ObservableObject {
         // The route is found with a list (any Mac answers it), so the request itself goes over one route only, once.
         guard let picked = await RouteProbe.pick(mac.id == pairings.active?.id ? routes : mac.routes, key: link.key,
                                                  makeRequest: { CompanionRequest.versioned(.list) }) else { return nil }
-        if picked.answer.ok, mac.id != pairings.active?.id, let list = picked.answer.sessions { otherSessions[mac.id] = list }
+        if picked.answer.ok, mac.id != pairings.active?.id, let list = picked.answer.sessions {
+            otherSessions[mac.id] = list
+            otherReachable[mac.id] = true
+            learnPlatform(picked.answer.platform, for: mac.id)
+        }
         var response = try? await exchange(request, link: link, route: picked.route)
         // Refused for the clock while the Mac said its time: once more, with the time corrected.
         if response?.error == .stale, CompanionClock.changed(clockBefore, ClockOffsets.offset(for: mac.id)) {
@@ -1863,7 +1890,7 @@ enum CompanionClientError: LocalizedError {
         case .badRequest: return String(localized: "Unreadable reply from your Mac.")
         case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
         case .closed: return String(localized: "The connection was lost.")
-        case .tooManyMacs: return String(localized: "This iPhone is paired with as many Macs as it can keep. Unpair one first.")
+        case .tooManyMacs: return String(localized: "This iPhone is paired with as many computers as it can keep. Unpair one first.")
         }
     }
 }

@@ -2,7 +2,7 @@
   // Settings, as the iPhone's sheet (`SettingsView`): your Mac and how the phone reaches it, what this phone does, the
   // plan limits, pairing, and the versions. On Android it also offers Nook on this phone itself.
   import { onMount } from "svelte";
-  import { companion, has, may, resetsIn, routeWords, Feature, type ClientView, type NotifySettings, type UsageAccount } from "../../lib/companion";
+  import { companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, may, resetsIn, routeWords, Feature, type ClientView, type NotifySettings, type UsageAccount } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import PanelHeader from "./ui/PanelHeader.svelte";
@@ -19,6 +19,7 @@
   let steer = $state(readSteer());
   let usage = $state<{ accounts: UsageAccount[]; sessions: number; completed: number; running: number; failed: number } | null>(null);
   let usageLoading = $state(false);
+  const activePlatform = $derived(view.macs?.find((m) => m.active)?.platform);
   let confirmUnpair = $state(false);
   let version = $state("");
   let checking = $state(false);
@@ -96,13 +97,13 @@
     <div class="groups">
       <ConnectionLine {view} />
       <section>
-        <h3>{tr("Je Mac", "Your Mac")}</h3>
+        <h3>{(view.macs?.length ?? 0) > 1 ? tr("Computers", "Computers") : fallbackComputerName(activePlatform, true)}</h3>
         <div class="card">
-          <SettingsRow icon="laptop" title={view.macName || tr("Je Mac", "Your Mac")} detail={routeLine}>
+          <SettingsRow icon={computerIcon(activePlatform)} title={view.macName || fallbackComputerName(activePlatform, true)} detail={routeLine}>
             {#snippet trailing()}<span class="dot" style:background={view.phase === "connected" ? "var(--mint)" : "var(--amber)"}></span>{/snippet}
           </SettingsRow>
-          {#each (view.macs ?? []).filter((m) => !m.active) as m (m.id)}
-            <SettingsRow icon="arrow-left-right" title={tr("Overschakelen naar {name}", "Switch to {name}", { name: m.name })} onclick={() => onswitch?.(m.id)} />
+          {#each computerChoices(view).filter((m) => !m.active) as m (m.id)}
+            <SettingsRow icon={computerIcon(m.platform)} title={tr("Overschakelen naar {name}", "Switch to {name}", { name: m.name })} detail={computerStatus(m) || undefined} onclick={() => onswitch?.(m.id)} />
           {/each}
           <SettingsRow icon="stethoscope" title={checking ? tr("Controleren…", "Checking…") : tr("Controleer de verbinding", "Check the connection")} detail={view.phase === "offline" ? view.reason : undefined} onclick={check} />
         </div>
@@ -209,8 +210,8 @@
       <section>
         <h3>{tr("Koppelen", "Pairing")}</h3>
         <div class="card">
-          {#if onadd}<SettingsRow icon="plus" title={tr("Koppel nog een Mac", "Pair another Mac")} onclick={onadd} />{/if}
-          <SettingsRow icon="circle-x" title={tr("Ontkoppel van deze Mac", "Unpair from this Mac")} destructive onclick={() => (confirmUnpair = true)} />
+          {#if onadd}<SettingsRow icon="plus" title={tr("Koppel nog een computer", "Pair another computer")} onclick={onadd} />{/if}
+          <SettingsRow icon="circle-x" title={tr("Ontkoppel van deze computer", "Unpair from this computer")} destructive onclick={() => (confirmUnpair = true)} />
         </div>
       </section>
       <section>
@@ -224,7 +225,7 @@
 </div>
 
 {#if confirmUnpair}
-  <Dialog title={tr("Ontkoppelen van deze Mac?", "Unpair from this Mac?")} message={tr("Je kunt opnieuw koppelen met de code in Nook op je Mac.", "You can pair again with the code in Nook on your Mac.")} onclose={() => (confirmUnpair = false)} buttons={[
+  <Dialog title={tr("Ontkoppelen van deze computer?", "Unpair from this computer?")} message={tr("Je kunt opnieuw koppelen met de code in Nook op je computer.", "You can pair again with the code in Nook on your computer.")} onclose={() => (confirmUnpair = false)} buttons={[
     { label: tr("Ontkoppel", "Unpair"), destructive: true, onselect: async () => { took(await companion.unpair()); onclose(); } },
     { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} },
   ]} />

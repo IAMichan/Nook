@@ -26,7 +26,7 @@
   import SessionComposer from "./ui/SessionComposer.svelte";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
 
-  let { view, inbox, conversations, archived = 0, took, onrefresh, onorb, ongear, onsession, onchat, onnook, ontab }: {
+  let { view, inbox, conversations, archived = 0, took, onrefresh, onorb, oncomputers, ongear, onsession, onchat, onnook, ontab }: {
     view: ClientView;
     inbox: InboxChatDigest[];
     conversations: ChatDigest[];
@@ -35,6 +35,8 @@
     took?: (v: ClientView) => void;
     onrefresh?: () => void;
     onorb: (r: DOMRect) => void;
+    /** The quick switcher under the title, with several computers paired. */
+    oncomputers?: (r: DOMRect) => void;
     ongear: () => void;
     onsession: (id: string) => void;
     onchat: (id: string) => void;
@@ -145,7 +147,7 @@
 <div class="tab">
   <div class="scroll">
     <div bind:this={header}>
-      <PanelHeader title="Nook" {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {ongear} />
+      <PanelHeader title="Nook" {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {oncomputers} {ongear} />
     </div>
     <div class="top">
       <ConnectionLine {view} />

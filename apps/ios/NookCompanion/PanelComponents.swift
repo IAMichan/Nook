@@ -155,30 +155,36 @@ extension PanelHeader where Trailing == EmptyView {
     }
 }
 
-/// Under the tab's name: the Mac and how the phone has it. "MacBook · live" while connected,
+/// Under the tab's name: the computer and how the phone has it. "MacBook · live" while connected,
 /// "Catching up…" while it synchronizes, and "Looking for MacBook…" once it has been away for a moment (not at a short
-/// drop). A tap on it while away explains why.
+/// drop). With one computer paired a tap on it while away explains why; with several it is the quick switcher: a tap
+/// lists every paired computer with its state and what waits there (`ComputerChoices`).
 struct ConnectionTitle: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var diagnosing = false
 
-    private var mac: String { client.macName.isEmpty ? String(localized: "your Mac") : client.macName }
+    private var mac: String { client.macName.isEmpty ? client.fallbackComputerName : client.macName }
+    private var switchable: Bool { client.macs.count > 1 }
 
     var body: some View {
         Group {
-            switch client.phase {
-            case .connected where client.synchronizing:
-                label(String(localized: "\(mac) · catching up…"), dot: Theme.blue)
-            case .connected:
-                label(String(localized: "\(mac) · live"), dot: Theme.mint)
-            case .offline:
-                Button { diagnosing = true } label: {
-                    label(String(localized: "Looking for \(mac)…"), dot: Theme.amber)
+            if switchable {
+                Menu {
+                    ComputerChoices()
+                    Section {
+                        Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
+                        Button { client.addingMac = true } label: { Label("Pair another computer", systemImage: "plus") }
+                    }
+                } label: {
+                    status
                 }
                 .buttonStyle(PressFade())
-                .appearsAfterDelay()
-            default:
-                EmptyView()
+                .accessibilityHint(Text("Switch to another computer"))
+            } else if case .offline = client.phase {
+                Button { diagnosing = true } label: { status }
+                    .buttonStyle(PressFade())
+            } else {
+                status
             }
         }
         .animation(Theme.reveal, value: client.phase)
@@ -186,10 +192,28 @@ struct ConnectionTitle: View {
         .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
     }
 
+    @ViewBuilder
+    private var status: some View {
+        switch client.phase {
+        case .connected where client.synchronizing:
+            label(String(localized: "\(mac) · catching up…"), dot: Theme.blue)
+        case .connected:
+            label(String(localized: "\(mac) · live"), dot: Theme.mint)
+        case .offline:
+            label(String(localized: "Looking for \(mac)…"), dot: Theme.amber)
+                .appearsAfterDelay()
+        default:
+            EmptyView()
+        }
+    }
+
     private func label(_ text: String, dot: Color) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
             Circle().fill(dot).frame(width: 6, height: 6)
             Text(text).lineLimit(1)
+            if switchable {
+                Image(icon: "chevron.down").imageScale(.small)
+            }
         }
         .font(Theme.TextStyle.detail)
         .foregroundStyle(Theme.textTertiary)
@@ -197,8 +221,65 @@ struct ConnectionTitle: View {
     }
 }
 
-/// Nook's orb, and under it what the phone knows about the Mac: which Mac (and switching to another), how it is
-/// reached, Live Activities, checking the connection, and unpairing. A small amber dot on the orb while the Mac
+/// Every paired computer, as a menu's checked list: its icon (a Mac, or a PC with Nook on Windows or Linux), its name, and
+/// under it whether it is live or can be reached and how much waits there (from the check of the others every 30
+/// seconds). Choosing one moves the live connection there. Used by the quick switcher under the tab title and by the
+/// orb's menu, so both read the same.
+struct ComputerChoices: View {
+    @EnvironmentObject private var client: CompanionClient
+
+    var body: some View {
+        Picker(selection: Binding(get: { client.activeMacID ?? "" }, set: { client.switchMac(to: $0) })) {
+            ForEach(client.macs) { mac in
+                Label {
+                    Text(mac.name)
+                    let status = client.computerStatus(mac)
+                    if !status.isEmpty { Text(status) }
+                } icon: {
+                    Image(icon: mac.kind.symbol)
+                }
+                .tag(mac.id)
+            }
+        } label: {
+            Text("Computers")
+        }
+        .pickerStyle(.inline)
+    }
+}
+
+extension CompanionClient {
+    /// "your Mac", or "your computer" when the active one is Nook on Windows or Linux: where its name is not known yet.
+    var fallbackComputerName: String {
+        platform.isMac ? String(localized: "your Mac") : String(localized: "your computer")
+    }
+
+    /// The same at the start of a title ("Your Mac", "Your computer").
+    var fallbackComputerTitle: String {
+        platform.isMac ? String(localized: "Your Mac") : String(localized: "Your computer")
+    }
+
+    /// How many sessions wait on you on a paired computer: the live list of the active one, the last check of another.
+    func waiting(on mac: PairedMac) -> Int {
+        (mac.id == activeMacID ? sessions : otherSessions[mac.id] ?? []).needingYou
+    }
+
+    /// A computer's line in the switcher: "Live · 2 waiting on you", "Offline", "Online"; empty for one not checked yet
+    /// with nothing waiting.
+    func computerStatus(_ mac: PairedMac) -> String {
+        let state: String?
+        if mac.id == activeMacID {
+            state = phase == .connected ? String(localized: "Live") : String(localized: "Not connected")
+        } else {
+            state = otherReachable[mac.id].map { $0 ? String(localized: "Online") : String(localized: "Offline") }
+        }
+        let count = waiting(on: mac)
+        let waits = count > 0 ? String(localized: "\(count) waiting on you") : nil
+        return [state, waits].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// Nook's orb, and under it what the phone knows about the computer: which one (and switching to another), how it is
+/// reached, Live Activities, checking the connection, and unpairing. A small amber dot on the orb while the computer
 /// cannot be reached.
 struct MacMenu: View {
     @EnvironmentObject private var client: CompanionClient
@@ -212,27 +293,19 @@ struct MacMenu: View {
 
     var body: some View {
         Menu {
-            // Every paired Mac: the live connection goes to the one that is checked.
-            Section(client.macName.isEmpty ? String(localized: "Your Mac") : client.macName) {
-                if client.macs.count > 1 {
-                    ForEach(client.macs) { mac in
-                        Button { client.switchMac(to: mac.id) } label: {
-                            if mac.id == client.activeMacID {
-                                Label(mac.name, systemImage: "checkmark")
-                            } else {
-                                Label(mac.name, systemImage: "laptopcomputer")
-                            }
-                        }
-                    }
-                }
-                // How the phone reaches the Mac right now: the local network, Tailscale, or the relay.
+            // Every paired computer: the live connection goes to the one that is checked.
+            if client.macs.count > 1 {
+                ComputerChoices()
+            }
+            Section(client.macName.isEmpty ? client.fallbackComputerTitle : client.macName) {
+                // How the phone reaches the computer right now: the local network, Tailscale, or the relay.
                 if client.phase == .connected, let route = client.activeRoute {
                     Label(RouteText.connected(route), systemImage: RouteText.symbol(route))
                 }
                 Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
             }
             Section {
-                // Sessions working on the Mac on the Lock Screen and in the Dynamic Island.
+                // Sessions working on the computer on the Lock Screen and in the Dynamic Island.
                 if client.can(CompanionFeature.liveActivity) {
                     Toggle(isOn: $live.enabled) { Label("Live Activities", systemImage: "platter.filled.top.iphone") }
                         .disabled(!live.allowedBySystem)
@@ -252,8 +325,8 @@ struct MacMenu: View {
                 }
             }
             Section {
-                Button { client.addingMac = true } label: { Label("Pair another Mac", systemImage: "plus") }
-                Button("Unpair from this Mac", role: .destructive) { client.unpair() }
+                Button { client.addingMac = true } label: { Label("Pair another computer", systemImage: "plus") }
+                Button("Unpair from this computer", role: .destructive) { client.unpair() }
             }
         } label: {
             NookMark(size: 30)
@@ -266,7 +339,7 @@ struct MacMenu: View {
                 .frame(width: 36, height: 36)
                 .contentShape(Circle())
         }
-        .accessibilityLabel("Nook and your Mac")
+        .accessibilityLabel("Nook and your computer")
         .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
     }
 }

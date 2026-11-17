@@ -326,6 +326,9 @@ pub mod feature {
     pub const PULL_ACTIONS: &str = "pullActions";
     /// The computer answers `notifySettings` and takes `notifySet`.
     pub const NOTIFY_SETTINGS: &str = "notifySettings";
+    pub const CLOCK: &str = "clock";
+    pub const REVOKE: &str = "revoke";
+    pub const RESUME: &str = "resume";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -728,6 +731,10 @@ pub struct CompanionResponse {
     pub error: Option<CompanionError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mac_name: Option<String>,
+    /// What kind of computer answers (`CompanionPlatform`: "macos", "windows" or "linux"), with `hello`, `list` and
+    /// `subscribe`; none from an older Mac. The phone names it and shows its icon by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Vec<SessionDigest>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -785,6 +792,9 @@ pub struct CompanionResponse {
     /// `ChatAppend`: Nook's new words at the end of its last message, passed through to the interface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_append: Option<serde_json::Value>,
+    /// The computer's clock with a `stale` refusal, so the phone can correct for its own (`feature::CLOCK`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_time: Option<f64>,
     /// The order of the updates on a kept connection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<i64>,
@@ -1012,6 +1022,11 @@ impl DeliveryLog {
         }
         true
     }
+
+    /// Forgets `id`, so the same request may come again (it failed in passing).
+    pub fn forget(&mut self, id: &str) {
+        self.ids.retain(|i| i != id);
+    }
 }
 
 /// Hoogstens `limit` aanvragen per `window` seconden (`RateWindow`). De klok wordt meegegeven.
@@ -1064,6 +1079,23 @@ impl RequestGuard {
             return Some(CompanionError::Replay);
         }
         None
+    }
+
+    /// For a request whose id already has an answer (`CommandReceipts`): it must still be fresh and within the rate,
+    /// but being a repeat is the point.
+    pub fn admit_retry(&mut self, request: &CompanionRequest, now: f64) -> Option<CompanionError> {
+        if (now - request.sent).abs() > FRESHNESS {
+            return Some(CompanionError::Stale);
+        }
+        if !self.rate.admit(now) {
+            return Some(CompanionError::RateLimited);
+        }
+        None
+    }
+
+    /// A request that failed in passing may come again with the same id.
+    pub fn forget(&mut self, request: &CompanionRequest) {
+        self.seen.forget(&request.id);
     }
 }
 

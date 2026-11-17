@@ -882,6 +882,8 @@ final class CompanionServer: ObservableObject {
         response.protocolVersion = CompanionProtocol.version
         response.oldestPhone = CompanionProtocol.oldestPhone
         response.appVersion = CompanionProtocol.appVersion
+        // What this computer is, so a phone paired with Nook on Windows or Linux too shows each with its own icon.
+        response.platform = CompanionPlatform.wireMac
         return response
     }
 
@@ -978,7 +980,9 @@ final class CompanionServer: ObservableObject {
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970,
                              turn: workspace.turnIdentity(run.id),
-                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory),
+                             agentID: run.provider.rawValue,
+                             modelChoice: run.autoModel == true ? AutoModel.id : run.model)
         // The Agents tab's menus, shelves, composer choices and queue (`CompanionFeature.agentsTab`).
         digest.actions = (digest.actions ?? []) + Self.tabActions(run, workspace: workspace).map(\.rawValue)
         Self.addTabFields(&digest, run: run, workspace: workspace, now: now)

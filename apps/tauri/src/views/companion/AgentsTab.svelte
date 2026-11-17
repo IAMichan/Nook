@@ -25,11 +25,13 @@
   import { placeSessions, ROW_MENU } from "../../lib/companion-sessions";
   import { sessionMenu } from "./session-menu";
 
-  let { view, act, took, onorb, ongear, onopen, onnew, onelsewhere }: {
+  let { view, act, took, onorb, oncomputers, ongear, onopen, onnew, onelsewhere }: {
     view: ClientView;
     act: (f: () => Promise<ClientView>) => Promise<void>;
     took: (v: ClientView) => void;
     onorb: (r: DOMRect) => void;
+    /** The quick switcher under the title, with several computers paired. */
+    oncomputers?: (r: DOMRect) => void;
     ongear: () => void;
     onopen: (id: string, digest?: SessionDigest) => void;
     onnew: () => void;
@@ -146,7 +148,7 @@
 <div class="tab">
   <div class="scroll">
     <div bind:this={header}>
-      <PanelHeader title={tr("Agents", "Agents")} {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {ongear}>
+      <PanelHeader title={tr("Agents", "Agents")} {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {oncomputers} {ongear}>
         {#snippet buttons()}
           {#if has(view, Feature.pullRequests) && may(view, "read")}<IconButton icon="git-pull-request" label={tr("Pull requests", "Pull requests")} onclick={() => { haptic(); pulls = true; }} />{/if}
           <IconButton icon="square-pen" label={tr("Nieuwe sessie", "New session")} onclick={newSession} />

@@ -337,9 +337,9 @@ struct PairingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
-                    PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
-                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.", last: true)
+                    PairingStep(number: 1, text: "Open Nook on your computer: on a Mac, Settings › iPhone companion; on Windows or Linux, Settings › Companion. Turn it on.")
+                    PairingStep(number: 2, text: "Choose ‘Pair an iPhone’ on a Mac, or ‘Pair a phone’ on Windows or Linux: Nook shows a code for five minutes.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and computer need to be on the same Wi‑Fi.", last: true)
                 }
                 .card()
 
@@ -374,7 +374,7 @@ struct PairingView: View {
             .padding(.bottom, Theme.Spacing.xxl)
 
             Label {
-                Text("Everything between your iPhone and your Mac is encrypted end to end.")
+                Text("Everything between your iPhone and your computer is encrypted end to end.")
             } icon: {
                 Image(icon: "lock.shield")
             }

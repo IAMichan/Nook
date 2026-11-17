@@ -83,6 +83,9 @@ pub fn run_session(
             updated: seconds(Some(run.updated_at)),
             excerpt: last_answer.into(),
             items,
+            actions: Some(super::remote_digest::run_actions(run)),
+            // A message goes into the running turn when the agent can take one (`ProviderCapabilities::steering`).
+            can_steer: Some(run.provider.capabilities().steering && run.status == crate::workspace::models::RunStatus::Running),
             ..Default::default()
         },
         active: run.status.is_active(),
@@ -132,6 +135,8 @@ pub fn hub_session(session: &AgentSession, approvals: &[ApprovalRequest], questi
             updated: seconds(session.updated.or(session.started)),
             excerpt: session.last_reply.clone(),
             items,
+            // An agent in a terminal whose process is known can be ended from the phone (it saves its conversation).
+            actions: (session.pid.is_some() || session.id.starts_with("proc-")).then(|| vec!["end".to_string()]),
             ..Default::default()
         },
         active: matches!(session.status, AgentStatus::Running | AgentStatus::Waiting),

@@ -203,6 +203,8 @@ struct StoredPairing {
     key_bound: bool,
     #[serde(default)]
     key_refused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    platform: Option<String>,
 }
 
 /// A push key for the phone's notification service (`RelayPush.pushKey`): derived from a pairing key, so the service
@@ -242,6 +244,9 @@ struct Pairing {
     key_bound: bool,
     /// The computer holds another key for this pairing ("other"): only pairing again helps, so it is not asked again.
     key_refused: bool,
+    /// What the computer said it is (`CompanionResponse::platform`: "macos", "windows", "linux"); none until it said,
+    /// and from an older Mac.
+    platform: Option<String>,
 }
 
 impl Pairing {
@@ -299,6 +304,7 @@ impl Pairing {
             device_key: self.device_key.clone(),
             key_bound: self.key_bound,
             key_refused: self.key_refused,
+            platform: self.platform.clone(),
         }
     }
 
@@ -314,6 +320,7 @@ impl Pairing {
             device_key: s.device_key,
             key_bound: s.key_bound,
             key_refused: s.key_refused,
+            platform: s.platform,
         })
     }
 
@@ -328,6 +335,14 @@ impl Pairing {
         if let Some(features) = &response.features {
             self.features = features.clone();
         }
+        if let Some(platform) = response.platform.as_deref().map(str::trim).filter(|p| !p.is_empty() && p.len() <= 32) {
+            self.platform = Some(platform.to_ascii_lowercase());
+        }
+    }
+
+    /// What kind of computer this is for the interface: what it said, "macos" for one that never did (an older Mac).
+    fn platform(&self) -> String {
+        self.platform.clone().unwrap_or_else(|| "macos".into())
     }
 }
 
@@ -347,6 +362,8 @@ pub struct MacSummary {
     pub id: String,
     pub name: String,
     pub active: bool,
+    /// "macos", "windows" or "linux" (`Pairing::platform`), for its icon and how the phone names it.
+    pub platform: String,
 }
 
 /// What another paired computer had when it was last asked (its sessions, under "On <Mac>" in the Agents list).
@@ -355,6 +372,7 @@ pub struct MacSummary {
 pub struct OtherMac {
     pub id: String,
     pub name: String,
+    pub platform: String,
     pub reachable: bool,
     pub sessions: Vec<SessionDigest>,
 }
@@ -559,7 +577,7 @@ impl CompanionClient {
                 .pairings
                 .iter()
                 .enumerate()
-                .map(|(n, p)| MacSummary { id: p.id(), name: p.link.mac_name.clone(), active: n == i.active })
+                .map(|(n, p)| MacSummary { id: p.id(), name: p.link.mac_name.clone(), active: n == i.active, platform: p.platform() })
                 .collect(),
             others: i.others.clone(),
             outbox: current
@@ -627,6 +645,7 @@ impl CompanionClient {
             device_key: None,
             key_bound: false,
             key_refused: false,
+            platform: None,
         };
         let mut hello = CompanionRequest::versioned(CompanionOp::Hello, &self.app_version);
         hello.text = Some(device_name.into());
@@ -773,14 +792,16 @@ impl CompanionClient {
                 Ok((r, _)) if r.ok => (true, r.sessions.clone().unwrap_or_default()),
                 _ => (false, Vec::new()),
             };
+            let mut platform = p.platform();
             if let Ok((r, route)) = &result {
                 let mut i = self.lock();
                 if let Some(stored) = i.pairings.iter_mut().find(|x| x.id() == p.id()) {
                     stored.learn(r);
                     stored.last_route = Some(route.clone());
+                    platform = stored.platform();
                 }
             }
-            found.push(OtherMac { id: p.id(), name: p.link.mac_name.clone(), reachable, sessions });
+            found.push(OtherMac { id: p.id(), name: p.link.mac_name.clone(), platform, reachable, sessions });
         }
         self.lock().others = found;
         let _ = self.save();
