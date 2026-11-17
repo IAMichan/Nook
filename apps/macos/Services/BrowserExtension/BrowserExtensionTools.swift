@@ -295,21 +295,15 @@ enum BrowserExtensionPanel {
         }
     }
 
-    /// A short fingerprint of the conversation as the side panel shows it: a change in any message changes it, so Nook
-    /// pushes only what the panel does not have yet. Stable across runs (no `Hasher` seed), FNV-1a over the fields.
+    /// A short fingerprint of the conversation as the side panel shows it: a change in any message (its sources and plan
+    /// too) changes it, so Nook pushes only what the panel does not have yet. Stable across runs (no `Hasher` seed):
+    /// FNV-1a over the messages as JSON with sorted keys.
     static func revision(_ messages: [[String: Any]]) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        func mix(_ text: String) {
-            for byte in text.utf8 {
-                hash ^= UInt64(byte)
-                hash = hash &* 0x0000_0100_0000_01b3
-            }
-            hash ^= 0xff
+        let data = (try? JSONSerialization.data(withJSONObject: messages, options: [.sortedKeys])) ?? Data()
+        for byte in data {
+            hash ^= UInt64(byte)
             hash = hash &* 0x0000_0100_0000_01b3
-        }
-        for message in messages {
-            for key in ["id", "text", "status", "notice"] { mix((message[key] as? String) ?? "") }
-            for key in ["fromNook", "streaming", "failed", "onMac"] { mix((message[key] as? Bool) == true ? "1" : "0") }
         }
         return String(messages.count) + "-" + String(hash, radix: 36)
     }
@@ -358,6 +352,8 @@ struct BrowserExtensionRequest: Sendable {
     let page: BrowserExtensionPanel.Page?
     /// The side panel wants the conversation's changes pushed to it from now on.
     let watch: Bool
+    /// The brain the side panel's composer picked (`BrowserExtensionBrain`), for `setBrain`.
+    let choice: String
     /// Pictures pasted, dropped or picked in the side panel's composer, as the extension sends them (`questionImages`).
     let images: [(mediaType: String, data: Data)]
 
@@ -370,6 +366,7 @@ struct BrowserExtensionRequest: Sendable {
         conversation = message["conversation"] as? String
         page = (message["page"] as? [String: Any]).flatMap(BrowserExtensionPanel.Page.init)
         watch = (message["watch"] as? Bool) ?? false
+        choice = String(((message["choice"] as? String) ?? "").prefix(400))
         let pictures = ((message["images"] as? [[String: Any]]) ?? []).lazy.compactMap { image -> (mediaType: String, data: Data)? in
             guard let mediaType = image["mediaType"] as? String, mediaType.hasPrefix("image/"),
                   let base64 = image["base64"] as? String, let data = Data(base64Encoded: base64), !data.isEmpty else { return nil }

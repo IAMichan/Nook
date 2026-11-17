@@ -8,10 +8,23 @@
 </head>
 <body>
   <header class="top">
-    <img class="face" src="icons/nook-32.png" alt="" width="22" height="22">
+    <img class="face" src="icons/nook-32.png" alt="" width="20" height="20">
     <h1 data-i18n="appName">Nook</h1>
     <span id="status" class="pill" role="status"></span>
+    <span class="grow"></span>
+    <button id="new-chat" type="button" class="icon" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2 2 0 0 1 2.9 2.9L12 14.8l-3.6.8.8-3.6Z"/></svg>
+    </button>
+    <button id="pause" type="button" class="icon">
+      <svg class="when-active" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>
+      <svg class="when-paused" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z"/></svg>
+    </button>
   </header>
+
+  <div id="paused-banner" class="banner" role="status" hidden>
+    <span id="paused-note" class="grow"></span>
+    <button id="resume" type="button" class="warn small" data-i18n="resume"></button>
+  </div>
 
   <section id="setup" class="card setup" hidden>
     <h2 data-i18n="setupTitle"></h2>
@@ -23,25 +36,30 @@
     <p class="note" id="setup-detail"></p>
   </section>
 
-  <section class="card site">
-    <div class="row">
-      <div class="grow">
-        <div id="site-name" class="site-name"></div>
-        <div id="site-note" class="note"></div>
-      </div>
-      <label class="switch" id="site-switch-wrap">
-        <input type="checkbox" id="site-switch" role="switch">
-        <span aria-hidden="true"></span>
-      </label>
+  <section class="site">
+    <span id="site-mark" class="site-mark" aria-hidden="true"></span>
+    <div class="grow">
+      <div id="site-name" class="site-name"></div>
+      <div id="site-note" class="site-note"></div>
     </div>
-    <div class="row pause-row">
-      <div id="paused-note" class="note grow"></div>
-      <button id="pause" type="button" class="quiet"></button>
-    </div>
+    <label class="switch" id="site-switch-wrap">
+      <input type="checkbox" id="site-switch" role="switch">
+      <span aria-hidden="true"></span>
+    </label>
   </section>
 
   <main id="chat" class="chat" aria-live="polite">
-    <p id="intro" class="intro" data-i18n="intro"></p>
+    <div id="empty" class="empty">
+      <img class="empty-face" src="icons/nook-128.png" alt="" width="44" height="44">
+      <p class="intro" data-i18n="intro"></p>
+      <div class="suggestions">
+        <button type="button" class="suggestion" data-suggest="suggestSummary"></button>
+        <button type="button" class="suggestion" data-suggest="suggestImportant"></button>
+        <button type="button" class="suggestion" data-suggest="suggestNext"></button>
+      </div>
+    </div>
+    <!-- Nook's shared transcript (packages/web-ui), mounted by sidepanel.js from ui/composer.js. -->
+    <div id="transcript"></div>
   </main>
 
   <section class="activity" aria-labelledby="activity-title">

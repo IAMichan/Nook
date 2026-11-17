@@ -2,6 +2,8 @@
 var HYDRATION_ERROR = {};
 var UNINITIALIZED = Symbol("uninitialized");
 var NAMESPACE_HTML = "http://www.w3.org/1999/xhtml";
+var NAMESPACE_SVG = "http://www.w3.org/2000/svg";
+var NAMESPACE_MATHML = "http://www.w3.org/1998/Math/MathML";
 // node_modules/svelte/src/internal/shared/utils.js
 var is_array = Array.isArray;
 var index_of = Array.prototype.indexOf;
@@ -2989,6 +2991,52 @@ function from_html(content, flags) {
 	};
 }
 /**
+* @param {string} content
+* @param {number} flags
+* @param {'svg' | 'math'} ns
+* @returns {() => Node | Node[]}
+*/
+/*#__NO_SIDE_EFFECTS__*/
+function from_namespace(content, flags, ns = "svg") {
+	/**
+	* Whether or not the first item is a text/element node. If not, we need to
+	* create an additional comment node to act as `effect.nodes.start`
+	*/
+	var has_start = !content.startsWith("<!>");
+	var is_fragment = (flags & 1) !== 0;
+	var wrapped = `<${ns}>${has_start ? content : "<!>" + content}</${ns}>`;
+	/** @type {Element | DocumentFragment} */
+	var node;
+	return () => {
+		if (hydrating) {
+			assign_nodes(hydrate_node, null);
+			return hydrate_node;
+		}
+		if (!node) {
+			var root = /* @__PURE__ */ get_first_child(create_fragment_from_html(wrapped));
+			if (is_fragment) {
+				node = document.createDocumentFragment();
+				while (/* @__PURE__ */ get_first_child(root)) node.appendChild(/* @__PURE__ */ get_first_child(root));
+			} else node = /* @__PURE__ */ get_first_child(root);
+		}
+		var clone = node.cloneNode(true);
+		if (is_fragment) {
+			var start = /* @__PURE__ */ get_first_child(clone);
+			var end = clone.lastChild;
+			assign_nodes(start, end);
+		} else assign_nodes(clone, clone);
+		return clone;
+	};
+}
+/**
+* @param {string} content
+* @param {number} flags
+*/
+/*#__NO_SIDE_EFFECTS__*/
+function from_svg(content, flags) {
+	return /* @__PURE__ */ from_namespace(content, flags, "svg");
+}
+/**
 * @returns {TemplateNode | DocumentFragment}
 */
 function comment() {
@@ -3803,6 +3851,13 @@ function if_block(node, fn, elseif = false) {
 /** @import { EachItem, EachOutroGroup, EachState, Effect, EffectNodes, MaybeSource, TemplateNode, TransitionManager } from '#client' */
 /** @import { Batch } from '../../reactivity/batch.js'; */
 /**
+* @param {any} _
+* @param {number} i
+*/
+function index(_, i) {
+	return i;
+}
+/**
 * Pause multiple effects simultaneously, and coordinate their
 * subsequent destruction. Used in each blocks
 * @param {EachState} state
@@ -4207,6 +4262,66 @@ function link(state, prev, next) {
 	if (next === null) state.effect.last = prev;
 	else next.prev = prev;
 }
+/**
+* @param {Element | Text | Comment} node
+* @param {() => string | TrustedHTML} get_value
+* @param {boolean} [is_controlled]
+* @param {boolean} [svg]
+* @param {boolean} [mathml]
+* @param {boolean} [skip_warning]
+* @returns {void}
+*/
+function html(node, get_value, is_controlled = false, svg = false, mathml = false, skip_warning = false) {
+	var anchor = node;
+	/** @type {string | TrustedHTML} */
+	var value = "";
+	if (is_controlled) {
+		var parent_node = node;
+		if (hydrating) anchor = set_hydrate_node(/* @__PURE__ */ get_first_child(parent_node));
+	}
+	template_effect(() => {
+		var effect = active_effect;
+		if (value === (value = get_value() ?? "")) {
+			if (hydrating) hydrate_next();
+			return;
+		}
+		if (is_controlled && !hydrating) {
+			effect.nodes = null;
+			parent_node.innerHTML = value;
+			if (value !== "") assign_nodes(/* @__PURE__ */ get_first_child(parent_node), parent_node.lastChild);
+			return;
+		}
+		if (effect.nodes !== null) {
+			remove_effect_dom(effect.nodes.start, effect.nodes.end);
+			effect.nodes = null;
+		}
+		if (value === "") return;
+		if (hydrating) {
+			hydrate_node.data;
+			/** @type {TemplateNode | null} */
+			var next = hydrate_next();
+			var last = next;
+			while (next !== null && (next.nodeType !== 8 || next.data !== "")) {
+				last = next;
+				next = /* @__PURE__ */ get_next_sibling(next);
+			}
+			if (next === null) {
+				hydration_mismatch();
+				throw HYDRATION_ERROR;
+			}
+			assign_nodes(hydrate_node, last);
+			anchor = set_hydrate_node(next);
+			return;
+		}
+		var wrapper = create_element(svg ? "svg" : mathml ? "math" : "template", svg ? NAMESPACE_SVG : mathml ? NAMESPACE_MATHML : void 0);
+		wrapper.innerHTML = value;
+		/** @type {DocumentFragment | Element} */
+		var node = svg || mathml ? wrapper : /** @type {HTMLTemplateElement} */ wrapper.content;
+		assign_nodes(/* @__PURE__ */ get_first_child(node), node.lastChild);
+		if (svg || mathml) while (/* @__PURE__ */ get_first_child(node)) anchor.before(/* @__PURE__ */ get_first_child(node));
+		else anchor.before(node);
+	});
+}
 // node_modules/svelte/src/internal/client/dom/css.js
 /**
 * @param {Node} anchor
@@ -4225,7 +4340,30 @@ function append_styles(anchor, css) {
 		}
 	});
 }
+// node_modules/clsx/dist/clsx.mjs
+function r(e) {
+	var t, f, n = "";
+	if ("string" == typeof e || "number" == typeof e) n += e;
+	else if ("object" == typeof e) if (Array.isArray(e)) {
+		var o = e.length;
+		for (t = 0; t < o; t++) e[t] && (f = r(e[t])) && (n && (n += " "), n += f);
+	} else for (f in e) e[f] && (n && (n += " "), n += f);
+	return n;
+}
+function clsx$1() {
+	for (var e, t, f = 0, n = "", o = arguments.length; f < o; f++) (e = arguments[f]) && (t = r(e)) && (n && (n += " "), n += t);
+	return n;
+}
 // node_modules/svelte/src/internal/shared/attributes.js
+/**
+* Small wrapper around clsx to preserve Svelte's (weird) handling of falsy values.
+* TODO Svelte 6 revisit this, and likely turn all falsy values into the empty string (what clsx also does)
+* @param  {any} value
+*/
+function clsx(value) {
+	if (typeof value === "object") return clsx$1(value);
+	else return value ?? "";
+}
 var whitespace = [..." 	\n\r\f\xA0\v﻿"];
 /**
 * @param {any} value
@@ -4281,6 +4419,33 @@ function set_class(dom, is_html, value, hash, prev_classes, next_classes) {
 var IS_CUSTOM_ELEMENT = Symbol("is custom element");
 var IS_HTML = Symbol("is html");
 var LINK_TAG = IS_XHTML ? "link" : "LINK";
+/**
+* The value/checked attribute in the template actually corresponds to the defaultValue property, so we need
+* to remove it upon hydration to avoid a bug when someone resets the form value.
+* @param {HTMLInputElement} input
+* @returns {void}
+*/
+function remove_input_defaults(input) {
+	if (!hydrating) return;
+	var already_removed = false;
+	var remove_defaults = () => {
+		if (already_removed) return;
+		already_removed = true;
+		if (input.hasAttribute("value")) {
+			var value = input.value;
+			set_attribute(input, "value", null);
+			input.value = value;
+		}
+		if (input.hasAttribute("checked")) {
+			var checked = input.checked;
+			set_attribute(input, "checked", null);
+			input.checked = checked;
+		}
+	};
+	/** @type {any} */ input[FORM_RESET_HANDLER] = remove_defaults;
+	queue_micro_task(remove_defaults);
+	add_form_reset_listener();
+}
 /**
 * @param {Element} element
 * @param {string} attribute
@@ -4600,22 +4765,22 @@ var Recall = class {
 // node_modules/svelte/src/internal/disclose-version.js
 if (typeof window !== "undefined") ((window.__svelte ??= {}).v ??= /* @__PURE__ */ new Set()).add("5");
 // src/Composer.svelte
-var root$1 = /* @__PURE__ */ from_html(`<button type="button" class="thumb svelte-r7ttdz"><img alt="" class="svelte-r7ttdz"/></button>`);
-var root_1$1 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"> </span>`);
-var root_2 = /* @__PURE__ */ from_html(`<button type="button" class="file svelte-r7ttdz"> <span class="faint svelte-r7ttdz"> </span></button>`);
-var root_3 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
-var root_4 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
-var root_5 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
-var root_6 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
-var root_7 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
-var root_8 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!></div></div> <!></div>`);
-var $$css$1 = {
+var root$3 = /* @__PURE__ */ from_html(`<button type="button" class="thumb svelte-r7ttdz"><img alt="" class="svelte-r7ttdz"/></button>`);
+var root_1$2 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"> </span>`);
+var root_2$2 = /* @__PURE__ */ from_html(`<button type="button" class="file svelte-r7ttdz"> <span class="faint svelte-r7ttdz"> </span></button>`);
+var root_3$2 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
+var root_4$2 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
+var root_5$2 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
+var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
+var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
+var root_8$2 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!></div></div> <!></div>`);
+var $$css$4 = {
 	hash: "svelte-r7ttdz",
 	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
 };
 function Composer($$anchor, $$props) {
 	push($$props, true);
-	append_styles($$anchor, $$css$1);
+	append_styles($$anchor, $$css$4);
 	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
 	/** Stops Nook's answer. Without it, a busy composer only waits. */
 	/** Nook is answering: send waits (or becomes stop when `onstop` is given). */
@@ -4695,17 +4860,17 @@ function Composer($$anchor, $$props) {
 	const accept = /* @__PURE__ */ user_derived(() => draft().readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx" : "image/*");
 	const placeholder = /* @__PURE__ */ user_derived(() => draft().attachment && $$props.texts.placeholderFor ? $$props.texts.placeholderFor(draft().attachment.name) : $$props.texts.placeholder);
 	var $$exports = { focus };
-	var div = root_8();
+	var div = root_8$2();
 	let classes;
 	var node = child(div);
 	snippet(node, () => $$props.top ?? noop);
 	var div_1 = sibling(node, 2);
 	var node_1 = child(div_1);
 	var consequent_3 = ($$anchor) => {
-		var div_2 = root_4();
+		var div_2 = root_4$2();
 		var node_2 = child(div_2);
 		each(node_2, 19, () => draft().images, (img) => img.url, ($$anchor, img, i) => {
-			var button = root$1();
+			var button = root$3();
 			var img_1 = only_child(button);
 			template_effect(() => {
 				set_attribute(button, "title", $$props.texts.removeImage);
@@ -4717,7 +4882,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_3 = sibling(node_2, 2);
 		var consequent = ($$anchor) => {
-			var span = root_1$1();
+			var span = root_1$2();
 			var text_1 = only_child(span, true);
 			template_effect(() => set_text(text_1, $$props.texts.reading));
 			append($$anchor, span);
@@ -4727,7 +4892,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_4 = sibling(node_3, 2);
 		var consequent_1 = ($$anchor) => {
-			var button_1 = root_2();
+			var button_1 = root_2$2();
 			var text_2 = child(button_1);
 			var text_3 = only_child(sibling(text_2));
 			reset(button_1);
@@ -4744,7 +4909,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_5 = sibling(node_4, 2);
 		var consequent_2 = ($$anchor) => {
-			append($$anchor, root_3());
+			append($$anchor, root_3$2());
 		};
 		if_block(node_5, ($$render) => {
 			if (get(dragging)) $$render(consequent_2);
@@ -4757,7 +4922,7 @@ function Composer($$anchor, $$props) {
 	});
 	var node_6 = sibling(node_1, 2);
 	var consequent_4 = ($$anchor) => {
-		var p = root_5();
+		var p = root_5$2();
 		var text_4 = only_child(p, true);
 		template_effect(() => set_text(text_4, draft().fileError));
 		append($$anchor, p);
@@ -4778,7 +4943,7 @@ function Composer($$anchor, $$props) {
 	snippet(node_8, () => $$props.extras ?? noop);
 	var node_9 = sibling(node_8, 2);
 	var consequent_5 = ($$anchor) => {
-		var button_3 = root_6();
+		var button_3 = root_6$2();
 		template_effect(() => {
 			set_attribute(button_3, "title", $$props.texts.stop);
 			set_attribute(button_3, "aria-label", $$props.texts.stop);
@@ -4787,7 +4952,7 @@ function Composer($$anchor, $$props) {
 		append($$anchor, button_3);
 	};
 	var alternate = ($$anchor) => {
-		var button_4 = root_7();
+		var button_4 = root_7$2();
 		template_effect(() => {
 			button_4.disabled = !get(canSend);
 			set_attribute(button_4, "title", $$props.texts.send);
@@ -4847,6 +5012,148 @@ delegate([
 	"input",
 	"change"
 ]);
+// src/ModelPicker.svelte
+var root_1$1 = /* @__PURE__ */ from_html(`<span class="agent svelte-9tg97k"> </span><span class="dot svelte-9tg97k" aria-hidden="true">·</span>`, 1);
+var root_2$1 = /* @__PURE__ */ from_html(`<input class="search svelte-9tg97k" type="search"/>`);
+var root_3$1 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><path d="m3.5 8.5 3 3 6-7"></path></svg>`);
+var root_4$1 = /* @__PURE__ */ from_html(`<button type="button" role="menuitemradio"><span class="title svelte-9tg97k"> </span> <!></button>`);
+var root_5$1 = /* @__PURE__ */ from_html(`<div class="group svelte-9tg97k"> </div> <!>`, 1);
+var root_6$1 = /* @__PURE__ */ from_html(`<p class="empty svelte-9tg97k"> </p>`);
+var root_7$1 = /* @__PURE__ */ from_html(`<div class="menu svelte-9tg97k" role="menu"><!> <div class="list svelte-9tg97k"></div></div>`);
+var root_8$1 = /* @__PURE__ */ from_html(`<div class="model-picker svelte-9tg97k"><button type="button" aria-haspopup="menu"><!> <span class="name svelte-9tg97k"> </span> <svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"></path></svg></button> <!></div>`);
+var $$css$3 = {
+	hash: "svelte-9tg97k",
+	code: ".model-picker.svelte-9tg97k {position:relative;min-width:0;}.chip.svelte-9tg97k {display:flex;align-items:center;gap:4px;max-width:100%;height:28px;margin:0;padding:0 8px;border:0;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;min-width:0;}.chip.svelte-9tg97k:hover:not(:disabled), .chip.open.svelte-9tg97k {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}.chip.svelte-9tg97k:disabled {cursor:default;opacity:0.6;}.chip.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.agent.svelte-9tg97k {flex-shrink:0;}.dot.svelte-9tg97k {opacity:0.6;}.name.svelte-9tg97k {overflow:hidden;text-overflow:ellipsis;color:var(--nc-text, #27272a);min-width:0;}.chip.svelte-9tg97k svg:where(.svelte-9tg97k) {flex-shrink:0;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}.menu.svelte-9tg97k {position:absolute;left:-4px;bottom:calc(100% + 8px);z-index:20;width:min(300px, calc(100vw - 32px));display:flex;flex-direction:column;padding:6px;border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-menu-radius, 12px);background:var(--nc-menu, var(--nc-surface, #ffffff));box-shadow:0 12px 32px rgb(0 0 0 / 0.28);}.search.svelte-9tg97k {margin:0 0 6px;padding:6px 8px;border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-text, #27272a);font:inherit;font-size:12px;outline:none;}.search.svelte-9tg97k:focus {border-color:var(--nc-line-focus, #d4d4d8);}.list.svelte-9tg97k {max-height:320px;overflow-y:auto;}.group.svelte-9tg97k {padding:8px 8px 4px;color:var(--nc-faint, #62626c);font-size:11px;font-weight:600;letter-spacing:0.02em;}.item.svelte-9tg97k {display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:6px 8px;border:0;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-text, #27272a);font:inherit;font-size:13px;text-align:left;cursor:pointer;}.item.svelte-9tg97k:hover, .item.svelte-9tg97k:focus-visible {background:var(--nc-hover, #f4f4f5);outline:none;}.title.svelte-9tg97k {flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.item.svelte-9tg97k svg:where(.svelte-9tg97k) {flex-shrink:0;width:14px;height:14px;fill:none;stroke:var(--nc-accent, #1e1e22);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}.empty.svelte-9tg97k {margin:0;padding:10px 8px;color:var(--nc-faint, #62626c);font-size:12px;}"
+};
+function ModelPicker($$anchor, $$props) {
+	push($$props, true);
+	append_styles($$anchor, $$css$3);
+	let group = prop($$props, "group", 3, ""), disabled = prop($$props, "disabled", 3, false);
+	/** The menu opens: the surface can fetch the newest list. */
+	let open = /* @__PURE__ */ state(false);
+	let query = /* @__PURE__ */ state("");
+	let root = /* @__PURE__ */ state(void 0);
+	let search = /* @__PURE__ */ state(void 0);
+	const filtered = /* @__PURE__ */ user_derived(() => {
+		const words = get(query).trim().toLowerCase().split(/\s+/).filter(Boolean);
+		return $$props.choices.filter((c) => words.every((w) => `${c.title} ${c.group}`.toLowerCase().includes(w)));
+	});
+	const groups = /* @__PURE__ */ user_derived(() => {
+		const out = [];
+		for (const choice of get(filtered)) {
+			let entry = out.find((g) => g.name === choice.group);
+			if (!entry) out.push(entry = {
+				name: choice.group,
+				items: []
+			});
+			entry.items.push(choice);
+		}
+		return out;
+	});
+	function toggle() {
+		set(open, !get(open));
+		set(query, "");
+		if (get(open)) {
+			$$props.onopen?.();
+			queueMicrotask(() => get(search)?.focus());
+		}
+	}
+	function choose(choice) {
+		set(open, false);
+		if (!choice.chosen) $$props.onchoose(choice.id);
+	}
+	var div = root_8$1();
+	event("click", $window, (e) => get(open) && !get(root)?.contains(e.target) && set(open, false));
+	event("keydown", $window, (e) => get(open) && e.key === "Escape" && (set(open, false), e.stopPropagation()));
+	var button = child(div);
+	let classes;
+	var node = child(button);
+	var consequent = ($$anchor) => {
+		var fragment = root_1$1();
+		var text = only_child(first_child(fragment), true);
+		next();
+		template_effect(() => set_text(text, group()));
+		append($$anchor, fragment);
+	};
+	if_block(node, ($$render) => {
+		if (group()) $$render(consequent);
+	});
+	var text_1 = only_child(sibling(node, 2), true);
+	next(2);
+	reset(button);
+	var node_1 = sibling(button, 2);
+	var consequent_3 = ($$anchor) => {
+		var div_1 = root_7$1();
+		var node_2 = child(div_1);
+		var consequent_1 = ($$anchor) => {
+			var input = root_2$1();
+			remove_input_defaults(input);
+			bind_this(input, ($$value) => set(search, $$value), () => get(search));
+			template_effect(() => {
+				set_attribute(input, "placeholder", $$props.texts.search);
+				set_attribute(input, "aria-label", $$props.texts.search);
+			});
+			bind_value(input, () => get(query), ($$value) => set(query, $$value));
+			append($$anchor, input);
+		};
+		if_block(node_2, ($$render) => {
+			if ($$props.choices.length > 8) $$render(consequent_1);
+		});
+		var div_2 = sibling(node_2, 2);
+		each(div_2, 21, () => get(groups), (g) => g.name, ($$anchor, g) => {
+			var fragment_1 = root_5$1();
+			var div_3 = first_child(fragment_1);
+			var text_2 = only_child(div_3, true);
+			each(sibling(div_3, 2), 17, () => get(g).items, (choice) => choice.id, ($$anchor, choice) => {
+				var button_1 = root_4$1();
+				let classes_1;
+				var span_2 = child(button_1);
+				var text_3 = only_child(span_2, true);
+				var node_4 = sibling(span_2, 2);
+				var consequent_2 = ($$anchor) => {
+					append($$anchor, root_3$1());
+				};
+				if_block(node_4, ($$render) => {
+					if (get(choice).chosen) $$render(consequent_2);
+				});
+				reset(button_1);
+				template_effect(() => {
+					classes_1 = set_class(button_1, 1, "item svelte-9tg97k", null, classes_1, { chosen: get(choice).chosen });
+					set_attribute(button_1, "aria-checked", !!get(choice).chosen);
+					set_text(text_3, get(choice).title);
+				});
+				delegated("click", button_1, () => choose(get(choice)));
+				append($$anchor, button_1);
+			});
+			template_effect(() => set_text(text_2, get(g).name));
+			append($$anchor, fragment_1);
+		}, ($$anchor) => {
+			var p = root_6$1();
+			var text_4 = only_child(p, true);
+			template_effect(() => set_text(text_4, $$props.texts.empty));
+			append($$anchor, p);
+		});
+		reset(div_2);
+		reset(div_1);
+		append($$anchor, div_1);
+	};
+	if_block(node_1, ($$render) => {
+		if (get(open)) $$render(consequent_3);
+	});
+	reset(div);
+	bind_this(div, ($$value) => set(root, $$value), () => get(root));
+	template_effect(() => {
+		classes = set_class(button, 1, "chip svelte-9tg97k", null, classes, { open: get(open) });
+		set_attribute(button, "title", $$props.texts.button);
+		set_attribute(button, "aria-expanded", get(open));
+		button.disabled = disabled();
+		set_text(text_1, $$props.label);
+	});
+	delegated("click", button, toggle);
+	append($$anchor, div);
+	pop();
+}
+delegate(["click"]);
 var Draft = class {
 	readDocument;
 	#text = /* @__PURE__ */ state("");
@@ -4951,19 +5258,23 @@ function fileBase64(file) {
 	});
 }
 // ../../apps/browser-extension/composer/PanelComposer.svelte
-var root = /* @__PURE__ */ from_html(`<button id="new-chat" type="button" class="quiet small"> </button>`);
-var root_1 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
-var $$css = {
+var root$2 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
+var $$css$2 = {
 	hash: "svelte-1dv7v2j",
-	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer-tray);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}"
+	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-menu: var(--surface);--nc-menu-radius: var(--radius-panel);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 4%, transparent), 0 8px 24px rgb(0 0 0 / 0.12);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}"
 };
 function PanelComposer($$anchor, $$props) {
 	push($$props, true);
-	append_styles($$anchor, $$css);
+	append_styles($$anchor, $$css$2);
 	const t = (key) => globalThis.chrome?.i18n?.getMessage(key) || key;
 	const draft = new Draft();
 	let composer = /* @__PURE__ */ state(void 0);
 	function focus() {
+		get(composer)?.focus();
+	}
+	/** Puts a question in the field (a suggestion), ready to send or change. */
+	function fill(text) {
+		draft.text = text;
 		get(composer)?.focus();
 	}
 	const texts = {
@@ -4974,27 +5285,54 @@ function PanelComposer($$anchor, $$props) {
 		attach: t("attachImages"),
 		removeImage: t("removeImage")
 	};
+	const modelTexts = {
+		button: t("modelChip"),
+		search: t("modelSearch"),
+		empty: t("modelEmpty")
+	};
 	function send({ text, images }) {
 		$$props.onsend(text || t("imageQuestion"), images);
 	}
-	var $$exports = { focus };
-	var div = root_1();
+	var $$exports = {
+		focus,
+		fill
+	};
+	var div = root$2();
 	var node = child(div);
 	{
 		const controls = ($$anchor) => {
 			var fragment = comment();
 			var node_1 = first_child(fragment);
 			var consequent = ($$anchor) => {
-				var button = root();
-				var text_1 = only_child(button, true);
-				template_effect(($0) => set_text(text_1, $0), [() => t("newChat")]);
-				delegated("click", button, function(...$$args) {
-					$$props.onnewchat?.apply(this, $$args);
-				});
-				append($$anchor, button);
+				{
+					let $0 = /* @__PURE__ */ user_derived(() => !$$props.panel.connected);
+					ModelPicker($$anchor, {
+						get label() {
+							return $$props.panel.brain.label;
+						},
+						get group() {
+							return $$props.panel.brain.group;
+						},
+						get choices() {
+							return $$props.panel.brain.choices;
+						},
+						get texts() {
+							return modelTexts;
+						},
+						get disabled() {
+							return get($0);
+						},
+						get onopen() {
+							return $$props.onbrain;
+						},
+						get onchoose() {
+							return $$props.onchoosebrain;
+						}
+					});
+				}
 			};
 			if_block(node_1, ($$render) => {
-				if ($$props.panel.showNewChat) $$render(consequent);
+				if ($$props.panel.brain) $$render(consequent);
 			});
 			append($$anchor, fragment);
 		};
@@ -5032,7 +5370,384 @@ function PanelComposer($$anchor, $$props) {
 	append($$anchor, div);
 	return pop($$exports);
 }
+// src/markdown.ts
+var englishTexts = {
+	copy: "Copy",
+	copyTitle: "Copy code"
+};
+function escapeHtml(text) {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function inline(text) {
+	let out = escapeHtml(text);
+	const codes = [];
+	out = out.replace(/`([^`]+)`/g, (_m, code) => {
+		codes.push(`<code>${code}</code>`);
+		return `\u0000${codes.length - 1}\u0000`;
+	});
+	out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>").replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) => `<a href="${url}" data-external>${label}</a>`).replace(/\[(\d{1,2})\]/g, "<sup class=\"cite\" data-cite=\"$1\">$1</sup>");
+	return out.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)]);
+}
+function isTableDivider(line) {
+	return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+}
+function cells(line) {
+	return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+}
+function renderMarkdown(source, texts = englishTexts) {
+	const lines = source.replace(/\r\n/g, "\n").split("\n");
+	const html = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		const fence = line.match(/^```\s*([\w+-]*)/);
+		if (fence) {
+			const body = [];
+			i++;
+			while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
+			i++;
+			html.push(`<div class="code-block"><button type="button" class="copy-code" data-copy-code title="${escapeHtml(texts.copyTitle)}">${escapeHtml(texts.copy)}</button><pre><code${fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : ""}>${escapeHtml(body.join("\n"))}</code></pre></div>`);
+			continue;
+		}
+		const heading = line.match(/^(#{1,4})\s+(.*)$/);
+		if (heading) {
+			const level = Math.min(heading[1].length + 2, 6);
+			html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+			i++;
+			continue;
+		}
+		if (line.includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1])) {
+			const head = cells(line);
+			i += 2;
+			const rows = [];
+			while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(cells(lines[i++]));
+			html.push(`<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>` + rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("") + "</tbody></table>");
+			continue;
+		}
+		if (/^\s*([-*•]|\d+[.)])\s+/.test(line)) {
+			const ordered = /^\s*\d+[.)]/.test(line);
+			const items = [];
+			while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) {
+				items.push(lines[i].replace(/^\s*([-*•]|\d+[.)])\s+/, ""));
+				i++;
+			}
+			const tag = ordered ? "ol" : "ul";
+			html.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</${tag}>`);
+			continue;
+		}
+		if (/^>\s?/.test(line)) {
+			const quote = [];
+			while (i < lines.length && /^>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^>\s?/, ""));
+			html.push(`<blockquote>${inline(quote.join(" "))}</blockquote>`);
+			continue;
+		}
+		if (!line.trim()) {
+			i++;
+			continue;
+		}
+		const para = [];
+		while (i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*([-*•]|\d+[.)])\s)/.test(lines[i])) {
+			if (lines[i].includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1])) break;
+			para.push(lines[i++]);
+		}
+		if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`);
+		else i++;
+	}
+	return html.join("");
+}
+// src/Transcript.svelte
+var root$1 = /* @__PURE__ */ from_html(`<div class="you svelte-xmynmn"> </div>`);
+var root_1 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" class="svelte-xmynmn"><path d="m4 8.5 2.5 2.5 5.5-6" class="svelte-xmynmn"></path></svg>`);
+var root_2 = /* @__PURE__ */ from_html(`<span class="spin svelte-xmynmn"></span>`);
+var root_3 = /* @__PURE__ */ from_html(`<li><span class="mark svelte-xmynmn" aria-hidden="true"><!></span> <span class="svelte-xmynmn"> </span></li>`);
+var root_4 = /* @__PURE__ */ from_html(`<ul class="tasks svelte-xmynmn"></ul>`);
+var root_5 = /* @__PURE__ */ from_html(`<div class="prose svelte-xmynmn"></div>`);
+var root_6 = /* @__PURE__ */ from_html(`<span class="dots svelte-xmynmn"><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i></span>`);
+var root_7 = /* @__PURE__ */ from_html(`<div class="status shimmer svelte-xmynmn"> </div>`);
+var root_8 = /* @__PURE__ */ from_html(`<span class="badge svelte-xmynmn" aria-hidden="true">!</span>`);
+var root_9 = /* @__PURE__ */ from_html(`<span class="source-detail svelte-xmynmn"> </span>`);
+var root_10 = /* @__PURE__ */ from_html(`<li><span class="state svelte-xmynmn" aria-hidden="true"></span> <span class="source-title svelte-xmynmn"> </span> <!></li>`);
+var root_11 = /* @__PURE__ */ from_html(`<a class="svelte-xmynmn"> </a>`);
+var root_12 = /* @__PURE__ */ from_html(`<span class="source-title svelte-xmynmn"> </span>`);
+var root_13 = /* @__PURE__ */ from_html(`<li class="reference svelte-xmynmn"><span class="number svelte-xmynmn"> </span> <!></li>`);
+var root_14 = /* @__PURE__ */ from_html(`<ul class="source-list svelte-xmynmn"><!> <!></ul>`);
+var root_15 = /* @__PURE__ */ from_html(`<div class="sources svelte-xmynmn"><button type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" class="svelte-xmynmn"></path></svg> <span> </span> <!></button> <!></div>`);
+var root_16 = /* @__PURE__ */ from_html(`<div class="note svelte-xmynmn"> </div>`);
+var root_17 = /* @__PURE__ */ from_html(`<div class="note on-mac svelte-xmynmn"> </div>`);
+var root_18 = /* @__PURE__ */ from_html(`<div><!> <!> <!> <!> <!> <!></div>`);
+var root_19 = /* @__PURE__ */ from_html(`<div class="nook-transcript svelte-xmynmn"></div>`);
+var $$css$1 = {
+	hash: "svelte-xmynmn",
+	code: "\n  /* Every color comes from the surface (`--nt-*`); the fallbacks are Nook's own dark theme. */.nook-transcript.svelte-xmynmn {display:flex;flex-direction:column;gap:18px;min-width:0;color:var(--nt-text, #ececef);}.you.svelte-xmynmn {align-self:flex-end;max-width:85%;padding:8px 13px;border-radius:var(--nt-bubble-radius, 16px);background:var(--nt-bubble, #26262b);color:var(--nt-text, #ececef);white-space:pre-wrap;overflow-wrap:anywhere;}.nook.svelte-xmynmn {display:flex;flex-direction:column;gap:8px;min-width:0;}.failed.svelte-xmynmn .prose:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.prose.svelte-xmynmn {overflow-wrap:anywhere;line-height:1.55;}.prose.svelte-xmynmn p {margin:0 0 10px;}.prose.svelte-xmynmn p:last-child, .prose.svelte-xmynmn ul:last-child, .prose.svelte-xmynmn ol:last-child {margin-bottom:0;}.prose.svelte-xmynmn h3, .prose.svelte-xmynmn h4, .prose.svelte-xmynmn h5, .prose.svelte-xmynmn h6 {margin:14px 0 6px;font-size:1em;font-weight:600;}.prose.svelte-xmynmn h3:first-child, .prose.svelte-xmynmn h4:first-child {margin-top:0;}.prose.svelte-xmynmn ul, .prose.svelte-xmynmn ol {margin:0 0 10px;padding-left:20px;}.prose.svelte-xmynmn li {margin:3px 0;}.prose.svelte-xmynmn li::marker {color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn strong {font-weight:600;}.prose.svelte-xmynmn a {color:var(--nt-accent, #8ab4ff);text-decoration:none;}.prose.svelte-xmynmn a:hover {text-decoration:underline;}.prose.svelte-xmynmn code {font-family:var(--nt-mono, ui-monospace, \"SF Mono\", Menlo, monospace);font-size:0.9em;padding:1px 5px;border-radius:5px;background:var(--nt-code, rgb(127 127 127 / 0.16));}.prose.svelte-xmynmn .code-block {position:relative;margin:0 0 10px;}.prose.svelte-xmynmn pre {margin:0;padding:10px 12px;overflow-x:auto;border-radius:var(--nt-card-radius, 10px);border:1px solid var(--nt-line, #2c2c31);background:var(--nt-card, #17171a);}.prose.svelte-xmynmn pre code {padding:0;background:none;font-size:12px;line-height:1.5;}.prose.svelte-xmynmn .copy-code {position:absolute;top:6px;right:6px;padding:2px 8px;border:1px solid var(--nt-line, #2c2c31);border-radius:6px;background:var(--nt-card, #17171a);color:var(--nt-faint, #8b8b94);font:inherit;font-size:11px;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}.prose.svelte-xmynmn .code-block:hover .copy-code, .prose.svelte-xmynmn .copy-code:focus-visible {opacity:1;}.prose.svelte-xmynmn blockquote {margin:0 0 10px;padding-left:10px;border-left:2px solid var(--nt-line, #2c2c31);color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn table {border-collapse:collapse;margin:0 0 10px;font-size:12px;display:block;overflow-x:auto;}.prose.svelte-xmynmn th, .prose.svelte-xmynmn td {padding:4px 8px;border:1px solid var(--nt-line, #2c2c31);text-align:left;}.prose.svelte-xmynmn th {font-weight:600;}.prose.svelte-xmynmn .cite {font-size:0.7em;padding:0 4px;margin-left:1px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);}.status.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}.shimmer.svelte-xmynmn {background:linear-gradient(90deg, var(--nt-faint, #8b8b94) 0%, var(--nt-text, #ececef) 50%, var(--nt-faint, #8b8b94) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;\n    animation: svelte-xmynmn-shimmer 1.8s linear infinite;}\n  @keyframes svelte-xmynmn-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }.dots.svelte-xmynmn {display:inline-flex;gap:4px;padding:6px 0;}.dots.svelte-xmynmn i:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-faint, #8b8b94); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(2) {animation-delay:0.15s;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(3) {animation-delay:0.3s;}\n  @keyframes svelte-xmynmn-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }.tasks.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:5px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.tasks.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:flex-start;gap:8px;}.tasks.svelte-xmynmn .mark:where(.svelte-xmynmn) {flex-shrink:0;display:grid;place-items:center;width:14px;height:14px;margin-top:2px;border:1.5px solid var(--nt-faint, #8b8b94);border-radius:50%;box-sizing:border-box;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);background:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) svg:where(.svelte-xmynmn) {width:10px;height:10px;fill:none;stroke:var(--nt-on-accent, #0b0b0c);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn), .tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) {color:var(--nt-faint, #8b8b94);}.tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) span:where(.svelte-xmynmn):last-child {text-decoration:line-through;}.tasks.svelte-xmynmn .active:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .spin:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.sources.svelte-xmynmn {display:flex;flex-direction:column;gap:6px;}.sources-line.svelte-xmynmn {align-self:flex-start;display:inline-flex;align-items:center;gap:4px;margin:0 0 0 -6px;padding:3px 8px 3px 4px;border:0;border-radius:999px;background:transparent;color:var(--nt-faint, #8b8b94);font:inherit;font-size:12px;cursor:pointer;}.sources-line.svelte-xmynmn:hover {background:var(--nt-hover, rgb(127 127 127 / 0.12));color:var(--nt-text, #ececef);}.chev.svelte-xmynmn {width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform 0.15s ease;}.chev.open.svelte-xmynmn {transform:rotate(90deg);}.badge.svelte-xmynmn {display:grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--nt-warn, #e0a23a);color:#000;font-size:10px;font-weight:700;}.source-list.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.source-list.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap;}.state.svelte-xmynmn {flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--nt-ok, #3ecf8e);transform:translateY(-1px);}.s-empty.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-faint, #8b8b94);}.s-failed.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-error, #ff6b5e);}.s-running.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.source-title.svelte-xmynmn {font-weight:500;}.source-detail.svelte-xmynmn {color:var(--nt-faint, #8b8b94);overflow-wrap:anywhere;}.s-failed.svelte-xmynmn .source-detail:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.reference.svelte-xmynmn .number:where(.svelte-xmynmn) {flex-shrink:0;min-width:16px;padding:0 4px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);font-size:10px;text-align:center;}.reference.svelte-xmynmn a:where(.svelte-xmynmn) {color:var(--nt-accent, #8ab4ff);text-decoration:none;overflow-wrap:anywhere;}.reference.svelte-xmynmn a:where(.svelte-xmynmn):hover {text-decoration:underline;}.note.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}\n  @media (prefers-reduced-motion: reduce) {.shimmer.svelte-xmynmn, .dots.svelte-xmynmn i:where(.svelte-xmynmn), .spin.svelte-xmynmn, .s-running.svelte-xmynmn .state:where(.svelte-xmynmn) { animation: none;}.shimmer.svelte-xmynmn {color:var(--nt-faint, #8b8b94);background:none;}\n  }"
+};
+function Transcript($$anchor, $$props) {
+	push($$props, true);
+	append_styles($$anchor, $$css$1);
+	let opened = proxy({});
+	const markdownTexts = /* @__PURE__ */ user_derived(() => ({
+		copy: $$props.texts.copy,
+		copyTitle: $$props.texts.copyTitle
+	}));
+	function keyOf(message, index) {
+		return message.id || `${index}`;
+	}
+	function webHref(text) {
+		try {
+			const url = new URL(text || "");
+			return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+		} catch {
+			return null;
+		}
+	}
+	async function click(e) {
+		const target = e.target;
+		const copy = target.closest("[data-copy-code]");
+		if (copy) {
+			const code = copy.parentElement?.querySelector("code")?.textContent ?? "";
+			await navigator.clipboard?.writeText(code).catch(() => {});
+			const before = copy.textContent;
+			copy.textContent = $$props.texts.copied;
+			setTimeout(() => copy.textContent = before, 1200);
+			return;
+		}
+		const link = target.closest("a[href]");
+		if (link) {
+			e.preventDefault();
+			const href = webHref(link.getAttribute("href"));
+			if (href) window.open(href, "_blank", "noopener,noreferrer");
+		}
+	}
+	var div = root_19();
+	each(div, 23, () => $$props.messages, (message, index) => keyOf(message, index), ($$anchor, message, index$1) => {
+		var fragment = comment();
+		var node = first_child(fragment);
+		var consequent = ($$anchor) => {
+			var div_1 = root$1();
+			var text_1 = only_child(div_1, true);
+			template_effect(() => set_text(text_1, get(message).text));
+			append($$anchor, div_1);
+		};
+		var alternate_1 = ($$anchor) => {
+			const key = /* @__PURE__ */ user_derived(() => keyOf(get(message), get(index$1)));
+			var div_2 = root_18();
+			let classes;
+			var node_1 = child(div_2);
+			var consequent_3 = ($$anchor) => {
+				var ul = root_4();
+				each(ul, 21, () => get(message).tasks, index, ($$anchor, task) => {
+					var li = root_3();
+					var span = child(li);
+					var node_2 = child(span);
+					var consequent_1 = ($$anchor) => {
+						append($$anchor, root_1());
+					};
+					var consequent_2 = ($$anchor) => {
+						append($$anchor, root_2());
+					};
+					if_block(node_2, ($$render) => {
+						if (get(task).status === "done") $$render(consequent_1);
+						else if (get(task).status === "active") $$render(consequent_2, 1);
+					});
+					reset(span);
+					var text_2 = only_child(sibling(span, 2), true);
+					reset(li);
+					template_effect(() => {
+						set_class(li, 1, clsx(get(task).status), "svelte-xmynmn");
+						set_text(text_2, get(task).text);
+					});
+					append($$anchor, li);
+				});
+				reset(ul);
+				append($$anchor, ul);
+			};
+			if_block(node_1, ($$render) => {
+				if (get(message).tasks?.length) $$render(consequent_3);
+			});
+			var node_3 = sibling(node_1, 2);
+			var consequent_4 = ($$anchor) => {
+				var div_3 = root_5();
+				html(div_3, () => renderMarkdown(get(message).text, get(markdownTexts)), true);
+				reset(div_3);
+				append($$anchor, div_3);
+			};
+			var consequent_5 = ($$anchor) => {
+				var span_3 = root_6();
+				template_effect(() => set_attribute(span_3, "aria-label", $$props.texts.thinking));
+				append($$anchor, span_3);
+			};
+			if_block(node_3, ($$render) => {
+				if (get(message).text) $$render(consequent_4);
+				else if (get(message).streaming && !get(message).status) $$render(consequent_5, 1);
+			});
+			var node_4 = sibling(node_3, 2);
+			var consequent_6 = ($$anchor) => {
+				var div_4 = root_7();
+				var text_3 = only_child(div_4, true);
+				template_effect(() => set_text(text_3, get(message).status));
+				append($$anchor, div_4);
+			};
+			if_block(node_4, ($$render) => {
+				if (get(message).streaming && get(message).status) $$render(consequent_6);
+			});
+			var node_5 = sibling(node_4, 2);
+			var consequent_11 = ($$anchor) => {
+				var div_5 = root_15();
+				var button = child(div_5);
+				let classes_1;
+				var svg_1 = child(button);
+				let classes_2;
+				var span_4 = sibling(svg_1, 2);
+				let classes_3;
+				var text_4 = only_child(span_4, true);
+				var node_6 = sibling(span_4, 2);
+				var consequent_7 = ($$anchor) => {
+					append($$anchor, root_8());
+				};
+				var d = /* @__PURE__ */ user_derived(() => get(message).sources.items.some((s) => s.state === "failed"));
+				if_block(node_6, ($$render) => {
+					if (get(d)) $$render(consequent_7);
+				});
+				reset(button);
+				var node_7 = sibling(button, 2);
+				var consequent_10 = ($$anchor) => {
+					var ul_1 = root_14();
+					var node_8 = child(ul_1);
+					each(node_8, 17, () => get(message).sources.items, index, ($$anchor, source) => {
+						var li_1 = root_10();
+						var span_6 = sibling(child(li_1), 2);
+						var text_5 = only_child(span_6, true);
+						var node_9 = sibling(span_6, 2);
+						var consequent_8 = ($$anchor) => {
+							var span_7 = root_9();
+							var text_6 = only_child(span_7, true);
+							template_effect(() => set_text(text_6, get(source).detail));
+							append($$anchor, span_7);
+						};
+						if_block(node_9, ($$render) => {
+							if (get(source).detail) $$render(consequent_8);
+						});
+						reset(li_1);
+						template_effect(() => {
+							set_class(li_1, 1, "s-" + get(source).state, "svelte-xmynmn");
+							set_text(text_5, get(source).title);
+						});
+						append($$anchor, li_1);
+					});
+					each(sibling(node_8, 2), 17, () => get(message).sources.references ?? [], (reference) => reference.number, ($$anchor, reference) => {
+						var li_2 = root_13();
+						var span_8 = child(li_2);
+						var text_7 = only_child(span_8, true);
+						var node_11 = sibling(span_8, 2);
+						var consequent_9 = ($$anchor) => {
+							var a = root_11();
+							var text_8 = only_child(a, true);
+							template_effect(($0) => {
+								set_attribute(a, "href", $0);
+								set_text(text_8, get(reference).title);
+							}, [() => webHref(get(reference).url)]);
+							append($$anchor, a);
+						};
+						var d_1 = /* @__PURE__ */ user_derived(() => webHref(get(reference).url));
+						var alternate = ($$anchor) => {
+							var span_9 = root_12();
+							var text_9 = only_child(span_9, true);
+							template_effect(() => set_text(text_9, get(reference).title));
+							append($$anchor, span_9);
+						};
+						if_block(node_11, ($$render) => {
+							if (get(d_1)) $$render(consequent_9);
+							else $$render(alternate, -1);
+						});
+						reset(li_2);
+						template_effect(() => set_text(text_7, get(reference).number));
+						append($$anchor, li_2);
+					});
+					reset(ul_1);
+					append($$anchor, ul_1);
+				};
+				if_block(node_7, ($$render) => {
+					if (opened[get(key)]) $$render(consequent_10);
+				});
+				reset(div_5);
+				template_effect(() => {
+					classes_1 = set_class(button, 1, "sources-line svelte-xmynmn", null, classes_1, { running: get(message).sources.running });
+					set_attribute(button, "aria-expanded", !!opened[get(key)]);
+					classes_2 = set_class(svg_1, 0, "chev svelte-xmynmn", null, classes_2, { open: opened[get(key)] });
+					classes_3 = set_class(span_4, 1, "svelte-xmynmn", null, classes_3, { shimmer: get(message).sources.running });
+					set_text(text_4, get(message).sources.summary);
+				});
+				delegated("click", button, () => opened[get(key)] = !opened[get(key)]);
+				append($$anchor, div_5);
+			};
+			if_block(node_5, ($$render) => {
+				if (get(message).sources && (get(message).sources.items.length || get(message).sources.references?.length)) $$render(consequent_11);
+			});
+			var node_12 = sibling(node_5, 2);
+			var consequent_12 = ($$anchor) => {
+				var div_6 = root_16();
+				var text_10 = only_child(div_6, true);
+				template_effect(() => set_text(text_10, get(message).notice));
+				append($$anchor, div_6);
+			};
+			if_block(node_12, ($$render) => {
+				if (get(message).notice && !get(message).streaming) $$render(consequent_12);
+			});
+			var node_13 = sibling(node_12, 2);
+			var consequent_13 = ($$anchor) => {
+				var div_7 = root_17();
+				var text_11 = only_child(div_7, true);
+				template_effect(() => set_text(text_11, $$props.texts.onMac));
+				append($$anchor, div_7);
+			};
+			if_block(node_13, ($$render) => {
+				if (get(message).onMac) $$render(consequent_13);
+			});
+			reset(div_2);
+			template_effect(() => classes = set_class(div_2, 1, "nook svelte-xmynmn", null, classes, { failed: get(message).failed }));
+			append($$anchor, div_2);
+		};
+		if_block(node, ($$render) => {
+			if (!get(message).fromNook) $$render(consequent);
+			else $$render(alternate_1, -1);
+		});
+		append($$anchor, fragment);
+	});
+	reset(div);
+	delegated("click", div, click);
+	append($$anchor, div);
+	pop();
+}
 delegate(["click"]);
+// ../../apps/browser-extension/composer/PanelTranscript.svelte
+var root = /* @__PURE__ */ from_html(`<div class="panel-transcript svelte-vng54z"><!></div>`);
+var $$css = {
+	hash: "svelte-vng54z",
+	code: ".panel-transcript.svelte-vng54z {--nt-text: var(--text-strong);--nt-faint: var(--text-tertiary);--nt-line: var(--line2);--nt-card: var(--surface);--nt-card-radius: var(--radius-card);--nt-bubble: var(--bubble);--nt-bubble-radius: var(--radius-bubble);--nt-code: var(--graphite);--nt-hover: var(--row-hover);--nt-accent: var(--blue);--nt-on-accent: var(--canvas);--nt-ok: var(--mint);--nt-warn: var(--amber);--nt-error: var(--coral);--nt-mono: var(--mono);font:var(--body)/1.55 var(--sans);}"
+};
+function PanelTranscript($$anchor, $$props) {
+	push($$props, true);
+	append_styles($$anchor, $$css);
+	const t = (key) => globalThis.chrome?.i18n?.getMessage(key) || key;
+	const texts = {
+		thinking: t("thinking"),
+		onMac: t("onMacNote"),
+		copy: t("copy"),
+		copyTitle: t("copyCode"),
+		copied: t("copied")
+	};
+	var div = root();
+	Transcript(child(div), {
+		get messages() {
+			return $$props.panel.messages;
+		},
+		get texts() {
+			return texts;
+		}
+	});
+	reset(div);
+	append($$anchor, div);
+	pop();
+}
 // ../../apps/browser-extension/composer/main.svelte.js
 function questionsAsked(messages) {
 	return askedBefore(messages.map((message) => ({
@@ -5042,16 +5757,17 @@ function questionsAsked(messages) {
 }
 /**
 * Mounts the composer in `target`. `onsend(text, images)` gets the question and its pictures
-* (`[{ mediaType, base64 }]`); `onstop` stops Nook's answer; `onnewchat` starts a new conversation.
+* (`[{ mediaType, base64 }]`); `onstop` stops Nook's answer; `onbrain` asks for the newest models when the model menu
+* opens; `onchoosebrain(id)` picks one.
 */
-function mountComposer(target, { onsend, onstop, onnewchat }) {
+function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain }) {
 	const panel = proxy({
 		connected: false,
 		busy: false,
 		canStop: false,
-		showNewChat: false,
 		history: [],
-		conversation: null
+		conversation: null,
+		brain: null
 	});
 	const component = mount(PanelComposer, {
 		target,
@@ -5059,17 +5775,32 @@ function mountComposer(target, { onsend, onstop, onnewchat }) {
 			panel,
 			onsend,
 			onstop,
-			onnewchat
+			onbrain,
+			onchoosebrain
 		}
 	});
 	return {
-		/** Changes what the composer shows: `connected`, `busy`, `canStop`, `showNewChat`, `history`, `conversation`. */
+		/** Changes what the composer shows: `connected`, `busy`, `canStop`, `history`, `conversation`, `brain`. */
 		set(values) {
 			Object.assign(panel, values);
 		},
 		focus() {
 			component.focus();
+		},
+		fill(text) {
+			component.fill(text);
 		}
 	};
 }
-export { mountComposer, questionsAsked };
+/** Mounts the conversation in `target`; `set(messages)` draws it again. */
+function mountTranscript(target) {
+	const panel = proxy({ messages: [] });
+	mount(PanelTranscript, {
+		target,
+		props: { panel }
+	});
+	return { set(messages) {
+		panel.messages = messages;
+	} };
+}
+export { mountComposer, mountTranscript, questionsAsked };

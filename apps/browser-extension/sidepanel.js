@@ -1,11 +1,13 @@
 // The side panel: whether Nook is connected, whether Nook may work on the site in front, a pause for this whole
-// browser, a chat with Nook about the page, and what Nook did here lately. Questions go to Nook on the Mac and are
+// browser, a chat with Nook about the page, and what Nook did here lately. The conversation and the composer are Nook's
+// shared ones (packages/web-ui): the answer as Nook's own window draws it (where Nook looked, its plan, Markdown) and
+// the model chip to choose the model Nook thinks with. Questions go to Nook on the Mac and are
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
 import {
-  cleanLook, inlineTokens, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
+  cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
 } from './lib/core.js';
-import { mountComposer, questionsAsked } from './ui/composer.js';
+import { mountComposer, mountTranscript, questionsAsked } from './ui/composer.js';
 
 const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
@@ -51,16 +53,52 @@ async function trySend(message) {
 
 for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
 for (const element of document.querySelectorAll('[data-i18n-placeholder]')) element.placeholder = t(element.dataset.i18nPlaceholder);
+$('new-chat').title = t('newChat');
+$('new-chat').setAttribute('aria-label', t('newChat'));
 
 // MARK: - Composer
 
 // Nook's shared composer (packages/web-ui), the same as in the Tauri app: Return sends, Up brings back an earlier
-// question, and pictures can be pasted, dropped or picked. sidepanel.js keeps it up to date in `renderComposer`.
+// question, and pictures can be pasted, dropped or picked. Its row holds the model chip, as in Nook's own composer.
+// sidepanel.js keeps it up to date in `renderComposer`.
 const composer = mountComposer($('composer'), {
   onsend: (text, images) => ask(text, images),
   onstop: () => stopAnswer(),
-  onnewchat: () => newChat()
+  onbrain: () => loadBrain(),
+  onchoosebrain: (id) => chooseBrain(id)
 });
+const transcript = mountTranscript($('transcript'));
+
+$('new-chat').addEventListener('click', () => newChat());
+
+// A suggestion puts its question in the field, so it can be sent as it is or changed first.
+for (const button of document.querySelectorAll('[data-suggest]')) {
+  button.textContent = t(button.dataset.suggest);
+  button.addEventListener('click', () => composer.fill(t(button.dataset.suggest)));
+}
+
+// MARK: - The model
+
+// The model chip: the model Nook thinks with and every one it could use, as the chip in Nook's own composer. A Nook
+// that does not know `brain` yet leaves the chip out.
+let brain = null;
+
+function applyBrain(reply) {
+  if (!reply?.ok || !Array.isArray(reply.choices)) return;
+  brain = { label: String(reply.label || ''), group: String(reply.group || ''), choices: reply.choices };
+  renderComposer();
+}
+
+async function loadBrain() {
+  if (status.nook !== 'connected') return;
+  applyBrain(await trySend({ type: 'brain' }));
+}
+
+async function chooseBrain(id) {
+  const reply = await trySend({ type: 'setBrain', choice: id });
+  if (reply?.ok) applyBrain(reply);
+  else await loadBrain();
+}
 
 // MARK: - Nook's look
 
@@ -81,7 +119,9 @@ function applyLook() {
 
 /** Asks Nook for its look again: when the panel opens or comes back into view, and now and then while it shows. */
 function refreshLook() {
-  if (document.visibilityState === 'visible') send({ type: 'look' }).catch(() => {});
+  if (document.visibilityState !== 'visible') return;
+  send({ type: 'look' }).catch(() => {});
+  loadBrain();
 }
 
 systemDark.addEventListener('change', applyLook);
@@ -104,6 +144,7 @@ function renderStatus() {
   pill.textContent = label;
   $('setup').hidden = status.nook !== 'missing';
   $('setup-detail').textContent = status.nook === 'missing' ? t('setupDetail', chrome.runtime.id) : '';
+  if (status.nook === 'connected' && !brain) loadBrain();
   renderComposer();
 }
 
@@ -114,16 +155,20 @@ function renderSite() {
   const allowed = !restricted && !isBlocked(url, options.blocked);
   $('site-name').textContent = site || page?.title || t('siteNone');
   $('site-note').textContent = restricted ? t('siteRestricted') : allowed ? t('siteAllowed') : t('siteBlocked');
+  $('site-mark').className = 'site-mark' + (options.paused ? ' paused' : allowed ? '' : ' off');
   const toggle = $('site-switch');
   toggle.checked = allowed;
   toggle.disabled = restricted;
   toggle.setAttribute('aria-label', t('siteSwitch', site || ''));
 
-  $('paused-note').textContent = options.paused ? t('pausedNote') : t('activeNote');
-  $('paused-note').className = 'note grow' + (options.paused ? ' wait' : '');
+  // Paused: an amber line with Resume under the header; otherwise only the quiet pause button in the header says it.
+  $('paused-banner').hidden = !options.paused;
+  $('paused-note').textContent = t('pausedNote');
   const pause = $('pause');
-  pause.textContent = options.paused ? t('resume') : t('pause');
-  pause.className = options.paused ? 'warn' : 'quiet';
+  const label = options.paused ? t('resume') : t('pauseHint');
+  pause.className = 'icon' + (options.paused ? ' paused' : '');
+  pause.title = label;
+  pause.setAttribute('aria-label', label);
 }
 
 async function loadPage() {
@@ -140,10 +185,12 @@ $('site-switch').addEventListener('change', async (event) => {
   if (!reply?.ok) renderSite();
 });
 
-$('pause').addEventListener('click', async () => {
+async function togglePause() {
   const reply = await trySend({ type: 'pause', paused: !options.paused });
   if (!reply?.ok) renderSite();
-});
+}
+$('pause').addEventListener('click', togglePause);
+$('resume').addEventListener('click', togglePause);
 
 // MARK: - Activity
 
@@ -186,86 +233,12 @@ function renderMessages() {
   const chat = $('chat');
   // Follow the answer while the user is at the bottom; leave them where they are when they scrolled up to read.
   const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 48;
-  chat.replaceChildren();
-  if (!messages.length) {
-    const intro = document.createElement('p');
-    intro.className = 'intro';
-    intro.textContent = t('intro');
-    chat.append(intro);
-  }
-  for (const message of messages) {
-    const bubble = document.createElement('div');
-    bubble.className = 'message ' + (message.fromNook ? 'nook' : 'you') + (message.failed ? ' failed' : '');
-    if (message.fromNook && !message.text && message.streaming) {
-      const dots = document.createElement('span');
-      dots.className = 'dots';
-      dots.setAttribute('aria-label', t('thinking'));
-      dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
-      bubble.append(dots);
-    } else {
-      for (const token of inlineTokens(message.text || '')) bubble.append(node(token));
-    }
-    if (message.status && message.streaming) {
-      const line = document.createElement('span');
-      line.className = 'status';
-      line.textContent = message.status;
-      bubble.append(line);
-    }
-    if (message.notice && !message.streaming) {
-      // How Nook answered, as Nook says it on the Mac: read there and kept private, for instance.
-      const line = document.createElement('span');
-      line.className = 'notice';
-      line.textContent = message.notice;
-      bubble.append(line);
-    }
-    if (message.onMac) {
-      const line = document.createElement('span');
-      line.className = 'on-mac';
-      line.textContent = t('onMacNote');
-      bubble.append(line);
-    }
-    chat.append(bubble);
-  }
-  if (atBottom) chat.scrollTop = chat.scrollHeight;
+  $('empty').hidden = messages.length > 0;
+  $('new-chat').hidden = messages.length === 0;
+  transcript.set(messages);
+  // The transcript draws in a microtask; scroll once it did.
+  if (atBottom) queueMicrotask(() => requestAnimationFrame(() => (chat.scrollTop = chat.scrollHeight)));
   renderComposer();
-}
-
-function node(token) {
-  switch (token.type) {
-    case 'code': {
-      const code = document.createElement('code');
-      code.textContent = token.value;
-      return code;
-    }
-    case 'bold': {
-      const strong = document.createElement('strong');
-      strong.textContent = token.value;
-      return strong;
-    }
-    case 'link': {
-      // Only a web address becomes a link: never a javascript: or data: URL, whatever the text says.
-      const href = webHref(token.href);
-      if (!href) return document.createTextNode(token.value);
-      const link = document.createElement('a');
-      link.href = href;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = token.value;
-      return link;
-    }
-    default:
-      return document.createTextNode(token.value);
-  }
-}
-
-function webHref(text) {
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    return null;
-  }
-  return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
 }
 
 function renderComposer() {
@@ -274,9 +247,9 @@ function renderComposer() {
     connected: status.nook === 'connected',
     busy,
     canStop: busy && !!conversation,
-    showNewChat: messages.length > 0,
     history: questionsAsked(messages),
-    conversation
+    conversation,
+    brain
   });
 }
 

@@ -37,6 +37,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
         "browserExt.summary.close": "Close tab %@ that Nook opened",
         "browserExt.summary.read": "Look at your browser",
         "browserExt.panel.empty": "Type a question first.",
+        "browserExt.panel.unknownModel": "That model is not available on your Mac any more.",
     ],
     .nl: [
         "browserExt.settings.title": "Nook in je browser",
@@ -70,6 +71,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
         "browserExt.summary.close": "Tabblad %@ sluiten dat Nook opende",
         "browserExt.summary.read": "In je browser kijken",
         "browserExt.panel.empty": "Typ eerst een vraag.",
+        "browserExt.panel.unknownModel": "Dat model is niet meer beschikbaar op je Mac.",
     ],
     .de: [
         "browserExt.settings.title": "Nook in deinem Browser",
@@ -103,6 +105,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
         "browserExt.summary.close": "Tab %@ schließen, den Nook geöffnet hat",
         "browserExt.summary.read": "In deinen Browser schauen",
         "browserExt.panel.empty": "Tippe zuerst eine Frage.",
+        "browserExt.panel.unknownModel": "Dieses Modell ist auf deinem Mac nicht mehr verfügbar.",
     ],
     .fr: [
         "browserExt.settings.title": "Nook dans votre navigateur",
@@ -136,6 +139,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
         "browserExt.summary.close": "Fermer l'onglet %@ ouvert par Nook",
         "browserExt.summary.read": "Regarder votre navigateur",
         "browserExt.panel.empty": "Tapez d'abord une question.",
+        "browserExt.panel.unknownModel": "Ce modèle n'est plus disponible sur votre Mac.",
     ],
     .es: [
         "browserExt.settings.title": "Nook en tu navegador",
@@ -169,6 +173,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
         "browserExt.summary.close": "Cerrar la pestaña %@ que abrió Nook",
         "browserExt.summary.read": "Mirar tu navegador",
         "browserExt.panel.empty": "Escribe primero una pregunta.",
+        "browserExt.panel.unknownModel": "Ese modelo ya no está disponible en tu Mac.",
     ],
 ]
 

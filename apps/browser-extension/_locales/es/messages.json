@@ -136,5 +136,35 @@
   },
   "presenceSignedIn": {
     "message": "Continuar"
+  },
+  "modelChip": {
+    "message": "Elige el modelo con el que piensa Nook"
+  },
+  "modelSearch": {
+    "message": "Buscar modelos"
+  },
+  "modelEmpty": {
+    "message": "No se encontraron modelos"
+  },
+  "copy": {
+    "message": "Copiar"
+  },
+  "copyCode": {
+    "message": "Copiar código"
+  },
+  "copied": {
+    "message": "Copiado"
+  },
+  "suggestSummary": {
+    "message": "Resume esta página"
+  },
+  "suggestImportant": {
+    "message": "¿Qué es lo más importante aquí?"
+  },
+  "suggestNext": {
+    "message": "¿Qué debería hacer ahora aquí?"
+  },
+  "pauseHint": {
+    "message": "Pausar Nook en este navegador"
   }
 }
