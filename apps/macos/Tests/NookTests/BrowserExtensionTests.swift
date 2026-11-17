@@ -49,7 +49,9 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertEqual(object["name"] as? String, "app.nook.browser")
         XCTAssertEqual(object["type"] as? String, "stdio")
         XCTAssertEqual(object["path"] as? String, "/Users/x/Library/Application Support/Nook/nook-browser-host")
-        XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://\(BrowserExtensionHost.extensionID)/"])
+        XCTAssertEqual(object["allowed_origins"] as? [String], [
+            "chrome-extension://\(BrowserExtensionHost.storeExtensionID)/", "chrome-extension://\(BrowserExtensionHost.extensionID)/"
+        ], "the Chrome Web Store build and the unpacked one")
         XCTAssertEqual(BrowserExtensionHost.extensionID.count, 32)
         XCTAssertTrue(BrowserExtensionHost.extensionID.allSatisfy { ("a"..."p").contains($0) }, "a Chromium extension id")
     }
@@ -78,6 +80,41 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: chrome.path))
         XCTAssertFalse(fm.fileExists(atPath: script.path))
         XCTAssertEqual(BrowserExtensionHost.installedBrowsers(script: script, applicationSupport: support), [])
+    }
+
+    func testFindsTheExtensionInEachProfileFromTheBrowsersOwnPreferences() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("nook-browser-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+        let id = BrowserExtensionHost.extensionID
+        func write(_ folder: String, _ file: String, _ settings: [String: Any]) throws {
+            let url = root.appendingPathComponent(folder, isDirectory: true)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: ["extensions": ["settings": settings]])
+            try data.write(to: url.appendingPathComponent(file))
+        }
+        // Chrome: loaded unpacked in its default profile, switched on.
+        try write("Google/Chrome/Default", "Secure Preferences", [id: ["location": 4, "path": "/x/Browser Extension", "disable_reasons": []]])
+        // Chrome's second profile: another extension only.
+        try write("Google/Chrome/Profile 1", "Secure Preferences", ["aapbdbdomjkkjkaonfhkkikfgjllcleb": ["location": 1]])
+        // Brave: switched off, in the plain Preferences file.
+        try write("BraveSoftware/Brave-Browser/Default", "Preferences", [id: ["location": 4, "path": "/x", "disable_reasons": [1]]])
+        // Vivaldi: from the Chrome Web Store, under the store's id.
+        try write("Vivaldi/Default", "Secure Preferences", [BrowserExtensionHost.storeExtensionID: ["location": 1, "from_webstore": true]])
+        // Edge: only the stub a removed extension leaves behind.
+        try write("Microsoft Edge/Default", "Secure Preferences", [id: ["granted_permissions": [:]]])
+        // Not a profile folder.
+        try write("Google/Chrome/System Profile", "Preferences", [id: ["location": 4]])
+
+        XCTAssertEqual(BrowserExtensionHost.extensionInstalls(applicationSupport: root), [
+            .init(browser: "Google Chrome", profile: "Default", enabled: true),
+            .init(browser: "Brave", profile: "Default", enabled: false),
+            .init(browser: "Vivaldi", profile: "Default", enabled: true)
+        ])
+        XCTAssertFalse(BrowserExtensionHost.isEnabled(["state": 0]))
+        XCTAssertFalse(BrowserExtensionHost.isEnabled(["disable_reasons": 2]))
+        XCTAssertTrue(BrowserExtensionHost.isEnabled(["state": 1, "disable_reasons": 0]))
+        XCTAssertNil(BrowserExtensionHost.extensionEntry(in: Data("not json".utf8)))
     }
 
     func testTheScriptTalksToNooksSocketAndKeepsNoLogic() {

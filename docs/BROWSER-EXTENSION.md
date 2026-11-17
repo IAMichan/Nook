@@ -17,12 +17,18 @@ a page until Nook is asked, and the extension sends nothing anywhere but to Nook
 ## Setting it up
 
 1. In Nook, open **Settings › Editor & browser › Nook in your browser** and click **Connect**. Nook writes a small
-   native messaging host (`~/Library/Application Support/Nook/nook-browser-host`), registers it with every Chromium
-   browser on the Mac, and puts a copy of the extension in `~/Library/Application Support/Nook/Browser Extension`.
-2. Click **Copy address**, paste it in your browser's address bar (`chrome://extensions`, `brave://extensions`…), and
-   turn on **Developer mode**.
-3. Click **Load unpacked** and choose the `Browser Extension` folder (**Show folder** in Settings opens it).
-4. Click Nook's icon in the toolbar. The side panel opens and says **Connected**.
+   native messaging host (`~/Library/Application Support/Nook/nook-browser-host`) and registers it with every Chromium
+   browser on the Mac. The host lets in the extension from the Chrome Web Store (`dlfjemgadfemaikmbbeocokfjhofkena`)
+   and the unpacked one (`dmnnhilmehmfdcllfemoipncfhmapjld`, see below).
+2. When no browser has the extension yet, Connect opens its Chrome Web Store page in your browser (the default one when
+   it is Chromium, else the first Chromium browser on the Mac). Click **Add to Chrome**; it connects as it installs.
+3. Nook recognizes the extension by itself. It reads each browser profile's own `Preferences` and `Secure Preferences`
+   (`extensions.settings.<id>`, `BrowserExtensionHost.extensionInstalls`), so Settings says one of:
+   - **Connected in Chrome**: done. The first browser that connects after Connect also shows a toast.
+   - **Found in Chrome: connecting**: the extension is there and connects as soon as its worker wakes (switching to the
+     browser wakes it, else the half-minute alarm does).
+   - **Switched off in Chrome**: turn it on; **Open extensions page** takes you there.
+   - **Not in your browser yet**: **Add to browser** opens the store page again.
 
 **Disconnect** in Settings removes the host and its registrations. The browsers then cannot reach Nook any more.
 
@@ -243,6 +249,6 @@ The extension's own texts are in `_locales/{en,nl,de,fr,es}/messages.json`. The 
   permission. Most sites accept them. A key's own effect (a new line, moving focus) does not follow by itself: Enter in
   a form field submits the form, and Tab moves to the next field.
 - **One frame.** The page agent works in the page's main frame, not inside iframes.
-- **Loaded unpacked.** The extension is not in the Chrome Web Store yet, so the browser loads it from Nook's folder in
-  Developer mode. A Web Store build would get a different id, which would have to be added to `allowed_origins` in
-  `BrowserExtensionHost.manifest`.
+- **Unpacked for development.** Nook still copies the extension to `~/Library/Application Support/Nook/Browser
+  Extension`; loaded unpacked in Developer mode it keeps the manifest's `key`, so its id differs from the store's and
+  both are in `allowed_origins`.

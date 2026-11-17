@@ -20,6 +20,12 @@ final class BrowserExtensionService: ObservableObject {
     @Published private(set) var installedBrowsers: [String] = []
     @Published private(set) var enabled = UserDefaults.standard.bool(forKey: BrowserExtensionService.enabledKey)
     @Published private(set) var error: String?
+    /// The browser profiles that have the extension, from their own preferences (`BrowserExtensionHost.extensionInstalls`),
+    /// so Settings can say "found in Chrome" before the extension says hello, and skip the steps to load it.
+    @Published private(set) var installs: [BrowserExtensionHost.Install] = []
+    private var scanning = false
+    /// Set by Connect until the first browser says hello, which then gets a toast: the user sees it worked.
+    private var greetFirstBrowser = false
 
     weak var app: AppModel?
     private let server = UnixSocketServer(path: NookPaths.browserSocketURL.path)
@@ -78,17 +84,29 @@ final class BrowserExtensionService: ObservableObject {
 
     /// Settings › Connect: writes the host and its manifests, puts a copy of the extension where a browser can load it,
     /// and starts listening.
+    /// When no browser has the extension yet, it also opens its Chrome Web Store page in the user's browser, so the one
+    /// thing left is "Add to Chrome"; the extension then connects by itself and Settings sees it.
     func connect() {
         UserDefaults.standard.set(true, forKey: Self.enabledKey)
         enabled = true
+        greetFirstBrowser = connected.isEmpty
         install()
         app?.store.audit(tool: "browser_extension_connect", args: installedBrowsers.joined(separator: ", "), result: error ?? "ok")
+        guard error == nil else { return }
+        Task { @MainActor in
+            // Its own scan: one Settings started at the same moment may still be reading.
+            let found = await Self.readInstalls(applicationSupport)
+            if found != installs { installs = found }
+            guard enabled, connected.isEmpty, found.isEmpty else { return }
+            openStorePage()
+        }
     }
 
     /// Settings › Disconnect: the browsers can no longer start the host, and Nook stops listening.
     func disconnect() {
         UserDefaults.standard.set(false, forKey: Self.enabledKey)
         enabled = false
+        greetFirstBrowser = false
         BrowserExtensionHost.uninstall(script: NookPaths.browserHostScriptURL, applicationSupport: applicationSupport)
         server.stop()
         serving = false
@@ -136,29 +154,73 @@ final class BrowserExtensionService: ObservableObject {
     /// Reads who is connected and which browsers have the host. Cheap: no browser is asked anything.
     func refresh() {
         let now = hub.connected
-        if now != connected { connected = now }
+        if now != connected {
+            if greetFirstBrowser, connected.isEmpty, let first = now.first {
+                greetFirstBrowser = false
+                ToastCenter.shared.success(tr("browserExt.settings.connected", first.browser.isEmpty ? tr("browserExt.source.unnamed") : first.browser))
+            }
+            connected = now
+        }
         let browsers = enabled ? BrowserExtensionHost.installedBrowsers(script: NookPaths.browserHostScriptURL, applicationSupport: applicationSupport) : []
         if browsers != installedBrowsers { installedBrowsers = browsers }
     }
 
-    /// Shows the extension's folder in Finder, for the browser's "Load unpacked".
-    func revealExtension() {
-        NSWorkspace.shared.activateFileViewerSelecting([NookPaths.browserExtensionDirectory])
+    /// Reads which browser profiles have the extension, off the main thread (a profile's preferences run to a few MB).
+    /// Settings asks again every few seconds while it waits, so loading the extension shows without a click.
+    func scanInstalls() async {
+        guard !scanning else { return }
+        scanning = true
+        defer { scanning = false }
+        let found = await Self.readInstalls(applicationSupport)
+        if found != installs { installs = found }
     }
 
-    /// The address of the extensions page of the first Chromium browser on this Mac ("chrome://extensions"), copied
-    /// for the user to paste, and that browser brought to the front. Browsers do not open their own pages when another
-    /// app asks, so pasting it is the one way that always works.
-    func copyExtensionsAddress() {
-        let pages: [(bundle: String, address: String)] = [
-            ("com.google.Chrome", "chrome://extensions"),
-            ("com.brave.Browser", "brave://extensions"),
-            ("com.microsoft.edgemac", "edge://extensions"),
-            ("company.thebrowser.Browser", "arc://extensions"),
-            ("com.vivaldi.Vivaldi", "vivaldi://extensions"),
-            ("org.chromium.Chromium", "chrome://extensions")
-        ]
-        let page = pages.first { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundle) != nil } ?? pages[0]
+    private nonisolated static func readInstalls(_ support: URL) async -> [BrowserExtensionHost.Install] {
+        await Task.detached(priority: .utility) {
+            BrowserExtensionHost.extensionInstalls(applicationSupport: support)
+        }.value
+    }
+
+    /// The browsers that have the extension, by name, once each; `enabled` picks the ones where it is switched on or off.
+    func browsersWithExtension(enabled: Bool) -> [String] {
+        var names: [String] = []
+        for install in installs where install.enabled == enabled && !names.contains(install.browser) {
+            names.append(install.browser)
+        }
+        return names
+    }
+
+    /// The extension's Chrome Web Store page, in the default browser when that is a Chromium one, else in the first
+    /// Chromium browser on this Mac (Safari cannot add it).
+    func openStorePage() {
+        let url = BrowserExtensionHost.storeURL
+        let chromium = Self.extensionPages.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundle) }
+        let fallback = chromium.first
+        let preferred = NSWorkspace.shared.urlForApplication(toOpen: url).flatMap { app in chromium.contains(app) ? app : nil }
+        guard let browser = preferred ?? fallback else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: browser, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private static let extensionPages: [(name: String, bundle: String, address: String)] = [
+        ("Google Chrome", "com.google.Chrome", "chrome://extensions"),
+        ("Brave", "com.brave.Browser", "brave://extensions"),
+        ("Microsoft Edge", "com.microsoft.edgemac", "edge://extensions"),
+        ("Arc", "company.thebrowser.Browser", "arc://extensions"),
+        ("Vivaldi", "com.vivaldi.Vivaldi", "vivaldi://extensions"),
+        ("Chromium", "org.chromium.Chromium", "chrome://extensions")
+    ]
+
+    /// The address of the extensions page of a Chromium browser on this Mac ("chrome://extensions"), copied for the
+    /// user to paste, and that browser brought to the front: the one named (where the extension is switched off), else
+    /// the first one installed. Browsers do not open their own pages when another app asks, so pasting it is the one
+    /// way that always works.
+    func openExtensionsPage(in browser: String? = nil) {
+        let pages = Self.extensionPages
+        let installed = pages.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundle) != nil }
+        let page = installed.first { $0.name == browser } ?? installed.first ?? pages[0]
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(page.address, forType: .string)
         ToastCenter.shared.success(tr("browserExt.settings.copied", page.address))

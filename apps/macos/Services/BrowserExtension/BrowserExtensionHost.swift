@@ -8,9 +8,19 @@ enum BrowserExtensionHost {
     /// The host's name, as the extension asks for it (`HOST_NAME` in apps/browser-extension/lib/core.js).
     static let name = "app.nook.browser"
 
-    /// The extension's id: fixed by the public key in its manifest, so it is the same wherever it is loaded from. A
-    /// browser lets only this extension start the host.
+    /// The extension's id when loaded unpacked: fixed by the public key in its manifest, so it is the same wherever it is
+    /// loaded from.
     static let extensionID = "dmnnhilmehmfdcllfemoipncfhmapjld"
+
+    /// The extension's id in the Chrome Web Store (the store gives it its own key; `npm run package` leaves the
+    /// manifest's out). Chrome, Brave, Edge, Arc and Vivaldi all install it from there.
+    static let storeExtensionID = "dlfjemgadfemaikmbbeocokfjhofkena"
+
+    /// The extensions a browser lets start the host: the store's and the unpacked one.
+    static let extensionIDs = [storeExtensionID, extensionID]
+
+    /// The extension's page in the Chrome Web Store, where one click adds it to the browser.
+    static let storeURL = URL(string: "https://chromewebstore.google.com/detail/\(storeExtensionID)")!
 
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
     static let version = 2
@@ -35,7 +45,7 @@ enum BrowserExtensionHost {
             "description": "Nook: lets Nook's browser extension talk to Nook on this Mac.",
             "path": scriptPath,
             "type": "stdio",
-            "allowed_origins": ["chrome-extension://\(extensionID)/"]
+            "allowed_origins": extensionIDs.map { "chrome-extension://\($0)/" }
         ]
         return (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
     }
@@ -75,6 +85,52 @@ enum BrowserExtensionHost {
         return manifestURLs(applicationSupport: applicationSupport, fileManager: fileManager)
             .filter { (try? Data(contentsOf: $0.url)) == manifest }
             .map(\.browser)
+    }
+
+    /// A browser profile that has Nook's extension, as the browser's own preferences say.
+    struct Install: Equatable {
+        let browser: String
+        let profile: String
+        /// False while the user (or the browser) switched it off on the extensions page.
+        let enabled: Bool
+    }
+
+    /// The browsers that have Nook's extension, read from each profile's `Preferences` and `Secure Preferences`
+    /// (`extensions.settings.<id>`), so Settings knows it is there before the extension says hello. No browser is asked.
+    static func extensionInstalls(applicationSupport: URL, fileManager: FileManager = .default) -> [Install] {
+        browsers.flatMap { browser -> [Install] in
+            let userData = applicationSupport.appendingPathComponent(browser.folder, isDirectory: true)
+            let profiles = ((try? fileManager.contentsOfDirectory(atPath: userData.path)) ?? [])
+                .filter { $0 == "Default" || $0.hasPrefix("Profile ") }
+                .sorted()
+            return profiles.compactMap { profile in
+                let folder = userData.appendingPathComponent(profile, isDirectory: true)
+                for file in ["Secure Preferences", "Preferences"] {
+                    let url = folder.appendingPathComponent(file)
+                    guard let data = try? Data(contentsOf: url), let entry = extensionEntry(in: data) else { continue }
+                    return Install(browser: browser.name, profile: profile, enabled: isEnabled(entry))
+                }
+                return nil
+            }
+        }
+    }
+
+    /// Nook's entry in a profile's preferences file (from the store or unpacked), when it has one.
+    static func extensionEntry(in preferences: Data) -> [String: Any]? {
+        guard let root = try? JSONSerialization.jsonObject(with: preferences) as? [String: Any],
+              let extensions = root["extensions"] as? [String: Any],
+              let settings = extensions["settings"] as? [String: Any] else { return nil }
+        // A removed extension can leave a stub behind (only its permissions); a real install has where it came from.
+        let entries = extensionIDs.compactMap { settings[$0] as? [String: Any] }.filter { $0["location"] != nil || $0["path"] != nil }
+        return entries.first(where: isEnabled) ?? entries.first
+    }
+
+    /// Chromium marks a switched-off extension with reasons (`disable_reasons`), older versions with `state: 0`.
+    static func isEnabled(_ entry: [String: Any]) -> Bool {
+        if let reasons = entry["disable_reasons"] as? [Any], !reasons.isEmpty { return false }
+        if let reasons = entry["disable_reasons"] as? Int, reasons != 0 { return false }
+        if let state = entry["state"] as? Int, state == 0 { return false }
+        return true
     }
 
     /// Removes the manifests (the browsers then cannot start the host) and the script.

@@ -248,6 +248,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Changed
 
+- Connecting Nook's browser extension is one click: Nook's host now lets in the extension from the Chrome Web Store
+  (before, only the unpacked build could connect), **Connect** opens its store page when no browser has it yet, and
+  Settings recognizes it by itself: connected, found and connecting, or switched off.
 - Nook Chat answers sooner: an API brain gets 5 s instead of 8 s to plan a question before Nook falls back to its own
   search, the connection to the brain is opened while Nook prepares (also with the chat open), and a retry (a chart, a
   corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
