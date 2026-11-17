@@ -97,6 +97,33 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(TimelinePresentation.split(running).count, 1)
     }
 
+    /// Another account picked while the agent worked: the line that the turn stops for it stays next to that turn's
+    /// answer, and the switch, the handoff and "Continuing…" after it stand between the turns, in sight and below that
+    /// answer, instead of folding into "Worked for…" of the stopped turn.
+    func testASwitchWhileWorkingStaysInSightBetweenTheTurns() throws {
+        var turn = finishedTurn()
+        let stopping = event(.system, "Stopping this turn to switch to Claude Code · Work.", tool: "switch-stop", at: 100)
+        turn.insert(stopping, at: 5)
+        let switched = event(.system, "Claude Code → Claude Code · Work", tool: "switch", at: 140)
+        let handoff = event(.system, "Handed over 12 events", tool: "handoff", at: 140)
+        let resumed = event(.system, "Continuing where it stopped, now on Claude Code · Work.", tool: "resume", at: 140)
+        let events = turn + [switched, handoff, resumed, event(.user, "Continue where you left off.", at: 141)]
+        XCTAssertEqual(TimelinePresentation.split(events).count, 3)
+        let blocks = TimelinePresentation.blocks(events, active: false)
+        let shown = blocks.compactMap { block -> UUID? in
+            if case .event(let event) = block { return event.id }
+            return nil
+        }
+        let answer = try XCTUnwrap(turn.first { $0.kind == .assistant }).id
+        for (line, name) in [(stopping, "the stop"), (switched, "the switch"), (handoff, "the handoff"), (resumed, "going on")] {
+            XCTAssertTrue(shown.contains(line.id), "\(name) is in sight")
+        }
+        XCTAssertLessThan(try XCTUnwrap(shown.firstIndex(of: answer)), try XCTUnwrap(shown.firstIndex(of: switched.id)),
+                          "the switch reads after the answer of the turn it stopped")
+        // A change that comes while a turn still runs stays in that turn, as news does.
+        XCTAssertEqual(TimelinePresentation.split(Array(finishedTurn().dropLast()) + [switched]).count, 1)
+    }
+
     func testSharedFilesStayOutOfTheFold() throws {
         var turn = finishedTurn()
         let shared = event(.tool, "SendUserFile", tool: "SendUserFile",
