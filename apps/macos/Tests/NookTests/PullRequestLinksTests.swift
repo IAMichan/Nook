@@ -645,4 +645,16 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: PullRequestToolCall.texts(in: ["file_path": "merge.swift"])))
         XCTAssertEqual(PullRequestToolCall.texts(in: nil), [])
     }
+
+    func testTheTrayListsAWatchedPullRequestOnceWhenItsURLIsSpelledDifferently() {
+        // You linked it under the repository's new name in other letter case; the watch keeps the URL it started with.
+        let linked = PullRequestLink(host: .github, repository: "Acme/App", number: 7, url: "https://github.com/Acme/App/pull/7")
+        let watch = PullRequestWatch(url: "https://github.com/acme/app/pull/7")
+        let others = SessionBranches.others(linked: [linked], watches: [watch], shown: [])
+        XCTAssertEqual(others.map(\.url), [linked.url])
+        XCTAssertEqual(SessionBranches.watch(for: linked.url, in: [watch])?.url, watch.url)
+        // One the branch rows already show stays out.
+        XCTAssertTrue(SessionBranches.others(linked: [linked], watches: [watch],
+                                             shown: [URL(string: "https://github.com/acme/app/pull/7")!]).isEmpty)
+    }
 }

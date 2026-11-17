@@ -90,6 +90,7 @@ const EXACT_TOOLS: &[(&str, &str)] = &[
     ("update_event", "calendar"),
     ("delete_event", "calendar"),
     ("check_availability", "calendar"),
+    ("find_time", "calendar"),
     ("create_reminder", "reminders"),
     ("complete_reminder", "reminders"),
     ("delete_reminder", "reminders"),
@@ -110,6 +111,8 @@ const EXACT_TOOLS: &[(&str, &str)] = &[
     ("search_call_notes", "callnotes"),
     ("read_call_note", "callnotes"),
     ("mac_status", "system"),
+    ("system_status", "system"),
+    ("network_status", "system"),
     ("search_bear", "bear"),
     ("read_bear", "bear"),
     ("search_things", "things"),
@@ -222,7 +225,9 @@ mod tests {
     #[test]
     fn tools_map_to_their_source() {
         assert_eq!(source_for_tool("check_availability").as_deref(), Some("calendar"));
+        assert_eq!(source_for_tool("find_time").as_deref(), Some("calendar"));
         assert_eq!(source_for_tool("github_merge_pr").as_deref(), Some("github"));
+        assert_eq!(source_for_tool("github_merge_prs").as_deref(), Some("github"));
         assert_eq!(source_for_tool("send_to_source").as_deref(), Some("customsources"));
         assert_eq!(source_for_tool("open_url"), None);
     }

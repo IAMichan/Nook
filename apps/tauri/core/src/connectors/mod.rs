@@ -22,6 +22,7 @@ pub mod ics;
 pub mod mcp;
 pub mod oauth;
 pub mod openrouter;
+pub mod pull_batch_merge;
 pub mod pulls;
 pub mod store;
 pub mod whatsapp;

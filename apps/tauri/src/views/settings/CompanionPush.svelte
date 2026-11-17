@@ -66,7 +66,7 @@
 </script>
 
 <div class="group">
-  <label class="row"><span>{tr("Pushmeldingen", "Push notifications")}</span><input type="checkbox" checked={s.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Pushmeldingen", "Push notifications")}</span><input type="checkbox" role="switch" checked={s.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} /></label>
   <p class="faint note">
     {tr(
       "Voor Nook Companion op de iPhone en Nook op Android. Een melding noemt alleen de agent en wat er nodig is, nooit een commando of antwoord.",
@@ -75,13 +75,13 @@
   </p>
   {#if s.enabled}
     {#each kinds as [kind, label] (kind)}
-      <label class="row sub"><span>{label}</span><input type="checkbox" checked={s.kinds.includes(kind)} onchange={(e) => toggleKind(kind, e.currentTarget.checked)} /></label>
+      <label class="row sub"><span>{label}</span><input type="checkbox" role="switch" checked={s.kinds.includes(kind)} onchange={(e) => toggleKind(kind, e.currentTarget.checked)} /></label>
     {/each}
-    <label class="row"><span>{tr("Alleen als ik niet bij de computer ben", "Only when I'm away from the computer")}</span><input type="checkbox" checked={s.onlyWhenAway} onchange={(e) => save({ onlyWhenAway: e.currentTarget.checked })} /></label>
-    <label class="row"><span>{tr("Noem de titel van de sessie", "Include the session title")}</span><input type="checkbox" checked={s.includeTitle} onchange={(e) => save({ includeTitle: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Alleen als ik niet bij de computer ben", "Only when I'm away from the computer")}</span><input type="checkbox" role="switch" checked={s.onlyWhenAway} onchange={(e) => save({ onlyWhenAway: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Noem de titel van de sessie", "Include the session title")}</span><input type="checkbox" role="switch" checked={s.includeTitle} onchange={(e) => save({ includeTitle: e.currentTarget.checked })} /></label>
     <label class="row">
       <span>{tr("Stille uren", "Quiet hours")}</span>
-      <input type="checkbox" checked={s.quietFrom != null} onchange={(e) => save(e.currentTarget.checked ? { quietFrom: 22, quietTo: 7 } : { quietFrom: null, quietTo: null })} />
+      <input type="checkbox" role="switch" checked={s.quietFrom != null} onchange={(e) => save(e.currentTarget.checked ? { quietFrom: 22, quietTo: 7 } : { quietFrom: null, quietTo: null })} />
     </label>
     {#if s.quietFrom != null}
       <div class="row sub">
@@ -96,7 +96,7 @@
           </select>
         </span>
       </div>
-      <label class="row sub"><span>{tr("Toestemming en vragen komen toch door", "Permissions and questions still come through")}</span><input type="checkbox" checked={s.quietAllowsUrgent} onchange={(e) => save({ quietAllowsUrgent: e.currentTarget.checked })} /></label>
+      <label class="row sub"><span>{tr("Toestemming en vragen komen toch door", "Permissions and questions still come through")}</span><input type="checkbox" role="switch" checked={s.quietAllowsUrgent} onchange={(e) => save({ quietAllowsUrgent: e.currentTarget.checked })} /></label>
     {/if}
   {/if}
 </div>

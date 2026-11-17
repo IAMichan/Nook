@@ -377,3 +377,9 @@ pub fn repair_start_menu_shortcut() -> Res<String> {
     #[cfg(not(windows))]
     Err("Alleen beschikbaar op Windows".into())
 }
+
+/// Reads a local image referenced on its own line in a Markdown answer as a `data:` URI.
+#[tauri::command]
+pub async fn read_answer_image(source: String, base: Option<String>) -> Option<String> {
+    tokio::task::spawn_blocking(move || nook_core::brain::answer_images::load_local(&source, base.as_deref())).await.ok().flatten()
+}

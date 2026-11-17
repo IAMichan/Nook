@@ -89,8 +89,10 @@ impl CompanionBackend for AppBackend {
     }
 
     async fn send(&self, session: &str, text: &str) -> Result<(), String> {
-        if session.starts_with(HUB_PREFIX) {
-            return Err("Deze sessie draait in een terminal; typ je bericht daar.".into());
+        if let Some(key) = session.strip_prefix(HUB_PREFIX) {
+            // As the Mac answers an agent outside Nook (`CompanionAgents.send`): it continues in Nook, in a copy while
+            // the terminal still works, so the original is left alone.
+            return crate::commands::workspace::continue_live(&self.app, key, Some(text.to_string()), false).await.map(|_| ());
         }
         let run = Self::run_id(session)?;
         // Bezig? Dan in de wachtrij, zoals in de werkruimte.

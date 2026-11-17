@@ -1,11 +1,23 @@
 <script lang="ts">
   // Een plan dat de agent in Plan-modus voorstelde (`PlanCard` op de Mac): het plan zelf, kopiëren, bewaren als
   // bestand, en de knop die het uitvoert (modus Agent, dan "voer het plan uit").
-  import { renderMarkdown } from "../../../lib/markdown";
+  import Markdown from "../../../components/Markdown.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { planFileName, planNeedsExpand, planPreview, planTitle } from "../../../lib/workspace/timeline";
 
-  let { text, canAct, onimplement }: { text: string; canAct: boolean; onimplement: () => void } = $props();
+  let {
+    text,
+    canAct,
+    onimplement,
+    baseFolder = null,
+    onrun,
+  }: {
+    text: string;
+    canAct: boolean;
+    onimplement: () => void;
+    baseFolder?: string | null;
+    onrun?: (command: string, title: string | null) => void;
+  } = $props();
   let open = $state(false);
   let copied = $state(false);
 
@@ -36,7 +48,7 @@
     <button class="ghost" title={tr("Kopieer plan", "Copy plan")} onclick={copy}>{copied ? "✓" : tr("Kopieer", "Copy")}</button>
     <button class="ghost" title={tr("Bewaar als bestand", "Save as file")} onclick={save}>{tr("Bewaar", "Save")}</button>
   </div>
-  <div class="markdown">{@html renderMarkdown(collapsible && !open ? planPreview(text) : text)}</div>
+  <Markdown text={collapsible && !open ? planPreview(text) : text} {baseFolder} {onrun} />
   {#if collapsible}
     <button class="ghost more" onclick={() => (open = !open)}>{open ? tr("Toon minder", "Show less") : tr("Toon volledig plan", "Show full plan")}</button>
   {/if}

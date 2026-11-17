@@ -204,6 +204,7 @@ impl CompanionServer {
             relay: Some(self.reach().relay),
             features: Some(self.features()),
             protocol_version: Some(PROTOCOL_VERSION),
+            oldest_phone: Some(OLDEST_PHONE),
             app_version: self.app_version.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             ..CompanionResponse::success(id)
         }
@@ -501,6 +502,9 @@ impl CompanionServer {
         } else {
             self.store.touch(&claimed, now);
         }
+        if matches!(request.op, CompanionOp::Hello | CompanionOp::List | CompanionOp::Subscribe) {
+            self.store.note_versions(&claimed, request.protocol_version, clean_version(request.app_version.as_deref()));
+        }
 
         if let Some((connection, tx, pending)) = connection {
             let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
@@ -677,8 +681,10 @@ impl CompanionServer {
                     return fail(CompanionError::Failed);
                 }
                 self.audit("send", &session.digest.title);
+                // A terminal session continues in Nook at once (`sessions::can_continue_in_nook`); only a run waits its turn.
+                let queued = session.active && !session.digest.id.starts_with(super::sessions::HUB_PREFIX);
                 CompanionResponse {
-                    message: Some(if session.active { "queued" } else { "sent" }.into()),
+                    message: Some(if queued { "queued" } else { "sent" }.into()),
                     ..with_sessions(digests(backend.sessions().await))
                 }
             }

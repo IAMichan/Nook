@@ -209,3 +209,36 @@ fn set_message(app: &AppHandle, nook_id: &str, message_id: &str, f: impl FnOnce(
     });
     let _ = tauri::Emitter::emit(app, "nook-updated", nook_id);
 }
+
+/// What the pictures of a question say, read on this computer (`ScreenReader::read_image_text`), one description per
+/// picture (`chat_image::describe`), for every brain: one that cannot see still knows what they show. Empty where this
+/// platform cannot read pictures, so no brain is told a picture has no text when it was never read.
+pub async fn describe_images(app: &AppHandle, images: &[nook_core::brain::PromptImage]) -> String {
+    use base64::Engine;
+    use nook_core::brain::chat_image;
+    let app = app.clone();
+    let images = images.to_vec();
+    tauri::async_runtime::spawn_blocking(move || {
+        let services = app.state::<Services>();
+        let count = images.len();
+        let mut described = vec![];
+        for (index, image) in images.iter().enumerate() {
+            let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&image.base64) else { continue };
+            let Ok(decoded) = image::load_from_memory(&bytes) else { continue };
+            // Read at the size a vision model gets: larger only costs time.
+            let decoded = if decoded.width().max(decoded.height()) > chat_image::MAX_SIDE {
+                decoded.resize(chat_image::MAX_SIDE, chat_image::MAX_SIDE, image::imageops::FilterType::Triangle)
+            } else {
+                decoded
+            };
+            let rgba = decoded.to_rgba8();
+            let Some(text) = services.platform.screen.read_image_text(rgba.as_raw(), rgba.width(), rgba.height()) else {
+                return String::new();
+            };
+            described.push(chat_image::describe(&chat_image::name(index, count), &text));
+        }
+        described.join("\n\n")
+    })
+    .await
+    .unwrap_or_default()
+}
