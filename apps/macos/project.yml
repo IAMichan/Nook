@@ -528,6 +528,9 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionHistory.swift
       - path: ../../packages/protocol/Sources/CompanionAgentWidget.swift
       - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
+      - path: ../../packages/protocol/Sources/CompanionChats.swift
+      - path: ../../packages/protocol/Sources/CompanionSessions.swift
+      - path: ../../packages/protocol/Sources/CompanionNookChats.swift
       # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff, the iPad layout, the
       # Agents list by project.
       - path: ../ios/Core/DictationText.swift

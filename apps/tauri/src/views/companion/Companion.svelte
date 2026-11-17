@@ -6,7 +6,7 @@
   // opens straight into this (`standalone`); Nook on the phone itself is a tap away in Settings.
   import { untrack } from "svelte";
   import {
-    companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, may, needingYou, tabsFor, unreadChats, Feature,
+    companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, isChat, may, needingYou, tabsFor, unreadChats, Feature,
     parseCompanionLink, parseNotificationAction, widgetData, type UsageAccount, routeWords, shortcutSessions, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
@@ -51,6 +51,8 @@
   let inbox = $state<InboxChatDigest[]>([]);
   let inboxMessage = $state<string | undefined>(undefined);
   let conversations = $state<ChatDigest[]>([]);
+  // How many of Nook's conversations wait in the archive (`nookChats`).
+  let nookArchived = $state(0);
 
   $effect(() => {
     companion.client().then(took);
@@ -60,6 +62,7 @@
     const live = companion.onLive((r) => {
       if (r.inbox) inbox = r.inbox;
       if (r.conversations) conversations = r.conversations;
+      if (r.conversationsArchived !== undefined) nookArchived = r.conversationsArchived;
     });
     const visible = () => companion.visible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", visible);
@@ -89,13 +92,15 @@
   async function loadLists() {
     if (!connected) return;
     if (showInbox) {
-      const r = await companion.call({ op: "inbox" });
+      // With `chatActions` the list also holds the apps' status updates and channels, as the Mac's per-app tabs do.
+      const r = await companion.call({ op: "inbox", allow: has(view, Feature.chatActions) || undefined });
       if (r.response?.inbox) inbox = r.response.inbox;
       inboxMessage = r.response?.message;
     }
     if (showNook) {
       const r = await companion.call({ op: "chats" });
       if (r.response?.conversations) conversations = r.response.conversations;
+      if (r.response?.conversationsArchived !== undefined) nookArchived = r.response.conversationsArchived;
     }
   }
   $effect(() => {
@@ -401,19 +406,19 @@
 {#snippet detail()}
   {#if !view}{""}
   {:else if tab === "agents" && screens.agents?.kind === "session"}
-    {#key screens.agents.id}<SessionDetail {view} id={screens.agents.id} fallback={screens.agents.digest} onback={() => (screens.agents = null)} {act} {took} />{/key}
+    {#key screens.agents.id}<SessionDetail {view} id={screens.agents.id} fallback={screens.agents.digest} onback={() => (screens.agents = null)} onopen={(next) => open("agents", { kind: "session", id: next })} {act} {took} />{/key}
   {:else if tab === "home" && screens.home?.kind === "nook"}
     {#key screens.home.id + (screens.home.ask ?? "")}<NookChat {view} id={screens.home.id} ask={screens.home.ask} onback={() => { screens.home = null; loadLists(); }} {took} />{/key}
   {:else if tab === "chats" && screens.chats?.kind === "chat"}
     {@const id = screens.chats.id}
-    {#key id}<InboxChat {view} {id} chat={inbox.find((c) => c.id === id) ?? null} onback={() => { screens.chats = null; loadLists(); }} {took} />{/key}
+    {#key id}<InboxChat {view} {id} chat={inbox.find((c) => c.id === id) ?? null} chats={inbox} onback={() => { screens.chats = null; loadLists(); }} {took} />{/key}
   {/if}
 {/snippet}
 
 {#snippet list()}
   {#if !view}{""}
   {:else if tab === "home"}
-    <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} oncomputers={(r) => (computerMenu = r)} ongear={() => (sheet = "settings")}
+    <HomeTab {view} inbox={inbox.filter(isChat)} {conversations} archived={nookArchived} {took} onrefresh={loadLists} onorb={(r) => (macMenu = r)} oncomputers={(r) => (computerMenu = r)} ongear={() => (sheet = "settings")}
       onsession={(id) => open("agents", { kind: "session", id })}
       onchat={(id) => open("chats", { kind: "chat", id })}
       onnook={(id, ask) => open("home", { kind: "nook", id, ask })}

@@ -53,11 +53,18 @@ struct SettingsView: View {
                                           detail: String(localized: "Off: your message waits until the turn ends."),
                                           isOn: $steerByDefault)
                     }
-                    SettingsRow(symbol: client.macPushReady == false ? "bell.slash" : "bell.badge",
-                                title: String(localized: "Notifications"),
-                                detail: client.macPushReady == false
-                                    ? String(localized: "Not set up on your Mac yet (Settings › iPhone companion).")
-                                    : String(localized: "From your Mac, also away from home."))
+                    if !client.can(CompanionFeature.notifySettings) || !client.allows(.read) {
+                        SettingsRow(symbol: client.macPushReady == false ? "bell.slash" : "bell.badge",
+                                    title: String(localized: "Notifications"),
+                                    detail: client.macPushReady == false
+                                        ? String(localized: "Not set up on your Mac yet (Settings › iPhone companion).")
+                                        : String(localized: "From your Mac, also away from home."))
+                    }
+                }
+
+                // The Mac's notification switches for its phones, changed from here (`CompanionFeature.notifySettings`).
+                if client.can(CompanionFeature.notifySettings), client.allows(.read) {
+                    NotifySettingsGroup()
                 }
 
                 if client.can(CompanionFeature.usage), client.allows(.read) {
@@ -75,6 +82,8 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                if client.scopes != nil { PhoneScopesGroup() }
 
                 SettingsGroup(title: String(localized: "Pairing")) {
                     SettingsButtonRow(symbol: "plus", title: String(localized: "Pair another computer")) { client.addingMac = true }

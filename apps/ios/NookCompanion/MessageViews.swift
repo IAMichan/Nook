@@ -228,17 +228,44 @@ struct ChatBubbleView: View {
     var whatsApp = false
     /// Opens your message's info from its ticks (who has it and who read it); nil when the app says nothing per person.
     var onInfo: (() -> Void)? = nil
+    /// The message's photo from the Mac (`ChatMediaStore`), and what a tap on it does (enlarge it).
+    var photo: UIImage? = nil
+    var onPhoto: (() -> Void)? = nil
+    /// A vote on its poll, where the chat's app takes one (`InboxAbility.vote`).
+    var onVote: ((String) -> Void)? = nil
+    /// A tap on an emoji under it: yours again takes it back, another one adds yours (`InboxAbility.react`).
+    var onReaction: ((String) -> Void)? = nil
 
     /// The widest a bubble gets: a long message wraps into lines that are easy to read.
     static let inset: CGFloat = 48
 
+    /// A file that shows as a picture: a photo, a video's first frame, a GIF, a sticker.
+    private var pictured: Bool { ["photo", "video", "gif", "sticker"].contains(line.media ?? "") && line.deleted != true }
+
     private var emojiOnly: Bool {
-        line.attachment == nil && line.quoteText == nil && !line.text.isEmpty && line.text.count <= 3
+        line.attachment == nil && line.poll == nil && line.quoteText == nil && !line.text.isEmpty && line.text.count <= 3
             && line.text.unicodeScalars.allSatisfy { $0.properties.isEmojiPresentation || $0.properties.isEmojiModifier
                 || $0.value == 0x200D || $0.value == 0xFE0F }
     }
 
     var body: some View {
+        if line.notice == true {
+            // Someone came in or left, or the group changed: a centred line, as on the Mac (`ChatMembershipLine`).
+            Text(verbatim: line.text)
+                .font(Theme.TextStyle.caption)
+                .foregroundStyle(whatsApp ? WhatsAppLook.quiet : Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(whatsApp ? WhatsAppLook.bar : Theme.surface, in: Capsule())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.xs)
+        } else {
+            message
+        }
+    }
+
+    private var message: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.sm) {
             if line.fromMe { Spacer(minLength: Self.inset) }
             // In a group, who wrote it shows beside each of their messages, as on the Mac.
@@ -288,18 +315,26 @@ struct ChatBubbleView: View {
                     ChatQuote(sender: line.quoteSender ?? "", text: quote, mine: line.fromMe)
                         .padding(.bottom, Theme.Spacing.xxs)
                 }
-                if let attachment = line.attachment {
-                    Label(attachment, systemImage: "paperclip")
+                if pictured {
+                    picture.padding(.vertical, Theme.Spacing.xxs)
+                } else if let poll = line.poll, line.deleted != true {
+                    InboxPollView(poll: poll, onVote: onVote)
+                        .padding(.vertical, Theme.Spacing.xxs)
+                } else if let attachment = line.attachment {
+                    Label(attachment, systemImage: line.media == "audio" ? "waveform" : "paperclip")
                         .font(Theme.TextStyle.label)
                         .foregroundStyle(Theme.textStrong)
                         .padding(.vertical, Theme.Spacing.xxs)
                 }
                 // The time sits after the last line, at the bubble's right, as chat apps place it.
                 HStack(alignment: .lastTextBaseline, spacing: Theme.Spacing.md) {
-                    if !line.text.isEmpty {
+                    // A poll says its question itself; a deleted message says so, quieter.
+                    if !line.text.isEmpty, line.poll == nil || line.deleted == true {
                         Text(verbatim: line.text)
                             .font(Theme.TextStyle.body)
-                            .foregroundStyle(whatsApp ? WhatsAppLook.text : Theme.paper)
+                            .italic(line.deleted == true)
+                            .foregroundStyle(line.deleted == true ? (whatsApp ? WhatsAppLook.quiet : Theme.textTertiary)
+                                             : (whatsApp ? WhatsAppLook.text : Theme.paper))
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
@@ -323,12 +358,52 @@ struct ChatBubbleView: View {
         }
     }
 
+    /// The photo, the video's first frame, the GIF or the sticker, as the Mac shows it in the bubble; a tile while the
+    /// phone does not have it yet. A tap enlarges it.
+    @ViewBuilder
+    private var picture: some View {
+        let width: CGFloat = line.media == "sticker" ? 140 : 230
+        Group {
+            if let photo {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: min(width * 1.25, max(width * 0.6, width * photo.size.height / max(photo.size.width, 1))))
+                    .clipped()
+            } else {
+                ZStack {
+                    Rectangle().fill(whatsApp ? WhatsAppLook.bar : Theme.surface)
+                    Image(icon: line.media == "video" ? "video" : "photo")
+                        .font(Theme.font(22))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .frame(width: width, height: width * 0.75)
+            }
+        }
+        .overlay {
+            if line.media == "video", photo != nil {
+                Image(icon: "play.fill")
+                    .font(Theme.font(18, .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.45), in: Circle())
+            }
+        }
+        .roundedClip(Theme.Radius.control)
+        .contentShape(Rectangle())
+        .onTapGesture { onPhoto?() }
+        .accessibilityElement()
+        .accessibilityLabel(Text(line.attachment ?? String(localized: "Photo")))
+        .accessibilityAddTraits(onPhoto == nil ? [] : .isButton)
+    }
+
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
         HStack(spacing: Theme.Spacing.xs) {
             if pending {
                 Image(icon: "clock").font(Theme.font(10, .semibold))
             } else {
+                if line.edited == true, line.deleted != true { Text("edited") }
                 Text(Date(timeIntervalSince1970: line.date), format: .dateTime.hour().minute())
                     .monospacedDigit()
                 if let ticks = MessageTicks(line.ticks) {
@@ -367,10 +442,18 @@ struct ChatBubbleView: View {
             return (String(words[0]), count)
         }
         let total = parts.reduce(0) { $0 + $1.count }
+        let mine = Set(line.myReactions ?? [])
         return HStack(spacing: Theme.Spacing.xxs) {
             HStack(spacing: 0) {
                 ForEach(Array(parts.prefix(3).enumerated()), id: \.offset) { _, part in
-                    Text(verbatim: part.emoji).font(Theme.font(14))
+                    if let onReaction {
+                        // A tap on yours takes it back, on another adds yours: as on the Mac's reaction pills.
+                        Button { onReaction(part.emoji) } label: { Text(verbatim: part.emoji).font(Theme.font(14)) }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text(mine.contains(part.emoji) ? "Take back \(part.emoji)" : "React with \(part.emoji)"))
+                    } else {
+                        Text(verbatim: part.emoji).font(Theme.font(14))
+                    }
                 }
             }
             if total > 1 {
@@ -383,7 +466,7 @@ struct ChatBubbleView: View {
         .fixedSize()
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, Theme.Spacing.xxs)
-        .background(Theme.chatTheirs, in: Capsule())
+        .background(mine.isEmpty ? Theme.chatTheirs : Theme.chatMine, in: Capsule())
         .overlay(Capsule().strokeBorder(Theme.canvas, lineWidth: 2))
         .padding(.leading, ChatBubbleShape.tail + Theme.Spacing.sm)
     }

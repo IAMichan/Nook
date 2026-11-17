@@ -65,8 +65,94 @@ extension CompanionClient {
         if action.kind == .merge {
             await loadPulls()
             notice = String(localized: "Merged.")
+        } else if response.ok, [.close, .reopen, .ready, .draft].contains(action.kind) {
+            // The row's state changed too.
+            await loadPulls()
         }
         return response.ok
+    }
+
+    /// Whether the Mac takes `kind` for this pull request now (`PullDetailDigest.actions`, `CompanionFeature.pullActions`).
+    func pullAllows(_ detail: PullDetailDigest, _ kind: CompanionPullAction.Kind) -> Bool {
+        can(CompanionFeature.pullActions) && (detail.actions ?? []).contains(kind.rawValue)
+    }
+
+    // MARK: Notification settings
+
+    /// The Mac's notification settings for its phones (`CompanionFeature.notifySettings`).
+    func loadNotify() async {
+        guard can(CompanionFeature.notifySettings) else { return }
+        await perform(CompanionRequest(op: .notifySettings), quiet: true)
+    }
+
+    /// Changes them on the Mac (for every paired phone); the Mac's answer replaces what shows. Needs `operate`.
+    @discardableResult
+    func setNotify(_ settings: CompanionNotifySettings) async -> Bool {
+        guard can(CompanionFeature.notifySettings), allows(.operate), settings.isValid else { return false }
+        if Self.isDemo { notify = settings; return true }
+        var request = CompanionRequest(op: .notifySet)
+        request.notify = settings
+        return await perform(request)?.ok ?? false
+    }
+
+    // MARK: Demo pull requests
+
+    /// The demo's pull requests as the Mac would send them with `pullActions`: labels, checks, a conversation.
+    func loadPullDemo(now: Double) {
+        if pulls.count >= 2 {
+            pulls[0].labels = ["bug", "relay"]
+            pulls[0].labelColors = ["bug": "d73a4a", "relay": "0e8a16"]
+            pulls[0].created = now - 86400 * 2
+            pulls[0].comments = 3
+            pulls[0].checksPassed = 12
+            pulls[0].checksTotal = 12
+            pulls[1].labels = ["feature"]
+            pulls[1].labelColors = ["feature": "a2eeef"]
+            pulls[1].created = now - 3600 * 5
+            pulls[1].checksPassed = 8
+            pulls[1].checksTotal = 11
+        }
+        pulls += [
+            PullDigest(url: "https://github.com/example/site/pull/88", repo: "example/site", number: 88,
+                       title: "Download buttons side by side", author: "you", state: "open", ci: "failing", review: "changesRequested",
+                       conflict: false, additions: 31, deletions: 9, updated: now - 7200, group: "mine",
+                       headBranch: "site/downloads", baseBranch: "main", labels: ["website"], created: now - 86400 * 4,
+                       comments: 5, checksPassed: 3, checksTotal: 5),
+            PullDigest(url: "https://github.com/example/nook/pull/1399", repo: "example/nook", number: 1399,
+                       title: "Faster session search", author: "jan", state: "merged", ci: "passing", review: "approved",
+                       conflict: false, additions: 120, deletions: 80, updated: now - 86400 * 3, group: "watched",
+                       headBranch: "perf/search", baseBranch: "main", created: now - 86400 * 9),
+        ]
+        guard let first = pulls.first else { return }
+        var detail = PullDetailDigest(
+            url: first.url, repo: first.repo, number: first.number, title: first.title,
+            body: "The relay waited up to five minutes after the Mac woke. This resets the backoff on wake.",
+            author: first.author, state: first.state, baseBranch: "main", headBranch: "fix/relay", headSHA: "abc1234",
+            additions: 48, deletions: 12, changedFiles: 2, updated: first.updated,
+            checks: [.init(name: "build", outcome: "passing", detail: "success"), .init(name: "tests", outcome: "failing", detail: "failure")],
+            files: [], verdicts: [.init(author: "anna", approved: true)], methods: ["squash", "merge"], blocker: nil,
+            verdictsAllowed: true, lineComments: true, fetched: now)
+        detail.reviewers = ["jan"]
+        detail.assignees = ["you"]
+        detail.labels = first.labels
+        detail.labelColors = first.labelColors
+        detail.milestone = "2.4"
+        detail.issues = [.init(repo: "example/nook", number: 1400, title: "Relay slow after sleep", open: true, url: nil)]
+        detail.behind = true
+        detail.created = first.created
+        detail.actions = ["note", "draft", "updateBranch", "rebaseBranch", "autoMergeOn", "rerunFailed", "close", "reply", "resolve", "unresolve"]
+        detail.conversation = [
+            .init(id: "comment-1", author: "anna", body: "Looks good, one question on the timer.", date: now - 4000, verdict: nil),
+            .init(id: "review-2", author: "anna", body: "", date: now - 3000, verdict: "APPROVED"),
+        ]
+        detail.threads = [
+            .init(id: "line-10", path: "Services/Relay.swift", line: 42, resolved: false, outdated: false, canReply: true, canResolve: true,
+                  comments: [.init(id: "line-10", author: "anna", body: "Should this also reset on network change?", date: now - 3900, verdict: nil),
+                             .init(id: "line-11", author: "you", body: "Good idea, added.", date: now - 3500, verdict: nil)]),
+        ]
+        pullDetails[first.url] = detail
+        notify = CompanionNotifySettings(enabled: true, kinds: ["approval", "question", "failed"], onlyWhenAway: true, includeTitle: false,
+                                         quietFrom: 22, quietTo: 7, quietAllowsUrgent: true, registered: true, canSend: true)
     }
 
     /// Starts a session on the Mac that works on this pull request, in a worktree of its own; the new session's id.

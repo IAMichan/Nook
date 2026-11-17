@@ -9,8 +9,14 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import {
     applyConversation, companion, CONVERSATION_STALL, Feature, followsLive, messageTime, resumePoint, writingWaits,
-    type ChatLine, type ClientView, type CompanionResponse,
+    has, type ChatDigest, type ChatLine, type ClientView, type CompanionResponse, type NookChatAction,
   } from "../../lib/companion";
+  import { nookAct, nookMenu } from "./nook-chats";
+  import type { ChatConfirm } from "./chat-actions";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import Dialog from "./ui/Dialog.svelte";
+  import PhotoButton from "./ui/PhotoButton.svelte";
+  import ImageTray from "./ui/ImageTray.svelte";
   import { activeMac, cacheFor, kept, recordChatLines, saveSoon } from "../../lib/companion-cache";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
   import OfflineNote from "./ui/OfflineNote.svelte";
@@ -76,8 +82,39 @@
   }
   async function loadTitle() {
     const r = await companion.call({ op: "chats" });
-    title = r.response?.conversations?.find((c) => c.id === id)?.title ?? "";
+    digest = r.response?.conversations?.find((c) => c.id === id) ?? null;
+    title = digest?.title ?? "";
   }
+
+  // As on the Mac's Nook tab (`nookChats`): the conversation's menu in the bar, questions that wait in line while Nook
+  // answers, and pictures with a question.
+  const likeTheMac = $derived(has(view, Feature.nookChats));
+  let digest = $state<ChatDigest | null>(null);
+  let images = $state<string[]>([]);
+  let menu = $state<DOMRect | null>(null);
+  let confirming = $state<ChatConfirm | null>(null);
+  let renaming = $state(false);
+  let newName = $state("");
+  // Follows the list live: the title, the flags and the questions in line.
+  onMount(() => {
+    const un = companion.onLive((r) => {
+      const d = r.conversations?.find((c) => c.id === id);
+      if (d) { digest = d; title = d.title; }
+    });
+    return () => { un.then((f) => f()); };
+  });
+  async function run(action: NookChatAction) {
+    if (!id) return;
+    const r = await nookAct(id, action);
+    took(r.view);
+    if (!r.response) return;
+    if (action.kind === "delete") { onback(); return; }
+    const d = r.response.conversations?.find((c) => c.id === id);
+    if (d) { digest = d; title = d.title; }
+    if (r.response.messages) lines = r.response.messages;
+  }
+  const menuSections = $derived<MenuItem[][]>(digest ? nookMenu(digest, run, (c) => (confirming = c), () => { renaming = true; newName = title; }, lines.some((l) => !l.fromNook)) : []);
+  const tooLarge = () => took({ ...view, notice: tr("Die foto kon niet klein genoeg worden gemaakt.", "That picture could not be made small enough.") });
 
   // Live: watch this conversation (again) once the connection is there or another conversation opened here.
   $effect(() => {
@@ -114,11 +151,15 @@
     if (sending) return;
     sending = true;
     haptic();
-    const r = await companion.call({ op: "ask", conversation: id ?? undefined, text: words });
+    const pictures = likeTheMac && images.length ? images.map((jpeg) => ({ jpeg })) : undefined;
+    const r = await companion.call({ op: "ask", conversation: id ?? undefined, text: words, images: pictures });
     sending = false;
     took(r.view);
     if (!r.response) return;
     text = "";
+    images = [];
+    // Waits in line on the computer: the list shows it under the answer.
+    if (r.response.message === "queued") loadTitle();
     if (r.response.created) id = r.response.created;
     if (r.response.messages) lines = r.response.messages;
     // Live, the new conversation is watched by the effect above; otherwise ask for it.
@@ -142,6 +183,7 @@
 <div class="chat">
   <NavBar onback={onback}>
     {#snippet center()}<span class="t"><strong>{title || tr("Nieuwe chat", "New chat")}</strong><small>Nook</small></span>{/snippet}
+    {#snippet trailing()}{#if likeTheMac && digest}<button class="more press" aria-label={tr("Meer acties", "More actions")} onclick={(e) => (menu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="ellipsis" size={18} stroke={2.4} /></button>{/if}{/snippet}
   </NavBar>
   <ConversationScroll version={[lines.length, last?.text.length, last?.status, sending]}>
     <div class="lines">
@@ -162,6 +204,12 @@
       {#each queued as q (q.id)}
         <div class="user waiting"><div class="bubble">{q.text}</div><span class="time"><Ico name="clock" size={11} /> {tr("Nog niet verstuurd · wacht op je Mac", "Not sent yet · waiting for your Mac")}</span></div>
       {/each}
+      {#if digest?.queued?.length}
+        {#each digest.queued as q, i (i)}
+          <div class="user waiting"><div class="bubble">{q}</div></div>
+        {/each}
+        <span class="time inline"><Ico name="clock" size={11} /> {tr("Wacht op dit antwoord", "Waits for this answer")}</span>
+      {/if}
       {#if thinking}
         <div class="thinking"><NookMark size={22} /><span>{last?.status || tr("Aan het denken…", "Thinking…")}</span><PulseDot size={5} color="var(--text2)" /></div>
       {/if}
@@ -169,11 +217,32 @@
   </ConversationScroll>
   <div class="dock">
     <OfflineStrip {view} />
-    <SessionComposer bind:value={text} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={send} onstop={busy ? stop : undefined} canSend={!offline || writingWaits(view)} />
+    {#if likeTheMac}<ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />{/if}
+    <div class="withattach">
+      {#if likeTheMac}<PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={tooLarge} />{/if}
+      <div class="grow"><SessionComposer bind:value={text} placeholder={tr("Vraag Nook", "Ask Nook")} onsend={send} onstop={busy ? stop : undefined} canSend={!offline || writingWaits(view)} attached={images.length > 0} /></div>
+    </div>
   </div>
 </div>
 
+{#if menu}<Menu sections={menuSections} anchor={menu} title={title} onclose={() => (menu = null)} />{/if}
+{#if confirming}{@const c = confirming}
+  <Dialog title={c.title} message={c.message} onclose={() => (confirming = null)}
+    buttons={[{ label: c.button, destructive: true, onselect: c.run }, { label: tr("Annuleer", "Cancel"), bold: true, onselect: () => {} }]} />
+{/if}
+{#if renaming}
+  <Dialog title={tr("Hernoem gesprek", "Rename conversation")} bind:field={newName} placeholder={tr("Naam", "Name")} onclose={() => (renaming = false)}
+    buttons={[{ label: tr("Annuleer", "Cancel"), onselect: () => {} }, { label: tr("Hernoem", "Rename"), bold: true, onselect: () => {
+      const name = newName.trim().slice(0, 80);
+      if (name && name !== title) run({ kind: "rename", text: name });
+    } }]} />
+{/if}
+
 <style>
+  .more { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); }
+  .withattach { display: flex; align-items: flex-end; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .inline { align-self: flex-end; display: inline-flex; align-items: center; gap: 4px; margin-top: -16px; }
   .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .t { display: flex; flex-direction: column; align-items: center; max-width: 240px; min-width: 0; }
   .t strong { font: var(--pt-strong); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

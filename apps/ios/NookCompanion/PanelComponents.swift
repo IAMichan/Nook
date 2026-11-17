@@ -462,6 +462,8 @@ struct SessionComposer<Controls: View>: View {
     /// Anything besides an empty text that keeps the message from going out.
     var canSend = true
     var sending = false
+    /// Something goes besides words (a picture, a file): Send works with the field empty.
+    var allowsEmpty = false
     /// Work runs: the button stops it instead of sending (when `onStop` is given).
     var busy = false
     var onStop: (() -> Void)? = nil
@@ -474,7 +476,7 @@ struct SessionComposer<Controls: View>: View {
     @FocusState private var ownFocus: Bool
 
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var enabled: Bool { canSend && !sending && !isEmpty }
+    private var enabled: Bool { canSend && !sending && (!isEmpty || allowsEmpty) }
     private var hasControls: Bool { Controls.self != EmptyView.self }
 
     var body: some View {

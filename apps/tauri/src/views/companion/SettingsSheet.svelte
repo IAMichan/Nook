@@ -2,7 +2,7 @@
   // Settings, as the iPhone's sheet (`SettingsView`): your Mac and how the phone reaches it, what this phone does, the
   // plan limits, pairing, and the versions. On Android it also offers Nook on this phone itself.
   import { onMount } from "svelte";
-  import { companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, may, resetsIn, routeWords, Feature, type ClientView, type UsageAccount } from "../../lib/companion";
+  import { companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, may, resetsIn, routeWords, Feature, type ClientView, type NotifySettings, type UsageAccount } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import PanelHeader from "./ui/PanelHeader.svelte";
@@ -34,6 +34,7 @@
   }
 
   onMount(async () => {
+    loadNotify();
     try { version = await (await import("@tauri-apps/api/app")).getVersion(); } catch { /* not in the app */ }
     if (has(view, Feature.usage) && may(view, "read")) {
       usageLoading = true;
@@ -43,6 +44,45 @@
       usageLoading = false;
     }
   });
+
+  // The computer's notification switches for its phones and its quiet hours (`notifySettings`): read here, changed for
+  // every paired phone with the `operate` scope, as on the iPhone.
+  const KINDS = ["approval", "question", "failed", "finished", "limited"] as const;
+  const kindTitle = (k: string) => ({
+    approval: tr("Goedkeuringen", "Approvals"), question: tr("Vragen", "Questions"), finished: tr("Klaar met werken", "Finished sessions"),
+    failed: tr("Mislukte sessies", "Failed sessions"), limited: tr("Gebruikslimiet bereikt", "Usage limit reached"),
+  } as Record<string, string>)[k] ?? k;
+  const kindIcon = (k: string) => ({ approval: "hand", question: "message-circle-question", finished: "circle-check", failed: "triangle-alert", limited: "hourglass" } as Record<string, string>)[k] ?? "bell";
+  let notify = $state<NotifySettings | null>(null);
+  const canChange = $derived(may(view, "operate") && view.phase === "connected");
+  const showsNotify = $derived(has(view, Feature.notifySettings) && may(view, "read"));
+  async function loadNotify() {
+    if (!showsNotify) return;
+    const r = await companion.call({ op: "notifySettings" });
+    if (r.response?.notify) notify = r.response.notify;
+  }
+  async function change(apply: (n: NotifySettings) => void) {
+    if (!notify || !canChange) return;
+    const kept = notify;
+    const next: NotifySettings = { ...$state.snapshot(notify), kinds: [...notify.kinds] };
+    apply(next);
+    if ((next.quietFrom == null) !== (next.quietTo == null)) return;
+    haptic();
+    notify = next;
+    const send = { ...next };
+    delete send.registered;
+    delete send.canSend;
+    const r = await companion.call({ op: "notifySet", notify: send });
+    took(r.view);
+    notify = r.response?.notify ?? kept;
+  }
+  const hourText = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const SCOPES = ["read", "approve", "operate", "chats", "music", "nookChat"] as const;
+  const scopeTitle = (s: string) => ({
+    read: tr("Sessies, pull requests en gebruik zien", "See sessions, pull requests and usage"), approve: tr("Toestaan, weigeren en antwoorden", "Allow, deny and answer"),
+    operate: tr("Starten, berichten, reviewen en samenvoegen", "Start, message, review and merge"), chats: tr("Chats lezen en beantwoorden", "Read and answer chats"),
+    music: tr("Muziek bedienen", "Control music"), nookChat: tr("Met Nook chatten", "Chat with Nook"),
+  } as Record<string, string>)[s] ?? s;
 
   async function check() {
     checking = true;
@@ -76,12 +116,69 @@
               {#snippet trailing()}<Toggle on={steer} onchange={setSteer} label={tr("Een werkende agent direct bijsturen", "Steer a working agent right away")} />{/snippet}
             </SettingsRow>
           {/if}
-          <SettingsRow icon="bell" title={tr("Meldingen", "Notifications")} detail={tr("Van je Mac, ook buitenshuis.", "From your Mac, also away from home.")} />
+          {#if !showsNotify}<SettingsRow icon="bell" title={tr("Meldingen", "Notifications")} detail={tr("Van je Mac, ook buitenshuis.", "From your Mac, also away from home.")} />{/if}
           {#if onlocal}
             <SettingsRow icon="smartphone" title={tr("Nook op deze telefoon", "Nook on this phone")} detail={tr("Nooks eigen brein op je telefoon, zonder je Mac.", "Nook's own brain on your phone, without your Mac.")} onclick={onlocal} />
           {/if}
         </div>
       </section>
+      {#if showsNotify}
+        <section>
+          <h3>{tr("Meldingen", "Notifications")}</h3>
+          <div class="card" class:locked={!canChange}>
+            {#if !notify}
+              <SettingsRow icon="bell" title={tr("Laden…", "Loading…")} />
+            {:else}
+              {@const n = notify}
+              <SettingsRow icon={n.enabled ? "bell" : "bell-off"} title={tr("Meldingen", "Notifications")}
+                detail={n.canSend === false ? tr("Nog niet ingesteld op je Mac (Instellingen › iPhone-companion).", "Not set up on your Mac yet (Settings › iPhone companion).") : tr("Van je Mac, voor elke telefoon die eraan gekoppeld is.", "From your Mac, for every phone paired with it.")}>
+                {#snippet trailing()}<Toggle on={n.enabled} onchange={(on) => change((x) => (x.enabled = on))} label={tr("Meldingen", "Notifications")} />{/snippet}
+              </SettingsRow>
+              {#if n.enabled}
+                {#each KINDS as k (k)}
+                  <SettingsRow icon={kindIcon(k)} title={kindTitle(k)}>
+                    {#snippet trailing()}<Toggle on={n.kinds.includes(k)} onchange={(on) => change((x) => (x.kinds = KINDS.filter((y) => (y === k ? on : x.kinds.includes(y)))))} label={kindTitle(k)} />{/snippet}
+                  </SettingsRow>
+                {/each}
+                <SettingsRow icon="laptop" title={tr("Alleen als je niet bij de Mac bent", "Only when you are away from the Mac")} detail={tr("Aan je bureau zijn de kaarten van de Mac genoeg.", "At your desk the Mac's own cards are enough.")}>
+                  {#snippet trailing()}<Toggle on={n.onlyWhenAway} onchange={(on) => change((x) => (x.onlyWhenAway = on))} label={tr("Alleen als je niet bij de Mac bent", "Only when you are away from the Mac")} />{/snippet}
+                </SettingsRow>
+                <SettingsRow icon="file-text" title={tr("Toon sessietitels", "Show session titles")} detail={tr("Standaard uit: Apple geeft de tekst door.", "Off by default: Apple relays the text.")}>
+                  {#snippet trailing()}<Toggle on={n.includeTitle} onchange={(on) => change((x) => (x.includeTitle = on))} label={tr("Toon sessietitels", "Show session titles")} />{/snippet}
+                </SettingsRow>
+              {/if}
+              <SettingsRow icon="moon" title={tr("Stille uren", "Quiet hours")} detail={tr("Dezelfde uren als de meldingen van de Mac zelf.", "The same hours as the Mac's own notices.")}>
+                {#snippet trailing()}<Toggle on={n.quietFrom != null} onchange={(on) => change((x) => { x.quietFrom = on ? 22 : null; x.quietTo = on ? 7 : null; })} label={tr("Stille uren", "Quiet hours")} />{/snippet}
+              </SettingsRow>
+              {#if n.quietFrom != null && n.quietTo != null}
+                <SettingsRow icon="clock" title={tr("Van", "From")}>
+                  {#snippet trailing()}<select class="hour" value={n.quietFrom} onchange={(e) => change((x) => (x.quietFrom = Number((e.currentTarget as HTMLSelectElement).value)))}>{#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={h}>{hourText(h)}</option>{/each}</select>{/snippet}
+                </SettingsRow>
+                <SettingsRow icon="alarm-clock" title={tr("Tot", "Until")}>
+                  {#snippet trailing()}<select class="hour" value={n.quietTo} onchange={(e) => change((x) => (x.quietTo = Number((e.currentTarget as HTMLSelectElement).value)))}>{#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={h}>{hourText(h)}</option>{/each}</select>{/snippet}
+                </SettingsRow>
+                <SettingsRow icon="hand" title={tr("Laat goedkeuringen en vragen door", "Let approvals and questions through")}>
+                  {#snippet trailing()}<Toggle on={n.quietAllowsUrgent} onchange={(on) => change((x) => (x.quietAllowsUrgent = on))} label={tr("Laat goedkeuringen en vragen door", "Let approvals and questions through")} />{/snippet}
+                </SettingsRow>
+              {/if}
+              {#if !may(view, "operate")}
+                <SettingsRow icon="lock" title={tr("Alleen je Mac kan deze voor deze telefoon wijzigen", "Only your Mac can change these for this phone")} detail={tr("Sessies starten en beheren staat ervoor uit in Instellingen › Apparaten.", "Starting and managing sessions is off for it in Settings › Devices.")} />
+              {/if}
+            {/if}
+          </div>
+        </section>
+      {/if}
+      {#if view.scopes}
+        <section>
+          <h3>{tr("Wat deze telefoon mag", "What this phone may do")}</h3>
+          <div class="card">
+            {#each SCOPES as sc (sc)}
+              <SettingsRow icon={may(view, sc) ? "circle-check" : "circle"} title={scopeTitle(sc)} tint={may(view, sc) ? "var(--mint)" : "var(--text3)"} />
+            {/each}
+            <SettingsRow icon="laptop" title={tr("Wijzig dit op je Mac", "Change this on your Mac")} detail={tr("Instellingen › Apparaten, bij deze telefoon.", "Settings › Devices, under this phone.")} />
+          </div>
+        </section>
+      {/if}
       {#if has(view, Feature.usage) && may(view, "read")}
         <section>
           <h3>{tr("Gebruik", "Usage")}</h3>
@@ -149,4 +246,6 @@
   .bar { height: 6px; border-radius: 999px; background: var(--well); overflow: hidden; }
   .bar span { display: block; height: 100%; border-radius: 999px; }
   small { font: var(--pt-caption); color: var(--text3); }
+  .locked { opacity: 0.6; pointer-events: none; }
+  .hour { min-height: 44px; background: transparent; color: var(--paper); font: var(--pt-label); border: none; text-align: right; }
 </style>

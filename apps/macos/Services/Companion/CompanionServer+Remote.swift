@@ -15,9 +15,16 @@ extension CompanionServer {
             let models = app.models(for: provider).prefix(16).map {
                 LaunchOptions.Model(id: $0, name: CompanionPolicy.clip(app.modelName($0, for: provider), limit: 80))
             }
-            return LaunchOptions.Agent(id: provider.rawValue, name: provider.displayName, canPlan: provider.capabilities.planMode,
-                                       models: Array(models), defaultModel: settings.model(for: provider),
-                                       canMainThread: MainThread.offered(provider: provider, access: settings.bridgeAccess))
+            var agent = LaunchOptions.Agent(id: provider.rawValue, name: provider.displayName, canPlan: provider.capabilities.planMode,
+                                            models: Array(models), defaultModel: settings.model(for: provider),
+                                            canMainThread: MainThread.offered(provider: provider, access: settings.bridgeAccess))
+            // Effort and access as the composer offers them, access never above "allow edits" (`agentsTab`).
+            let choices = launchChoices(provider, app: app)
+            agent.efforts = choices.efforts.isEmpty ? nil : choices.efforts
+            agent.defaultEffort = choices.defaultEffort
+            agent.permissions = choices.permissions
+            agent.defaultPermission = choices.defaultPermission
+            return agent
         }
         let paths = recentProjects(settings)
         let infos = await withTaskGroup(of: ProjectInfo.self) { group in
@@ -29,8 +36,15 @@ extension CompanionServer {
         let canGit = workspace.gitAvailable == true
         let projects = paths.compactMap { path -> LaunchOptions.Project? in
             guard let info = infos[WorkspacePathPolicy.normalize(path)], info.verdict == .ok else { return nil }
-            return LaunchOptions.Project(path: info.path, name: info.name,
-                                         canWorktree: canGit && info.repoRoot != nil && info.hasCommits)
+            var project = LaunchOptions.Project(path: info.path, name: info.name,
+                                                canWorktree: canGit && info.repoRoot != nil && info.hasCommits)
+            // The branches a worktree can start from, the default base first (`agentsTab`).
+            if project.canWorktree {
+                let base = info.defaultBase.flatMap { info.branches.contains($0) ? $0 : nil } ?? info.currentBranch ?? info.branches.first
+                project.branches = Array(([base].compactMap { $0 } + info.branches.filter { $0 != base }).prefix(40))
+                project.defaultBase = base
+            }
+            return project
         }
         let last = WorkspacePathPolicy.normalize(settings.lastProject)
         let defaultProject = projects.contains { $0.path == last } ? last : projects.first?.path
@@ -85,17 +99,24 @@ extension CompanionServer {
         } else {
             config.model = defaults.model(for: provider)
         }
-        config.effort = defaults.effort(for: provider)
+        // An effort the phone picked from the composer's levels (`agentsTab`), else your default.
+        if let effort = launch.effort, effort.isEmpty || workspace.effortLevels(for: provider, model: config.model).contains(effort) {
+            config.effort = effort.isEmpty ? nil : effort
+        } else {
+            config.effort = defaults.effort(for: provider)
+        }
         if launch.mainThread == true, MainThread.offered(provider: provider, access: settings.bridgeAccess) { config.mainThread = true }
         config.mode = plan ? .plan : .agent
-        config.permission = phonePermission(provider, preferred: defaults.permission(for: provider), plan: plan)
+        config.permission = phonePermission(provider, asked: launch.permission, preferred: defaults.permission(for: provider), plan: plan)
         config.projectPath = project
         config.worktreeRoot = settings.worktreeRoot
         if launch.worktree {
             let info = await workspace.inspectProject(project)
             guard workspace.gitAvailable == true, info.repoRoot != nil, info.hasCommits else { return .failure(request.id, .badRequest) }
             config.isolation = .worktree
-            if let base = info.defaultBase, info.branches.contains(base) {
+            if let asked = launch.baseBranch, info.branches.contains(asked) {
+                config.baseBranch = asked
+            } else if let base = info.defaultBase, info.branches.contains(base) {
                 config.baseBranch = base
             } else {
                 config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
@@ -405,6 +426,8 @@ extension CompanionServer {
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), let run = workspace.run(runID) else { return .failure(request.id, .unknownSession) }
+        // The Agents tab's own actions (`CompanionFeature.agentsTab`, `CompanionServer+Sessions.swift`).
+        if SessionAction.agentsTab.contains(action) { return manageTab(action, run: run, request: request, app: app) }
         guard Self.actions(run, now: Date(), access: workspace.settings.bridgeAccess).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
         switch action {
         case .rename:
@@ -434,6 +457,9 @@ extension CompanionServer {
                 return .failure(request.id, .busy)
             }
         case .end: return .failure(request.id, .notAllowedFromPhone)
+        case .pin, .unpin, .settle, .reopen, .markUnread, .fork, .retry, .restartAgent, .regenerateTitle, .delete,
+             .deleteWithWorktree, .setEffort, .setMode, .setModel, .unqueue:
+            return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)
         return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
@@ -442,12 +468,12 @@ extension CompanionServer {
     // MARK: Nook's own chats
 
     func chats(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
-        let list = app.chat.history.prefix(40).map { conversation in
-            ChatDigest(id: conversation.id.uuidString, title: CompanionPolicy.excerpt(conversation.title),
-                       updated: conversation.updated.timeIntervalSince1970, busy: conversation.busy,
-                       waiting: conversation.status == .waiting, preview: conversation.preview)
-        }
-        return CompanionResponse(id: request.id, ok: true, message: app.settings.brainReady ? nil : "nobrain", conversations: Array(list))
+        // The whole open list, as the Mac's Nook tab shows it (`ConversationList.activeLimit` keeps it short), with the
+        // list's flags (`CompanionFeature.nookChats`, `CompanionServer+NookChats.swift`).
+        let list = app.chat.history.prefix(60).map(nookDigest)
+        var response = CompanionResponse(id: request.id, ok: true, message: app.settings.brainReady ? nil : "nobrain", conversations: Array(list))
+        response.conversationsArchived = archivedConversations(app)
+        return response
     }
 
     func chat(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
@@ -488,7 +514,11 @@ extension CompanionServer {
     /// for approval on the Mac. The notch stays as it is.
     func ask(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         guard app.settings.brainReady else { return .failure(request.id, .failed, message: "nobrain") }
-        guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
+        // A picture without words asks what is on it, as on the Mac.
+        let pictured = request.images?.isEmpty == false
+        guard let text = CompanionPolicy.cleanMessage(request.text ?? "") ?? (pictured ? tr("image.defaultQuestion") : nil) else {
+            return .failure(request.id, .badRequest)
+        }
         let id: UUID
         if let asked = request.conversation {
             guard let existing = UUID(uuidString: asked), app.chat.conversation(existing) != nil else {
@@ -498,7 +528,17 @@ extension CompanionServer {
         } else {
             id = app.chat.startInBackground()
         }
-        app.ask(text, in: id, reveal: false)
+        // Pictures go with the question as the Mac's composer adds them (`CompanionFeature.nookChats`).
+        guard let images = phoneImages(request.images) else { return .failure(request.id, .badRequest) }
+        // Nook still answers in this conversation: the question waits in line as on the Mac (`handleUserText`) and
+        // goes once the answer is done, instead of stopping it.
+        if app.chat.isBusy(id) {
+            guard app.chat.enqueue(text, images: images, conversation: id) else { return .failure(request.id, .busy) }
+            audit("ask_queued", app.chat.conversation(id)?.title ?? "")
+            return CompanionResponse(id: request.id, ok: true, message: "queued", messages: app.chat.conversation(id).map(lines),
+                                     created: id.uuidString)
+        }
+        app.ask(text, images: images, in: id, reveal: false)
         audit("ask", app.chat.conversation(id)?.title ?? "")
         return CompanionResponse(id: request.id, ok: true, messages: app.chat.conversation(id).map(lines), created: id.uuidString)
     }
