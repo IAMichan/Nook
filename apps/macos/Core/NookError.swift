@@ -62,6 +62,34 @@ enum ConnectorRetry {
     }
 }
 
+/// Asks a brain again when one round failed on something that passes by itself: a dropped connection, a timeout, an
+/// overloaded service (Anthropic's 529, a 5xx) or a rate limit. A rejected key, an unknown model or a refused request
+/// fail at once, and so does a stop by the user. One hiccup then never ends an answer with an error.
+enum BrainRetry {
+    /// Seconds to wait before each next try: two more tries after the first.
+    static let delays: [TimeInterval] = [1.5, 4]
+
+    static func isTransient(_ error: Error) -> Bool {
+        if ConnectorRetry.isTransient(error) { return true }
+        return ConnectorErrorKind.classify(error) == .rateLimited
+    }
+
+    /// Runs `body`, and again after each of `delays` while it fails on something transient. `onRetry` hears each new try
+    /// (1 for the second) with the error that caused it.
+    static func run<T>(delays: [TimeInterval] = delays, onRetry: ((Int, Error) -> Void)? = nil,
+                       _ body: () async throws -> T) async throws -> T {
+        for (index, delay) in delays.enumerated() {
+            do {
+                return try await body()
+            } catch where isTransient(error) && !Task.isCancelled {
+                onRetry?(index + 1, error)
+                try await Task.sleep(nanoseconds: UInt64(max(delay, 0) * 1_000_000_000))
+            }
+        }
+        return try await body()
+    }
+}
+
 /// An error with a message that can be shown to the user as is.
 struct NookError: LocalizedError {
     let message: String

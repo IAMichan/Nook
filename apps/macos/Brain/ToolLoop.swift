@@ -115,6 +115,11 @@ final class ToolRunner {
     /// Read tools whose answer changes by itself (a window that is still loading): read again on every call instead of
     /// from the cache, so "wait and read again" sees what is there now.
     var liveReads: Set<String> = []
+    /// Waits before asking the model again after a round failed on something transient (`BrainRetry`). A failed round
+    /// changed nothing yet: its tools only run once it returns, so the same round can simply be asked again.
+    var retryDelays: [TimeInterval] = BrainRetry.delays
+    /// Hears each new try of a round (1 for the second) with the error that caused it.
+    var onRetry: ((Int, Error) -> Void)?
 
     private(set) var actions: [PlannedAction] = []
     private(set) var callCount = 0
@@ -188,7 +193,10 @@ final class ToolRunner {
         let known = { Set(self.tools.map(\.name)) }
         for round in 0..<limits.rounds {
             let before = finalText.isEmpty ? "" : finalText + "\n\n"
-            var turn = try await conversation.next(tools: tools) { partial in onText?(before + partial) }
+            // `onText` gets the whole text so far: a try after a failed one simply writes over what that one streamed.
+            var turn = try await BrainRetry.run(delays: retryDelays, onRetry: onRetry) {
+                try await conversation.next(tools: tools) { partial in onText?(before + partial) }
+            }
 
             // Small models often write a tool call as JSON in their text instead of calling it.
             if turn.calls.isEmpty, !turn.finished {
