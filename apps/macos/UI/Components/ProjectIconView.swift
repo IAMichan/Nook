@@ -105,7 +105,7 @@ final class ProjectFavicons: ObservableObject {
     @Published private var version = 0
     private static let retryAfter: TimeInterval = 10 * 60
     /// Drawn at most 20 pt, so 64 px covers a Retina screen at three times.
-    private static let pixels: CGFloat = 64
+    nonisolated private static let pixels: CGFloat = 64
 
     /// The project's icon when it has one; the first ask starts the lookup and returns nil until it is done.
     func image(for root: String) -> NSImage? {

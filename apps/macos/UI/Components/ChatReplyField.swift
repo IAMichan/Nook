@@ -397,7 +397,8 @@ struct ChatReplyField: View {
                 .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
                 .onKeyPress(.escape) { () -> KeyPress.Result in
                     if suggestedReply != nil {
-                        replies.dismiss(replyTurn)
+                        // Dismissing publishes; key presses arrive while SwiftUI updates its views.
+                        DispatchQueue.main.async { [replyTurn] in replies.dismiss(replyTurn) }
                         return .handled
                     }
                     if ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: text)) != nil {
@@ -511,7 +512,8 @@ struct ChatReplyField: View {
     /// chat, so the send itself runs right after.
     private func returnKey(_ press: KeyPress) -> KeyPress.Result {
         if press.modifiers.contains(.option) || press.modifiers.contains(.shift) {
-            newline()
+            // The field takes the line at once and writes the draft back, so it too runs right after.
+            DispatchQueue.main.async { newline() }
         } else if menu.isOpen {
             chooseSelected()
         } else {
@@ -542,10 +544,14 @@ struct ChatReplyField: View {
     /// Tab chooses the menu's line; on the grey rest of the sentence Tab takes a word of it, ⇧Tab all of it.
     private func tabKey(_ press: KeyPress) -> KeyPress.Result {
         let all = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        // SwiftUI handles key presses while it updates its views, and these change the draft and the published
+        // suggestion, so the changes run right after.
         if let suggestedReply {
-            text = suggestedReply
-            replies.dismiss(replyTurn)
-            ComposerFieldStyle.placeCaret((suggestedReply as NSString).length, expecting: suggestedReply)
+            DispatchQueue.main.async { [replyTurn] in
+                text = suggestedReply
+                replies.dismiss(replyTurn)
+                ComposerFieldStyle.placeCaret((suggestedReply as NSString).length, expecting: suggestedReply)
+            }
             return .handled
         }
         if menu.isOpen, !all {
@@ -554,8 +560,10 @@ struct ChatReplyField: View {
         }
         guard let (value, caret) = ComposerInlineGhost.shared.acceptingText(
             all: all, in: text, editor: ComposerFieldStyle.focusedEditor(expecting: text)) else { return .ignored }
-        text = value
-        ComposerFieldStyle.placeCaret(caret, expecting: value)
+        DispatchQueue.main.async {
+            text = value
+            ComposerFieldStyle.placeCaret(caret, expecting: value)
+        }
         return .handled
     }
 
