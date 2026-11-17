@@ -572,6 +572,13 @@ pub async fn answer_question(
     });
 
     let mut request = text.to_string();
+    // Every brain gets the text in the pictures, read on this computer: one that cannot see still knows what they show.
+    if !images.is_empty() {
+        let described = crate::services::screen::describe_images(app, &images).await;
+        if !described.is_empty() {
+            request += &format!("\n\n{described}");
+        }
+    }
     if let Ok(note) = ASK_NOTE.try_with(Clone::clone) {
         request += &format!("\n\n({note})");
     }
