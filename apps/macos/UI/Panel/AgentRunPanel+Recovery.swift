@@ -3,9 +3,58 @@ import AppKit
 import UniformTypeIdentifiers
 import Combine
 
-/// The card that offers a way on when a turn failed or the session cannot continue.
+/// The way on after a turn ended early: a quiet marker in the conversation when you stopped it, a card when it failed.
 extension AgentRunPanel {
+    @ViewBuilder
     func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
+        if run.status == .stopped, run.statusDetail != "interrupted" {
+            stoppedMarker(run)
+        } else {
+            recoveryCard(run, events: events, blocks: blocks, proxy: proxy)
+        }
+    }
+
+    /// You stopped the turn: nothing went wrong, so no card. A hairline on either side of a small pill that says when it
+    /// stopped, with Retry and, when the agent kept its conversation, Go on as the main action.
+    func stoppedMarker(_ run: WorkspaceRun) -> some View {
+        let canGoOn = run.providerSessionID != nil
+        return HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Image(icon: "pause.circle")
+                        .font(NookTheme.font(12, .semibold))
+                    Text(tr("ws.recovery.stoppedAt", NookDates.dayAndClock(run.updatedAt)))
+                        .font(NookTheme.TextStyle.caption)
+                        .fixedSize()
+                }
+                .foregroundStyle(NookTheme.textSecondary)
+                .nookTip(canGoOn ? tr("ws.recovery.stoppedDetail") : tr("ws.recovery.noResume"))
+                .accessibilityElement(children: .combine)
+                if canGoOn {
+                    NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(runID) }
+                        .nookTip(tr("ws.action.retry.help"))
+                    SmallPrimaryButton(title: tr("ws.action.goOn"), compact: true) {
+                        _ = workspace.send(runID, text: UsageLimits.resumeMessage)
+                    }
+                    .nookTip(tr("ws.action.goOn.help"))
+                } else {
+                    SmallPrimaryButton(title: tr("ws.action.retry"), compact: true) { workspace.retry(runID) }
+                        .nookTip(tr("ws.action.retry.help"))
+                }
+            }
+            .padding(.leading, NookTheme.Spacing.lg)
+            .padding(.trailing, NookTheme.Spacing.xs)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
+            .fixedSize()
+            NookDivider()
+        }
+        .padding(.vertical, NookTheme.Spacing.sm)
+    }
+
+    /// The card that offers a way on when a turn failed or the session cannot continue.
+    func recoveryCard(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
         let failed = run.status == .failed
         // A stopped turn goes on where it was when the agent kept its conversation; otherwise only a retry helps.
         let canGoOn = !failed && run.providerSessionID != nil

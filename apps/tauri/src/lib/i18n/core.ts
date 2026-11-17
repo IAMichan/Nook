@@ -521,4 +521,14 @@ export const table: Table = {
   "Companion": { de: "Companion", fr: "Compagnon", es: "Companion" },
   "Nook on your phone": { de: "Nook auf deinem Handy", fr: "Nook sur ton téléphone", es: "Nook en tu móvil" },
   "Make Nook yours": { de: "Mach Nook zu deinem", fr: "Fais de Nook le tien", es: "Haz tuyo Nook" },
+
+  // Markdown blocks
+  "Preview": { de: "Vorschau", fr: "Aperçu", es: "Vista previa" },
+  "Wrap lines": { de: "Zeilen umbrechen", fr: "Renvoyer les lignes à la ligne", es: "Ajustar líneas" },
+  "Don't wrap lines": { de: "Zeilen nicht umbrechen", fr: "Ne pas renvoyer à la ligne", es: "No ajustar líneas" },
+  "Run in terminal": { de: "Im Terminal ausführen", fr: "Exécuter dans le terminal", es: "Ejecutar en el terminal" },
+  "Started in terminal": { de: "Im Terminal gestartet", fr: "Démarré dans le terminal", es: "Iniciado en el terminal" },
+  "Could not open terminal": { de: "Terminal konnte nicht geöffnet werden", fr: "Impossible d’ouvrir le terminal", es: "No se pudo abrir el terminal" },
+  "Copy table": { de: "Tabelle kopieren", fr: "Copier le tableau", es: "Copiar tabla" },
+  "Copy as CSV": { de: "Als CSV kopieren", fr: "Copier en CSV", es: "Copiar como CSV" },
 };
