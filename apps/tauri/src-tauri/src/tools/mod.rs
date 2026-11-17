@@ -36,7 +36,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
 
-pub use mail::{open_mail, send_mail};
+pub use mail::{open_invite, open_mail, send_mail, sync_invite};
 pub use memory::rejected as memory_rejected;
 
 /// Het antwoord waar grafieken en mailconcepten van tools heen gaan.

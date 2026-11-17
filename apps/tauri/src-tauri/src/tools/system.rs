@@ -1,7 +1,9 @@
 //! Kleine systeemacties: een link of app openen, muziek bedienen en het volume zetten, en kijken wat er speelt.
 //! Acties gebeuren pas na Uitvoeren; de platformlaag doet het werk.
 
+use nook_core::brain::system_report::{fetch_public_address, NetworkAddress, NetworkReport, SystemReport};
 use nook_core::brain::LoopTool;
+use nook_core::i18n::tr;
 use nook_core::platform::MediaCommand;
 use serde_json::{json, Value};
 use tauri::Manager;
@@ -19,6 +21,21 @@ fn level(input: &Value) -> Option<u8> {
         .map(|l| l.clamp(0.0, 100.0) as u8)
 }
 
+fn local_addresses() -> Vec<NetworkAddress> {
+    let mut found: Vec<_> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|i| !i.is_loopback())
+        .filter_map(|i| match i.ip() {
+            std::net::IpAddr::V4(v4) if !v4.is_unspecified() => Some(NetworkAddress { interface: i.name, address: v4.to_string() }),
+            _ => None,
+        })
+        .collect();
+    found.sort_by(|a, b| a.interface.cmp(&b.interface).then_with(|| a.address.cmp(&b.address)));
+    found.dedup();
+    found
+}
+
 #[async_trait::async_trait]
 impl ToolSource for System {
     fn id(&self) -> &'static str {
@@ -26,11 +43,42 @@ impl ToolSource for System {
     }
 
     fn tools(&self, ctx: &ToolCtx) -> Vec<LoopTool> {
-        let mut tools = vec![LoopTool::action(
-            "open_url",
-            "Opens a web address in the user's browser.",
-            json!({"type": "object", "properties": {"url": {"type": "string", "description": "https address"}}, "required": ["url"]}),
-        )];
+        let status_app = ctx.app.clone();
+        let mut tools = vec![
+            LoopTool::action(
+                "open_url",
+                "Opens a web address in the user's browser.",
+                json!({"type": "object", "properties": {"url": {"type": "string", "description": "https address"}}, "required": ["url"]}),
+            ),
+            LoopTool::read(
+                "system_status",
+                "How this computer is doing right now: processor load, memory, temperature (slowed down or not), battery, free disk space, time since restart, and the apps using the most processor and memory. Use for \"why is my computer slow\", \"what drains my battery\", \"how full is my disk\".",
+                json!({"type": "object", "properties": {}}),
+                move |_| {
+                    let app = status_app.clone();
+                    async move {
+                        let (battery, hot) = app
+                            .try_state::<Services>()
+                            .map(|s| (s.platform.power.battery(), s.platform.power.signals().hot))
+                            .unwrap_or((None, false));
+                        let report = tauri::async_runtime::spawn_blocking(move || SystemReport::collect(battery, hot))
+                            .await
+                            .map_err(|e| nook_core::NookError(e.to_string()))?;
+                        Ok(report.format())
+                    }
+                },
+            ),
+            LoopTool::read(
+                "network_status",
+                "The IP addresses of this computer right now: the public address the internet sees and the local address per network interface. Use for \"wat is mijn IP-adres\", \"what is my IP\". Reading the public address asks Cloudflare once.",
+                json!({"type": "object", "properties": {}}),
+                move |_| async move {
+                    let addresses = tauri::async_runtime::spawn_blocking(local_addresses).await.unwrap_or_default();
+                    let public_address = fetch_public_address().await;
+                    Ok(NetworkReport { addresses, public_address }.format())
+                },
+            ),
+        ];
         let Some(services) = ctx.app.try_state::<Services>() else { return tools };
         let caps = crate::platform::capabilities();
         if caps.open_apps {
@@ -105,6 +153,8 @@ impl ToolSource for System {
         match tool {
             "open_url" => Some(format!("Open {}", text(input, "url"))),
             "open_app" => Some(format!("Open {}", text(input, "name"))),
+            "system_status" => Some(tr("Status van deze computer", "This computer's status").into()),
+            "network_status" => Some(tr("IP-adressen van deze computer", "IP addresses of this computer").into()),
             "media_control" => Some(
                 match text(input, "action").as_str() {
                     "next" => "Volgend nummer",
