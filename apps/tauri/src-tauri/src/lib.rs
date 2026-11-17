@@ -134,6 +134,7 @@ pub fn run() {
             commands::start_local_brain,
             commands::tray_status,
             commands::shortcut_problems,
+            commands::read_answer_image,
             commands::companion::companion_info,
             commands::companion::companion_set_enabled,
             commands::companion::companion_begin_pairing,
