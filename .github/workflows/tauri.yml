@@ -135,11 +135,15 @@ jobs:
         with:
           workspaces: apps/tauri
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The Tauri crate embeds the built interface (frontendDist), so it has to exist before Rust compiles.
       - run: npm ci
+      # A few seconds: catches path, line-ending and locale differences the Linux run can't see.
+      - name: Interface tests on Windows
+        run: npm test
+      # The Tauri crate embeds the built interface (frontendDist), so it has to exist before Rust compiles.
       - run: npm run build
       - name: Clippy (Windows code)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The whole workspace, including the cfg(windows) tests (Task Scheduler XML, `cmd /C` MCP servers, named pipes).
       - name: Rust tests on Windows
         run: cargo test --workspace
 
