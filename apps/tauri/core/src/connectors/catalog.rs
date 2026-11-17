@@ -227,6 +227,7 @@ mod tests {
         assert_eq!(source_for_tool("check_availability").as_deref(), Some("calendar"));
         assert_eq!(source_for_tool("find_time").as_deref(), Some("calendar"));
         assert_eq!(source_for_tool("github_merge_pr").as_deref(), Some("github"));
+        assert_eq!(source_for_tool("github_merge_prs").as_deref(), Some("github"));
         assert_eq!(source_for_tool("send_to_source").as_deref(), Some("customsources"));
         assert_eq!(source_for_tool("open_url"), None);
     }

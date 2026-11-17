@@ -47,6 +47,8 @@ pub struct ChatIntent {
     pub is_small_talk: bool,
     /// "Verplaats mijn afspraak": een bestaande afspraak verandert.
     pub moves: bool,
+    /// "Merge alle PR's", "voeg de pull requests samen": pull requests are to be merged, not only looked at.
+    pub merges: bool,
     /// "Vergeet dat…": iets onthoudens gaat weg.
     pub forgets: bool,
     /// "Wat weet je over mij?": een vraag over wat Nook onthoudt.
@@ -156,7 +158,22 @@ impl ChatIntent {
     /// Tools die bij deze vraag horen, belangrijkste eerst. Namen kunnen tools zijn die niet gekoppeld zijn.
     pub fn tools(&self) -> Vec<&'static str> {
         let mut seen = HashSet::new();
-        self.kinds.iter().flat_map(|k| tools_for(*k).iter().copied()).filter(|t| seen.insert(*t)).collect()
+        self.kinds
+            .iter()
+            .flat_map(|k| {
+                let tools = tools_for(*k);
+                // "Merge alle PR's": the merge actions come first, with the overview that lists what to merge.
+                if *k == Kind::Github && self.merges {
+                    let mut out = Vec::with_capacity(3 + tools.len());
+                    out.extend_from_slice(&["github_merge_prs", "github_overview", "github_merge_pr"]);
+                    out.extend_from_slice(tools);
+                    out
+                } else {
+                    tools.to_vec()
+                }
+            })
+            .filter(|t| seen.insert(*t))
+            .collect()
     }
 
     /// De ene actie waar deze vraag om draait, als hij daar duidelijk om vraagt.
@@ -302,6 +319,10 @@ impl ChatIntent {
         }
         // Wat de gebruiker wil laten maken wint van waar het over gaat: "een grafiek van mijn afspraken" is een grafiek.
         kinds.sort_by_key(|k| PRIORITY.iter().position(|p| p == k).unwrap_or(99));
+        intent.merges = kinds.contains(&Kind::Github)
+            && has(rx!(
+                r"\bmerge(?!d|able)|samenvoeg|\bvoeg\b[^.?!]{0,60}\bsamen\b|zusammenführ|\bführ\w*\b[^.?!]{0,60}\bzusammen\b|fusionn|fusiona"
+            ));
         intent.moves = has(rx!(r"verplaats|reschedule|\bmove (my|the)\b|verschieb|\bverzet"));
         let makes_note = has(rx!(
             r"\b(zet|schrijf|sla|bewaar|voeg|put|save|add|write|speicher)[^.?!]{0,40}\b(in|als|naar|to|into|as) (een |mijn |de |a |my )?(nieuwe |new )?(notitie|notities|note|notes)\b|\bals notitie|\bas a note|(maak|create|make|nieuwe|new|erstelle) (een |a |eine )?(nieuwe |new |neue )?(notitie|note|notiz)\b|\bnoteer|schrijf (dit|het|dat) op|write (this|it|that) down|neue notiz"
@@ -318,7 +339,7 @@ impl ChatIntent {
                 .to_string();
         let imperative = matches(
             rx!(
-                r"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"
+                r"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"
             ),
             &polite,
         );
@@ -407,6 +428,26 @@ mod tests {
         let tools = ChatIntent::detect("Herinner me aan de call met Jan").tools();
         assert_eq!(tools.first(), Some(&"create_reminder"));
         assert_eq!(tools.iter().collect::<HashSet<_>>().len(), tools.len());
+    }
+
+    #[test]
+    fn batch_merge_intent_offers_merge_prs_and_overview_first() {
+        for text in [
+            "Merge alle PR's",
+            "merge all my pull requests",
+            "Kun je alle open PR's samenvoegen?",
+            "Voeg de pull requests van nook samen",
+            "Can you merge those two PRs?",
+            "Führe meine Pull Requests zusammen",
+        ] {
+            let intent = ChatIntent::detect(text);
+            let tools = intent.tools();
+            assert_eq!(&tools[..2], &["github_merge_prs", "github_overview"], "{text}");
+            assert_eq!(intent.primary_action(), None, "{text}");
+        }
+        for text in ["Is PR 12 al gemerged?", "Which pull requests are open?", "Is this PR mergeable?"] {
+            assert!(!ChatIntent::detect(text).tools().contains(&"github_merge_prs"), "{text}");
+        }
     }
 
     #[test]
