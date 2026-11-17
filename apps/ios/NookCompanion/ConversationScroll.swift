@@ -13,6 +13,7 @@ import SwiftUI
 struct ConversationScrollControl {
     fileprivate let proxy: ScrollViewProxy
     fileprivate let follow: () -> Void
+    fileprivate let land: () -> Void
 
     /// To the newest message, and following again from there (after you send something, for instance).
     func scrollToEnd(animated: Bool = true) {
@@ -22,6 +23,13 @@ struct ConversationScrollControl {
         } else {
             proxy.scrollTo(ConversationScrollEnd.id, anchor: .bottom)
         }
+    }
+
+    /// A row at the top of the screen, without animation, and the conversation holds still there: a chat opens at the
+    /// first message you had not read. Where that row is near the end anyway, the conversation follows the end again.
+    func land(on id: some Hashable) {
+        land()
+        proxy.scrollTo(id, anchor: .top)
     }
 
     /// A row by its id, without animation: after an older page came in above it, so it stays where you read it.
@@ -51,12 +59,18 @@ struct ConversationScroll<Content: View, Floating: View, Dock: View>: View {
     @ViewBuilder var dock: (ConversationScrollControl) -> Dock
 
     @State private var atEnd = true
+    /// Moved away from the end by `land(on:)`, not by your finger: the next move counts as leaving the end.
+    @State private var landing = false
     /// Before iOS 18: the bottom of the part of the scroll view you see (`LegacyEndTracker`).
     @State private var visibleBottom: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
-            let control = ConversationScrollControl(proxy: proxy) { atEnd = true }
+            let control = ConversationScrollControl(proxy: proxy, follow: { atEnd = true }, land: {
+                landing = true
+                // A landing that did not move the conversation (it was there already) is no landing later on.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { landing = false }
+            })
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     content(control)
@@ -78,7 +92,7 @@ struct ConversationScroll<Content: View, Floating: View, Dock: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .modifier(EndAnchor(atEnd: atEnd))
-            .modifier(EndTracker(atEnd: $atEnd))
+            .modifier(EndTracker(atEnd: $atEnd, landing: $landing))
             .onAppear { proxy.scrollTo(ConversationScrollEnd.id, anchor: .bottom) }
             // New at the end: followed only while you are there, without an animation that would wobble while text
             // streams in. Scrolled up, nothing moves.
@@ -142,6 +156,8 @@ private struct EndAnchor: ViewModifier {
 /// followed it, and that must not count as you scrolling away.
 private struct EndTracker: ViewModifier {
     @Binding var atEnd: Bool
+    /// Moved by `ConversationScrollControl.land(on:)`: away from the end counts without your finger, once.
+    @Binding var landing: Bool
     @State private var scrolling = false
 
     func body(content: Content) -> some View {
@@ -159,8 +175,11 @@ private struct EndTracker: ViewModifier {
                     switch distance {
                     case .near where !atEnd: atEnd = true
                     case .far where atEnd && scrolling: atEnd = false
+                    case .far, .between:
+                        if landing, atEnd { atEnd = false }
                     default: break
                     }
+                    landing = false
                 }
         } else {
             content

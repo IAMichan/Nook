@@ -241,6 +241,7 @@ export const table: Table = {
   "No chat is read everywhere yet.": { de: "Noch kein Chat ist überall gelesen.", fr: "Aucune discussion n’est encore lue partout.", es: "Aún no hay ningún chat leído en todas partes." },
   "No chat is read only in Nook.": { de: "Kein Chat ist nur in Nook gelesen.", fr: "Aucune discussion n’est lue seulement dans Nook.", es: "Ningún chat está leído solo en Nook." },
   "Older messages": { de: "Ältere Nachrichten", fr: "Messages plus anciens", es: "Mensajes anteriores" },
+  "New messages": { de: "Neue Nachrichten", fr: "Nouveaux messages", es: "Mensajes nuevos" },
   "Only admins can send messages": { de: "Nur Admins können Nachrichten senden", fr: "Seuls les admins peuvent envoyer des messages", es: "Solo los administradores pueden enviar mensajes" },
   "Only in Nook": { de: "Nur in Nook", fr: "Seulement dans Nook", es: "Solo en Nook" },
   "Remove file": { de: "Datei entfernen", fr: "Retirer le fichier", es: "Quitar archivo" },

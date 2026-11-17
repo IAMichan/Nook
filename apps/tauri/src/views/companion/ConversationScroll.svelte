@@ -9,10 +9,13 @@
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "./ui/Ico.svelte";
 
-  let { children, floating, version, reserve = 0, background }: {
+  let { children, floating, version, reserve = 0, background, land = null }: {
     children: Snippet;
     floating?: Snippet;
     version: unknown;
+    /** The id of an element to open at instead of the end (a chat's first unread message): set once, it lands there
+     * at the top and holds still; where it is near the end anyway, the end is followed again. */
+    land?: string | null;
     /** Room kept under the content for what floats over it. */
     reserve?: number;
     background?: string;
@@ -38,6 +41,18 @@
     void version;
     const follow = atEnd;
     tick().then(() => follow && toEnd());
+  });
+
+  // Landing on an element: after the follow above, so it wins over the end it just scrolled to.
+  $effect(() => {
+    const target = land;
+    if (!target) return;
+    tick().then(() => {
+      const el = box?.querySelector<HTMLElement>(`#${CSS.escape(target)}`);
+      if (!box || !el) return;
+      box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - 8;
+      measure();
+    });
   });
 
   // Links in answers open in the browser, never inside the app.

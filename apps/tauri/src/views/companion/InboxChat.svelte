@@ -1,6 +1,6 @@
 <script lang="ts">
   // One chat as the iPhone shows it (`InboxChatView`): bubbles in runs (the first of a run with a tail and, in a group,
-  // the sender), a day divider where a day starts, quotes, reactions and ticks. A WhatsApp chat wears WhatsApp's colors.
+  // the sender), a day divider where a day starts, quotes, reactions and ticks. Every app's chat wears Nook's look, as on the Mac.
   // A chat the computer can write in is answered here, also as a reply to one of its messages (touch and hold it); any
   // other says how to answer it.
   // A computer with `chatActions` gives what the Mac's chat does: quick reactions, editing, forwarding and deleting a
@@ -29,7 +29,6 @@
   import SessionComposer from "./ui/SessionComposer.svelte";
   import Menu, { type MenuItem, type MenuReactions } from "./ui/Menu.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
-  import { WA } from "./ui/whatsapp";
   import Sheet from "./ui/Sheet.svelte";
   import MessageInfo from "./MessageInfo.svelte";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
@@ -58,7 +57,6 @@
   let sending = $state(false);
   let menu = $state<{ anchor: DOMRect; sections: MenuItem[][]; reactions?: MenuReactions } | null>(null);
   let info = $state<InboxLine | null>(null);
-  const wa = $derived(chat?.app === "whatsapp");
   const live = $derived(followsLive(view, Feature.liveChats));
   const group = $derived(chat?.group ?? lines.some((l) => !l.fromMe && l.sender));
   const rich = $derived(has(view, Feature.chatActions));
@@ -263,17 +261,33 @@
     start = null;
   }
   const typingNow = $derived(typingText(typing));
+  // How many messages were new when the chat opened (before opening read them), and the first of them once the chat
+  // shows it: "New messages" stands above it and the chat opens there, as on the Mac (`ChatsDetail.landNew`).
+  let unreadAtOpen: number | null = untrack(() => chat?.unread ?? null);
+  let newFrom = $state<string | null>(null);
+  $effect(() => {
+    if (unreadAtOpen === null && chat) unreadAtOpen = chat.unread;
+    if (newFrom || !chat || !unreadAtOpen) return;
+    // Only once the phone has the chat's newest message: kept from an earlier visit, the new ones are not in yet.
+    const newest = lines[lines.length - 1]?.date;
+    if (newest === undefined || newest < chat.last - 1) return;
+    const incoming = lines.filter((l) => !l.fromMe && !l.notice && !l.local);
+    if (!incoming.length) return;
+    // More was new than the phone has read back: from the oldest of them it has.
+    newFrom = incoming[Math.max(incoming.length - unreadAtOpen, 0)].id;
+    unreadAtOpen = 0;
+  });
 </script>
 
-<div class="chat" class:wa style:background={wa ? WA.wallpaper : undefined}>
-  <NavBar onback={onback} tint={wa ? WA.bar : undefined}>
+<div class="chat">
+  <NavBar onback={onback}>
     {#snippet center()}
       {#if chat}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <span class="who" class:left={wa} class:tappable={rich && chat.hasInfo} onclick={() => { if (rich && chat?.hasInfo) chatInfo = true; }}>
-          <InboxAvatar id={chat.id} name={chat.name} app={chat.app} size={wa ? 36 : 30} badge={!wa} />
-          <span class="t"><strong style:color={wa ? WA.text : undefined}>{chat.name}</strong>
-            {#if wa}{#if typingNow}<small style:color={WA.green}>{typingNow}</small>{/if}{:else}<small>{chat.appName}</small>{/if}</span>
+        <span class="who" class:tappable={rich && chat.hasInfo} onclick={() => { if (rich && chat?.hasInfo) chatInfo = true; }}>
+          <InboxAvatar id={chat.id} name={chat.name} app={chat.app} size={30} />
+          <span class="t"><strong>{chat.name}</strong>
+            <small>{typingNow || chat.appName}</small></span>
         </span>
       {/if}
     {/snippet}
@@ -286,7 +300,7 @@
     {/snippet}
   </NavBar>
 
-  <ConversationScroll version={[lines.length, lines[lines.length - 1]?.id, typing.length]} background={wa ? WA.wallpaper : undefined}>
+  <ConversationScroll version={[lines.length, lines[lines.length - 1]?.id, typing.length]} land={newFrom ? "chat-new-messages" : null}>
     {#if offline && !lines.length && !queued.length}
       <OfflineNote>{tr("Deze chat staat nog niet op deze telefoon. Hij opent zodra je Mac verbonden is.", "This chat is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
     {:else if !loaded && !lines.length}<div class="spinner"></div>{/if}
@@ -296,6 +310,7 @@
       {/if}
       {#each lines as l, i (l.id)}
         {#if i === 0 || day(lines[i - 1].date) !== day(l.date)}<div class="day"><span>{dayLabel(l.date)}</span></div>{/if}
+        {#if l.id === newFrom}<div class="newdiv" id="chat-new-messages" role="heading" aria-level="3"><i></i><span>{tr("Nieuwe berichten", "New messages")}</span><i></i></div>{/if}
         {@const head = first(i)}
         {#if l.notice}
         <div class="notice"><span>{l.text}</span></div>
@@ -331,7 +346,7 @@
             <span class="body">
               {#if l.deleted}<span class="words gone"><Ico name="circle-x" size={13} />{l.fromMe ? tr("Je hebt dit bericht verwijderd", "You deleted this message") : tr("Dit bericht is verwijderd", "This message was deleted")}</span>
               {:else if l.text && !(l.poll && l.text === l.poll.question)}<span class="words">{l.text}</span>{/if}
-              <span class="stamp">{#if l.edited && !l.deleted}<span class="edited">{tr("Bewerkt", "Edited")}</span>{/if}{#if l.local}<Ico name="clock" size={10} />{/if}{time(l.date)}{#if l.fromMe && l.ticks}{#if l.readers?.length}<button class="ticks" aria-label={tr("Berichtinfo", "Message info")} onclick={() => (info = l)}><TicksMark ticks={l.ticks} read={wa ? WA.readTick : "var(--blue)"} quiet={wa ? WA.stampOnMine : "var(--chat-stamp)"} /></button>{:else}<TicksMark ticks={l.ticks} read={wa ? WA.readTick : "var(--blue)"} quiet={wa ? WA.stampOnMine : "var(--chat-stamp)"} />{/if}{/if}</span>
+              <span class="stamp">{#if l.edited && !l.deleted}<span class="edited">{tr("Bewerkt", "Edited")}</span>{/if}{#if l.local}<Ico name="clock" size={10} />{/if}{time(l.date)}{#if l.fromMe && l.ticks}{#if l.readers?.length}<button class="ticks" aria-label={tr("Berichtinfo", "Message info")} onclick={() => (info = l)}><TicksMark ticks={l.ticks} read="var(--blue)" quiet="var(--chat-stamp)" /></button>{:else}<TicksMark ticks={l.ticks} read="var(--blue)" quiet="var(--chat-stamp)" />{/if}{/if}</span>
             </span>
             {#if l.reactions.length}<span class="reactions">{l.reactions.slice(0, 3).join(" ")}</span>{/if}
           </div>
@@ -342,14 +357,14 @@
         <div class="line mine head tailend waiting"><div class="bubble tail"><span class="body"><span class="words">{q.text}</span></span></div></div>
         <span class="notsent"><Ico name="clock" size={11} />{tr("Nog niet verstuurd · wacht op je Mac", "Not sent yet · waiting for your Mac")}</span>
       {/each}
-      {#if typing.length && !wa}
+      {#if typing.length}
         <div class="line head"><div class="bubble tail typingbubble"><span class="dots"><i></i><i></i><i></i></span>{typingNow}</div></div>
       {/if}
     </div>
   </ConversationScroll>
 
   {#if chat?.canSend}
-    <div class="dock" style:background={wa ? `linear-gradient(transparent, ${WA.wallpaper} 30%)` : undefined}>
+    <div class="dock">
       <OfflineStrip {view} />
       {#if editing}
         <div class="replybar">
@@ -379,18 +394,10 @@
           <input bind:this={filePicker} type="file" hidden onchange={pickFile} />
         {/if}
       {/snippet}
-      {#if wa}
-        <div class="wacomposer">
-          {@render attach()}
-          <div class="pill"><textarea rows="1" bind:value={text} placeholder={tr("Bericht", "Message")}></textarea></div>
-          {#if text.trim() || (!editing && (images.length || files.length))}<button class="wasend" aria-label={tr("Verstuur", "Send")} disabled={sending || (offline && !writingWaits(view))} onclick={() => send(text.trim())}><Ico name="send" size={18} fill="currentColor" /></button>{/if}
-        </div>
-      {:else}
         <div class="withattach">
           {@render attach()}
           <div class="grow"><SessionComposer bind:value={text} placeholder={tr("Bericht", "Message")} onsend={send} {sending} canSend={!offline || writingWaits(view)} attached={!editing && (images.length > 0 || files.length > 0)} /></div>
         </div>
-      {/if}
     </div>
   {:else if (loaded || offline) && chat}
     <div class="dock">
@@ -421,16 +428,16 @@
   .who { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 260px; }
   .t { display: flex; flex-direction: column; min-width: 0; }
   .t strong { font: var(--pt-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wa .t strong { font: 600 17px var(--font); }
   .t small { font: var(--pt-caption); color: var(--text3); }
-  .wa .t small { font: 400 12.5px var(--font); }
   .more { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper) !important; }
   .spinner { margin: 40px auto; width: 24px; height: 24px; border-radius: 50%; border: 3px solid var(--smoke); border-top-color: var(--text2); animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .lines { display: flex; flex-direction: column; gap: 2px; }
+  .newdiv { display: flex; align-items: center; gap: 12px; padding: 12px 0 8px; }
+  .newdiv i { flex: 1; height: 1px; background: color-mix(in srgb, var(--amber) 35%, transparent); }
+  .newdiv span { font: var(--pt-caption); color: var(--amber); white-space: nowrap; }
   .day { display: flex; justify-content: center; padding: 16px 0 8px; }
   .day span { padding: 4px 12px; border-radius: 8px; background: var(--chat-theirs); font: 600 12px var(--font); color: var(--text-strong); }
-  .wa .day span { border-radius: 999px; background: #182229; color: #8696a0; font: 500 12.5px var(--font); }
   .line { display: flex; align-items: flex-end; gap: 6px; padding-right: 48px; }
   .line.mine { justify-content: flex-end; padding: 0 0 0 48px; }
   .line.head { padding-top: 6px; }
@@ -438,8 +445,6 @@
   .face { width: 28px; flex: none; }
   .bubble { position: relative; max-width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 10px; background: var(--chat-theirs); color: var(--paper); -webkit-touch-callout: none; user-select: none; }
   .mine .bubble { background: var(--chat-mine); }
-  .wa .bubble { background: #1f2c34; color: #e9edef; border-radius: 9px; }
-  .wa .mine .bubble { background: #005c4b; }
   .bubble.tail { border-top-left-radius: 0; }
   .mine .bubble.tail { border-top-left-radius: 10px; border-top-right-radius: 0; }
   .bubble.tail::before { content: ""; position: absolute; top: 0; left: -7px; width: 7px; height: 11px; background: inherit; clip-path: polygon(100% 0, 0 0, 100% 100%); }
@@ -458,10 +463,7 @@
   .file { display: flex; align-items: center; gap: 6px; font: var(--pt-label); color: var(--text-strong); }
   .body { display: flex; flex-wrap: wrap; align-items: last baseline; justify-content: flex-end; gap: 0 8px; }
   .words { flex: 1 1 auto; font: var(--pt-body); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-  .wa .words { font: 400 16px/1.35 var(--font); }
   .stamp { display: inline-flex; align-items: center; gap: 3px; font: var(--pt-caption); color: var(--chat-stamp); font-variant-numeric: tabular-nums; margin-left: auto; }
-  .wa .stamp { font: 400 11.5px var(--font); color: #8696a0; }
-  .wa .mine .stamp { color: #8db5ac; }
   .ticks { display: inline-flex; padding: 0 !important; }
   .reactions { position: absolute; bottom: -12px; left: 13px; padding: 1px 6px; border-radius: 999px; background: var(--chat-theirs); box-shadow: 0 0 0 2px var(--canvas); font-size: 14px; }
   .mine .reactions { left: auto; right: 13px; }
@@ -474,7 +476,6 @@
   @keyframes dot { 0% { opacity: 1; } 33% { opacity: 0.35; } }
   .waiting { opacity: 0.6; }
   .notsent { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 2px 4px 6px; font: var(--pt-caption); color: var(--text3); }
-  .wa .notsent { color: #8696a0; }
   .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
   .replybar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 24px; margin: 0 6px -16px; background: var(--field); border: 1px solid var(--field-stroke); border-radius: 16px 16px 0 0; animation: rise 240ms ease-out; }
   .rbar { width: 3px; align-self: stretch; border-radius: 999px; }
@@ -482,20 +483,14 @@
   .rtext strong { font: var(--pt-label); }
   .rtext span { font: var(--pt-detail); color: var(--text2); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .rclose { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--text3) !important; }
-  .wacomposer { display: flex; align-items: flex-end; gap: 6px; padding: 6px; }
-  .pill { flex: 1; display: flex; padding: 4px 6px 4px 16px; border-radius: 22px; background: #1f2c34; min-height: 36px; align-items: center; }
-  .pill textarea { flex: 1; resize: none; font: 400 17px var(--font) !important; color: #e9edef !important; caret-color: #00a884; field-sizing: content; max-height: 140px; padding: 4px 0 !important; }
-  .wasend { width: 44px; height: 44px; border-radius: 50%; background: #00a884 !important; color: #0b141a !important; display: inline-flex; align-items: center; justify-content: center; flex: none; animation: grow 200ms ease-out; }
   .readonly { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }
   .readonly span { display: flex; flex-direction: column; gap: 2px; }
   .readonly small { font: var(--pt-detail); color: var(--text3); }
   .who.tappable { cursor: pointer; }
   .older { align-self: center; display: inline-flex; align-items: center; gap: 6px; margin: 8px 0; padding: 6px 12px !important; border-radius: 999px; background: var(--chat-theirs) !important; font: var(--pt-label) !important; color: var(--text2) !important; }
-  .wa .older { background: #182229 !important; color: #8696a0 !important; }
   .minispin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: transparent; animation: spin 0.8s linear infinite; }
   .notice { display: flex; justify-content: center; padding: 6px 24px; }
   .notice span { padding: 4px 12px; border-radius: 8px; background: var(--chat-theirs); font: var(--pt-caption); color: var(--text2); text-align: center; }
-  .wa .notice span { background: #182229; color: #8696a0; }
   .bubble.local { opacity: 0.7; }
   .photo { position: relative; display: block; padding: 0 !important; margin: -2px -6px 2px; border-radius: 8px; overflow: hidden; }
   .photo img { display: block; max-width: min(260px, 100%); max-height: 320px; object-fit: cover; }
@@ -526,5 +521,4 @@
   .vclose { position: absolute; top: calc(var(--safe-top, 0px) + 12px); right: 12px; width: 36px; height: 36px; border-radius: 50%; background: rgba(255, 255, 255, 0.14) !important; color: #fff !important; display: inline-flex; align-items: center; justify-content: center; }
   @keyframes fade { from { opacity: 0; } }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
-  @keyframes grow { from { transform: scale(0.4); } }
 </style>

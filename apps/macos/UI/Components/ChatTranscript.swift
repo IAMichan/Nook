@@ -1134,23 +1134,6 @@ private struct MessageMenuButton: View {
     }
 }
 
-/// Where what was new when the chat opened starts: a hairline on either side of "New messages".
-private struct ChatNewDivider: View {
-    var body: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            NookDivider(tint: NookTheme.amber.opacity(0.35))
-            Text(tr("chat.newMessages"))
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize()
-            NookDivider(tint: NookTheme.amber.opacity(0.35))
-        }
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-    }
-}
-
 /// Back to the newest message, while you read further up: a round arrow, with how many came in meanwhile.
 private struct ChatJumpButton: View {
     let missed: Int
