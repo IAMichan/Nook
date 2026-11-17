@@ -188,7 +188,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-23** `github_merge_prs` (batch merge) · S
 - [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
 - [ ] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
-- [ ] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
+- [x] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 - [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L

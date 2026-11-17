@@ -126,4 +126,7 @@ pub const ROWS: &[Row] = &[
         "{agent} démarré dans {folder} | id de session {id}",
         "{agent} iniciado en {folder} | id de sesión {id}",
     ),
+    // System and network status tools (`tools::system`).
+    ("This computer's status", "Status dieses Computers", "État de cet ordinateur", "Estado de este ordenador"),
+    ("IP addresses of this computer", "IP-Adressen dieses Computers", "Adresses IP de cet ordinateur", "Direcciones IP de este ordenador"),
 ];
