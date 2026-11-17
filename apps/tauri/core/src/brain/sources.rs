@@ -601,6 +601,8 @@ pub mod capabilities {
             "search_files" => "bestanden zoeken",
             "read_file" => "document lezen",
             "read_browser_tab" => "geopende webpagina lezen",
+            "read_nook_browser" => "pagina in Nooks browser lezen",
+            "open_in_nook_browser" => "link openen in Nooks browser",
             "read_screen" => "scherm lezen",
             "read_app" => "een geopende app lezen",
             "search_contacts" => "contacten zoeken",
