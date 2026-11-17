@@ -10,6 +10,7 @@
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
   import type { ChatMessage } from "../lib/types";
+  import ScheduledRunMarker from "./ScheduledRunMarker.svelte";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
   import PlanCard from "./PlanCard.svelte";
@@ -92,7 +93,9 @@
 </script>
 
 <div class="msg" class:user={message.fromUser} class:error={message.isError}>
-  {#if message.fromUser}
+  {#if message.fromUser && message.scheduled}
+    <ScheduledRunMarker text={message.text} date={message.date} />
+  {:else if message.fromUser}
     {#each message.images as src (src)}
       {@const label = enlargedImages[src] ? tr("Verkleinen", "Shrink") : tr("Vergroten", "Enlarge")}
       <button

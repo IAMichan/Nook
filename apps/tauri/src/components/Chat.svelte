@@ -15,6 +15,7 @@
   import ForYou from "./ForYou.svelte";
   import HomeGlance from "./HomeGlance.svelte";
   import StarterGrid from "./StarterGrid.svelte";
+  import NookTaskBar from "./NookTaskBar.svelte";
 
   let { compact = false, autofocus = false, onopen }: { compact?: boolean; autofocus?: boolean; onopen?: (target: Target) => void } = $props();
   let scroller: HTMLDivElement;
@@ -136,6 +137,7 @@
         {/if}
       </div>
     {:else}
+      {#if nook.active?.scheduledTask}<NookTaskBar taskId={nook.active.scheduledTask} {onopen} />{/if}
       {#each nook.active!.messages as message (message.id)}
         <MessageView {message} nookId={nook.active!.id} last={message.id === lastId} />
       {/each}

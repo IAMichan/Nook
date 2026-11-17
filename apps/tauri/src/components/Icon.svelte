@@ -4,7 +4,7 @@
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
       | "code" | "sparkle" | "x" | "grip" | "tasks"
       | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass"
-      | "palette" | "keyboard" | "archive" | "bell";
+      | "palette" | "keyboard" | "archive" | "bell" | "clock" | "play" | "pause";
     size?: number;
   } = $props();
 </script>
@@ -62,5 +62,8 @@
   {:else if name === "keyboard"}<rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6 14h.01M17.5 14h.01M9 14h6" />
   {:else if name === "archive"}<rect x="3" y="4" width="18" height="5" rx="1.5" /><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
   {:else if name === "tasks"}<rect x="4" y="4" width="16" height="16" rx="4" /><path d="m8.5 12 2.5 2.5 4.5-5" />
+  {:else if name === "clock"}<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" />
+  {:else if name === "play"}<path d="M8 5.5v13l10-6.5Z" />
+  {:else if name === "pause"}<path d="M9 6v12M15 6v12" />
   {/if}
 </svg>
