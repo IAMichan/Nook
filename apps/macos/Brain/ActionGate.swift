@@ -180,7 +180,7 @@ enum ActionGate {
         if let repo = input["repo"] as? String, !repo.isEmpty, !isRepository(repo) {
             problems.append("De repository moet eigenaar/naam zijn.")
         }
-        for key in ["to", "cc"] where tool == "compose_mail" || tool == "send_mail" {
+        for key in ["to", "cc", "bcc"] where tool == "compose_mail" || tool == "send_mail" {
             guard let text = input[key] as? String, !text.isEmpty else { continue }
             for address in text.split(whereSeparator: { $0 == "," || $0 == ";" }) where !isMailAddress(String(address)) {
                 problems.append("\(address.trimmingCharacters(in: .whitespaces)) is geen geldig mailadres.")
