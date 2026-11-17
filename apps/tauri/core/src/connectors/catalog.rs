@@ -111,6 +111,8 @@ const EXACT_TOOLS: &[(&str, &str)] = &[
     ("search_call_notes", "callnotes"),
     ("read_call_note", "callnotes"),
     ("mac_status", "system"),
+    ("system_status", "system"),
+    ("network_status", "system"),
     ("search_bear", "bear"),
     ("read_bear", "bear"),
     ("search_things", "things"),

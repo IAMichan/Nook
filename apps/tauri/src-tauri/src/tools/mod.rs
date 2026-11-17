@@ -19,6 +19,7 @@ mod mail;
 mod memory;
 mod plan;
 mod screen;
+mod settings;
 mod system;
 mod web;
 
@@ -34,7 +35,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
 
-pub use mail::{open_mail, send_mail};
+pub use mail::{open_invite, open_mail, send_mail, sync_invite};
 pub use memory::rejected as memory_rejected;
 
 /// Het antwoord waar grafieken en mailconcepten van tools heen gaan.
@@ -148,6 +149,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(memory::Memory),
         Box::new(web::Web),
         Box::new(charts::Charts),
+        Box::new(settings::SettingsTools),
         Box::new(plan::Plan),
         Box::new(mail::Mail),
         Box::new(system::System),
