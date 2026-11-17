@@ -504,4 +504,7 @@ export const table: Table = {
   "Companion": { de: "Companion", fr: "Compagnon", es: "Companion" },
   "Nook on your phone": { de: "Nook auf deinem Handy", fr: "Nook sur ton téléphone", es: "Nook en tu móvil" },
   "Make Nook yours": { de: "Mach Nook zu deinem", fr: "Fais de Nook le tien", es: "Haz tuyo Nook" },
+  "New since your last visit": { de: "Neu seit deinem letzten Besuch", fr: "Nouveau depuis ta dernière visite", es: "Nuevo desde tu última visita" },
+  "Show earlier messages": { de: "Frühere Nachrichten zeigen", fr: "Afficher les messages précédents", es: "Mostrar mensajes anteriores" },
+  "Image": { de: "Bild", fr: "Image", es: "Imagen" },
 };

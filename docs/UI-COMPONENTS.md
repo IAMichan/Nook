@@ -472,6 +472,12 @@ switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the tw
 | `IconButton.svelte`, `CopyIconButton.svelte`, `RefreshIconButton.svelte`, `TabCloseButton.svelte` | `NookIconButton`, `CopyIconButton`/`CopiedMoment`, `RefreshIconButton`, `TabCloseButton` | Symbol buttons with their name as tooltip: copy turns into a checkmark for 1.5 s (a second click restarts it); refresh turns its arrows while it runs, never a spinner in its place; the small × of a tab. Never a hand-rolled `copied` flag |
 | `hover-row`, `hover-reveal` classes (`ui.css`) | `.hoverRowFill`, `.revealOnHover` | A row that lifts under the pointer (`selected` when chosen); a control inside it that shows only under the pointer or with the keyboard, and cannot be clicked while hidden |
 | `DisclosureChevron.svelte` | `DisclosureChevron` | The chevron of a section that folds, turning from right to down |
+| `ProjectIconView.svelte`, `lib/project-icon.ts` | `ProjectIconView`, `ProjectIcon` | A project's icon: emoji, monogram on a tint or image, read from the Mac's stored string; without one its initials on the tint picked from its name (FNV-1a, the same as the Mac) |
+| `QRCodeView.svelte` | `QRCodeView` | The one QR code for a phone to scan, from the backend's SVG or an image, on a light card with a label for screen readers |
+| `ImageModal.svelte` | `ImageModal` | A picture shown big over a dimmed window; a click or Escape closes it, an optional button opens the file in the system's viewer |
+| `TimelineNewDivider.svelte`, `TimelineEarlierRow.svelte` | `TimelineNewDivider`, `TimelineEarlierRow` | "New since your last visit" above what came in; "Show earlier messages" between hairlines at the top of a conversation that opened with only its latest turns |
+| `DropdownTileGrid.svelte` | `DropdownTileGrid`, `DropdownTile`, `DropdownNote` | The big choices on top of a dropdown as tinted tiles in a grid of three, with an optional tip line |
+| `components/NoticeOk.svelte` | `NookAcknowledgeButton` | The OK of a notice, with its countdown ring while it closes by itself |
 
 ## Shortcut cheat sheet
 
