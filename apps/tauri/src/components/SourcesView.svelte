@@ -221,7 +221,7 @@
   }
   .ref-row.cited .ref-title { color: var(--paper); }
   .ref-sub {
-    font: var(--text-caption);
+    font: var(--text-label);
     color: var(--text3);
     white-space: nowrap;
     overflow: hidden;

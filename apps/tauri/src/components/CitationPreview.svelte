@@ -171,7 +171,7 @@
   .origin {
     flex: 1;
     min-width: 0;
-    font: var(--text-caption);
+    font: var(--text-label);
     color: var(--text3);
     white-space: nowrap;
     overflow: hidden;
@@ -179,7 +179,7 @@
   }
   .open-btn {
     flex: none;
-    font: var(--text-caption);
+    font: var(--text-label);
     font-weight: 500;
     padding: 2px 8px;
     border-radius: var(--radius-control);
@@ -235,7 +235,7 @@
     background: var(--iris);
   }
   .more {
-    font: var(--text-caption);
+    font: var(--text-label);
     color: var(--text3);
   }
 </style>

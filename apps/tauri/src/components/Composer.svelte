@@ -215,7 +215,7 @@
   }
   .composer.compact :global(.box) { border-width: 1px 0 0; border-color: var(--line); }
   .under { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 4px; min-width: 0; }
-  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-caption); padding: 2px 8px; border-radius: var(--radius-pill); background: none; color: var(--text3); }
+  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-label); padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
   .chip.access.open { color: var(--text2); }
   @media (max-width: 640px) {
     .composer { width: calc(100% - 24px); margin-bottom: 12px; }
