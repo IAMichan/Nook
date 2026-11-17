@@ -1,11 +1,18 @@
 <script lang="ts">
   // Het hele gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen.
   import { agentApi, type ChatMessage } from "../../lib/agents";
-  import { renderMarkdown } from "../../lib/markdown";
+  import { agents } from "../../lib/agents.svelte";
+  import Markdown from "../../components/Markdown.svelte";
   import MarkdownBody from "../../components/MarkdownBody.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { toast } from "../../lib/toast.svelte";
+  import { toolsApi } from "../../lib/workspace/api";
 
-  let { path, refreshKey = "" }: { path: string; refreshKey?: string } = $props();
+  let {
+    path,
+    refreshKey = "",
+    baseFolder = null,
+  }: { path: string; refreshKey?: string; baseFolder?: string | null } = $props();
   let messages = $state<ChatMessage[]>([]);
   let loading = $state(false);
 
@@ -21,14 +28,24 @@
       loading = false;
     });
   });
+
+  async function runCode(command: string, title: string | null) {
+    if (!baseFolder) return;
+    try {
+      await toolsApi.openTerminal(baseFolder, command, title);
+      agents.select("terminals");
+    } catch (e) {
+      toast.error(tr("Kon terminal niet openen", "Could not open terminal"), e);
+    }
+  }
 </script>
 
 <div class="conversation">
   {#each messages as m (m.id)}
     {#if m.kind === "thinking"}
-      <details class="thinking"><summary>{tr("Denkstappen", "Thinking")}</summary><div class="markdown">{@html renderMarkdown(m.text)}</div></details>
+      <details class="thinking"><summary>{tr("Denkstappen", "Thinking")}</summary><div class="thinking-body"><Markdown text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} /></div></details>
     {:else}
-      <div class="msg {m.kind}"><div class="markdown">{#if m.kind === "assistant"}<MarkdownBody text={m.text} />{:else}{@html renderMarkdown(m.text)}{/if}</div></div>
+      <div class="msg {m.kind}">{#if m.kind === "assistant"}<MarkdownBody text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} />{:else}<Markdown text={m.text} {baseFolder} onrun={baseFolder ? runCode : undefined} />{/if}</div>
     {/if}
   {:else}
     {#if loading}<p class="faint">{tr("Gesprek lezen…", "Reading conversation…")}</p>{:else if path}<p class="faint">{tr("Nog niets in dit gesprek.", "Nothing in this conversation yet.")}</p>{/if}
@@ -43,5 +60,5 @@
   .msg.assistant { align-self: stretch; padding: 2px 4px; color: var(--text-strong); }
   .thinking { color: var(--text2); font-size: 14px; padding: 0 4px; }
   .thinking summary { cursor: pointer; min-height: 24px; line-height: 24px; }
-  .thinking .markdown { color: var(--text3); font-size: 13px; margin-left: 16px; }
+  .thinking-body { color: var(--text3); font-size: 13px; margin-left: 16px; }
 </style>

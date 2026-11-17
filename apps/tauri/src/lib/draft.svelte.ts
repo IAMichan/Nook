@@ -10,6 +10,19 @@ export class Draft extends SharedDraft {
   constructor() {
     super((name, base64) => brainApi.readAttachment(name, base64));
   }
+
+  /** A path dropped on the window or pasted into the field: a picture joins the strip, a file, zip or folder is read. */
+  async addPath(path: string) {
+    this.fileError = null;
+    this.reading = true;
+    try {
+      const read = await brainApi.readAttachmentPath(path);
+      if (read.kind === "image") this.addImage(read.mediaType, read.base64);
+      else this.attachment = { name: read.name, text: read.text };
+    } finally {
+      this.reading = false;
+    }
+  }
 }
 
 /** The draft of the bar's compact field; the main window's fields keep their own. */

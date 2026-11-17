@@ -4,7 +4,7 @@
   import { api, events } from "../lib/api";
   import { services, serviceEvents, type TodayItem, type RecapView, type NoteLive } from "../lib/services";
   import { nook, relativeTime } from "../lib/state.svelte";
-  import { renderMarkdown } from "../lib/markdown";
+  import Markdown from "../components/Markdown.svelte";
   import { tr, locale } from "../lib/i18n.svelte";
   import type { OpenLoop } from "../lib/types";
 
@@ -92,7 +92,7 @@
   {:else if note}
     <div class="panel">
       <div class="head"><span class="faint">{tr("Gespreksnotitie", "Conversation note")}</span><button class="ghost x" onclick={() => (note = null)}>✕</button></div>
-      <div class="markdown note">{@html renderMarkdown(note)}</div>
+      <div class="note"><Markdown text={note} /></div>
     </div>
   {/if}
 

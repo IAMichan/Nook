@@ -3,6 +3,7 @@
 
 use super::Row;
 
+mod attachments;
 mod automation;
 mod base;
 mod companion_home;
@@ -14,6 +15,7 @@ mod workspace_agents;
 mod workspace_sessions;
 
 pub const ALL: &[&[Row]] = &[
+    attachments::ROWS,
     automation::ROWS,
     base::ROWS,
     companion_home::ROWS,

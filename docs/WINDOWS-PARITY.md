@@ -188,7 +188,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [x] **BR-22b** Bcc on mail drafts and mail cards from a ```mail block or a quoted mail in an answer (`MailTemplate`, `lib/mail-block.ts`) · S
 - [ ] **BR-23** `github_merge_prs` (batch merge) · S
 - [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
-- [ ] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
+- [x] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
 - [x] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 - [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
@@ -199,14 +199,14 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 ### 3.5 Chat UI (Nook tab)
 
 - [ ] **BR-40** Sources: cited excerpt on hover or click with highlighted lines, dot for cited and dimmed uncited sources, mail sources by sender, strip model-written "Sources:" lists (`ChatSourcesView`, aa6afaa94) · M
-- [ ] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
+- [x] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 - [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 - [ ] **BR-45** Conversation list like the Mac: Conversations/Scheduled header tabs, For you card, one-line settled rows, hover card, archive shelf, multi-select, mark unread (`NookConversationList`) · M
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 - [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
-- [ ] **BR-48** Zip archives, folders and pasted paths as attachments · S
+- [x] **BR-48** Zip archives, folders and pasted paths as attachments · S
 - [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
@@ -221,7 +221,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
 - [ ] **BR-61** One-click suggestions under the quick field (`DoubleTapSuggest`) · S
 - [ ] **BR-62** Selection Ask complete: the bar in the small windows, a drag across messages as context, the hidden note that the quote is material, Quote into an agent's reply box · M
-- [ ] **BR-63** Import MCP memory · S
+- [x] **BR-63** Import MCP memory · S
 
 ## 4. Coding agents and the workspace (AG)
 

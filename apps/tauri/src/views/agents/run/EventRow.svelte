@@ -2,8 +2,8 @@
   // Eén regel in de tijdlijn (`EventRow` op de Mac): berichten, het denken van de agent, tool-aanroepen met invoer en
   // uitkomst, gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels en het einde van een beurt.
   import Icon from "../../../components/Icon.svelte";
+  import Markdown from "../../../components/Markdown.svelte";
   import MarkdownBody from "../../../components/MarkdownBody.svelte";
-  import { renderMarkdown } from "../../../lib/markdown";
   import { tr, locale } from "../../../lib/i18n.svelte";
   import type { RunEvent } from "../../../lib/workspace/api";
   import { toolLabel } from "../../../lib/workspace/timeline";
@@ -15,6 +15,8 @@
     highlighted = false,
     openFile,
     onrevert,
+    baseFolder = null,
+    onrun,
   }: {
     event: RunEvent;
     expanded: boolean;
@@ -22,6 +24,8 @@
     highlighted?: boolean;
     openFile?: (path: string) => void;
     onrevert?: () => void;
+    baseFolder?: string | null;
+    onrun?: (command: string, title: string | null) => void;
   } = $props();
 
   const changeLabels = $derived<Record<string, string>>({
@@ -59,7 +63,7 @@
     <!-- Your message: a round bubble on the right, its time and copy under it on hover. -->
     <div class="turn user">
       <div class="msg user" oncontextmenu={(e) => { if (onrevert) { e.preventDefault(); onrevert(); } }} role="note">
-        <div class="markdown">{@html renderMarkdown(event.text)}</div>
+        <Markdown text={event.text} {baseFolder} {onrun} />
       </div>
       <div class="meta">
         {#if onrevert}<button class="metab" title={tr("Zet de bestanden terug naar vóór dit bericht", "Restore the files to before this message")} onclick={onrevert}>{tr("Terugzetten", "Restore")}</button>{/if}
@@ -70,7 +74,7 @@
   {:else if event.kind === "assistant"}
     <!-- The agent's answer has no bubble at all. -->
     <div class="turn assistant">
-      <div class="msg assistant"><div class="markdown"><MarkdownBody text={event.text} /></div></div>
+      <div class="msg assistant"><MarkdownBody text={event.text} {baseFolder} {onrun} /></div>
       <div class="meta">
         <span>{time}</span>
         <button class="metab" title={tr("Kopieer", "Copy")} aria-label={tr("Kopieer antwoord", "Copy answer")} onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>

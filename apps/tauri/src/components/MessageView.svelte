@@ -34,24 +34,6 @@
     } catch { /* The clipboard can be busy; the button simply stays. */ }
   }
 
-  function click(e: MouseEvent) {
-    const copy = (e.target as HTMLElement).closest("[data-copy-code]") as HTMLButtonElement | null;
-    if (copy) {
-      const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
-      navigator.clipboard.writeText(code).then(() => {
-        copy.textContent = tr("Gekopieerd", "Copied");
-        copy.classList.add("copied");
-        setTimeout(() => { copy.textContent = tr("Kopieer", "Copy"); copy.classList.remove("copied"); }, 1500);
-      }).catch(() => {});
-      return;
-    }
-    const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
-    if (a) {
-      e.preventDefault();
-      openUrl(a.href);
-    }
-  }
-
   function recoveryTitle(r: Recovery): string {
     switch (r.kind) {
       case "chooseModel": return tr("Kies een model", "Choose a model");
@@ -114,8 +96,7 @@
     {#if message.streaming && !text}
       <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="markdown" onclick={click}><MarkdownBody {text} /></div>
+      <MarkdownBody {text} />
       {#if !message.streaming && !message.isError}
         <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
       {/if}
@@ -164,7 +145,7 @@
   .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
-  .error .markdown { color: var(--coral); }
+  .error :global(.markdown) { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
