@@ -206,7 +206,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 - [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
 - [ ] **BR-48** Zip archives, folders and pasted paths as attachments · S
-- [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
+- [x] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
 ### 3.6 Instructions, inspector, search

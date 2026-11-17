@@ -3,6 +3,9 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "Nearly full": { de: "Fast voll", fr: "Presque plein", es: "Casi lleno" },
+  "5 hours": { de: "5 Stunden", fr: "5 heures", es: "5 horas" },
+  "week": { de: "Woche", fr: "semaine", es: "semana" },
   // Windows and loading
   "Nook bar": { de: "Nook-Leiste", fr: "Barre Nook", es: "Barra de Nook" },
   "Suggestions": { de: "Vorschläge", fr: "Suggestions", es: "Sugerencias" },
