@@ -48,7 +48,8 @@ class AgentsStore {
     });
     agentEvents.onAttention((s) => {
       this.play(s.status === "done" ? "done" : s.status === "failed" ? "error" : "attention");
-      this.attention = s;
+      // Shown as a system notification instead of the bar's card when you chose that (Settings › Voice & sound).
+      if (nook.settings?.agentNotice !== "system") this.attention = s;
     });
     agentEvents.onUsage(() => this.refresh());
     agentEvents.onHistory((h) => (this.history = h));

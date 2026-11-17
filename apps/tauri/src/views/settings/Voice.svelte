@@ -204,10 +204,11 @@
   <h3>{tr("Meldingen", "Notices")}</h3>
   <div class="group">
     <label class="row">
-      <span>{tr("Grootte van meldingen", "Notice size")}<br /><small class="faint">{tr("Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk.", "For every agent that is done, gets stuck or waits for you, in the terminal or in the workspace. Detailed shows a card with the summary and what changed; compact one narrow line in the bar.")}</small></span>
-      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" })}>
+      <span>{tr("Grootte van meldingen", "Notice size")}<br /><small class="faint">{tr("Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk; systeemmelding een melding van het systeem, met Toestaan en Weigeren bij een vraag.", "For every agent that is done, gets stuck or waits for you, in the terminal or in the workspace. Detailed shows a card with the summary and what changed; compact one narrow line in the bar; system notification a notification of the system, with Allow and Deny on a request.")}</small></span>
+      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" | "system" })}>
         <option value="detailed">{tr("Uitgebreid", "Detailed")}</option>
         <option value="compact">{tr("Compact", "Compact")}</option>
+        <option value="system">{tr("Systeemmelding", "System notification")}</option>
       </select>
     </label>
     <p class="faint note">{tr("Met Oké verdwijnt een melding meteen. Anders gaat hij na een paar seconden vanzelf weg, behalve zolang je pointer op de balk staat.", "With OK a notice disappears right away. Otherwise it goes away by itself after a few seconds, except while your pointer is on the bar.")}</p>
