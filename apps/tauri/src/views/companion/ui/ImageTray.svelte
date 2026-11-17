@@ -1,7 +1,7 @@
 <script lang="ts">
   // The pictures waiting in a composer (`ImageTray`): 56-point thumbnails, each with an x to take it out.
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { images, onremove }: { images: string[]; onremove: (i: number) => void } = $props();
 </script>
 

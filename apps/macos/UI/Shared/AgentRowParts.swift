@@ -8,8 +8,6 @@ import SwiftUI
 /// Without anything for the third line the logo moves up beside the name and the row keeps two lines.
 struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
     let folder: String
-    /// The folder's full path, on hover on the Mac.
-    var folderHelp = ""
     /// Something for the third line: a branch, changes or a pull request.
     let hasMeta: Bool
     /// The right end of the first line: the status, or how long ago.
@@ -32,7 +30,6 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
                 }
                 Text(folder)
                     .lineLimit(1)
-                    .sharedTip(folderHelp)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot()
             }
@@ -77,20 +74,11 @@ struct AgentRowTitle: View {
 }
 
 /// The branch on a session's third line, cut in the middle when it is long. It starts in the title's column for every
-/// session; a worktree says so in its tooltip rather than with a mark that would push its branch to the right.
+/// session, also one in a worktree (no mark that would push its branch to the right).
 struct AgentRowBranch: View {
     let branch: String
-    var worktree = false
 
     var body: some View {
-        if worktree {
-            label.sharedTip(sharedText("agents.row.worktree", "Works in its own worktree"))
-        } else {
-            label
-        }
-    }
-
-    private var label: some View {
         Text(branch)
             .lineLimit(1)
             .truncationMode(.middle)

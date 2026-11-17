@@ -781,7 +781,7 @@ struct AgentListRow: View, Equatable {
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
         AgentRowLayout(folder: SessionProjects.label(own: ownProject, others: item.otherProjects),
-                       folderHelp: folderHelp, hasMeta: hasMeta) {
+                       hasMeta: hasMeta) {
             fadingSlot
         } title: {
             marks
@@ -800,22 +800,14 @@ struct AgentListRow: View, Equatable {
     /// The session's own project, as the first line names it.
     private var ownProject: String { project?.name ?? (withoutProject ? tr("inbox.project.none") : item.folder) }
 
-    /// The folder's path on hover; with other projects, each of them under it.
-    private var folderHelp: String {
-        let path = AgentPathFormat.tilde(item.path)
-        guard !item.otherProjects.isEmpty else { return path }
-        return ([path] + item.otherProjects.map { "+ " + $0 }).joined(separator: "\n")
-    }
-
     /// Under its project's header, which names only its own project: "+ monorepo" on the line under the name.
     @ViewBuilder
     private var otherProjectsMark: some View {
         if grouped, !item.otherProjects.isEmpty {
             HStack(spacing: 3) {
                 Image(icon: "folder").font(NookTheme.textFont(9, .semibold))
-                Text("+ " + item.otherProjects.joined(separator: " + ")).lineLimit(1)
+                Text("+ " + item.otherProjects.joined(separator: " + ")).nookTipWhenCut("+ " + item.otherProjects.joined(separator: " + "))
             }
-            .nookTip(tr("agents.projects.others", item.otherProjects.joined(separator: ", ")))
             .accessibilityLabel(tr("agents.projects.others", item.otherProjects.joined(separator: ", ")))
         }
     }
@@ -855,7 +847,7 @@ struct AgentListRow: View, Equatable {
     private var metaLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let branch = shownBranch {
-                AgentRowBranch(branch: branch, worktree: item.worktree)
+                AgentRowBranch(branch: branch)
             }
             otherProjectsMark
             Spacer(minLength: 0)
@@ -902,7 +894,6 @@ struct AgentListRow: View, Equatable {
                 Text("\(files)").monospacedDigit()
             }
             .fixedSize()
-            .nookTip(tr("agents.git.changes", files), enabled: !showsChangesCard)
             .accessibilityLabel(tr("agents.git.changes", files))
         }
     }
@@ -1076,8 +1067,6 @@ struct AgentListRow: View, Equatable {
             let count = item.subThreadsWorking
             AgentStatusBadge(state: .working, detail: count == 1 ? tr("inbox.thread.one") : tr("inbox.thread.many", count),
                              markOnly: compactStatus)
-                // A mark-only badge has its own tip (the status and the count); one tip per view.
-                .nookTip(count == 1 ? tr("inbox.thread.busyOne") : tr("inbox.thread.busyMany", count), enabled: !compactStatus)
         case .working:
             AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) }, markOnly: compactStatus)
         case .waiting:

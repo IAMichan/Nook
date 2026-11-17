@@ -44,7 +44,6 @@ struct TranscriptUserMessage<Attachments: View>: View {
                 }
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
-                .nookTip(steerHelp)
                 .accessibilityElement(children: .combine)
             }
             attachments()
@@ -93,14 +92,6 @@ struct TranscriptUserMessage<Attachments: View>: View {
         }
     }
 
-    private var steerHelp: String {
-        switch steerStatus {
-        case .pending: return tr("agents.message.steerWaitingHelp")
-        case .cancelled: return tr("agents.message.steerDroppedHelp")
-        case nil: return promoted ? tr("agents.message.steerPromotedHelp") : tr("agents.message.steerHelp")
-        }
-    }
-
     /// Your words in Markdown, as the agent reads them: a quote, list or code block as such, `code` and **bold** inline.
     /// Only a message with blocks takes the whole width of the bubble; one of plain lines keeps hugging its words. A
     /// message that starts with a quote (a reply to an answer, a quoted passage) shows that quote as a card above the
@@ -136,9 +127,10 @@ struct TranscriptUserMessage<Attachments: View>: View {
 }
 
 /// The quote a message of yours starts with (`AnswerReply.leadingQuote`), as an inset card at the top of your bubble:
-/// a bar and the quoted words, quieter than yours, at most a few lines; all of it on hover.
+/// a bar and the quoted words, quieter than yours, at most a few lines; all of it on hover when cut short.
 struct TranscriptQuoteCard: View {
     let text: String
+    @State private var cut = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -146,8 +138,8 @@ struct TranscriptQuoteCard: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineSpacing(2)
-                .lineLimit(4)
                 .truncationMode(.tail)
+                .lineLimit(4, reportingCut: $cut)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -159,7 +151,7 @@ struct TranscriptQuoteCard: View {
                 .padding(.vertical, NookTheme.Spacing.sm).padding(.leading, NookTheme.Spacing.xs)
         }
         .roundedBackground(NookTheme.wash.opacity(0.05), radius: NookTheme.Radius.control)
-        .nookTip(text)
+        .nookTip(text, enabled: cut)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("agents.message.quoteLabel", text))
     }

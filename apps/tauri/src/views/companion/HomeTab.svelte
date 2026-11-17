@@ -8,21 +8,21 @@
   } from "../../lib/companion";
   import { nookAct, nookMenu } from "./nook-chats";
   import type { ChatConfirm } from "./chat-actions";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import Dialog from "./ui/Dialog.svelte";
-  import SearchField from "./ui/SearchField.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
+  import SearchField from "../../components/ui/SearchField.svelte";
   import { untrack } from "svelte";
   import { locale, tr } from "../../lib/i18n.svelte";
   import { greeting } from "../../lib/companion";
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import AgentMark from "./ui/AgentMark.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
-  import StatusPill from "./ui/StatusPill.svelte";
-  import PulseDot from "./ui/PulseDot.svelte";
+  import StatusPill from "../../components/ui/StatusPill.svelte";
+  import PulseDot from "../../components/ui/PulseDot.svelte";
   import NookMark from "./ui/NookMark.svelte";
-  import Banner from "./ui/Banner.svelte";
+  import Banner from "../../components/ui/Banner.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
 

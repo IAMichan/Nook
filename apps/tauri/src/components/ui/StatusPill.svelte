@@ -1,6 +1,6 @@
 <script lang="ts">
   // A session's state as a mark and a word in its color (`StatusBadgeLabel`), short in a row's corner.
-  import { attentionTint, attentionWord, shortAttentionWord } from "../../../lib/companion";
+  import { attentionTint, attentionWord, shortAttentionWord } from "../../lib/companion";
   import Ico from "./Ico.svelte";
   import PulseDot from "./PulseDot.svelte";
   let { attention, short = true }: { attention: string; short?: boolean } = $props();
@@ -16,6 +16,6 @@
 </span>
 
 <style>
-  .pill { display: inline-flex; align-items: center; gap: 4px; min-height: 18px; padding: 0 4px; font: var(--pt-label); white-space: nowrap; flex: none; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; min-height: 18px; padding: 0 4px; font: var(--pt-label, var(--text-label)); white-space: nowrap; flex: none; }
   .markbox { width: 12px; height: 12px; display: inline-flex; align-items: center; justify-content: center; }
 </style>

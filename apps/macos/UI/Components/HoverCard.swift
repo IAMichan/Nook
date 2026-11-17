@@ -48,12 +48,12 @@ struct HoverCardButton<Label: View>: View {
         .buttonStyle(.nookPlain)
         .padding(-NookTheme.Spacing.xs)
         .pointerStyle(.link)
-        .nookTip(help)
         .accessibilityHint(help)
     }
 }
 
-/// One line of a hover card: an SF Symbol and a single line of text, cut in the middle when it is too long.
+/// One line of a hover card: an SF Symbol and a single line of text, cut in the middle when it is too long (its tip,
+/// `help` or the whole text, shows only then).
 struct HoverCardRow: View {
     let symbol: String
     let text: String
@@ -66,12 +66,11 @@ struct HoverCardRow: View {
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 16)
             Text(text)
-                .lineLimit(1)
                 .truncationMode(.middle)
+                .nookTipWhenCut(help ?? text)
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textSecondary)
-        .nookTip(help ?? "", enabled: help != nil)
     }
 }
 

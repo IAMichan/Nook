@@ -4,6 +4,7 @@
   import LazyView from "./components/LazyView.svelte";
   import { retryableView } from "./lib/shell-routes";
   import Toast from "./components/Toast.svelte";
+  import ConfirmHost from "./components/ui/ConfirmHost.svelte";
   import SelectionAsk from "./components/SelectionAsk.svelte";
   import { nook, accentCss, onAccent } from "./lib/state.svelte";
   import { quiet } from "./lib/quiet.svelte";
@@ -73,5 +74,6 @@
   <!-- Words selected anywhere in the main window: a bar to ask Nook about them. -->
   <SelectionAsk />
 {/if}
-<!-- Every window shows its own results in the same toast. -->
+<!-- Every window shows its own results in the same toast, and asks before what cannot be undone in the same dialog. -->
 <Toast />
+<ConfirmHost />

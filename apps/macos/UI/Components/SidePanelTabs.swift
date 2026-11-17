@@ -81,6 +81,7 @@ private struct SidePanelTab<Value: Hashable>: View {
     let close: () -> Void
     var togglePin: (() -> Void)? = nil
     @State private var hovering = false
+    @State private var cut = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
@@ -99,14 +100,14 @@ private struct SidePanelTab<Value: Hashable>: View {
             .frame(width: 16, height: 16)
             Button(action: select) {
                 Text(item.title)
-                    .lineLimit(1)
                     .truncationMode(.tail)
+                    .lineLimit(1, reportingCut: $cut)
                     .frame(maxWidth: 108, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: false)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(item.help ?? item.title)
+            .nookTip(item.help ?? item.title, enabled: item.help != nil || cut)
             if item.pinned {
                 Image(icon: "pin.fill")
                     .font(NookTheme.font(8, .semibold))
@@ -266,7 +267,7 @@ struct SidePanelLauncher: View {
         .buttonStyle(.nookPlain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.5)
-        .nookTip(item.disabledReason ?? item.title)
+        .nookTip(item.disabledReason ?? "")
         .onHover { inside in
             guard enabled, let index = available.firstIndex(where: { $0.id == item.id }) else { return }
             if inside { highlight = index } else if highlight == index { highlight = nil }

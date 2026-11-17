@@ -118,7 +118,6 @@ struct TurnChangesCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("agents.turn.openDiff"))
         }
         .font(NookTheme.TextStyle.label)
         .foregroundStyle(NookTheme.textTertiary)
@@ -163,7 +162,6 @@ private struct TurnChangesRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(row.isDirectory ? row.path : tr("agents.turn.showFile", row.path))
     }
 }
 
@@ -361,7 +359,6 @@ struct TurnDiffPanel: View {
                             chosen: selection.source == .commit(commit.id)) {
                     selection = .commit(commit.id)
                 }
-                .nookTip(commit.date.map { "\(commit.author) · " + $0.formatted(date: .abbreviated, time: .shortened) } ?? commit.author)
             }
         }
         // An older commit an agent's answer linked to.

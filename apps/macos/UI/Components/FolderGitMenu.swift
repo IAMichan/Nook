@@ -266,7 +266,7 @@ struct FolderGitButton: View {
                         }
                     }
                     .buttonStyle(.nookPlain)
-                    .nookTip(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
+                    .nookTip(model.error ?? "")
                     .popover(isPresented: $open, arrowEdge: .bottom) {
                         // The same panel as docked, with its usage under it.
                         VStack(alignment: .leading, spacing: 0) {
@@ -291,7 +291,6 @@ struct FolderGitButton: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.nookPlain)
-                        .nookTip(tr("agents.git.changes", model.changes.count))
                         .fixedSize()
                     }
                     // How full the context and the limits are; the docked panel shows them in its card instead.

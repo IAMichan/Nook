@@ -3,7 +3,7 @@
   // small enough to travel (`CompanionImage`), at most two per message.
   import { MAX_IMAGES, shrinkToJpeg } from "../../../lib/images";
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { count, onpick, ontoolarge }: { count: number; onpick: (jpegs: string[]) => void; ontoolarge: () => void } = $props();
   let input = $state<HTMLInputElement | null>(null);
   async function picked() {

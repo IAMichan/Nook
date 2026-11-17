@@ -157,7 +157,6 @@ struct CitationPreview: View {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if openable {
                     SmallGhostButton(title: tr("chat.citation.open")) { AppModel.shared.openReference(reference) }
-                        .nookTip(tr("chat.references.open"))
                 }
             }
             Text(reference.shortTitle)

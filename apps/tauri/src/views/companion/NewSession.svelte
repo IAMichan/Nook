@@ -10,10 +10,10 @@
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ComposerPill from "./ui/ComposerPill.svelte";
   import AgentMark from "./ui/AgentMark.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Banner from "./ui/Banner.svelte";
-  import Ico from "./ui/Ico.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Banner from "../../components/ui/Banner.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import { has, Feature, writingWaits } from "../../lib/companion";

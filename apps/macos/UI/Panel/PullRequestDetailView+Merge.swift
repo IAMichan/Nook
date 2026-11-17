@@ -48,7 +48,6 @@ extension PullRequestDetailView {
             .contentShape(Rectangle())
         }
         .nookMenuButton()
-        .nookTip(tr("agents.pulls.stack.position", index, shownStack.count))
     }
 
     /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
@@ -143,7 +142,6 @@ extension PullRequestDetailView {
             SmallPrimaryButton(title: tr("session.context.resolve"), systemName: PullRequestIcon.symbol(.conflict), compact: true) {
                 ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
             }
-            .nookTip(tr("agents.pr.note.conflict"))
         } else if detail.waitsForAutoMerge {
             // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done. An
             // admin gets Merge instead, which goes past them; auto-merge stays in Merge's dropdown and the ⋯ menu.
@@ -172,7 +170,8 @@ extension PullRequestDetailView {
                 }
             }
             .disabled(!detail.canMerge || merging)
-            .nookTip(armedMerge ? confirmMessage : tr(method.titleKey))
+            // Armed, it says what the second click merges and how.
+            .nookTip(confirmMessage, enabled: armedMerge)
             ComposerDropdown(width: 240) {
                 Image(icon: "chevron.down")
                     .font(NookTheme.font(9, .bold))
@@ -208,7 +207,6 @@ extension PullRequestDetailView {
     func mergeStatus(_ detail: PullRequestDetail) -> some View {
         let status = detail.mergeStatus
         let note = detail.canPush == false && detail.isOpen ? "agents.pr.note.noAccess" : status.noteKey
-        let method = detail.autoMerge?.method.map { tr($0.titleKey) }
         return Button {
             showBlocker.toggle()
         } label: {
@@ -220,7 +218,6 @@ extension PullRequestDetailView {
         }
         .buttonStyle(.nookPlain)
         .allowsHitTesting(note != nil)
-        .nookTip(note.map { status.word + " · " + tr($0) } ?? method ?? "")
         .popover(isPresented: $showBlocker, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(status.word).font(NookTheme.TextStyle.strong).foregroundStyle(PullRequestIcon.tint(status: status))

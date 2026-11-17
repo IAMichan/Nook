@@ -27,7 +27,6 @@ struct UsageLimitCard: View {
                 } actions: {
                     // The limit may already be free (or the reset was early): try the turn again now.
                     NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(run.id) }
-                        .nookTip(tr("ws.action.retry.help"))
                 }
                 NookDivider()
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -57,7 +56,6 @@ struct UsageLimitCard: View {
                 }
                 .compactSwitch(.mini)
                 .tint(NookTheme.amber)
-                .nookTip(tr("ws.limit.resumeHelp"))
                 // A banked reset credit of this account frees it now, instead of waiting for the reset.
                 if let profile = app.profiles.profile(id: run.profileID) {
                     ResetCreditRow(profile: profile)
@@ -118,7 +116,6 @@ struct UsageLimitCard: View {
                 }
             }
         }
-        .nookTip(tr("ws.limit.otherModelHelp"))
     }
 
     /// "Claude Code · Personal": the agent, with the account when the agent has several.
@@ -234,7 +231,6 @@ struct LimitOptionRow: View {
                             if let model { pickModel(model) }
                         }
                     }
-                    .nookTip(tr("ws.limit.modelHelp"))
                     Text("· " + tr(option.sameAgent ? "ws.limit.carrySame" : "ws.limit.carryOther"))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -253,7 +249,6 @@ struct LimitOptionRow: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.sm)
         .roundedBackground(best ? NookTheme.rowSelected : Color.clear, radius: NookTheme.Radius.control)
-        .nookTip(tr(option.sameAgent ? "ws.limit.switchHelpSame" : "ws.limit.switchHelp"))
     }
 }
 

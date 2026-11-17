@@ -113,7 +113,6 @@ struct WorktreesView: View {
                 }
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("ws.worktrees.openSession"))
         } else {
             Text(row.worktree.isMain ? tr("ws.worktrees.main") : tr("ws.worktrees.noSession"))
                 .font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)

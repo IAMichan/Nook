@@ -5,7 +5,9 @@
   import { relativeTime } from "../../lib/state.svelte";
   import CompanionPush from "./CompanionPush.svelte";
   import CompanionAway from "./CompanionAway.svelte";
+  import CompanionScopes from "./CompanionScopes.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import QRCodeView from "../../components/ui/QRCodeView.svelte";
 
   let info = $state<CompanionInfo | null>(null);
   let error = $state<string | null>(null);
@@ -89,14 +91,23 @@
           </div>
           <button onclick={() => run(() => companion.removeDevice(device.id))}>{tr("Ontkoppel", "Unpair")}</button>
         </div>
+        <details class="scopes">
+          <summary class="faint small">{tr("Wat deze telefoon mag", "What this phone may do")}</summary>
+          <CompanionScopes scopes={device.scopes} onchange={(s) => run(() => companion.setScopes(device.id, s))} />
+        </details>
       {:else}
         <p class="faint note">{tr("Nog geen telefoon gekoppeld.", "No phone paired yet.")}</p>
       {/each}
     </div>
 
+    <h3>{tr("Kies wat de volgende telefoon mag", "Choose what the next phone may do")}</h3>
+    <div class="group">
+      <CompanionScopes scopes={info.pendingScopes} onchange={(s) => run(() => companion.setScopes(null, s))} />
+    </div>
+
     {#if info.pairing}
       <div class="pairing">
-        <div class="qr" role="img" aria-label={tr("QR-code om te koppelen", "QR code to pair")}>{@html info.pairing.qrSvg}</div>
+        <QRCodeView svg={info.pairing.qrSvg} label={tr("QR-code om te koppelen", "QR code to pair")} size={180} />
         <div class="steps">
           <p>{minutesLeft === 1 ? tr("Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog 1 minuut en één keer.", "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for 1 more minute and only once.") : tr("Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog {n} minuten en één keer.", "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for {n} more minutes and only once.", { n: minutesLeft })}</p>
           <code class="link">{info.pairing.url}</code>
@@ -139,10 +150,10 @@
   .device { display: flex; flex-direction: column; gap: 2px; }
   .small { font-size: 11px; }
   .mono { font-family: var(--mono); }
+  .scopes { padding: 0 0 6px; }
+  .scopes summary { cursor: pointer; padding: 2px 0 4px; }
   .status { justify-content: flex-start; }
   .pairing { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
-  .qr { width: 200px; height: 200px; flex: none; background: #fff; border-radius: 12px; overflow: hidden; }
-  .qr :global(svg) { width: 100%; height: 100%; display: block; }
   .steps { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 10px; }
   .steps p { margin: 0; }
   .link { font-family: var(--mono); font-size: 11px; word-break: break-all; user-select: text; background: var(--field); border: 1px solid var(--line2); border-radius: 8px; padding: 6px 8px; }

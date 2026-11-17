@@ -38,7 +38,6 @@ struct PullRequestChecksStatus: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("agents.pr.status.checks"))
             .accessibilityLabel(tr("agents.pr.status.checks") + ": " + summary)
             .popover(isPresented: $showing, arrowEdge: .bottom) { list(outcome) }
         } else {
