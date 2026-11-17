@@ -10,10 +10,11 @@
 
 use std::time::Duration;
 
+use nook_core::brain::conversation_window::as_text;
 use nook_core::brain::intent::{ChatIntent, Kind};
 use nook_core::brain::service::{self, BrainRequest};
 use nook_core::brain::sources::SourceScope;
-use nook_core::brain::{follow_ups, history_prefix, private_brief, screen_brain, ChatTurn, PromptImage, ToolKind};
+use nook_core::brain::{follow_ups, private_brief, screen_brain, ChatTurn, PromptImage, ToolKind};
 use nook_core::i18n::{tr, trf};
 use nook_core::settings::{BrainSelection, Settings};
 use tauri::{AppHandle, Manager};
@@ -191,7 +192,7 @@ async fn write_brief(app: &AppHandle, routed: &Settings, text: &str, history: &[
     let task_app = app.clone();
     let small = profile.is_small;
     let snapshot = tauri::async_runtime::spawn_blocking(move || crate::services::screen::snapshot(&task_app, small)).await.ok()?.ok()?;
-    let prompt = private_brief::prompt(text, &history_prefix(history, 6, 300), "", Some(&snapshot.text), profile.prompt_character_budget());
+    let prompt = private_brief::prompt(text, &as_text(history, 6, 300), "", Some(&snapshot.text), profile.prompt_character_budget());
     let key = app.state::<AppState>().key_for(routed.provider);
     let raw = tokio::time::timeout(
         Duration::from_secs(60),
