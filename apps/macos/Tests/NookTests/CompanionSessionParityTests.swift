@@ -54,9 +54,10 @@ final class CompanionSessionParityTests: XCTestCase {
     }
 
     func testTheNewActionsAreOnlyThoseOfTheAgentsTab() {
-        // An older phone knows none of them: its menus stay as they were.
+        // An older phone knows none of them: its menus stay as they were. `model` is the composer's model menu that came
+        // before the Agents tab (a Mac without `agentsTab` may list it).
         let old: [SessionAction] = [.rename, .archive, .snoozeHour, .snoozeEvening, .snoozeTomorrow, .unsnooze, .snoozeUntil,
-                                    .snoozeLimitReset, .end, .mainThreadOn, .mainThreadOff]
+                                    .snoozeLimitReset, .end, .mainThreadOn, .mainThreadOff, .model]
         XCTAssertTrue(SessionAction.agentsTab.isDisjoint(with: old))
         XCTAssertEqual(Set(SessionAction.allCases), SessionAction.agentsTab.union(old))
         XCTAssertTrue(SessionMenu.confirms(.delete))
