@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accessOf, type NookAccess } from "../../lib/access";
   // Assistent: wat Nook ziet (je schermen, het klembord, je bestanden, je gesprekken) en of hij meedenkt.
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
@@ -81,10 +82,14 @@
       <span>{tr("Denk mee terwijl ik werk", "Think along while I work")}<br /><small class="faint">{tr("Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de balk. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.", "If Nook can take something over or knows a smarter approach, it suggests it next to the bar. Say no more often and it holds back. Now and then it sends the text of your front windows to your brain.")}</small></span>
       <input type="checkbox" role="switch" checked={s.autoWatch} onchange={(e) => nook.saveSettings({ autoWatch: e.currentTarget.checked })} />
     </label>
-    <label class="row">
-      <span>{tr("Kleine dingen meteen doen", "Do small things right away")}<br /><small class="faint">{tr("Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.", "Music, volume, an app, a reminder or an open item. Appointments, mail, links, commands and services always ask first.")}</small></span>
-      <input type="checkbox" role="switch" checked={s.autoRunSafe} onchange={(e) => nook.saveSettings({ autoRunSafe: e.currentTarget.checked })} />
-    </label>
+    <div class="row">
+      <span>{tr("Wat Nook zelf mag", "What Nook may do")}<br /><small class="faint">{tr("Ook te kiezen onder het invoerveld, of met ⇧Tab. Mail, berichten, links, opdrachten, instellingen en verwijderen vragen altijd eerst.", "Also chosen under the message field, or with ⇧Tab. Mail, messages, links, commands, settings, and deleting always ask first.")}</small></span>
+      <select value={accessOf(s)} onchange={(e) => nook.saveSettings({ nookAccess: e.currentTarget.value as NookAccess })}>
+        <option value="ask">{tr("Eerst vragen", "Ask first")}</option>
+        <option value="small">{tr("Kleine dingen meteen", "Small things right away")}</option>
+        <option value="more">{tr("Meer zelf doen", "More by itself")}</option>
+      </select>
+    </div>
     {#if prefs && Object.keys(prefs.thinkAlongMuted).length}
       <div class="row">
         <span>{tr("Niet meedenken in", "Don't think along in")}</span>

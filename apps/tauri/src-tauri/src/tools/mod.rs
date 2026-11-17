@@ -10,6 +10,7 @@
 
 mod agents;
 mod browser;
+mod browser_tab;
 mod calls;
 mod charts;
 mod clipboard;
@@ -23,6 +24,7 @@ mod schedule;
 mod screen;
 mod settings;
 mod system;
+mod terminal;
 mod web;
 
 use std::sync::Arc;
@@ -151,6 +153,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(memory::Memory),
         Box::new(web::Web),
         Box::new(browser::NookBrowser),
+        Box::new(browser_tab::Browser),
         Box::new(charts::Charts),
         Box::new(schedule::Schedule),
         Box::new(settings::SettingsTools),
@@ -162,6 +165,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(clipboard::Clipboard),
         Box::new(calls::Calls),
         Box::new(agents::AgentSessions),
+        Box::new(terminal::Terminal),
     ]
 }
 

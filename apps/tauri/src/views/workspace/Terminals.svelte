@@ -8,7 +8,7 @@
   import { toolEvents, toolsApi, type DevServer, type ProjectScript, type TerminalInfo } from "../../lib/workspace/api";
   import TerminalView from "./TerminalView.svelte";
 
-  let { folder = null }: { folder?: string | null } = $props();
+  let { folder = null, focusId = null }: { folder?: string | null; focusId?: string | null } = $props();
   let terminals = $state<TerminalInfo[]>([]);
   let selected = $state<string | null>(null);
   let scripts = $state<ProjectScript[]>([]);
@@ -16,6 +16,10 @@
   let error = $state<string | null>(null);
   let scriptsOpen = $state(false);
   let started = false;
+
+  $effect(() => {
+    if (focusId) selected = focusId;
+  });
 
   const available = $derived(nook.info?.capabilities.terminals ?? true);
   const within = (origin: string, root: string) => {

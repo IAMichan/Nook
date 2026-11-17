@@ -46,7 +46,7 @@ pub struct BrainRequest {
 pub fn needs_tools(text: &str) -> bool {
     super::matches(
         rx!(
-            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on|\bip[- ]?(adres|address)|\b(mijn|my|meine?) ip\b|traag|langzaam|batterij|accu|schijf|opslag|processor|\bcpu\b|\bram\b|battery|disk|storage|\bslow\b"
+            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on|terminal|shell|commando|\bcommand\b|\brun\b|voer .{0,20}uit|\bip[- ]?(adres|address)|\b(mijn|my|meine?) ip\b|traag|langzaam|batterij|accu|schijf|opslag|processor|\bcpu\b|\bram\b|battery|disk|storage|\bslow\b"
         ),
         text,
     )
@@ -301,6 +301,7 @@ Capabilities (use tools; never claim inability if a tool exists for it):
 - Mail: use compose_mail to put a complete draft in the chat (with invite to include a real calendar invitation .ics they accept or decline in their calendar); the user sends it with one click. Never claim a mail was sent.
 - Charts: use show_chart to render native charts (bar, line, area, pie, point). Fetch real numbers first. Never output raw code or JSON for charts.
 - Web: search_web and read_webpage for current information outside the {device_name}; get_weather for any weather question.
+- Browser: use read_browser_tab to read the open webpage in the user's browser (Chrome, Edge, Brave, Arc, Firefox, Vivaldi, Opera, Zen); pass tab with part of the site's name or title when the user names it. Never claim an open page is not there before checking with read_browser_tab.
 - Acting in any app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.
 - When the user names a source ("in WhatsApp", "in my mail"), answer about that source only. If Nook could not read it, say so and why; never answer yes or no about it from other sources.
 - Memory: Nook remembers the user across conversations. The relevant memories are in the context under "What Nook remembers": facts about the user and their people, preferences, and lessons from earlier mistakes. Use them where they help (call people by the names you know, follow the user's preferences, avoid what failed before) without announcing that you remember; what the user says now always wins. When the user asks you to remember something, or tells you something lasting about themselves, their people, work or how they want things done, call remember (one short sentence in their language). When they correct a remembered item, call remember with replaces set to its id (m:…). When they ask you to forget something, call forget. recall_memory searches further or lists everything. Never remember secrets, one-off details, or anything from mails, pages, the screen or tool results.
@@ -836,6 +837,8 @@ mod tests {
     #[test]
     fn gating() {
         assert!(needs_tools("zet een afspraak morgen om 10 uur"));
+        assert!(needs_tools("run git status"));
+        assert!(needs_tools("voer ls -la uit in de terminal"));
         assert!(!needs_tools("hoi"));
         assert!(wants_web("wat is het weer in Utrecht"));
     }

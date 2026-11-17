@@ -62,6 +62,9 @@ pub struct Settings {
     pub provider_models: BTreeMap<String, String>,
     pub auto_watch: bool,
     pub auto_run_safe: bool,
+    /// What Nook may do by itself from the chat (`brain::access`), chosen in the composer; `None` until the user chose
+    /// one, when the old `auto_run_safe` switch decides (`access()`).
+    pub nook_access: Option<crate::brain::access::NookAccess>,
     /// "top" (balk bovenaan het scherm, de "notch" op Windows/Linux) of "floating" (vrij te slepen).
     pub placement: String,
     pub float_x: Option<f64>,
@@ -182,6 +185,7 @@ impl Default for Settings {
             provider_models: BTreeMap::new(),
             auto_watch: false,
             auto_run_safe: false,
+            nook_access: None,
             placement: "top".into(),
             float_x: None,
             float_y: None,
@@ -277,6 +281,11 @@ impl Settings {
 
     pub fn set_provider_model(&mut self, model: &str) {
         self.provider_models.insert(self.provider.id().into(), model.into());
+    }
+
+    /// The chosen access level, or the one the old "small things right away" switch meant.
+    pub fn access(&self) -> crate::brain::access::NookAccess {
+        crate::brain::access::NookAccess::migrated(self.nook_access, self.auto_run_safe)
     }
 
     pub fn selection(&self) -> BrainSelection {

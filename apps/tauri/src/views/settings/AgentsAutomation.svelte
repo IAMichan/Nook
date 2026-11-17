@@ -6,8 +6,8 @@
   import { agents } from "../../lib/agents.svelte";
   import { permissionLabels, type RunProvider } from "../../lib/workspace/api";
   import {
-    automationApi, blankTask, curlExample, editorValues, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel,
-    weekdayOrder, weekdayShort, type AutomationOverview, type Preset, type ScheduledTask,
+    automationApi, autonomyLevels, blankTask, curlExample, editorValues, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel,
+    weekdayOrder, weekdayShort, type AutomationOverview, type NookAutonomy, type Preset, type ScheduledTask,
   } from "../../lib/workspace/automation";
   import { workspace } from "../../lib/workspace/store.svelte";
   import { tr } from "../../lib/i18n.svelte";
@@ -201,6 +201,7 @@
           <option value="interval">{tr("Interval", "Interval")}</option>
           <option value="once">{tr("Eén keer", "Once")}</option>
           <option value="webhook">{tr("Webhook", "Webhook")}</option>
+          <option value="message">{tr("Bij een nieuw bericht", "On a new message")}</option>
         </select>
       </label>
       {#if preset === "daily" || preset === "weekdays"}
@@ -213,6 +214,12 @@
           </div>
           <p class="faint note">{tr("Geen dag gekozen is maandag tot en met vrijdag.", "No day chosen means Monday to Friday.")}</p>
         {/if}
+      {:else if preset === "message"}
+        <label class="row"><span>{tr("Apps", "Apps")}</span><input bind:value={values.apps} placeholder={tr("Leeg: elke app. Bijvoorbeeld: whatsapp", "Empty: every app. For example: whatsapp")} /></label>
+        <label class="row"><span>{tr("Van", "From")}</span><input bind:value={values.from} placeholder={tr("Leeg: iedereen", "Empty: anyone")} /></label>
+        <label class="row"><span>{tr("Woorden", "Words")}</span><input bind:value={values.keywords} placeholder={tr("Leeg: elk bericht. Gescheiden door komma’s", "Empty: any message. Separated by commas")} /></label>
+        <label class="check"><input type="checkbox" role="switch" bind:checked={values.groups} /> {tr("Ook groepsgesprekken", "Group chats too")}</label>
+        <p class="faint note">{tr("Draait zodra er een bericht van iemand anders binnenkomt dat past, één keer per bericht. Wat binnenkomt terwijl de taak draait, wacht op de volgende run. Het bericht komt bij Nook aan als gegevens, nooit als opdracht. Nu nog alleen WhatsApp.", "Runs as soon as a matching message from someone else comes in, once per message. What arrives while the task runs waits for the next run. The message reaches Nook as data, never as an instruction. Only WhatsApp for now.")}</p>
       {:else if preset === "interval"}
         <label class="row"><span>{tr("Elke", "Every")}</span><span class="inline"><input class="port" type="number" min="1" bind:value={values.minutes} /> {tr("minuten", "minutes")}</span></label>
         <p class="faint note">{tr("Minstens 1 minuut. Het interval telt vanaf het einde van de vorige run, dus runs stapelen nooit op.", "At least 1 minute. The interval counts from the end of the previous run, so runs never pile up.")}</p>
@@ -233,6 +240,17 @@
       </label>
       {#if editing.target.type === "nook"}
         <label class="check"><input type="checkbox" role="switch" bind:checked={editing.quiet} /> {tr("Alleen melden als er iets nieuws is", "Only speak up for something new")}</label>
+        <label class="row"><span>{tr("Wat Nook zelf doet", "What Nook does by itself")}</span>
+          <select value={editing.autonomy ?? "ask"} onchange={(e) => { if (editing) editing.autonomy = (e.target as HTMLSelectElement).value as NookAutonomy; }}>
+            {#each autonomyLevels() as level (level.id)}<option value={level.id}>{level.label}</option>{/each}
+          </select>
+        </label>
+        <p class="faint note">{autonomyLevels().find((l) => l.id === (editing?.autonomy ?? "ask"))?.detail}</p>
+        {#if (editing.autonomy ?? "ask") !== "ask"}
+          <p class="faint note">{preset === "webhook"
+            ? tr("Deze taak start op een webhook van iemand anders, dus Nook controleert elke stap eerst, ook bij Gewoon doen. Verwijderen, mergen, opdrachten, instellingen en betalingen wachten altijd op jou.", "This task starts on a webhook from someone else, so Nook always checks each step first, also on Do it. Deleting, merging, commands, settings and payments always wait for you.")
+            : tr("Alleen berichten, je agenda, herinneringen, notities en reacties kunnen vanzelf, hooguit 12 stappen per run. Mail wacht altijd op jou, net als verwijderen, mergen, opdrachten, instellingen en betalingen; alles wat draait staat in het auditlog.", "Only messages, your calendar, reminders, notes and comments can run by themselves, at most 12 steps a run. Mail always waits for you, as do deleting, merging, commands, settings and payments; everything that runs is in the audit log.")}</p>
+        {/if}
         <p class="faint note">{tr("Elke run is een eigen gesprek in Nook Chat. Nook zoekt zelf op en zet antwoorden en acties klaar; niets wordt verstuurd of veranderd zonder jouw OK.", "Each run is a conversation of its own in Nook Chat. Nook looks things up and prepares replies and actions; nothing is sent or changed without your OK.")}</p>
       {:else if editing.target.type === "newSession"}
         <div class="row"><span>{tr("Projectmap", "Project folder")}</span>

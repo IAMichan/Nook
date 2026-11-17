@@ -885,43 +885,23 @@ fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, s
     finish(app, nook_id);
 }
 
-/// Acties die zonder klik mogen: onthouden of vergeten waar de eigen woorden van de gebruiker om vragen (het blijft op
-/// dit apparaat en is terug te draaien bij Instellingen › Geheugen), en kleine veilige dingen als dat aan staat.
-/// Tekst van anderen (scherm, mail, web) mag nooit genoeg zijn om Nook zonder klik iets te laten doen.
+/// Text from others (screen, mail, web) is never enough to make Nook act without a click: only the user's own words,
+/// at the access level chosen in the composer (`brain::access`).
 pub fn can_run_without_asking(settings: &Settings, actions: &[PlannedAction], request: &str) -> bool {
     if actions.is_empty() {
         return false;
     }
+    // Remembering or forgetting what the user's own words ask for needs no level: it stays here and is undone in
+    // Settings › Assistant.
     if actions.iter().all(|a| (a.tool == "remember" || a.tool == "forget") && asks_for(request, a)) {
         return true;
     }
-    const SAFE: [&str; 6] = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"];
-    settings.auto_run_safe && actions.iter().all(|a| SAFE.contains(&a.tool.as_str()) && asks_for(request, a))
+    let access = settings.access();
+    actions.iter().all(|a| access.allows_call(&a.tool, &a.input) && asks_for(request, a))
 }
 
 pub fn asks_for(request: &str, action: &PlannedAction) -> bool {
-    use nook_core::brain::memory::text as memory_text;
-    let text = request.to_lowercase();
-    let mentions = |pattern: &str| fancy_regex::Regex::new(pattern).ok().is_some_and(|re| re.is_match(&text).unwrap_or(false));
-    match action.tool.as_str() {
-        "open_app" => {
-            let name = action.input["name"].as_str().unwrap_or("").trim().to_lowercase();
-            !name.is_empty() && text.contains(&name) && mentions(r"\b(open|start|launch|öffne|starte)")
-        }
-        "media_control" => {
-            mentions(r"muziek|music|musik|nummer|liedje|song|track|speel|play|pauze|pause|stop|volgende|vorige|next|previous|skip")
-        }
-        "set_volume" => mentions(r"volume|geluid|harder|zachter|louder|quieter|lauter|leiser|mute|dempen"),
-        "create_reminder" => mentions(r"herinner|reminder|erinner|onthoud|remember"),
-        "remember" => {
-            memory_request::asks_to_remember(request) && memory_text::grounded(action.input["text"].as_str().unwrap_or(""), request)
-        }
-        "forget" => memory_request::asks_to_forget(request) && memory_text::grounded(action.input["what"].as_str().unwrap_or(""), request),
-        "add_open_loop" | "complete_open_loop" => {
-            mentions(r"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt")
-        }
-        _ => false,
-    }
+    nook_core::brain::access::asks_for(request, &action.tool, &action.input)
 }
 
 /// After a Nook's first answer: the chosen brain gives it a short title ("Offer from Infaris") in place of the first
@@ -1112,6 +1092,7 @@ pub fn retry_last(app: &AppHandle, nook_id: &str) -> Result<Option<String>, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nook_core::brain::access::NookAccess;
     use serde_json::json;
 
     #[test]
@@ -1127,6 +1108,14 @@ mod tests {
         let reminder = PlannedAction::new("create_reminder", json!({"title": "bellen"}));
         assert!(!can_run_without_asking(&settings, std::slice::from_ref(&reminder), "Herinner me eraan te bellen"));
         let auto = Settings { auto_run_safe: true, ..Default::default() };
-        assert!(can_run_without_asking(&auto, &[reminder], "Herinner me eraan te bellen"));
+        assert!(can_run_without_asking(&auto, std::slice::from_ref(&reminder), "Herinner me eraan te bellen"));
+        // The level chosen in the composer wins over the old switch; "more" adds an event without guests.
+        let ask = Settings { auto_run_safe: true, nook_access: Some(NookAccess::Ask), ..Default::default() };
+        assert!(!can_run_without_asking(&ask, &[reminder], "Herinner me eraan te bellen"));
+        let more = Settings { nook_access: Some(NookAccess::More), ..Default::default() };
+        let event = PlannedAction::new("create_event", json!({"title": "Tandarts"}));
+        assert!(can_run_without_asking(&more, std::slice::from_ref(&event), "Zet de tandarts morgen om 10 uur in mijn agenda"));
+        let invite = PlannedAction::new("create_event", json!({"title": "Overleg", "attendees": ["lisa@x.nl"]}));
+        assert!(!can_run_without_asking(&more, &[invite], "Zet een overleg met Lisa in mijn agenda"));
     }
 }

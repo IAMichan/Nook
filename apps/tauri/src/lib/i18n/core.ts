@@ -347,6 +347,7 @@ export const table: Table = {
     es: "Los terminales, el navegador de Nook, los worktrees y las sesiones de los agentes de código están en tu ordenador Windows o Linux (o tu Mac). Abre Nook allí; en el móvil los sigues a través del companion en cuanto esté vinculado.",
   },
   "Terminals": { de: "Terminals", fr: "Terminaux", es: "Terminales" },
+  "Close terminal": { de: "Terminal schließen", fr: "Fermer le terminal", es: "Cerrar terminal" },
   "Browser": { de: "Browser", fr: "Navigateur", es: "Navegador" },
   "Worktrees": { de: "Worktrees", fr: "Worktrees", es: "Worktrees" },
   "Usage": { de: "Nutzung", fr: "Utilisation", es: "Uso" },

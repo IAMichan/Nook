@@ -29,6 +29,8 @@ export interface Settings {
   providerModels: Record<string, string>;
   autoWatch: boolean;
   autoRunSafe: boolean;
+  /** What Nook may do by itself from the chat (`brain::access`); null until chosen, when `autoRunSafe` decides. */
+  nookAccess?: "ask" | "small" | "more" | null;
   placement: "top" | "floating";
   floatX: number | null;
   floatY: number | null;
@@ -245,4 +247,9 @@ export interface StreamEvent {
   nookId: string;
   messageId: string;
   text: string;
+}
+
+export interface ChatTerminal {
+  folder: string;
+  id: string;
 }

@@ -14,6 +14,8 @@ const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
 const ACTION: &str = "org.a11y.atspi.Action";
 const TEXT: &str = "org.a11y.atspi.Text";
 
+const DOCUMENT: &str = "org.a11y.atspi.Document";
+
 // Rollen (ATSPI_ROLE_*).
 const ROLE_CHECK_MENU_ITEM: u32 = 8;
 const ROLE_FRAME: u32 = 23;
@@ -23,10 +25,14 @@ const ROLE_PASSWORD: u32 = 40;
 const ROLE_MENU: u32 = 33;
 const ROLE_MENU_BAR: u32 = 34;
 const ROLE_MENU_ITEM: u32 = 35;
+const ROLE_PAGE_TAB: u32 = 36;
 const ROLE_POPUP_MENU: u32 = 41;
 const ROLE_RADIO_MENU_ITEM: u32 = 45;
 const ROLE_TOOL_BAR: u32 = 63;
 const ROLE_SCROLL_BAR: u32 = 48;
+const ROLE_ENTRY: u32 = 78;
+const ROLE_DOCUMENT_FRAME: u32 = 80;
+const ROLE_DOCUMENT_WEB: u32 = 95;
 /// Rollen waarvan de naam inhoud is (knoppen, links, cellen, koppen…).
 const NAMED: [u32; 12] = [43, 29, 56, 32, 37, 44, 62, 27, 7, 88, 83, 101];
 
@@ -228,6 +234,88 @@ impl Atspi {
         }
     }
 
+    /// Reads an open browser window's active document URL, text, and tab titles via AT-SPI.
+    pub fn inspect_browser(&self, frame: &Frame, max_chars: usize) -> BrowserInspect {
+        let mut url = String::new();
+        let mut doc_title = String::new();
+        let mut tabs = Vec::new();
+        let mut doc_node: Option<Node> = None;
+        let mut budget = 400usize;
+        let deadline = Instant::now() + Duration::from_millis(1200);
+        self.scan_browser_chrome(&frame.node, 0, &mut budget, deadline, &mut url, &mut doc_title, &mut tabs, &mut doc_node);
+        let text = if let Some(doc) = doc_node {
+            let mut lines = Vec::new();
+            let mut doc_budget = 3000usize;
+            let mut count = 0usize;
+            let doc_deadline = Instant::now() + Duration::from_millis(2500);
+            self.collect(&doc, 1, &mut lines, &mut doc_budget, &mut count, max_chars, doc_deadline);
+            lines.join("\n").trim().to_string()
+        } else {
+            String::new()
+        };
+        BrowserInspect { url, doc_title, tabs, text }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn scan_browser_chrome(
+        &self,
+        node: &Node,
+        depth: usize,
+        budget: &mut usize,
+        deadline: Instant,
+        url: &mut String,
+        doc_title: &mut String,
+        tabs: &mut Vec<String>,
+        doc_node: &mut Option<Node>,
+    ) {
+        if depth > 12 || *budget == 0 || Instant::now() > deadline {
+            return;
+        }
+        *budget -= 1;
+        let role = self.role(node);
+        if role == ROLE_PASSWORD {
+            return;
+        }
+        if role == ROLE_PAGE_TAB {
+            let name = self.name(node).trim().to_string();
+            if !name.is_empty() && tabs.len() < 150 && !tabs.contains(&name) {
+                tabs.push(name);
+            }
+            return;
+        }
+        if role == ROLE_DOCUMENT_WEB || role == ROLE_DOCUMENT_FRAME {
+            if doc_node.is_none() {
+                *doc_node = Some(node.clone());
+            }
+            if doc_title.is_empty() {
+                let name = self.name(node).trim().to_string();
+                if !name.is_empty() {
+                    *doc_title = name;
+                }
+            }
+            if url.is_empty() && self.interfaces(node).iter().any(|i| i == DOCUMENT) {
+                if let Some(raw_url) = self.call::<_, String>(node, DOCUMENT, "GetAttributeValue", &("DocURL",)) {
+                    let normalized = nook_core::brain::open_browser_tab::normalize_url(&raw_url);
+                    if !normalized.is_empty() {
+                        *url = normalized;
+                    }
+                }
+            }
+            return;
+        }
+        if role == ROLE_ENTRY && url.is_empty() && self.interfaces(node).iter().any(|i| i == TEXT) {
+            if let Some(raw) = self.call::<_, String>(node, TEXT, "GetText", &(0i32, -1i32)) {
+                let normalized = nook_core::brain::open_browser_tab::normalize_url(&raw);
+                if !normalized.is_empty() {
+                    *url = normalized;
+                }
+            }
+        }
+        for child in self.children(node) {
+            self.scan_browser_chrome(&child, depth + 1, budget, deadline, url, doc_title, tabs, doc_node);
+        }
+    }
+
     fn is_menu_role(role: u32) -> bool {
         matches!(role, ROLE_MENU | ROLE_MENU_ITEM | ROLE_CHECK_MENU_ITEM | ROLE_RADIO_MENU_ITEM)
     }
@@ -348,4 +436,11 @@ impl Atspi {
             Err("Menu command action failed.".into())
         }
     }
+}
+
+pub struct BrowserInspect {
+    pub url: String,
+    pub doc_title: String,
+    pub tabs: Vec<String>,
+    pub text: String,
 }

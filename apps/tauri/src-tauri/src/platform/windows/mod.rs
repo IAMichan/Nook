@@ -2,6 +2,7 @@
 //! volume, het Startmenu voor apps, Windows Search voor bestanden, en de spraak van Windows.
 
 mod autocomplete;
+mod browser;
 mod media;
 mod menu;
 mod quiet;

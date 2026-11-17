@@ -132,6 +132,7 @@ pub fn run() {
             commands::show_main,
             commands::bar_moved,
             commands::take_route,
+            commands::take_chat_terminal,
             commands::repair_start_menu_shortcut,
             commands::start_local_brain,
             commands::tray_status,

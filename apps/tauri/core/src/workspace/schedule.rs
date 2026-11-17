@@ -27,6 +27,8 @@ pub enum ScheduleRule {
     Webhook,
     /// One run at this moment, then done. A run the computer slept through runs as soon as it is awake again.
     Once { at: DateTime<Utc> },
+    /// When a new message arrives that matches, in any chat app Nook reads: "as soon as a client writes".
+    Message { trigger: super::arrivals::MessageTrigger },
 }
 
 /// The shortest interval. Rows saved with less still load, but run at this rate.
@@ -41,6 +43,22 @@ impl ScheduleRule {
 
     pub fn is_once(&self) -> bool {
         matches!(self, Self::Once { .. })
+    }
+
+    pub fn is_message(&self) -> bool {
+        matches!(self, Self::Message { .. })
+    }
+
+    /// Runs only when something happens (a webhook call, a message), never on a timer.
+    pub fn waits_for_event(&self) -> bool {
+        self.is_webhook() || self.is_message()
+    }
+
+    pub fn message_trigger(&self) -> Option<&super::arrivals::MessageTrigger> {
+        match self {
+            Self::Message { trigger } => Some(trigger),
+            _ => None,
+        }
     }
 
     fn from_value(v: &Value) -> Self {
@@ -61,6 +79,9 @@ impl ScheduleRule {
                 Some(at) => Self::Once { at: at.with_timezone(&Utc) },
                 None => Self::Webhook,
             },
+            "message" => {
+                Self::Message { trigger: v.get("trigger").and_then(|t| serde_json::from_value(t.clone()).ok()).unwrap_or_default() }
+            }
             _ => Self::Webhook,
         }
     }
@@ -101,7 +122,7 @@ pub fn next_run<Tz: TimeZone>(
     tz: &Tz,
 ) -> Option<DateTime<Utc>> {
     match rule {
-        ScheduleRule::Webhook => None,
+        ScheduleRule::Webhook | ScheduleRule::Message { .. } => None,
         ScheduleRule::Once { at } => last_finished.is_none().then_some(*at),
         ScheduleRule::Interval { seconds } => {
             // Checked: a saved interval past any representable date means the task never comes due, not a crash.
@@ -199,6 +220,8 @@ pub enum ScheduleTrigger {
     Schedule,
     Manual,
     Webhook,
+    /// A new message matched the task's message trigger.
+    Message,
 }
 
 impl ScheduleTrigger {
@@ -207,7 +230,14 @@ impl ScheduleTrigger {
             Self::Schedule => "schedule",
             Self::Manual => "manual",
             Self::Webhook => "webhook",
+            Self::Message => "message",
         }
+    }
+
+    /// What started the run came from outside (a webhook delivery, someone's message): its content is data, and a run it
+    /// starts never gets more rights than "ask".
+    pub fn is_from_outside(self) -> bool {
+        matches!(self, Self::Webhook | Self::Message)
     }
 }
 
@@ -277,6 +307,18 @@ pub struct ScheduledTask {
     /// The ready-made task this is (the secretary's), by an id that does not change with the app's language.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// For Nook: what each run carries out by itself. A row without a level, or with one this version does not know,
+    /// asks: it must not start acting by itself.
+    #[serde(default, deserialize_with = "autonomy_or_ask", skip_serializing_if = "is_ask")]
+    pub autonomy: super::autonomy::NookAutonomy,
+}
+
+fn autonomy_or_ask<'de, D: Deserializer<'de>>(d: D) -> Result<super::autonomy::NookAutonomy, D::Error> {
+    Ok(serde_json::from_value(Value::deserialize(d)?).unwrap_or_default())
+}
+
+fn is_ask(level: &super::autonomy::NookAutonomy) -> bool {
+    *level == super::autonomy::NookAutonomy::Ask
 }
 
 fn epoch() -> DateTime<Utc> {
@@ -301,6 +343,7 @@ impl ScheduledTask {
             created_at: now,
             quiet: false,
             preset: None,
+            autonomy: Default::default(),
         }
     }
 
@@ -356,7 +399,7 @@ impl ScheduledTask {
 /// falls back to "ask".
 pub fn effective_permission(stored: PermissionPolicy, provider: RunProvider, trigger: ScheduleTrigger) -> PermissionPolicy {
     let capped = if stored == PermissionPolicy::Bypass { PermissionPolicy::Ask } else { stored };
-    let wanted = if trigger == ScheduleTrigger::Webhook { PermissionPolicy::Ask } else { capped };
+    let wanted = if trigger.is_from_outside() { PermissionPolicy::Ask } else { capped };
     let offered = provider.capabilities().policies;
     if offered.contains(&wanted) {
         wanted

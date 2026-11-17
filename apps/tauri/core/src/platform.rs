@@ -111,6 +111,15 @@ pub trait ScreenReader: Send + Sync {
     fn idle_seconds(&self) -> f64 {
         0.0
     }
+    /// Reads the active (or matching) tab in the user's open desktop browser via the platform accessibility layer
+    /// (UI Automation on Windows, AT-SPI on Linux).
+    fn read_browser_tab(
+        &self,
+        _browser: Option<&str>,
+        _tab: Option<&str>,
+    ) -> Result<crate::brain::open_browser_tab::BrowserTabResult, String> {
+        Ok(crate::brain::open_browser_tab::BrowserTabResult::Unsupported)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
