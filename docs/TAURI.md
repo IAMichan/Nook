@@ -21,7 +21,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |
 | `ModelProfile`, `ModelAdvisor`, `ModelDownload` (one-click Ollama install) | ✓ | `core/src/brain/profile.rs`, `model_download.rs` |
-| `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` | ✓ | `core/src/brain/` |
+| `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` (up to three next steps under an answer, two on a card, with the Mac's prompt) | ✓ | `core/src/brain/` |
+| Nook Chat titles (`nameAfterFirstAnswer`, `ConversationTitle`): after a Nook's first answer the chosen brain writes a two-to-five-word title, only while the title is still the question's own; a local brain skips it while another answer runs | ◐ (prompt and cleaning unit-tested; not run against a live brain) | `core/src/brain/conversation_title.rs`, `name_after_first_answer` in `commands/chat.rs` |
 | `Research`, `Retrieval` (searching on its own, numbered sources) | ✓ | `core/src/brain/research.rs`, `retrieval.rs` |
 | Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
 | Chat tables: text columns with digits in a name don't become a chart (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
