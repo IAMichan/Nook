@@ -7,10 +7,8 @@
   import { looksLikePath } from "../lib/paths";
   import SharedComposer from "@nook/web-ui/Composer.svelte";
   import type { ComposerMessage } from "@nook/web-ui/Composer.svelte";
-  import { api } from "../lib/api";
   import { askedBefore } from "../lib/recall";
   import { drafts } from "../lib/drafts";
-  import { brainApi, type ServerModel } from "../lib/brain";
   import { barDraft, Draft } from "../lib/draft.svelte";
   import { nook } from "../lib/state.svelte";
   import { tr, locale } from "../lib/i18n.svelte";
@@ -22,14 +20,12 @@
   import SourcePicker from "./SourcePicker.svelte";
   import ChatAccounts from "../views/connectors/ChatAccounts.svelte";
   import QueuedTray from "./QueuedTray.svelte";
+  import BrainPicker from "./BrainPicker.svelte";
 
   let { autofocus = false, compact = false }: { autofocus?: boolean; compact?: boolean } = $props();
   // The bar's field keeps its draft when the panel closes; other fields keep theirs only while they are open.
   const ownDraft = new Draft();
   const draft = $derived(compact ? barDraft : ownDraft);
-  let brainMenu = $state(false);
-  let servers = $state<ServerModel[]>([]);
-  let brainRoot = $state<HTMLDivElement>();
   let composer = $state<SharedComposer>();
 
   const history = $derived(askedBefore(nook.active?.messages ?? []));
@@ -98,23 +94,6 @@
     await nook.ask(question, images.length ? images : undefined, attachment ?? undefined);
   }
 
-  async function openBrainMenu() {
-    brainMenu = !brainMenu;
-    if (brainMenu) servers = (await brainApi.advice()).servers;
-  }
-
-  async function chooseModel(m: ServerModel) {
-    brainMenu = false;
-    nook.settings = await brainApi.useLocal(m.server, m.name);
-    nook.info = await api.appInfo();
-  }
-
-  function openBrainSettings() {
-    brainMenu = false;
-    localStorage.setItem("settings.section", "brain");
-    api.showMain("settings");
-  }
-
   const texts = $derived({
     placeholder: tr("Vraag Nook iets…", "Ask Nook anything…"),
     placeholderFor: (name: string) => tr("Vraag iets over {name}…", "Ask about {name}…", { name }),
@@ -129,8 +108,6 @@
     characters: tr("tekens", "characters"),
   });
 </script>
-
-<svelte:window onclick={(e) => brainMenu && !brainRoot?.contains(e.target as Node) && (brainMenu = false)} />
 
 <div class="composer" class:compact onpastecapture={pastePath}>
   {#if nook.active?.queue?.messages.length}
@@ -168,23 +145,7 @@
         <div class="under">
           <SourcePicker />
           <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
-          <div class="brain" bind:this={brainRoot}>
-            <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
-              title={nook.info.brainLocal ? tr("Denkt op deze computer", "Thinks on this computer") : tr("Externe AI", "External AI")}>
-              {nook.info.brainLocal ? tr("● lokaal", "● local") : tr("○ extern", "○ external")} · {nook.info.brainLabel}{nook.info.brainReady ? "" : tr(" · niet klaar", " · not ready")}
-            </button>
-            {#if brainMenu}
-              <div class="menu">
-                {#each servers as m (m.server + m.name)}
-                  <button class="ghost item" onclick={() => chooseModel(m)}>{m.name} <span class="faint">{m.server === "ollama" ? "Ollama" : "LM Studio"}</span></button>
-                {:else}
-                  <p class="faint item">{tr("Geen lokale modellen gevonden.", "No local models found.")}</p>
-                {/each}
-                <div class="sep"></div>
-                <button class="ghost item" onclick={openBrainSettings}>{tr("Brein-instellingen…", "Brain settings…")}</button>
-              </div>
-            {/if}
-          </div>
+          <BrainPicker />
         </div>
       {/if}
     {/snippet}
@@ -223,17 +184,8 @@
   }
   .composer.compact :global(.box) { border-width: 1px 0 0; border-color: var(--line); }
   .under { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 4px; min-width: 0; }
-  .brain { position: relative; min-width: 0; margin-left: auto; max-width: 100%; }
-  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
-  .chip.local { color: var(--text2); }
-  .chip.off { color: var(--amber); }
-  .menu { position: absolute; bottom: 32px; right: 0; max-width: min(320px, 80vw); box-shadow: var(--shadow-popover); z-index: 20; min-width: 220px; background: var(--smoke); border: 1px solid var(--line2); border-radius: 10px; padding: 6px; }
-  .item { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; font-size: 12px; padding: 4px 6px; margin: 0; }
-  .sep { border-top: 1px solid var(--line2); margin: 4px 0; }
   @media (max-width: 640px) {
     .composer { width: calc(100% - 24px); margin-bottom: 12px; }
     .under { gap: 6px; }
-    .brain { margin-left: 0; }
-    .menu { left: 0; right: auto; }
   }
 </style>

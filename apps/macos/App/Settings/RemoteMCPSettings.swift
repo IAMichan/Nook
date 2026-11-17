@@ -59,17 +59,21 @@ struct RemoteMCPSettingsSection: View {
         if server.access.grants.isEmpty && server.access.waiting.isEmpty {
             SettingNote(tr("remotemcp.none"), tone: .info)
         }
-        ConfirmedButton(tr("remotemcp.reset"), question: tr("remotemcp.reset.confirm")) { server.resetEverything() }
-            .controlSize(.small)
-            .nookTip(tr("remotemcp.reset.help"))
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ConfirmedButton(tr("remotemcp.reset"), question: tr("remotemcp.reset.confirm")) { server.resetEverything() }
+                .controlSize(.small)
+            SettingsInfoButton(text: tr("remotemcp.reset.help"))
+        }
     }
 
     private func levelPicker(_ level: RemoteAccessLevel, set: @escaping (RemoteAccessLevel) -> Void) -> some View {
-        Picker(tr("remotemcp.level"), selection: Binding(get: { level }, set: set)) {
-            ForEach(RemoteAccessLevel.allCases, id: \.self) { Text(tr("remotemcp.level." + $0.rawValue)).tag($0) }
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Picker(tr("remotemcp.level"), selection: Binding(get: { level }, set: set)) {
+                ForEach(RemoteAccessLevel.allCases, id: \.self) { Text(tr("remotemcp.level." + $0.rawValue)).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            SettingsInfoButton(text: tr("remotemcp.level.help"))
         }
-        .labelsHidden()
-        .fixedSize()
-        .nookTip(tr("remotemcp.level.help"))
     }
 }

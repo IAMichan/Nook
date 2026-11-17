@@ -87,7 +87,6 @@ private struct SelectionBarButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(title)
     }
 }
 

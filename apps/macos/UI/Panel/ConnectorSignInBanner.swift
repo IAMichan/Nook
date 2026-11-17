@@ -22,7 +22,6 @@ struct ConnectorSignInBanner: View {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .nookTip(waiting == nil ? "" : tr("ws.connector.waitingHelp"))
                     }
                 }
             } actions: {

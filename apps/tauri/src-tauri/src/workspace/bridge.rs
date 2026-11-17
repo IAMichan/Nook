@@ -14,9 +14,11 @@ use chrono::{DateTime, Utc};
 use nook_core::agents::ipc::{self, BoxStream};
 use nook_core::agents::models::{AgentApproval, ApprovalOrigin};
 use nook_core::agents::risk::{self, RiskLevel};
+use nook_core::i18n::{tr, trf};
 use nook_core::workspace::bridge::{
-    allowed_url, call_response, handle_rpc, verdict, BridgeCaller, BridgeTool, Reason, RpcAction, ToolResult, Verdict,
+    allowed_url, call_response, handle_rpc, page_verdict, verdict, BridgeCaller, BridgeTool, Reason, RpcAction, ToolResult, Verdict,
 };
+use nook_core::workspace::browser_script;
 use nook_core::workspace::models::{EventKind, PermissionPolicy, WorkspaceRun};
 use nook_core::workspace::paths::{self, Verdict as PathVerdict};
 use nook_core::workspace::source_control::{RemoteRepository, SourceControlHost};
@@ -26,6 +28,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 mod nook;
+mod sessions;
+pub mod tasks;
 
 use super::terminals::{TerminalInfo, TerminalOwner};
 use super::WorkspaceState;
@@ -273,7 +277,7 @@ fn refusal(reason: Reason) -> &'static str {
         Reason::Disabled => "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace).",
         Reason::PlanMode => "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead.",
         Reason::Dangerous => "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed.",
-        Reason::NeedsReview | Reason::Outward => "The user did not approve this in Nook.",
+        Reason::NeedsReview | Reason::Outward | Reason::Delegation => "The user did not approve this in Nook.",
     }
 }
 
@@ -304,9 +308,20 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::BrowserOpen => browser_open(app, a, &caller).await,
         BridgeTool::BrowserRead => browser_read(app).await,
         BridgeTool::BrowserScreenshot => browser_screenshot(app, a).await,
+        BridgeTool::BrowserSnapshot => browser_snapshot(app, a).await,
+        BridgeTool::BrowserClick | BridgeTool::BrowserType => browser_interact(app, tool, a, &caller, context).await,
+        BridgeTool::BrowserWaitFor => browser_wait_for(app, a).await,
+        BridgeTool::OrchestratorCapabilities
+        | BridgeTool::DelegateTask
+        | BridgeTool::TaskStatus
+        | BridgeTool::TaskWait
+        | BridgeTool::TaskCancel => tasks::call(app, tool, a, &caller, context).await,
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
+        BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
+        BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
+        BridgeTool::SessionWait => sessions::session_wait(app, a).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList
@@ -631,6 +646,123 @@ async fn browser_read(app: &AppHandle) -> Result<ToolResult, String> {
     text +=
         &format!("\n\n## Console errors and warnings\n{}", if console.is_empty() { "none".into() } else { console[start..].join("\n") });
     Ok(ToolResult::text(text))
+}
+
+const NOTHING_OPEN: &str = "Nothing is open in Nook's browser. Open a page with browser_open first.";
+
+/// The page in Nook's browser, or the error for the agent. Looking never opens the browser.
+fn open_page(app: &AppHandle) -> Result<String, String> {
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let state = ws.browser.state();
+    if !state.open || state.url.is_empty() {
+        return Err(NOTHING_OPEN.into());
+    }
+    Ok(state.url)
+}
+
+async fn browser_snapshot(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
+    open_page(app)?;
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let limit = browser_script::snapshot_limit(a.get("limit").and_then(Value::as_i64));
+    let json = ws.browser.evaluate(app, &browser_script::snapshot(limit)).await?;
+    Ok(ToolResult::text(browser_script::snapshot_text(&json)))
+}
+
+async fn browser_interact(
+    app: &AppHandle,
+    tool: BridgeTool,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    let page = open_page(app)?;
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let target = browser_script::Target::parse(a)?;
+    let value = if tool == BridgeTool::BrowserType {
+        a.get("value").and_then(Value::as_str).ok_or("Give the value to type.")?.to_string()
+    } else {
+        String::new()
+    };
+    let host = url::Url::parse(&page).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_else(|| page.clone());
+    let click = tool == BridgeTool::BrowserClick;
+    match page_verdict(tool, caller, &host, enabled(app)) {
+        Verdict::Refuse(reason) => return Err(refusal(reason).into()),
+        Verdict::Ask(_) => {
+            let action = if click { target.summary() } else { format!("{}\n\n{value}", target.summary()) };
+            let title = if click {
+                trf("{agent} wil klikken op {host}", "{agent} wants to click on {host}", &[("agent", &caller.agent), ("host", &host)])
+            } else {
+                trf("{agent} wil typen op {host}", "{agent} wants to type on {host}", &[("agent", &caller.agent), ("host", &host)])
+            };
+            let note = tr(
+                "Deze pagina staat niet op je computer: een klik of getypte tekst kan namens jou iets versturen.",
+                "This page is not on your computer: a click or typed text can send something on your behalf.",
+            );
+            let allowed = ws.bridge.ask(app, caller, tool, title, format!("{page}\n\n{action}"), note.into(), &context.connection).await;
+            if !allowed {
+                audit(app, tool, caller, &format!("{host} · {}", target.summary()), "niet toegestaan");
+                return Err(refusal(Reason::NeedsReview).into());
+            }
+        }
+        Verdict::Allow => {}
+    }
+    let flag = |k: &str| a.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let script =
+        if click { browser_script::click(&target) } else { browser_script::type_text(&target, &value, flag("append"), flag("submit")) };
+    let object = browser_script::result(&ws.browser.evaluate(app, &script).await?);
+    let _ = app.emit("bridge-used", serde_json::json!({"directory": caller.directory, "tool": "browser"}));
+    // Only where and on what: typed text can be private and never goes into the audit log.
+    if object.get("ok").and_then(Value::as_bool) != Some(true) {
+        audit(app, tool, caller, &format!("{host} · {}", target.summary()), "mislukt");
+        return Err(object.get("error").and_then(Value::as_str).unwrap_or("Nook's browser could not do that.").to_string());
+    }
+    audit(app, tool, caller, &format!("{host} · {}", target.summary()), "gedaan");
+    // A click often starts a navigation; give it a moment so the next call sees the new page.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let element = object.get("element").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| target.summary());
+    let verb = match (click, object.get("submitted").and_then(Value::as_bool) == Some(true)) {
+        (true, _) => "Clicked",
+        (false, true) => "Typed into and submitted",
+        (false, false) => "Typed into",
+    };
+    Ok(ToolResult::text(format!("{verb} {element} on {page}. Check the result with browser_snapshot, browser_read or browser_wait_for.")))
+}
+
+async fn browser_wait_for(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
+    let text = Some(arg(a, "text")).filter(|t| !t.is_empty());
+    let selector = Some(arg(a, "selector")).filter(|t| !t.is_empty());
+    if text.is_none() && selector.is_none() {
+        return Err("Give the text or selector to wait for.".into());
+    }
+    open_page(app)?;
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let gone = a.get("gone").and_then(Value::as_bool).unwrap_or(false);
+    let timeout = browser_script::wait_seconds(a.get("timeout_seconds").and_then(Value::as_i64));
+    let script = browser_script::condition(text, selector, gone);
+    let what = [text.map(|t| format!("\"{t}\"")), selector.map(str::to_string)].into_iter().flatten().collect::<Vec<_>>().join(" and ");
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout);
+    loop {
+        // A page that is still loading cannot answer yet.
+        if !ws.browser.state().loading {
+            if let Ok(json) = ws.browser.evaluate(app, &script).await {
+                let object = browser_script::result(&json);
+                if let Some(e) = object.get("error").and_then(Value::as_str) {
+                    return Err(e.into());
+                }
+                if object.get("met").and_then(Value::as_bool) == Some(true) {
+                    let url = ws.browser.state().url;
+                    return Ok(ToolResult::text(format!("{}{what} on {url}.", if gone { "Gone: " } else { "Found: " })));
+                }
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "Waited {timeout} s; {what} {}. Check the page with browser_snapshot or browser_screenshot.",
+                if gone { "is still there" } else { "did not appear" }
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
 }
 
 async fn browser_screenshot(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {

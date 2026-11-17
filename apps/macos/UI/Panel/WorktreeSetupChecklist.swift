@@ -37,7 +37,6 @@ struct WorktreeSetupChecklist: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                     .buttonStyle(.nookPlain)
-                    .nookTip(tr("ws.setup.cancel.help"))
                 }
             }
             .padding(.leading, NookTheme.Spacing.xxxl)

@@ -1,6 +1,6 @@
 <script lang="ts">
   // How far your message got (`MessageTicksMark`): a clock, one check, two checks, two blue checks, or a failure.
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { ticks, read = "var(--blue)", quiet = "var(--chat-stamp)" }: { ticks?: string; read?: string; quiet?: string } = $props();
 </script>
 

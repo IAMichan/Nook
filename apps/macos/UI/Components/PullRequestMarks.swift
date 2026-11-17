@@ -29,7 +29,7 @@ struct LabelChip: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, 1)
         .background(NookTheme.shape(NookTheme.Radius.chip).strokeBorder(NookTheme.line2))
-        .nookTip(detail.map { name + ": " + $0 } ?? name)
+        .nookTip(detail.map { name + ": " + $0 } ?? "")
         .accessibilityElement(children: .combine)
         .accessibilityHint(detail ?? "")
     }
@@ -83,8 +83,8 @@ struct GitHubAvatar: View {
     }
 }
 
-/// A GitHub account by picture and login, as a pull request's author, a run's actor or a note's writer show it, with
-/// "@login" on hover. `handle` writes the login as "@login".
+/// A GitHub account by picture and login, as a pull request's author, a run's actor or a note's writer show it.
+/// `handle` writes the login as "@login".
 struct GitHubPerson: View {
     let login: String
     var size: CGFloat = 16
@@ -97,7 +97,6 @@ struct GitHubPerson: View {
             GitHubAvatar(login: login, size: size)
             Text(handle ? "@" + login : login).font(font).foregroundStyle(tint).lineLimit(1)
         }
-        .nookTip("@" + login)
     }
 }
 

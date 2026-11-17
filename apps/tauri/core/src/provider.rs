@@ -11,6 +11,16 @@ pub enum AIProvider {
     Claude,
     #[serde(rename = "claudeCode")]
     ClaudeCode,
+    #[serde(rename = "codexCLI")]
+    CodexCli,
+    #[serde(rename = "geminiCLI")]
+    GeminiCli,
+    #[serde(rename = "grokCLI")]
+    GrokCli,
+    #[serde(rename = "kimiCLI")]
+    KimiCli,
+    #[serde(rename = "vibeCLI")]
+    VibeCli,
     Openai,
     Gemini,
     Grok,
@@ -25,9 +35,14 @@ pub enum AIProvider {
 }
 
 impl AIProvider {
-    pub const ALL: [AIProvider; 13] = [
+    pub const ALL: [AIProvider; 18] = [
         Self::Claude,
         Self::ClaudeCode,
+        Self::CodexCli,
+        Self::GeminiCli,
+        Self::GrokCli,
+        Self::KimiCli,
+        Self::VibeCli,
         Self::Openai,
         Self::Gemini,
         Self::Grok,
@@ -45,6 +60,11 @@ impl AIProvider {
         match self {
             Self::Claude => "claude",
             Self::ClaudeCode => "claudeCode",
+            Self::CodexCli => "codexCLI",
+            Self::GeminiCli => "geminiCLI",
+            Self::GrokCli => "grokCLI",
+            Self::KimiCli => "kimiCLI",
+            Self::VibeCli => "vibeCLI",
             Self::Openai => "openai",
             Self::Gemini => "gemini",
             Self::Grok => "grok",
@@ -67,6 +87,11 @@ impl AIProvider {
         match self {
             Self::Claude => "Claude",
             Self::ClaudeCode => "Claude Code (je abonnement)",
+            Self::CodexCli => "ChatGPT (je abonnement, via Codex)",
+            Self::GeminiCli => "Gemini (je Google-account, via Gemini CLI)",
+            Self::GrokCli => "Grok (je xAI-account, via Grok)",
+            Self::KimiCli => "Kimi (je Kimi-account, via Kimi Code)",
+            Self::VibeCli => "Mistral (je Mistral-account, via Vibe)",
             Self::Openai => "OpenAI",
             Self::Gemini => "Google Gemini",
             Self::Grok => "Grok (xAI)",
@@ -87,7 +112,59 @@ impl AIProvider {
     }
 
     pub fn needs_key(self) -> bool {
-        !self.is_local_server() && self != Self::ClaudeCode
+        !self.is_local_server() && !self.is_subscription()
+    }
+
+    /// The command of the coding agent whose own login this provider thinks with (your subscription or account, no
+    /// key); `None` for the APIs.
+    pub fn cli_command(self) -> Option<&'static str> {
+        match self {
+            Self::ClaudeCode => Some("claude"),
+            Self::CodexCli => Some("codex"),
+            Self::GeminiCli => Some("gemini"),
+            Self::GrokCli => Some("grok"),
+            Self::KimiCli => Some("kimi"),
+            Self::VibeCli => Some("vibe"),
+            Self::Claude
+            | Self::Openai
+            | Self::Gemini
+            | Self::Grok
+            | Self::Mistral
+            | Self::Groq
+            | Self::Openrouter
+            | Self::Deepseek
+            | Self::Qwen
+            | Self::Moonshot
+            | Self::Ollama
+            | Self::Lmstudio => None,
+        }
+    }
+
+    /// What to run once in a terminal to sign in: Kimi Code and Vibe have their own command; the agents Nook runs sign
+    /// in when they start.
+    pub fn login_command(self) -> Option<&'static str> {
+        match self {
+            Self::KimiCli => Some("kimi login"),
+            Self::VibeCli => Some("vibe --setup"),
+            other => other.cli_command(),
+        }
+    }
+
+    /// Thinks through a coding agent you are signed in to, instead of an API with a key.
+    pub fn is_subscription(self) -> bool {
+        self.cli_command().is_some()
+    }
+
+    /// Pictures go along with the prompt through the agent: Codex takes them, Claude Code through its stream input;
+    /// Gemini CLI, Grok, Kimi and Vibe would only read them as files, which stays off.
+    pub fn cli_takes_images(self) -> bool {
+        matches!(self, Self::ClaudeCode | Self::CodexCli) || !self.is_subscription()
+    }
+
+    /// Whether the agent may search the web for Nook when the Web source is allowed. Kimi and Vibe never search: their
+    /// search tools are not named in their documentation, so every tool stays off.
+    pub fn cli_searches_web(self) -> bool {
+        matches!(self, Self::ClaudeCode | Self::CodexCli | Self::GeminiCli | Self::GrokCli)
     }
 
     /// Naam waaronder de sleutel in de geheimenkluis staat (zelfde als de Keychain op de Mac).
@@ -111,7 +188,14 @@ impl AIProvider {
             Self::Deepseek => "DeepSeek API-sleutel",
             Self::Qwen => "DashScope API-sleutel",
             Self::Moonshot => "Moonshot API-sleutel",
-            Self::Ollama | Self::Lmstudio | Self::ClaudeCode => "",
+            Self::Ollama
+            | Self::Lmstudio
+            | Self::ClaudeCode
+            | Self::CodexCli
+            | Self::GeminiCli
+            | Self::GrokCli
+            | Self::KimiCli
+            | Self::VibeCli => "",
         }
     }
 
@@ -119,6 +203,11 @@ impl AIProvider {
         match self {
             Self::Claude => "https://console.anthropic.com/settings/keys",
             Self::ClaudeCode => "https://claude.com/product/claude-code",
+            Self::CodexCli => "https://github.com/openai/codex",
+            Self::GeminiCli => "https://github.com/google-gemini/gemini-cli",
+            Self::GrokCli => "https://github.com/xai-org/grok-build",
+            Self::KimiCli => "https://github.com/MoonshotAI/kimi-code",
+            Self::VibeCli => "https://github.com/mistralai/mistral-vibe",
             Self::Openai => "https://platform.openai.com/api-keys",
             Self::Gemini => "https://aistudio.google.com/apikey",
             Self::Grok => "https://console.x.ai",
@@ -137,15 +226,15 @@ impl AIProvider {
     pub fn base_url(self) -> &'static str {
         match self {
             Self::Claude | Self::ClaudeCode => "https://api.anthropic.com/v1",
-            Self::Openai => "https://api.openai.com/v1",
-            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
-            Self::Grok => "https://api.x.ai/v1",
-            Self::Mistral => "https://api.mistral.ai/v1",
+            Self::Openai | Self::CodexCli => "https://api.openai.com/v1",
+            Self::Gemini | Self::GeminiCli => "https://generativelanguage.googleapis.com/v1beta/openai",
+            Self::Grok | Self::GrokCli => "https://api.x.ai/v1",
+            Self::Mistral | Self::VibeCli => "https://api.mistral.ai/v1",
             Self::Groq => "https://api.groq.com/openai/v1",
             Self::Openrouter => "https://openrouter.ai/api/v1",
             Self::Deepseek => "https://api.deepseek.com/v1",
             Self::Qwen => "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-            Self::Moonshot => "https://api.moonshot.ai/v1",
+            Self::Moonshot | Self::KimiCli => "https://api.moonshot.ai/v1",
             Self::Ollama => "http://localhost:11434/v1",
             Self::Lmstudio => "http://localhost:1234/v1",
         }
@@ -156,6 +245,8 @@ impl AIProvider {
         match self {
             Self::Claude => "claude-haiku-5-5",
             Self::ClaudeCode => "haiku",
+            // Empty: the agent's own default for your account.
+            Self::CodexCli | Self::GeminiCli | Self::GrokCli | Self::KimiCli | Self::VibeCli => "",
             Self::Openai => "gpt-4.1-mini",
             Self::Gemini => "gemini-2.5-flash",
             Self::Grok => "grok-3-mini",
@@ -174,6 +265,8 @@ impl AIProvider {
         match self {
             Self::Claude => &["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
             Self::ClaudeCode => &["haiku", "sonnet", "opus"],
+            Self::CodexCli | Self::GrokCli | Self::KimiCli | Self::VibeCli => &[],
+            Self::GeminiCli => &["gemini-2.5-flash", "gemini-2.5-pro"],
             Self::Openai => &["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
             Self::Gemini => &["gemini-2.5-flash", "gemini-2.5-pro"],
             Self::Grok => &["grok-3-mini", "grok-3", "grok-4"],
@@ -189,7 +282,7 @@ impl AIProvider {
 
     /// Haalt de modellen op die deze dienst met deze sleutel aanbiedt.
     pub async fn list_models(self, key: Option<&str>) -> Result<Vec<String>> {
-        if self == Self::ClaudeCode {
+        if self.is_subscription() {
             return Ok(self.suggested_models().iter().map(|s| s.to_string()).collect());
         }
         let base = if self == Self::Ollama {
@@ -263,7 +356,8 @@ impl AIProvider {
         let name = model.to_lowercase();
         let has = |parts: &[&str]| parts.iter().any(|p| name.contains(p));
         match self {
-            Self::Claude | Self::ClaudeCode | Self::Gemini | Self::Openrouter => true,
+            Self::Claude | Self::ClaudeCode | Self::CodexCli | Self::Gemini | Self::Openrouter => true,
+            Self::GeminiCli | Self::GrokCli | Self::KimiCli | Self::VibeCli => false,
             Self::Openai => !has(&["gpt-3", "o1-mini", "o3-mini", "instruct"]),
             Self::Grok => has(&["vision", "grok-4", "grok-2-image"]),
             Self::Mistral => has(&["pixtral", "small", "medium", "large"]),
@@ -300,6 +394,10 @@ pub struct ProviderInfo {
     pub title: &'static str,
     pub is_local: bool,
     pub needs_key: bool,
+    /// Thinks through a coding agent's own sign-in (`cli_command`), with no key.
+    pub is_subscription: bool,
+    pub cli_command: Option<&'static str>,
+    pub login_command: Option<&'static str>,
     pub key_placeholder: &'static str,
     pub key_url: &'static str,
     pub default_model: &'static str,
@@ -313,6 +411,9 @@ impl From<AIProvider> for ProviderInfo {
             title: p.title(),
             is_local: p.is_local_server(),
             needs_key: p.needs_key(),
+            is_subscription: p.is_subscription(),
+            cli_command: p.cli_command(),
+            login_command: p.login_command(),
             key_placeholder: p.key_placeholder(),
             key_url: p.key_url(),
             default_model: p.default_model(),
@@ -339,6 +440,27 @@ mod tests {
         assert!(AIProvider::is_chat_model("gpt-4.1-mini"));
         assert!(!AIProvider::is_chat_model("text-embedding-3-small"));
         assert!(!AIProvider::is_chat_model("whisper-1"));
+    }
+
+    #[test]
+    fn subscription_brains_need_no_key_and_match_mac_ids() {
+        for (provider, id, command) in [
+            (AIProvider::CodexCli, "codexCLI", "codex"),
+            (AIProvider::GeminiCli, "geminiCLI", "gemini"),
+            (AIProvider::GrokCli, "grokCLI", "grok"),
+            (AIProvider::KimiCli, "kimiCLI", "kimi"),
+            (AIProvider::VibeCli, "vibeCLI", "vibe"),
+        ] {
+            assert_eq!(provider.id(), id);
+            assert_eq!(provider.cli_command(), Some(command));
+            assert!(provider.is_subscription() && !provider.needs_key() && !provider.is_local_server());
+        }
+        assert_eq!(AIProvider::VibeCli.login_command(), Some("vibe --setup"));
+        assert_eq!(AIProvider::CodexCli.login_command(), Some("codex"));
+        assert_eq!(AIProvider::Openai.login_command(), None);
+        assert!(AIProvider::CodexCli.cli_takes_images() && !AIProvider::GeminiCli.cli_takes_images());
+        assert!(AIProvider::GrokCli.cli_searches_web() && !AIProvider::KimiCli.cli_searches_web());
+        assert!(!AIProvider::Openai.is_subscription() && AIProvider::Openai.cli_takes_images());
     }
 
     #[test]

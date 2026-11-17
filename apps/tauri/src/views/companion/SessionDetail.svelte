@@ -13,14 +13,14 @@
   import { haptic } from "../../lib/haptics";
   import { duration } from "../../lib/transcript";
   import NavBar from "./ui/NavBar.svelte";
-  import Ico from "./ui/Ico.svelte";
-  import PulseDot from "./ui/PulseDot.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import PulseDot from "../../components/ui/PulseDot.svelte";
   import DecisionButton from "./ui/DecisionButton.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ComposerPill from "./ui/ComposerPill.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
   import TranscriptView from "./TranscriptView.svelte";
   import ChangesView from "./ChangesView.svelte";
@@ -30,7 +30,7 @@
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import PullRequests from "./PullRequests.svelte";
-  import Sheet from "./ui/Sheet.svelte";
+  import Sheet from "../../components/ui/Sheet.svelte";
   import { withReviewComment } from "../../lib/patch";
   import { activeMac, cacheFor, kept, recordTimeline, saveSoon } from "../../lib/companion-cache";
   import OfflineStrip from "./ui/OfflineStrip.svelte";

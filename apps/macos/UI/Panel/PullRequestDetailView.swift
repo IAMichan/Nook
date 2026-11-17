@@ -272,7 +272,7 @@ struct PullRequestDetailView: View {
                         }
                     }
                     .onChange(of: model.loading) { _, loading in if !loading { refreshAsked = false } }
-                    PullRequestMoreMenu(state: actions, detail: detail, fetchedAt: model.fetchedAt,
+                    PullRequestMoreMenu(state: actions, detail: detail,
                                         viewer: viewer, method: method, host: forgeRepository?.host ?? .github, onWriteGuide: {
                         switchTo(.guide)
                         writeGuide(detail, key: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number))
@@ -307,10 +307,9 @@ struct PullRequestDetailView: View {
                 Button {
                     if let url = URL(string: (forgeRepository?.webOrigin ?? "https://github.com") + "/" + item.repo) { NSWorkspace.shared.open(url) }
                 } label: {
-                    Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
+                    Text(item.repo).foregroundStyle(NookTheme.textSecondary).truncationMode(.tail).nookTipWhenCut(item.repo)
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(tr("agents.pr.openRepository", item.repo))
                 numberLink
             }
         }
@@ -330,7 +329,6 @@ struct PullRequestDetailView: View {
         }
         .buttonStyle(.nookPlain)
         .fixedSize()
-        .nookTip(tr("agents.pulls.open"))
         .accessibilityLabel(tr("agents.pulls.open"))
         .contextMenu {
             GitHubLinkMenuItems(url: detail?.url ?? item.url)
@@ -364,13 +362,11 @@ struct PullRequestDetailView: View {
                     Text(PullRequestRow.opened(Date().timeIntervalSince(created)))
                         .monospacedDigit()
                         .fixedSize()
-                        .nookTip(created.formatted(date: .abbreviated, time: .shortened))
                 }
                 if let updated = detail?.updated ?? item.updated {
                     if !author.isEmpty || created != nil { Text("·").foregroundStyle(NookTheme.textMuted) }
                     Text(tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
                         .monospacedDigit()
-                        .nookTip(updated.formatted(date: .abbreviated, time: .shortened))
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if let detail { checkoutCommand(detail) }
@@ -442,10 +438,9 @@ struct PullRequestDetailView: View {
             Pasteboard.copy(command)
             ToastCenter.shared.success(tr("agents.pr.action.copied"))
         } label: {
-            Text(command).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textMuted).lineLimit(1).truncationMode(.tail)
+            Text(command).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textMuted).truncationMode(.tail).nookTipWhenCut(command)
         }
         .buttonStyle(.nookPlain)
-        .nookTip(tr("agents.pr.action.copyCheckout"))
         .layoutPriority(-1)
     }
 
@@ -490,7 +485,7 @@ struct PullRequestDetailView: View {
         let stacked = shownStack.contains { $0.headBranch == detail.baseBranch }
         let name = HStack(spacing: NookTheme.Spacing.xs) {
             if stacked { PullRequestStateIcon(glyph: .stack, tinted: false) }
-            Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
+            Text(detail.baseBranch).truncationMode(.middle).nookTipWhenCut(detail.baseBranch)
         }
         if detail.state == .open, detail.mergeable != false, detail.mergeState == "behind" || (behindBy ?? 0) > 0 {
             Button {
@@ -504,7 +499,6 @@ struct PullRequestDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(behindText(detail))
             .popover(isPresented: $showBehind, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     Text(behindText(detail))
@@ -532,7 +526,7 @@ struct PullRequestDetailView: View {
                 .frame(width: 280, alignment: .leading)
             }
         } else {
-            name.nookTip(stacked ? tr("agents.pr.base.stacked", detail.baseBranch) : detail.baseBranch)
+            name
         }
     }
 
@@ -556,10 +550,10 @@ struct PullRequestDetailView: View {
                     Pasteboard.copy(detail.headBranch, toast: tr("agents.pr.copiedBranch"))
                 } label: {
                     // A fork's branch carries its owner, as on GitHub: "ada:feature".
-                    Text((detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch).lineLimit(1).truncationMode(.middle)
+                    let branch = (detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch
+                    Text(branch).truncationMode(.middle).nookTipWhenCut(branch)
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(tr("agents.pr.copyBranch"))
             }
             .font(NookTheme.mono(11.5))
             .foregroundStyle(NookTheme.textMuted)
@@ -583,7 +577,6 @@ struct PullRequestDetailView: View {
                 Text(compact ? "\(files)" : tr("agents.pr.filesCount", files))
             }
             .foregroundStyle(NookTheme.textTertiary)
-            .nookTip(tr("agents.pr.filesCount", files))
             if detail.additions > 0 || detail.deletions > 0 {
                 let split = breakdown(detail)
                 PullRequestLineCounts(additions: detail.additions, deletions: detail.deletions,
@@ -710,13 +703,10 @@ struct PullRequestDetailView: View {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
                     Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", icon: "bubble.left")
-                        .nookTip(tr("agents.pr.count.comments"))
                     Label("\(detail.commits.count)", icon: "circle.and.line.horizontal")
-                        .nookTip(tr("agents.pr.count.commits"))
                     if approvals > 0 {
                         Label("\(approvals)", icon: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
                             .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
-                            .nookTip(tr("agents.pr.count.approvals"))
                     }
                 }
                 orderButton(newestFirst: $newestFirst)

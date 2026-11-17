@@ -71,6 +71,7 @@ fn label(key: &str) -> String {
         "subject" => "Het onderwerp",
         "id" => "Het id",
         "event" => "Het oordeel",
+        "pulls" => "De pull requests",
         "text" => "De tekst",
         "what" => "Wat vergeten moet worden",
         other => other,
@@ -139,6 +140,11 @@ pub fn problems(tool: &str, input: &Value, schema: &Value) -> Vec<String> {
         }
     }
 
+    // A batch merge lists every pull request it touches, so the plan shows exactly what gets merged.
+    if tool == "github_merge_prs" {
+        problems.extend(crate::connectors::pull_batch_merge::problems(input.get("pulls")));
+    }
+
     // Velden met een vaste betekenis.
     let mut dates = std::collections::HashMap::new();
     for key in ["start", "end", "due", "from", "to", "date"] {
@@ -179,6 +185,11 @@ pub fn problems(tool: &str, input: &Value, schema: &Value) -> Vec<String> {
                 }
             }
         }
+    }
+    if tool == "app_menu_command" {
+        let app = input["app"].as_str().unwrap_or("");
+        let path = super::app_menu::path(&input["path"]);
+        problems.extend(super::app_menu::problems(app, &path));
     }
     problems
 }
@@ -233,6 +244,7 @@ fn short_label(key: &str) -> String {
         "id" => "Id",
         "labels" => "Labels",
         "state" => "Status",
+        "pulls" => "Pull requests",
         "text" => "Tekst",
         "what" => "Wat",
         "kind" => "Soort",
@@ -435,6 +447,9 @@ mod tests {
         assert_eq!(problems("compose_mail", &json!({"to": "lisa", "subject": "Hoi"}), &mail), vec!["lisa is geen geldig mailadres."]);
         let command = json!({"properties": {"command": {"type": "string"}}});
         assert!(problems("run_command", &json!({"command": "rm -rf ~"}), &command)[0].starts_with("Dit commando voer ik niet uit"));
+        let batch = json!({"type": "object", "properties": {"pulls": {"type": "string"}}, "required": ["pulls"]});
+        assert!(problems("github_merge_prs", &json!({"pulls": "acme/app#1, acme/app#2"}), &batch).is_empty());
+        assert!(!problems("github_merge_prs", &json!({"pulls": "acme/app#1, not-a-pr"}), &batch).is_empty());
     }
 
     #[test]

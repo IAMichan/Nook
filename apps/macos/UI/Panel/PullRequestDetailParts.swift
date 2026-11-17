@@ -103,7 +103,6 @@ struct PullRequestCommitEntry: View {
     /// The message under the subject; empty for a one-line commit.
     var details = ""
     let time: String?
-    let date: Date?
     let open: () -> Void
     @State private var hovering = false
     @State private var expanded = false
@@ -121,7 +120,6 @@ struct PullRequestCommitEntry: View {
                 }
                 .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
-                .nookTip(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
                 if !details.isEmpty {
                     Button {
                         withAnimation(NookTheme.reveal) { expanded.toggle() }

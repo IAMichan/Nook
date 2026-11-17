@@ -7,6 +7,28 @@
   import { conversationGroups, recoverDeletedConversation } from "../lib/conversation-list";
   import { tr, locale } from "../lib/i18n.svelte";
   import type { ConversationSummary } from "../lib/types";
+  import type { Target } from "../lib/inbox";
+  import { tabBadge } from "../lib/nook-tasks";
+  import { automationApi, type TaskView } from "../lib/workspace/automation";
+  import NookTasks from "./NookTasks.svelte";
+
+  let { onopen }: { onopen?: (target: Target) => void } = $props();
+
+  /// Conversations and scheduled tasks as two tabs, so they never mix (`NookConversationList` on the Mac).
+  let part = $state<"conversations" | "scheduled">("conversations");
+  let tasks = $state<TaskView[] | null>(null);
+  const badge = $derived(tasks ? tabBadge(tasks, nook.nooks) : { waiting: 0, fresh: false });
+  const nookTaskCount = $derived(tasks?.filter((t) => t.target.type === "nook").length ?? 0);
+
+  // Automation runs in the desktop app only; where it is missing, the list has no Scheduled tab.
+  $effect(() => {
+    let stop: (() => void) | undefined;
+    let live = true;
+    const load = () => automationApi.overview().then((o) => { if (live) tasks = o.tasks; }).catch(() => { if (live) tasks = null; });
+    load();
+    automationApi.onChanged(load).then((off) => { if (live) stop = off; else off(); }).catch(() => {});
+    return () => { live = false; stop?.(); };
+  });
 
   function groupTitle(id: string): string | undefined {
     switch (id) {
@@ -28,7 +50,7 @@
   let menu = $state<string | null>(null);
   let confirming = $state<string | null>(null);
   let pending = $state(false);
-  let itemsElement: HTMLDivElement;
+  let itemsElement = $state<HTMLDivElement | undefined>();
   const deleted = new Set<string>();
   /// Deleted with Undo still on screen: hidden right away, removed for good once the undo time is over.
   let hidden = $state<Set<string>>(new Set());
@@ -149,7 +171,7 @@
       confirming = null;
       retry++;
       await tick();
-      const target = itemsElement.querySelector<HTMLButtonElement>(".conversation[aria-current='true']") ?? itemsElement.querySelector<HTMLButtonElement>(".conversation");
+      const target = itemsElement?.querySelector<HTMLButtonElement>(".conversation[aria-current='true']") ?? itemsElement?.querySelector<HTMLButtonElement>(".conversation");
       target?.focus();
     } catch (e) {
       toast.error(changed
@@ -162,7 +184,8 @@
   }
 
   function focusRow(index: number) {
-    const rows = itemsElement.querySelectorAll<HTMLButtonElement>(".conversation");
+    const rows = itemsElement?.querySelectorAll<HTMLButtonElement>(".conversation");
+    if (!rows) return;
     rows[index]?.focus();
   }
 
@@ -178,7 +201,7 @@
       e.preventDefault();
       menu = id;
       confirming = null;
-      tick().then(() => itemsElement.querySelector<HTMLButtonElement>(".actions button")?.focus());
+      tick().then(() => itemsElement?.querySelector<HTMLButtonElement>(".actions button")?.focus());
     }
   }
 
@@ -195,9 +218,23 @@
 <svelte:window onkeydown={closeActions} />
 
 <aside class="list" aria-label={tr("Gesprekken", "Conversations")}>
-  <header><span>{tr("Gesprekken", "Conversations")}</span><span class="count">{list.length}</span></header>
+  {#if tasks}
+    <div class="tabs" role="tablist" aria-label={tr("Gesprekken of geplande taken", "Conversations or scheduled tasks")}>
+      <button role="tab" aria-selected={part === "conversations"} class:on={part === "conversations"} onclick={() => (part = "conversations")}>{tr("Gesprekken", "Conversations")}<span class="count">{list.length}</span></button>
+      <button role="tab" aria-selected={part === "scheduled"} class:on={part === "scheduled"} onclick={() => (part = "scheduled")} title={nookTaskCount ? tr("{n} taken die Nook uit zichzelf doet", "{n} tasks Nook runs on its own", { n: nookTaskCount }) : undefined}>
+        {tr("Gepland", "Scheduled")}
+        {#if badge.waiting}<span class="count waiting" aria-label={tr("{n} wachten op jou", "{n} waiting for you", { n: badge.waiting })}>{badge.waiting}</span>
+        {:else if badge.fresh}<span class="fresh" aria-label={tr("Nieuw antwoord", "New answer")}></span>{/if}
+      </button>
+    </div>
+  {:else}
+    <header><span>{tr("Gesprekken", "Conversations")}</span><span class="count">{list.length}</span></header>
+  {/if}
   <button class="new-nook" onclick={newNook}><Icon name="plus" size={16} /><span>{tr("Nieuwe Nook", "New Nook")}</span><kbd>Ctrl N</kbd></button>
   <label class="search"><Icon name="search" size={15} /><input aria-label={tr("Gesprekken zoeken", "Search conversations")} placeholder={tr("Gesprekken zoeken (Ctrl+F)", "Search conversations (Ctrl+F)")} bind:value={query} onkeydown={(e) => { if (e.key === "ArrowDown" && list.length) { e.preventDefault(); focusRow(0); } }} />{#if query}<button class="ghost" aria-label={tr("Zoekopdracht wissen", "Clear search")} onclick={() => query = ""}>×</button>{/if}</label>
+  {#if part === "scheduled" && tasks}
+    <div class="items"><NookTasks {tasks} {query} {onopen} /></div>
+  {:else}
   <div class="items" bind:this={itemsElement} aria-busy={query.trim() ? search.kind === "loading" : loading}>
     {#if query.trim() && search.kind === "loading" || !query.trim() && loading && !list.length}
       <p class="state" role="status">{query.trim() ? tr("Gesprekken doorzoeken…", "Searching conversations…") : tr("Gesprekken laden…", "Loading conversations…")}</p>
@@ -236,11 +273,18 @@
       <div class="list-empty"><Icon name="chat" size={24} /><p>{query.trim() ? tr("Niets gevonden", "No conversations found") : tr("Ruimte om na te denken", "A little room to think")}</p><span>{query.trim() ? tr("Zoek in titels en berichten, ook in gearchiveerde Nooks.", "Search titles and messages, including archived Nooks.") : tr("Begin een Nook. Je gesprekken verschijnen hier.", "Start a Nook. Your conversations will appear here.")}</span>{#if query.trim()}<button class="ghost" onclick={() => query = ""}>{tr("Zoekopdracht wissen", "Clear search")}</button>{:else}<button class="ghost" onclick={newNook}>{tr("Nieuwe Nook", "New Nook")}</button>{/if}</div>
     {/if}
   </div>
+  {/if}
 </aside>
 
 <style>
   .list { display: flex; flex-direction: column; min-height: 0; background: transparent; }
   header { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 8px 12px; font-weight: 600; font-size: 12px; color: var(--text2); }
+  .tabs { display: flex; gap: var(--space-4); padding: var(--space-6) var(--space-8); }
+  .tabs button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-8); border-radius: var(--radius-control); font: var(--text-label); color: var(--text3); }
+  .tabs button.on { color: var(--text-strong); background: var(--smoke); }
+  .tabs button:focus-visible { outline: 2px solid var(--iris); outline-offset: 1px; }
+  .count.waiting { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
+  .fresh { width: 6px; height: 6px; border-radius: 50%; background: var(--iris); }
   .count { color: var(--text3); background: var(--smoke); border-radius: var(--radius-control); padding: 2px 6px; font-size: 10px; font-weight: 500; }
   .new-nook { margin: 4px 4px 12px; display: flex; align-items: center; gap: 8px; min-height: 34px; background: var(--surface); border-color: var(--line2); }
   .new-nook kbd { margin-left: auto; color: var(--text3); font-size: 10px; }

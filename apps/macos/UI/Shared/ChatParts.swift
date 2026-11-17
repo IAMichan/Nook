@@ -249,7 +249,6 @@ struct MessageTicksMark: View {
             }
         }
         .foregroundStyle(color)
-        .sharedTip(ticks.label)
         .accessibilityElement()
         .accessibilityLabel(ticks.label)
     }

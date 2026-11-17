@@ -3,6 +3,7 @@
 
 mod agents;
 mod brain;
+mod chats;
 pub mod cli;
 mod commands;
 mod companion;
@@ -105,6 +106,7 @@ pub fn run() {
             commands::maintenance::export_settings,
             commands::maintenance::reset_settings,
             commands::providers,
+            commands::openrouter_sign_in,
             commands::list_models,
             commands::key_status,
             commands::set_key,
@@ -143,6 +145,7 @@ pub fn run() {
             commands::companion::companion_begin_pairing,
             commands::companion::companion_cancel_pairing,
             commands::companion::companion_remove_device,
+            commands::companion::companion_set_scopes,
             commands::companion::companion_set_push,
             commands::companion::companion_set_push_route,
             commands::companion::companion_set_apns,
@@ -215,6 +218,14 @@ pub fn run() {
             commands::connectors::whatsapp_mark_read,
             commands::connectors::whatsapp_ignore,
             commands::connectors::whatsapp_unmute,
+            chats::helper::chat_helper_status,
+            chats::link::chat_link_networks,
+            chats::link::chat_link_start,
+            chats::link::chat_link_session,
+            chats::link::chat_link_submit,
+            chats::link::chat_link_cancel,
+            chats::link::chat_link_remove,
+            chats::link::chat_link_sign_in,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
             commands::whatsapp::whatsapp_avatars,
@@ -308,6 +319,7 @@ pub fn run() {
             commands::brain::mail_send,
             commands::brain::mail_open,
             commands::brain::mail_open_invite,
+            commands::brain::mail_block_open,
             commands::brain::read_attachment,
             commands::brain::read_attachment_path,
             commands::brain::source_choices,

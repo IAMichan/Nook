@@ -80,11 +80,31 @@ fn translations_keep_placeholders() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
+/// The catalog files are joined in file-name order, so an English text in two files must say the same in both;
+/// otherwise renaming a file would change what Nook shows.
+#[test]
+fn a_text_in_two_catalogs_has_one_translation() {
+    let mut seen = std::collections::HashMap::new();
+    let mut bad = Vec::new();
+    for rows in catalog::ALL {
+        for &(en, de, fr, es) in rows.iter() {
+            if let Some(&earlier) = seen.get(en) {
+                if earlier != (de, fr, es) {
+                    bad.push(en.to_string());
+                }
+            }
+            seen.insert(en, (de, fr, es));
+        }
+    }
+    assert!(bad.is_empty(), "translated differently in two catalog files:\n{}", bad.join("\n"));
+}
+
 // MARK: Dutch text outside tr/trf (FD-04 in docs/WINDOWS-PARITY.md)
 
 /// Files whose Dutch string literals are data, not text Nook shows: keyword patterns that read what the user typed,
 /// and the Dutch documents and questions of the local quality check.
-const DUTCH_ON_PURPOSE: &[&str] = &["core/src/brain/intent.rs", "core/src/brain/local_intent.rs", "core/src/brain/quality.rs"];
+const DUTCH_ON_PURPOSE: &[&str] =
+    &["core/src/brain/intent.rs", "core/src/brain/local_intent.rs", "core/src/brain/message_trust.rs", "core/src/brain/quality.rs"];
 
 /// Dutch string literals each file still has outside `tr`/`trf`, from before the Rust side spoke five languages.
 /// The numbers only go down: wrap the text in `tr("Nederlands", "English")` with a catalog row and lower the number
@@ -133,7 +153,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("core/src/connectors/pulls.rs", 9),
     ("core/src/connectors/whatsapp/link.rs", 12),
     ("core/src/platform.rs", 10),
-    ("core/src/services/autocomplete/engine.rs", 3),
+    ("core/src/services/autocomplete/engine.rs", 2),
     ("core/src/services/files.rs", 2),
     ("core/src/services/quiet.rs", 3),
     ("core/src/services/rewrite.rs", 4),
@@ -149,7 +169,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/agents/mod.rs", 3),
     ("src-tauri/src/agents/terminal.rs", 8),
     ("src-tauri/src/commands/agents.rs", 5),
-    ("src-tauri/src/commands/brain.rs", 6),
+    ("src-tauri/src/commands/brain.rs", 3),
     ("src-tauri/src/commands/chat.rs", 24),
     ("src-tauri/src/commands/companion.rs", 2),
     ("src-tauri/src/commands/connectors.rs", 22),

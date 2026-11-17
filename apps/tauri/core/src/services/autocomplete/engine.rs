@@ -52,9 +52,11 @@ pub fn plan(settings: &Settings) -> Plan {
     match settings.autocomplete.engine {
         EngineChoice::Local => Plan::Local { server: local_server(settings) },
         EngineChoice::Brain if settings.provider.is_local_server() => Plan::Local { server: settings.provider },
-        EngineChoice::Brain if settings.provider == AIProvider::ClaudeCode => {
-            Plan::Unsupported("Claude Code als brein kan niet aanvullen. Kies een model op deze computer.".into())
-        }
+        EngineChoice::Brain if settings.provider.is_subscription() => Plan::Unsupported(crate::i18n::trf(
+            "{name} als brein kan niet aanvullen. Kies een model op deze computer.",
+            "{name} as the brain cannot autocomplete. Choose a model on this computer.",
+            &[("name", &settings.provider.title())],
+        )),
         EngineChoice::Brain => Plan::Remote { provider: settings.provider, model: settings.active_model() },
     }
 }
@@ -564,6 +566,7 @@ mod tests {
         assert_eq!(plan(&settings(AIProvider::Ollama, EngineChoice::Brain)), Plan::Local { server: AIProvider::Ollama });
         assert!(matches!(plan(&settings(AIProvider::Openai, EngineChoice::Brain)), Plan::Remote { provider: AIProvider::Openai, .. }));
         assert!(matches!(plan(&settings(AIProvider::ClaudeCode, EngineChoice::Brain)), Plan::Unsupported(_)));
+        assert!(matches!(plan(&settings(AIProvider::CodexCli, EngineChoice::Brain)), Plan::Unsupported(_)));
         let mut s = settings(AIProvider::Ollama, EngineChoice::Local);
         s.autocomplete.local_server = LocalServer::Lmstudio;
         assert_eq!(local_server(&s), AIProvider::Lmstudio);

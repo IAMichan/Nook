@@ -4,7 +4,7 @@ import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, Source
 import type { TaskStep } from "./task-steps";
 
 export type ProviderId =
-  | "claude" | "claudeCode" | "openai" | "gemini" | "grok" | "mistral" | "groq"
+  | "claude" | "claudeCode" | "codexCLI" | "geminiCLI" | "grokCLI" | "kimiCLI" | "vibeCLI" | "openai" | "gemini" | "grok" | "mistral" | "groq"
   | "openrouter" | "deepseek" | "qwen" | "moonshot" | "ollama" | "lmstudio";
 
 export interface ProviderInfo {
@@ -12,6 +12,10 @@ export interface ProviderInfo {
   title: string;
   isLocal: boolean;
   needsKey: boolean;
+  /** Thinks through a coding agent's own sign-in (Claude Code, Codex, Gemini CLI, Grok, Kimi Code, Vibe), no key. */
+  isSubscription: boolean;
+  cliCommand: string | null;
+  loginCommand: string | null;
   keyPlaceholder: string;
   keyUrl: string;
   defaultModel: string;
@@ -176,6 +180,8 @@ export interface ChatMessage {
   offers: string[];
   recovery: Recovery | null;
   attachment: string | null;
+  /** A question an automation asked: shown as a "Scheduled run" line, not as a bubble the user typed. */
+  scheduled?: boolean;
 }
 
 export type ConversationStatus = "working" | "waiting" | "unread" | "idle";
@@ -190,6 +196,8 @@ export interface Conversation {
   pinned: boolean;
   archived: boolean;
   scope: SourceScope | null;
+  /** The automation whose run this conversation is. */
+  scheduledTask?: string | null;
   /** Questions waiting for the answer that is being written (absent when none wait). */
   queue?: MessageQueue;
 }
@@ -215,6 +223,8 @@ export interface ConversationSummary {
   preview: string;
   pinned: boolean;
   archived: boolean;
+  /** The automation whose run this conversation is. */
+  scheduledTask?: string | null;
 }
 
 export interface OpenLoop {

@@ -6,7 +6,7 @@
   import { toggleAnswer, validAnswers } from "../../lib/companion-sessions";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { questions, onsend }: { questions: SessionQuestion[]; onsend: (answers: Record<string, string[]>) => void } = $props();
   let step = $state(0);

@@ -423,6 +423,8 @@ struct MarkdownView: View, Equatable {
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
+        case .mail(let mail):
+            MailTemplateCard(template: mail)
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size).equatable()
         case .rule:
@@ -517,9 +519,8 @@ private struct MarkdownCodeBlock: View {
                     Text(title)
                         .font(NookTheme.mono(11))
                         .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
                         .truncationMode(.head)
-                        .nookTip(language.isEmpty ? title : "\(title) · \(language)")
+                        .nookTipWhenCut(title)
                         .padding(.leading, NookTheme.Spacing.xxs)
                 } else {
                     Text(language.isEmpty ? "code" : language)

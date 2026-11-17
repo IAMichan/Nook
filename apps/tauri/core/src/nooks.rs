@@ -68,6 +68,9 @@ pub struct MailDraft {
     pub to: String,
     #[serde(default)]
     pub cc: String,
+    /// Blind copy recipients; empty in drafts stored before Bcc existed.
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
     pub body: String,
     /// Paths on disk attached to this draft (such as `invite.ics`).
@@ -89,6 +92,7 @@ impl MailDraft {
             id: uuid::Uuid::new_v4().to_string(),
             to: to.into(),
             cc: cc.into(),
+            bcc: String::new(),
             subject: subject.into(),
             body: body.into(),
             attachments: Vec::new(),
@@ -135,6 +139,9 @@ pub struct ChatMessage {
     pub recovery: Option<serde_json::Value>,
     /// De bijlage bij een vraag (bestandsnaam).
     pub attachment: Option<String>,
+    /// A question an automation asked (a scheduled run), shown as a quiet marker instead of a bubble the user typed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub scheduled: bool,
 }
 
 impl Default for ChatMessage {
@@ -165,6 +172,7 @@ impl Default for ChatMessage {
             offers: vec![],
             recovery: None,
             attachment: None,
+            scheduled: false,
         }
     }
 }
@@ -299,6 +307,9 @@ pub struct Conversation {
     /// Questions waiting for the answer that is being written (`NookChat.enqueue` on the Mac).
     #[serde(default, skip_serializing_if = "crate::brain::queue::MessageQueue::is_empty")]
     pub queue: crate::brain::queue::MessageQueue,
+    /// The automation whose run this conversation is (a scheduled task for Nook Chat), for the "Scheduled run" marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_task: Option<String>,
 }
 
 impl Conversation {
@@ -316,6 +327,7 @@ impl Conversation {
             pinned: false,
             archived: false,
             queue: Default::default(),
+            scheduled_task: None,
         }
     }
 
@@ -421,6 +433,8 @@ pub struct ConversationSummary {
     pub preview: String,
     pub pinned: bool,
     pub archived: bool,
+    /// The automation whose run this conversation is.
+    pub scheduled_task: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -584,8 +598,14 @@ impl NookChat {
                 preview: c.preview(),
                 pinned: c.pinned,
                 archived: c.archived,
+                scheduled_task: c.scheduled_task.clone(),
             })
             .collect()
+    }
+
+    /// The conversation of an automation's latest run, archived ones included; `None` before its first run.
+    pub fn latest_run(&self, task: &str) -> Option<&Conversation> {
+        self.conversations.iter().filter(|c| c.scheduled_task.as_deref() == Some(task)).max_by_key(|c| c.created)
     }
 
     /// Zoeken in titels en berichten, ook in het archief.
@@ -628,6 +648,29 @@ mod tests {
         c.messages[0].plan_state = None;
         c.messages.push(ChatMessage::user("laat maar, iets anders"));
         assert_eq!(c.status(), ConversationStatus::Idle, "a plan you moved past no longer waits");
+    }
+
+    #[test]
+    fn an_automation_finds_its_latest_run_and_the_list_says_whose_run_it_is() {
+        let mut chat = NookChat::default();
+        for minutes in [1, 3, 2] {
+            let mut c = Conversation::new();
+            c.created = Utc::now() + chrono::Duration::minutes(minutes);
+            c.scheduled_task = Some("task".into());
+            c.title = format!("run {minutes}");
+            let mut question = ChatMessage::user("Anything new?");
+            question.scheduled = true;
+            c.messages.push(question);
+            chat.conversations.push(c);
+        }
+        chat.conversations.push(Conversation::new());
+        assert_eq!(chat.latest_run("task").unwrap().title, "run 3");
+        assert!(chat.latest_run("other").is_none());
+        let list = chat.list(false);
+        assert_eq!(list.iter().filter(|s| s.scheduled_task.as_deref() == Some("task")).count(), 3);
+        let json = serde_json::to_value(&chat.conversations[0].messages[0]).unwrap();
+        assert_eq!(json["scheduled"], true);
+        assert!(serde_json::to_value(ChatMessage::user("x")).unwrap().get("scheduled").is_none());
     }
 
     #[test]
