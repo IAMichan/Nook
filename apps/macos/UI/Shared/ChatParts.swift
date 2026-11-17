@@ -139,6 +139,24 @@ struct ChatDayDivider: View {
     }
 }
 
+/// Where what was new when the chat opened starts: a hairline on either side of "New messages". The Mac's transcript and
+/// the iPhone's chat both draw it above the first message you had not read.
+struct ChatNewDivider: View {
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+            Text(sharedText("chat.newMessages", "New messages"))
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize()
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text; in mint when it
 /// answers a message of yours.
 struct ChatQuote: View {

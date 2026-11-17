@@ -1,6 +1,6 @@
 <script lang="ts">
   // The Chats tab of the iPhone app (`InboxListView`): every chat app on the computer in one list, newest first, with a
-  // search and All / Unread once there are more than eight. WhatsApp chats read as WhatsApp; the rest as Nook's rows.
+  // search and All / Unread once there are more than eight. Every app's chats read as Nook's rows, with the app's badge on the face.
   // A computer with `chatActions` gives the Mac's Chats tab instead: the list grouped Pinned / Today / Yesterday / This
   // week / This month / Earlier, filters by read state and app (with an app's Status and Channels), a search on the
   // computer, and a menu per chat with what its app takes.
@@ -20,7 +20,6 @@
   import EmptyState from "./ui/EmptyState.svelte";
   import Banner from "./ui/Banner.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
-  import { WA } from "./ui/whatsapp";
   import { fetchPictures } from "../../lib/avatars.svelte";
 
   let { view, inbox, message, onorb, oncomputers, ongear, onopen, took, onrefresh }: {
@@ -162,19 +161,6 @@
 {#snippet row(c: InboxChatDigest, i: number)}
         {#if i > 0}<div class="rule"></div>{/if}
         {@const typing = typingText(c.typing)}
-        {#if c.app === "whatsapp"}
-          <button class="row wa row-press" onclick={() => !held && onopen(c.id)} onpointerdown={(e) => down(e, c)} onpointerup={up} onpointerleave={up} onpointercancel={up} oncontextmenu={(e) => e.preventDefault()}>
-            <InboxAvatar id={c.id} name={c.name} size={52} badge={false} />
-            <span class="text">
-              <span class="l1"><strong style:color={WA.text}>{c.name}</strong>{@render marks(c)}<span class="when" style:color={c.unread ? WA.green : WA.quiet}>{chatTime(c.last)}</span></span>
-              <span class="l2">
-                {#if typing}<span class="prev" style:color={WA.green}>{typing}</span>
-                {:else}<span class="prev" style:color={WA.quiet}>{#if c.ticks}<TicksMark ticks={c.ticks} read={WA.readTick} quiet={WA.quiet} /> {/if}{c.preview || c.appName}</span>{/if}
-                {#if c.unread}<span class="wacount">{c.unread > 99 ? "99+" : c.unread}</span>{/if}
-              </span>
-            </span>
-          </button>
-        {:else}
           <button class="row row-press" onclick={() => !held && onopen(c.id)} onpointerdown={(e) => down(e, c)} onpointerup={up} onpointerleave={up} onpointercancel={up} oncontextmenu={(e) => e.preventDefault()}>
             <InboxAvatar id={c.id} name={c.name} app={c.app} size={40} />
             <span class="text">
@@ -186,7 +172,6 @@
               </span>
             </span>
           </button>
-        {/if}
 {/snippet}
 
 {#snippet marks(c: InboxChatDigest)}
@@ -224,20 +209,15 @@
   .rows { padding: 0 8px; }
   .rule { height: 1px; background: var(--separator); margin: 2px 12px; }
   .row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; text-align: left; -webkit-touch-callout: none; user-select: none; }
-  .row.wa { padding: 8px 12px; }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .l1 { display: flex; align-items: baseline; gap: 8px; }
   .l1 strong { flex: 1; min-width: 0; font: var(--pt-strong); color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .l1 strong.unread { color: var(--paper); }
-  .wa .l1 strong { font: 500 17px var(--font); }
   .when { font: var(--pt-caption); font-variant-numeric: tabular-nums; color: var(--text3); flex: none; }
   .when.unread { color: var(--amber); }
-  .wa .when { font: 400 12px var(--font); }
   .l2 { display: flex; align-items: center; gap: 6px; }
   .prev { flex: 1; min-width: 0; font: var(--pt-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prev.two { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .prev.unread { color: var(--text-strong); }
-  .wa .prev { font: 400 15px var(--font); }
   .count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 6px; background: rgba(240, 182, 90, 0.14); color: var(--amber); font: 600 11.4px ui-rounded, var(--font); display: inline-flex; align-items: center; justify-content: center; flex: none; }
-  .wacount { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #00a884; color: #0b141a; font: 600 12px var(--font); display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
 </style>

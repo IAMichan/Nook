@@ -2250,6 +2250,17 @@ extension CompanionClient {
         // `-NookDemoLong YES`: a long conversation on s2 that the agent keeps adding to, to check that reading it holds
         // still while new work streams in at the end.
         if UserDefaults.standard.bool(forKey: "NookDemoLong") {
+            // And a long chat with Anna whose last eight messages from her are new, to check that it opens at them.
+            inboxLines["w1"] = (0..<40).map { index in
+                let mine = index % 3 == 1
+                return InboxLine(id: "old\(index)", text: mine ? "Antwoord \(index)" : "Bericht \(index) van Anna",
+                                 date: now - 7200 + Double(index) * 150, sender: mine ? "" : "Anna de Vries", fromMe: mine,
+                                 attachment: nil, ticks: mine ? "read" : nil, quoteSender: nil, quoteText: nil, reactions: [])
+            }
+            if let index = inbox.firstIndex(where: { $0.id == "w1" }) {
+                inbox[index].unread = 8
+                inbox[index].last = inboxLines["w1"]?.last?.date ?? now
+            }
             timelines["s2"] = Self.demoLongConversation(now: now) + (timelines["s2"] ?? [])
             Task { @MainActor [weak self] in
                 var step = 0

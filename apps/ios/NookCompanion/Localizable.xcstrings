@@ -9226,6 +9226,35 @@
         }
       }
     },
+    "New messages" : {
+      "comment" : "Above the first message you had not read when you opened a chat.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Nachrichten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mensajes nuevos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveaux messages"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe berichten"
+          }
+        }
+      }
+    },
     "New messages from WhatsApp and your other chat apps on your Mac show up here." : {
       "extractionState" : "stale",
       "localizations" : {
