@@ -21,11 +21,18 @@ pub struct Env {
     pub secrets: Arc<dyn SecretStore>,
     pub store: Arc<ConnectorStore>,
     pub http: Http,
+    /// The shared inbox every chat app merges into ([`crate::chats::ChatInbox`]).
+    pub chats: Arc<crate::chats::InboxStore>,
 }
 
 impl Env {
     pub fn new(secrets: Arc<dyn SecretStore>, store: Arc<ConnectorStore>) -> Arc<Self> {
-        Arc::new(Self { secrets, store, http: Http::new() })
+        Self::with_chats(secrets, store, Arc::new(crate::chats::InboxStore::memory()))
+    }
+
+    /// With the shared inbox the app saves (`chat-inbox.json`).
+    pub fn with_chats(secrets: Arc<dyn SecretStore>, store: Arc<ConnectorStore>, chats: Arc<crate::chats::InboxStore>) -> Arc<Self> {
+        Arc::new(Self { secrets, store, http: Http::new(), chats })
     }
 
     /// Een opgeschoonde waarde uit de kluis, of `None` als hij leeg is.

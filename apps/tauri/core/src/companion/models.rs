@@ -1146,6 +1146,10 @@ pub struct PairedDevice {
     pub push_token: Option<String>,
     #[serde(default)]
     pub push_production: Option<bool>,
+    /// Whose token it is: none for Apple's (an iPhone), "fcm" for Firebase (Nook on Android), whose pushes always go
+    /// through the relay (`relay_push`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_service: Option<String>,
     /// The public half of the phone's device key (X9.63, base64; `device_key`): once set, only requests signed with it
     /// are taken. `None` until the phone bound one (an older app never does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1399,7 +1403,8 @@ mod tests {
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["nookAction"]["kind"], "pin");
         let answer: CompanionResponse =
-            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3})).unwrap();
+            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3}))
+                .unwrap();
         assert_eq!(answer.conversations_archived, Some(3));
         assert!(answer.conversations_found.is_some());
     }

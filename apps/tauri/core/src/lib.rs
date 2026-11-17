@@ -7,6 +7,7 @@
 pub mod agents;
 pub mod attachments;
 pub mod brain;
+pub mod chats;
 pub mod companion;
 pub mod connectors;
 pub mod error;

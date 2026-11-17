@@ -96,7 +96,6 @@
   {/if}
 {/snippet}
 
-<h2>{tr("Archief", "Archive")}</h2>
 <input class="search" bind:value={query} placeholder={tr("Zoek in het archief", "Search the archive")} aria-label={tr("Zoek in het archief", "Search the archive")} />
 
 {#if agentsHere}

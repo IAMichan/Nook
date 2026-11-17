@@ -59,6 +59,19 @@ struct ActionField: Equatable, Identifiable {
 }
 
 enum ActionGate {
+    /// A step's one-line summary ("WhatsApp → Anna: see you at 8", "Calendar: Lunch · Fri 13:00") split into what it goes
+    /// to and what it does, so the plan can show the target as a small line above the content. `lead` is nil when the
+    /// summary has no short "target: " in front; a target that names who it goes to (with "→") is kept as is.
+    static func splitSummary(_ summary: String) -> (lead: String?, body: String) {
+        let text = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let colon = text.range(of: ": ") else { return (nil, text) }
+        let lead = text[..<colon.lowerBound].trimmingCharacters(in: .whitespaces)
+        let body = text[colon.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        // A long front part is a sentence with a colon in it, not a target.
+        guard !lead.isEmpty, !body.isEmpty, lead.count <= 64, !lead.contains("\n") else { return (nil, text) }
+        return (lead, body)
+    }
+
     /// Actions safe to repeat without deduplication checks.
     static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url", "change_setting", "open_settings", "control_ui"]
     /// Window duration within which an action is considered a duplicate.

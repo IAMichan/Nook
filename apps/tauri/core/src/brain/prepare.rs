@@ -128,8 +128,7 @@ pub async fn research(input: &ResearchInput<'_>) -> Findings {
         _ => regex_terms,
     };
     let relevant = sources::router::relevant(input.text, input.scope, input.active);
-    let previous = input
-        .history
+    let previous = super::conversation_window::without_recap(input.history)
         .iter()
         .rev()
         .find(|t| t.from_user)

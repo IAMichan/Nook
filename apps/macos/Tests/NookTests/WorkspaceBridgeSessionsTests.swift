@@ -145,6 +145,39 @@ final class WorkspaceBridgeSessionsTests: XCTestCase {
                              "neither a task nor a title")
     }
 
+    func testStartingOnAnAccountWithRights() throws {
+        let many = try BridgeSessionArguments.start([
+            "account": "Personal", "rights": "bypass",
+            "sessions": [["task": "a"], ["task": "b", "account": "claude-work", "rights": "acceptEdits"]],
+        ], callerFolder: "/a").get()
+        XCTAssertEqual(many.sessions.map(\.account), ["Personal", "claude-work"], "the shared account is the default")
+        XCTAssertEqual(many.sessions.map(\.rights), [.bypass, .acceptEdits])
+        XCTAssertNil(try BridgeSessionArguments.start(["task": "t"], callerFolder: "/a").get().sessions[0].rights)
+        XCTAssertThrowsError(try BridgeSessionArguments.start(["task": "t", "rights": "root"], callerFolder: "/a").get())
+        XCTAssertThrowsError(try BridgeSessionArguments.start(["sessions": [["task": "t", "rights": "all"]]], callerFolder: "/a").get())
+    }
+
+    func testAStartedSessionNeverHasMoreRightsThanItsCaller() {
+        let all = PermissionPolicy.allCases
+        XCTAssertEqual(try BridgeSessionArguments.rights(nil, caller: .bypass, offered: all).get(), .ask, "the default asks")
+        XCTAssertEqual(try BridgeSessionArguments.rights(.bypass, caller: .bypass, offered: all).get(), .bypass)
+        XCTAssertEqual(try BridgeSessionArguments.rights(.bypass, caller: nil, offered: all).get(), .bypass,
+                       "a script you ran: the approval card shows it")
+        XCTAssertThrowsError(try BridgeSessionArguments.rights(.bypass, caller: .acceptEdits, offered: all).get())
+        XCTAssertThrowsError(try BridgeSessionArguments.rights(.auto, caller: .bypass, offered: [.ask, .acceptEdits, .bypass]).get(),
+                             "an agent that does not offer it")
+        XCTAssertEqual(try BridgeSessionArguments.rights(nil, caller: nil, offered: [.acceptEdits, .bypass]).get(), .acceptEdits)
+    }
+
+    func testAnAccountIsNamedByIdOrLabel() {
+        let accounts = [(id: "claude", label: "Personal"), (id: "claude-mindlinq", label: "Mindlinq")]
+        XCTAssertEqual(BridgeSessionArguments.account("claude-mindlinq", among: accounts), "claude-mindlinq")
+        XCTAssertEqual(BridgeSessionArguments.account(" personal ", among: accounts), "claude")
+        XCTAssertEqual(BridgeSessionArguments.account("MINDLINQ", among: accounts), "claude-mindlinq")
+        XCTAssertNil(BridgeSessionArguments.account("work", among: accounts))
+        XCTAssertNil(BridgeSessionArguments.account("", among: accounts))
+    }
+
     func testPlaces() throws {
         XCTAssertEqual(try BridgeSessionArguments.start(["task": "t", "base": "origin/main"], callerFolder: "/a").get().place,
                        .worktree("/a", base: "origin/main"), "a base means a worktree")
