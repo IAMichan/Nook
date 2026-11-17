@@ -67,6 +67,10 @@ fn start(app: &AppHandle, run: NookRun) -> Result<(), String> {
         if let Some(conv) = c.get_mut(&nook_id) {
             conv.title = run.title.clone();
             conv.scheduled_task = Some(run.task.to_string());
+            // The run's question shows as a quiet "Scheduled run" line, not as a bubble the user typed.
+            if let Some(question) = conv.messages.iter_mut().rev().find(|m| m.from_user) {
+                question.scheduled = true;
+            }
         }
     });
     chat::updated(app, &nook_id);

@@ -260,7 +260,8 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-16** Automations that start when a matching message arrives, and the quiet "nothing new" answer (4cdac90ca) · M
   - Done: the trigger, queue, scheduler path and the quiet answer, fed by WhatsApp's arrivals. Left: the shared `ChatInbox` (CH-01/CH-02) has to hand every other app's new incoming messages to `workspace::automation::messages_arrived`; tick this item then.
-- [ ] **BR-17** Scheduled tab in the Nook list with an amber count, the bar over a run's conversation, the "Scheduled run" marker (`NookScheduledTasks`) · M
+
+- [x] **BR-17** Scheduled tab in the Nook list with an amber count, the bar over a run's conversation, the "Scheduled run" marker (`NookScheduledTasks`) · M
 
 ### 3.4 Tools for Nook Chat
 
