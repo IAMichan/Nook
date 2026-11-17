@@ -260,13 +260,14 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-11** `update_plan`: the live step checklist above an answer → `src-tauri/src/tools/plan.rs`, `MessageView.svelte` · S
 
-- [ ] **BR-12** Automation autonomy (ask, decide through a judge, auto) and the unattended-tools policy (`AppModel+Autonomy`) · M
+- [x] **BR-12** Automation autonomy (ask, decide through a judge, auto) and the unattended-tools policy (`AppModel+Autonomy`) · M (mail drafts always wait: no mail sender yet, CH-91)
 
 ### 3.3 Nook Chat automations
 
 - [x] **BR-15** `ScheduledTaskTarget.nook` and the tools `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `set_up_secretary` (`AppModel+ScheduleTools`) → `src-tauri/src/tools/schedule.rs` · L
 
 - [ ] **BR-16** Automations that start when a matching message arrives, and the quiet "nothing new" answer (4cdac90ca) · M
+  - Done: the trigger, queue, scheduler path and the quiet answer, fed by WhatsApp's arrivals. Left: the shared `ChatInbox` (CH-01/CH-02) has to hand every other app's new incoming messages to `workspace::automation::messages_arrived`; tick this item then.
 
 - [x] **BR-17** Scheduled tab in the Nook list with an amber count, the bar over a run's conversation, the "Scheduled run" marker (`NookScheduledTasks`) · M
 
