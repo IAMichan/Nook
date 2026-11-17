@@ -40,7 +40,7 @@
       </span>
     </button>
     <HealthPill health={s.config.enabled ? health(i) : "off"} />
-    <input type="checkbox" checked={s.config.enabled} title={tr("Aan of uit", "On or off")} onchange={async (e) => { await connectorsApi.mcpSetEnabled(s.config.id, e.currentTarget.checked); onchange(); }} />
+    <input type="checkbox" role="switch" checked={s.config.enabled} title={tr("Aan of uit", "On or off")} onchange={async (e) => { await connectorsApi.mcpSetEnabled(s.config.id, e.currentTarget.checked); onchange(); }} />
   </div>
   {#if open === s.config.id}
     <div class="details">

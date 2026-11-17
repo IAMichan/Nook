@@ -33,7 +33,7 @@
     {#each services as s (s.service)}
       {#each s.accounts as a (a.id)}
         <label title={tr("Mag deze chat {name} gebruiken?", "May this chat use {name}?", { name: a.title })}>
-          <input type="checkbox" checked={a.allowed} onchange={(e) => toggle(a.id, e.currentTarget.checked)} />
+          <input type="checkbox" role="switch" checked={a.allowed} onchange={(e) => toggle(a.id, e.currentTarget.checked)} />
           {a.title}
         </label>
       {/each}
