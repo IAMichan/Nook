@@ -35,7 +35,7 @@
   .chat-terminal { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
   .head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--border); flex: none; }
   .title { display: inline-flex; align-items: center; gap: 6px; font: var(--text-control); font-weight: 600; color: var(--paper); flex: none; }
-  .folder { flex: 1; min-width: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+  .folder { flex: 1; min-width: 0; font: var(--text-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
   .icon-button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; flex: none; border: 0; border-radius: var(--radius-control); color: var(--text2); }
   .icon-button:hover { background: var(--row-hover); color: var(--paper); }
   .body { flex: 1; min-height: 0; padding: 10px 12px; display: flex; flex-direction: column; }
