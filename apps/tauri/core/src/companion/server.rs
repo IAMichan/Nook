@@ -681,8 +681,10 @@ impl CompanionServer {
                     return fail(CompanionError::Failed);
                 }
                 self.audit("send", &session.digest.title);
+                // A terminal session continues in Nook at once (`sessions::can_continue_in_nook`); only a run waits its turn.
+                let queued = session.active && !session.digest.id.starts_with(super::sessions::HUB_PREFIX);
                 CompanionResponse {
-                    message: Some(if session.active { "queued" } else { "sent" }.into()),
+                    message: Some(if queued { "queued" } else { "sent" }.into()),
                     ..with_sessions(digests(backend.sessions().await))
                 }
             }
