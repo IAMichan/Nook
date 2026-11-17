@@ -112,6 +112,9 @@ pub struct ChatMessage {
     /// De toegestane bronnen als de gebruiker ze beperkte ("Alleen Agenda en Mail").
     pub scope_label: String,
     pub notices: Vec<String>,
+    /// The filtered note this answer was written from (`brain::private_brief`): exactly what left this computer of
+    /// what stays on it.
+    pub private_brief: String,
     pub charts: Vec<ChatChart>,
     pub mails: Vec<MailDraft>,
     pub actions: Vec<PlannedAction>,
@@ -144,6 +147,7 @@ impl Default for ChatMessage {
             context_sources: vec![],
             scope_label: String::new(),
             notices: vec![],
+            private_brief: String::new(),
             charts: vec![],
             mails: vec![],
             actions: vec![],

@@ -5,6 +5,13 @@ use nook_core::secrets::SecretStore;
 use nook_core::settings::Settings;
 use nook_core::store::NookStore;
 
+tokio::task_local! {
+    /// The settings a screen-work run reads instead of the stored ones: the same, but thinking on the model on this
+    /// computer (`brain::screen_brain::routed`, the Mac's `ScreenBrain.routed`). Every step of that run (context, tools,
+    /// privacy filter, model) follows it; saving settings never does.
+    pub static ROUTED: Settings;
+}
+
 /// Alles wat de commando's delen. Eén exemplaar, beheerd door Tauri.
 pub struct AppState {
     pub settings: RwLock<Settings>,
@@ -34,6 +41,9 @@ impl AppState {
     }
 
     pub fn settings(&self) -> Settings {
+        if let Ok(routed) = ROUTED.try_with(Clone::clone) {
+            return routed;
+        }
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 

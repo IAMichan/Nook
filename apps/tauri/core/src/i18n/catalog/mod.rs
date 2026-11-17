@@ -8,7 +8,8 @@ mod base;
 mod companion_home;
 mod maintenance;
 mod nook_tools;
+mod screen_work;
 mod workspace_agents;
 
 pub const ALL: &[&[Row]] =
-    &[automation::ROWS, base::ROWS, companion_home::ROWS, maintenance::ROWS, nook_tools::ROWS, workspace_agents::ROWS];
+    &[automation::ROWS, base::ROWS, companion_home::ROWS, maintenance::ROWS, nook_tools::ROWS, screen_work::ROWS, workspace_agents::ROWS];

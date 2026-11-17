@@ -117,6 +117,7 @@ export const table: Table = {
   "Shrink": { de: "Verkleinern", fr: "Réduire", es: "Reducir" },
   "Enlarge": { de: "Vergrößern", fr: "Agrandir", es: "Ampliar" },
   "Thinking…": { de: "Denke nach…", fr: "Réflexion…", es: "Pensando…" },
+  "What left this computer": { de: "Was diesen Computer verlassen hat", fr: "Ce qui a quitté cet ordinateur", es: "Lo que salió de este ordenador" },
   "Try again": { de: "Erneut versuchen", fr: "Réessayer", es: "Reintentar" },
 
   // Local models

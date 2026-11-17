@@ -54,6 +54,28 @@
     nook.saveSettings({ provider: id });
   }
 
+  // Screen work: who reads the screen while an external brain answers (the Mac's ScreenBrainSection).
+  let localModels = $state<string[]>([]);
+  $effect(() => {
+    if (current && !current.isLocal) {
+      Promise.all([
+        api.listModels("ollama").then((m) => m.map((x) => `ollama:${x}`)).catch(() => [] as string[]),
+        api.listModels("lmstudio").then((m) => m.map((x) => `lmstudio:${x}`)).catch(() => [] as string[]),
+      ]).then(([a, b]) => (localModels = [...a, ...b]));
+    }
+  });
+  const chosenName = $derived(current?.title.split(" (")[0] ?? "");
+  const screenKept = $derived(s.localOnlySources.includes("screen"));
+  const screenChoice = $derived(screenKept ? s.screenBrain : "external");
+  const screenOptions = $derived(s.screenBrain && !localModels.includes(s.screenBrain) ? [...localModels, s.screenBrain] : localModels);
+  const workerName = $derived(s.screenBrain.split(":").slice(1).join(":"));
+
+  function chooseScreen(value: string) {
+    const others = s.localOnlySources.filter((x) => x !== "screen");
+    if (value === "external") nook.saveSettings({ localOnlySources: others });
+    else nook.saveSettings({ localOnlySources: [...others, "screen"], screenBrain: value });
+  }
+
   // Testen en meten.
   let testing = $state(false);
   let testResult = $state<{ ok: boolean; text: string } | null>(null);
@@ -133,6 +155,45 @@
       <label class="row"><span>{tr("Zoeken op het web", "Search the web")}</span><input type="checkbox" checked={s.webSearch} onchange={(e) => nook.saveSettings({ webSearch: e.currentTarget.checked })} /></label>
     {/if}
   </div>
+{/if}
+
+{#if current && !current.isLocal}
+  <h3>{tr("Schermwerk", "Screen work")}</h3>
+  <p class="faint note">{tr("Vragen over wat er op je scherm staat lezen je scherm. Laat dat een model op deze computer doen, dan blijft je scherm hier en beantwoordt je externe brein al het andere.", "Questions about what is on your screen read your screen. Let a model on this computer do that, and your screen stays here while your external brain answers everything else.")}</p>
+  <div class="group">
+    <div class="row">
+      <span>{tr("Wie leest je scherm", "Who reads your screen")}</span>
+      <select value={screenChoice} onchange={(e) => chooseScreen(e.currentTarget.value)}>
+        <option value="external">{tr("{name} mag het lezen", "{name} may read it", { name: chosenName })}</option>
+        <option value="">{tr("Niemand: schermwerk staat uit", "No one: screen work is off")}</option>
+        {#each screenOptions as option (option)}
+          <option value={option}>{tr("{name} op deze computer", "{name} on this computer", { name: option.split(":").slice(1).join(":") })}</option>
+        {/each}
+      </select>
+    </div>
+    {#if screenKept && s.screenBrain}
+      <div class="row">
+        <span>{tr("Wat het daarmee doet", "What it does with that")}</span>
+        <select value={s.screenBrainRelays ? "passes" : "answers"} onchange={(e) => nook.saveSettings({ screenBrainRelays: e.currentTarget.value === "passes" })}>
+          <option value="answers">{tr("Het antwoordt zelf", "It answers itself")}</option>
+          <option value="passes">{tr("Het geeft {name} een korte, gefilterde notitie", "It gives {name} a short, filtered note", { name: chosenName })}</option>
+        </select>
+      </div>
+    {/if}
+  </div>
+  <p class="faint note">
+    {#if screenKept && s.screenBrain && s.screenBrainRelays}
+      {tr("{name} leest je scherm op deze computer en geeft {chosen} alleen een korte notitie met wat de vraag nodig heeft. Geheimen, mailadressen en telefoonnummers gaan er eerst uit.", "{name} reads your screen on this computer and gives {chosen} only a short note with what the question needs. Secrets, mail addresses and phone numbers are taken out first.", { name: workerName, chosen: chosenName })}
+    {:else if screenKept && s.screenBrain}
+      {tr("Schermwerk draait op {name}, op deze computer. Je schermtekst gaat nooit naar {chosen}; andere vragen wel.", "Screen work runs on {name}, on this computer. Your screen text never goes to {chosen}; other questions do.", { name: workerName, chosen: chosenName })}
+    {:else if !screenKept}
+      {tr("Schermtekst gaat mee naar {name} bij vragen over je scherm.", "Screen text goes to {name} with questions about your screen.", { name: chosenName })}
+    {:else if !localModels.length}
+      {tr("Nog geen model op deze computer. Start Ollama of LM Studio met een model.", "No model on this computer yet. Start Ollama or LM Studio with a model.")}
+    {:else}
+      {tr("Je scherm blijft op deze computer. Vragen over je scherm krijgen geen scherm tot je hier een model kiest.", "Your screen stays on this computer. Questions about your screen get no screen until you choose a model here.")}
+    {/if}
+  </p>
 {/if}
 
 {#if current?.isLocal || !nook.info?.brainReady}

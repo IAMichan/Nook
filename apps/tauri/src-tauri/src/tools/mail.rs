@@ -41,7 +41,14 @@ impl ToolSource for Mail {
                     if body.is_empty() {
                         return Err(nook_core::NookError::new("The email text (body) is missing."));
                     }
-                    let to = text(&input, "to");
+                    // A name for a recipient the screen brain read: its address, which never left this computer.
+                    let to = text(&input, "to")
+                        .split([',', ';'])
+                        .map(str::trim)
+                        .filter(|a| !a.is_empty())
+                        .map(|a| if is_mail_address(a) { a.to_string() } else { crate::commands::screen_work::address_for(a).unwrap_or_else(|| a.to_string()) })
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     let bad: Vec<&str> = to.split([',', ';']).map(str::trim).filter(|a| !a.is_empty() && !is_mail_address(a)).collect();
                     let note = if bad.is_empty() { String::new() } else { format!(" Note: {} is not a valid address; the user can fix it in the draft.", bad.join(", ")) };
                     let draft = MailDraft::new(&to, &text(&input, "cc"), &subject, &body);

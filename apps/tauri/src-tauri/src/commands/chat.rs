@@ -21,6 +21,7 @@ use nook_core::settings::Settings;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::screen_work::{self, Route};
 use crate::brain::BrainState;
 use crate::state::AppState;
 use crate::tools::{self, Reply, ToolCtx};
@@ -78,6 +79,10 @@ pub fn attach(app: &AppHandle, reply: Option<&Reply>, change: impl FnOnce(&mut C
         state.save_chat();
         updated(app, &id);
     }
+}
+
+pub(crate) fn brain_env(app: &AppHandle, settings: &Settings) -> BrainEnv {
+    env(app, settings)
 }
 
 fn env(app: &AppHandle, settings: &Settings) -> BrainEnv {
@@ -229,9 +234,17 @@ fn ask_with(
         answer.notices.push("Dit brein kan geen afbeeldingen zien. Kies Claude, OpenAI, Gemini of een lokaal model dat plaatjes ziet (Qwen 3.5/3.6, Gemma 3/4) in Instellingen › Brein.".into());
     }
     let message_id = answer.id.clone();
-    let hidden = settings.private_sources();
-    let history = state.with_chat(|c| {
+    // A question about the screen while the screen stays on this computer: the screen brain on this computer answers
+    // it, or writes the chosen brain a filtered note (`screen_work`). Everything else goes to the chosen brain.
+    let route = if card.is_some() { Route::Chosen } else { screen_work::route(app, &settings, nook_id, &text, !images.is_empty()) };
+    let hidden = if route.sees_everything() { BTreeSet::new() } else { settings.private_sources() };
+    let (history, local_history) = state.with_chat(|c| {
         let history = c.get(nook_id).map(|conv| conv.history_hiding(12, &hidden)).unwrap_or_default();
+        // The model on this computer reads the whole conversation for its note; the chosen brain what it may see.
+        let local = match route {
+            Route::Relay { .. } => c.get(nook_id).map(|conv| conv.history(12)).unwrap_or_default(),
+            _ => history.clone(),
+        };
         let mut question = ChatMessage::user(&text);
         question.images = images.iter().map(|i| format!("data:{};base64,{}", i.media_type, i.base64)).collect();
         question.attachment = attachment.as_ref().map(|a| a.name.clone());
@@ -240,7 +253,7 @@ fn ask_with(
         if let Some(conv) = c.get_mut(nook_id) {
             conv.busy = true;
         }
-        history
+        (history, local)
     });
     // A card's answer is about its own chat only: earlier turns of this Nook stay out of it.
     let history = if card.is_some() { vec![] } else { history };
@@ -249,7 +262,8 @@ fn ask_with(
     let task_app = app.clone();
     let (nid, mid) = (nook_id.to_string(), message_id.clone());
     let handle = tauri::async_runtime::spawn(async move {
-        let answer = answer_question(&task_app, &nid, &mid, &text, &history, images, attachment, false, None);
+        let answer =
+            screen_work::answer(task_app.clone(), nid.clone(), mid.clone(), text, history, local_history, images, attachment, route);
         let answer = async move {
             match note {
                 Some(note) => ASK_NOTE.scope(note, answer).await,
@@ -391,7 +405,7 @@ fn memory_limits(settings: &Settings) -> (usize, usize) {
 }
 
 /// Wat het antwoord niet kon gebruiken omdat het alleen op dit apparaat mag, terwijl de vraag erom vroeg.
-fn withheld(settings: &Settings, text: &str, scope: &SourceScope) -> BTreeSet<String> {
+pub(crate) fn withheld(settings: &Settings, text: &str, scope: &SourceScope) -> BTreeSet<String> {
     let hidden = settings.private_sources();
     if hidden.is_empty() {
         return BTreeSet::new();
@@ -568,6 +582,12 @@ pub async fn answer_question(
         evidence: &evidence_text,
         findings: &findings,
     });
+
+    // What the screen brain wrote for this answer (`private_brief`), or what the chosen brain found for its part.
+    let context = match screen_work::brief_context().or_else(screen_work::outside_context) {
+        Some(head) => format!("{head}\n\n{context}"),
+        None => context,
+    };
 
     let mut request = text.to_string();
     if let Ok(note) = ASK_NOTE.try_with(Clone::clone) {
@@ -927,6 +947,8 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
         history.iter().filter(|t| !t.from_user).map(|t| t.text.clone()).chain(std::iter::once(message.text.clone())).collect();
     brain.memory.begin_reflection(nook_id);
     let (app, nid, mid) = (app.clone(), nook_id.to_string(), message_id.to_string());
+    // An answer the screen brain wrote is reflected on by that same model: what it read never reaches another brain.
+    let routed = crate::state::ROUTED.try_with(Clone::clone).ok();
     tauri::async_runtime::spawn(async move {
         // De volgende vraag gaat voor: een reflectie zit nooit in de weg.
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -938,7 +960,7 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
             return;
         }
         let recent: Vec<String> = user_turns.iter().rev().take(6).rev().cloned().collect();
-        let settings = state.settings();
+        let settings = routed.unwrap_or_else(|| state.settings());
         let env = env(&app, &settings);
         let known = brain.memory.recall(&recent.join("\n"), &Default::default(), 20, 3_000, settings.is_local_brain());
         let nook: Vec<String> = answers.iter().rev().take(recent.len()).rev().cloned().collect();
