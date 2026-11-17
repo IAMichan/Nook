@@ -21,7 +21,7 @@
 </div>
 
 <style>
-  .working { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 2px 0; min-width: 0; }
+  .working { display: flex; gap: 8px; align-items: center; font: var(--text-detail); padding: 2px 0; min-width: 0; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--iris); flex: none; animation: pulse 1.4s ease-in-out infinite; }
   .label {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;

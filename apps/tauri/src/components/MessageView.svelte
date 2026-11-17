@@ -184,14 +184,14 @@
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error :global(.markdown) { color: var(--coral); }
-  .error-card { margin-top: 4px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, var(--coral) 7%, transparent); }
+  .error-card { margin-top: 4px; padding: 14px; border-radius: var(--radius-sheet); background: color-mix(in srgb, var(--coral) 7%, transparent); }
   .error-head { display: flex; gap: 10px; align-items: flex-start; }
   .error-head .mark { color: var(--coral); font-weight: 600; width: 16px; text-align: center; }
   .error-title { font-weight: 600; }
-  .error-detail { color: var(--text2); font-size: 13px; }
+  .error-detail { color: var(--text2); font: var(--text-detail); }
   .error-actions { padding-left: 26px; }
-  .details { font-size: 12px; color: var(--text3); padding: 4px 0; margin-top: 6px; }
-  .raw { font-size: 11.5px; color: var(--text3); white-space: pre-wrap; user-select: text; margin: 6px 0 0; padding: 10px; border-radius: 8px; background: var(--well, var(--smoke)); }
+  .details { font: var(--text-detail); color: var(--text3); padding: 4px 0; margin-top: 6px; }
+  .raw { font: var(--text-label); color: var(--text3); white-space: pre-wrap; user-select: text; margin: 6px 0 0; padding: 10px; border-radius: var(--radius-control); background: var(--well, var(--smoke)); }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
