@@ -635,6 +635,7 @@ pub mod capabilities {
             "stripe_payments" => "betalingen lezen",
             "notion_search" => "pagina's zoeken",
             "notion_read_page" => "pagina lezen",
+            "run_command" => "commando uitvoeren in terminal",
             _ => return None,
         })
     }

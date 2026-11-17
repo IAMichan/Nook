@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  AppInfo, AuditEntry, Conversation, ConversationSummary, OpenLoop, PlanStep, ProviderId, ProviderInfo, Settings, StreamEvent,
+  AppInfo, AuditEntry, ChatTerminal, Conversation, ConversationSummary, OpenLoop, PlanStep, ProviderId, ProviderInfo, Settings, StreamEvent,
 } from "./types";
 
 export const api = {
@@ -48,6 +48,7 @@ export const api = {
   barMoved: () => invoke<void>("bar_moved"),
   showMain: (route: string) => invoke<void>("show_main", { route }),
   takeRoute: () => invoke<string | null>("take_route"),
+  takeChatTerminal: () => invoke<ChatTerminal | null>("take_chat_terminal"),
   /// Starts Ollama or LM Studio when it is installed but not running.
   startLocalBrain: (name: string) => invoke<"alreadyRunning" | "started" | "notInstalled" | "noAnswer">("start_local_brain", { name }),
   trayStatus: (waiting: number, working: number) => invoke<void>("tray_status", { waiting, working }),
@@ -60,6 +61,7 @@ export const events = {
   onNookUpdated: (cb: (id: string) => void): Promise<UnlistenFn> => listen<string>("nook-updated", (e) => cb(e.payload)),
   onSettings: (cb: (s: Settings) => void): Promise<UnlistenFn> => listen<Settings>("settings-changed", (e) => cb(e.payload)),
   onNavigate: (cb: (route: string) => void): Promise<UnlistenFn> => listen<string>("navigate", (e) => cb(e.payload)),
+  onChatTerminal: (cb: (t: ChatTerminal) => void): Promise<UnlistenFn> => listen<ChatTerminal>("chat-terminal", (e) => cb(e.payload)),
   onBarOpen: (cb: (focus: string) => void): Promise<UnlistenFn> => listen<string>("bar-open", (e) => cb(e.payload)),
   onNewNook: (cb: () => void): Promise<UnlistenFn> => listen("new-nook", () => cb()),
 };

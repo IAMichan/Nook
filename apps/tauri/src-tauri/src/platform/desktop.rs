@@ -302,6 +302,17 @@ pub fn show_main(app: &AppHandle, route: &str) {
     }
 }
 
+/// Shows the terminal Nook just started beside the chat in the main window.
+pub fn open_terminal_beside_chat(app: &AppHandle, folder: &str, id: &str, nook_id: Option<&str>) {
+    let terminal = crate::state::ChatTerminal { folder: folder.to_string(), id: id.to_string() };
+    *app.state::<AppState>().pending_chat_terminal.lock().unwrap_or_else(|e| e.into_inner()) = Some(terminal.clone());
+    let route = nook_id.map(|n| format!("nook:{n}")).unwrap_or_else(|| "chat".into());
+    show_main(app, &route);
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.emit("chat-terminal", terminal);
+    }
+}
+
 /// Opent de balk en zet de cursor in het invoerveld.
 pub fn open_bar(app: &AppHandle, focus: &str) {
     // While Nook hides for a share or meeting, agent prompts wait in the bar; a shortcut or the tray still opens it.
