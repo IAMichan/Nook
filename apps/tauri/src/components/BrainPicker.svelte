@@ -107,20 +107,20 @@
 
 <style>
   .brain { position: relative; min-width: 0; margin-left: auto; max-width: 100%; }
-  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
+  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-label); padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
   .chip.local { color: var(--text2); }
   .chip.off { color: var(--amber); }
-  .menu { position: absolute; bottom: 32px; right: 0; display: flex; gap: 6px; width: min(460px, 86vw); max-height: 360px; box-shadow: var(--shadow-popover); z-index: 20; background: var(--smoke); border: 1px solid var(--line2); border-radius: 10px; padding: 6px; }
+  .menu { position: absolute; bottom: 32px; right: 0; display: flex; gap: 6px; width: min(460px, 86vw); max-height: 360px; box-shadow: var(--shadow-popover); z-index: 20; background: var(--smoke); border: 1px solid var(--line2); border-radius: var(--radius-card); padding: 6px; }
   .rail { display: flex; flex-direction: column; gap: 2px; min-width: 130px; border-right: 1px solid var(--line2); padding-right: 6px; overflow-y: auto; }
-  .place { text-align: left; font-size: 12px; padding: 4px 6px; margin: 0; color: var(--text2); }
+  .place { text-align: left; font: var(--text-detail); padding: 4px 6px; margin: 0; color: var(--text2); }
   .place.on { color: var(--paper); background: var(--row-hover); }
   .models { flex: 1; min-width: 0; overflow-y: auto; }
-  .search { width: 100%; font-size: 12px; margin-bottom: 4px; }
-  .detail { font-size: 11px; margin: 2px 6px 6px; }
+  .search { width: 100%; font: var(--text-detail); margin-bottom: 4px; }
+  .detail { font: var(--text-label); margin: 2px 6px 6px; }
   .row { display: flex; align-items: center; }
-  .item { display: flex; justify-content: space-between; gap: 8px; flex: 1; min-width: 0; text-align: left; font-size: 12px; padding: 4px 6px; margin: 0; }
+  .item { display: flex; justify-content: space-between; gap: 8px; flex: 1; min-width: 0; text-align: left; font: var(--text-detail); padding: 4px 6px; margin: 0; }
   .row.chosen .item { color: var(--paper); }
-  .star { font-size: 12px; padding: 2px 6px; margin: 0; color: var(--text3); }
+  .star { font: var(--text-detail); padding: 2px 6px; margin: 0; color: var(--text3); }
   .star.on { color: var(--amber); }
   .sep { border-top: 1px solid var(--line2); margin: 4px 0; }
   @media (max-width: 640px) {
