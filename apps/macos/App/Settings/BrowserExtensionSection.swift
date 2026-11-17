@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Settings › Editor & browser › Nook in your browser: connects Nook to the user's own Chromium browsers through Nook's
-/// extension (`BrowserExtensionService`). Connect writes the host the extension talks to and a copy of the extension;
-/// the three steps say how to load it, and the status says which browser is connected now.
+/// extension (`BrowserExtensionService`). Connect writes the host the extension talks to, and opens the extension's
+/// Chrome Web Store page when no browser has it yet. The status recognizes the extension by itself: connected, found in
+/// a browser (connecting), switched off there, or not added yet.
 struct BrowserExtensionSection: View {
     @ObservedObject private var service = BrowserExtensionService.shared
 
@@ -20,16 +21,15 @@ struct BrowserExtensionSection: View {
                     SettingNote(tr("browserExt.settings.detail"))
                 }
             }
-            if service.enabled {
-                status
-                steps
-            }
+            if service.enabled { status }
             if let error = service.error { SettingNote(error, tone: .error) }
         }
         .task(id: service.enabled) {
-            // While this page is open: who is connected, read from Nook's own bookkeeping (no browser is asked).
+            // While this page is open: who is connected, read from Nook's own bookkeeping (no browser is asked), and
+            // which browsers have the extension, read from their preferences, so loading it shows without a click.
             while service.enabled, !Task.isCancelled {
                 service.refresh()
+                if service.connected.isEmpty { await service.scanInstalls() }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
@@ -38,43 +38,28 @@ struct BrowserExtensionSection: View {
     @ViewBuilder
     private var status: some View {
         let browsers = service.connected.map { $0.browser.isEmpty ? tr("browserExt.source.unnamed") : $0.browser }
-        if browsers.isEmpty {
-            SettingNote(tr("browserExt.settings.waiting"), tone: .warning)
-        } else {
+        let switchedOn = service.browsersWithExtension(enabled: true)
+        let switchedOff = service.browsersWithExtension(enabled: false)
+        if !browsers.isEmpty {
             SettingNote(tr("browserExt.settings.connected", browsers.joined(separator: ", ")), tone: .success)
-        }
-        if service.installedBrowsers.isEmpty {
+        } else if service.installedBrowsers.isEmpty {
             SettingNote(tr("browserExt.settings.noBrowser"), tone: .warning)
+        } else if !switchedOn.isEmpty {
+            // In the browser already: it connects by itself as soon as its worker wakes (switching to the browser does).
+            SettingNote(tr("browserExt.settings.found", switchedOn.joined(separator: ", ")))
+        } else if let browser = switchedOff.first {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                SettingNote(tr("browserExt.settings.switchedOff", switchedOff.joined(separator: ", ")), tone: .warning)
+                Spacer(minLength: NookTheme.Spacing.md)
+                Button(tr("browserExt.settings.openPage")) { service.openExtensionsPage(in: browser) }
+            }
         } else {
-            SettingNote(tr("browserExt.settings.hostFor", service.installedBrowsers.joined(separator: ", ")))
-        }
-    }
-
-    private var steps: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            stepRow(1, tr("browserExt.settings.step1")) {
-                Button(tr("browserExt.settings.copyAddress")) { service.copyExtensionsAddress() }
+            // Not in any browser yet: Connect opened the store page; the button opens it again.
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                SettingNote(tr("browserExt.settings.waiting"), tone: .warning)
+                Spacer(minLength: NookTheme.Spacing.md)
+                Button(tr("browserExt.settings.install")) { service.openStorePage() }
             }
-            stepRow(2, tr("browserExt.settings.step2")) {
-                Button(tr("browserExt.settings.showFolder")) { service.revealExtension() }
-            }
-            stepRow(3, tr("browserExt.settings.step3")) { EmptyView() }
-        }
-        .padding(.vertical, NookTheme.Spacing.xxs)
-    }
-
-    private func stepRow<Action: View>(_ number: Int, _ text: String, @ViewBuilder action: () -> Action) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-            Text("\(number).")
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textMuted)
-                .monospacedDigit()
-            Text(text)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: NookTheme.Spacing.md)
-            action()
         }
     }
 }
