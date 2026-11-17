@@ -103,7 +103,8 @@ fn a_text_in_two_catalogs_has_one_translation() {
 
 /// Files whose Dutch string literals are data, not text Nook shows: keyword patterns that read what the user typed,
 /// and the Dutch documents and questions of the local quality check.
-const DUTCH_ON_PURPOSE: &[&str] = &["core/src/brain/intent.rs", "core/src/brain/local_intent.rs", "core/src/brain/quality.rs"];
+const DUTCH_ON_PURPOSE: &[&str] =
+    &["core/src/brain/intent.rs", "core/src/brain/local_intent.rs", "core/src/brain/message_trust.rs", "core/src/brain/quality.rs"];
 
 /// Dutch string literals each file still has outside `tr`/`trf`, from before the Rust side spoke five languages.
 /// The numbers only go down: wrap the text in `tr("Nederlands", "English")` with a catalog row and lower the number

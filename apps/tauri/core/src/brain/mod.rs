@@ -58,6 +58,7 @@ pub mod intent;
 pub mod local_intent;
 pub mod meeting_times;
 pub mod memory;
+pub mod message_trust;
 pub mod model_download;
 pub mod network_guard;
 pub mod prepare;

@@ -244,7 +244,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
 
-- [ ] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
+- [x] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
 
 - [x] **BR-09** Nested command judging (`sh -c`, `xargs`, `find -exec`) in `command_risk.rs` with the Mac's tests · S
 
