@@ -19,6 +19,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | `AIProvider`, `BrainSelection`, `AppSettings` | ✓ | `core/src/provider.rs`, `core/src/settings.rs` |
+| Zip archives, folders and pasted paths as attachments (`ZipText`, `FileText.folder`, `askAbout`): a zip lists its files and gives the text of the readable ones (read in memory, refused above 500 MB unpacked, 2 MB a file, 400,000 characters); a folder lists its files without hidden folders and build output; a path dropped on the main window or pasted into the field is attached, only from the home folder and never hidden folders, app data or key files | ◐ (zip, folder and the path rules unit-tested; dropping and pasting not tried in the running app or on Windows) | `core/src/attachments.rs`, `read_attachment_path` in `commands/brain.rs`, `lib/paths.ts`, `components/Composer.svelte` |
 | `ToolRunner` (tool loop, recovery, cache, JSON in text) | ✓ | `core/src/brain/tool_loop.rs` |
 | Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |

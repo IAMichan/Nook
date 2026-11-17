@@ -199,6 +199,9 @@ export const brainApi = {
   mailOpenInvite: (nookId: string, draft: MailDraft) => invoke<void>("mail_open_invite", { nookId, draft }),
 
   readAttachment: (name: string, base64: string) => invoke<Attachment>("read_attachment", { name, base64 }),
+  /** A dropped or pasted path: a picture, or the text of a file, zip archive or folder. */
+  readAttachmentPath: (path: string) =>
+    invoke<{ kind: "image"; mediaType: string; base64: string } | ({ kind: "document" } & Attachment)>("read_attachment_path", { path }),
   sourceChoices: () => invoke<SourceChoice[]>("source_choices"),
   setScope: (nookId: string, scope: SourceScope | null) => invoke<string>("set_scope", { nookId, scope }),
   suggestions: () => invoke<string[]>("start_suggestions"),

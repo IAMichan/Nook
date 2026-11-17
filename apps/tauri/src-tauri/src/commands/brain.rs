@@ -307,6 +307,54 @@ pub async fn read_attachment(name: String, base64: String) -> Res<Attachment> {
     .map_err(|e| e.to_string())?
 }
 
+/// What a path dropped on the window or pasted into the field holds: a picture, or the text of a file, a zip archive or
+/// a folder's files (the Mac's `askAbout`).
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PathAttachment {
+    #[serde(rename_all = "camelCase")]
+    Image {
+        media_type: String,
+        base64: String,
+    },
+    Document(Attachment),
+}
+
+#[tauri::command]
+pub async fn read_attachment_path(path: String) -> Res<PathAttachment> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or_else(|| "No home folder".to_string())?;
+        let raw = path.trim().trim_start_matches("file://");
+        let path = match raw.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None => std::path::PathBuf::from(raw),
+        };
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let media = match ext.as_str() {
+            "png" => Some("image/png"),
+            "jpg" | "jpeg" => Some("image/jpeg"),
+            "gif" => Some("image/gif"),
+            "webp" => Some("image/webp"),
+            _ => None,
+        };
+        if let Some(media) = media.filter(|_| path.is_file()) {
+            if !nook_core::attachments::is_allowed(&path, &home) {
+                return Err(nook_core::i18n::tr(
+                    "Nook leest alleen bestanden in je eigen map (niet in verborgen mappen of app-gegevens).",
+                    "Nook only reads files in your home folder (not in hidden folders or app data).",
+                )
+                .to_string());
+            }
+            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+            return Ok(PathAttachment::Image { media_type: media.into(), base64: base64::engine::general_purpose::STANDARD.encode(bytes) });
+        }
+        let (name, text) = nook_core::attachments::read_path(&path, &home).map_err(|e| e.0)?;
+        Ok(PathAttachment::Document(Attachment { name, text }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceChoice {
