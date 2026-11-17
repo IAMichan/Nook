@@ -41,6 +41,28 @@ struct SessionDetailView: View {
     @State private var findText = ""
     @State private var findIndex = 0
 
+    /// The conversation, with find's match kept in sight and "Reply" on its answers. Its own function, so the body
+    /// stays quick to type-check.
+    private func transcript(_ session: SessionDigest, scroll: ConversationScrollControl) -> some View {
+        let working = session.attention == "working"
+        let match: String? = finding ? currentMatch : nil
+        let reply: ((String) -> Void)? = client.allows(.operate) && session.canSend != false ? { answer in
+            message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+            composerFocused = true
+        } : nil
+        return TranscriptConversation(sessionID: sessionID, entries: entries, working: working, found: match)
+            // The match shown: in sight, in the middle of the screen.
+            .onChange(of: match) { _, match in
+                guard let match else { return }
+                let rows = TranscriptRow.rows(entries, working: working)
+                if let row = rows.first(where: { $0.holds(match) }) {
+                    withAnimation(Theme.reveal) { scroll.scrollTo(row.id, anchor: .center) }
+                }
+            }
+            // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+            .environment(\.replyToAnswer, reply)
+    }
+
     var body: some View {
         if let session {
             ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
@@ -49,21 +71,7 @@ struct SessionDetailView: View {
                         if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
                             EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(scroll) }
                         }
-                        TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working",
-                                               found: finding ? currentMatch : nil)
-                            // The match shown: in sight, in the middle of the screen.
-                            .onChange(of: finding ? currentMatch : nil) { _, match in
-                                guard let match else { return }
-                                let rows = TranscriptRow.rows(entries, working: session.attention == "working")
-                                if let row = rows.first(where: { $0.holds(match) }) {
-                                    withAnimation(Theme.reveal) { scroll.scrollTo(row.id, anchor: .center) }
-                                }
-                            }
-                            // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
-                            .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
-                                message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
-                                composerFocused = true
-                            } : nil)
+                        transcript(session, scroll: scroll)
                     } else if !session.excerpt.isEmpty {
                         SectionHeader(title: String(localized: "Latest reply"))
                         TranscriptReply(text: session.excerpt, footer: false)
