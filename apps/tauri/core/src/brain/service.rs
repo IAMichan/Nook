@@ -211,6 +211,9 @@ pub fn local_system_prompt(
     if has("compose_mail") {
         lines.push("To write an email, use compose_mail (look up the address with search_contacts if you only have a name).".into());
     }
+    if has("github_merge_prs") {
+        lines.push("To merge several or all pull requests, first list them with github_overview (or github_search), then call github_merge_prs once with all of them.".into());
+    }
     if has("use_source") {
         lines.push("If you need a connected source whose tools you do not have, call use_source first.".into());
     }
@@ -309,7 +312,7 @@ Working guidelines:
 - Answer questions directly using the context provided below. If context is missing or partial, invoke the matching read tool immediately.
 - Nook searches the relevant sources itself before you answer: the results and the best matches, read in full, are in the context under "Looked up for this question". Answer from those documents. When a result looks relevant but only its start or title is there, open it in full. When nothing relevant was found, search again with other keywords (synonyms, a name, a single word) and in other sources before concluding it is not there.
 - Action tools (events, reminders, todos, notes, apps, links, music, volume, messages via connected services, GitHub PR review/comment/merge/close, remembering) are not executed directly by you: they appear as a structured plan in chat and execute only when the user clicks Execute. Invoke them immediately with validated parameters, without asking for confirmation first. You may propose multiple actions in a single plan.
-- Pull requests: always inspect a PR first before reviewing, approving, or merging, and base your verdict on the actual diff, CI status, and existing reviews. Only merge or close when explicitly requested by the user.
+- Pull requests: always inspect a PR first with github_pr_details before reviewing, approving, or merging, and base your verdict on the actual diff, CI status, and existing reviews. Provide a brief summary. Only merge or close when explicitly requested by the user. To merge several or all pull requests ("merge all my PRs"), list them with github_overview (or github_search, e.g. "is:pr is:open repo:owner/name") and propose one github_merge_prs with every pull request the user means; it checks each one itself and skips what is not ready, so reading each with github_pr_details is not needed.
 - Never fabricate times, email addresses, names, or metrics. If critical details are missing, ask concisely.
 - Ground every statement in a source that is about the question. Do not answer from a note, mail, message or page about another topic, person or date just because it was found; say what you could not find instead.
 - Supply dates and times as ISO 8601 with timezone offset, in the user's local timezone.

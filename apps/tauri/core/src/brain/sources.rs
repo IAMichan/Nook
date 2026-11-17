@@ -618,6 +618,7 @@ pub mod capabilities {
             "github_pr_details" => "PR met diff lezen",
             "github_search" => "issues en PR's zoeken",
             "github_issue_details" => "issue lezen",
+            "github_merge_prs" => "meerdere PR's samenvoegen",
             "github_create_issue" => "issue maken",
             "stripe_payments" => "betalingen lezen",
             "notion_search" => "pagina's zoeken",

@@ -62,7 +62,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Framework (Connector, Hub, catalog, brands) | ✓ | `core/src/connectors/` |
 | Calendars: ICS ("Other calendars"), Cal.com, `check_availability` | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs` |
 | System calendars (Apple Calendar) | — | No API in this port |
-| GitHub (read; review, merge, close as an action) | ✓ | `github.rs` |
+| GitHub (read; review, single & batch merge via `github_merge_prs`, close as an action) | ✓ | `github.rs`, `pull_batch_merge.rs` |
 | Pull requests under Agents: yours, awaiting your review, followed organizations and repositories (Settings › Accounts & connections), filters (status, involvement, author, draft, checks), reading with reviews and comments (GitHub HTML as Markdown), a GitHub Actions check's steps and log read in Nook (`CheckLog.svelte`), merging after confirmation in the bar, with an action log | ◐ (tested against a fake API, not against GitHub itself) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |
 | Sign in with GitHub | ◐ | Sign in and Repair take over the `gh auth token` login (a token stays under "With a token"); device flow is waiting on a client ID; opening `gh auth login --web` itself ○ |
 | Second account per service, account per chat | ◐ (no second WhatsApp account, CH-70; agent accounts for Claude and Codex only, AG-27) | `accounts.rs`, `ChatAccounts.svelte` |
