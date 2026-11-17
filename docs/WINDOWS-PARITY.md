@@ -301,7 +301,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.5 Chat UI (Nook tab)
 
-- [ ] **BR-40** Sources: cited excerpt on hover or click with highlighted lines, dot for cited and dimmed uncited sources, mail sources by sender, strip model-written "Sources:" lists (`ChatSourcesView`, aa6afaa94) · M
+- [x] **BR-40** Sources: cited excerpt on hover or click with highlighted lines, dot for cited and dimmed uncited sources, mail sources by sender, strip model-written "Sources:" lists (`ChatSourcesView`, aa6afaa94) · M
 
 - [x] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
 

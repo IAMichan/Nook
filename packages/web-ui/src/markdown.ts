@@ -6,6 +6,8 @@
 export interface MarkdownTexts {
   copy: string;
   copyTitle: string;
+  /** Optional renderer for grouped citation numbers (e.g. `[1]`, `[2, 3]`, `[1][2]`). */
+  citation?: (numbers: number[]) => string;
 }
 
 const englishTexts: MarkdownTexts = { copy: "Copy", copyTitle: "Copy code" };
@@ -14,20 +16,32 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function inline(text: string): string {
+function inline(text: string, texts: MarkdownTexts): string {
   let out = escapeHtml(text);
   const codes: string[] = [];
   out = out.replace(/`([^`]+)`/g, (_m, code: string) => {
     codes.push(`<code>${code}</code>`);
     return `\u0000${codes.length - 1}\u0000`;
   });
+  const links: string[] = [];
   out = out
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label: string, url: string) =>
-      `<a href="${url}" data-external>${label}</a>`)
-    .replace(/\[(\d{1,2})\]/g, '<sup class="cite" data-cite="$1">$1</sup>');
-  return out.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => codes[Number(i)]);
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label: string, url: string) => {
+      links.push(`<a href="${url}" data-external>${label}</a>`);
+      return `\u0001${links.length - 1}\u0001`;
+    });
+  if (texts.citation) {
+    out = out.replace(/((?:\[\d{1,3}(?:\s*,\s*\d{1,3})*\])+)(?!\()/g, (_m, group: string) => {
+      const nums = [...group.matchAll(/\d{1,3}/g)].map((m) => Number(m[0]));
+      return texts.citation!(nums);
+    });
+  } else {
+    out = out.replace(/\[(\d{1,2})\]/g, '<sup class="cite" data-cite="$1">$1</sup>');
+  }
+  return out
+    .replace(/\u0001(\d+)\u0001/g, (_m, i: string) => links[Number(i)])
+    .replace(/\u0000(\d+)\u0000/g, (_m, i: string) => codes[Number(i)]);
 }
 
 function isTableDivider(line: string): boolean {
@@ -57,7 +71,7 @@ export function renderMarkdown(source: string, texts: MarkdownTexts = englishTex
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
       const level = Math.min(heading[1].length + 2, 6);
-      html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      html.push(`<h${level}>${inline(heading[2], texts)}</h${level}>`);
       i++;
       continue;
     }
@@ -67,8 +81,8 @@ export function renderMarkdown(source: string, texts: MarkdownTexts = englishTex
       const rows: string[][] = [];
       while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(cells(lines[i++]));
       html.push(
-        `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>` +
-          rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("") +
+        `<table><thead><tr>${head.map((c) => `<th>${inline(c, texts)}</th>`).join("")}</tr></thead><tbody>` +
+          rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c, texts)}</td>`).join("")}</tr>`).join("") +
           "</tbody></table>",
       );
       continue;
@@ -81,13 +95,13 @@ export function renderMarkdown(source: string, texts: MarkdownTexts = englishTex
         i++;
       }
       const tag = ordered ? "ol" : "ul";
-      html.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</${tag}>`);
+      html.push(`<${tag}>${items.map((it) => `<li>${inline(it, texts)}</li>`).join("")}</${tag}>`);
       continue;
     }
     if (/^>\s?/.test(line)) {
       const quote: string[] = [];
       while (i < lines.length && /^>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^>\s?/, ""));
-      html.push(`<blockquote>${inline(quote.join(" "))}</blockquote>`);
+      html.push(`<blockquote>${inline(quote.join(" "), texts)}</blockquote>`);
       continue;
     }
     if (!line.trim()) {
@@ -99,7 +113,7 @@ export function renderMarkdown(source: string, texts: MarkdownTexts = englishTex
       if (lines[i].includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1])) break;
       para.push(lines[i++]);
     }
-    if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`);
+    if (para.length) html.push(`<p>${para.map((p) => inline(p, texts)).join("<br>")}</p>`);
     else i++;
   }
   return html.join("");

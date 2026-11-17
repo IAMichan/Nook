@@ -781,7 +781,7 @@ pub async fn answer_question(
     // Alleen verwijzingen naar bronnen die echt opgezocht zijn, blijven staan.
     let references = ledger.references();
     let valid: BTreeSet<u32> = references.iter().map(|r| r.number).collect();
-    body = citations::sanitize(&suggestions::clean_reply(&body), &valid);
+    body = citations::without_source_list(&citations::sanitize(&suggestions::clean_reply(&body), &valid));
     let bare_body = body.trim_matches(|c: char| c.is_whitespace() || c.is_ascii_punctuation()).to_uppercase();
     let unusable = bare_body.is_empty() || bare_body == "NONE" || (retry && suggestions::looks_broken(&body, text, expected));
     let found: Vec<String> = findings.opened.iter().chain(findings.found.iter()).cloned().collect();

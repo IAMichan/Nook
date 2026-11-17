@@ -270,6 +270,27 @@ a { color: var(--iris); }
 .markdown .tok-property { color: var(--syntax-property); }
 .markdown .tok-tag { color: var(--syntax-tag); }
 .markdown .tok-attribute { color: var(--syntax-attribute); }
+.markdown .cite-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 1px 6px;
+  margin-left: 2px;
+  border-radius: 6px;
+  border: 1px solid var(--line2);
+  background: var(--graphite);
+  color: var(--text2);
+  cursor: pointer;
+}
+.markdown .cite-pill:hover, .markdown .cite-pill:focus-visible { color: var(--paper); background: var(--smoke); }
+.markdown .cite-ico { display: inline-flex; align-items: center; flex: none; }
+.markdown .cite-img { width: 12px; height: 12px; border-radius: 3px; object-fit: contain; }
+.markdown .cite-label { white-space: nowrap; }
+::highlight(nook-claim) { background-color: color-mix(in srgb, var(--iris) 18%, transparent); }
 
 /* A coding agent's conversation: one centered column, the composer under it at the same width. */
 .thread-column { width: 100%; max-width: var(--thread-width); margin: 0 auto; padding: 0 20px; box-sizing: border-box; }
