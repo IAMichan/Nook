@@ -8,6 +8,7 @@ pub mod brain;
 pub mod chat;
 pub mod companion;
 pub mod games;
+pub mod instructions;
 pub mod maintenance;
 pub mod plans;
 pub mod screen_work;
