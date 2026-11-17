@@ -141,7 +141,7 @@
           )}
         </small>
       </span>
-      <input type="checkbox" checked={ac.enabled} disabled={!caps?.autocomplete} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.enabled} disabled={!caps?.autocomplete} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
     </label>
     {#if caps?.autocomplete && ac.enabled}
       <div class="row">
@@ -226,15 +226,15 @@
     </label>
     <label class="row">
       <span>{tr("Midden in een regel", "In the middle of a line")}<br /><small class="faint">{tr("Ook voorstellen als er al tekst achter de cursor staat. Een voorstel stopt waar die tekst begint.", "Also suggest when there's already text after the cursor. A suggestion stops where that text begins.")}</small></span>
-      <input type="checkbox" checked={ac.midLine} onchange={(e) => save({ midLine: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.midLine} onchange={(e) => save({ midLine: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Spatie meenemen na een woord", "Include the space after a word")}</span>
-      <input type="checkbox" checked={ac.trailingSpace} onchange={(e) => save({ trailingSpace: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.trailingSpace} onchange={(e) => save({ trailingSpace: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Leestekens meenemen met een woord", "Include punctuation with a word")}</span>
-      <input type="checkbox" checked={ac.punctuationWithWord} onchange={(e) => save({ punctuationWithWord: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.punctuationWithWord} onchange={(e) => save({ punctuationWithWord: e.currentTarget.checked })} />
     </label>
   </div>
 
@@ -267,7 +267,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("In elke app", "In every app")}<br /><small class="faint">{tr("Uit: alleen in apps die je hieronder aanzet.", "Off: only in apps you turn on below.")}</small></span>
-      <input type="checkbox" checked={ac.enabledByDefault} onchange={(e) => save({ enabledByDefault: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.enabledByDefault} onchange={(e) => save({ enabledByDefault: e.currentTarget.checked })} />
     </label>
   </div>
 
@@ -285,7 +285,7 @@
             {a.id}{offByDefault(a.id, view?.offByDefault ?? []) ? " · " + tr("Standaard uit", "Off by default") : ""}{rule.instructions.trim() ? " · " + tr("Met eigen uitleg", "With its own instructions") : ""}
           </small>
         </button>
-        <input type="checkbox" checked={appOn(a.id)} onchange={(e) => saveRule(a.id, { enabled: e.currentTarget.checked ? "on" : "off" })} />
+        <input type="checkbox" role="switch" checked={appOn(a.id)} onchange={(e) => saveRule(a.id, { enabled: e.currentTarget.checked ? "on" : "off" })} />
       </div>
       {#if openApp === a.id}
         <div class="detail">
@@ -303,7 +303,7 @@
           </label>
           <label class="row">
             <span>{tr("Tab aan de app laten", "Leave Tab to the app")}</span>
-            <input type="checkbox" checked={rule.leaveTab} onchange={(e) => saveRule(a.id, { leaveTab: e.currentTarget.checked })} />
+            <input type="checkbox" role="switch" checked={rule.leaveTab} onchange={(e) => saveRule(a.id, { leaveTab: e.currentTarget.checked })} />
           </label>
           <label class="column">
             <span>{tr("Extra uitleg voor deze app (bijv. kort en los voor Slack)", "Extra instructions for this app (e.g. short and casual for Slack)")}</span>
@@ -331,15 +331,15 @@
   <div class="group">
     <label class="row">
       <span>{tr("App en venster", "App and window")}<br /><small class="faint">{tr("De naam van de app en de venstertitel.", "The app's name and the window title.")}</small></span>
-      <input type="checkbox" checked={ac.windowContext} onchange={(e) => save({ windowContext: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.windowContext} onchange={(e) => save({ windowContext: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Je geheugen", "Your memory")}<br /><small class="faint">{tr("Wat Nook over je onthoudt: je naam, je werk, de mensen om je heen. Zo vult hij namen en feiten goed in.", "What Nook remembers about you: your name, your work, the people around you. That way it fills in names and facts correctly.")}</small></span>
-      <input type="checkbox" checked={ac.memoryContext} onchange={(e) => save({ memoryContext: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.memoryContext} onchange={(e) => save({ memoryContext: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Het klembord", "The clipboard")}<br /><small class="faint">{tr("Wat je net kopieerde (tot vijf minuten). Wachtwoorden uit een wachtwoordmanager worden overgeslagen.", "What you just copied (up to five minutes). Passwords from a password manager are skipped.")}</small></span>
-      <input type="checkbox" checked={ac.clipboardContext} onchange={(e) => save({ clipboardContext: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.clipboardContext} onchange={(e) => save({ clipboardContext: e.currentTarget.checked })} />
     </label>
   </div>
   <p class="faint note">
@@ -361,7 +361,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("Emoji met een dubbele punt", "Emoji with a colon")}<br /><small class="faint">{tr("Typ : aan het begin van een woord voor emoji die bij je tekst passen, of zoek verder: :lach, :heart, :duim.", "Type : at the start of a word for emoji that fit your text, or search further: :laugh, :heart, :thumbs.")}</small></span>
-      <input type="checkbox" checked={ac.emoji} onchange={(e) => save({ emoji: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.emoji} onchange={(e) => save({ emoji: e.currentTarget.checked })} />
     </label>
     <label class="row">
       <span>{tr("Huidskleur", "Skin tone")}</span>
@@ -384,7 +384,7 @@
     </label>
     <label class="row">
       <span>{tr("Emoji voor emoticons", "Emoji for emoticons")}<br /><small class="faint">{tr("Typ :-) of <3 en Tab zet de emoji ervoor in de plaats.", "Type :-) or <3 and Tab puts the emoji in its place.")}</small></span>
-      <input type="checkbox" checked={ac.emoticons} onchange={(e) => save({ emoticons: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.emoticons} onchange={(e) => save({ emoticons: e.currentTarget.checked })} />
     </label>
   </div>
 
@@ -392,7 +392,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("Brits of Amerikaans, zoals jij schrijft", "British or American, the way you write")}<br /><small class="faint">{tr("Suggesties volgen je eigen Engelse spelling: colour of color, organise of organize.", "Suggestions follow your own English spelling: colour or color, organise or organize.")}</small></span>
-      <input type="checkbox" checked={ac.matchSpelling} onchange={(e) => save({ matchSpelling: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={ac.matchSpelling} onchange={(e) => save({ matchSpelling: e.currentTarget.checked })} />
     </label>
   </div>
 

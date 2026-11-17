@@ -57,7 +57,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("Companion op je telefoon", "Companion on your phone")}</span>
-      <input type="checkbox" checked={info.enabled} onchange={(e) => run(() => companion.setEnabled(e.currentTarget.checked))} />
+      <input type="checkbox" role="switch" checked={info.enabled} onchange={(e) => run(() => companion.setEnabled(e.currentTarget.checked))} />
     </label>
     {#if info.enabled}
       <div class="row status">

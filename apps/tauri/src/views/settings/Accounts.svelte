@@ -277,7 +277,7 @@
     {:else}
       <HealthPill health={h} />
     {/if}
-    <input type="checkbox" checked={info?.on ?? true} title={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
+    <input type="checkbox" role="switch" checked={info?.on ?? true} title={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
   </div>
 {/snippet}
 
