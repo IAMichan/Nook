@@ -153,6 +153,7 @@ export interface SourceReference {
   title: string;
   detail: string;
   url?: string | null;
+  excerpt?: string | null;
 }
 
 export interface ChatMessage {

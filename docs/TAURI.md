@@ -78,7 +78,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Plans with Run, never run twice, Undo. **Tauri:** ✓. **Where:** `src-tauri/src/commands/plans.rs`
 
-- `Research`, `Retrieval` (searching on its own, numbered sources). **Tauri:** ✓. **Where:** `core/src/brain/research.rs`, `retrieval.rs`
+- `Research`, `Retrieval` (searching on its own, numbered sources, per-reference excerpts, strip model "Sources:" lists). **Tauri:** ✓. **Where:** `core/src/brain/research.rs`, `retrieval.rs`
 
 - `SecretStore`. **Tauri:** ✓. **Where:** Credential Manager, Secret Service, private app folder on Android
 
@@ -100,7 +100,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Shared components (`ConfirmedButton`/`.confirmDelete`, dialog, sheet, menu, switch, search field, empty state, banner, status pill, tab bar) for the desktop and the companion alike, listed next to their Swift names in UI-COMPONENTS.md. **Tauri:** ◐ (FD-05 parts 1–3: the moved companion parts, `ConfirmedButton`, tooltip, hover card, loading, badges, chips, tags, notes, icon buttons, hover rows, project icon, QR code, image modal, timeline dividers, tile grid; the model picker and emoji browser still to build). **Where:** `src/components/ui/`, `src/lib/confirm.ts`, `src/lib/ui-parts.ts`, `src/lib/project-icon.ts` (+ tests)
 
-- Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language). **Tauri:** ◐ (no cited excerpt on hover, cited/uncited dots or mail sources by sender, BR-40). **Where:** `components/SourcesView.svelte`, `lib/sources.ts`
+- Sources card under an answer & inline citations (cited excerpt on hover/click with highlighted matching lines, cited/uncited dots, mail sources by sender, status per source, unread sources on top with Try again). **Tauri:** ✓. **Where:** `components/SourcesView.svelte`, `components/CitationPreview.svelte`, `components/MessageView.svelte`, `lib/citations.ts`, `lib/sources.ts`
 
 - Terminal commands from Nook Chat (`run_command`, `CommandRisk` `review` tag, `ChatTerminalPanel` beside the chat). **Tauri:** ◐ (`command_request`, tilde expansion, `ActionGate` rules, `needs_tools` gating and the `review` step tag are unit-tested, and `nook` compiles including Windows; running a command live in the app window was not tested yet). **Where:** `core/src/workspace/terminal.rs`, `src-tauri/src/tools/terminal.rs`, `src-tauri/src/commands/plans.rs`, `components/ChatTerminalPanel.svelte`, `views/Main.svelte`
 

@@ -5,6 +5,10 @@ import { escapeHtml } from "@nook/web-ui/markdown";
 import { tr } from "./i18n.svelte";
 import { parseMarkdownBlocks, renderInlineMarkdown, isNumericColumn, type InlineOptions } from "./markdown-blocks";
 import { highlightCodeToHtml } from "./syntax";
+import { citationLabel, citationReferences, isOpenableUrl, withoutSourceList } from "./citations";
+import { sourceGlyphSvg } from "./service-icons";
+import { sourceDomain } from "./sources";
+import type { SourceReference } from "./types";
 
 export { escapeHtml };
 
@@ -72,4 +76,29 @@ export function renderMarkdown(source: string, inlineOpts: InlineOptions = {}): 
       }
     })
     .join("");
+}
+
+/**
+ * Citations in a Nook answer: `[1]` / `[1, 4]` / `[1][2]` backed by `references` become clickable pills labeled by
+ * sender or short name; unbacked numbers stay raised numbers. Pass it as `citation` to `MarkdownBody`.
+ */
+export function answerCitation(references: SourceReference[]): (numbers: number[]) => string {
+  return (numbers) => {
+    const cited = citationReferences(numbers, references);
+    if (!cited.length) {
+      return `<sup class="cite" data-cite="${numbers.join(",")}">${numbers.join(", ")}</sup>`;
+    }
+    const first = cited[0];
+    const domain = sourceDomain(first.sourceId);
+    const nums = cited.map((r) => r.number).join(",");
+    const label = escapeHtml(citationLabel(cited));
+    const openAttr = cited.length === 1 && isOpenableUrl(first.url) ? ' data-openable="1"' : "";
+    const domainAttr = domain ? ` data-icon-domain="${escapeHtml(domain)}"` : "";
+    return `<button type="button" class="cite-pill" data-cites="${nums}"${openAttr}><span class="cite-ico"${domainAttr}>${sourceGlyphSvg(first.sourceId)}</span><span class="cite-label">${label}</span></button>`;
+  };
+}
+
+/** A whole answer as HTML: without a model-written "Sources:" list, and with citation pills for `references`. */
+export function renderAnswerMarkdown(source: string, references: SourceReference[]): string {
+  return renderMarkdown(withoutSourceList(source), references.length ? { citation: answerCitation(references) } : {});
 }

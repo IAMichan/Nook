@@ -4,14 +4,17 @@
   // context, niet gelezen, zoekt); bronnen die niet gelezen konden worden staan bovenaan, met de reden en Probeer
   // opnieuw op één regel. Klapt vanzelf open als een bron niet gelezen kon worden.
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { sourceDomain, sourceGroups, sourcesSummary, statusText, type SourceGroup } from "../lib/sources";
+  import { citationsUsed, isOpenableUrl } from "../lib/citations";
+  import { sourceDomain, sourceGroups, sourcesSummary, sourceTitle, statusText, type SourceGroup } from "../lib/sources";
   import type { ChatMessage, SourceReference } from "../lib/types";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
   import { tr } from "../lib/i18n.svelte";
+  import CitationPreview from "./CitationPreview.svelte";
 
   let { message, live = false, onRetry }: { message: ChatMessage; live?: boolean; onRetry?: () => void } = $props();
 
   const groups = $derived(sourceGroups(message, live));
+  const cited = $derived(citationsUsed(message.text));
   const failed = $derived(groups.filter((g) => g.status === "failed").length);
   const searching = $derived(live && groups.some((g) => g.status === "running"));
   const summary = $derived(sourcesSummary(groups, live));
@@ -20,13 +23,64 @@
     if (failed > 0) expanded = true;
   });
 
+  let previewRef = $state<SourceReference | null>(null);
+  let previewAnchor = $state<{ left: number; top: number; right: number; bottom: number } | null>(null);
+  let onRow = false;
+  let onPopover = false;
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearTimers() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+  }
+
+  function scheduleClose() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!onRow && !onPopover) {
+        previewRef = null;
+        previewAnchor = null;
+      }
+    }, 200);
+  }
+
+  function enterRow(ref: SourceReference, el: HTMLElement) {
+    onRow = true;
+    clearTimers();
+    const rect = el.getBoundingClientRect();
+    const anchor = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+    const delay = previewRef ? 0 : 400;
+    showTimer = setTimeout(() => {
+      previewRef = ref;
+      previewAnchor = anchor;
+    }, delay);
+  }
+
+  function leaveRow() {
+    onRow = false;
+    clearTimeout(showTimer);
+    scheduleClose();
+  }
+
+  function hoverPopover(inside: boolean) {
+    onPopover = inside;
+    if (inside) clearTimeout(hideTimer);
+    else scheduleClose();
+  }
+
   function open(ref: SourceReference) {
-    if (ref.url && /^(https:|file:|message:)/.test(ref.url)) openUrl(ref.url);
+    if (ref.url && isOpenableUrl(ref.url)) openUrl(ref.url);
   }
 
   /** The exact queries as a tooltip (a failed source shows its reason in the row itself). */
   function help(g: SourceGroup): string {
     return g.queries.map((q) => `“${q}”`).join(", ");
+  }
+
+  function refSubtitle(ref: SourceReference, groupTitle: string): string {
+    const app = sourceTitle(ref.sourceId) || groupTitle;
+    return [app, ref.detail].filter((s) => s && s.trim().length > 0).join(" · ");
   }
 </script>
 
@@ -67,20 +121,46 @@
               </div>
             {/if}
             {#if !live && g.references.length}
-              <ol>
+              <div class="refs-list">
                 {#each g.references as ref (ref.number)}
-                  <li value={ref.number}>
-                    {#if ref.url}<a href={ref.url} onclick={(e) => { e.preventDefault(); open(ref); }}>{ref.title}</a>{:else}{ref.title}{/if}
-                    {#if ref.detail}<span class="faint"> — {ref.detail}</span>{/if}
-                  </li>
+                  {@const isCited = cited.has(ref.number)}
+                  {@const openable = isOpenableUrl(ref.url)}
+                  <button
+                    type="button"
+                    class="ref-row"
+                    class:cited={isCited}
+                    class:openable
+                    aria-label={ref.title}
+                    title={openable ? tr("Open het origineel", "Open the original") : tr("Geen link beschikbaar voor deze bron", "No link available for this source")}
+                    onclick={() => open(ref)}
+                    onmouseenter={(e) => enterRow(ref, e.currentTarget)}
+                    onmouseleave={leaveRow}
+                  >
+                    <span class="ref-dot" aria-hidden="true"></span>
+                    <span class="ref-text">
+                      <span class="ref-title">{ref.title}</span>
+                      <span class="ref-sub">{refSubtitle(ref, g.title)}</span>
+                    </span>
+                    {#if openable}<span class="ref-arrow" aria-hidden="true">↗</span>{/if}
+                  </button>
                 {/each}
-              </ol>
+              </div>
             {/if}
           </div>
         {/each}
       </div>
     {/if}
   </div>
+{/if}
+
+{#if previewRef && previewAnchor}
+  <CitationPreview
+    references={[previewRef]}
+    anchor={previewAnchor}
+    edge="right"
+    onhover={hoverPopover}
+    onopen={() => { previewRef = null; previewAnchor = null; }}
+  />
 {/if}
 
 <style>
@@ -109,5 +189,44 @@
   .failure { display: flex; align-items: center; gap: 10px; padding-left: 24px; }
   .reason { flex: 1; font-size: 11.5px; color: var(--text2); user-select: text; }
   .fix { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: none; background: var(--smoke); color: var(--paper); white-space: nowrap; }
-  ol { margin: 0 0 0 20px; padding-left: 16px; color: var(--text2); }
+  .refs-list { display: flex; flex-direction: column; padding-left: 20px; }
+  .ref-row {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    width: 100%;
+    text-align: left;
+    padding: 4px 6px;
+    border-radius: var(--radius-control);
+    border: none;
+    background: transparent;
+  }
+  .ref-row:hover { background: var(--smoke); }
+  .ref-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+    align-self: center;
+    background: var(--smoke);
+  }
+  .ref-row.cited .ref-dot { background: var(--iris); }
+  .ref-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ref-title {
+    font: var(--text-detail);
+    color: var(--text2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ref-row.cited .ref-title { color: var(--paper); }
+  .ref-sub {
+    font: var(--text-label);
+    color: var(--text3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ref-arrow { font: var(--text-caption); font-weight: 600; color: var(--text3); flex: none; }
+  .ref-row:hover .ref-arrow { color: var(--paper); }
 </style>
