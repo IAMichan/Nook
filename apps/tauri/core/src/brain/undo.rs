@@ -23,6 +23,9 @@ pub fn step(tool: &str, input: &Value, result: &str) -> Option<UndoStep> {
         "create_reminder" => created_id(result).map(|id| UndoStep { tool: "delete_reminder".into(), input: titled(json!({"id": id})) }),
         "add_open_loop" => bracket_id(result).map(|id| UndoStep { tool: "complete_open_loop".into(), input: json!({"id": id}) }),
         "remember" => memory_id(result).map(|id| UndoStep { tool: "forget".into(), input: json!({"what": id}) }),
+        // A setting goes back to what it was; the result says "web_search: off (was on)".
+        "change_setting" => crate::settings_catalog::previous(result)
+            .map(|old| UndoStep { tool: "change_setting".into(), input: json!({"setting": input["setting"], "value": old}) }),
         _ => None,
     }
 }
@@ -78,6 +81,13 @@ pub fn batch<T: Clone>(actions: &[(T, DateTime<Utc>)], now: DateTime<Utc>) -> Ve
 mod tests {
     use super::*;
     use chrono::{Duration, TimeZone};
+
+    #[test]
+    fn a_changed_setting_goes_back_to_what_it_was() {
+        let undo = step("change_setting", &json!({"setting": "web_search", "value": "off"}), "web_search: off (was on)").unwrap();
+        assert_eq!(undo, UndoStep { tool: "change_setting".into(), input: json!({"setting": "web_search", "value": "on"}) });
+        assert!(step("change_setting", &json!({"setting": "web_search"}), "nothing").is_none());
+    }
 
     #[test]
     fn what_can_be_undone() {

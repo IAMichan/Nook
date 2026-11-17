@@ -182,7 +182,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.4 Tools for Nook Chat
 
-- [ ] **BR-20** `get_settings`, `change_setting`, `open_settings` with the settings catalog (`AppModel+SettingsTools`, `SettingsCatalog`) → `src-tauri/src/tools/settings.rs`, `core/src/settings_catalog.rs` · M
+- [x] **BR-20** `get_settings`, `change_setting`, `open_settings` with the settings catalog (`AppModel+SettingsTools`, `SettingsCatalog`) → `src-tauri/src/tools/settings.rs`, `core/src/settings_catalog.rs` · M
 - [ ] **BR-21** `find_time` with buffers, time-of-day preference and weekends (`MeetingTimes`, `Availability`) · S
 - [ ] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
 - [ ] **BR-23** `github_merge_prs` (batch merge) · S
