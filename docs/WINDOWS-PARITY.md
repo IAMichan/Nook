@@ -351,7 +351,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-01** `browser_screenshot`: offered in `tools/list`; WebView2 through the DevTools protocol (`Page.captureScreenshot`), WebKitGTK `get_snapshot`, WKWebView `takeSnapshot` (`src-tauri/src/workspace/snapshot.rs`) · M
 
-- [ ] **AG-02** `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for` on `src-tauri/src/workspace/browser.rs` (DOM refs, click and type through JS) · M
+- [x] **AG-02** `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for` on `src-tauri/src/workspace/browser.rs` (DOM refs, click and type through JS; scripts in `core/src/workspace/browser_script.rs`; no Stop overlay on the page yet) · M
 
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 
