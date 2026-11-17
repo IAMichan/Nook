@@ -5,10 +5,11 @@ use super::Row;
 
 mod automation;
 mod base;
+mod brain;
 mod companion_home;
 mod maintenance;
 mod nook_tools;
 mod workspace_agents;
 
 pub const ALL: &[&[Row]] =
-    &[automation::ROWS, base::ROWS, companion_home::ROWS, maintenance::ROWS, nook_tools::ROWS, workspace_agents::ROWS];
+    &[automation::ROWS, base::ROWS, brain::ROWS, companion_home::ROWS, maintenance::ROWS, nook_tools::ROWS, workspace_agents::ROWS];

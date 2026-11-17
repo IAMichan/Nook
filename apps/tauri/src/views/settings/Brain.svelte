@@ -110,6 +110,8 @@
         </div>
       </div>
       <p class="faint note">{tr("De sleutel staat in de kluis van je systeem (Windows Referentiebeheer, GNOME Keyring/KWallet), nooit in een bestand.", "The key is kept in your system's keychain (Windows Credential Manager, GNOME Keyring/KWallet), never in a file.")} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Sleutel maken", "Create a key")}</a></p>
+    {:else if current.isSubscription}
+      <p class="faint note">{tr("Nook denkt met je eigen login bij {name}: geen sleutel, binnen de limieten van je abonnement. Het draait afgeschermd: geen shell, geen bestanden, geen eigen plug-ins of MCP-servers.", "Nook thinks with your own sign-in to {name}: no key, within your plan's limits. It runs locked down: no shell, no files, none of your own plugins or MCP servers.", { name: current.title.split(" (")[0] })} {#if current.loginCommand}{tr("Installeer het en log één keer in met {command} in een terminal.", "Install it and sign in once with {command} in a terminal.", { command: current.loginCommand })}{/if} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Installeren", "Install")}</a></p>
     {:else if current.isLocal}
       <p class="faint note">{tr("Draait {name} nog niet?", "{name} not running yet?", { name: current.title.split(" (")[0] })} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Download", "Download")}</a> {tr("en start hem, en haal dan de modellen op.", "and start it, then fetch the models.")}</p>
     {/if}
