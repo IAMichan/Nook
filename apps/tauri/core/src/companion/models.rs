@@ -1173,6 +1173,9 @@ pub struct PairedDevice {
     /// through the relay (`relay_push`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_service: Option<String>,
+    /// What it may do (`CompanionScope` names, `granted_scopes`); `None` for a phone paired before scopes: everything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
     /// The public half of the phone's device key (X9.63, base64; `device_key`): once set, only requests signed with it
     /// are taken. `None` until the phone bound one (an older app never does).
     #[serde(default, skip_serializing_if = "Option::is_none")]

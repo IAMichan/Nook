@@ -13,6 +13,7 @@ use super::keep_awake::KeepAwakeMode;
 use super::models::{base64url_decode, base64url_encode, is_control, PairedDevice, KEY_LENGTH, PAIRING_WINDOW};
 use super::push::PushSettings;
 use super::relay_push::PushRoute;
+use super::scopes::{self, Scopes};
 use crate::secrets::SecretStore;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -53,6 +54,8 @@ pub struct CompanionStore {
     secrets: Arc<dyn SecretStore>,
     stored: Mutex<Stored>,
     pending: Mutex<Option<Pending>>,
+    /// What the phone that pairs now may do, chosen next to the pairing code; everything by default.
+    pending_scopes: Mutex<Scopes>,
 }
 
 const APNS_KEY_ACCOUNT: &str = "companion.apns.key";
@@ -67,7 +70,7 @@ impl CompanionStore {
     pub fn load(path: PathBuf, secrets: Arc<dyn SecretStore>) -> Self {
         let mut stored: Stored = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         stored.devices.retain(|d| key_from(&*secrets, &d.id).is_some());
-        Self { path, secrets, stored: Mutex::new(stored), pending: Mutex::new(None) }
+        Self { path, secrets, stored: Mutex::new(stored), pending: Mutex::new(None), pending_scopes: Mutex::new(scopes::all()) }
     }
 
     pub fn load_default(secrets: Arc<dyn SecretStore>) -> Self {
@@ -216,6 +219,7 @@ impl CompanionStore {
             push_token: None,
             push_production: None,
             push_service: None,
+            scopes: Some(scopes::names(&self.pending_scopes())),
             device_key: None,
             protocol_version: None,
             app_version: None,
@@ -228,7 +232,34 @@ impl CompanionStore {
             true,
         );
         self.cancel_pairing();
+        self.set_pending_scopes(scopes::all());
         Some(device)
+    }
+
+    /// What the phone that pairs next may do.
+    pub fn pending_scopes(&self) -> Scopes {
+        self.pending_scopes.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_pending_scopes(&self, scopes: Scopes) {
+        *self.pending_scopes.lock().unwrap_or_else(|e| e.into_inner()) = scopes;
+    }
+
+    /// What a paired phone may do; nothing for an id that is no paired phone.
+    pub fn scopes_of(&self, id: &str) -> Scopes {
+        self.device(id).map(|d| d.granted_scopes()).unwrap_or_default()
+    }
+
+    /// Changes what a paired phone may do (the server drops its live connection, `CompanionServer::set_scopes`).
+    pub fn set_scopes(&self, id: &str, granted: &Scopes) {
+        self.with(
+            |s| {
+                if let Some(d) = s.devices.iter_mut().find(|d| d.id == id) {
+                    d.scopes = Some(scopes::names(granted));
+                }
+            },
+            true,
+        );
     }
 
     pub fn set_push_token(&self, id: &str, token: Option<String>, production: Option<bool>) {

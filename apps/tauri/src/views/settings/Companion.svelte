@@ -5,6 +5,7 @@
   import { relativeTime } from "../../lib/state.svelte";
   import CompanionPush from "./CompanionPush.svelte";
   import CompanionAway from "./CompanionAway.svelte";
+  import CompanionScopes from "./CompanionScopes.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
   let info = $state<CompanionInfo | null>(null);
@@ -89,9 +90,18 @@
           </div>
           <button onclick={() => run(() => companion.removeDevice(device.id))}>{tr("Ontkoppel", "Unpair")}</button>
         </div>
+        <details class="scopes">
+          <summary class="faint small">{tr("Wat deze telefoon mag", "What this phone may do")}</summary>
+          <CompanionScopes scopes={device.scopes} onchange={(s) => run(() => companion.setScopes(device.id, s))} />
+        </details>
       {:else}
         <p class="faint note">{tr("Nog geen telefoon gekoppeld.", "No phone paired yet.")}</p>
       {/each}
+    </div>
+
+    <h3>{tr("Kies wat de volgende telefoon mag", "Choose what the next phone may do")}</h3>
+    <div class="group">
+      <CompanionScopes scopes={info.pendingScopes} onchange={(s) => run(() => companion.setScopes(null, s))} />
     </div>
 
     {#if info.pairing}
@@ -139,6 +149,8 @@
   .device { display: flex; flex-direction: column; gap: 2px; }
   .small { font-size: 11px; }
   .mono { font-family: var(--mono); }
+  .scopes { padding: 0 0 6px; }
+  .scopes summary { cursor: pointer; padding: 2px 0 4px; }
   .status { justify-content: flex-start; }
   .pairing { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
   .qr { width: 200px; height: 200px; flex: none; background: #fff; border-radius: 12px; overflow: hidden; }
