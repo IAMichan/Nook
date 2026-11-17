@@ -25,12 +25,26 @@ export interface ChatChart {
   series: ChartSeries[];
 }
 
+export interface CalendarInviteEvent {
+  title: string;
+  start: string;
+  end: string;
+  location?: string;
+  notes?: string;
+  organizer?: string;
+  attendees?: string[];
+  uid?: string;
+  stamp?: string;
+}
+
 export interface MailDraft {
   id: string;
   to: string;
   cc: string;
   subject: string;
   body: string;
+  attachments?: string[];
+  invite?: CalendarInviteEvent | null;
   /** draft, sending, sent, opened of failed */
   state: string;
   error: string;
@@ -182,6 +196,7 @@ export const brainApi = {
   mailUpdate: (nookId: string, draft: MailDraft) => invoke<void>("mail_update", { nookId, draft }),
   mailSend: (nookId: string, draft: MailDraft) => invoke<void>("mail_send", { nookId, draft }),
   mailOpen: (nookId: string, draft: MailDraft) => invoke<void>("mail_open", { nookId, draft }),
+  mailOpenInvite: (nookId: string, draft: MailDraft) => invoke<void>("mail_open_invite", { nookId, draft }),
 
   readAttachment: (name: string, base64: string) => invoke<Attachment>("read_attachment", { name, base64 }),
   sourceChoices: () => invoke<SourceChoice[]>("source_choices"),

@@ -38,7 +38,7 @@ unicode-normalization = "0.1"
 quick-xml = "0.42"
 pdf-extract = "0.12"
 iana-time-zone = "0.1"
-sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system", "disk"] }
 # The system language on first start, like `Locale.preferredLanguages` on the Mac.
 sys-locale = "0.3"
 # The companion's phone side: large answers come compressed (raw DEFLATE, `CompanionWire`), and away from home it reaches

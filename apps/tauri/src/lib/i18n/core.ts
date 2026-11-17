@@ -101,6 +101,8 @@ export const table: Table = {
   "Edit": { de: "Bearbeiten", fr: "Modifier", es: "Editar" },
   "Open in mail app": { de: "Im Mailprogramm öffnen", fr: "Ouvrir dans l’app de messagerie", es: "Abrir en la app de correo" },
   "Send": { de: "Senden", fr: "Envoyer", es: "Enviar" },
+  "Invitation: {summary}": { de: "Einladung: {summary}", fr: "Invitation : {summary}", es: "Invitación: {summary}" },
+  "Open .ics": { de: ".ics öffnen", fr: "Ouvrir .ics", es: "Abrir .ics" },
 
   // Messages
   "Copied": { de: "Kopiert", fr: "Copié", es: "Copiado" },
