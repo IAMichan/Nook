@@ -227,7 +227,7 @@ enum MailActions {
     /// quoted text with the answer; `to` and `cc`, when given, replace the recipients Mail filled in (the user may have
     /// changed them in the draft).
     /// `subject`, when given, replaces Mail's own "Re:" subject (the user may have changed it in the draft).
-    static func replyScript(id: String, body: String, subject: String = "", to: [String], cc: [String], openWindow: Bool) -> String {
+    static func replyScript(id: String, body: String, subject: String = "", to: [String], cc: [String], bcc: [String] = [], openWindow: Bool) -> String {
         let q = quote(id)
         var recipients = ""
         if !to.isEmpty {
@@ -238,6 +238,9 @@ enum MailActions {
         }
         for address in cc {
             recipients += "\n        make new cc recipient at end of cc recipients of m with properties {address:\(quote(address))}"
+        }
+        for address in bcc {
+            recipients += "\n        make new bcc recipient at end of bcc recipients of m with properties {address:\(quote(address))}"
         }
         return """
             set m to missing value

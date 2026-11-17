@@ -96,12 +96,13 @@ pub const PERSONAL: [&str; 17] = [
 ];
 
 /// Tools van een bron. Tools zonder bron (grafieken, app openen, muziek…) mogen altijd.
-const EXACT_TOOLS: [(&str, &str); 63] = [
+const EXACT_TOOLS: [(&str, &str); 64] = [
     ("list_events", "calendar"),
     ("create_event", "calendar"),
     ("update_event", "calendar"),
     ("delete_event", "calendar"),
     ("check_availability", "calendar"),
+    ("find_time", "calendar"),
     ("create_reminder", "reminders"),
     ("complete_reminder", "reminders"),
     ("delete_reminder", "reminders"),
@@ -586,6 +587,7 @@ pub mod capabilities {
         Some(match tool {
             "list_events" => "afspraken lezen",
             "check_availability" => "beschikbaarheid in alle agenda's",
+            "find_time" => "vrije tijd voor een afspraak zoeken",
             "create_event" => "afspraak maken",
             "update_event" => "afspraak aanpassen",
             "delete_event" => "afspraak verwijderen",
@@ -603,6 +605,8 @@ pub mod capabilities {
             "search_files" => "bestanden zoeken",
             "read_file" => "document lezen",
             "read_browser_tab" => "geopende webpagina lezen",
+            "read_nook_browser" => "pagina in Nooks browser lezen",
+            "open_in_nook_browser" => "link openen in Nooks browser",
             "read_screen" => "scherm lezen",
             "read_app" => "een geopende app lezen",
             "system_status" | "mac_status" => "processor, geheugen, batterij en schijf",
@@ -622,6 +626,7 @@ pub mod capabilities {
             "github_pr_details" => "PR met diff lezen",
             "github_search" => "issues en PR's zoeken",
             "github_issue_details" => "issue lezen",
+            "github_merge_prs" => "meerdere PR's samenvoegen",
             "github_create_issue" => "issue maken",
             "stripe_payments" => "betalingen lezen",
             "notion_search" => "pagina's zoeken",

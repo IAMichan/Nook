@@ -452,13 +452,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
             ])
         case .chatRead:
             return object([
-                "chat": ["type": "string", "description": "Chat name (person or group) from chat_list."],
+                "chat": ["type": "string", "description": "Chat name (person or group) from chat_list, or its id when a name fits several chats."],
                 "app": ["type": "string", "description": "The chat's app, when known."],
                 "limit": ["type": "integer", "description": "Last N messages (default 20, max 50)."]
             ], required: ["chat"])
         case .chatSend:
             return object([
-                "to": ["type": "string", "description": "Chat name from chat_list."],
+                "to": ["type": "string", "description": "Chat name from chat_list, or its id when a name fits several chats."],
                 "app": ["type": "string", "description": "The chat's app, when known."],
                 "message": ["type": "string", "description": "The full text, written as the user would."]
             ], required: ["to", "message"])
@@ -823,7 +823,8 @@ struct BridgeLaunch: Equatable, Sendable {
     (actions need approval); chat_list, chat_read, chat_send for chat apps; nook_chat_list, nook_chat_read, nook_chat_send for Nook Chat; \
     take_over_screen for \
     the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_start (new top-level sessions), \
-    session_send, session_wait, session_search, session_questions and session_organize for the user's other sessions; render_page to show HTML (charts, diagrams, mock-ups).
+    session_send, session_wait, session_search, session_questions and session_organize for the user's other sessions; render_page to show HTML (charts, diagrams, mock-ups). \
+    A mail for the user to send: a ```mail block (To:, Cc:, Bcc:, Subject: lines, blank line, text).
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because
