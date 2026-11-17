@@ -115,7 +115,7 @@ pub fn prioritized(tools: &[LoopTool], request: &str, limit: usize, preferred: &
     if tools.len() <= limit {
         return wanted.into_iter().chain(rest.into_iter().map(|r| r.1)).cloned().collect();
     }
-    const CORE: [&str; 9] = [
+    const CORE: [&str; 10] = [
         "compose_mail",
         "show_chart",
         "create_event",
