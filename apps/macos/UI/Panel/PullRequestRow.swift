@@ -30,8 +30,6 @@ struct PullRequestRow: View, Equatable {
     var selected = false
     /// Where it stands in a stack of pull requests built on each other, if it is in one.
     var stack: (index: Int, count: Int, merged: Int)? = nil
-    /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
-    var now = Date()
     /// In a session's own list: what the row adds there, and its ⋯ menu's actions.
     var linked: PullRequestRowLink? = nil
     var onWatch: (() -> Void)? = nil
@@ -46,7 +44,7 @@ struct PullRequestRow: View, Equatable {
         lhs.item == rhs.item && lhs.role == rhs.role && lhs.showRepo == rhs.showRepo && lhs.accountID == rhs.accountID
             && lhs.selected == rhs.selected && lhs.stack?.index == rhs.stack?.index && lhs.stack?.count == rhs.stack?.count
             && lhs.stack?.merged == rhs.stack?.merged
-            && lhs.now == rhs.now && lhs.linked == rhs.linked && lhs.readable == rhs.readable
+            && lhs.linked == rhs.linked && lhs.readable == rhs.readable
     }
 
     var body: some View {
@@ -169,10 +167,7 @@ struct PullRequestRow: View, Equatable {
                         }
                     }
                     if let opened = item.created ?? item.updated {
-                        Text(Self.opened(now.timeIntervalSince(opened)))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .fixedSize()
+                        PullRequestOpenedTime(date: opened)
                     }
                     if let role = Self.roleKey(item.authorRole) {
                         NookTag(tr(role)).fixedSize()
@@ -453,5 +448,20 @@ struct PullRequestLineCounts: View {
         .monospacedDigit()
         .lineLimit(1)
         .fixedSize()
+    }
+}
+
+/// "opened 6m ago" on a pull request's row, moving on with the clock. Its own tick, so only this text redraws every
+/// half minute, not the list and every row in it.
+struct PullRequestOpenedTime: View {
+    let date: Date
+
+    var body: some View {
+        TimelineView(.nookTicks(every: 30)) { context in
+            Text(PullRequestRow.opened(context.date.timeIntervalSince(date)))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 }
