@@ -62,6 +62,7 @@ webview2-com = "0.39"
 windows-collections = "0.3"
 windows = { version = "0.62", features = [
   "Foundation",
+  "Data_Xml_Dom",
   "Foundation_Collections",
   "Globalization",
   "Graphics_Imaging",
@@ -74,6 +75,7 @@ windows = { version = "0.62", features = [
   "Media_SpeechSynthesis",
   "Security_Cryptography",
   "Storage_Streams",
+  "UI_Notifications",
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",

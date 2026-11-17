@@ -8,6 +8,7 @@ mod commands;
 mod companion;
 mod connectors;
 mod games;
+mod notices;
 mod platform;
 mod services;
 mod state;
@@ -28,6 +29,10 @@ pub fn run() {
                 // The task that keeps Nook running starts it every minute; while it runs, that start ends quietly.
                 if args.iter().any(|a| a == companion::background::BACKGROUND_ARG) {
                     return;
+                }
+                // A click on a toast after Nook restarted (Windows starts `nook.exe "nook://notice?…"`).
+                if let Some(link) = nook_core::services::toast::ToastLink::from_args(&args) {
+                    return notices::respond(app, link, None);
                 }
                 platform::desktop::show_main(app, platform::desktop::route_from_args(&args).unwrap_or("chat"))
             }))
@@ -50,6 +55,7 @@ pub fn run() {
                 nook_core::paths::set_support_directory(dir);
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
+            notices::setup(app.handle());
             companion::setup(app.handle());
             connectors::setup(app.handle());
             services::setup(app.handle());

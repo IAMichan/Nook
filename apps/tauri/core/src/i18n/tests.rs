@@ -170,7 +170,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/platform/linux/mpris.rs", 2),
     ("src-tauri/src/platform/linux/speech.rs", 1),
     ("src-tauri/src/platform/linux/x11.rs", 4),
-    ("src-tauri/src/platform/mod.rs", 12),
+    ("src-tauri/src/platform/mod.rs", 11),
     ("src-tauri/src/platform/process.rs", 2),
     ("src-tauri/src/platform/secrets.rs", 1),
     ("src-tauri/src/platform/windows/autocomplete.rs", 1),

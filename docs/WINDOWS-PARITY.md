@@ -475,7 +475,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **SV-12** History of missed notices, searchable, opens its source (`NoticeLog`, `NoticeHistory`) · M
 - [ ] **SV-13** Shared ranking with learned weights for Today, menu and phone (`AttentionItem`, `AttentionScorer`, `AttentionFeedback`) · M
 - [ ] **SV-14** One app-kind catalog (browser, call, chat, editor, terminal) with Windows exe names (`AppCatalog`) · S
-- [ ] **SV-15** Rich Windows toasts: Allow/Deny buttons, groups, priority, clicks that survive a restart, short gist for long approvals (`SystemNotifier`, 5b67dce9f, 730ba42b9; base for AG-51 and CH-67) · M
+- [x] **SV-15** Rich Windows toasts: Allow/Deny buttons, groups, priority, clicks that survive a restart, short gist for long approvals (`SystemNotifier`, 5b67dce9f, 730ba42b9; base for AG-51 and CH-67) · M
 - [ ] **SV-16** Configurable snooze durations and times of day (`SnoozeOptionsSection`) · S
 - [ ] **SV-17** Think Along backoff up to 2 h and kept across restarts; the full nudge filter (`NudgeFilter`, `ThinkAlongBackoff`) · S
 - [ ] **SV-18** Today complete: agents waiting or failed, replies you owe, birthdays, next event within 3 h, connector failures, autocomplete "saved you", ranking (`AppModel+Today`) · M
