@@ -187,7 +187,7 @@ final class RowCardWindow: NSPanel {
 private final class RowCardPresenter {
     static let shared = RowCardPresenter()
     /// Room between the row and its card, and between the card and the screen's edge.
-    private static let gap = NookTheme.Spacing.xs
+    nonisolated private static let gap = NookTheme.Spacing.xs
     private static let margin: CGFloat = 5
 
     private var panel: RowCardWindow?

@@ -59,7 +59,7 @@ final class SearchCenter: ObservableObject {
     private var archived: [String: SearchDocument] = [:]
     private var archiveTask: Task<Void, Never>?
     /// Most sessions the archive brings per query, newest first, each holding the query's words.
-    static let archiveLimit = 200
+    nonisolated static let archiveLimit = 200
     /// How many transcript files are read before the index is built again with them: results fill in as they are read.
     private static let transcriptBatch = 150
     /// How long the index stays after the panel closed, for opening search again at once.
@@ -132,7 +132,7 @@ final class SearchCenter: ObservableObject {
             case .run(let run):
                 let events = await app.workspace.timelineForSearch(run.id)
                 await Task.detached(priority: .utility) {
-                    archive.save(source.key, stamp: source.stamp, date: source.date,
+                    _ = archive.save(source.key, stamp: source.stamp, date: source.date,
                                  passages: SessionPassages.make(events, run: run))
                 }.value
             case .transcript(let path, let agent):

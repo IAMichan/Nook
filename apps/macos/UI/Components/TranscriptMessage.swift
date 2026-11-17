@@ -259,7 +259,18 @@ extension EnvironmentValues {
     /// "Reply" under an agent's final answer: puts the words it is given (the answer, or what you selected of it) as a
     /// quote at the top of the session's composer. Set by each session view for its own composer; nil (no Reply button)
     /// where nothing can be answered.
-    @Entry var replyToAnswer: ((String) -> Void)? = nil
+    @Entry var replyToAnswer: AnswerReplyAction? = nil
+}
+
+/// What "Reply" under an answer does (`replyToAnswer`). Equal while it writes into the same draft holder (`owner`), so a
+/// new closure from each update of the session view does not invalidate every message that reads it.
+struct AnswerReplyAction: Equatable {
+    let owner: ObjectIdentifier
+    let perform: (String) -> Void
+
+    func callAsFunction(_ answer: String) { perform(answer) }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.owner == rhs.owner }
 }
 
 /// Under a message, on hover: copy, the message's own actions, and when it was written. It keeps its place while

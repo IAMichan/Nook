@@ -90,7 +90,8 @@ extension AgentListEntries {
     /// The rows as you have seen them: a row that finished (`AgentListItem.unseenSince`) reads as unseen when it finished
     /// after you last looked (`SessionVisits`), and never while it is the session you are looking at (`selected`).
     @MainActor
-    func seen(selected: String, demoMode: Bool, visits: SessionVisits = .shared) -> AgentListEntries {
+    func seen(selected: String, demoMode: Bool, visits: SessionVisits? = nil) -> AgentListEntries {
+        let visits = visits ?? .shared
         func seen(_ items: [AgentListItem]) -> [AgentListItem] {
             items.map { item in
                 guard let since = item.unseenSince else { return item }

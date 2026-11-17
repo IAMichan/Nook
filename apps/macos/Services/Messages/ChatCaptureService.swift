@@ -428,7 +428,7 @@ final class ChatCaptureService: ObservableObject {
     }
 
     /// While nobody sees the screen, an app read over the network waits at least this long between two reads.
-    static let unseenRemoteGap: TimeInterval = 15 * 60
+    nonisolated static let unseenRemoteGap: TimeInterval = 15 * 60
 
     /// The time between two reads of a bridge under the energy plan, the same rule for every app: its usual interval
     /// stretched by the plan's slowdown, and while nobody sees the screen (displays asleep, screen locked) at least

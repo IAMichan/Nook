@@ -569,9 +569,13 @@ struct SessionComposer<Controls: View>: View {
             }
         }
         if !outdent, let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
-            bodyBinding.wrappedValue = suggestion.text
-            suggestion.accept()
-            Self.placeCaretAtEnd()
+            // SwiftUI handles key presses while it updates its views, and taking the suggestion changes the draft and
+            // the session's published suggestion, so that runs right after.
+            DispatchQueue.main.async {
+                bodyBinding.wrappedValue = suggestion.text
+                suggestion.accept()
+                Self.placeCaretAtEnd()
+            }
             return .handled
         }
         if !outdent, let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) {
@@ -653,7 +657,8 @@ struct SessionComposer<Controls: View>: View {
             return .handled
         }
         if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
-            suggestion.dismiss()
+            // Dismissing publishes; key presses arrive while SwiftUI updates its views.
+            DispatchQueue.main.async { suggestion.dismiss() }
             return .handled
         }
         guard let extras, extras.model.isOpen else { return .ignored }

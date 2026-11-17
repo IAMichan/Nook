@@ -61,7 +61,7 @@ struct AgentSessionDetail: View {
             }
         }
         // "Reply" under an answer: it goes as a quote to the top of this session's composer, with the keyboard there.
-        .environment(\.replyToAnswer, { answer in
+        .environment(\.replyToAnswer, AnswerReplyAction(owner: ObjectIdentifier(composerState)) { answer in
             var text = draft
             ComposerFieldStyle.reply(to: answer, in: &text)
             draft = text
