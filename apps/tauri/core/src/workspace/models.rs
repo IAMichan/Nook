@@ -75,6 +75,18 @@ impl RunProvider {
         }
     }
 
+    /// The agent Nook continues a session of this kind with when it takes one over from a terminal (`nookProvider` on
+    /// the Mac): only those whose own conversations Nook can resume.
+    pub fn continues(kind: crate::agents::AgentKind) -> Option<Self> {
+        use crate::agents::AgentKind as K;
+        match kind {
+            K::Claude => Some(Self::Claude),
+            K::Codex => Some(Self::Codex),
+            K::Gemini => Some(Self::Gemini),
+            K::Opencode | K::Cursor | K::Grok | K::Antigravity => None,
+        }
+    }
+
     /// Draait over ACP (Agent Client Protocol).
     pub fn uses_acp(self) -> bool {
         self.transport() == Transport::Acp

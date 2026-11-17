@@ -48,7 +48,7 @@ BR Nook Chat and the brain, AG coding agents, CH chat apps and connectors, SV sy
   - Progress: `i18n::tests::no_new_dutch_text_outside_tr` fails on Dutch literals outside `tr`/`trf`; `DUTCH_LEFT` in `core/src/i18n/tests.rs` lists what each file still has and only goes down. Done: `workspace/manager.rs`, `commands/workspace.rs`.
 - [ ] **FD-05** Shared desktop components in `src/components/ui/`: move Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner and StatusPill out of `views/companion/ui/`, and add the Svelte twins of `NookTooltip`/`HoverCard`, `ConfirmedButton` (replaces the remaining `confirm()` calls), `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton` (with feedback), `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron`, `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`/`ModelPickerDropdown`, `EmojiBrowser`, `ImageModal`, `QRCodeView`, `NookAcknowledgeButton`; list them next to their Swift names in UI-COMPONENTS.md · L
 - [x] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
-- [ ] **FD-07** Correct TAURI.md where the audit found it wrong: WhatsApp Web inside Nook is possible through WebView2 (CH-73), and rows marked ✓ that miss parts listed here · S
+- [x] **FD-07** Correct TAURI.md where the audit found it wrong: WhatsApp Web inside Nook is possible through WebView2 (CH-73), and rows marked ✓ that miss parts listed here · S
 
 ## 2. Shell, Settings, look (UI)
 
@@ -171,7 +171,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 ### 3.2 Access, plans, autonomy
 
 - [ ] **BR-10** Three access levels (ask, small, more) chosen in the composer with Shift+Tab (`NookAccess`); Tauri has one `auto_run_safe` toggle → `core/src/brain/access.rs`, `Composer.svelte` · M
-- [ ] **BR-11** `update_plan`: the live step checklist above an answer → `src-tauri/src/tools/plan.rs`, `MessageView.svelte` · S
+- [x] **BR-11** `update_plan`: the live step checklist above an answer → `src-tauri/src/tools/plan.rs`, `MessageView.svelte` · S
 - [x] **BR-12** Automation autonomy (ask, decide through a judge, auto) and the unattended-tools policy (`AppModel+Autonomy`) · M (mail drafts always wait: no mail sender yet, CH-91)
 
 ### 3.3 Nook Chat automations
@@ -183,13 +183,13 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.4 Tools for Nook Chat
 
-- [ ] **BR-20** `get_settings`, `change_setting`, `open_settings` with the settings catalog (`AppModel+SettingsTools`, `SettingsCatalog`) → `src-tauri/src/tools/settings.rs`, `core/src/settings_catalog.rs` · M
+- [x] **BR-20** `get_settings`, `change_setting`, `open_settings` with the settings catalog (`AppModel+SettingsTools`, `SettingsCatalog`) → `src-tauri/src/tools/settings.rs`, `core/src/settings_catalog.rs` · M
 - [ ] **BR-21** `find_time` with buffers, time-of-day preference and weekends (`MeetingTimes`, `Availability`) · S
-- [ ] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
+- [x] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
 - [ ] **BR-23** `github_merge_prs` (batch merge) · S
 - [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
-- [ ] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
-- [ ] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
+- [x] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
+- [x] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 - [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L
@@ -199,14 +199,14 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 ### 3.5 Chat UI (Nook tab)
 
 - [ ] **BR-40** Sources: cited excerpt on hover or click with highlighted lines, dot for cited and dimmed uncited sources, mail sources by sender, strip model-written "Sources:" lists (`ChatSourcesView`, aa6afaa94) · M
-- [ ] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
+- [x] **BR-41** Markdown like the Mac: syntax colours, file name on a fence, wrap and run buttons, `<details>`, images on their own line, table copy as Markdown or CSV, link address on hover, HTML/SVG preview in a sandboxed frame (`MarkdownView`, `MarkdownExtras`, `CodeRender`) · M
 - [ ] **BR-42** MCP apps (`ui://` resources) in a sandboxed frame (`McpAppViews`) · M
 - [ ] **BR-43** Brain chip showing the model, opening the picker (`BrainChip`) · S
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 - [ ] **BR-45** Conversation list like the Mac: Conversations/Scheduled header tabs, For you card, one-line settled rows, hover card, archive shelf, multi-select, mark unread (`NookConversationList`) · M
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
 - [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
-- [ ] **BR-48** Zip archives, folders and pasted paths as attachments · S
+- [x] **BR-48** Zip archives, folders and pasted paths as attachments · S
 - [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
@@ -221,7 +221,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
 - [ ] **BR-61** One-click suggestions under the quick field (`DoubleTapSuggest`) · S
 - [ ] **BR-62** Selection Ask complete: the bar in the small windows, a drag across messages as context, the hidden note that the quote is material, Quote into an agent's reply box · M
-- [ ] **BR-63** Import MCP memory · S
+- [x] **BR-63** Import MCP memory · S
 
 ## 4. Coding agents and the workspace (AG)
 
@@ -476,7 +476,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **SV-12** History of missed notices, searchable, opens its source (`NoticeLog`, `NoticeHistory`) · M
 - [ ] **SV-13** Shared ranking with learned weights for Today, menu and phone (`AttentionItem`, `AttentionScorer`, `AttentionFeedback`) · M
 - [ ] **SV-14** One app-kind catalog (browser, call, chat, editor, terminal) with Windows exe names (`AppCatalog`) · S
-- [ ] **SV-15** Rich Windows toasts: Allow/Deny buttons, groups, priority, clicks that survive a restart, short gist for long approvals (`SystemNotifier`, 5b67dce9f, 730ba42b9; base for AG-51 and CH-67) · M
+- [x] **SV-15** Rich Windows toasts: Allow/Deny buttons, groups, priority, clicks that survive a restart, short gist for long approvals (`SystemNotifier`, 5b67dce9f, 730ba42b9; base for AG-51 and CH-67) · M
 - [ ] **SV-16** Configurable snooze durations and times of day (`SnoozeOptionsSection`) · S
 - [ ] **SV-17** Think Along backoff up to 2 h and kept across restarts; the full nudge filter (`NudgeFilter`, `ThinkAlongBackoff`) · S
 - [ ] **SV-18** Today complete: agents waiting or failed, replies you owe, birthdays, next event within 3 h, connector failures, autocomplete "saved you", ranking (`AppModel+Today`) · M
@@ -536,7 +536,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ## 7. Companion: the PC as server for the phone (CO)
 
-- [ ] **CO-01** The rest of the companion protocol. `core/src/companion/server.rs` handles hello, list, ping, bindKey, register, unregister, decide, answer, send and stop. Missing groups: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`liveActivity`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork`. One item per group is fine · L
+- [x] **CO-01** The rest of the companion protocol. The audit missed that `core/src/companion/server.rs` with `src-tauri/src/companion/backend.rs` already dispatches every group: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork` (checked during FD-07). Only `liveActivity` is missing, which is CO-07 · L
 - [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 - [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
@@ -545,7 +545,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
 - [x] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
-- [ ] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer · M
+- [x] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer: a message continues the session in Nook (a copy while the terminal still works) and *End* ends its process, as on the Mac; steering a running terminal turn is not possible there either · M
 - [ ] **CO-11** Android Keystore for secrets (TAURI.md ○) · M
 
 ## 8. Not portable: Mac-only parts and the Windows alternative

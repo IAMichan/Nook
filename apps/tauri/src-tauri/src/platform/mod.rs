@@ -21,6 +21,29 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+/// Toasts with buttons: Windows' own, elsewhere a plain notification for what needs no buttons.
+#[cfg(target_os = "windows")]
+pub use self::windows::toast;
+#[cfg(not(target_os = "windows"))]
+pub mod toast {
+    use nook_core::services::toast::Toast;
+    use tauri::AppHandle;
+
+    pub fn setup(_app: &AppHandle) {}
+
+    /// Linux and Android show title and text; a toast with buttons is left to the caller's fallback (the bar).
+    pub fn show(app: &AppHandle, toast: &Toast) -> Result<(), String> {
+        if !toast.kind.buttons().is_empty() {
+            return Err("no buttons on this platform's notifications".into());
+        }
+        let body = [toast.subtitle.as_str(), toast.body.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join("\n");
+        super::plain_notification(app, &toast.title, &body);
+        Ok(())
+    }
+
+    pub fn remove(_app: &AppHandle, _id: &str, _group: &str) {}
+}
+
 use std::sync::Arc;
 
 use nook_core::platform::{
@@ -84,11 +107,27 @@ pub fn services(app: &AppHandle) -> Platform {
     android::services(app)
 }
 
-/// Een melding van het systeem (Meldingencentrum op Windows, de notificatiedienst op Linux, Android).
+/// A system notification (a toast on Windows, the notification service on Linux and Android); a click opens Nook.
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    crate::notices::notice(app, &uuid::Uuid::new_v4().to_string(), title, body, nook_core::services::toast::NoticeTarget::Nowhere);
+}
+
+/// Title and text only, through the notification plugin: where toasts with buttons are not possible.
+pub fn plain_notification(app: &AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        log::warn!("Melding kon niet getoond worden: {e}");
+        log::warn!("Notification could not be shown: {e}");
+    }
+}
+
+/// Opens a place in the main window (`nook:<id>`, `agents`, `chats`), as a click on a notice does.
+pub fn desktop_or_main(app: &AppHandle, route: &str) {
+    #[cfg(desktop)]
+    desktop::show_main(app, route);
+    #[cfg(mobile)]
+    {
+        use tauri::Emitter;
+        let _ = app.emit("navigate", route);
     }
 }
 

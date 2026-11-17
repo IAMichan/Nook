@@ -128,6 +128,8 @@ impl Browser {
         if let Some(window) = app.get_webview_window(LABEL) {
             window.navigate(parsed).map_err(|e| e.to_string())?;
             let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
         } else {
             let state = self.state.clone();
             let pending = self.pending.clone();

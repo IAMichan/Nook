@@ -477,12 +477,24 @@ async fn manage(app: &AppHandle, request: &CompanionRequest, manager: Arc<Manage
 /// turn when the phone asks to steer and the agent can take it, else in line for after the turn. The server audits it.
 async fn send(app: &AppHandle, request: &CompanionRequest, manager: Arc<Manager>) -> CompanionResponse {
     let Some(session) = request.session.as_deref() else { return fail(request, CompanionError::UnknownSession) };
-    if session.starts_with(HUB_PREFIX) {
-        if hub_session(app, session).is_none() {
-            return fail(request, CompanionError::UnknownSession);
+    if let Some(key) = session.strip_prefix(HUB_PREFIX) {
+        let Some(found) = hub_session(app, session) else { return fail(request, CompanionError::UnknownSession) };
+        if !sessions::can_continue_in_nook(&found) {
+            return fail(request, CompanionError::NotAllowedFromPhone);
         }
-        // This app cannot write into another app's terminal; the message is typed there.
-        return fail(request, CompanionError::NotAllowedFromPhone);
+        // Continued in Nook with the pictures, as the Mac does (`CompanionAgents.send`); steering a terminal is not.
+        let asked = request.clone();
+        let Some(text) = blocking(move || rd::message(&asked, &images_folder())).await.flatten() else {
+            return fail(request, CompanionError::BadRequest);
+        };
+        return match crate::commands::workspace::continue_live(app, key, Some(text), false).await {
+            Ok(_) => CompanionResponse {
+                sessions: Some(listed(app).await),
+                message: Some("sent".into()),
+                ..CompanionResponse::success(&request.id)
+            },
+            Err(message) => fail_with(request, CompanionError::NotAllowedFromPhone, message),
+        };
     }
     let Some(run) = run_of(&manager, session) else { return fail(request, CompanionError::UnknownSession) };
     let asked = request.clone();

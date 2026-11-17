@@ -429,6 +429,8 @@ mod tests {
         let link = json!({"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]});
         assert_eq!(problems("open_url", &json!({"url": "file:///etc/passwd"}), &link), vec!["Alleen https-links mogen."]);
         assert!(problems("open_url", &json!({"url": "https://nook.app"}), &link).is_empty());
+        assert_eq!(problems("open_in_nook_browser", &json!({"url": "http://nook.app"}), &link), vec!["Alleen https-links mogen."]);
+        assert!(problems("open_in_nook_browser", &json!({"url": "https://nook.app"}), &link).is_empty());
         let mail = json!({"properties": {"to": {"type": "string"}, "subject": {"type": "string"}}});
         assert_eq!(problems("compose_mail", &json!({"to": "lisa", "subject": "Hoi"}), &mail), vec!["lisa is geen geldig mailadres."]);
         let command = json!({"properties": {"command": {"type": "string"}}});

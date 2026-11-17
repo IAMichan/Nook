@@ -52,6 +52,15 @@ fn yes() -> bool {
 }
 
 impl McpServerConfig {
+    /// The MCP memory server (`@modelcontextprotocol/server-memory`) a user added before memory was built in: once its
+    /// graph is imported, it is no longer needed.
+    pub fn is_memory_server(&self) -> bool {
+        match &self.transport {
+            Transport::Stdio { command, arguments } => std::iter::once(command).chain(arguments).any(|part| part.contains("server-memory")),
+            Transport::Http { .. } => false,
+        }
+    }
+
     pub fn signs_in(&self) -> bool {
         self.uses_oauth == Some(true)
     }
@@ -374,6 +383,24 @@ pub fn events_in(text: &str) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_old_memory_server_is_recognised() {
+        let config = |transport| McpServerConfig {
+            id: "m".into(),
+            name: "memory".into(),
+            transport,
+            secret_names: vec![],
+            enabled: true,
+            uses_oauth: None,
+            service_id: None,
+        };
+        let npx = Transport::Stdio { command: "npx".into(), arguments: vec!["-y".into(), "@modelcontextprotocol/server-memory".into()] };
+        assert!(config(npx).is_memory_server());
+        let github = Transport::Stdio { command: "npx".into(), arguments: vec!["@modelcontextprotocol/server-github".into()] };
+        assert!(!config(github).is_memory_server());
+        assert!(!config(Transport::Http { url: "https://x/server-memory".into() }).is_memory_server());
+    }
     use std::sync::Mutex;
 
     /// Een server in het geheugen die antwoordt als een echte en bijhoudt wat hij kreeg.
