@@ -13,6 +13,8 @@ enum MarkdownBlock: Equatable {
     /// A question from the answer with options to pick from (a ```question block).
     case question(text: String, options: [String])
     case quote(String)
+    /// A mail for the user to send: a ```mail block, or a quote that reads as a mail (`MailTemplate`).
+    case mail(MailTemplate)
     case table(header: [String], rows: [[String]])
     case rule
     /// A pull request an agent reports on a line of its own (`<pr-created>https://…/pull/12</pr-created>`).
@@ -306,6 +308,8 @@ enum MarkdownBlock: Equatable {
                 let body = code.joined(separator: "\n")
                 if language == "math" {
                     blocks.append(.math(body.trimmingCharacters(in: .whitespacesAndNewlines)))
+                } else if MailTemplate.languages.contains(language) {
+                    blocks.append(.mail(MailTemplate.fenced(body)))
                 } else if language == "question", let block = question(from: body) {
                     blocks.append(block)
                 } else if chartLanguages.contains(language), let chart = ChartRescue.chart(fromCode: body, language: language, title: "") {
@@ -379,7 +383,8 @@ enum MarkdownBlock: Equatable {
                     quote.append(String(lines[index].trimmingCharacters(in: .whitespaces).dropFirst()).trimmingCharacters(in: .whitespaces))
                     index += 1
                 }
-                blocks.append(.quote(quote.joined(separator: "\n")))
+                let text = quote.joined(separator: "\n")
+                blocks.append(MailTemplate.quoted(text).map(MarkdownBlock.mail) ?? .quote(text))
                 continue
             }
             if let url = pullRequestLine(trimmed) {

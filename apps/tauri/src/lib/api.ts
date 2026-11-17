@@ -47,6 +47,7 @@ export const api = {
   startLocalBrain: (name: string) => invoke<"alreadyRunning" | "started" | "notInstalled" | "noAnswer">("start_local_brain", { name }),
   trayStatus: (waiting: number, working: number) => invoke<void>("tray_status", { waiting, working }),
   shortcutProblems: () => invoke<string[]>("shortcut_problems"),
+  readAnswerImage: (source: string, base: string | null = null) => invoke<string | null>("read_answer_image", { source, base }),
 };
 
 export const events = {

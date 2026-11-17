@@ -157,7 +157,7 @@
     draft.addFiles(files);
   }
 
-  const accept = $derived(draft.readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx" : "image/*");
+  const accept = $derived(draft.readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx,.odt,.pptx,.zip" : "image/*");
   const placeholder = $derived(draft.attachment && texts.placeholderFor ? texts.placeholderFor(draft.attachment.name) : texts.placeholder);
 </script>
 

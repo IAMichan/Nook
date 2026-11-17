@@ -127,7 +127,6 @@ struct SessionPanel: View {
     /// The rows you turned off, by name; right-click the panel to choose.
     @AppStorage("agents.panel.hidden") private var hiddenRaw = ""
     /// The session's pull requests past the first few.
-    @State private var allPullRequests = false
     /// More than one pull request folds under a header row, so the panel keeps its overview; remembered across sessions.
     @AppStorage("agents.panel.pullRequestsOpen") private var pullRequestsOpen = false
 
@@ -157,7 +156,8 @@ struct SessionPanel: View {
     }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
 
-    private static let shownPullRequests = 5
+    /// The pull requests always in view; the rest wait behind a fold.
+    private static let shownPullRequests = 2
 
     /// The rows that can be turned off, in the order they show.
     /// "usage" is the card under the panel (`SessionUsageCard`).
@@ -181,19 +181,20 @@ struct SessionPanel: View {
     @ViewBuilder
     private var pullRequestRows: some View {
         let links = pullRequests
-        if links.count > 1 {
-            pullRequestHeader(links)
-            if pullRequestsOpen { pullRequestList(links) }
-        } else {
-            pullRequestList(links)
+        let shown = links.prefix(Self.shownPullRequests)
+        let rest = links.dropFirst(Self.shownPullRequests)
+        ForEach(shown) { pullRequestRow($0) }
+        if !rest.isEmpty {
+            pullRequestFold(rest)
+            if pullRequestsOpen { ForEach(rest) { pullRequestRow($0) } }
         }
     }
 
-    /// The fold over a session's pull requests: how many, how many still open, and a chevron.
-    private func pullRequestHeader(_ links: [PullRequestLink]) -> some View {
-        let open = links.filter(\.state.isOpen).count
+    /// The fold under the first pull requests: how many more, how many of those are still open, and a chevron.
+    private func pullRequestFold(_ rest: ArraySlice<PullRequestLink>) -> some View {
+        let open = rest.filter(\.state.isOpen).count
         return PanelRow(icon: symbol(PullRequestIcon.generic),
-                        title: tr("agents.panel.pullRequestsCount", links.count),
+                        title: pullRequestsOpen ? tr("agents.panel.showLess") : tr("agents.panel.showMore", rest.count),
                         trailing: AnyView(HStack(spacing: NookTheme.Spacing.sm) {
                             if open > 0 { Text(tr("agents.panel.pullRequestsOpenCount", open)).font(NookTheme.TextStyle.detail) }
                             DisclosureChevron(open: pullRequestsOpen, size: 8.5, tint: nil, style: .vertical)
@@ -202,17 +203,9 @@ struct SessionPanel: View {
             .accessibilityValue(tr(pullRequestsOpen ? "agents.panel.unfolded" : "agents.panel.folded"))
     }
 
-    @ViewBuilder
-    private func pullRequestList(_ links: [PullRequestLink]) -> some View {
-        ForEach(allPullRequests ? links[...] : links.prefix(Self.shownPullRequests)) { link in
-            SessionPullRequestRow(link: link, glyph: glyph(link), runID: runID, directory: directory) {
-                if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) }
-            }
-        }
-        if links.count > Self.shownPullRequests {
-            PanelRow(icon: symbol(allPullRequests ? "chevron.up" : "chevron.down"),
-                     title: allPullRequests ? tr("agents.panel.showLess") : tr("agents.panel.showMore", links.count - Self.shownPullRequests),
-                     action: { allPullRequests.toggle() })
+    private func pullRequestRow(_ link: PullRequestLink) -> some View {
+        SessionPullRequestRow(link: link, glyph: glyph(link), runID: runID, directory: directory) {
+            if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) }
         }
     }
 

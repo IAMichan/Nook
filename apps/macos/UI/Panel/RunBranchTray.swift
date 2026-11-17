@@ -34,7 +34,7 @@ struct RunBranchTray: View {
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
         ForEach(folded.shown) { row in
-            branchRow(row, watch: row.pullRequest.flatMap { url in watches.first { $0.url == url.absoluteString } }, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
+            branchRow(row, watch: row.pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches) }, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
         }
     }
 

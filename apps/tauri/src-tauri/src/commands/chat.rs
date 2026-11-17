@@ -572,6 +572,13 @@ pub async fn answer_question(
     });
 
     let mut request = text.to_string();
+    // Every brain gets the text in the pictures, read on this computer: one that cannot see still knows what they show.
+    if !images.is_empty() {
+        let described = crate::services::screen::describe_images(app, &images).await;
+        if !described.is_empty() {
+            request += &format!("\n\n{described}");
+        }
+    }
     if let Ok(note) = ASK_NOTE.try_with(Clone::clone) {
         request += &format!("\n\n({note})");
     }
@@ -782,6 +789,7 @@ pub async fn answer_question(
         m.notices.extend(notices);
         m.offers = offers;
         m.streaming = false;
+        m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
         m.status.clear();
         if has_actions {
             m.action_states = vec![StepState::Pending; action_list.len()];
@@ -828,6 +836,7 @@ fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, s
     let recovery = serde_json::to_value(Recovery::for_error(error, &settings.selection())).ok();
     update(app, nook_id, message_id, |m| {
         m.streaming = false;
+        m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
         m.status.clear();
         if m.text.is_empty() {
             m.text = error.into();
@@ -995,6 +1004,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
             conv.busy = false;
             for m in conv.messages.iter_mut().filter(|m| m.streaming) {
                 m.streaming = false;
+                m.tasks = nook_core::brain::task_steps::settled(&m.tasks);
                 m.status.clear();
                 for step in m.retrieval.iter_mut().filter(|s| s.outcome == Outcome::Running) {
                     step.outcome = Outcome::Failed(nook_core::brain::retrieval::INTERRUPTED.into());

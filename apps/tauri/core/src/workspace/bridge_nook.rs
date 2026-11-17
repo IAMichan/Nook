@@ -35,8 +35,8 @@ pub const TOOLS: [BridgeTool; 9] = [
 
 /// Nook tools an agent does not get: what the bridge already offers in its own shape (terminal, browser), and what
 /// only makes sense inside a chat answer (a chart, a mail draft under the answer).
-pub const NOT_FOR_AGENTS: [&str; 6] =
-    ["run_command", "read_nook_browser", "open_in_nook_browser", "show_chart", "compose_mail", "use_source"];
+pub const NOT_FOR_AGENTS: [&str; 7] =
+    ["run_command", "read_nook_browser", "open_in_nook_browser", "show_chart", "compose_mail", "update_plan", "use_source"];
 
 /// Nook's tools that read the screen: only for the session that holds it (`take_over_screen`).
 pub const SCREEN_TOOLS: [&str; 4] = ["read_screen", "read_app", "list_running_apps", "get_active_app"];

@@ -312,7 +312,8 @@ enum AnswerFiles {
     }
 }
 
-/// One file in `SharedFilesRow` that is not a video: a picture as a small thumbnail, anything else as its icon and name.
+/// One file in `SharedFilesRow` that is not a video: a picture (or a PDF's first page) as a small thumbnail, anything else
+/// as its icon and name.
 /// `compact`, a picture the agent only looked at (`ViewedImagesRow`): the thumbnail alone, small, its name on hover.
 struct SharedFileTile: View {
     let path: String
@@ -333,11 +334,14 @@ struct SharedFileTile: View {
         .nookTip(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
         .accessibilityLabel(name)
         .task(id: path) {
-            guard SessionOutputs.kind(path: path) == .image else { return }
-            // A small picture made off the main thread: the shared file is often a full-size render.
+            let kind = SessionOutputs.kind(path: path)
+            guard kind == .image || kind == .pdf else { return }
+            // A small picture made off the main thread: the shared file is often a full-size render. A PDF shows its
+            // first page.
             let url = URL(fileURLWithPath: path) as CFURL
             let size = compact ? 160 : 400
             let small = await Task.detached(priority: .utility) { () -> CGImage? in
+                if kind == .pdf { return Self.firstPage(url, size: size) }
                 guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
                 let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                                 kCGImageSourceCreateThumbnailWithTransform: true,
@@ -346,6 +350,25 @@ struct SharedFileTile: View {
             }.value
             thumbnail = small.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         }
+    }
+
+    /// The first page of a PDF drawn on white, its longest side `size` pixels; nil for a file that is no PDF.
+    nonisolated private static func firstPage(_ url: CFURL, size: Int) -> CGImage? {
+        guard let page = CGPDFDocument(url)?.page(at: 1) else { return nil }
+        let box = page.getBoxRect(.cropBox)
+        guard box.width > 0, box.height > 0 else { return nil }
+        let scale = CGFloat(size) / max(box.width, box.height)
+        let width = Int(box.width * scale), height = Int(box.height * scale)
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
+        context.concatenate(page.getDrawingTransform(.cropBox, rect: CGRect(x: 0, y: 0, width: width, height: height),
+                                                     rotate: 0, preserveAspectRatio: true))
+        context.drawPDFPage(page)
+        return context.makeImage()
     }
 
     /// The thumbnail alone, 64 by 44 points; the picture's mark while it loads.

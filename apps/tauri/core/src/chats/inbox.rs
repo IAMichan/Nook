@@ -214,14 +214,7 @@ impl InboxThread {
 
     /// Read here, read in Nook only, or read in the app too: the same three states for every chat app.
     pub fn read_state(&self) -> ChatReadState {
-        ChatReadState::of(
-            self.unread,
-            self.app_unread,
-            self.newest_incoming(),
-            self.read_in_nook,
-            self.read_in_app,
-            self.waits_in_app,
-        )
+        ChatReadState::of(self.unread, self.app_unread, self.newest_incoming(), self.read_in_nook, self.read_in_app, self.waits_in_app)
     }
 }
 
@@ -384,8 +377,7 @@ impl ChatInbox {
         let before = thread.clone();
         // What the chat had before, the app's own word on when it last moved included: a message no newer is no news.
         let newest_before = known.as_ref().map(|k| k.messages.last().map(|m| m.date).into_iter().chain(k.activity).max());
-        let index_by_id: HashMap<String, usize> =
-            thread.messages.iter().enumerate().rev().map(|(i, m)| (m.id.clone(), i)).collect();
+        let index_by_id: HashMap<String, usize> = thread.messages.iter().enumerate().rev().map(|(i, m)| (m.id.clone(), i)).collect();
         for message in &messages {
             let Some(&index) = index_by_id.get(&message.id) else { continue };
             let kept = &mut thread.messages[index];
@@ -428,7 +420,13 @@ impl ChatInbox {
         }
         // You wrote in this chat, so what came before is read, in every app. A little before your message: a clock
         // behind yours must not hide an answer that came right after it.
-        let answered = thread.messages.iter().chain(messages.iter()).filter(|m| m.from_me).map(|m| m.date).max()
+        let answered = thread
+            .messages
+            .iter()
+            .chain(messages.iter())
+            .filter(|m| m.from_me)
+            .map(|m| m.date)
+            .max()
             .map(|d| d - Self::same_message_window());
         let mut ids: HashSet<String> = thread.messages.iter().map(|m| m.id.clone()).collect();
         // A chat its app knows by an id gets every message under the app's own id: two "ok"s in a row are two.
@@ -475,15 +473,16 @@ impl ChatInbox {
         }
         if let Some(unread) = chat.unread {
             // Marked unread by hand stays so: your own message does not take that back.
-            let read = [thread.read_in_nook, if thread.marked_unread.is_none() { answered } else { None }]
-                .into_iter()
-                .flatten()
-                .max();
+            let read = [thread.read_in_nook, if thread.marked_unread.is_none() { answered } else { None }].into_iter().flatten().max();
             if let Some(read) = read {
                 // Read in Nook or answered: only what came in after that is new here, never more than the app counts.
                 let fresh = thread.messages.iter().filter(|m| m.is_incoming() && m.date > read).count();
                 thread.unread = if thread.messages.is_empty() {
-                    if thread.activity.is_some_and(|a| a > read) { unread } else { 0 }
+                    if thread.activity.is_some_and(|a| a > read) {
+                        unread
+                    } else {
+                        0
+                    }
                 } else {
                     unread.min(fresh)
                 };

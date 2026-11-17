@@ -160,4 +160,14 @@ impl PowerMonitor for WindowsPower {
         let busy = self.load().is_some_and(|l| l > 0.9);
         EnergySignals { low_power_mode, on_battery, busy, ..Default::default() }
     }
+
+    fn battery(&self) -> Option<(u8, bool)> {
+        let mut status = SYSTEM_POWER_STATUS::default();
+        unsafe { GetSystemPowerStatus(&mut status) }.ok()?;
+        // BatteryFlag 128 = no battery; 255 = unknown battery percentage.
+        if status.BatteryFlag == 128 || status.BatteryLifePercent > 100 {
+            return None;
+        }
+        Some((status.BatteryLifePercent, status.ACLineStatus == 1))
+    }
 }

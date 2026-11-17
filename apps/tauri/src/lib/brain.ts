@@ -25,12 +25,28 @@ export interface ChatChart {
   series: ChartSeries[];
 }
 
+export interface CalendarInviteEvent {
+  title: string;
+  start: string;
+  end: string;
+  location?: string;
+  notes?: string;
+  organizer?: string;
+  attendees?: string[];
+  uid?: string;
+  stamp?: string;
+}
+
 export interface MailDraft {
   id: string;
   to: string;
   cc: string;
+  /** Blind copy recipients; empty when the user asked for none. */
+  bcc: string;
   subject: string;
   body: string;
+  attachments?: string[];
+  invite?: CalendarInviteEvent | null;
   /** draft, sending, sent, opened of failed */
   state: string;
   error: string;
@@ -107,6 +123,8 @@ export interface MemoryOverview {
   items: MemoryItem[];
   learnedWords: number;
   importable: [string, number][];
+  /** The MCP memory server still connected (id, name): no longer needed once its graph is imported. */
+  oldServer?: [string, string] | null;
   localOnlySource: boolean;
 }
 
@@ -182,8 +200,14 @@ export const brainApi = {
   mailUpdate: (nookId: string, draft: MailDraft) => invoke<void>("mail_update", { nookId, draft }),
   mailSend: (nookId: string, draft: MailDraft) => invoke<void>("mail_send", { nookId, draft }),
   mailOpen: (nookId: string, draft: MailDraft) => invoke<void>("mail_open", { nookId, draft }),
+  mailOpenInvite: (nookId: string, draft: MailDraft) => invoke<void>("mail_open_invite", { nookId, draft }),
+  /** A mail card from a ```mail block in an answer (not stored with the chat): Send (`send`) or Open in mail app. */
+  mailBlockOpen: (draft: MailDraft, send: boolean) => invoke<void>("mail_block_open", { draft, send }),
 
   readAttachment: (name: string, base64: string) => invoke<Attachment>("read_attachment", { name, base64 }),
+  /** A dropped or pasted path: a picture, or the text of a file, zip archive or folder. */
+  readAttachmentPath: (path: string) =>
+    invoke<{ kind: "image"; mediaType: string; base64: string } | ({ kind: "document" } & Attachment)>("read_attachment_path", { path }),
   sourceChoices: () => invoke<SourceChoice[]>("source_choices"),
   setScope: (nookId: string, scope: SourceScope | null) => invoke<string>("set_scope", { nookId, scope }),
   suggestions: () => invoke<string[]>("start_suggestions"),

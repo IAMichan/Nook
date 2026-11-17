@@ -140,6 +140,21 @@ fn hot(root: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// First internal battery's percentage (0–100) and whether external power is connected.
+fn battery_status(root: &Path) -> Option<(u8, bool)> {
+    let dir = std::fs::read_dir(root).ok()?;
+    for entry in dir.flatten() {
+        let path = entry.path();
+        if read(&path.join("type")) != "Battery" {
+            continue;
+        }
+        let Ok(percent) = read(&path.join("capacity")).parse::<u8>() else { continue };
+        let on_power = read(&path.join("status")) != "Discharging";
+        return Some((percent.min(100), on_power));
+    }
+    None
+}
+
 impl PowerMonitor for LinuxPower {
     fn signals(&self) -> EnergySignals {
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
@@ -151,6 +166,10 @@ impl PowerMonitor for LinuxPower {
             away: false,
             display_asleep: self.x11.as_ref().is_some_and(|x| x.screen_saver_on()),
         }
+    }
+
+    fn battery(&self) -> Option<(u8, bool)> {
+        battery_status(Path::new("/sys/class/power_supply"))
     }
 }
 
@@ -177,10 +196,13 @@ mod tests {
         let bat = dir.join("BAT0");
         std::fs::create_dir_all(&bat).unwrap();
         std::fs::write(bat.join("type"), "Battery\n").unwrap();
+        std::fs::write(bat.join("capacity"), "72\n").unwrap();
         std::fs::write(bat.join("status"), "Charging\n").unwrap();
         assert!(!on_battery(&dir));
+        assert_eq!(battery_status(&dir), Some((72, true)));
         std::fs::write(bat.join("status"), "Discharging\n").unwrap();
         assert!(on_battery(&dir));
+        assert_eq!(battery_status(&dir), Some((72, false)));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

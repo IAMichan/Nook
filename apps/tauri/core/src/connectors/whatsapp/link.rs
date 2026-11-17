@@ -939,9 +939,7 @@ impl WhatsAppLink {
         self.with(|i| i.inbox.add(mine, &filters, Some(&name), false));
         // Antwoorden leest het gesprek.
         if self.settings().mark_read_on_reply {
-            let last = self.with(|i| {
-                i.inbox.get(&target).and_then(|c| c.messages.iter().rev().find(|m| !m.from_me).map(|m| m.id.clone()))
-            });
+            let last = self.with(|i| i.inbox.get(&target).and_then(|c| c.messages.iter().rev().find(|m| !m.from_me).map(|m| m.id.clone())));
             let _ = provider.mark_read(&target, last.as_deref()).await;
         }
         self.changed();

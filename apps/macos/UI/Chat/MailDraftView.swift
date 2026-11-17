@@ -12,6 +12,7 @@ struct MailDraftView: View {
     @State private var from: String
     @State private var to: String
     @State private var cc: String
+    @State private var bcc: String
     @State private var subject: String
     @State private var body_: String
     /// `@` in the body: people from your chats by name.
@@ -27,6 +28,7 @@ struct MailDraftView: View {
         _from = State(initialValue: draft.from)
         _to = State(initialValue: draft.to)
         _cc = State(initialValue: draft.cc)
+        _bcc = State(initialValue: draft.bcc)
         _subject = State(initialValue: draft.subject)
         _body_ = State(initialValue: draft.body)
     }
@@ -36,6 +38,7 @@ struct MailDraftView: View {
         copy.from = from
         copy.to = to
         copy.cc = cc
+        copy.bcc = bcc
         copy.subject = subject
         copy.body = body_
         return copy
@@ -97,6 +100,7 @@ struct MailDraftView: View {
             if !draft.from.isEmpty { field(tr("chat.mail.from"), text: $from, prompt: tr("chat.mail.emailPrompt")) }
             field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
             if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
+            if !bcc.isEmpty || !locked { field(tr("chat.mail.bcc"), text: $bcc, prompt: tr("chat.mail.optional")) }
             field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))
             if let invite = draft.invite { inviteRow(invite) }
 

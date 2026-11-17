@@ -68,8 +68,17 @@ pub struct MailDraft {
     pub to: String,
     #[serde(default)]
     pub cc: String,
+    /// Blind copy recipients; empty in drafts stored before Bcc existed.
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
     pub body: String,
+    /// Paths on disk attached to this draft (such as `invite.ics`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
+    /// A calendar invitation attached as `invite.ics`; rewritten if To/Cc changes before sending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<crate::brain::calendar_invite::CalendarInviteEvent>,
     /// draft, sending, sent, opened of failed.
     #[serde(default)]
     pub state: String,
@@ -83,8 +92,11 @@ impl MailDraft {
             id: uuid::Uuid::new_v4().to_string(),
             to: to.into(),
             cc: cc.into(),
+            bcc: String::new(),
             subject: subject.into(),
             body: body.into(),
+            attachments: Vec::new(),
+            invite: None,
             state: "draft".into(),
             error: String::new(),
         }
@@ -113,6 +125,8 @@ pub struct ChatMessage {
     pub scope_label: String,
     pub notices: Vec<String>,
     pub charts: Vec<ChatChart>,
+    /// The plan Nook works through (`update_plan`), shown as a checklist above the answer.
+    pub tasks: Vec<crate::brain::task_steps::TaskStep>,
     pub mails: Vec<MailDraft>,
     pub actions: Vec<PlannedAction>,
     pub plan_state: Option<PlanState>,
@@ -145,6 +159,7 @@ impl Default for ChatMessage {
             scope_label: String::new(),
             notices: vec![],
             charts: vec![],
+            tasks: vec![],
             mails: vec![],
             actions: vec![],
             plan_state: None,
@@ -457,6 +472,7 @@ impl NookChat {
         for c in &mut chat.conversations {
             for m in &mut c.messages {
                 m.streaming = false;
+                m.tasks = crate::brain::task_steps::settled(&m.tasks);
             }
         }
         chat.active_id = stored.active.filter(|id| chat.conversations.iter().any(|c| &c.id == id));

@@ -80,6 +80,25 @@ fn translations_keep_placeholders() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
+/// The catalog files are joined in file-name order, so an English text in two files must say the same in both;
+/// otherwise renaming a file would change what Nook shows.
+#[test]
+fn a_text_in_two_catalogs_has_one_translation() {
+    let mut seen = std::collections::HashMap::new();
+    let mut bad = Vec::new();
+    for rows in catalog::ALL {
+        for &(en, de, fr, es) in rows.iter() {
+            if let Some(&earlier) = seen.get(en) {
+                if earlier != (de, fr, es) {
+                    bad.push(en.to_string());
+                }
+            }
+            seen.insert(en, (de, fr, es));
+        }
+    }
+    assert!(bad.is_empty(), "translated differently in two catalog files:\n{}", bad.join("\n"));
+}
+
 // MARK: Dutch text outside tr/trf (FD-04 in docs/WINDOWS-PARITY.md)
 
 /// Files whose Dutch string literals are data, not text Nook shows: keyword patterns that read what the user typed,
@@ -150,7 +169,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/agents/mod.rs", 3),
     ("src-tauri/src/agents/terminal.rs", 8),
     ("src-tauri/src/commands/agents.rs", 5),
-    ("src-tauri/src/commands/brain.rs", 6),
+    ("src-tauri/src/commands/brain.rs", 3),
     ("src-tauri/src/commands/chat.rs", 24),
     ("src-tauri/src/commands/companion.rs", 2),
     ("src-tauri/src/commands/connectors.rs", 22),
@@ -159,7 +178,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/commands/services.rs", 2),
     ("src-tauri/src/commands/whatsapp.rs", 9),
     ("src-tauri/src/commands/workspace_tools.rs", 2),
-    ("src-tauri/src/companion/backend.rs", 6),
+    ("src-tauri/src/companion/backend.rs", 5),
     ("src-tauri/src/companion/poll.rs", 1),
     ("src-tauri/src/lib.rs", 1),
     ("src-tauri/src/platform/android.rs", 8),
@@ -171,7 +190,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/platform/linux/mpris.rs", 2),
     ("src-tauri/src/platform/linux/speech.rs", 1),
     ("src-tauri/src/platform/linux/x11.rs", 4),
-    ("src-tauri/src/platform/mod.rs", 12),
+    ("src-tauri/src/platform/mod.rs", 11),
     ("src-tauri/src/platform/process.rs", 2),
     ("src-tauri/src/platform/secrets.rs", 1),
     ("src-tauri/src/platform/windows/autocomplete.rs", 1),

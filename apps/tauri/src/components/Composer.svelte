@@ -3,6 +3,8 @@
   // what only this app has: dropped documents read by Rust, drafts kept per Nook, a picture of the screen from the
   // bar, the microphone, and under the box the sources Nook may use and the brain that thinks.
   import { untrack } from "svelte";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { looksLikePath } from "../lib/paths";
   import SharedComposer from "@nook/web-ui/Composer.svelte";
   import type { ComposerMessage } from "@nook/web-ui/Composer.svelte";
   import { api } from "../lib/api";
@@ -45,6 +47,36 @@
   $effect(() => {
     const value = draft.text;
     untrack(() => drafts.set(draftFor, value));
+  });
+
+  // A path pasted into the field is attached (a file, a zip archive or a folder); when it cannot be read, it is
+  // pasted as the text it is.
+  function pastePath(e: ClipboardEvent) {
+    if (e.clipboardData?.files.length) return;
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (!looksLikePath(text)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    draft.addPath(text).catch(() => (draft.text += text));
+  }
+
+  // The main window keeps the system's own drag and drop: a file, zip archive or folder dropped on it arrives as a
+  // path (the bar's field takes web drops, `Bar.svelte`).
+  $effect(() => {
+    if (compact) return;
+    let stop: (() => void) | undefined;
+    let gone = false;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        for (const path of event.payload.paths) draft.addPath(path).catch((err) => (draft.fileError = String(err)));
+      })
+      .then((un) => (gone ? un() : (stop = un)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      stop?.();
+    };
   });
 
   export function focus() {
@@ -98,7 +130,7 @@
 
 <svelte:window onclick={(e) => brainMenu && !brainRoot?.contains(e.target as Node) && (brainMenu = false)} />
 
-<div class="composer" class:compact>
+<div class="composer" class:compact onpastecapture={pastePath}>
   <SharedComposer
     bind:this={composer}
     {draft}

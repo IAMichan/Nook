@@ -618,16 +618,13 @@ pub async fn workspace_create_pull_request(
 // MARK: Verdergaan in Nook
 
 fn nook_provider(kind: AgentKind) -> Res<RunProvider> {
-    match kind {
-        AgentKind::Claude => Ok(RunProvider::Claude),
-        AgentKind::Codex => Ok(RunProvider::Codex),
-        AgentKind::Gemini => Ok(RunProvider::Gemini),
-        other => Err(trf(
+    RunProvider::continues(kind).ok_or_else(|| {
+        trf(
             "Nook kan {agent} nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.",
             "Nook can't drive {agent} itself yet. It can drive Claude Code, Codex and Gemini CLI.",
-            &[("agent", &other.name())],
-        )),
-    }
+            &[("agent", &kind.name())],
+        )
+    })
 }
 
 /// Het gesprek tot nu toe voor een sessie die Nook overneemt: het hele transcript met het denken van de agent, of, als
@@ -662,6 +659,11 @@ fn earlier_conversation(path: &str, prompt: &str, reply: &str) -> Vec<(EventKind
 /// dat expliciet kiest, eerst het oorspronkelijke proces beëindigen en hetzelfde gesprek hier voortzetten.
 #[tauri::command]
 pub async fn workspace_continue_live(app: AppHandle, session_id: String, message: Option<String>, ending_terminal: bool) -> Res<String> {
+    continue_live(&app, &session_id, message, ending_terminal).await
+}
+
+/// The work of `workspace_continue_live`, also for a message from the phone to a terminal session (`companion`).
+pub async fn continue_live(app: &AppHandle, session_id: &str, message: Option<String>, ending_terminal: bool) -> Res<String> {
     let agents_state = app.state::<AgentsState>();
     let session = agents_state
         .hub

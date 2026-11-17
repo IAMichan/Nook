@@ -121,10 +121,12 @@ fn on_hub_event(app: &AppHandle, event: HubEvent) {
             let _ = app.emit("agents-changed", ());
         }
         HubEvent::Approval(request) => {
-            let _ = app.emit("agent-approval", nook_core::agents::models::AgentApproval::from_hook(&request));
-            open_bar(app);
+            let approval = nook_core::agents::models::AgentApproval::from_hook(&request);
+            let _ = app.emit("agent-approval", &approval);
+            present_approval(app, &approval);
         }
         HubEvent::ApprovalGone(id, message) => {
+            approval_gone(app, &format!("hook-{id}"));
             let _ = app.emit("agent-approval-gone", Gone { id: format!("hook-{id}"), message });
         }
         HubEvent::Question(request) => {
@@ -135,12 +137,73 @@ fn on_hub_event(app: &AppHandle, event: HubEvent) {
             let _ = app.emit("agent-question-gone", Gone { id, message });
         }
         HubEvent::Attention(session) => {
+            present_attention(app, &session);
             let _ = app.emit("agent-attention", session);
         }
         HubEvent::PlanUsage => {
             let _ = app.emit("agent-usage", ());
         }
     }
+}
+
+/// Decides a permission request, wherever it came from: a hook (`hook-`), a session Nook runs (`run-`) or the MCP
+/// bridge (`bridge-`).
+pub fn decide(app: &AppHandle, id: &str, decision: nook_core::agents::models::ApprovalDecision) -> Result<(), String> {
+    if let Some(request) = id.strip_prefix("hook-") {
+        app.state::<AgentsState>().hub.decide(request, decision);
+        return Ok(());
+    }
+    crate::workspace::decide_approval(app, id, decision)
+}
+
+/// A permission request reaches you (`presentApprovalCard` on the Mac): in the bar, or as a system notification with
+/// Allow and Deny when you chose that for agents (Settings › Voice & sound › Notices). Show, a click, or a computer that
+/// cannot show it brings up the bar, so the request is never lost.
+pub fn present_approval(app: &AppHandle, approval: &nook_core::agents::models::AgentApproval) {
+    use nook_core::agents::models::ApprovalOrigin;
+    use nook_core::services::toast::{NoticeTarget, Toast};
+    if !system_notices(app) {
+        return open_bar(app);
+    }
+    let target = match &approval.origin {
+        ApprovalOrigin::Hook { .. } if !approval.session_key.is_empty() => NoticeTarget::Agent(approval.session_key.clone()),
+        ApprovalOrigin::Run { run_id, .. } => uuid::Uuid::parse_str(run_id).map(NoticeTarget::Run).unwrap_or(NoticeTarget::Agents),
+        _ => NoticeTarget::Agents,
+    };
+    let context =
+        [approval.agent_name.as_str(), approval.project.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+    let toast = Toast::approval(approval, &context, target);
+    let (decide_app, show_app, fallback_app, id) = (app.clone(), app.clone(), app.clone(), approval.id.clone());
+    let handlers = crate::notices::Handlers {
+        decide: Some(Box::new(move |decision| {
+            if let Err(e) = decide(&decide_app, &id, decision) {
+                log::info!("A toast's decision did not land: {e}");
+            }
+        })),
+        show: Some(Box::new(move || open_bar(&show_app))),
+        ..Default::default()
+    };
+    crate::notices::post(app, toast, handlers, move || open_bar(&fallback_app));
+}
+
+fn system_notices(app: &AppHandle) -> bool {
+    app.try_state::<crate::state::AppState>().is_some_and(|s| s.settings().agent_notice == "system")
+}
+
+/// An agent that is done, failed or waits on you: as a system notification when you chose that for agents; otherwise
+/// the bar shows its card (`agent-attention`). A click opens the session.
+pub fn present_attention(app: &AppHandle, session: &nook_core::agents::models::AgentSession) {
+    if !system_notices(app) {
+        return;
+    }
+    if let Some(toast) = nook_core::services::toast::Toast::agent_status(session) {
+        crate::notices::post(app, toast, crate::notices::Handlers::default(), || {});
+    }
+}
+
+/// The request was decided elsewhere or the agent moved on: its notification goes away.
+pub fn approval_gone(app: &AppHandle, id: &str) {
+    crate::notices::withdraw(app, id);
 }
 
 /// Een wachtende agent opent de balk op de tab Agents; an open panel stays on its tab and asks in its compact bar.
