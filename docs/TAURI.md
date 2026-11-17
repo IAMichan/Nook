@@ -5,8 +5,10 @@ already there. [WINDOWS-PARITY.md](WINDOWS-PARITY.md) is the checklist of everyt
 
 ✓ = ported and tested in the app · ◐ = partial, or only compiled and not actually run · ○ = not yet · — = not possible on this platform
 
-> Windows code compiles in CI and locally with `cargo check -p nook --target x86_64-pc-windows-gnu`, but has not (yet)
-> been run on a real Windows PC. Android builds only in CI (job **Android**); the Android SDK could not be downloaded
+> Windows code compiles locally with `cargo check -p nook --target x86_64-pc-windows-gnu` (needs `mingw-w64`). In CI
+> the **Windows checks** job runs clippy, the Rust tests and the interface tests on `windows-latest`, including the
+> Windows-only tests (named pipes for hooks, `cmd /C` MCP servers, the Task Scheduler task). The app itself has not
+> (yet) been run on a real Windows PC. Android builds only in CI (job **Android**); the Android SDK could not be downloaded
 > locally.
 
 **Want to help?** Every ○ and ◐ row below is open for contributors, and so is the [To do](#to-do) list. You don't need
