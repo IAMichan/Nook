@@ -313,10 +313,10 @@ impl ConnectorHub {
         lines.join("\n")
     }
 
-    /// `check_availability` en `list_events`: over alle agenda's heen.
+    /// `check_availability`, `find_time` en `list_events`: over alle agenda's heen.
     pub fn calendar_tools(self: &Arc<Self>, allowed: Arc<dyn Fn(&str) -> bool + Send + Sync>) -> Vec<LoopTool> {
-        let (hub1, hub2) = (self.clone(), self.clone());
-        let (allowed1, allowed2) = (allowed.clone(), allowed);
+        let (hub1, hub2, hub3) = (self.clone(), self.clone(), self.clone());
+        let (allowed1, allowed2, allowed3) = (allowed.clone(), allowed.clone(), allowed);
         vec![
             LoopTool::read(
                 "check_availability",
@@ -336,6 +336,32 @@ impl ConnectorHub {
                 },
             ),
             LoopTool::read(
+                "find_time",
+                "Finds concrete free times for a meeting, call or block of work across ALL of the user's calendars (the same ones check_availability reads), and returns ready options with exact ISO start and end. Use this whenever the user wants to plan, schedule or move something (\"schedule an hour with Jan next week\", \"when can I fit in two hours for the report?\", \"find a time for lunch with Sara\", \"plan my afternoon\"), instead of working out gaps yourself. Offer the options to the user (or, when they asked you to just plan it, pick the first).",
+                json!({"type": "object", "properties": {
+                    "duration_minutes": {"type": "number", "description": "How long it takes, in minutes. Default 60."},
+                    "from": {"type": "string", "description": "Earliest moment, ISO 8601 (a date alone is the start of that day). Default: now."},
+                    "to": {"type": "string", "description": "Latest moment, ISO 8601 (a date alone includes that whole day). Default: seven days after from. At most 31 days."},
+                    "count": {"type": "number", "description": "How many options. Default 3, at most 10."},
+                    "day_start": {"type": "string", "description": "Earliest time of day, \"HH:MM\". Default 09:00 (or what the user said: \"in the evening\" is 18:00)."},
+                    "day_end": {"type": "string", "description": "Latest end time of day, \"HH:MM\". Default 18:00."},
+                    "prefer": {"type": "string", "enum": ["any", "morning", "afternoon", "evening"], "description": "Part of the day to try first. Default any."},
+                    "buffer_minutes": {"type": "number", "description": "Free minutes kept before and after other appointments (travel, a breather). Default 0; 15 to 30 for a meeting somewhere else."},
+                    "weekends": {"type": "boolean", "description": "Also Saturday and Sunday. Default false, unless the user names a weekend day or a private plan."}
+                }, "required": []}),
+                move |input| {
+                    let hub = hub2.clone();
+                    let allowed = allowed2.clone();
+                    async move {
+                        let now = Utc::now();
+                        let request = agenda::find_time_request(&input, now)?;
+                        let (checked, entries, problems, _, _) =
+                            hub.agenda(request.from - request.buffer, request.to + request.buffer, &*allowed).await;
+                        Ok(agenda::find_time(&request, &checked, &entries, &problems, now))
+                    }
+                },
+            ),
+            LoopTool::read(
                 "list_events",
                 "Reads calendar events between two timestamps from all connected calendars. Use this to discover free time slots or check for schedule conflicts.",
                 json!({"type": "object", "properties": {
@@ -343,8 +369,8 @@ impl ConnectorHub {
                     "to": {"type": "string", "description": "End, ISO 8601 with timezone."}
                 }, "required": ["from", "to"]}),
                 move |input| {
-                    let hub = hub2.clone();
-                    let allowed = allowed2.clone();
+                    let hub = hub3.clone();
+                    let allowed = allowed3.clone();
                     async move {
                         let (Some(from), Some(to)) = (dates::parse(super::text(&input, "from")), dates::parse(super::text(&input, "to"))) else {
                             return Err(ConnectorError::new("from and to must be ISO 8601 dates.").into());
@@ -405,4 +431,82 @@ impl ConnectorHub {
 
 fn is_agenda(c: &dyn Connector) -> bool {
     matches!(c.id().as_str(), "icalfeeds" | "calcom")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connectors::ConnectorState;
+    use chrono::TimeZone;
+
+    struct FakeAgenda {
+        entries: Vec<AgendaEntry>,
+    }
+
+    #[async_trait::async_trait]
+    impl Connector for FakeAgenda {
+        fn id(&self) -> String {
+            "icalfeeds".into()
+        }
+        fn title(&self) -> String {
+            "Other calendars".into()
+        }
+        fn configured(&self) -> bool {
+            true
+        }
+        fn active(&self) -> bool {
+            true
+        }
+        fn status(&self) -> ConnectorStatus {
+            ConnectorStatus { state: ConnectorState::Ok, ..Default::default() }
+        }
+        async fn refresh(&self) {}
+        fn agenda_names(&self) -> Vec<String> {
+            vec!["Work (ICS)".into()]
+        }
+        async fn agenda(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Option<CResult<AgendaResult>> {
+            let entries = self.entries.iter().filter(|e| e.start < to && e.end > from).cloned().collect();
+            Some(Ok(AgendaResult { entries, problems: vec![] }))
+        }
+    }
+
+    #[tokio::test]
+    async fn find_time_tool_queries_active_agendas() {
+        let store = Arc::new(ConnectorStore::in_memory());
+        let hub = ConnectorHub::new(store);
+        let tomorrow = Utc::now() + chrono::Duration::days(1);
+        let day_date = tomorrow.with_timezone(&chrono::Local).date_naive();
+        let busy_start = chrono::Local.from_local_datetime(&day_date.and_hms_opt(9, 0, 0).unwrap()).earliest().unwrap().with_timezone(&Utc);
+        let busy_end = busy_start + chrono::Duration::hours(2);
+        hub.register(Arc::new(FakeAgenda {
+            entries: vec![AgendaEntry {
+                title: "Morning block".into(),
+                start: busy_start,
+                end: busy_end,
+                all_day: false,
+                busy: true,
+                location: String::new(),
+                calendar: "Work (ICS)".into(),
+            }],
+        }));
+
+        let tools = hub.calendar_tools(Arc::new(|_| true));
+        let tool = tools.into_iter().find(|t| t.name == "find_time").expect("find_time tool");
+        let day_str = day_date.format("%Y-%m-%d").to_string();
+        let out = (tool.run)(json!({
+            "from": day_str,
+            "to": day_str,
+            "duration_minutes": 60,
+            "buffer_minutes": 15,
+            "weekends": true,
+            "count": 1
+        }))
+        .await
+        .unwrap();
+        assert!(out.contains("Checked: Work (ICS)."), "{out}");
+        assert!(out.contains("15 minutes buffer around other appointments"), "{out}");
+        assert!(out.contains("Options:"), "{out}");
+        // Busy 09:00-11:00 + 15m buffer -> 11:15-12:15.
+        assert!(out.contains("11:15–12:15"), "{out}");
+    }
 }

@@ -96,12 +96,13 @@ pub const PERSONAL: [&str; 17] = [
 ];
 
 /// Tools van een bron. Tools zonder bron (grafieken, app openen, muziek…) mogen altijd.
-const EXACT_TOOLS: [(&str, &str); 63] = [
+const EXACT_TOOLS: [(&str, &str); 64] = [
     ("list_events", "calendar"),
     ("create_event", "calendar"),
     ("update_event", "calendar"),
     ("delete_event", "calendar"),
     ("check_availability", "calendar"),
+    ("find_time", "calendar"),
     ("create_reminder", "reminders"),
     ("complete_reminder", "reminders"),
     ("delete_reminder", "reminders"),
@@ -586,6 +587,7 @@ pub mod capabilities {
         Some(match tool {
             "list_events" => "afspraken lezen",
             "check_availability" => "beschikbaarheid in alle agenda's",
+            "find_time" => "vrije tijd voor een afspraak zoeken",
             "create_event" => "afspraak maken",
             "update_event" => "afspraak aanpassen",
             "delete_event" => "afspraak verwijderen",

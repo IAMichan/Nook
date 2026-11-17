@@ -115,12 +115,13 @@ pub fn prioritized(tools: &[LoopTool], request: &str, limit: usize, preferred: &
     if tools.len() <= limit {
         return wanted.into_iter().chain(rest.into_iter().map(|r| r.1)).cloned().collect();
     }
-    const CORE: [&str; 8] = [
+    const CORE: [&str; 9] = [
         "compose_mail",
         "show_chart",
         "create_event",
         "create_reminder",
         "check_availability",
+        "find_time",
         "list_events",
         "read_screen",
         "add_open_loop",
@@ -201,7 +202,7 @@ pub fn local_system_prompt(
     } else if let Some(first) = intent.tools().into_iter().find(|t| has(t)) {
         lines.push(format!("For this request, {first} is the most likely tool if the context does not already answer it."));
     }
-    let dated = ["create_event", "update_event", "create_reminder", "add_open_loop", "check_availability", "list_events"];
+    let dated = ["create_event", "update_event", "create_reminder", "add_open_loop", "check_availability", "find_time", "list_events"];
     if names.iter().any(|n| dated.contains(n)) {
         lines.push(format!("{} Use these dates; dates are ISO 8601 with timezone offset.", dates::date_sheet(&chrono::Local::now(), 8)));
     }
@@ -315,7 +316,7 @@ Working guidelines:
 - Supply dates and times as ISO 8601 with timezone offset, in the user's local timezone.
 
 Calendar & Availability:
-- Upcoming calendar events are under "Calendar" when a calendar is connected. For other dates, use list_events or check_availability.
+- Upcoming calendar events are under "Calendar" when a calendar is connected. For other dates, use list_events or check_availability; use find_time to find concrete free times for something new (it returns exact start and end, never compute gaps yourself).
 - When the user asks whether they are free or busy ("am I free on Friday?"), invoke check_availability immediately across all connected calendars.
 
 What the user sees:
