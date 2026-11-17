@@ -424,6 +424,8 @@ final class CompanionClient: ObservableObject {
         let wakeup = CompanionWakeup.onActive(backgroundedAt: backgroundedAt, now: Date())
         backgroundedAt = nil
         inFront = true
+        LiveActivities.shared.inFront = true
+        Task { await LiveActivities.shared.reconcile(sessions) }
         // Buttons on notifications that could not reach their Mac get another go, quietly.
         if !retries.entries.isEmpty { Task { await retryNotificationActions(mac: nil, quiet: true) } }
         guard link != nil else { return }
@@ -452,6 +454,7 @@ final class CompanionClient: ObservableObject {
     func appWentToBackground() {
         backgroundedAt = Date()
         inFront = false
+        LiveActivities.shared.inFront = false
         flushCache()
         // The Mac sends pushes again from now on (`CompanionFeature.foreground`); without this word it does after a few
         // seconds of silence anyway (`ForegroundPolicy`).
