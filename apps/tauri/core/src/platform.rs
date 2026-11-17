@@ -420,4 +420,8 @@ pub trait PowerMonitor: Send + Sync {
     fn signals(&self) -> crate::services::energy::EnergySignals {
         Default::default()
     }
+    /// Battery charge (0–100) and whether the computer is on external power, if there is a battery.
+    fn battery(&self) -> Option<(u8, bool)> {
+        None
+    }
 }

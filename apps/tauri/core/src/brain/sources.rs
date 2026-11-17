@@ -96,7 +96,7 @@ pub const PERSONAL: [&str; 17] = [
 ];
 
 /// Tools van een bron. Tools zonder bron (grafieken, app openen, muziek…) mogen altijd.
-const EXACT_TOOLS: [(&str, &str); 63] = [
+const EXACT_TOOLS: [(&str, &str); 65] = [
     ("list_events", "calendar"),
     ("create_event", "calendar"),
     ("update_event", "calendar"),
@@ -122,6 +122,8 @@ const EXACT_TOOLS: [(&str, &str); 63] = [
     ("search_call_notes", "callnotes"),
     ("read_call_note", "callnotes"),
     ("mac_status", "system"),
+    ("system_status", "system"),
+    ("network_status", "system"),
     ("search_bear", "bear"),
     ("read_bear", "bear"),
     ("search_things", "things"),
@@ -521,7 +523,7 @@ pub mod router {
         (r"terminal|shell|commando|command\b|npm |yarn |pip |brew |git |draai |run |voer .{0,20}uit|installeer|install\b", &["terminal"]),
         (r"notitie\w*|notes?|memo'?s?|aantekening\w*", &["notes", "bear"]),
         (
-            r"traag|langzaam|trage (mac|pc|computer)|hangt|vastloopt|batterij\w*|accu\w*|geheugen|werkgeheugen|\bram\b|processor|\bcpu\b|ventilator|schijfruimte|harde schijf|schijf vol\w*|opslag\w*|vrije ruimte|slow|battery|memory|disk space|storage|fan\b|langsam|akku|speicher|festplatte",
+            r"traag|langzaam|trage (mac|pc|computer)|hangt|vastloopt|batterij\w*|accu\w*|geheugen|werkgeheugen|\bram\b|processor|\bcpu\b|ventilator|schijfruimte|harde schijf|schijf vol\w*|opslag\w*|vrije ruimte|\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b|slow|battery|memory|disk space|storage|fan\b|langsam|akku|speicher|festplatte",
             &["system"],
         ),
         (
@@ -607,6 +609,8 @@ pub mod capabilities {
             "read_app" => "een geopende app lezen",
             "list_app_menu" => crate::i18n::tr("menu's van elke app lezen", "read menus of any app"),
             "app_menu_command" => crate::i18n::tr("menu-opdracht in elke app uitvoeren", "run a menu command in any app"),
+            "system_status" | "mac_status" => "processor, geheugen, batterij en schijf",
+            "network_status" => crate::i18n::tr("IP-adressen van deze computer", "IP addresses of this computer"),
             "search_contacts" => "contacten zoeken",
             "read_clipboard" => "klembord lezen",
             "list_open_loops" => "open punten lezen",

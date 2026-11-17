@@ -152,4 +152,7 @@ pub const ROWS: &[Row] = &[
         "Aucune connexion au bus d'accessibilité (AT-SPI).",
         "Sin conexión con el bus de accesibilidad (AT-SPI).",
     ),
+    // System and network status tools (`tools::system`).
+    ("This computer's status", "Status dieses Computers", "État de cet ordinateur", "Estado de este ordenador"),
+    ("IP addresses of this computer", "IP-Adressen dieses Computers", "Adresses IP de cet ordinateur", "Direcciones IP de este ordenador"),
 ];

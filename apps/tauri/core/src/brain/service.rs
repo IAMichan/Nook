@@ -46,7 +46,7 @@ pub struct BrainRequest {
 pub fn needs_tools(text: &str) -> bool {
     super::matches(
         rx!(
-            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on"
+            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on|\bip[- ]?(adres|address)|\b(mijn|my|meine?) ip\b|traag|langzaam|batterij|accu|schijf|opslag|processor|\bcpu\b|\bram\b|battery|disk|storage|\bslow\b"
         ),
         text,
     )
@@ -210,7 +210,7 @@ pub fn local_system_prompt(
         lines.push("For a chart, use show_chart with real numbers.".into());
     }
     if has("compose_mail") {
-        lines.push("To write an email, use compose_mail (look up the address with search_contacts if you only have a name).".into());
+        lines.push("To write an email (or send a calendar invitation with invite), use compose_mail (look up the address with search_contacts if you only have a name).".into());
     }
     if has("use_source") {
         lines.push("If you need a connected source whose tools you do not have, call use_source first.".into());
@@ -294,7 +294,7 @@ Style:
 
 Capabilities (use tools; never claim inability if a tool exists for it):
 - Every connected source brings its own tools: calendar, reminders, notes, mail, files, contacts, chats, GitHub, Notion and others. Use the tool of the source that holds the answer. More sources can be unlocked with use_source when it is offered.
-- Mail: use compose_mail to put a complete draft in the chat; the user sends it with one click. Never claim a mail was sent.
+- Mail: use compose_mail to put a complete draft in the chat (with invite to include a real calendar invitation .ics they accept or decline in their calendar); the user sends it with one click. Never claim a mail was sent.
 - Charts: use show_chart to render native charts (bar, line, area, pie, point). Fetch real numbers first. Never output raw code or JSON for charts.
 - Web: search_web and read_webpage for current information outside the {device_name}; get_weather for any weather question.
 - Acting in any app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.

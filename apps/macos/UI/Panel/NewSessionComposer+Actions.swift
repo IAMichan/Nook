@@ -149,7 +149,7 @@ extension NewSessionComposer {
         let key = draftKey
         guard !started else { NewSessionDraft.saved[key] = nil; return }
         if remoteMachine == nil, ScratchProjects.isScratch(config.projectPath), !hasTask, images.isEmpty {
-            ScratchProjects.discardIfEmpty(config.projectPath)
+            discardScratchIfUnused(config.projectPath)
             NewSessionDraft.saved[key] = nil
             return
         }
@@ -195,10 +195,12 @@ extension NewSessionComposer {
     }
 
     /// Drops an unsent draft from the list: its words and, when it was parked, everything around them.
-    static func discardDraft(_ key: String) {
+    static func discardDraft(_ key: String, workspace: WorkspaceManager? = nil) {
         NewSessionDraft.discard(key)
         ComposerDraftStore.shared.save(sessionID: key, text: "")
-        if case .folder(let path) = NewSessionDraftKey.place(of: key) { ScratchProjects.discardIfEmpty(path) }
+        if case .folder(let path) = NewSessionDraftKey.place(of: key), workspace?.usesFolder(path) != true {
+            ScratchProjects.discardIfEmpty(path)
+        }
     }
 
     /// The same for a machine over SSH.
@@ -339,11 +341,16 @@ extension NewSessionComposer {
         error = nil
     }
 
+    private func discardScratchIfUnused(_ path: String) {
+        guard !workspace.usesFolder(path) else { return }
+        ScratchProjects.discardIfEmpty(path)
+    }
+
     private func select(_ path: String) {
         remoteMachine = nil
         // A folder made for "No project" that nothing started in goes again when you pick another.
         if config.projectPath != path {
-            ScratchProjects.discardIfEmpty(config.projectPath)
+            discardScratchIfUnused(config.projectPath)
             applyFolderDefaults(path)
         }
         config.projectPath = path
@@ -467,7 +474,19 @@ extension NewSessionComposer {
         var request = checkedConfig
         // A folder made for "No project" before the prompt was typed gets the prompt's name now.
         if request.remote == nil, ScratchProjects.isScratch(request.projectPath) {
-            request.projectPath = ScratchProjects.rename(request.projectPath, prompt: request.task)
+            let renamed = ScratchProjects.rename(request.projectPath, prompt: request.task)
+            if renamed != request.projectPath {
+                moveDraft {
+                    config.projectPath = renamed
+                    if var info = project {
+                        info.path = renamed
+                        info.name = (renamed as NSString).lastPathComponent
+                        info.verdict = .ok
+                        project = info
+                    }
+                }
+                request.projectPath = renamed
+            }
         }
         // References in the text reach the agent as markers plus the context envelope.
         request.task = composerModel.outgoing(request.task).send
@@ -549,6 +568,17 @@ extension NewSessionComposer {
     /// After ⌥⌘↩: the session runs in the list, and this box is a fresh draft with the same choices and the keyboard.
     private func startedInBackground() {
         started = false
+        if remoteMachine == nil, ScratchProjects.isScratch(config.projectPath) {
+            if let fresh = try? ScratchProjects.create(prompt: "") {
+                config.projectPath = fresh
+                project = ProjectInfo(path: fresh, name: (fresh as NSString).lastPathComponent, verdict: .ok,
+                                      repoRoot: nil, currentBranch: nil, branches: [], defaultBase: nil,
+                                      hasCommits: false, dirtyFiles: 0, isWorktree: false)
+            } else {
+                config.projectPath = ""
+                project = nil
+            }
+        }
         ToastCenter.shared.success(tr("ws.new.startedInBackground"))
         focused = true
     }
