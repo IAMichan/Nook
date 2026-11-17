@@ -371,7 +371,7 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 | Search everything (query language & ranking) | [`docs/SEARCH.md`](docs/SEARCH.md) |
 | Panel keybindings (`~/.nook/keybindings.json`) | [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md) |
 | Shared macOS UI components | [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) |
-| Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
+| Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md), parity checklist [`docs/WINDOWS-PARITY.md`](docs/WINDOWS-PARITY.md) |
 | Chat helper (`nook-chatd`, AGPL-3.0) | [`apps/chatd/README.md`](apps/chatd/README.md) |
 | Website | [`site/README.md`](site/README.md) |
 | Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |

@@ -1,7 +1,7 @@
 # The Tauri app: what has been ported from the Mac
 
 `apps/tauri` brings Nook to Windows, Linux, and Android. The macOS app is the specification; this list tracks what is
-already there.
+already there. [WINDOWS-PARITY.md](WINDOWS-PARITY.md) is the checklist of everything still missing.
 
 ✓ = ported and tested in the app · ◐ = partial, or only compiled and not actually run · ○ = not yet · — = not possible on this platform
 
@@ -149,6 +149,9 @@ game. Events can also be logged by hand.
 | Secrets in the Android Keystore | ○ (private app folder without backup) | `platform/secrets.rs` |
 
 ## To do
+
+The full list of what is still missing for a 1:1 match with the Mac, as numbered items to work through one by one, is
+[WINDOWS-PARITY.md](WINDOWS-PARITY.md).
 
 - Error messages written on the Rust side are still partly Dutch; the interface itself has the Mac's five languages.
 - Real testing on Windows and on an Android device.
