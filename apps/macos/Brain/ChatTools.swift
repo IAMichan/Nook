@@ -59,6 +59,7 @@ enum ChatTools {
                     "properties": [
                         "to": ["type": "string", "description": "Recipient email address(es), comma-separated, or the person's name: Nook fills in the address from Contacts on this Mac. Empty if unknown."],
                         "cc": ["type": "string", "description": "CC email address(es), optional."],
+                        "bcc": ["type": "string", "description": "BCC email address(es), optional: only when the user asks for a blind copy."],
                         "from": ["type": "string", "description": "The user's own address to send from, only when they name one (\"vanuit mijn gmail\", \"from work@x.nl\"). Empty: the default account."],
                         "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
                         "body": ["type": "string", "description": "Full text of the email, excluding subject line."],
@@ -91,6 +92,7 @@ enum ChatTools {
                         cc: await ActionGate.addressed((input["cc"] as? String) ?? "", lookup: mailAddress),
                         subject: subject,
                         body: body,
+                        bcc: await ActionGate.addressed((input["bcc"] as? String) ?? "", lookup: mailAddress),
                         from: ((input["from"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     )
                     draft.replyTo = MailActions.ids([(input["reply_to"] as? String) ?? ""]).first ?? ""

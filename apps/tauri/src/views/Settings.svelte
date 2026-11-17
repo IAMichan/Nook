@@ -95,7 +95,7 @@
   });
   // A button elsewhere (the chat, the welcome, a notice) picks a subject through localStorage and a navigate event.
   $effect(() => {
-    const un = events.onNavigate(() => (section = settingsSection(stored() ?? section)));
+    const un = events.onNavigate((r) => (section = settingsSection(r.startsWith("settings:") ? r.slice(9) : stored() ?? section)));
     return () => {
       un.then((f) => f());
     };

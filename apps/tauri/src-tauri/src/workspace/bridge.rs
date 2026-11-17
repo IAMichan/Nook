@@ -95,6 +95,7 @@ impl Bridge {
     fn finish(&self, app: &AppHandle, id: &str, allowed: bool, message: &str) -> bool {
         let Some(waiter) = lock(&self.waiters).remove(id) else { return false };
         lock(&self.pending).retain(|r| r.id != id);
+        crate::agents::approval_gone(app, &format!("bridge-{id}"));
         let _ = app.emit("agent-approval-gone", serde_json::json!({"id": format!("bridge-{id}"), "message": message}));
         let _ = waiter.send(allowed);
         true
@@ -124,8 +125,9 @@ impl Bridge {
         let (tx, rx) = tokio::sync::oneshot::channel();
         lock(&self.waiters).insert(id.clone(), tx);
         lock(&self.pending).push(request.clone());
-        let _ = app.emit("agent-approval", Self::approval(&request));
-        crate::agents::open_bar(app);
+        let approval = Self::approval(&request);
+        let _ = app.emit("agent-approval", &approval);
+        crate::agents::present_approval(app, &approval);
         match tokio::time::timeout(APPROVAL_TIMEOUT, rx).await {
             Ok(Ok(allowed)) => allowed,
             _ => {

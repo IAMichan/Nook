@@ -6,6 +6,11 @@ export const table: Table = {
   // Windows and loading
   "Nook bar": { de: "Nook-Leiste", fr: "Barre Nook", es: "Barra de Nook" },
   "Suggestions": { de: "Vorschläge", fr: "Suggestions", es: "Sugerencias" },
+  // The plan Nook works through (update_plan)
+  "Tasks": { de: "Aufgaben", fr: "Tâches", es: "Tareas" },
+  "{done} of {total} done": { de: "{done} von {total} erledigt", fr: "{done} sur {total} terminées", es: "{done} de {total} hechas" },
+  "Show tasks": { de: "Aufgaben einblenden", fr: "Afficher les tâches", es: "Mostrar tareas" },
+  "Hide tasks": { de: "Aufgaben ausblenden", fr: "Masquer les tâches", es: "Ocultar tareas" },
   "Recording": { de: "Aufnahme", fr: "Enregistrement", es: "Grabación" },
   "Screen selection": { de: "Bildschirmauswahl", fr: "Sélection d’écran", es: "Selección de pantalla" },
   "Autocomplete": { de: "Autovervollständigung", fr: "Saisie automatique", es: "Autocompletar" },
@@ -96,6 +101,8 @@ export const table: Table = {
   "Edit": { de: "Bearbeiten", fr: "Modifier", es: "Editar" },
   "Open in mail app": { de: "Im Mailprogramm öffnen", fr: "Ouvrir dans l’app de messagerie", es: "Abrir en la app de correo" },
   "Send": { de: "Senden", fr: "Envoyer", es: "Enviar" },
+  "Invitation: {summary}": { de: "Einladung: {summary}", fr: "Invitation : {summary}", es: "Invitación: {summary}" },
+  "Open .ics": { de: ".ics öffnen", fr: "Ouvrir .ics", es: "Abrir .ics" },
 
   // Messages
   "Copied": { de: "Kopiert", fr: "Copié", es: "Copiado" },
@@ -504,4 +511,14 @@ export const table: Table = {
   "Companion": { de: "Companion", fr: "Compagnon", es: "Companion" },
   "Nook on your phone": { de: "Nook auf deinem Handy", fr: "Nook sur ton téléphone", es: "Nook en tu móvil" },
   "Make Nook yours": { de: "Mach Nook zu deinem", fr: "Fais de Nook le tien", es: "Haz tuyo Nook" },
+
+  // Markdown blocks
+  "Preview": { de: "Vorschau", fr: "Aperçu", es: "Vista previa" },
+  "Wrap lines": { de: "Zeilen umbrechen", fr: "Renvoyer les lignes à la ligne", es: "Ajustar líneas" },
+  "Don't wrap lines": { de: "Zeilen nicht umbrechen", fr: "Ne pas renvoyer à la ligne", es: "No ajustar líneas" },
+  "Run in terminal": { de: "Im Terminal ausführen", fr: "Exécuter dans le terminal", es: "Ejecutar en el terminal" },
+  "Started in terminal": { de: "Im Terminal gestartet", fr: "Démarré dans le terminal", es: "Iniciado en el terminal" },
+  "Could not open terminal": { de: "Terminal konnte nicht geöffnet werden", fr: "Impossible d’ouvrir le terminal", es: "No se pudo abrir el terminal" },
+  "Copy table": { de: "Tabelle kopieren", fr: "Copier le tableau", es: "Copiar tabla" },
+  "Copy as CSV": { de: "Als CSV kopieren", fr: "Copier en CSV", es: "Copiar como CSV" },
 };
