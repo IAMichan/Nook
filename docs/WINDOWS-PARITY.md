@@ -341,6 +341,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
 - [x] **CH-05** Per-app notification layouts (`MessagingApp`, `NoticeLayout`) in `core/src/chats/apps.rs` · S
 - [ ] **CH-06** Chat history on disk, backfill, edits and deletions (`ChatStore`, `ChatArchive`, `ChatBackfill`, `ChatReconcile`): SQLite in `core/src/chats/archive.rs` · L
+  - Done: the archive (`ChatStore`): every message in `chats.sqlite` with the Mac's tables, paging by key, the trigram search index, earlier texts of edited and deleted messages, written with only what changed and loaded at start, with `chat-inbox.json` as the fallback. Open: backfill and reconcile (`ChatBackfill`, `ChatReconcile`). They walk a chat's history in its app, so each bridge first needs to read older pages (CH-35).
 - [ ] **CH-07** Chat history in Search everything (`ChatHistorySearch`, `NookSearch`, `SearchCenter`) · M
 - [ ] **CH-08** People and names across apps, no guessing between equal matches (`ChatIdentity`, `ChatHandle`, `ChatNames`, `ChatRecipients.pick`) · M
 

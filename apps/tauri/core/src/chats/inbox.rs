@@ -970,7 +970,7 @@ impl ChatInbox {
 }
 
 /// A chat name as a key: invisible marks out, case and accents folded, runs of spaces as one.
-fn fold(text: &str) -> String {
+pub(crate) fn fold(text: &str) -> String {
     let visible: String = text
         .chars()
         .filter(|c| !matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}'))
