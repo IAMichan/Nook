@@ -59,7 +59,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | Framework (Connector, Hub, catalog, brands) | ✓ | `core/src/connectors/` |
-| Calendars: ICS ("Other calendars"), Cal.com, `check_availability` | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs` |
+| Calendars: ICS ("Other calendars"), Cal.com, `check_availability`, `find_time` (buffers, time-of-day preference, weekends) | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs`, `brain/meeting_times.rs` |
 | System calendars (Apple Calendar) | — | No API in this port |
 | GitHub (read; review, merge, close as an action) | ✓ | `github.rs` |
 | Pull requests under Agents: yours, awaiting your review, followed organizations and repositories (Settings › Accounts & connections), filters (status, involvement, author, draft, checks), reading with reviews and comments (GitHub HTML as Markdown), a GitHub Actions check's steps and log read in Nook (`CheckLog.svelte`), merging after confirmation in the bar, with an action log | ◐ (tested against a fake API, not against GitHub itself) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |

@@ -85,8 +85,8 @@ const PRIORITY: [Kind; 23] = [
 pub fn tools_for(kind: Kind) -> &'static [&'static str] {
     match kind {
         Kind::Reminder => &["create_reminder", "list_reminders", "search_reminders", "complete_reminder"],
-        Kind::Event => &["create_event", "update_event", "list_events", "check_availability"],
-        Kind::Availability => &["check_availability", "list_events"],
+        Kind::Event => &["create_event", "find_time", "update_event", "list_events", "check_availability"],
+        Kind::Availability => &["check_availability", "find_time", "list_events"],
         Kind::Note => &["create_note", "search_notes", "read_note", "list_notes"],
         Kind::Todo => &["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
         Kind::MailWrite => &["compose_mail", "search_contacts", "search_mail", "read_mail"],
