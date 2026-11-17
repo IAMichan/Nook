@@ -46,6 +46,10 @@ struct NookChatView: View {
     /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
     @State private var viewport = TimelineViewport()
     @State private var overflows = false
+    /// Messages the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    @State private var drawnRows = DrawnRows()
+    /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
+    @State private var timelineBuild = 0
     @State private var marks = NookChatMarks()
     @State private var renaming = false
     @State private var titleDraft = ""
@@ -417,25 +421,33 @@ struct NookChatView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // Wide gaps between turns, so each question and its answer read as one block.
-                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+                // Wide gaps between turns, so each question and its answer read as one block. Lazy, but for the latest
+                // messages (`ConversationRows`): a bare lazy stack whose rows change height (an answer streaming in, a
+                // chart or mail list filling in) can come to rest drawing none of its rows, even at its end.
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     let newest = chat.messages.last?.id
-                    ForEach(chat.messages) { message in
+                    ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
                             .equatable()
+                            .countsAsDrawnRow(drawnRows, id: message.id)
                             .id(message.id)
                             .transition(.opacity.combined(with: .offset(y: 6)))
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .scrollTargetLayout()
+                // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
+                .coordinateSpace(name: TimelineSpace.name)
                 .padding(.horizontal, NookTheme.Spacing.xxs)
                 .readableChat(!compact)
                 .padding(.top, NookTheme.Spacing.md)
                 .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
             }
+            // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
+            .id(timelineBuild)
             // No system scroll bar, as in an agent's transcript: the rows are laid out only as they come into view, so
             // its knob jumped while dragged. The rail beside the conversation is the scroll bar instead. `.never`,
             // because `.hidden` still shows one when the system shows scroll bars always (a mouse connected).
@@ -487,6 +499,26 @@ struct NookChatView: View {
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
+            }
+            // Never a black conversation: at rest with none of its messages in view, back to the one you last saw (or the
+            // end), the same guard as an agent's transcript.
+            .recoversBlankRows(UUID.self, rows: chat.messages.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) {
+                    if let last, !scroll.shouldFollowEnd, !atEnd {
+                        proxy.scrollTo(last, anchor: .top)
+                    } else if attempt == 0 {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    } else {
+                        // Still blank at the end: follow the end again, land on the last message itself (one the stack
+                        // draws in full), and only then on the very end; scrolling brought nothing back, a new scroll view.
+                        scroll.jumpedToEnd()
+                        if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
+                        if let lastRow = chat.messages.last?.id { proxy.scrollTo(lastRow, anchor: .bottom) }
+                        DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    }
+                }
             }
             // A mark per question of yours on the leading edge, as in an agent's transcript: a click jumps to it.
             .overlay(alignment: .leading) {
