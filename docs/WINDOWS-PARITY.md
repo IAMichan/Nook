@@ -558,8 +558,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **CH-01** One inbox for all apps (`ChatInbox`, `InboxThread`, `BridgedChat`, `ChatBridge`): `core/src/chats/{inbox,bridge,store}.rs`; move WhatsApp onto it first · L
 
 - [ ] **CH-02** Nook's chat helper (`apps/chatd`, `ChatHelper`, `ChatServiceData`, `ChatLiveStream`, `ChatLinker`): build `nook-chatd.exe` in CI, child-process manager in `src-tauri/src/chats/helper.rs`, `/v1` client and `/v1/ws` live line in `core/src/chats/chatd.rs`. This unlocks Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack · L
-
-- [ ] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
+  - Done: the helper's child-process manager (Job Object on Windows), the `/v1` client, the `/v1/ws` live line and its bridge into the shared inbox. Open: building `nook-chatd.exe` in CI and shipping it beside `nook.exe` (`externalBin`). Its Go code is portable, but the Signal connector needs libsignal's Rust library for `x86_64-pc-windows-*`. That library builds BoringSSL with cmake, and go-sqlite3 and webp need cgo through MinGW, so it needs a Windows runner to prove.
+- [x] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
 
 - [ ] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
 
