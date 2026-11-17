@@ -139,7 +139,8 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **UI-72** Colour per token with reset and live preview, readable-contrast fix (#1483, #1492, #1495, #1526) · L
 - [ ] **UI-73** `.nooklook` export and import (#1609) · S
 - [ ] **UI-74** Colour-blind diff colours; switches for math rendering and the rich composer · S
-- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom; radii and motion tokens (springs, reduced motion) checked against `NookTheme` · M
+- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom (radii, spacing, text styles, colors and motion durations are now checked against `NookTheme` by `src/theme/theme-tokens.test.ts`) · M
+- [ ] **UI-76** No inline colors, font sizes or radii in Svelte: bring `src/theme/ui-baseline.json` (149 files: 161 colors, 563 font sizes, 215 radii at the start) to zero by moving each to the theme's variables; `ui-lint.test.ts` already stops new ones · L
 ## 3. Nook Chat and the brain (BR)
 
 ### 3.1 Brain core and providers
