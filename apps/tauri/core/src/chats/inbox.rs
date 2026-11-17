@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 
+use super::capture::{self, ChatNotice};
 use super::{ChatKind, ChatMedia, Receipt};
 
 /// One message in a chat, the same for every app.
@@ -37,6 +38,20 @@ pub struct InboxMessage {
     /// Deleted for everyone: the row stays, without its words or file.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
+    /// The emoji on it, the most used first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<InboxReaction>,
+}
+
+/// One emoji on a message (`InboxReaction` on the Mac): how many put it there, whether you did, and who.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxReaction {
+    pub emoji: String,
+    pub count: usize,
+    pub mine: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub people: Vec<String>,
 }
 
 impl InboxMessage {
@@ -53,6 +68,7 @@ impl InboxMessage {
             mentions_me: false,
             edited: false,
             deleted: false,
+            reactions: vec![],
         }
     }
 
@@ -153,6 +169,9 @@ pub struct InboxThread {
     pub muted_in_app: Option<bool>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
+    /// A bridge reads this chat; without one only notifications bring its messages.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bridged: bool,
 }
 
 impl InboxThread {
@@ -180,12 +199,26 @@ impl InboxThread {
             waits_in_app: None,
             muted_in_app: None,
             ephemeral: false,
+            bridged: false,
         }
     }
 
-    /// How many messages it keeps.
+    /// How many messages it keeps: a bridge's chat its newest ones (its app keeps the rest), a chat only notifications
+    /// bring all of them, bounded only so a runaway app cannot fill the disk.
     pub fn keeps(&self) -> usize {
-        self.capacity.unwrap_or(0).max(ChatInbox::KEEP)
+        if self.bridged {
+            self.capacity.unwrap_or(0).max(ChatInbox::KEEP)
+        } else {
+            ChatInbox::NOTIFICATION_KEEP
+        }
+    }
+
+    /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
+    pub fn is_private(&self) -> bool {
+        if let Some(kind) = self.kind {
+            return kind == ChatKind::Person;
+        }
+        self.members.as_ref().map_or(0, Vec::len) <= 1 && !self.is_group() && self.messages.iter().any(|m| !m.from_me)
     }
 
     /// When the chat last had a message: it sorts and is dated by this. A chat without messages here goes by when its
@@ -282,11 +315,16 @@ pub struct ChatInbox {
     /// Chats you removed, and when: a bridge brings back only what is newer, not the history you threw away.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub removed: HashMap<String, DateTime<Utc>>,
+    /// The newest notification read, so none is read twice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_record: Option<i64>,
 }
 
 impl ChatInbox {
     /// Messages kept per chat a bridge reads, until you scroll back (the app keeps the rest).
     pub const KEEP: usize = 50;
+    /// Messages kept per chat only notifications bring.
+    pub const NOTIFICATION_KEEP: usize = 100_000;
     /// Chats kept; the quietest go first.
     pub const MAX_THREADS: usize = 200;
     /// Two copies of one message (seconds): the same words from the same side this close together are one.
@@ -382,6 +420,7 @@ impl ChatInbox {
         let mut thread = known.clone().unwrap_or_else(|| InboxThread::new(&key, &chat.app, &chat.name));
         thread.chat_id = chat.chat_id.clone();
         let before = thread.clone();
+        thread.bridged = true;
         // What the chat had before, the app's own word on when it last moved included: a message no newer is no news.
         let newest_before = known.as_ref().map(|k| k.messages.last().map(|m| m.date).into_iter().chain(k.activity).max());
         let index_by_id: HashMap<String, usize> =
@@ -530,6 +569,188 @@ impl ChatInbox {
         }
         self.threads.insert(key, thread);
         true
+    }
+
+    /// Adds a message a notification brought to its chat. False when that chat already shows it: the same text from
+    /// the same person within a minute (an app that shows a notification again, or updates it).
+    pub fn add(&mut self, notice: &ChatNotice, id: &str) -> bool {
+        let notice = self.placed(notice);
+        let key = Self::key_by_name(&notice.app, &notice.chat);
+        // A chat you removed comes back with what is newer, not with the notifications it already had.
+        if self.removed.get(&key).is_some_and(|gone| notice.date <= *gone) {
+            return false;
+        }
+        // Someone's emoji on a message goes on that message, not into the chat as a message of its own.
+        if let Some(reaction) = capture::reaction(&notice.text) {
+            let person = capture::unmarked(if notice.sender.is_empty() { &notice.chat } else { &notice.sender });
+            return self.react(reaction, &key, &person, notice.date);
+        }
+        // A vote on a poll is no message: the chat stays where it is.
+        if capture::is_poll_vote(&notice.text) {
+            return false;
+        }
+        let mut thread = self.threads.get(&key).cloned().unwrap_or_else(|| InboxThread::new(&key, &notice.app, &notice.chat));
+        if thread.messages.iter().any(|m| {
+            m.id == id || (!m.from_me && m.text == notice.text && (m.date - notice.date).abs() < Self::same_message_window())
+        }) {
+            return false;
+        }
+        let mut message = InboxMessage::new(id, notice.text.clone(), notice.date, false);
+        message.sender = notice.sender.clone();
+        // Usually the newest, but a late notification goes in its place.
+        let index = thread.messages.iter().rposition(|m| m.date <= notice.date).map_or(0, |i| i + 1);
+        thread.messages.insert(index, message);
+        let keeps = thread.keeps();
+        if thread.messages.len() > keeps {
+            let extra = thread.messages.len() - keeps;
+            thread.messages.drain(..extra);
+        }
+        thread.name = notice.chat.clone();
+        thread.unread += 1;
+        self.threads.insert(key, thread);
+        self.regroup();
+        self.drop_quietest(notice.date);
+        true
+    }
+
+    /// Puts someone's emoji from a notification on the message it is on: the one whose text it quotes, else your newest
+    /// (what people react to). False when the chat has no such message or already shows that emoji there.
+    pub fn react(&mut self, reaction: (String, Option<String>), key: &str, person: &str, _date: DateTime<Utc>) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        let target = reaction.1.as_deref().map(|t| t.trim_matches(|c: char| "…. ".contains(c)).to_string());
+        let quoted = target.as_deref().filter(|t| !t.is_empty()).and_then(|target| {
+            thread.messages.iter().rposition(|m| {
+                let text = m.text.as_str();
+                text.starts_with(target) || (!text.is_empty() && target.starts_with(text))
+            })
+        });
+        let Some(index) =
+            quoted.or_else(|| thread.messages.iter().rposition(|m| m.from_me)).or(thread.messages.len().checked_sub(1))
+        else {
+            return false;
+        };
+        let message = &mut thread.messages[index];
+        if message.reactions.iter().any(|r| r.emoji == reaction.0) {
+            return false;
+        }
+        message.reactions.push(InboxReaction {
+            emoji: reaction.0,
+            count: 1,
+            mine: false,
+            people: if person.is_empty() { vec![] } else { vec![person.to_string()] },
+        });
+        true
+    }
+
+    /// The notice with the group as its chat and the person as its sender. Not every app (nor every version of one)
+    /// puts them in the same place: when the chat it names is a private chat Nook knows, or the sender is a group Nook
+    /// knows, the two were the other way around.
+    pub fn placed(&self, notice: &ChatNotice) -> ChatNotice {
+        if notice.sender.is_empty() {
+            return notice.clone();
+        }
+        let chat = self.threads.get(&Self::key_by_name(&notice.app, &notice.chat));
+        let sender = self.threads.get(&Self::key_by_name(&notice.app, &notice.sender));
+        let sender_is_group = sender.is_some_and(Self::is_clearly_group) && !chat.is_some_and(InboxThread::is_group);
+        let chat_is_person = chat.is_some_and(InboxThread::is_private) && !sender.is_some_and(InboxThread::is_private);
+        if !(sender_is_group || chat_is_person) {
+            return notice.clone();
+        }
+        let mut swapped = notice.clone();
+        swapped.chat = notice.sender.clone();
+        swapped.sender = notice.chat.clone();
+        swapped
+    }
+
+    /// A group beyond doubt: its app lists more than one other person, or more than one person wrote in it.
+    fn is_clearly_group(thread: &InboxThread) -> bool {
+        thread.members.as_ref().map_or(0, Vec::len) > 1
+            || thread.messages.iter().filter(|m| !m.sender.is_empty()).map(|m| &m.sender).collect::<HashSet<_>>().len() > 1
+    }
+
+    /// A chat only notifications made, whose every sender is a group Nook knows: it is a person's chat the groups'
+    /// notifications landed in, and no group itself.
+    fn holds_only_groups(thread: &InboxThread, groups: &HashSet<String>) -> bool {
+        if thread.bridged {
+            return false;
+        }
+        let senders: HashSet<String> = thread
+            .messages
+            .iter()
+            .filter(|m| !m.from_me && !m.sender.is_empty())
+            .map(|m| Self::key_by_name(&thread.app, &m.sender))
+            .collect();
+        !senders.is_empty() && senders.iter().all(|s| s != &thread.id && groups.contains(s))
+    }
+
+    /// Puts a group's messages that landed in someone's chat back in the group: in a chat without a list of people, a
+    /// message "written by" a group Nook knows is that group's, by the person the chat is named after. A chat left
+    /// without messages goes.
+    pub fn regroup(&mut self) {
+        let groups: HashSet<String> = self.threads.values().filter(|t| Self::is_clearly_group(t)).map(|t| t.id.clone()).collect();
+        if groups.is_empty() {
+            return;
+        }
+        let keys: Vec<String> = self.threads.keys().cloned().collect();
+        for key in keys {
+            let Some(thread) = self.threads.get(&key).cloned() else { continue };
+            // A chat its app knows by an id is never a notification's guess.
+            if thread.chat_id.is_some()
+                || thread.members.is_some()
+                || (groups.contains(&key) && !Self::holds_only_groups(&thread, &groups))
+            {
+                continue;
+            }
+            let mut moved: HashMap<String, Vec<InboxMessage>> = HashMap::new();
+            for message in thread.messages.iter().filter(|m| !m.from_me && !m.sender.is_empty()) {
+                let group = Self::key_by_name(&thread.app, &message.sender);
+                if group == key || !groups.contains(&group) {
+                    continue;
+                }
+                let mut copy = message.clone();
+                copy.sender = thread.name.clone();
+                moved.entry(group).or_default().push(copy);
+            }
+            if moved.is_empty() {
+                continue;
+            }
+            let ids: HashSet<String> = moved.values().flatten().map(|m| m.id.clone()).collect();
+            let mut source = thread.clone();
+            source.messages.retain(|m| !ids.contains(&m.id));
+            source.unread = source.unread.min(source.messages.iter().filter(|m| !m.from_me).count());
+            // What was unread there is unread in the group now.
+            let mut freed = thread.unread - source.unread;
+            for (group, messages) in moved {
+                let Some(mut target) = self.threads.get(&group).cloned() else { continue };
+                let mut inserted = 0;
+                for message in messages {
+                    if target.messages.iter().any(|m| {
+                        m.id == message.id
+                            || (!m.from_me && m.text == message.text && (m.date - message.date).abs() < Self::same_message_window())
+                    }) {
+                        continue;
+                    }
+                    let index = target.messages.iter().rposition(|m| m.date <= message.date).map_or(0, |i| i + 1);
+                    if target.read_in_nook.is_none_or(|r| message.date > r) {
+                        inserted += 1;
+                    }
+                    target.messages.insert(index, message);
+                }
+                target.unread += freed.min(inserted);
+                freed = 0;
+                let keeps = target.keeps();
+                if target.messages.len() > keeps {
+                    let extra = target.messages.len() - keeps;
+                    target.messages.drain(..extra);
+                }
+                self.threads.insert(group, target);
+            }
+            if source.messages.is_empty() && source.listed.is_none() {
+                self.threads.remove(&key);
+            } else {
+                self.threads.insert(key, source);
+            }
+        }
     }
 
     /// Your own message's ticks, from a receipt that names messages by id: they only move forward. True when any changed.
@@ -973,6 +1194,75 @@ mod tests {
         after.merge(chat("a", "2", vec![msg("2", 5, false)]), at(5));
         after.merge(chat("a", "1", vec![msg("2", 4, false)]), at(5));
         assert_eq!(after.fresh(&before, at(1)), vec![ChatInbox::key("a", "1"), ChatInbox::key("a", "2")]);
+    }
+
+
+    fn notice(app: &str, chat: &str, sender: &str, text: &str, min: i64) -> ChatNotice {
+        ChatNotice { app: app.into(), chat: chat.into(), sender: sender.into(), text: text.into(), date: at(min) }
+    }
+
+    #[test]
+    fn notifications_add_messages_once_and_count_them() {
+        let mut inbox = ChatInbox::default();
+        assert!(inbox.add(&notice("discord", "Kai", "", "gg", 0), "n1"));
+        assert!(!inbox.add(&notice("discord", "Kai", "", "gg", 0), "n2"), "the same words within a minute are one message");
+        assert!(inbox.add(&notice("discord", "kai", "", "again", 1), "n3"), "one chat by any spelling of its name");
+        let kai = &inbox.threads[&ChatInbox::key_by_name("discord", "Kai")];
+        assert_eq!((kai.messages.len(), kai.unread), (2, 2));
+        assert_eq!(kai.keeps(), ChatInbox::NOTIFICATION_KEEP, "a chat only notifications bring keeps them all");
+        // A late notification goes in its place.
+        inbox.add(&notice("discord", "Kai", "", "early", -5), "n4");
+        assert_eq!(inbox.threads[&ChatInbox::key_by_name("discord", "Kai")].messages[0].text, "early");
+        // Removed: only what is newer comes back.
+        inbox.remove(&ChatInbox::key_by_name("discord", "Kai"), at(2));
+        assert!(!inbox.add(&notice("discord", "Kai", "", "old", 1), "n5"));
+        assert!(inbox.add(&notice("discord", "Kai", "", "new", 3), "n6"));
+    }
+
+    #[test]
+    fn reactions_and_votes_from_notifications_are_no_messages() {
+        let mut inbox = ChatInbox::default();
+        inbox.add(&notice("line", "Ann", "", "See you at 8", 0), "n1");
+        assert!(inbox.add(&notice("line", "Ann", "", "Reacted 👍 to: “See you at 8”", 1), "n2"));
+        let ann = &inbox.threads[&ChatInbox::key_by_name("line", "Ann")];
+        assert_eq!(ann.messages.len(), 1);
+        assert_eq!(ann.messages[0].reactions[0].emoji, "👍");
+        assert_eq!(ann.messages[0].reactions[0].people, vec!["Ann"]);
+        assert!(!inbox.add(&notice("line", "Ann", "", "Reacted 👍 to: “See you at 8”", 2), "n3"), "already there");
+        assert!(!inbox.add(&notice("line", "Ann", "", "📊 Ann voted in the poll: Friday?", 3), "n4"));
+        assert_eq!(inbox.threads[&ChatInbox::key_by_name("line", "Ann")].messages.len(), 1);
+    }
+
+    #[test]
+    fn a_group_and_a_person_the_wrong_way_round_are_put_right() {
+        let mut inbox = ChatInbox::default();
+        // A group, beyond doubt: two people wrote in it.
+        inbox.add(&notice("viber", "Family", "Piet", "hi", 0), "g1");
+        inbox.add(&notice("viber", "Family", "Ann", "hey", 1), "g2");
+        // The app named the person as the chat and the group as the sender this time.
+        inbox.add(&notice("viber", "Piet", "Family", "dinner?", 2), "g3");
+        let family = &inbox.threads[&ChatInbox::key_by_name("viber", "Family")];
+        assert_eq!(family.messages.len(), 3);
+        assert_eq!(family.messages[2].sender, "Piet");
+        assert!(!inbox.threads.contains_key(&ChatInbox::key_by_name("viber", "Piet")));
+    }
+
+    #[test]
+    fn group_messages_in_someones_chat_go_back_to_the_group() {
+        let mut inbox = ChatInbox::default();
+        // Before the group was known, its message landed in Piet's chat, "written by" the group.
+        let key = ChatInbox::key_by_name("wire", "Piet");
+        let mut piet = InboxThread::new(&key, "wire", "Piet");
+        let mut stray = InboxMessage::new("s1", "dinner?", at(0), false);
+        stray.sender = "Family".into();
+        piet.messages.push(stray);
+        piet.unread = 1;
+        inbox.threads.insert(key.clone(), piet);
+        inbox.add(&notice("wire", "Family", "Ann", "hey", 1), "g1");
+        inbox.add(&notice("wire", "Family", "Bo", "yo", 2), "g2");
+        let family = &inbox.threads[&ChatInbox::key_by_name("wire", "Family")];
+        assert!(family.messages.iter().any(|m| m.id == "s1" && m.sender == "Piet"));
+        assert!(!inbox.threads.contains_key(&key), "the chat it left empty goes");
     }
 
     #[test]

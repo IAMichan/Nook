@@ -76,6 +76,7 @@ pub fn setup(app: &AppHandle) {
         let _ = handle.emit("whatsapp-receipt", &chat);
     });
 
+    crate::chats::capture::setup(app, env.chats.clone(), env.store.clone(), whatsapp.clone());
     app.manage(Connectors { env: env.clone(), hub: hub.clone(), github, whatsapp: whatsapp.clone() });
     // Verversen en luisteren draaien op de runtime van Tauri.
     tauri::async_runtime::spawn(async move {
