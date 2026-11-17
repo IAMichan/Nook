@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod bridge_cli;
 #[cfg(desktop)]
 pub mod browser;
+pub mod nook_runs;
 #[cfg(desktop)]
 pub mod snapshot;
 #[cfg(desktop)]

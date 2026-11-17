@@ -285,6 +285,9 @@ pub struct Conversation {
     pub pinned: bool,
     #[serde(default)]
     pub archived: bool,
+    /// The automation whose run this conversation is (a scheduled task for Nook Chat), for the "Scheduled run" marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_task: Option<String>,
 }
 
 impl Conversation {
@@ -301,6 +304,7 @@ impl Conversation {
             scope: None,
             pinned: false,
             archived: false,
+            scheduled_task: None,
         }
     }
 

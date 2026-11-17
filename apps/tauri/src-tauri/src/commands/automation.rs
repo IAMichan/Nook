@@ -102,7 +102,8 @@ pub async fn automation_run_task(app: AppHandle, task: String) -> Res<RunNow> {
     let app2 = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let profile = |p: RunProvider| automation::default_profile(&app2, p);
-        scheduler.run_now(&manager, enabled, task, &profile, Utc::now(), &Local)
+        let host = crate::workspace::nook_runs::AppHost { manager, app: app2.clone() };
+        scheduler.run_now(&host, enabled, task, &profile, Utc::now(), &Local)
     })
     .await
     .map_err(|e| e.to_string())?;

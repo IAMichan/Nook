@@ -17,6 +17,7 @@ mod files;
 mod loops;
 mod mail;
 mod memory;
+mod schedule;
 mod screen;
 mod system;
 mod web;
@@ -147,6 +148,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(memory::Memory),
         Box::new(web::Web),
         Box::new(charts::Charts),
+        Box::new(schedule::Schedule),
         Box::new(mail::Mail),
         Box::new(system::System),
         Box::new(screen::Screen),

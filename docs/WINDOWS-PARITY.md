@@ -176,7 +176,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.3 Nook Chat automations
 
-- [ ] **BR-15** `ScheduledTaskTarget.nook` and the tools `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `set_up_secretary` (`AppModel+ScheduleTools`) → `src-tauri/src/tools/schedule.rs` · L
+- [x] **BR-15** `ScheduledTaskTarget.nook` and the tools `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `set_up_secretary` (`AppModel+ScheduleTools`) → `src-tauri/src/tools/schedule.rs` · L
 - [ ] **BR-16** Automations that start when a matching message arrives, and the quiet "nothing new" answer (4cdac90ca) · M
 - [ ] **BR-17** Scheduled tab in the Nook list with an amber count, the bar over a run's conversation, the "Scheduled run" marker (`NookScheduledTasks`) · M
 
