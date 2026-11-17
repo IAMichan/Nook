@@ -19,6 +19,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | `AIProvider`, `BrainSelection`, `AppSettings` | ✓ | `core/src/provider.rs`, `core/src/settings.rs` |
+| Brain chip under the composer (`BrainChip`): names the model ("Claude Code · sonnet", a local model by name), and opens a picker with a rail of places (this computer's Ollama and LM Studio models, and each agent Nook thinks through with your own sign-in), a search, stars for favourites per place, and Brain settings | ◐ (picker logic unit-tested; checked with svelte-check, not clicked through in the running app; no account rail per agent and no maker logos yet) | `components/BrainPicker.svelte`, `lib/brain-chip.ts` |
 | `ToolRunner` (tool loop, recovery, cache, JSON in text) | ✓ | `core/src/brain/tool_loop.rs` |
 | Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |
