@@ -190,25 +190,31 @@ struct SessionControlsMenu: View {
     var body: some View {
         let controls = session.controls ?? SessionControls()
         let actions = session.actions ?? []
-        Menu {
-            if actions.contains(SessionAction.setMode.rawValue), let mode = controls.mode {
-                Section("Mode") {
-                    choice(String(localized: "Agent"), on: mode == "agent") { set(.setMode, "agent") }
-                    choice(String(localized: "Plan"), on: mode == "plan") { set(.setMode, "plan") }
-                }
-            }
-            if actions.contains(SessionAction.setEffort.rawValue), let efforts = controls.efforts {
-                Section("Effort") {
-                    ForEach(efforts) { level in choice(level.name, on: level.id == (controls.effort ?? "")) { set(.setEffort, level.id) } }
-                }
-            }
-            if actions.contains(SessionAction.setModel.rawValue), let models = controls.models {
-                Section("Model") {
-                    ForEach(models) { model in choice(model.name, on: model.id == (controls.model ?? "")) { set(.setModel, model.id) } }
-                }
-            }
-        } label: {
+        let mode = actions.contains(SessionAction.setMode.rawValue) ? controls.mode : nil
+        let efforts = actions.contains(SessionAction.setEffort.rawValue) ? controls.efforts : nil
+        let models = actions.contains(SessionAction.setModel.rawValue) ? controls.models : nil
+        ComposerDropdown(title: "Mode, effort and model") {
             ComposerPill(symbol: controls.mode == "plan" ? "list.bullet.clipboard" : "slider.horizontal.3", text: summary(controls))
+        } content: {
+            if let mode {
+                DropdownHeader(title: "Mode")
+                DropdownRow(symbol: "sparkles", title: String(localized: "Agent"), chosen: mode == "agent") { set(.setMode, "agent") }
+                DropdownRow(symbol: "list.bullet.clipboard", title: String(localized: "Plan"), chosen: mode == "plan") { set(.setMode, "plan") }
+            }
+            if let efforts {
+                if mode != nil { DropdownDivider() }
+                DropdownHeader(title: "Effort")
+                ForEach(efforts) { level in
+                    DropdownRow(title: level.name, chosen: level.id == (controls.effort ?? "")) { set(.setEffort, level.id) }
+                }
+            }
+            if let models {
+                if mode != nil || efforts != nil { DropdownDivider() }
+                DropdownHeader(title: "Model")
+                ForEach(models) { model in
+                    DropdownRow(title: model.name, chosen: model.id == (controls.model ?? "")) { set(.setModel, model.id) }
+                }
+            }
         }
         .accessibilityLabel("Mode, effort and model")
     }
@@ -224,14 +230,7 @@ struct SessionControlsMenu: View {
         return parts.isEmpty ? String(localized: "Options") : parts.joined(separator: " · ")
     }
 
-    private func choice(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-        }
-    }
-
     private func set(_ action: SessionAction, _ value: String) {
-        Haptics.tap()
         Task { await client.manage(session, action, text: value) }
     }
 }

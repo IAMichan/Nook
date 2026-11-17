@@ -588,22 +588,25 @@ struct InboxAttachButton: View {
     @State private var tooLarge = false
 
     var body: some View {
-        Menu {
-            if photos {
-                Button { picking = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button { camera = true } label: { Label("Camera", systemImage: "camera") }
-                }
-            }
-            if files {
-                Button { importing = true } label: { Label("File", systemImage: "doc") }
-            }
-        } label: {
+        // The Mac chat composer's "+": the choices as tinted tiles, each opening its picker once the panel is gone.
+        ComposerDropdown(title: "Attach") {
             Image(icon: "plus")
                 .font(Theme.font(17, .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 36, height: 36)
                 .contentShape(Circle())
+        } content: {
+            DropdownTileGrid {
+                if photos {
+                    DropdownTile(symbol: "photo.on.rectangle", title: String(localized: "Photo library"), tint: Theme.textStrong) { picking = true }
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        DropdownTile(symbol: "camera", title: String(localized: "Camera"), tint: Theme.textStrong) { camera = true }
+                    }
+                }
+                if files {
+                    DropdownTile(symbol: "doc.fill", title: String(localized: "File"), tint: Theme.textStrong) { importing = true }
+                }
+            }
         }
         .accessibilityLabel("Attach")
         .photosPicker(isPresented: $picking, selection: $picked, maxSelectionCount: max(1, CompanionImage.maxCount - attachments.images.count),
