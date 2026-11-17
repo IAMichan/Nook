@@ -234,13 +234,16 @@ final class AgentProgressTests: XCTestCase {
         let page = event(.tool, "Write · index.html", tool: "Write", detail: #"{"file_path":"/p/index.html"}"#, state: .done, at: 3)
         let share = event(.tool, "SendUserFile · notes.md", tool: "SendUserFile", detail: #"{"files":["notes.md"]}"#,
                           state: .done, at: 4)
-        let outputs = SessionOutputs.collect([edit, page, share], tasks: nil, directory: "/p")
+        let pdf = event(.tool, "SendUserFile · report.pdf", tool: "SendUserFile", detail: #"{"files":["report.pdf"]}"#,
+                        state: .done, at: 5)
+        let outputs = SessionOutputs.collect([edit, page, share, pdf], tasks: nil, directory: "/p")
         func opens(_ id: String) -> Bool {
             SessionOutputs.opensByItself(outputs.first { $0.id == id }!, turnStart: start)
         }
         XCTAssertFalse(opens("file:/p/README.md"), "a Markdown file the agent edits stays in the outputs tab")
         XCTAssertTrue(opens("file:/p/index.html"), "a page still opens by itself")
         XCTAssertTrue(opens("file:/p/notes.md"), "a document handed to you still opens")
+        XCTAssertTrue(opens("file:/p/report.pdf"), "a PDF the agent made opens in the side panel")
         XCTAssertFalse(SessionOutputs.opensByItself(outputs[0], turnStart: start.addingTimeInterval(60)),
                        "earlier work does not open")
     }
@@ -253,6 +256,7 @@ final class AgentProgressTests: XCTestCase {
         rewritten.date = start.addingTimeInterval(5)
         XCTAssertTrue(SessionOutputs.hasNew([rewritten], seen: seen), "written again is new")
         XCTAssertEqual(SessionOutputs.kind(path: "/a/b.SVG"), .design)
+        XCTAssertEqual(SessionOutputs.kind(path: "/a/report.PDF"), .pdf)
         XCTAssertNil(SessionOutputs.kind(path: "/a/b.swift"))
         XCTAssertEqual(SessionOutputs.resolve("docs/a.md", in: "/p"), "/p/docs/a.md")
         XCTAssertEqual(SessionOutputs.resolve("/abs/a.md", in: "/p"), "/abs/a.md")
