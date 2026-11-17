@@ -4,7 +4,7 @@
   import { untrack } from "svelte";
   import type { SessionDigest } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
 
   let { kind, session, onrun, onclose }: {
     kind: "rename" | "delete" | "end";

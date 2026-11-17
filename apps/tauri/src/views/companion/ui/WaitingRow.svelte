@@ -2,8 +2,8 @@
   // Something that waits for the computer (`WaitingRow`): what it is, "waiting for your Mac", and Don't send on a
   // touch and hold.
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
-  import Menu from "./Menu.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import Menu from "../../../components/ui/Menu.svelte";
   let { icon, title, detail, ondiscard }: { icon: string; title: string; detail: string; ondiscard: () => void } = $props();
   let menu = $state<DOMRect | null>(null);
   let press: ReturnType<typeof setTimeout> | undefined;

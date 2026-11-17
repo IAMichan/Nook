@@ -3,7 +3,7 @@
 // and the one way to send an action (`chatAct`).
 import { companion, nookMarkdown, type CallResult, type ChatDigest, type NookChatAction } from "../../lib/companion";
 import { tr } from "../../lib/i18n.svelte";
-import type { MenuItem } from "./ui/Menu.svelte";
+import type { MenuItem } from "../../components/ui/Menu.svelte";
 import type { ChatConfirm } from "./chat-actions";
 
 /** Sends one action; the answer has the list as it is after it. */

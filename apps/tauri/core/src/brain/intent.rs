@@ -98,10 +98,10 @@ pub fn tools_for(kind: Kind) -> &'static [&'static str] {
         Kind::Contacts => &["search_contacts"],
         Kind::Music => &["media_control"],
         Kind::Volume => &["set_volume"],
-        Kind::OpenApp => &["open_app", "open_url"],
+        Kind::OpenApp => &["open_app", "open_url", "list_app_menu", "app_menu_command"],
         Kind::Shortcut => &["run_shortcut"],
         Kind::Chart => &["show_chart"],
-        Kind::Screen => &["read_screen", "read_app"],
+        Kind::Screen => &["read_screen", "read_app", "list_app_menu", "app_menu_command"],
         Kind::Browser => &["read_browser_tab", "read_webpage"],
         Kind::Files => &["search_files", "read_file"],
         Kind::Github => &[

@@ -360,7 +360,6 @@ struct UsageShareBar: View {
                             Capsule()
                                 .fill(segment.color)
                                 .frame(width: max(3, (proxy.size.width - CGFloat(visible.count - 1) * 2) * segment.value / total))
-                                .nookTip("\(segment.label) · \(format(segment.value)) · \(UsageFormat.percent(segment.value / total))")
                         }
                     }
                 }
@@ -484,9 +483,8 @@ struct UsageChatRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("usage.chat.open", target.title))
         } else {
-            row(title: chat.chat.displayTitle).nookTip(chat.chat.displayTitle)
+            row(title: chat.chat.displayTitle)
         }
     }
 

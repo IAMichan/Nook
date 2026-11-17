@@ -4,8 +4,8 @@
   import { companion, type ClientView, type TerminalDigest } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import NavBar from "./ui/NavBar.svelte";
-  import Ico from "./ui/Ico.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
   let { session, onback, took }: { view?: ClientView; session: string; onback: () => void; took: (v: ClientView) => void } = $props();
   let terminals = $state<TerminalDigest[] | null>(null);
   async function load() {

@@ -12,7 +12,7 @@
 {/if}
 
 <style>
-  .banner { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line2); border-radius: 12px; text-align: left; width: 100%; box-sizing: border-box; }
+  .banner { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); color: inherit; font: inherit; text-align: left; width: 100%; box-sizing: border-box; }
   .banner > span:first-child { position: relative; top: 2px; }
-  .text { font: var(--pt-detail); color: var(--text-strong); flex: 1; }
+  .text { font: var(--pt-detail, var(--text-detail)); color: var(--text-strong); flex: 1; }
 </style>

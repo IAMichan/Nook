@@ -1,6 +1,6 @@
 <script lang="ts">
   // Allow or Deny (`DecisionButton`): a full-width capsule; Allow in iris, Deny in a soft coral.
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { kind, label, onclick }: { kind: "allow" | "deny"; label: string; onclick: () => void } = $props();
 </script>
 

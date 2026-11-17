@@ -40,6 +40,22 @@
     }
   }
 
+  // OpenRouter: sign in on its own page instead of making a key (PKCE, the Mac's OpenRouterSignIn).
+  let signingIn = $state(false);
+  let signInError = $state<string | null>(null);
+  async function openrouterSignIn() {
+    signingIn = true;
+    signInError = null;
+    try {
+      keyMask = await api.openrouterSignIn();
+      nook.info = await api.appInfo();
+    } catch (e) {
+      signInError = String(e);
+    } finally {
+      signingIn = false;
+    }
+  }
+
   async function saveKey() {
     keyMask = await api.setKey(s.provider, keyInput);
     keyInput = "";
@@ -130,6 +146,12 @@
           <button onclick={saveKey} disabled={!keyInput.trim() && !keyMask}>{keyInput.trim() ? tr("Bewaar", "Save") : tr("Weghalen", "Remove")}</button>
         </div>
       </div>
+      {#if current.id === "openrouter"}
+        <div class="row">
+          <span>{tr("Of log in bij OpenRouter", "Or sign in to OpenRouter")}<br /><span class="faint small">{tr("OpenRouter vraagt je in te loggen en Nook toe te staan, met een bestedingslimiet als je wilt. Nook krijgt een eigen sleutel.", "OpenRouter asks you to sign in and allow Nook, with a spending limit if you like. Nook gets a key of its own.")}</span>{#if signInError}<br /><span class="small err">{signInError}</span>{/if}</span>
+          <button onclick={openrouterSignIn} disabled={signingIn}>{signingIn ? tr("Wacht op OpenRouter…", "Waiting for OpenRouter…") : tr("Inloggen", "Sign in")}</button>
+        </div>
+      {/if}
       <p class="faint note">{tr("De sleutel staat in de kluis van je systeem (Windows Referentiebeheer, GNOME Keyring/KWallet), nooit in een bestand.", "The key is kept in your system's keychain (Windows Credential Manager, GNOME Keyring/KWallet), never in a file.")} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Sleutel maken", "Create a key")}</a></p>
     {:else if current.isLocal}
       <p class="faint note">{tr("Draait {name} nog niet?", "{name} not running yet?", { name: current.title.split(" (")[0] })} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Download", "Download")}</a> {tr("en start hem, en haal dan de modellen op.", "and start it, then fetch the models.")}</p>

@@ -23,6 +23,10 @@ struct SidePanelPullRequestPicker: View {
     @State private var linkError: String?
     @State private var linkBusy = false
     @FocusState private var linkFocused: Bool
+    /// The filtered lists, chip counts and Filters counts, worked out again only when the lists or the filter change.
+    @State private var layouts = LastValue<PullRequestListLayout.Inputs, PullRequestListLayout>()
+    /// Where each pull request stands in a stack, per account, worked out again only when the lists change.
+    @State private var stackCache = LastValue<[AccountPullRequests], [String: [String: (index: Int, count: Int, merged: Int)]]>()
 
     init(directory: String, runID: UUID? = nil, choose: @escaping (PullRequestOpenRequest) -> Void) {
         self.directory = directory
@@ -51,11 +55,11 @@ struct SidePanelPullRequestPicker: View {
         }.first
     }
 
-    private func groups(excluding linked: Set<String>) -> [PickGroup] {
+    private func groups(_ shown: [AccountPullRequests], excluding linked: Set<String>) -> [PickGroup] {
         let branch = git.status?.branch ?? ""
         var seen = linked
         func take(_ pick: (AccountPullRequests) -> [PullRequestItem]) -> [PullRequestOpenRequest] {
-            filter.apply(store.accounts).flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
+            shown.flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
                 .filter { seen.insert($0.item.id.lowercased()).inserted }
         }
         // What the store lists for this branch and the session's sync has not seen: a session Nook does not follow.
@@ -68,23 +72,22 @@ struct SidePanelPullRequestPicker: View {
         ].filter { !$0.items.isEmpty }
     }
 
-    /// Every pull request of one account, for where one stands in a stack.
-    private func items(of account: String) -> [PullRequestItem] {
-        guard let found = store.accounts.first(where: { $0.id == account }) else { return [] }
-        return found.reviews + found.mine + found.watched
-    }
-
     var body: some View {
         let all = linked
+        let layout = layouts.value(for: .init(accounts: store.accounts, filter: filter, sort: .attention, grouping: .involvement),
+                                   PullRequestListLayout.init)
         // While a search or filter narrows the list, the session's own pull requests go through it too.
-        let matching = filter.isActive ? Set(filter.apply(store.accounts).flatMap { $0.mine + $0.reviews + $0.watched }.map { $0.id.lowercased() }) : nil
+        let matching = filter.isActive ? Set(layout.shown.flatMap { $0.mine + $0.reviews + $0.watched }.map { $0.id.lowercased() }) : nil
         let shownLines = matching.map { keep in all.filter { keep.contains("\($0.link.repository)#\($0.link.number)".lowercased()) } } ?? all
-        let groups = groups(excluding: Set(all.map { "\($0.link.repository)#\($0.link.number)".lowercased() }))
-        // Where each pull request stands in a stack, per account, worked out once instead of once per row.
-        let stacks = Dictionary(store.accounts.map { ($0.id, PullRequestStack.positions(in: items(of: $0.id))) },
-                                uniquingKeysWith: { first, _ in first })
+        let groups = groups(layout.shown, excluding: Set(all.map { "\($0.link.repository)#\($0.link.number)".lowercased() }))
+        // Where each pull request stands in a stack, per account, worked out once per change of the lists.
+        let stacks = stackCache.value(for: store.accounts) { accounts in
+            Dictionary(accounts.map { ($0.id, PullRequestStack.positions(in: $0.reviews + $0.mine + $0.watched)) },
+                       uniquingKeysWith: { first, _ in first })
+        }
         VStack(spacing: 0) {
-            PullRequestSearchBar(filter: $filterStore.filter, accounts: store.accounts, prompt: tr("agents.pr.pick.search"),
+            PullRequestSearchBar(filter: $filterStore.filter, accounts: store.accounts, facets: layout.facets,
+                                 prompt: tr("agents.pr.pick.search"),
                                  watching: !watching.entries.isEmpty, style: .inline) {
                 // As on the Pull requests page: only a refresh you asked for (or a first load) turns it.
                 RefreshIconButton(label: tr("agents.pulls.refresh"), turning: store.showsProgress) {
@@ -93,42 +96,42 @@ struct SidePanelPullRequestPicker: View {
             }
                 .padding(NookTheme.Spacing.sm)
             // The same chips as on the Pull requests page, on the same filter.
-            PullRequestAttentionBar(filter: $filterStore.filter, accounts: store.accounts)
+            PullRequestAttentionBar(filter: $filterStore.filter, counts: layout.attention)
                 .padding(.horizontal, NookTheme.Spacing.sm).padding(.bottom, NookTheme.Spacing.sm)
             PullRequestCloseSweepBar().padding(.horizontal, NookTheme.Spacing.sm).padding(.bottom, NookTheme.Spacing.sm)
             NookDivider()
             ScrollView {
-                TimelineView(.nookTicks(every: 30)) { context in
-                    LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        if !shownLines.isEmpty {
-                            NookSectionLabel(tr("agents.pr.linked.title"), inset: NookTheme.Spacing.sm)
-                                .padding(.top, NookTheme.Spacing.md)
-                            ForEach(shownLines) { line in row(line, now: context.date) }
-                        } else if all.isEmpty, !filter.isActive {
-                            emptyNote
-                        }
-                        ForEach(groups) { group in
-                            NookSectionLabel(group.title, inset: NookTheme.Spacing.sm)
-                                .padding(.top, NookTheme.Spacing.md)
-                            ForEach(group.items, id: \.item.id) { request in
-                                if request.item.id != group.items.first?.item.id { NookRowSeparator() }
-                                PullRequestRow(item: request.item, role: group.role, showRepo: true, accountID: request.account,
-                                               stack: stacks[request.account]?[request.item.id], now: context.date) {
-                                    choose(request)
-                                }
+                // The times on the rows move on by themselves (`PullRequestOpenedTime`): no tick redraws the list.
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    if !shownLines.isEmpty {
+                        NookSectionLabel(tr("agents.pr.linked.title"), inset: NookTheme.Spacing.sm)
+                            .padding(.top, NookTheme.Spacing.md)
+                        ForEach(shownLines) { line in row(line) }
+                    } else if all.isEmpty, !filter.isActive {
+                        emptyNote
+                    }
+                    ForEach(groups) { group in
+                        NookSectionLabel(group.title, inset: NookTheme.Spacing.sm)
+                            .padding(.top, NookTheme.Spacing.md)
+                        ForEach(group.items, id: \.item.id) { request in
+                            if request.item.id != group.items.first?.item.id { NookRowSeparator() }
+                            PullRequestRow(item: request.item, role: group.role, showRepo: true, accountID: request.account,
+                                           stack: stacks[request.account]?[request.item.id]) {
+                                choose(request)
                             }
-                        }
-                        if groups.isEmpty, shownLines.isEmpty, filter.isActive {
-                            StackedDiffNote(text: tr("agents.pr.pick.noMatch"))
-                        } else if groups.isEmpty, store.loading, !store.loaded {
-                            PatientSpinner()
-                        } else if !GitHubPullRequestList.isAvailable {
-                            StackedDiffNote(text: tr("agents.pr.pick.unavailable"))
+                            .equatable()
                         }
                     }
-                    .padding(.horizontal, NookTheme.Spacing.xs)
-                    .padding(.bottom, NookTheme.Spacing.md)
+                    if groups.isEmpty, shownLines.isEmpty, filter.isActive {
+                        StackedDiffNote(text: tr("agents.pr.pick.noMatch"))
+                    } else if groups.isEmpty, store.loading, !store.loaded {
+                        PatientSpinner()
+                    } else if !GitHubPullRequestList.isAvailable {
+                        StackedDiffNote(text: tr("agents.pr.pick.unavailable"))
+                    }
                 }
+                .padding(.horizontal, NookTheme.Spacing.xs)
+                .padding(.bottom, NookTheme.Spacing.md)
             }
             // ⇧- or ⌘-clicked rows: merge or close them together. It floats over the list with nothing behind it, so
             // the rows stay in sight, and the last ones scroll clear of it.
@@ -149,7 +152,7 @@ struct SidePanelPullRequestPicker: View {
 
     // MARK: Rows
 
-    private func row(_ line: LinkedPullRequest, now: Date) -> some View {
+    private func row(_ line: LinkedPullRequest) -> some View {
         let link = line.link
         let request = listed(link)
         let url = URL(string: link.url)
@@ -158,7 +161,7 @@ struct SidePanelPullRequestPicker: View {
                                       watching: watchable ? runID.flatMap { id in url.map { workspace.isWatching(id, url: $0) } } : nil,
                                       removeTitle: tr(line.source == .you ? "agents.pr.linked.unlink" : "agents.pr.linked.dismiss"))
         return PullRequestRow(item: Self.item(link, listed: request?.item), role: .mine, showRepo: true,
-                              accountID: request?.account ?? "", now: now, linked: info,
+                              accountID: request?.account ?? "", linked: info,
                               onWatch: watchable ? { toggleWatch(link, url: url) } : nil,
                               onRemove: { sync.remove(link, session: sessionKey) },
                               readable: request != nil) {
@@ -242,7 +245,6 @@ struct SidePanelPullRequestPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(tr("agents.pr.linked.add"))
             }
         }
         .padding(.horizontal, NookTheme.Spacing.md)

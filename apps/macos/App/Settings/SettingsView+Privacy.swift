@@ -56,10 +56,9 @@ extension SettingsView {
                     Text(tr(level.titleKey)).tag(level)
                 }
             } label: {
-                Text(tr("settings.privacy.level"))
+                SettingInfoLabel(tr("settings.privacy.level"), info: tr("settings.privacy.levelDetail"))
             }
             .pickerStyle(.segmented)
-            .nookTip(tr("settings.privacy.levelDetail"))
             SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
@@ -116,20 +115,17 @@ extension SettingsView {
         return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
     }
 
-    /// One promise on one line; the longer explanation shows on hover.
+    /// One promise on one line; the longer explanation sits behind the ⓘ after it.
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
             Image(icon: symbol)
                 .font(NookTheme.font(14))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22)
-            Text(title)
+                .accessibilityHidden(true)
+            SettingInfoLabel(title, info: detail)
             Spacer(minLength: 0)
         }
-        .contentShape(Rectangle())
-        .nookTip(detail)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(detail)
     }
 
     /// `turnOff` opens the place a granted permission is taken back: macOS lets only the user do that, in System Settings.
@@ -139,9 +135,9 @@ extension SettingsView {
         StatusRow(title: title, detail: granted ? "" : detail, state: granted ? .done : .todo) {
             // Granted needs no word: the check in front of the row says it.
             if granted, let turnOff {
+                SettingsInfoButton(text: tr("access.permission.turnOffDetail"))
                 Button(tr("access.permission.turnOff"), action: turnOff)
                     .controlSize(.small)
-                    .nookTip(tr("access.permission.turnOffDetail"))
             }
             if !granted {
                 Button(tr("button.allow")) {

@@ -176,7 +176,6 @@ struct ActionsPanel: View {
                                                mark: latest[workflow.id].map { (outcome: $0.outcome, running: $0.running) }) {
                                     store.select(workflow: workflow.id)
                                 }
-                                .nookTip(workflow.path)
                                 .contextMenu {
                                     if store.dispatchInfo?.inputs[workflow.id] != nil {
                                         Button(tr("actions.dispatch.open")) { dispatching = workflow.id }
@@ -313,7 +312,7 @@ struct WorkflowRunRow: View {
                         Text(run.title)
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.paper)
-                            .lineLimit(1)
+                            .nookTipWhenCut(run.title)
                         Spacer(minLength: NookTheme.Spacing.sm)
                         CICheckStatusText(check: run.check)
                             .fixedSize()
@@ -337,7 +336,6 @@ struct WorkflowRunRow: View {
         }
         .buttonStyle(.nookPlain)
         .hoverRowFill(selected: selected)
-        .nookTip(run.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {
             GitHubLinkMenuItems(url: run.url, branch: run.branch, openTitle: tr("actions.openOnGitHub"))

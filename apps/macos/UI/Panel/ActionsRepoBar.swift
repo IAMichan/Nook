@@ -85,7 +85,6 @@ struct ActionsRepoTab: View {
         .nookClickable()
         .onTapGesture(perform: onSelect)
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(repo)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(repo)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -130,7 +129,7 @@ struct ActionsRepoPicker: View {
             .padding(.horizontal, store.recent.isEmpty ? NookTheme.Spacing.md : 0)
             .frame(minWidth: 30, minHeight: 30)
             .contentShape(Rectangle())
-            .nookTip(tr("actions.repo.help"))
+            .nookTip(tr("actions.repo.help"), enabled: !store.recent.isEmpty)
             .accessibilityLabel(tr("actions.repo.help"))
         } content: {
             ActionsRepoPickerList(store: store, candidates: candidates)

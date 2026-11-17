@@ -30,11 +30,10 @@ struct UpdateSettingsSection: View {
                     Text(tr("update.channel.stable")).tag(UpdateChannel.stable)
                     Text(tr("update.channel.beta")).tag(UpdateChannel.beta)
                 } label: {
-                    SettingText("update.channel.title")
+                    SettingInfoLabel(info: tr("update.channel.detail")) { SettingText("update.channel.title") }
                 }
                 .pickerStyle(.segmented)
                 .disabled(installing)
-                .nookTip(tr("update.channel.detail"))
                 SettingNote(channelNote(for: release))
                 if let manual = updater.manualRelease {
                     StatusRow(title: tr("update.release.manual.title", manual.version.description),

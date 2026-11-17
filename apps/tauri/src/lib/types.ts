@@ -182,6 +182,8 @@ export interface ChatMessage {
   offers: string[];
   recovery: Recovery | null;
   attachment: string | null;
+  /** A question an automation asked: shown as a "Scheduled run" line, not as a bubble the user typed. */
+  scheduled?: boolean;
 }
 
 export type ConversationStatus = "working" | "waiting" | "unread" | "idle";
@@ -196,6 +198,8 @@ export interface Conversation {
   pinned: boolean;
   archived: boolean;
   scope: SourceScope | null;
+  /** The automation whose run this conversation is. */
+  scheduledTask?: string | null;
 }
 
 export interface ConversationSummary {
@@ -206,6 +210,8 @@ export interface ConversationSummary {
   preview: string;
   pinned: boolean;
   archived: boolean;
+  /** The automation whose run this conversation is. */
+  scheduledTask?: string | null;
 }
 
 export interface OpenLoop {

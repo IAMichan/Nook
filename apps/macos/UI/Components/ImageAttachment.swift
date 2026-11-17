@@ -524,8 +524,8 @@ struct ComposerSnippetChip: View {
             Text(label)
                 .font(NookTheme.mono(11.5, .medium))
                 .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
                 .truncationMode(.middle)
+                .nookTipWhenCut(label)
                 .frame(maxWidth: 220, alignment: .leading)
             Button(action: remove) {
                 Image(icon: "xmark")
@@ -542,7 +542,6 @@ struct ComposerSnippetChip: View {
         .frame(height: Self.height)
         .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
         .onHover { hovering = $0 }
-        .nookTip(tr("compose.chip.element") + "\n" + label)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("compose.chip.element") + ", " + label)
     }

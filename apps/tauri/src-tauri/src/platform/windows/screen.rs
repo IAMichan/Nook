@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use nook_core::platform::{Capture, RunningApp, ScreenReader, SeenWindow, WindowText};
+use nook_core::platform::{Capture, MenuCommandOutcome, RunningApp, ScreenReader, SeenWindow, WindowText};
 use nook_core::services::{fuzzy, screen};
 use windows::core::{BOOL, BSTR, HSTRING, PWSTR};
 use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
@@ -432,6 +432,14 @@ impl ScreenReader for WindowsScreen {
             apps.push(RunningApp { name: w.name, id: w.exe, pid: w.pid, frontmost: Some(w.hwnd) == front, title: w.title });
         }
         apps
+    }
+
+    fn list_app_menu(&self, pid: u32) -> Result<Vec<String>, String> {
+        super::menu::list(pid)
+    }
+
+    fn click_app_menu(&self, pid: u32, path: &[String]) -> Result<MenuCommandOutcome, String> {
+        super::menu::click(pid, path)
     }
 
     fn can_capture(&self) -> bool {

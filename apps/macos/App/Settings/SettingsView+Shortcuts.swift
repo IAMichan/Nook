@@ -31,8 +31,7 @@ private struct WindowCaptureTargetPicker: View {
         Picker(selection: $target) {
             ForEach(WindowCaptureTarget.allCases) { Text(tr("windowCapture.target." + $0.rawValue)).tag($0.rawValue) }
         } label: {
-            SettingText("windowCapture.target")
+            SettingInfoLabel(info: tr("windowCapture.target.help")) { SettingText("windowCapture.target") }
         }
-        .nookTip(tr("windowCapture.target.help"))
     }
 }

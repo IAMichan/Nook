@@ -161,12 +161,16 @@ final class Screen {
         return result
     }
 
+    /// A frame value as a whole number: an element still being laid out can report NaN or infinity, which `Int(_:)`
+    /// traps on (it crashed the dump of a failed scenario and hid its failure).
+    private static func whole(_ value: CGFloat) -> String { value.isFinite ? String(Int(value)) : "?" }
+
     /// The tree as text, for the report of a scenario that failed.
     func dump(limit: Int = 400) -> String {
         elements().prefix(limit).map { element in
             let value = element.value.count > 120 ? String(element.value.prefix(120)) + "…" : element.value
             return "\(element.role) \"\(element.label)\"" + (value.isEmpty ? "" : " = \"\(value)\"")
-                + " \(type(of: element.object)) \(Int(element.frame.minX)),\(Int(element.frame.minY)) \(Int(element.frame.width))x\(Int(element.frame.height))"
+                + " \(type(of: element.object)) \(Self.whole(element.frame.minX)),\(Self.whole(element.frame.minY)) \(Self.whole(element.frame.width))x\(Self.whole(element.frame.height))"
                 + (isOnScreen(element) ? "" : " (off)")
         }.joined(separator: "\n")
     }

@@ -703,7 +703,6 @@ struct NookTaskRingLabel: View {
                 }
                 .buttonStyle(.nookPlain)
                 .onHover { pointer?.onLabel($0) }
-                .nookTip(tr("notch.taskRing.open"))
                 .shadow(color: .black.opacity(0.5), radius: 9, y: 4)
                 .offset(x: side / 2 + CGFloat(cos(a)) * (radius + 10) + 6, y: side / 2 + CGFloat(sin(a)) * (radius + 10) - 12)
                 .transition(.opacity)

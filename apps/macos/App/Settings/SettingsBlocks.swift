@@ -266,6 +266,26 @@ struct SettingsInfoButton: View {
     }
 }
 
+/// A setting's label with its explanation behind an ⓘ right after it, so the explanation is one click away without a
+/// tooltip on the whole row.
+struct SettingInfoLabel<Label: View>: View {
+    let info: String
+    @ViewBuilder var label: () -> Label
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            label()
+            if !info.isEmpty { SettingsInfoButton(text: info) }
+        }
+    }
+}
+
+extension SettingInfoLabel where Label == Text {
+    init(_ title: String, info: String) {
+        self.init(info: info) { Text(title) }
+    }
+}
+
 /// A short line under a setting or inside a form: a hint, a warning, or an error. A warning and an error carry their
 /// symbol, so they stand out by more than color alone. Every such line in Settings is one of these, so they all read
 /// the same.
@@ -489,8 +509,9 @@ struct WorkspaceSettingsSection: View {
                 } else if case .failed(let message) = webhook.state {
                     SettingNote(tr("sched.webhook.failed", message), tone: .warning)
                 }
-                Toggle(tr("sched.public.toggle"), isOn: $ws.scheduledWebhooksPublic)
-                    .nookTip(tr("sched.public.help"))
+                Toggle(isOn: $ws.scheduledWebhooksPublic) {
+                    SettingInfoLabel(tr("sched.public.toggle"), info: tr("sched.public.help"))
+                }
                 if ws.scheduledWebhooksPublic {
                     SettingNote(tr("sched.public.readable"), tone: .warning)
                     if relay.state == .noRelay { SettingNote(tr("sched.public.noRelay"), tone: .warning) }
@@ -662,15 +683,16 @@ struct WorkspaceSettingsSection: View {
             }
         }
         inheritable(.browserSignIns, path) {
-            Picker(tr("settings.ws.browserSignIns"), selection: Binding(
+            Picker(selection: Binding(
                 get: { resolved.browserSignIns },
                 set: {
                     ws.setOverride(.browserSignIns, $0.stored, for: path)
                     if $0 != .keep { BrowserProfiles.forget(project: path) }
                 })) {
                 ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
+            } label: {
+                SettingInfoLabel(tr("settings.ws.browserSignIns"), info: tr("settings.ws.browserSignIns.help"))
             }
-            .nookTip(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
             SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
@@ -692,19 +714,21 @@ struct WorkspaceSettingsSection: View {
             }
         }
         inheritable(.submodules, path) {
-            Picker(tr("sc.submodules"), selection: Binding(
+            Picker(selection: Binding(
                 get: { resolved.submodules }, set: { ws.setOverride(.submodules, $0.rawValue, for: path) })) {
                 ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
+            } label: {
+                SettingInfoLabel(tr("sc.submodules"), info: tr("sc.submodules.help"))
             }
-            .nookTip(tr("sc.submodules.help"))
         }
         inheritable(.autoPull, path) {
-            Picker(tr("sc.autoPull"), selection: Binding(
+            Picker(selection: Binding(
                 get: { resolved.autoPull }, set: { ws.setOverride(.autoPull, $0 ? "on" : "off", for: path) })) {
                 Text(tr("sc.autoPull.on")).tag(true)
                 Text(tr("sc.autoPull.off")).tag(false)
+            } label: {
+                SettingInfoLabel(tr("sc.autoPull"), info: tr("sc.autoPull.help"))
             }
-            .nookTip(tr("sc.autoPull.help"))
         }
         ProjectSourceControlRows(path: path)
     }
@@ -721,10 +745,11 @@ struct WorkspaceSettingsSection: View {
                     if key == .browserSignIns { BrowserProfiles.forget(project: path) }
                 }
             } else {
-                Text(tr("settings.scope.inherited"))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .nookTip(tr("settings.scope.inheritedHelp"))
+                SettingInfoLabel(info: tr("settings.scope.inheritedHelp")) {
+                    Text(tr("settings.scope.inherited"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
             }
         }
     }
@@ -768,9 +793,8 @@ struct WorkspaceSettingsSection: View {
                 })) {
                 ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
             } label: {
-                SettingText("settings.browser.signIns")
+                SettingInfoLabel(info: tr("settings.browser.signIns.detail")) { SettingText("settings.browser.signIns") }
             }
-            .nookTip(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
             BrowserHistoryRow()
             BrowserPasswordsRow()
@@ -926,12 +950,13 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingLabel(tr("settings.ws.screenReader"), hint: tr("settings.ws.screenReader.help"))
             }
-            Picker(tr("settings.ws.maxWorking"), selection: $ws.maxWorkingSessions) {
+            Picker(selection: $ws.maxWorkingSessions) {
                 ForEach(SessionCapacity.choices, id: \.self) { count in
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
                 }
+            } label: {
+                SettingInfoLabel(tr("settings.ws.maxWorking"), info: tr("settings.ws.maxWorking.help"))
             }
-            .nookTip(tr("settings.ws.maxWorking.help"))
             .onChange(of: ws.maxWorkingSessions) { _, _ in app.workspace.startWaitingTurns() }
         }
         // How the session list is laid out and confirming quit are on General.
@@ -990,8 +1015,9 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 30)).tag(30)
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
-            Toggle(tr("settings.ws.buildLeftovers"), isOn: $ws.buildLeftoverCleanup)
-                .nookTip(tr("settings.ws.buildLeftovers.help"))
+            Toggle(isOn: $ws.buildLeftoverCleanup) {
+                SettingInfoLabel(tr("settings.ws.buildLeftovers"), info: tr("settings.ws.buildLeftovers.help"))
+            }
         } header: {
             SettingsSectionTitle(tr("ws.section.tidy"))
         }
@@ -1008,10 +1034,11 @@ struct WorkspaceSettingsSection: View {
             daysPicker(tr("settings.ws.worktreeCleanupInactive"), $ws.worktreeCleanupInactiveDays)
             Toggle(tr("settings.ws.worktreeCleanupUnchanged"), isOn: $ws.worktreeCleanupUnchanged)
             Toggle(tr("settings.ws.worktreeCleanupOnDelete"), isOn: $ws.worktreeCleanupOnDelete)
-            Picker(tr("settings.ws.worktreeKeepWhen"), selection: $ws.worktreeKeepWhen) {
+            Picker(selection: $ws.worktreeKeepWhen) {
                 ForEach(WorktreeCleanup.KeepWhen.allCases) { Text(tr("settings.ws.keepWhen." + $0.rawValue)).tag($0) }
+            } label: {
+                SettingInfoLabel(tr("settings.ws.worktreeKeepWhen"), info: tr("settings.ws.worktreeKeepWhen.help"))
             }
-            .nookTip(tr("settings.ws.worktreeKeepWhen.help"))
             WorktreeCleanupReportView(workspace: app.workspace)
         } header: {
             SettingsSectionTitle(tr("ws.worktrees.title"), info: tr("settings.ws.worktreeCleanup.footer"))
@@ -1034,7 +1061,6 @@ struct WorkspaceSettingsSection: View {
         ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
             Button { link(provider) } label: { AgentName(provider.kind, name: provider.displayName) }
                 .controlSize(.small)
-                .nookTip(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
         }
     }
 
@@ -1243,9 +1269,8 @@ private struct DefaultBrowserSection: View {
             Picker(selection: $target) {
                 ForEach(IncomingLinkTarget.allCases) { Text(tr("browserDefault.target." + $0.rawValue)).tag($0.rawValue) }
             } label: {
-                SettingText("browserDefault.target")
+                SettingInfoLabel(info: tr("browserDefault.target.help")) { SettingText("browserDefault.target") }
             }
-            .nookTip(tr("browserDefault.target.help"))
             if let error { SettingNote(error, tone: .error) }
         }
         .onAppear {

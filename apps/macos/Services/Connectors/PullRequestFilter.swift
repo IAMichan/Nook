@@ -482,3 +482,111 @@ final class PullRequestFilterStore: ObservableObject {
     static let shared = PullRequestFilterStore()
     @Published var filter = PullRequestFilter.load() { didSet { if filter != oldValue { filter.save() } } }
 }
+
+/// Everything a pull request list draws from the lists, the filter, the sort and the grouping: the rows that match, in
+/// their groups, where each stands in a stack, the counts on the chips and in Filters, and how many are shown. Worked
+/// out once per change of those (see `LastValue`), not on every redraw: a page with a thousand pull requests redraws on
+/// every key typed in its search and every refresh, and each pass over all of them cost milliseconds.
+struct PullRequestListLayout {
+    /// A heading and its rows: why they are in the list (`role`), or their repository (`repo`).
+    struct Group: Identifiable {
+        /// As "account role:review" or "account owner/name", the key a folded group is kept under.
+        let id: String
+        let role: PullRequestRepoGroup.Role?
+        let repo: String?
+        let rows: [PullRequestRepoGroup.Row]
+        /// How many of its pull requests wait for your review (counted for repository groups).
+        let waiting: Int
+    }
+
+    /// One account's part of the list, with only the pull requests that match.
+    struct Section: Identifiable {
+        let account: AccountPullRequests
+        let groups: [Group]
+        /// Where each of the account's pull requests stands in a stack, by id, from its whole list (unfiltered).
+        let stacks: [String: (index: Int, count: Int, merged: Int)]
+        var id: String { account.id }
+    }
+
+    /// The accounts with only the pull requests that match.
+    let shown: [AccountPullRequests]
+    /// The accounts to draw: a filtered list leaves out an account without matches, unless it has an error to show.
+    let sections: [Section]
+    /// What each attention chip counts: the list as every other filter leaves it.
+    let attention: [PullRequestAttention: Int]
+    /// The authors, labels and repositories for the Filters dropdown, in the chosen state.
+    let facets: PullRequestFacets
+    /// Pull requests shown and listed in all, each counted once.
+    let shownCount: Int
+    let allCount: Int
+    /// Whether nothing matches and no account has an error to show.
+    let isEmpty: Bool
+    /// Open pull requests that wait for your review, each once, whatever the filter.
+    let waitingForYou: Int
+
+    init(accounts: [AccountPullRequests], filter: PullRequestFilter, sort: PullRequestSort, grouping: PullRequestGrouping) {
+        let shown = filter.apply(accounts)
+        self.shown = shown
+        var others = filter
+        others.attention = nil
+        attention = PullRequestAttention.counts(in: filter.attention == nil ? shown : others.apply(accounts))
+        facets = PullRequestFilter.facets(in: accounts, state: filter.state)
+        func count(_ list: [AccountPullRequests]) -> Int {
+            var ids = Set<String>()
+            for account in list { for item in account.mine + account.reviews + account.watched { ids.insert(item.id) } }
+            return ids.count
+        }
+        shownCount = count(shown)
+        allCount = count(accounts)
+        isEmpty = shown.allSatisfy { $0.isEmpty && $0.error == nil }
+        waitingForYou = Set(accounts.flatMap { $0.reviews.filter { $0.state == .open }.map(\.id) }).count
+        let active = filter.isActive
+        let unfiltered = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        sections = shown.compactMap { account in
+            guard !active || !account.isEmpty || account.error != nil else { return nil }
+            let whole = unfiltered[account.id].map { $0.reviews + $0.mine + $0.watched } ?? []
+            let groups: [Group]
+            switch grouping {
+            case .involvement:
+                groups = account.byRole(sort: sort).map {
+                    Group(id: account.id + " role:" + $0.role.rawValue, role: $0.role, repo: nil, rows: $0.rows, waiting: 0)
+                }
+            case .repository:
+                groups = account.byRepo(sort: sort).map {
+                    Group(id: account.id + " " + $0.repo, role: nil, repo: $0.repo, rows: $0.rows, waiting: $0.waiting)
+                }
+            }
+            return Section(account: account, groups: groups, stacks: PullRequestStack.positions(in: whole))
+        }
+    }
+}
+
+/// The last value worked out, kept while what it was worked out from stays the same: a view keeps one in `@State` and
+/// asks it in its body, so a redraw for something else (a tick, a spinner, a hover) costs a comparison. Arrays compare
+/// by their storage first, so an unchanged list compares at once.
+final class LastValue<Key: Equatable, Value> {
+    private var last: (key: Key, value: Value)?
+
+    init() {}
+
+    func value(for key: Key, _ make: (Key) -> Value) -> Value {
+        if let last, last.key == key { return last.value }
+        let value = make(key)
+        last = (key, value)
+        return value
+    }
+}
+
+extension PullRequestListLayout {
+    /// What a layout is worked out from.
+    struct Inputs: Equatable {
+        let accounts: [AccountPullRequests]
+        let filter: PullRequestFilter
+        let sort: PullRequestSort
+        let grouping: PullRequestGrouping
+    }
+
+    init(_ inputs: Inputs) {
+        self.init(accounts: inputs.accounts, filter: inputs.filter, sort: inputs.sort, grouping: inputs.grouping)
+    }
+}

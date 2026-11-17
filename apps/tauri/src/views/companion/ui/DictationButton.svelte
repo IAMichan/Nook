@@ -4,8 +4,8 @@
   import { dictation, DICTATION_LANGUAGES, withDictated } from "../../../lib/dictation.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { haptic } from "../../../lib/haptics";
-  import Ico from "./Ico.svelte";
-  import Menu from "./Menu.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import Menu from "../../../components/ui/Menu.svelte";
   let { value = $bindable("") }: { value: string } = $props();
   const id = `d${Math.random().toString(36).slice(2, 8)}`;
   const on = $derived(dictation.owner === id);
