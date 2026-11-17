@@ -201,6 +201,7 @@
           <option value="interval">{tr("Interval", "Interval")}</option>
           <option value="once">{tr("Eén keer", "Once")}</option>
           <option value="webhook">{tr("Webhook", "Webhook")}</option>
+          <option value="message">{tr("Bij een nieuw bericht", "On a new message")}</option>
         </select>
       </label>
       {#if preset === "daily" || preset === "weekdays"}
@@ -213,6 +214,12 @@
           </div>
           <p class="faint note">{tr("Geen dag gekozen is maandag tot en met vrijdag.", "No day chosen means Monday to Friday.")}</p>
         {/if}
+      {:else if preset === "message"}
+        <label class="row"><span>{tr("Apps", "Apps")}</span><input bind:value={values.apps} placeholder={tr("Leeg: elke app. Bijvoorbeeld: whatsapp", "Empty: every app. For example: whatsapp")} /></label>
+        <label class="row"><span>{tr("Van", "From")}</span><input bind:value={values.from} placeholder={tr("Leeg: iedereen", "Empty: anyone")} /></label>
+        <label class="row"><span>{tr("Woorden", "Words")}</span><input bind:value={values.keywords} placeholder={tr("Leeg: elk bericht. Gescheiden door komma’s", "Empty: any message. Separated by commas")} /></label>
+        <label class="check"><input type="checkbox" role="switch" bind:checked={values.groups} /> {tr("Ook groepsgesprekken", "Group chats too")}</label>
+        <p class="faint note">{tr("Draait zodra er een bericht van iemand anders binnenkomt dat past, één keer per bericht. Wat binnenkomt terwijl de taak draait, wacht op de volgende run. Het bericht komt bij Nook aan als gegevens, nooit als opdracht. Nu nog alleen WhatsApp.", "Runs as soon as a matching message from someone else comes in, once per message. What arrives while the task runs waits for the next run. The message reaches Nook as data, never as an instruction. Only WhatsApp for now.")}</p>
       {:else if preset === "interval"}
         <label class="row"><span>{tr("Elke", "Every")}</span><span class="inline"><input class="port" type="number" min="1" bind:value={values.minutes} /> {tr("minuten", "minutes")}</span></label>
         <p class="faint note">{tr("Minstens 1 minuut. Het interval telt vanaf het einde van de vorige run, dus runs stapelen nooit op.", "At least 1 minute. The interval counts from the end of the previous run, so runs never pile up.")}</p>

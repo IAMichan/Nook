@@ -46,10 +46,10 @@ impl NookAutonomy {
         }
     }
 
-    /// The level a run gets. What started a run from outside (a webhook) is someone else's text: such a run never
+    /// The level a run gets. What started a run from outside (a webhook, a message) is someone else's text: such a run never
     /// carries out steps without the judge, whatever the task says.
     pub fn effective(self, trigger: ScheduleTrigger) -> Self {
-        if trigger == ScheduleTrigger::Webhook && self == Self::Auto {
+        if trigger.is_from_outside() && self == Self::Auto {
             Self::Decide
         } else {
             self
@@ -271,6 +271,7 @@ mod tests {
     #[test]
     fn a_webhook_never_runs_steps_without_the_judge() {
         assert_eq!(NookAutonomy::Auto.effective(ScheduleTrigger::Webhook), NookAutonomy::Decide);
+        assert_eq!(NookAutonomy::Auto.effective(ScheduleTrigger::Message), NookAutonomy::Decide);
         assert_eq!(NookAutonomy::Auto.effective(ScheduleTrigger::Schedule), NookAutonomy::Auto);
         assert_eq!(NookAutonomy::Ask.effective(ScheduleTrigger::Webhook), NookAutonomy::Ask);
     }

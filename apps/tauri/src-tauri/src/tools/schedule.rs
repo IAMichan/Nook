@@ -26,11 +26,15 @@ const UPDATE: &str = "update_scheduled_task";
 
 fn schedule_fields() -> serde_json::Map<String, Value> {
     let fields = json!({
-        "schedule": {"type": "string", "enum": nook_schedule::KINDS, "description": "daily (every day at time), weekdays (Monday to Friday at time), weekly (on days at time), interval (every every_minutes), once (at)."},
+        "schedule": {"type": "string", "enum": nook_schedule::KINDS, "description": "daily (every day at time), weekdays (Monday to Friday at time), weekly (on days at time), interval (every every_minutes), once (at), message (as soon as a new message arrives that matches apps, from and keywords)."},
         "time": {"type": "string", "description": "For daily, weekdays and weekly: the time as HH:mm (24 hours), e.g. 08:00."},
         "days": {"type": "array", "items": {"type": "string"}, "description": "For weekly: weekday names, e.g. [\"monday\", \"friday\"]."},
         "every_minutes": {"type": "integer", "description": format!("For interval: minutes between runs, at least {}.", nook_schedule::MINIMUM_MINUTES)},
         "at": {"type": "string", "description": "For once: the moment, e.g. 2026-11-20T09:00 (the user's own time)."},
+        "apps": {"type": "array", "items": {"type": "string"}, "description": "For message: the apps to listen to, e.g. [\"whatsapp\"]. Empty: every app."},
+        "from": {"type": "string", "description": "For message: part of the person's or chat's name, e.g. \"Lisa\". Empty: anyone."},
+        "keywords": {"type": "array", "items": {"type": "string"}, "description": "For message: words of which one must be in the message, e.g. [\"invoice\", \"payment\"]. Empty: any message."},
+        "groups": {"type": "boolean", "description": "For message: group chats count too (default false)."},
         "quiet": {"type": "boolean", "description": "Only speak up when something new needs the user (no conversation otherwise). Default: true for interval, false for an overview at a set time."},
         "autonomy": autonomy_schema()
     });
@@ -124,7 +128,7 @@ impl ToolSource for Schedule {
         vec![
             LoopTool::action(
                 SCHEDULE_TASK,
-                "Creates an automation: a task Nook Chat runs by itself on a schedule (every day, on weekdays, on certain days, every so many minutes, or once), each run in a conversation of its own in Nook Chat. It works for anything Nook can read or do: mail, chats, the calendar, reminders and open loops, files, pull requests, coding agents, the web and connected services. Use it when the user asks Nook to do something regularly or later (\"check my mail every morning at 8 and draft the replies\", \"every Friday an overview of my week\", \"every evening: which pull requests wait for me\"). Write prompt as the complete request Nook gets on each run, in the user's language, with everything they asked for. Each run works as the user's secretary: it says what matters and prepares every step as a proposal. With autonomy ask (the default) the user approves each step; with decide Nook carries out the routine steps itself and asks for the rest; with auto it carries out every step it may do unattended and only asks for the rest. The user approves the automation itself with a click. Do not use it for a single reminder or a recurring calendar event. For a full personal secretary across everything, use set_up_secretary.",
+                "Creates an automation: a task Nook Chat runs by itself on a schedule (every day, on weekdays, on certain days, every so many minutes, or once), each run in a conversation of its own in Nook Chat. It works for anything Nook can read or do: mail, chats, the calendar, reminders and open loops, files, pull requests, coding agents, the web and connected services. Use it when the user asks Nook to do something regularly or later (\"check my mail every morning at 8 and draft the replies\", \"every Friday an overview of my week\", \"every evening: which pull requests wait for me\"), or as soon as something happens: schedule message runs the moment a new message arrives in a chat app, filtered by app, sender and words (\"as soon as Lisa writes on WhatsApp, prepare a reply\"). Write prompt as the complete request Nook gets on each run, in the user's language, with everything they asked for. Each run works as the user's secretary: it says what matters and prepares every step as a proposal. With autonomy ask (the default) the user approves each step; with decide Nook carries out the routine steps itself and asks for the rest; with auto it carries out every step it may do unattended and only asks for the rest. The user approves the automation itself with a click. Do not use it for a single reminder or a recurring calendar event. For a full personal secretary across everything, use set_up_secretary.",
                 schedule_schema(),
             ),
             LoopTool::action(

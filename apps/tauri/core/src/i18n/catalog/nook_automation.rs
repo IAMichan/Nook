@@ -71,4 +71,10 @@ pub const ROWS: &[Row] = &[
     ),
     ("Waiting for you ({n}):", "Wartet auf dich ({n}):", "En attente de toi ({n}) :", "Esperando por ti ({n}):"),
     ("Carried out by itself ({level})", "Selbst erledigt ({level})", "Fait seul ({level})", "Hecho por sí solo ({level})"),
+    // Automations that start on a message (`workspace::arrivals`).
+    ("as soon as a new message arrives", "sobald eine neue Nachricht eingeht", "dès qu’un nouveau message arrive", "en cuanto llega un mensaje nuevo"),
+    ("in {apps}", "in {apps}", "dans {apps}", "en {apps}"),
+    ("from {from}", "von {from}", "de {from}", "de {from}"),
+    ("about {words}", "über {words}", "sur {words}", "sobre {words}"),
+    ("group chats too", "auch Gruppenchats", "aussi les groupes", "también chats de grupo"),
 ];
