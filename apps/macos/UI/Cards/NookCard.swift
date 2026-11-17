@@ -30,6 +30,8 @@ struct PlanStep: Equatable, Identifiable {
     var text: String
     var tag: String
     var tone: StepTone
+    /// The source the step acts on ("whatsapp", "calendar", "github"), for its icon; nil when it has none.
+    var source: String? = nil
 }
 
 /// A choice option for an agent prompt.
