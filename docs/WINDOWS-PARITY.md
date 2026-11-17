@@ -52,6 +52,10 @@ BR Nook Chat and the brain, AG coding agents, CH chat apps and connectors, SV sy
 - [ ] **FD-04** Rust error and status messages in five languages: about 550 Dutch-only strings (about 307 in `core/src`, 248 in `src-tauri/src`; most in `workspace/manager.rs`, `commands/workspace.rs`, `commands/connectors.rs`, `commands/chat.rs`, `companion/client.rs`, `connectors/oauth.rs`, `brain/action_gate.rs`) wrapped in `tr`/`trf` with catalog rows; a test that fails on new Dutch literals · L
   - Progress: `i18n::tests::no_new_dutch_text_outside_tr` fails on Dutch literals outside `tr`/`trf`; `DUTCH_LEFT` in `core/src/i18n/tests.rs` lists what each file still has and only goes down. Done: `workspace/manager.rs`, `commands/workspace.rs`.
 - [ ] **FD-05** Shared desktop components in `src/components/ui/`: move Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner and StatusPill out of `views/companion/ui/`, and add the Svelte twins of `NookTooltip`/`HoverCard`, `ConfirmedButton` (replaces the remaining `confirm()` calls), `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton` (with feedback), `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron`, `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`/`ModelPickerDropdown`, `EmojiBrowser`, `ImageModal`, `QRCodeView`, `NookAcknowledgeButton`; list them next to their Swift names in UI-COMPONENTS.md · L
+  - [x] Part 1: Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner, StatusPill (with `Ico` and `PulseDot`) moved to `src/components/ui/` with a desktop look and the phone look inside `.phone`; `ConfirmedButton` and `ask()` replace the last `confirm()` calls
+  - [x] Part 2: `NookTooltip`/`HoverCard`, `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton`, `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron` (logic in `lib/ui-parts.ts` with tests)
+  - [x] Part 3: `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`, `ImageModal`, `QRCodeView` (the Companion and WhatsApp QR codes use it), `NookAcknowledgeButton` (already `components/NoticeOk.svelte`)
+  - [ ] Part 4: `ModelPickerDropdown` (one picker for the agents and Nook's brain) and `EmojiBrowser` (needs Unicode's emoji list as data and shared frequently-used emoji)
 
 - [x] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
 
@@ -225,7 +229,9 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **UI-74** Colour-blind diff colours; switches for math rendering and the rich composer · S
 
-- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom; radii and motion tokens (springs, reduced motion) checked against `NookTheme` · M
+- [ ] **UI-75** Density as separate type and spacing scales instead of a window zoom (radii, spacing, text styles, colors and motion durations are now checked against `NookTheme` by `src/theme/theme-tokens.test.ts`) · M
+
+- [ ] **UI-76** No inline colors, font sizes or radii in Svelte: bring `src/theme/ui-baseline.json` (149 files: 161 colors, 563 font sizes, 215 radii at the start) to zero by moving each to the theme's variables; `ui-lint.test.ts` already stops new ones · L
 ## 3. Nook Chat and the brain (BR)
 
 ### 3.1 Brain core and providers

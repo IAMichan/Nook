@@ -64,7 +64,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - `NookStore`, `NookChat` (Nooks, `nooks.json`, archive, search). **Tauri:** ✓. **Where:** `core/src/store.rs`, `core/src/nooks.rs`
 
-- `NookTheme` tokens: type scale, spacing, radii, palette. **Tauri:** ◐ (motion tokens and reduced motion not checked against `NookTheme`, UI-75; built-in themes UI-70). **Where:** `src/app.css`
+- `NookTheme` tokens: type scale (with `strong` as `--text-emphasis`), spacing, radii, palette (dark and light), motion durations, tooltip width; checked 1:1 against the Swift sources by a test, and a lint that stops new inline colors, font sizes and radii (`UIConsistencyTests`). **Tauri:** ✓ (deviation: `--menu` stays white in light, because Tauri menus use the theme's text color where the Mac draws its dark menus with their own; the 149 older files with inline values are UI-76). **Where:** `src/app.css`, `src/theme/theme-tokens.test.ts`, `src/theme/ui-lint.test.ts`, `src/theme/ui-baseline.json`
 
 - Onboarding (welcome card, three steps). **Tauri:** ✓. **Where:** `src/views/`
 
@@ -89,6 +89,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 - Settings › Maintenance: data folder, cache size and clearing, export settings (save dialog), restore defaults (keeps language, welcome, window), versions to copy, updates via the releases page (no built-in updater). **Tauri:** ◐ (core tested; commands compiled for Windows, not run in a real window). **Where:** `views/settings/Maintenance.svelte`, `core/src/maintenance.rs`, `commands/maintenance.rs`
 
 - Settings › Shortcuts: the global shortcuts (moved from General) and a cheat sheet of the main window's keys with a filter (`ShortcutCheatSheetView`). **Tauri:** ◐ (the sheet is checked against `shellShortcut` in tests; in-app keys can't be rebound and the capture, point-to-bar and open-panel keys are missing, UI-19; most Mac key commands are missing, UI-62). **Where:** `views/settings/Shortcuts.svelte`, `lib/shortcut-sheet.ts`
+
+- Shared components (`ConfirmedButton`/`.confirmDelete`, dialog, sheet, menu, switch, search field, empty state, banner, status pill, tab bar) for the desktop and the companion alike, listed next to their Swift names in UI-COMPONENTS.md. **Tauri:** ◐ (FD-05 parts 1–3: the moved companion parts, `ConfirmedButton`, tooltip, hover card, loading, badges, chips, tags, notes, icon buttons, hover rows, project icon, QR code, image modal, timeline dividers, tile grid; the model picker and emoji browser still to build). **Where:** `src/components/ui/`, `src/lib/confirm.ts`, `src/lib/ui-parts.ts`, `src/lib/project-icon.ts` (+ tests)
 
 - Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language). **Tauri:** ◐ (no cited excerpt on hover, cited/uncited dots or mail sources by sender, BR-40). **Where:** `components/SourcesView.svelte`, `lib/sources.ts`
 

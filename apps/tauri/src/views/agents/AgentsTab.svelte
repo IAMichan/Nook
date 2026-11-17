@@ -4,6 +4,7 @@
   // wacht staat bovenaan, daarna wat werkt, dan de rest; eerdere sessies wachten ingeklapt onderaan.
   import { agentNames, type AgentSession, type PastSession } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { ask } from "../../lib/confirm.svelte";
   import { tr, locale } from "../../lib/i18n.svelte";
   import { isActive, projectName, workspaceApi, type WorkspaceRun } from "../../lib/workspace/api";
   import { workspace } from "../../lib/workspace/store.svelte";
@@ -201,7 +202,11 @@
   });
 
   async function takeover(s: AgentSession, endTerminal: boolean, message?: string) {
-    if (endTerminal && !confirm(tr("{name} in {project} beëindigen en hier verdergaan? De agent bewaart zijn gesprek, zodat Nook verdergaat waar hij was.", "End {name} in {project} and continue here? The agent keeps its conversation, so Nook picks up where it left off.", { name: s.name, project: s.project }))) return;
+    if (endTerminal && !(await ask({
+      question: tr("{name} in {project} beëindigen en hier verdergaan?", "End {name} in {project} and continue here?", { name: s.name, project: s.project }),
+      detail: tr("De agent bewaart zijn gesprek, zodat Nook verdergaat waar hij was.", "The agent keeps its conversation, so Nook picks up where it left off."),
+      confirmTitle: tr("Beëindig en ga hier verder", "End and continue here"),
+    }))) return;
     try {
       const id = await workspaceApi.continueLive(s.id, message ?? null, endTerminal);
       await workspace.refresh();
