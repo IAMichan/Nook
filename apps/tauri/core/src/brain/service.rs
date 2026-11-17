@@ -46,7 +46,7 @@ pub struct BrainRequest {
 pub fn needs_tools(text: &str) -> bool {
     super::matches(
         rx!(
-            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on"
+            r"(?i)agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on|terminal|shell|commando|\bcommand\b|\brun\b|voer .{0,20}uit"
         ),
         text,
     )
@@ -784,6 +784,8 @@ mod tests {
     #[test]
     fn gating() {
         assert!(needs_tools("zet een afspraak morgen om 10 uur"));
+        assert!(needs_tools("run git status"));
+        assert!(needs_tools("voer ls -la uit in de terminal"));
         assert!(!needs_tools("hoi"));
         assert!(wants_web("wat is het weer in Utrecht"));
     }

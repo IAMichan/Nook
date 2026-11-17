@@ -4,6 +4,7 @@
   import { api, events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import Chat from "../components/Chat.svelte";
+  import ChatTerminalPanel from "../components/ChatTerminalPanel.svelte";
   import Chats from "./Chats.svelte";
   import NookList from "../components/NookList.svelte";
   import Orb from "../components/Orb.svelte";
@@ -23,12 +24,14 @@
   import { agents } from "../lib/agents.svelte";
   import { services, serviceEvents, type NowPlaying } from "../lib/services";
   import type { Target } from "../lib/inbox";
+  import type { ChatTerminal } from "../lib/types";
   import { tr } from "../lib/i18n.svelte";
   import MicButton from "../components/MicButton.svelte";
   import Music from "./services/Music.svelte";
 
   let route = $state<Route>(resumeRoute());
   let paletteOpen = $state(false);
+  let chatTerminal = $state<ChatTerminal | null>(null);
   let width = $state(window.innerWidth);
   // The sidebar's state is remembered. Below the narrow breakpoint it is an overlay that starts closed.
   const SIDEBAR_KEY = "nook.sidebar.open";
@@ -130,18 +133,27 @@
     if (r.startsWith("nook:")) {
       route = "chat";
       if (mobile) showList = false;
-      nook.select(r.slice(5)).catch(() => {});
+      const target = r.slice(5);
+      if (target !== nook.activeId || !nook.active) nook.select(target).catch(() => {});
     } else route = parseRoute(r);
   }
 
   $effect(() => {
     api.takeRoute().then((r) => r && applyRoute(r));
-    const un = events.onNavigate((r) => {
+    api.takeChatTerminal().then((t) => {
+      if (t) chatTerminal = t;
+    });
+    const unNav = events.onNavigate((r) => {
       applyRoute(r);
       api.takeRoute();
     });
+    const unTerm = events.onChatTerminal((t) => {
+      chatTerminal = t;
+      api.takeChatTerminal();
+    });
     return () => {
-      un.then((f) => f());
+      unNav.then((f) => f());
+      unTerm.then((f) => f());
     };
   });
 
@@ -322,7 +334,8 @@
   </nav>
   <section class="content" aria-label={routeTitle}>
     {#if route === "chat"}
-      <div class="chatlayout" class:nolist={!mobile || !showList}>
+      {@const terminalBeside = !!(chatTerminal && !mobile && nook.info?.capabilities.terminals)}
+      <div class="chatlayout" class:nolist={!mobile || !showList} class:has-terminal={terminalBeside}>
         {#if mobile && showList}
           <div class="listwrap" role="presentation" onclick={(e) => {
             const t = e.target as HTMLElement;
@@ -349,6 +362,11 @@
           </header>
           <Chat onopen={openTarget} />
         </div>
+        {#if terminalBeside && chatTerminal}
+          <aside class="terminal-pane" aria-label={tr("Terminals", "Terminals")}>
+            <ChatTerminalPanel folder={chatTerminal.folder} focusId={chatTerminal.id} onclose={() => (chatTerminal = null)} />
+          </aside>
+        {/if}
       </div>
     {:else if route === "chats"}
       <header class="title page-title"><span class="name">{routeTitle}</span></header>
@@ -402,7 +420,9 @@
   .music-body { overflow-y: auto; }
   .quiet { padding: 24px; text-align: center; }
   .content { min-width: 0; min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--canvas); }
-  .chatlayout { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; }
+  .chatlayout { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; min-height: 0; }
+  .chatlayout.has-terminal { grid-template-columns: minmax(280px, 1fr) minmax(280px, 44%); }
+  .terminal-pane { min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--canvas); display: flex; flex-direction: column; }
   .chatpane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .listwrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .listwrap :global(.list) { flex: 1; }

@@ -21,6 +21,7 @@ mod plan;
 mod screen;
 mod settings;
 mod system;
+mod terminal;
 mod web;
 
 use std::sync::Arc;
@@ -158,6 +159,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(clipboard::Clipboard),
         Box::new(calls::Calls),
         Box::new(agents::AgentSessions),
+        Box::new(terminal::Terminal),
     ]
 }
 
