@@ -66,6 +66,7 @@ pub mod retrieval;
 pub mod service;
 pub mod sources;
 pub mod suggestions;
+pub mod task_steps;
 pub mod text;
 pub mod tool_loop;
 pub mod undo;

@@ -6,6 +6,11 @@ export const table: Table = {
   // Windows and loading
   "Nook bar": { de: "Nook-Leiste", fr: "Barre Nook", es: "Barra de Nook" },
   "Suggestions": { de: "Vorschläge", fr: "Suggestions", es: "Sugerencias" },
+  // The plan Nook works through (update_plan)
+  "Tasks": { de: "Aufgaben", fr: "Tâches", es: "Tareas" },
+  "{done} of {total} done": { de: "{done} von {total} erledigt", fr: "{done} sur {total} terminées", es: "{done} de {total} hechas" },
+  "Show tasks": { de: "Aufgaben einblenden", fr: "Afficher les tâches", es: "Mostrar tareas" },
+  "Hide tasks": { de: "Aufgaben ausblenden", fr: "Masquer les tâches", es: "Ocultar tareas" },
   "Recording": { de: "Aufnahme", fr: "Enregistrement", es: "Grabación" },
   "Screen selection": { de: "Bildschirmauswahl", fr: "Sélection d’écran", es: "Selección de pantalla" },
   "Autocomplete": { de: "Autovervollständigung", fr: "Saisie automatique", es: "Autocompletar" },
