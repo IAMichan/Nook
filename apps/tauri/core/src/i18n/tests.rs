@@ -168,7 +168,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/agents/mod.rs", 3),
     ("src-tauri/src/agents/terminal.rs", 8),
     ("src-tauri/src/commands/agents.rs", 5),
-    ("src-tauri/src/commands/brain.rs", 6),
+    ("src-tauri/src/commands/brain.rs", 3),
     ("src-tauri/src/commands/chat.rs", 24),
     ("src-tauri/src/commands/companion.rs", 2),
     ("src-tauri/src/commands/connectors.rs", 22),

@@ -114,7 +114,11 @@ pub fn memory_import(app: AppHandle, brain: State<'_, BrainState>, path: String)
     let home = dirs::home_dir().unwrap_or_default();
     // Alleen een graaf die Nook zelf vond: geen willekeurig bestand.
     if !brain.memory.importable(&home).iter().any(|(p, _)| p.to_string_lossy() == path) {
-        return Err("Dit bestand is geen kennisgraaf van de MCP-geheugenserver.".into());
+        return Err(nook_core::i18n::tr(
+            "Dit bestand is geen kennisgraaf van de MCP-geheugenserver.",
+            "This file is not a knowledge graph of the MCP memory server.",
+        )
+        .into());
     }
     let count = brain.memory.import_graph(std::path::Path::new(&path));
     let file = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -238,7 +242,8 @@ fn set_draft(app: &AppHandle, nook_id: &str, message_id: &str, draft: MailDraft)
 /// Bewaart wat de gebruiker in het concept veranderde.
 #[tauri::command]
 pub fn mail_update(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id)
+        .ok_or_else(|| nook_core::i18n::tr("Dit concept bestaat niet meer.", "This draft no longer exists."))?;
     if current.state == "sent" {
         return Err("Deze mail is al verstuurd.".into());
     }
@@ -257,7 +262,8 @@ pub fn mail_update(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()>
 /// Versturen (de klik van de gebruiker): het concept gaat naar het mailprogramma, klaar om te verzenden.
 #[tauri::command]
 pub fn mail_send(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id)
+        .ok_or_else(|| nook_core::i18n::tr("Dit concept bestaat niet meer.", "This draft no longer exists."))?;
     current.to = draft.to;
     current.cc = draft.cc;
     current.bcc = draft.bcc;
@@ -278,7 +284,8 @@ pub fn mail_send(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
 
 #[tauri::command]
 pub fn mail_open(app: AppHandle, nook_id: String, draft: MailDraft) -> Res<()> {
-    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id).ok_or("Dit concept bestaat niet meer.")?;
+    let (message_id, mut current) = find_draft(&app, &nook_id, &draft.id)
+        .ok_or_else(|| nook_core::i18n::tr("Dit concept bestaat niet meer.", "This draft no longer exists."))?;
     current.to = draft.to;
     current.cc = draft.cc;
     current.bcc = draft.bcc;
