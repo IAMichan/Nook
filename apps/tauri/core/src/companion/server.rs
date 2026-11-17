@@ -204,6 +204,7 @@ impl CompanionServer {
             relay: Some(self.reach().relay),
             features: Some(self.features()),
             protocol_version: Some(PROTOCOL_VERSION),
+            oldest_phone: Some(OLDEST_PHONE),
             app_version: self.app_version.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             ..CompanionResponse::success(id)
         }
@@ -500,6 +501,9 @@ impl CompanionServer {
             self.audit("paired", if name.is_empty() { "Telefoon" } else { &name });
         } else {
             self.store.touch(&claimed, now);
+        }
+        if matches!(request.op, CompanionOp::Hello | CompanionOp::List | CompanionOp::Subscribe) {
+            self.store.note_versions(&claimed, request.protocol_version, clean_version(request.app_version.as_deref()));
         }
 
         if let Some((connection, tx, pending)) = connection {

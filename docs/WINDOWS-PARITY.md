@@ -535,14 +535,14 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 ## 7. Companion: the PC as server for the phone (CO)
 
 - [ ] **CO-01** The rest of the companion protocol. `core/src/companion/server.rs` handles hello, list, ping, bindKey, register, unregister, decide, answer, send and stop. Missing groups: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`liveActivity`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork`. One item per group is fine · L
-- [ ] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`) · S
+- [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
-- [ ] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`) · S
-- [ ] **CO-05** Images with messages and new sessions (`CompanionImages`) · S
+- [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
+- [x] **CO-05** Images with messages and new sessions (`CompanionImages`): already in `core/src/companion/remote_digest.rs` (`image_bytes`, `message`, with tests) and listed as `images` · S
 - [x] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`); also Firebase pushes to Nook on Android (`register` with `fcm`) · M
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
-- [ ] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
+- [x] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
 - [ ] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer · M
 - [ ] **CO-11** Android Keystore for secrets (TAURI.md ○) · M
 
