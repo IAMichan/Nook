@@ -82,18 +82,20 @@ session as a message (through the outbox), without opening the app.
 
 ## Pairing
 
-1. **On your Mac:** Go to **Settings › iPhone**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
-2. **On your iPhone:** Open **Nook Companion** and scan the QR code (or paste the pairing link). The app registers the `nook://` scheme, so scanning the code with the Camera app opens it too.
-3. The first authenticated request proves the phone holds the shared key; your Mac stores the paired device key in the macOS Keychain. Unpairing deletes the key on either side. When the Mac removes a phone that is connected live, it tells it first (see *When the Mac is out of reach*), so the phone says *Pair again* instead of looking for the Mac.
+1. **On your computer:** on a Mac, go to **Settings › iPhone**, enable **iPhone Companion**, and click **Pair an iPhone**. On Windows or Linux, go to **Settings › Companion**, turn on **Companion on your phone**, and click **Pair a phone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
+2. **On your phone:** Open **Nook Companion** (iPhone) or Nook › Companion (Android) and scan the QR code (or paste the pairing link). The pairing screen names both places, so the same steps work for a Mac and a PC. The iPhone app registers the `nook://` scheme, so scanning the code with the Camera app opens it too.
+3. The first authenticated request proves the phone holds the shared key; the computer stores the paired device key (the macOS Keychain on a Mac, the system's secret store on Windows and Linux). Unpairing deletes the key on either side. When the computer removes a phone that is connected live, it tells it first (see *When the Mac is out of reach*), so the phone says *Pair again* instead of looking for it.
 
-## Several Macs
+## Several computers
 
-One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`). *Pair another Mac* is in the menu under Nook's orb, next to the list of paired Macs.
+One phone can pair with up to eight computers: Macs, and PCs running Nook for Windows or Linux, side by side (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`; on Android `core/src/companion/client.rs`). *Pair another computer* is in the menu under Nook's orb and in the quick switcher.
 
-- **One active Mac:** the live connection, the tabs and the Live Activities follow the active Mac; picking another Mac in the menu moves the connection there. *Unpair from this Mac* removes only the active one.
-- **The others in the Agents list:** every other Mac is asked for its sessions when the phone connects and every 30 seconds (one short `list` over its own routes), and its sessions show under *On <Mac>*, what waits on you first. A tap makes that Mac active and opens the session.
-- **Kept per Mac:** each Mac has its own key, routes, features and outbox (`companion-outbox-<id>.json`), keyed by the id of its pairing key, so a message written to one Mac never goes to another. The Mac a phone was paired with before this keeps its old storage names; the single stored pairing is turned into the list on the first launch (`PairingStore`).
-- Push notifications and Live Activities come from the Mac they belong to, and a button on a notification goes back to that Mac (the push names it, see *When the Mac is out of reach*), also when another Mac is active. A notification from a Mac that does not name itself goes to the active Mac.
+- **What kind of computer:** `hello`, `list` and `subscribe` answers carry `platform` (`"macos"`, `"windows"` or `"linux"`; `CompanionPlatform`). The phone keeps it with the pairing (`PairedMac.platform`; `Pairing::platform` on Android) and shows a laptop for a Mac and a monitor for a PC. An older Mac sends no `platform` and is treated as a Mac. Where the computer's name is not known yet, the phone says "your Mac" for a Mac and "your computer" for a PC.
+- **The quick switcher:** with more than one computer paired, the line under the tab title ("Studio · live") is a button. A tap lists every paired computer with its icon, its name, whether it is live (the active one) or online/offline at the last check (the others), and how many sessions wait on you there, plus *Check the connection* and *Pair another computer*. The orb's menu starts with the same list (`ComputerChoices` on the iPhone, `computerChoices` in `src/lib/companion.ts` on Android), and Settings lists the others with the same status line.
+- **One active computer:** the live connection, the tabs and the Live Activities follow the active computer; picking another one moves the connection there. *Unpair from this computer* removes only the active one.
+- **The others in the Agents list:** every other computer is asked for its sessions when the phone connects and every 30 seconds (one short `list` over its own routes), and its sessions show under *On <name>*, what waits on you first. The same check fills the switcher's online/offline state and counts. A tap makes that computer active and opens the session.
+- **Kept per computer:** each one has its own key, routes, features, platform and outbox (`companion-outbox-<id>.json`), keyed by the id of its pairing key, so a message written to one computer never goes to another. The Mac a phone was paired with before this keeps its old storage names; the single stored pairing is turned into the list on the first launch (`PairingStore`).
+- Push notifications and Live Activities come from the computer they belong to, and a button on a notification goes back to that computer (the push names it, see *When the Mac is out of reach*), also when another one is active. A notification from a computer that does not name itself goes to the active one.
 
 ## What the App Does
 
@@ -114,7 +116,7 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 - **Snooze:** besides an hour, this evening and tomorrow morning, *Pick a time…* snoozes to any moment up to a month ahead (`snoozeUntil`) and *Until the limit resets* to when the usage limit that stopped the session resets (`snoozeLimitReset`, offered while the Mac knows that moment, `SessionDigest.limitResetsAt`).
 - **Main thread:** a session's menu turns its main thread on or off (`mainThreadOn` / `mainThreadOff` in `SessionDigest.actions`), as the Mac composer's switch does; the Mac lists the one that applies, only for an agent that may delegate. A phone that predates them leaves the two names out.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `fullTranscript`, `appIcons`, `liveConversation`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app lists `deviceKey` alone.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `fullTranscript`, `appIcons`, `liveConversation`, `deviceKey`). A Mac without them keeps working with the approve/answer/send/stop features only. Nook on Windows and Linux lists what it can do as a computer (see *A Windows or Linux PC as the Server*).
 
 ## iPad
 
@@ -218,8 +220,8 @@ the relay and on mobile data. Sealed bytes look random and do not compress, so i
   compressed requests; the phone's requests are small, so it does not compress them yet.
 - The limits of one answer (`linesBudget`, `DiffFileDigest.maxTotal`, `CompanionWorkspace.maxEncodedBytes`) stay as they
   are, so an answer fits one frame for a phone without compression too.
-- Nook on Windows and Linux (`apps/tauri`) lists none of `history`, `compression` and `filePreview` as a computer, so a
-  phone talks to it as before. Its Android companion sets `compression` and opens compressed answers.
+- Nook on Windows and Linux (`apps/tauri`) lists `history`, `compression` and `filePreview` as a computer too, and its
+  Android companion sets `compression` and opens compressed answers.
 
 ## Versions
 
@@ -345,7 +347,20 @@ Nook for Windows and Linux (`apps/tauri`) can be the computer the phone pairs wi
 - **Away from home:** the same relay as the Mac (Nook's, or your own address), with a room per paired phone and one for the pairing window, the relay in the code and in every answer (`core/src/companion/relay.rs`). Its LAN and Tailscale addresses go in the code and in every `hello`/`list` answer, so the phone follows a new address without pairing again.
 - **Keep this computer awake:** the same rules as the Mac (`core/src/companion/keep_awake.rs`); `SetThreadExecutionState` on Windows (a closed lid follows the power plan), `systemd-inhibit` on Linux.
 - **Keep Nook running:** Windows registers a Task Scheduler task that starts `nook --background` at sign-in and every minute (`IgnoreNew`: a second Nook ends at once in the single-instance check, without a window), so Nook comes back within a minute when it stops; Linux enables a systemd user service in the graphical session with `Restart=on-failure`. Nook runs in your session: lock the screen instead of signing out.
-- The PC still answers only approve, answer, send and stop (see *Versions* for what it does not list).
+- **The same companion as with a Mac.** The PC keeps the phone's connection open (`subscribe`: the sessions, the open
+  session's conversation, Nook's conversations and the Chats tab follow by themselves, `core/src/companion/live.rs` and
+  `server.rs`), keeps the answer of every request that changes something so the phone's outbox can send it again
+  (`retry`), and answers what the Mac answers, area by area in `src-tauri/src/companion/`: starting sessions, their
+  conversations, older sessions, renaming and archiving, steering, pictures, diffs, terminals and files (`remote.rs`),
+  Home, usage and music (`home.rs`), chatting with Nook through the main window's own path, without bringing its window
+  to the front (`nook_chat.rs`), the Chats tab (`inbox.rs`) and pull requests (`pulls.rs`). Every answer says
+  `platform` ("windows" or "linux"), so the phone shows the PC with its own icon beside the Macs.
+- **What the PC does not list, because the app cannot do it yet:** `liveActivity` and push to start (no Live
+  Activities from the PC), `requestUpdate` (this build has no updater, only a link to the releases), `appIcons`, and
+  `attachments`. Snoozing a session and the main thread are not offered (the Tauri workspace has neither); a message to
+  an agent in a terminal stays in the terminal; the Chats tab covers WhatsApp, the one chat app the PC links; pull
+  requests are GitHub's, and *Work on this* is refused because the workspace cannot check a pull request out in a
+  worktree yet.
 
 ## Scope & Intentional Boundaries
 

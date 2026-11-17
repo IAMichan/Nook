@@ -9,15 +9,20 @@
 
 pub mod apns;
 pub mod backend;
+pub mod chat_digest;
 pub mod client;
 pub mod device_key;
 #[cfg(test)]
 mod fixtures;
+pub mod home_digest;
+pub mod inbox_digest;
 pub mod keep_awake;
 pub mod live;
 pub mod models;
+pub mod pull_digest;
 pub mod push;
 pub mod relay;
+pub mod remote_digest;
 pub mod seal;
 pub mod server;
 pub mod sessions;
@@ -387,6 +392,139 @@ mod tests {
         assert_eq!(seen[1], (CompanionOp::Ping, Some(true)));
     }
 
+    /// A backend with one session whose conversation grows, for the live connection of a real server.
+    #[derive(Default)]
+    struct LiveWorkspace {
+        entries: Mutex<Vec<serde_json::Value>>,
+        waiting: Mutex<bool>,
+    }
+
+    #[async_trait]
+    impl CompanionBackend for LiveWorkspace {
+        async fn sessions(&self) -> Vec<BackendSession> {
+            let items = if *self.waiting.lock().unwrap() {
+                vec![DigestItem { id: "p1".into(), kind: ItemKind::Approval, title: "ls".into(), ..Default::default() }]
+            } else {
+                vec![]
+            };
+            vec![BackendSession {
+                digest: SessionDigest { id: "S1".into(), title: "Live".into(), items, ..Default::default() },
+                active: true,
+                free_answers: vec![],
+            }]
+        }
+        async fn decide(&self, _: &str, _: &str, _: bool) -> Result<(), String> {
+            *self.waiting.lock().unwrap() = false;
+            Ok(())
+        }
+        async fn answer(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        async fn send(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        async fn stop(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn features(&self) -> Vec<&'static str> {
+            vec![feature::TIMELINE]
+        }
+        async fn extra(&self, request: &CompanionRequest, _device: &str) -> Option<CompanionResponse> {
+            (request.op == CompanionOp::Timeline && request.session.as_deref() == Some("S1")).then(|| CompanionResponse {
+                timeline: Some(serde_json::Value::Array(self.entries.lock().unwrap().clone())),
+                timeline_session: Some("S1".into()),
+                ..CompanionResponse::success(&request.id)
+            })
+        }
+    }
+
+    /// A real server keeps the phone's connection open: it says what kind of computer it is and what it can do, sends
+    /// the sessions when they change, and the open session's conversation as only what came after.
+    #[tokio::test]
+    async fn server_streams_sessions_and_the_open_conversation() {
+        let entry = |id: &str, text: &str| serde_json::json!({"id": id, "kind": "assistant", "text": text, "date": 1.0, "failed": false});
+        let workspace = Arc::new(LiveWorkspace::default());
+        *workspace.waiting.lock().unwrap() = true;
+        workspace.entries.lock().unwrap().push(entry("e1", "hallo"));
+        let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+        store.set_enabled(true);
+        let server = Arc::new(CompanionServer::new(store.clone(), workspace.clone(), None, "Linux-pc".into()));
+        server.set_app_version("1.2.3");
+        let ServerState::Listening { .. } = server.apply().await else { panic!("not listening") };
+        let link = server.pairing_link("127.0.0.1").unwrap();
+        let phone = Arc::new(CompanionClient::new(Arc::new(MemorySecrets::default()), Arc::new(DnsResolver)));
+        let paired = phone.pair(&link.url(), "Pixel").await;
+        assert_eq!(paired.phase, Phase::Connected, "{:?}", paired.notice);
+        for f in [feature::STREAM, feature::LIVE_TIMELINE, feature::RETRY, feature::TIMELINE] {
+            assert!(paired.features.contains(&f.to_string()), "{f} in {:?}", paired.features);
+        }
+
+        let updates = Arc::new(Mutex::new(Vec::<CompanionResponse>::new()));
+        let collected = updates.clone();
+        let streaming = phone.clone();
+        let live = tokio::spawn(async move {
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(8),
+                streaming.stream(|| true, move |_, r| collected.lock().unwrap().push(r)),
+            )
+            .await;
+        });
+        async fn wait_for(updates: &Mutex<Vec<CompanionResponse>>, check: impl Fn(&[CompanionResponse]) -> bool) -> bool {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+            while std::time::Instant::now() < deadline {
+                if check(&updates.lock().unwrap()) {
+                    return true;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            false
+        }
+        assert!(wait_for(&updates, |u: &[CompanionResponse]| !u.is_empty()).await, "the answer to subscribe");
+        {
+            let first = &updates.lock().unwrap()[0];
+            assert_eq!(
+                first.platform.as_deref(),
+                Some(if cfg!(target_os = "windows") {
+                    "windows"
+                } else if cfg!(target_os = "macos") {
+                    "macos"
+                } else {
+                    "linux"
+                })
+            );
+            assert_eq!(first.app_version.as_deref(), Some("1.2.3"));
+            assert_eq!(first.protocol_version, Some(PROTOCOL_VERSION));
+        }
+
+        // An approval answered elsewhere: the list follows by itself.
+        phone.decide("S1", "p1", false).await;
+        assert!(
+            wait_for(&updates, |u: &[CompanionResponse]| u
+                .iter()
+                .any(|r| r.seq.is_some() && r.sessions.as_ref().is_some_and(|s| s[0].items.is_empty())))
+            .await,
+            "the new list"
+        );
+
+        // The phone opens the session; a new entry arrives as only that entry, after the one it has.
+        let (_, watched) =
+            phone.call(client::ClientCall { op: Some(CompanionOp::Watch), session: Some("S1".into()), ..Default::default() }).await;
+        assert_eq!(watched.and_then(|w| w.timeline).map(|t| t.as_array().unwrap().len()), Some(1));
+        workspace.entries.lock().unwrap().push(entry("e2", "klaar"));
+        server.nudge();
+        assert!(
+            wait_for(&updates, |u: &[CompanionResponse]| u.iter().any(|r| r.timeline_after.as_deref() == Some("e1")
+                && r.timeline.as_ref().and_then(|t| t.as_array()).is_some_and(|t| t.len() == 1 && t[0]["id"] == "e2")))
+            .await,
+            "only the new entry"
+        );
+        // Removing the phone tells it first.
+        let device = store.devices()[0].id.clone();
+        assert!(server.revoke(&device));
+        assert!(wait_for(&updates, |u: &[CompanionResponse]| u.iter().any(|r| r.revoked == Some(true))).await, "revoked");
+        live.abort();
+    }
+
     /// Two computers paired with one phone: the second becomes active, the first is asked for its sessions as one of the
     /// others, switching moves back, and unpairing leaves the other. A code with a dead first address still pairs
     /// through its alternate.
@@ -419,6 +557,16 @@ mod tests {
         assert_eq!(s.others[0].name, "Mac A");
         assert!(s.others[0].reachable);
         assert_eq!(s.others[0].sessions.len(), 2);
+        // Each computer says what it is, so the phone shows its icon and names it (a Mac, or a PC).
+        let here = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "linux"
+        };
+        assert!(s.macs.iter().all(|m| m.platform == here), "{:?}", s.macs);
+        assert_eq!(s.others[0].platform, here);
         let a_id = s.macs[0].id.clone();
         let s = phone.switch_to(&a_id);
         assert_eq!(s.mac_name, "Mac A");

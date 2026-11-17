@@ -859,6 +859,20 @@ impl WhatsAppLink {
         });
     }
 
+    /// Unread again by hand (the companion's "Mark as unread"): in Nook only, WhatsApp is not told.
+    pub fn mark_unread(&self, chat: &str) {
+        let key = jid::normalized(chat);
+        if self.with(|i| i.inbox.mark_unread(&key)) {
+            self.changed();
+        }
+    }
+
+    /// What `f` makes of a chat's picture when Nook already fetched it; never asks the gateway, so a list can say which
+    /// chats have one every time it is drawn.
+    pub fn with_avatar<T>(&self, chat: &str, f: impl FnOnce(&[u8]) -> T) -> Option<T> {
+        self.with(|i| i.avatars.get(&jid::normalized(chat)).map(|bytes| f(bytes)))
+    }
+
     /// Wie een naam, nummer of chat-id bedoelt: een chat op de telefoon of een die jou schreef. Nooit een nieuw
     /// nummer: Nook is geen massaverzender en een verkeerde gok mag nooit bij een vreemde aankomen.
     pub fn resolve(&self, recipient: &str) -> Option<(String, String)> {

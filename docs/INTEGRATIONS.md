@@ -797,4 +797,13 @@ yet.
   connected in Settings, and Premium to move playback). Picking a speaker of this Mac while the player sends elsewhere
   takes the player back to this Mac too. Spotify without a connection shows only this Mac's outputs, and says why.
 
+
+The companion's computers are one family too: the Mac and Nook on Windows and Linux (`apps/tauri`) answer the same
+protocol, and the iPhone and Android companions treat them alike (each pairing keeps its `platform`, shown with its own
+icon in the quick switcher under the tab title). The PC answers every area the Mac answers through
+`CompanionBackend::extra` (`apps/tauri/src-tauri/src/companion/`). Left out on the PC, because its app does not offer
+them yet: Live Activities, `requestUpdate`, `appIcons`, `attachments`, snoozing and the main thread, sending to an agent
+in a terminal, chat apps other than WhatsApp, forges other than GitHub, and *Work on this* for a pull request (see
+*A Windows or Linux PC as the Server* in [`COMPANION.md`](COMPANION.md)).
+
 Add an item here when a change cannot reach every member yet.

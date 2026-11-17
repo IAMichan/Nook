@@ -6,7 +6,7 @@
   // opens straight into this (`standalone`); Nook on the phone itself is a tap away in Settings.
   import { untrack } from "svelte";
   import {
-    companion, has, may, needingYou, tabsFor, unreadChats, Feature,
+    companion, computerChoices, computerIcon, computerStatus, fallbackComputerName, has, may, needingYou, tabsFor, unreadChats, Feature,
     parseCompanionLink, parseNotificationAction, widgetData, type UsageAccount, routeWords, shortcutSessions, type NotificationAction, type ChatDigest, type ClientView, type CompanionTab, type InboxChatDigest, type SessionDigest,
   } from "../../lib/companion";
   import { onBack } from "../../lib/mobile";
@@ -41,6 +41,8 @@
   let screens = $state<Record<CompanionTab, Screen | null>>({ home: null, agents: null, chats: null });
   let sheet = $state<null | "settings" | { kind: "new"; task?: string; link?: PromptLink }>(null);
   let macMenu = $state<DOMRect | null>(null);
+  /** The quick switcher under the tab title, opened at the line that was tapped. */
+  let computerMenu = $state<DOMRect | null>(null);
   // Pairing another computer shows the pairing screen; the paired ones stay.
   let adding = $state(false);
   // A tablet, or a phone on its side with room (the iPad's split view): the list beside what you opened.
@@ -217,6 +219,7 @@
   // The back button: a menu, a sheet, then what is open on the tab.
   $effect(() => onBack(() => {
     if (macMenu) return (macMenu = null), true;
+    if (computerMenu) return (computerMenu = null), true;
     if (screens[tab]) return (screens[tab] = null), true;
     return false;
   }));
@@ -295,22 +298,34 @@
     chats: unreadChats(inbox),
   });
 
+  /** Every paired computer, checked on the active one, with its icon (a Mac or a PC), whether it is live or can be
+   * reached, and what waits there: the quick switcher under the title and the top of the orb's menu read the same. */
+  const computerItems = $derived<MenuItem[]>(view ? computerChoices(view).map((c) => ({
+    label: c.name, icon: computerIcon(c.platform), checked: c.active, detail: computerStatus(c) || undefined,
+    onselect: c.active ? undefined : () => switchTo(c.id),
+  })) : []);
+  const pairAnother = $derived<MenuItem>({ label: tr("Koppel nog een computer", "Pair another computer"), icon: "plus", onselect: () => (adding = true) });
+  const computerSections = $derived<MenuItem[][]>([
+    computerItems,
+    [{ label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") }, pairAnother],
+  ]);
+
   const macSections = $derived.by<MenuItem[][]>(() => {
     if (!view) return [];
     const route = view.phase === "connected" ? routeWords(view.route) : null;
     const macs = view.macs ?? [];
+    const active = macs.find((m) => m.active);
     return [
+      ...(macs.length > 1 ? [computerItems] : []),
       [
-        ...(macs.length > 1
-          ? macs.map((m) => ({ label: m.name, icon: m.active ? "check" : "laptop", onselect: m.active ? undefined : () => switchTo(m.id) }))
-          : [{ label: view.macName || tr("Je Mac", "Your Mac"), icon: "laptop" }]),
+        ...(macs.length > 1 ? [] : [{ label: view.macName || fallbackComputerName(active?.platform, true), icon: computerIcon(active?.platform) }]),
         ...(route ? [{ label: route.text, icon: route.icon }] : []),
         { label: tr("Controleer de verbinding", "Check the connection"), icon: "stethoscope", onselect: () => (sheet = "settings") },
       ],
       has(view, Feature.requestUpdate) ? [{ label: tr("Toon de update op je Mac", "Show the update on your Mac"), icon: "circle-arrow-down", onselect: requestUpdate }] : [],
       [
-        { label: tr("Koppel nog een Mac", "Pair another Mac"), icon: "plus", onselect: () => (adding = true) },
-        { label: tr("Ontkoppel van deze Mac", "Unpair from this Mac"), destructive: true, onselect: () => act(async () => companion.unpair()) },
+        pairAnother,
+        { label: tr("Ontkoppel van deze computer", "Unpair from this computer"), destructive: true, onselect: () => act(async () => companion.unpair()) },
       ],
     ];
   });
@@ -371,6 +386,7 @@
   {/if}
 
   {#if macMenu}<Menu sections={macSections} anchor={macMenu} onclose={() => (macMenu = null)} />{/if}
+  {#if computerMenu}<Menu sections={computerSections} anchor={computerMenu} onclose={() => (computerMenu = null)} />{/if}
 
   {#if view?.notice}
     <div class="alert-scrim">
@@ -397,15 +413,15 @@
 {#snippet list()}
   {#if !view}{""}
   {:else if tab === "home"}
-    <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+    <HomeTab {view} {inbox} {conversations} onorb={(r) => (macMenu = r)} oncomputers={(r) => (computerMenu = r)} ongear={() => (sheet = "settings")}
       onsession={(id) => open("agents", { kind: "session", id })}
       onchat={(id) => open("chats", { kind: "chat", id })}
       onnook={(id, ask) => open("home", { kind: "nook", id, ask })}
       ontab={(t) => (tab = t)} />
   {:else if tab === "chats"}
-    <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
+    <ChatsTab {view} {inbox} message={inboxMessage} onorb={(r) => (macMenu = r)} oncomputers={(r) => (computerMenu = r)} ongear={() => (sheet = "settings")} onopen={(id) => open("chats", { kind: "chat", id })} {took} onrefresh={loadLists} />
   {:else}
-    <AgentsTab {view} {act} {took} onelsewhere={async (mac, id, digest) => { await switchTo(mac); open("agents", { kind: "session", id, digest }); }} onorb={(r) => (macMenu = r)} ongear={() => (sheet = "settings")}
+    <AgentsTab {view} {act} {took} onelsewhere={async (mac, id, digest) => { await switchTo(mac); open("agents", { kind: "session", id, digest }); }} onorb={(r) => (macMenu = r)} oncomputers={(r) => (computerMenu = r)} ongear={() => (sheet = "settings")}
       onopen={(id, digest) => open("agents", { kind: "session", id, digest })} onnew={() => (sheet = { kind: "new" })} />
   {/if}
 {/snippet}

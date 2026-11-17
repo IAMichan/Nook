@@ -174,7 +174,7 @@ pub struct Receipts {
 pub enum Lookup {
     New,
     Running,
-    Answered(CompanionResponse),
+    Answered(Box<CompanionResponse>),
 }
 
 impl Receipts {
@@ -186,7 +186,7 @@ impl Receipts {
         if let Some((answer, at)) = self.answers.get(id) {
             if at.elapsed() <= Self::LIFETIME {
                 return match answer {
-                    Some(a) => Lookup::Answered(a.clone()),
+                    Some(a) => Lookup::Answered(Box::new(a.clone())),
                     None => Lookup::Running,
                 };
             }

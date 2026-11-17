@@ -24,6 +24,9 @@ use super::store::CompanionStore;
 use crate::store::NookStore;
 
 const MAX_CONNECTIONS: usize = 8;
+
+/// A connection a request came on: its number, its writer, and how many frames wait on that writer.
+type Connection<'a> = (u64, &'a tokio::sync::mpsc::UnboundedSender<Vec<u8>>, &'a Arc<AtomicUsize>);
 const CONNECTION_DEADLINE: Duration = Duration::from_secs(30);
 const MAX_SESSIONS: usize = 25;
 
@@ -385,11 +388,7 @@ impl CompanionServer {
     }
 
     /// The answer to one frame on `connection` (none: a single request, as in the tests): sealed and framed.
-    async fn respond_on(
-        &self,
-        frame: &[u8],
-        connection: Option<(u64, &tokio::sync::mpsc::UnboundedSender<Vec<u8>>, &Arc<AtomicUsize>)>,
-    ) -> Option<Vec<u8>> {
+    async fn respond_on(&self, frame: &[u8], connection: Option<Connection<'_>>) -> Option<Vec<u8>> {
         let claimed = seal::claimed_device(frame)?;
         let now = Utc::now();
         // De sleutel van een gekoppeld toestel, of die van het open koppelvenster (die zich bewijst door het bericht te openen).
@@ -435,7 +434,7 @@ impl CompanionServer {
                         .entry(claimed.clone())
                         .or_default()
                         .admit_retry(&request, seconds);
-                    return sealed(refusal.map(|e| Self::refusal(&request.id, e, seconds)).unwrap_or(earlier));
+                    return sealed(refusal.map(|e| Self::refusal(&request.id, e, seconds)).unwrap_or(*earlier));
                 }
                 // Still being carried out: the phone asks again later and gets the answer then.
                 live::Lookup::Running => return sealed(CompanionResponse::failure(&request.id, CompanionError::Busy)),

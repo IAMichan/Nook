@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyConversation, applyTimeline, attentionWord, resumePoint, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
+  applyConversation, applyTimeline, computerChoices, computerIcon, computerKind, computerStatus, type ClientView, attentionWord, resumePoint, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
 } from "./companion";
 
@@ -15,6 +15,27 @@ const chat = (id: string, last: number, unread = 0, extra: Partial<InboxChatDige
 const approval = { id: "p", kind: "approval" as const, title: "rm", detail: "Bash", canAllow: false, options: [] };
 
 describe("companion", () => {
+  it("names each paired computer by its platform and lists it in the switcher", () => {
+    expect(computerKind(undefined)).toBe("mac");
+    expect(computerKind("macos")).toBe("mac");
+    expect(computerKind("Windows")).toBe("windows");
+    expect(computerKind("linux")).toBe("linux");
+    expect(computerKind("android")).toBe("other");
+    expect(computerIcon(null)).toBe("laptop");
+    expect(computerIcon("windows")).toBe("monitor");
+    const view = {
+      phase: "connected", reason: "", macName: "Studio", host: "", notice: null, features: [], scopes: null,
+      sessions: [session("a", "approval", 1, { items: [approval] })],
+      macs: [{ id: "m", name: "Studio", active: true }, { id: "w", name: "ThinkPad", active: false, platform: "windows" }, { id: "l", name: "Box", active: false, platform: "linux" }],
+      others: [{ id: "w", name: "ThinkPad", platform: "windows", reachable: false, sessions: [] }],
+    } as ClientView;
+    const choices = computerChoices(view);
+    expect(choices.map((c) => [c.platform, c.reachable, c.waiting])).toEqual([["macos", true, 1], ["windows", false, 0], ["linux", null, 0]]);
+    expect(computerStatus(choices[0])).toBe("Live · 1 waiting on you");
+    expect(computerStatus(choices[1])).toBe("Offline");
+    expect(computerStatus(choices[2])).toBe("");
+  });
+
   it("puts what needs you first, then the newest", () => {
     const sorted = sortSessions([session("a", "idle", 9), session("b", "approval", 1), session("c", "working", 5), session("d", "idle", 10)]);
     expect(sorted.map((s) => s.id)).toEqual(["b", "c", "d", "a"]);
