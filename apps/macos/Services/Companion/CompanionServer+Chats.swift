@@ -150,6 +150,7 @@ extension CompanionServer {
         if abilities.mute { digest.mutedInApp = abilities.muted }
         digest.group = entry.kind == .group || (entry.members?.count ?? 0) > 1
         digest.account = entry.account.map { CompanionPolicy.clip($0, limit: 80) }
+        digest.suggestion = Self.suggestion(entry.id)
         digest.hasInfo = !(entry.members ?? []).isEmpty || entry.profile.map { !$0.isEmpty } == true || app.chatPhone(entry) != nil
         return digest
     }
@@ -185,6 +186,8 @@ extension CompanionServer {
         }
         var response = await inboxChat(request, app: app)
         guard response.ok, let id = request.item else { return response }
+        // What Nook could do next for what was said, as the bar over the Mac's chat field looks.
+        if let entry = inboxEntry(id) { lookForSuggestion(chat: entry, app: app) }
         if let peer {
             peer.watchChat = id
             peer.sentChatLines = response.inboxLines
@@ -254,7 +257,7 @@ extension CompanionServer {
     }
 
     /// The chat's thread without the messages you deleted for yourself, as the Chats tab shows it.
-    private func visibleThread(_ entry: ChatsEntry) -> InboxThread? {
+    func visibleThread(_ entry: ChatsEntry) -> InboxThread? {
         guard var thread = ChatCaptureService.shared.loadedInbox.threads[entry.id] else { return nil }
         thread.messages = ChatHiddenMessages.shared.visible(thread.messages, in: entry.id) { $0.id }
         return thread

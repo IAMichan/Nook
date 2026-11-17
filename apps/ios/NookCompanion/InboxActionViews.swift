@@ -581,6 +581,8 @@ struct InboxAttachButton: View {
     let photos: Bool
     let files: Bool
     var tint: Color = Theme.textSecondary
+    /// What the notice says when a file is too large: in a chat, to send it from the chat's own app.
+    var tooLargeNote: LocalizedStringKey = "A file from the phone can be at most 150 KB. Send larger files from the chat's own app."
     @State private var picking = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var importing = false
@@ -645,7 +647,7 @@ struct InboxAttachButton: View {
         .alert("Too large to send from your phone", isPresented: $tooLarge) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("A file from the phone can be at most 150 KB. Send larger files from the chat's own app.")
+            Text(tooLargeNote)
         }
     }
 

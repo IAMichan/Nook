@@ -13,6 +13,18 @@
     { "name": "revoked", "core": false, "json": { "id": "E", "ok": false, "error": "notAllowedFromPhone", "seq": 7, "revoked": true } },
     { "name": "watchResumed", "core": false, "json": { "id": "F", "ok": true, "timeline": [
       { "id": "E7", "kind": "assistant", "text": "Done.", "date": 1700000010, "failed": false } ],
-      "timelineSession": "S1", "timelineAfter": "E6" } }
+      "timelineSession": "S1", "timelineAfter": "E6" } },
+    { "name": "session with next step and lineage", "core": false, "json": { "id": "NX", "ok": true, "sessions": [
+      { "id": "S1", "title": "Fix the build", "agent": "Codex", "attention": "ready", "folder": "app", "updated": 1700000000,
+        "excerpt": "Done.", "items": [], "nextPrompt": "Now open a pull request.",
+        "lineage": [ { "id": "S2", "title": "Write the test", "role": "subThread", "status": "working" },
+                     { "id": "S3", "title": "Read the docs", "role": "subThread", "status": "done", "previous": true } ],
+        "suggestion": { "conversation": "agent:S1", "steps": [ { "text": "Remind you at 9:00", "symbol": "bell" } ],
+                        "reason": "You said you would test it.", "state": "waiting" } } ] } },
+    { "name": "nookComposer", "core": false, "json": { "id": "NC", "ok": true, "nookComposer": {
+      "model": "Claude Code · Opus", "models": [ { "id": "agent|claude|opus", "title": "Opus", "group": "Claude Code", "chosen": true } ],
+      "access": "small", "accesses": [ { "id": "more", "title": "More", "chosen": false, "macOnly": true } ],
+      "scope": "All sources", "restricted": false, "only": [ { "id": "web", "title": "Web", "chosen": false } ],
+      "never": [ { "id": "screen", "title": "Screen", "chosen": true } ] } } }
   ]
 }
