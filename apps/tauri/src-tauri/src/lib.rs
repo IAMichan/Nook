@@ -99,6 +99,7 @@ pub fn run() {
             commands::maintenance::export_settings,
             commands::maintenance::reset_settings,
             commands::providers,
+            commands::openrouter_sign_in,
             commands::list_models,
             commands::key_status,
             commands::set_key,

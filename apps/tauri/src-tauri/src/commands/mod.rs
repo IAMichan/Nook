@@ -118,6 +118,21 @@ pub fn set_key(app: AppHandle, state: State<'_, AppState>, provider_id: String, 
     Ok(state.key_for(p).map(|k| mask(&k)))
 }
 
+/// Settings › Brain › OpenRouter: sign in on OpenRouter's page instead of pasting a key. The key it gives is kept
+/// like a pasted one; returns it masked.
+#[tauri::command]
+pub async fn openrouter_sign_in(app: AppHandle) -> Res<Option<String>> {
+    use tauri_plugin_opener::OpenerExt;
+    let opener = app.clone();
+    let key = nook_core::connectors::openrouter::sign_in(move |url| opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.0)?;
+    let state = app.state::<AppState>();
+    state.secrets.write(&AIProvider::Openrouter.key_account(), &key)?;
+    let _ = app.emit("settings-changed", state.settings());
+    Ok(state.key_for(AIProvider::Openrouter).map(|k| mask(&k)))
+}
+
 // Nooks
 
 fn updated(app: &AppHandle, id: &str) {

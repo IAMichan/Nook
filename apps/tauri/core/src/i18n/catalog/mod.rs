@@ -8,6 +8,7 @@ mod base;
 mod companion_home;
 mod maintenance;
 mod nook_tools;
+mod openrouter;
 mod workspace_agents;
 mod workspace_sessions;
 
@@ -17,6 +18,7 @@ pub const ALL: &[&[Row]] = &[
     companion_home::ROWS,
     maintenance::ROWS,
     nook_tools::ROWS,
+    openrouter::ROWS,
     workspace_agents::ROWS,
     workspace_sessions::ROWS,
 ];
