@@ -229,7 +229,6 @@ private struct MusicPlayingCard: View {
         .buttonStyle(.nookPlain)
         .onHover { hoveringCover = $0 }
         .animation(NookTheme.hover, value: hoveringCover)
-        .nookTip(tr("music.openNowPlaying"))
         .accessibilityLabel(tr("music.openNowPlaying"))
     }
 
@@ -249,8 +248,7 @@ private struct MusicPlayingCard: View {
             Text(info.title)
                 .font(NookTheme.TextStyle.display)
                 .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .nookTip(info.title)
+                .nookTipWhenCut(info.title)
                 .padding(.top, NookTheme.Spacing.sm)
             Text(musicSubtitle(info))
                 .font(NookTheme.TextStyle.body)
@@ -387,7 +385,6 @@ private struct MusicWeekCard: View {
             .contentShape(shape)
         }
         .buttonStyle(.nookPlain)
-        .nookTip(tr("music.section.stats"))
         .accessibilityLabel(tr("music.home.thisWeek", musicListeningTime(stats.seconds)) + ", " + tr("music.stats.days", stats.streak))
     }
 
@@ -536,7 +533,6 @@ struct MusicTrackTile: View {
         }
         .buttonStyle(.nookPlain)
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(tr("music.play"))
         .contextMenu {
             Button(tr("music.play"), action: action)
             if let secondary {

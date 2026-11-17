@@ -3,6 +3,7 @@
 
 mod autocomplete;
 mod media;
+mod menu;
 mod quiet;
 mod screen;
 mod speech;

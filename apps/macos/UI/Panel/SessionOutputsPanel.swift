@@ -75,8 +75,8 @@ private struct OutputTab: View {
                     .font(NookTheme.font(10.5, .medium))
                     .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
                 Text(OutputText.title(output))
-                    .lineLimit(1)
                     .truncationMode(.middle)
+                    .nookTipWhenCut(OutputText.title(output))
                     .frame(maxWidth: 160, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(chosen || hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -95,7 +95,6 @@ private struct OutputTab: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(OutputText.kind(output.kind) + " · " + (output.path ?? OutputText.title(output)))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }

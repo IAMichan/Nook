@@ -18,16 +18,18 @@ struct KeptSessionsSettingsRows: View {
         if ws.keepSessionsRunning || !live.isEmpty {
             LabeledContent {
                 if orphans > 0 {
-                    Button(tr("keep.stopOrphans", orphans)) {
-                        workspace.stopOrphanKeepers()
-                        // The keepers wind down in their own time (interrupt, terminate, kill); read again after that.
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            refresh()
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        Button(tr("keep.stopOrphans", orphans)) {
+                            workspace.stopOrphanKeepers()
+                            // The keepers wind down in their own time (interrupt, terminate, kill); read again after that.
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                refresh()
+                            }
                         }
+                        .controlSize(.small)
+                        SettingsInfoButton(text: tr("keep.stopOrphans.help"))
                     }
-                    .controlSize(.small)
-                    .nookTip(tr("keep.stopOrphans.help"))
                 }
             } label: {
                 SettingLabel(tr("keep.status"), detail: statusText)

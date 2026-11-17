@@ -106,7 +106,9 @@ second run.
 
 CI runs them too: the macOS job in `.github/workflows/build.yml` runs `scripts/scenarios.sh` after the unit tests, with
 its build next to the app's own (`NOOK_XCODE_DERIVED_DATA`), puts `summary.md` on the job page, and keeps the output of a
-failed run as an artifact.
+failed run as an artifact. On GitHub's macOS 15 runners xcodebuild does not exit after the last test, so the script
+stops it once the top test suite has reported and `NOOK_SCENARIO_EXIT_GRACE` seconds (default 60) have passed, and takes
+the suite's own verdict.
 
 ## Prove a fix
 

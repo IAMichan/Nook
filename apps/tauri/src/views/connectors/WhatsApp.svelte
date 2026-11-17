@@ -16,6 +16,7 @@
   import { tr } from "../../lib/i18n.svelte";
   import Avatar from "./Avatar.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
+  import QRCodeView from "../../components/ui/QRCodeView.svelte";
 
   let view = $state<WhatsAppView | null>(null);
   let chats = $state<WhatsAppConversation[]>([]);
@@ -112,7 +113,7 @@
       {#if view.webhookLine}<p class="faint small">{view.webhookLine}</p>{/if}
       {#if view.qr}
         <div class="qr">
-          <img src={view.qr} alt={tr("QR-code om WhatsApp te koppelen", "QR code to connect WhatsApp")} width="200" height="200" />
+          <QRCodeView src={view.qr} label={tr("QR-code om WhatsApp te koppelen", "QR code to connect WhatsApp")} size={188} />
           <p class="muted">{tr("Open WhatsApp op je telefoon › Instellingen › Gekoppelde apparaten › Apparaat koppelen, en scan deze code.", "Open WhatsApp on your phone › Settings › Linked devices › Link a device, and scan this code.")}</p>
         </div>
       {/if}
@@ -201,7 +202,6 @@
   .head { display: flex; gap: 12px; align-items: center; }
   .small { font-size: 11px; }
   .qr { display: flex; gap: 16px; align-items: center; padding: 10px 0; }
-  .qr img { background: white; border-radius: 10px; padding: 6px; }
   .link { background: none; border: none; padding: 8px 0; color: var(--text2); text-align: left; }
   .chat { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
   .chat:last-child { border-bottom: none; }

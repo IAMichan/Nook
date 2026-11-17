@@ -106,7 +106,6 @@ struct SourcesDisclosure: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
-                .nookTip(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
                 .accessibilityLabel(summary(used: used, failed: failed, running: running)
                                     + (failed > 0 ? ", " + tr("chat.sources.unread", failed) : ""))
 
@@ -164,7 +163,6 @@ struct SourcesDisclosure: View {
                 Spacer(minLength: 6)
                 statusChip(group)
             }
-            .nookTip(helpText(group))
             if let failure {
                 failureView(failure)
             }
@@ -211,7 +209,6 @@ struct SourcesDisclosure: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let needed, !needed.isGranted(permissions) {
                 SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
-                    .nookTip(tr("chat.notice.allowHelp"))
             } else if let onRetry {
                 SourceFixButton(title: tr("chat.retry"), symbol: "arrow.clockwise", prominent: false, action: onRetry)
             }
@@ -305,11 +302,6 @@ struct SourcesDisclosure: View {
     }
 
     /// The exact queries as a tooltip (a failed source shows its reason in the row itself).
-    private func helpText(_ group: SourceGroup) -> String {
-        var parts: [String] = []
-        if !group.queries.isEmpty { parts.append(group.queries.map { "\"\($0)\"" }.joined(separator: ", ")) }
-        return parts.joined(separator: " · ")
-    }
 }
 
 private extension String {
@@ -464,7 +456,6 @@ struct NoticeList: View {
                             .textSelection(.enabled)
                         if let needed = buttons[notice] {
                             SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
-                                .nookTip(tr("chat.notice.allowHelp"))
                         }
                     }
                     Spacer(minLength: 0)
@@ -638,7 +629,6 @@ struct ScopeMenu: View {
                          tint: current.isRestricted ? NookTheme.iris : nil)
         }
         .composerMenu()
-        .composerTip(tr("scope.help"))
     }
 
     /// A source in the menu with its real icon: the app or the service's logo, else its own symbol (screen, web…).

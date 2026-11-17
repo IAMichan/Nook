@@ -4,7 +4,7 @@
   // (`oncomputers`, the menu `Companion.svelte` shows), as on the iPhone.
   import { tr } from "../../../lib/i18n.svelte";
   import { fallbackComputerName, type ClientView } from "../../../lib/companion";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { view, oncomputers }: { view: ClientView; oncomputers?: (r: DOMRect) => void } = $props();
   const platform = $derived(view.macs?.find((m) => m.active)?.platform);
   const mac = $derived(view.macName || fallbackComputerName(platform));

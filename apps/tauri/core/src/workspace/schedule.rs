@@ -149,10 +149,16 @@ pub enum ScheduledTaskTarget {
     /// continues the conversation.
     #[serde(rename_all = "camelCase")]
     ExistingSession { id: Uuid, fresh: bool },
+    /// Nook Chat answers each run itself, in a conversation of its own (`super::nook_schedule`). It only reads and
+    /// proposes there: whatever it would send or change waits in that conversation for the user's own click.
+    Nook,
 }
 
 impl ScheduledTaskTarget {
     fn from_value(v: &Value) -> Self {
+        if v.get("type").and_then(Value::as_str) == Some("nook") {
+            return Self::Nook;
+        }
         let id = v.get("id").and_then(Value::as_str).and_then(|s| Uuid::parse_str(s).ok());
         if let (Some(id), Some("existingSession")) = (id, v.get("type").and_then(Value::as_str)) {
             return Self::ExistingSession { id, fresh: v.get("fresh").and_then(Value::as_bool).unwrap_or(false) };
@@ -213,6 +219,11 @@ pub mod reason {
     pub const NO_SESSION: &str = "sched.error.noSession";
     pub const BAD_TARGET: &str = "sched.error.badTarget";
     pub const WEBHOOK_RIGHTS: &str = "sched.error.webhookRights";
+    pub const NO_BRAIN: &str = "sched.error.noBrain";
+    pub const NOOK_TIMEOUT: &str = "sched.error.nookTimeout";
+    pub const NOOK_EMPTY: &str = "sched.error.nookEmpty";
+    /// A quiet run of Nook's own that found nothing new: it succeeded and left no conversation behind.
+    pub const NOTHING_NEW: &str = "sched.nook.nothingNew";
 }
 
 fn rule_or_webhook<'de, D: Deserializer<'de>>(d: D) -> Result<ScheduleRule, D::Error> {
@@ -260,6 +271,12 @@ pub struct ScheduledTask {
     pub last_session: Option<Uuid>,
     #[serde(default = "epoch")]
     pub created_at: DateTime<Utc>,
+    /// For Nook: only speak up when something new needs the user.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub quiet: bool,
+    /// The ready-made task this is (the secretary's), by an id that does not change with the app's language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
 }
 
 fn epoch() -> DateTime<Utc> {
@@ -282,6 +299,8 @@ impl ScheduledTask {
             next_run: None,
             last_session: None,
             created_at: now,
+            quiet: false,
+            preset: None,
         }
     }
 

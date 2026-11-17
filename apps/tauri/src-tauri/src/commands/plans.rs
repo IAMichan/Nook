@@ -34,6 +34,7 @@ pub(crate) fn step_tag(tool: &str, input: &Value) -> String {
         "remember" if !tools::text(input, "replaces").is_empty() => "vervangt".into(),
         "forget" => "vergeet".into(),
         "delete_event" | "delete_reminder" => "verwijdert".into(),
+        "app_menu_command" => nook_core::i18n::tr("menucommando", "menu command").into(),
         "run_command"
             if nook_core::brain::command_risk::assess(&tools::text(input, "command")).level
                 != nook_core::brain::command_risk::Level::Safe =>

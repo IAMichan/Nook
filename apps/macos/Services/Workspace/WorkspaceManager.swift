@@ -367,6 +367,9 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNowFresh: Set<UUID> = []
     /// Where the message in `pendingSendNow` comes from, when that is not you (`QueuedMessage.Origin`).
     var pendingSendNowOrigin: [UUID: QueuedMessage.Origin] = [:]
+    /// Another agent or account you picked while a turn ran: the turn stops, the session moves there and goes on
+    /// (`switchAfterStop`).
+    var pendingSwitches: [UUID: PendingSwitch] = [:]
     /// When the work now going on began (`TurnTimer`): a new prompt sets it, the agent carrying on by itself keeps it.
     var workStartedAt: [UUID: Date] = [:]
     /// The turn about to start carries on the agent's own work (`TurnTimer`); taken by the turn's start.
@@ -669,6 +672,8 @@ final class WorkspaceManager: ObservableObject {
     /// first in the queue. False when nothing was waiting.
     @discardableResult
     func sendPendingNow(_ id: UUID) -> Bool {
+        // A switch you picked while the turn ran goes first: whatever waits to go out then goes to the new agent.
+        applyPendingSwitch(id)
         guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
         let mark = pendingSendNowSteer.removeValue(forKey: id)
         let fresh = pendingSendNowFresh.remove(id) != nil
@@ -837,6 +842,11 @@ final class WorkspaceManager: ObservableObject {
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
     func turnDidFinish(_ id: UUID) {
         keptTurnEnded(id)
+        // A switch you picked while this turn ran: once the agent's driver is done with the turn (Claude Code parks its
+        // process right after this). A snapshot still being made holds it until `recordCheckpoint` sends the queue.
+        if pendingSwitches[id] != nil {
+            DispatchQueue.main.async { [weak self] in self?.applyPendingSwitch(id) }
+        }
         checkUsageLimit(id)
         guard let run = run(id) else { return }
         NookTelemetry.shared.turnFinished(run)
@@ -1204,6 +1214,8 @@ final class WorkspaceManager: ObservableObject {
     /// waits for you, so nothing goes out on top of a problem. News about a pull request gets a fresh look first: the turn
     /// that just ended may well have fixed it. `looked` says that look was just taken.
     func sendQueued(_ id: UUID, looked: Bool = false) {
+        // A switch that waited for the turn's snapshot (or a turn that ended by itself before the stop) happens now.
+        applyPendingSwitch(id)
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
         guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed else { return }
         guard var queue = queued[id], let next = queue.next() else {
@@ -1504,6 +1516,7 @@ final class WorkspaceManager: ObservableObject {
         pendingSendNowSteer[id] = nil
         pendingSendNowFresh.remove(id)
         pendingSendNowOrigin[id] = nil
+        pendingSwitches[id] = nil
         workStartedAt[id] = nil
         continuingTurns.remove(id)
         freshArmed.remove(id)

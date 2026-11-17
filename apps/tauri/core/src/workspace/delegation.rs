@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::manager::Manager;
-use super::models::{ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
+use super::models::{
+    clip_to, EventKind, ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunEvent, RunProvider, RunStatus, WorkspaceRun,
+};
 
 /// What a delegated task is for. It only changes the instruction the agent gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +165,9 @@ pub struct Link {
     /// A repeated call with the same key returns the same child instead of starting a second one.
     #[serde(default)]
     pub key: String,
+    /// The parent hears when this task ends (`wake_message`): it did not wait for it, or its wait ran out.
+    #[serde(default)]
+    pub wake: bool,
 }
 
 /// `delegations.json` next to the sessions: child → link.
@@ -191,7 +196,19 @@ impl Links {
         self.links.lock().map(|l| l.iter().filter(|(_, v)| v.parent == parent).map(|(k, _)| *k).collect()).unwrap_or_default()
     }
 
-    fn child_with_key(&self, parent: Uuid, key: &str) -> Option<Uuid> {
+    /// Turns the parent's wake-up for this task on or off; returns whether the task is linked.
+    pub fn set_wake(&self, child: Uuid, wake: bool) -> bool {
+        let Ok(mut links) = self.links.lock() else { return false };
+        let Some(link) = links.get_mut(&child) else { return false };
+        link.wake = wake;
+        if let Ok(bytes) = serde_json::to_vec_pretty(&*links) {
+            let _ = crate::paths::write_atomic(&self.file, &bytes);
+        }
+        true
+    }
+
+    /// The child for a retried request (`client_request_id`).
+    pub fn child_with_key(&self, parent: Uuid, key: &str) -> Option<Uuid> {
         if key.is_empty() {
             return None;
         }
@@ -218,6 +235,223 @@ pub struct Request {
     pub mode: Option<ExecutionMode>,
     pub permission: Option<PermissionPolicy>,
     pub key: String,
+    /// Another model than the default; empty is the parent's (same agent) or the agent's default.
+    pub model: String,
+    /// `shared`, `worktree`, or empty to let Nook choose (`placement`).
+    pub isolation: String,
+    /// The parent hears when the task ends (it does not wait for it).
+    pub wake: bool,
+}
+
+/// Where a task works: in its parent's folder, or in a git worktree of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
+    Shared,
+    Worktree,
+}
+
+/// The placement asked for, or the error for the agent. Two tasks changing the same files at once overwrite each
+/// other, so with nothing asked a second writer in the same folder gets a worktree. A Plan task changes nothing.
+pub fn placement(requested: &str, mode: ExecutionMode, writing_siblings: usize, in_repository: bool) -> Result<Placement, String> {
+    match requested.trim().to_ascii_lowercase().as_str() {
+        "shared" => Ok(Placement::Shared),
+        "worktree" if !in_repository => Err("A worktree needs a git repository; this folder is not one. Use isolation: shared.".into()),
+        "worktree" => Ok(if mode == ExecutionMode::Plan { Placement::Shared } else { Placement::Worktree }),
+        "" if mode == ExecutionMode::Agent && in_repository && writing_siblings > 0 => Ok(Placement::Worktree),
+        "" => Ok(Placement::Shared),
+        other => Err(format!("isolation must be shared or worktree, not \"{other}\".")),
+    }
+}
+
+/// How long `delegate_task` with `wait` and `task_wait` wait: default and most, in seconds.
+pub const DEFAULT_WAIT: u64 = 45;
+pub const MAX_WAIT: u64 = 840;
+
+pub fn wait_seconds(requested: Option<i64>) -> u64 {
+    requested.map(|n| n.clamp(1, MAX_WAIT as i64) as u64).unwrap_or(DEFAULT_WAIT)
+}
+
+/// A delegated task as its parent sees it (`DelegatedTask` on the Mac).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState {
+    Queued,
+    Running,
+    Waiting,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl TaskState {
+    /// `queued_work`: a message still waits to go out to the task (not held after a failure or a stop); the task is
+    /// not done until it went.
+    pub fn of(status: RunStatus, pending_question: bool, queued_work: bool) -> Self {
+        if queued_work && !status.is_active() {
+            return Self::Running;
+        }
+        match status {
+            RunStatus::Preparing => Self::Queued,
+            RunStatus::Running if pending_question => Self::Waiting,
+            RunStatus::Running => Self::Running,
+            RunStatus::WaitingApproval => Self::Waiting,
+            RunStatus::Completed => Self::Completed,
+            RunStatus::Failed => Self::Failed,
+            RunStatus::Stopped => Self::Cancelled,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Waiting => "waiting",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub task_id: String,
+    pub title: String,
+    pub state: TaskState,
+    pub summary: Option<String>,
+    pub pending_question: bool,
+    pub model: String,
+    pub provider: String,
+    /// For a task in a worktree of its own: where it works and on which branch, so the parent can merge it.
+    pub worktree: Option<String>,
+    pub branch: Option<String>,
+}
+
+impl Snapshot {
+    /// Finished, or asking something only the parent or the user can answer.
+    pub fn is_settled(&self) -> bool {
+        self.state.is_terminal() || self.pending_question
+    }
+
+    fn object(&self) -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::Value;
+        let mut o = serde_json::Map::new();
+        o.insert("taskId".into(), self.task_id.clone().into());
+        o.insert("title".into(), self.title.clone().into());
+        o.insert("status".into(), self.state.name().into());
+        o.insert("agent".into(), self.provider.clone().into());
+        o.insert("hasPendingQuestion".into(), self.pending_question.into());
+        if !self.model.is_empty() {
+            o.insert("model".into(), self.model.clone().into());
+        }
+        if let Some(worktree) = self.worktree.as_ref().filter(|w| !w.is_empty()) {
+            o.insert("worktree".into(), worktree.clone().into());
+            if let Some(branch) = self.branch.as_ref().filter(|b| !b.is_empty()) {
+                o.insert("branch".into(), branch.clone().into());
+                o.insert("merge".into(), merge_note(branch).into());
+            }
+        }
+        o.insert("summary".into(), self.summary.clone().map(Value::String).unwrap_or(Value::Null));
+        o
+    }
+
+    /// The tool result: JSON the agent can read.
+    pub fn render(&self, wait_timed_out: bool) -> String {
+        let mut o = self.object();
+        o.insert("waitTimedOut".into(), wait_timed_out.into());
+        pretty(serde_json::Value::Object(o))
+    }
+}
+
+fn merge_note(branch: &str) -> String {
+    format!("Its changes are on branch {branch}, not in your folder: review them, then merge that branch (git merge {branch}) once it has committed.")
+}
+
+/// Pretty JSON with sorted keys, as the Mac writes it.
+fn pretty(value: serde_json::Value) -> String {
+    fn sort(v: serde_json::Value) -> serde_json::Value {
+        match v {
+            serde_json::Value::Object(m) => {
+                let sorted: BTreeMap<String, serde_json::Value> = m.into_iter().map(|(k, v)| (k, sort(v))).collect();
+                serde_json::Value::Object(sorted.into_iter().collect())
+            }
+            serde_json::Value::Array(a) => serde_json::Value::Array(a.into_iter().map(sort).collect()),
+            other => other,
+        }
+    }
+    serde_json::to_string_pretty(&sort(value)).unwrap_or_default()
+}
+
+/// How `task_wait` waits on several tasks: until one of them (`any`) or all of them settle.
+pub fn wait_is_over(snapshots: &[Snapshot], all: bool) -> bool {
+    if snapshots.is_empty() {
+        return true;
+    }
+    if all {
+        snapshots.iter().all(Snapshot::is_settled)
+    } else {
+        snapshots.iter().any(Snapshot::is_settled)
+    }
+}
+
+/// The `task_wait` result: every task's state, and whether the wait ran out first.
+pub fn render_wait(snapshots: &[Snapshot], wait_timed_out: bool) -> String {
+    let tasks: Vec<serde_json::Value> = snapshots.iter().map(|s| serde_json::Value::Object(s.object())).collect();
+    let settled: Vec<String> = snapshots.iter().filter(|s| s.is_settled()).map(|s| s.task_id.clone()).collect();
+    pretty(serde_json::json!({"tasks": tasks, "waitTimedOut": wait_timed_out, "settled": settled}))
+}
+
+/// What the parent is told when a task it did not wait for has ended: everything it needs, so it need not ask again.
+pub fn wake_message(snapshot: &Snapshot) -> String {
+    let mut text = format!("Delegated task \"{}\" ({}) {}.", snapshot.title, snapshot.task_id, snapshot.state.name());
+    if let Some(summary) = snapshot.summary.as_ref().filter(|s| !s.is_empty()) {
+        text += &format!("\n\nResult:\n{summary}");
+    }
+    if let Some(branch) = snapshot.branch.as_ref().filter(|b| !b.is_empty()) {
+        text += &format!("\n\n{}", merge_note(branch));
+    }
+    text
+}
+
+/// Whether the parent hears of a finished task now: it ended (well, failed or stopped) and nothing it still has to do
+/// waits in its queue, so the parent never reads a result that is not the last.
+pub fn may_deliver(status: RunStatus, queued_work: bool) -> bool {
+    matches!(status, RunStatus::Completed | RunStatus::Failed | RunStatus::Stopped) && !queued_work
+}
+
+pub const SUMMARY_LIMIT: usize = 4_000;
+
+/// The result of a task: what the child said last, or why it failed (the error before any progress text).
+pub fn summary(status: RunStatus, status_detail: Option<&str>, events: &[RunEvent]) -> Option<String> {
+    if status == RunStatus::Failed {
+        let error = events.iter().rev().find(|e| e.kind == EventKind::Error).map(|e| e.text.as_str()).or(status_detail);
+        if let Some(e) = error.filter(|e| !e.is_empty()) {
+            return Some(clip_to(e, SUMMARY_LIMIT));
+        }
+    }
+    events.iter().rev().find(|e| e.kind == EventKind::Assistant && !e.text.trim().is_empty()).map(|e| clip_to(e.text.trim(), SUMMARY_LIMIT))
+}
+
+/// A task as its parent sees it now.
+pub fn snapshot(manager: &Manager, run: &WorkspaceRun) -> Snapshot {
+    let queue = manager.queue(run.id);
+    let queued_work = !queue.is_empty() && !queue.is_held();
+    let pending_question = !manager.questions(run.id).is_empty();
+    let worktree = (run.isolation == IsolationMode::Worktree).then(|| run.worktree_path.clone().unwrap_or_default());
+    Snapshot {
+        task_id: run.id.to_string(),
+        title: run.title.clone(),
+        state: TaskState::of(run.status, pending_question, queued_work),
+        summary: summary(run.status, run.status_detail.as_deref(), &manager.timeline(run.id)),
+        pending_question,
+        model: run.resolved_model.clone().unwrap_or_else(|| run.model.clone()),
+        provider: run.provider.id().into(),
+        branch: worktree.as_ref().and(run.branch.clone()),
+        worktree,
+    }
 }
 
 /// Starts a child session in the parent's folder with at most the parent's rights. Returns the child's id (the same
@@ -246,20 +480,42 @@ pub fn delegate(
     let provider = request.agent.unwrap_or(run.provider);
     let (mode, permission) =
         resolve(run.mode, run.permission, request.mode, request.permission, role, provider).map_err(|d| d.message())?;
-    let config = NewRunConfig {
+    let same_folder = |r: &WorkspaceRun| super::paths::normalize(&r.working_directory) == super::paths::normalize(&run.working_directory);
+    let writing_siblings = links
+        .children(parent)
+        .into_iter()
+        .filter_map(|c| manager.run(c))
+        .filter(|r| r.status.is_active() && r.mode == ExecutionMode::Agent && r.isolation == IsolationMode::Folder && same_folder(r))
+        .count();
+    let repo_root = run.repo_root.clone().filter(|r| !r.is_empty());
+    let place = placement(&request.isolation, mode, writing_siblings, repo_root.is_some())?;
+    let model = request.model.trim();
+    let mut config = NewRunConfig {
         title: if request.title.trim().is_empty() { super::models::title_from(task, 60) } else { request.title.trim().into() },
         task: child_prompt(task, role),
         provider,
         profile_id: if provider == run.provider { run.profile_id.clone() } else { profile(provider) },
-        model: if provider == run.provider { run.model.clone() } else { String::new() },
+        model: if !model.is_empty() {
+            model.into()
+        } else if provider == run.provider {
+            run.model.clone()
+        } else {
+            String::new()
+        },
         mode,
         permission,
         isolation: IsolationMode::Folder,
         project_path: run.working_directory.clone(),
         ..NewRunConfig::default()
     };
-    let child = manager.start(config, true)?;
-    links.insert(child, Link { parent, depth: depth + 1, key: request.key.trim().to_string() });
+    if place == Placement::Worktree {
+        // From the parent's branch, so the task starts from what the parent committed.
+        config.isolation = IsolationMode::Worktree;
+        config.project_path = repo_root.unwrap_or_else(|| run.working_directory.clone());
+        config.base_branch = run.branch.clone().unwrap_or_default();
+    }
+    let child = manager.start(config, place == Placement::Shared)?;
+    links.insert(child, Link { parent, depth: depth + 1, key: request.key.trim().to_string(), wake: request.wake });
     manager.note(child, &crate::i18n::trf("Gedelegeerd door ‘{parent}’", "Delegated by “{parent}”", &[("parent", &run.title)]));
     Ok(child)
 }
@@ -302,8 +558,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let (parent, child, grandchild) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
         let links = Links::new(&dir);
-        links.insert(child, Link { parent, depth: 1, key: "k".into() });
-        links.insert(grandchild, Link { parent: child, depth: 2, key: String::new() });
+        links.insert(child, Link { parent, depth: 1, key: "k".into(), wake: false });
+        links.insert(grandchild, Link { parent: child, depth: 2, key: String::new(), wake: true });
         let again = Links::new(&dir);
         assert_eq!(again.depth(parent), 0);
         assert_eq!(again.depth(grandchild), 2);
@@ -311,6 +567,85 @@ mod tests {
         assert_eq!(again.child_with_key(parent, "k"), Some(child));
         assert_eq!(again.child_with_key(parent, ""), None);
         assert_eq!(admit(again.depth(grandchild), 0), Some(Denial::TooDeep));
+        assert!(again.link(grandchild).unwrap().wake);
+        assert!(again.set_wake(child, true));
+        assert!(Links::new(&dir).link(child).unwrap().wake, "kept on disk");
+        assert!(!again.set_wake(Uuid::new_v4(), true));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn snap(id: &str, state: TaskState, question: bool) -> Snapshot {
+        Snapshot {
+            task_id: id.into(),
+            title: "Check parser".into(),
+            state,
+            summary: Some("All good".into()),
+            pending_question: question,
+            model: String::new(),
+            provider: "codex".into(),
+            worktree: None,
+            branch: None,
+        }
+    }
+
+    #[test]
+    fn where_a_task_works() {
+        use Placement::*;
+        assert_eq!(placement("", Agent, 0, true), Ok(Shared));
+        assert_eq!(placement("", Agent, 1, true), Ok(Worktree), "a second writer gets its own worktree");
+        assert_eq!(placement("", Plan, 3, true), Ok(Shared));
+        assert_eq!(placement("", Agent, 1, false), Ok(Shared));
+        assert_eq!(placement("Worktree", Plan, 0, true), Ok(Shared));
+        assert_eq!(placement("worktree", Agent, 0, true), Ok(Worktree));
+        assert!(placement("worktree", Agent, 0, false).unwrap_err().contains("git repository"));
+        assert!(placement("nearby", Agent, 0, true).unwrap_err().contains("\"nearby\""));
+        assert_eq!(wait_seconds(None), 45);
+        assert_eq!(wait_seconds(Some(10_000)), 840);
+    }
+
+    #[test]
+    fn task_states_follow_the_session() {
+        use TaskState::*;
+        assert_eq!(TaskState::of(RunStatus::Preparing, false, false), Queued);
+        assert_eq!(TaskState::of(RunStatus::Running, true, false), Waiting);
+        assert_eq!(TaskState::of(RunStatus::WaitingApproval, false, false), Waiting);
+        assert_eq!(TaskState::of(RunStatus::Completed, false, true), Running, "queued work is still to come");
+        assert_eq!(TaskState::of(RunStatus::Stopped, false, false), Cancelled);
+        assert!(may_deliver(RunStatus::Failed, false));
+        assert!(!may_deliver(RunStatus::Completed, true));
+        assert!(!may_deliver(RunStatus::Running, false));
+    }
+
+    #[test]
+    fn results_read_as_on_the_mac() {
+        let mut s = snap("t1", TaskState::Completed, false);
+        s.worktree = Some("/w/t1".into());
+        s.branch = Some("nook/t1".into());
+        let v: serde_json::Value = serde_json::from_str(&s.render(true)).unwrap();
+        assert_eq!(v["status"], "completed");
+        assert_eq!(v["agent"], "codex");
+        assert_eq!(v["waitTimedOut"], true);
+        assert!(v["merge"].as_str().unwrap().contains("git merge nook/t1"));
+        assert!(v.get("model").is_none());
+        let running = snap("t2", TaskState::Running, false);
+        assert!(!wait_is_over(&[running.clone()], false));
+        assert!(wait_is_over(&[running.clone(), s.clone()], false));
+        assert!(!wait_is_over(&[running.clone(), s.clone()], true));
+        assert!(wait_is_over(&[snap("t3", TaskState::Running, true), s.clone()], true), "a question settles too");
+        let w: serde_json::Value = serde_json::from_str(&render_wait(&[running, s.clone()], false)).unwrap();
+        assert_eq!(w["settled"], serde_json::json!(["t1"]));
+        assert!(w["tasks"][0].get("waitTimedOut").is_none());
+        let wake = wake_message(&s);
+        assert!(wake.starts_with("Delegated task \"Check parser\" (t1) completed.\n\nResult:\nAll good"));
+        assert!(wake.ends_with("once it has committed."));
+    }
+
+    #[test]
+    fn a_failed_task_reports_its_error() {
+        let events = vec![RunEvent::new(EventKind::Assistant, "Working on it"), RunEvent::new(EventKind::Error, "Out of credits")];
+        assert_eq!(summary(RunStatus::Failed, None, &events).as_deref(), Some("Out of credits"));
+        assert_eq!(summary(RunStatus::Completed, None, &events).as_deref(), Some("Working on it"));
+        assert_eq!(summary(RunStatus::Failed, Some("Crashed"), &[]).as_deref(), Some("Crashed"));
+        assert_eq!(summary(RunStatus::Completed, None, &[]), None);
     }
 }

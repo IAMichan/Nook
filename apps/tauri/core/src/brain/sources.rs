@@ -96,7 +96,7 @@ pub const PERSONAL: [&str; 17] = [
 ];
 
 /// Tools van een bron. Tools zonder bron (grafieken, app openen, muziek…) mogen altijd.
-const EXACT_TOOLS: [(&str, &str); 64] = [
+const EXACT_TOOLS: [(&str, &str); 66] = [
     ("list_events", "calendar"),
     ("create_event", "calendar"),
     ("update_event", "calendar"),
@@ -142,6 +142,8 @@ const EXACT_TOOLS: [(&str, &str); 64] = [
     ("read_app", SCREEN),
     ("list_running_apps", SCREEN),
     ("get_active_app", SCREEN),
+    ("list_app_menu", SCREEN),
+    ("app_menu_command", SCREEN),
     ("search_contacts", "contacts"),
     ("read_clipboard", "clipboard"),
     ("list_open_loops", LOOPS),
@@ -609,6 +611,8 @@ pub mod capabilities {
             "open_in_nook_browser" => "link openen in Nooks browser",
             "read_screen" => "scherm lezen",
             "read_app" => "een geopende app lezen",
+            "list_app_menu" => crate::i18n::tr("menu's van elke app lezen", "read menus of any app"),
+            "app_menu_command" => crate::i18n::tr("menu-opdracht in elke app uitvoeren", "run a menu command in any app"),
             "system_status" | "mac_status" => "processor, geheugen, batterij en schijf",
             "network_status" => crate::i18n::tr("IP-adressen van deze computer", "IP addresses of this computer"),
             "search_contacts" => "contacten zoeken",

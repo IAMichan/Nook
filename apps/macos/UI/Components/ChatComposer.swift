@@ -978,7 +978,6 @@ struct ChatAttachmentKindMenu: View {
                 .foregroundStyle(NookTheme.textSecondary)
             }
             .composerMenu()
-            .composerTip(tr("chat.compose.sendAs"))
         } else {
             Text(Self.title(file.kind))
                 .font(NookTheme.TextStyle.caption)
@@ -1262,7 +1261,6 @@ private struct ChatPickRow: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(tr("chat.compose.sendThis", title))
         .accessibilityLabel(tr("chat.compose.sendThis", title))
     }
 }
@@ -1434,7 +1432,6 @@ private struct ChatGIFCell: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .task(id: gif.id) { preview = await ChatComposerModel.preview(gif) }
-        .nookTip(gif.title.isEmpty ? tr("chat.compose.sendSticker") : gif.title)
         .accessibilityLabel(gif.title.isEmpty ? tr("chat.media.gif") : gif.title)
     }
 }
@@ -1464,7 +1461,6 @@ private struct ChatStickerCell: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(tr("chat.compose.sendSticker"))
         .accessibilityLabel(tr("chat.compose.sendSticker"))
     }
 }

@@ -6,8 +6,8 @@
   import { companion, fileKind, has, FileAssembly, Feature, type ClientView, type FolderDigest } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import NavBar from "./ui/NavBar.svelte";
-  import Ico from "./ui/Ico.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
 
   let { view, session, onback, took }: { view: ClientView; session: string; onback: () => void; took: (v: ClientView) => void } = $props();
   let stack = $state<string[]>([""]);

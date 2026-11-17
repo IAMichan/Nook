@@ -294,7 +294,6 @@ private struct GlanceAgendaCard: View {
                 }
             }
         }
-        .nookTip(events.first.map { tr("app.today.preparePrompt", $0.title) } ?? "")
     }
 }
 
