@@ -134,7 +134,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("core/src/brain/retrieval.rs", 4),
     ("core/src/brain/service.rs", 9),
     ("core/src/brain/sources.rs", 5),
-    ("core/src/brain/suggestions.rs", 28),
+    ("core/src/brain/suggestions.rs", 5),
     ("core/src/brain/undo.rs", 1),
     ("core/src/brain/weather.rs", 2),
     ("core/src/brain/web.rs", 3),
