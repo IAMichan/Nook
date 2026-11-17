@@ -436,6 +436,94 @@ impl Atspi {
             Err("Menu command action failed.".into())
         }
     }
+    /// Reads an open browser window's active document URL, text, and tab titles via AT-SPI.
+    pub fn inspect_browser(&self, frame: &Frame, max_chars: usize) -> BrowserInspect {
+        let mut url = String::new();
+        let mut doc_title = String::new();
+        let mut tabs = Vec::new();
+        let mut doc_node: Option<Node> = None;
+        let mut budget = 400usize;
+        let deadline = Instant::now() + Duration::from_millis(1200);
+        self.scan_browser_chrome(&frame.node, 0, &mut budget, deadline, &mut url, &mut doc_title, &mut tabs, &mut doc_node);
+        let text = if let Some(doc) = doc_node {
+            let mut lines = Vec::new();
+            let mut doc_budget = 3000usize;
+            let mut count = 0usize;
+            let doc_deadline = Instant::now() + Duration::from_millis(2500);
+            self.collect(&doc, 1, &mut lines, &mut doc_budget, &mut count, max_chars, doc_deadline);
+            lines.join("\n").trim().to_string()
+        } else {
+            String::new()
+        };
+        BrowserInspect { url, doc_title, tabs, text }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn scan_browser_chrome(
+        &self,
+        node: &Node,
+        depth: usize,
+        budget: &mut usize,
+        deadline: Instant,
+        url: &mut String,
+        doc_title: &mut String,
+        tabs: &mut Vec<String>,
+        doc_node: &mut Option<Node>,
+    ) {
+        if depth > 12 || *budget == 0 || Instant::now() > deadline {
+            return;
+        }
+        *budget -= 1;
+        let role = self.role(node);
+        if role == ROLE_PASSWORD {
+            return;
+        }
+        if role == ROLE_PAGE_TAB {
+            let name = self.name(node).trim().to_string();
+            if !name.is_empty() && tabs.len() < 150 && !tabs.contains(&name) {
+                tabs.push(name);
+            }
+            return;
+        }
+        if role == ROLE_DOCUMENT_WEB || role == ROLE_DOCUMENT_FRAME {
+            if doc_node.is_none() {
+                *doc_node = Some(node.clone());
+            }
+            if doc_title.is_empty() {
+                let name = self.name(node).trim().to_string();
+                if !name.is_empty() {
+                    *doc_title = name;
+                }
+            }
+            if url.is_empty() && self.interfaces(node).iter().any(|i| i == DOCUMENT) {
+                if let Some(raw_url) = self.call::<_, String>(node, DOCUMENT, "GetAttributeValue", &("DocURL",)) {
+                    let normalized = nook_core::brain::open_browser_tab::normalize_url(&raw_url);
+                    if !normalized.is_empty() {
+                        *url = normalized;
+                    }
+                }
+            }
+            return;
+        }
+        if role == ROLE_ENTRY && url.is_empty() && self.interfaces(node).iter().any(|i| i == TEXT) {
+            if let Some(raw) = self.call::<_, String>(node, TEXT, "GetText", &(0i32, -1i32)) {
+                let normalized = nook_core::brain::open_browser_tab::normalize_url(&raw);
+                if !normalized.is_empty() {
+                    *url = normalized;
+                }
+            }
+        }
+        for child in self.children(node) {
+            self.scan_browser_chrome(&child, depth + 1, budget, deadline, url, doc_title, tabs, doc_node);
+        }
+    }
+}
+
+pub struct BrowserInspect {
+    pub url: String,
+    pub doc_title: String,
+    pub tabs: Vec<String>,
+    pub text: String,
 }
 
 pub struct BrowserInspect {

@@ -22,6 +22,7 @@ use nook_core::settings::Settings;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::screen_work::{self, Route};
 use crate::brain::BrainState;
 use crate::state::AppState;
 use crate::tools::{self, Reply, ToolCtx};
@@ -79,6 +80,10 @@ pub fn attach(app: &AppHandle, reply: Option<&Reply>, change: impl FnOnce(&mut C
         state.save_chat();
         updated(app, &id);
     }
+}
+
+pub(crate) fn brain_env(app: &AppHandle, settings: &Settings) -> BrainEnv {
+    env(app, settings)
 }
 
 fn env(app: &AppHandle, settings: &Settings) -> BrainEnv {
@@ -205,6 +210,27 @@ fn ask_with(
     let state = app.state::<AppState>();
     let settings = state.settings();
 
+    // Nook is still answering here: the question waits in line and goes out once that answer is done. A card's own
+    // prompt is not yours, so it never waits behind your questions.
+    if card.is_none() {
+        let queued = state.with_chat(|c| match c.get_mut(nook_id) {
+            Some(conv) if conv.busy => {
+                let document = attachment.as_ref().map(|a| (a.name.clone(), a.text.clone()));
+                Some(conv.queue.enqueue(raw, images.clone(), document, chrono::Utc::now()).is_some())
+            }
+            _ => None,
+        });
+        match queued {
+            Some(true) => {
+                state.save_chat();
+                updated(app, nook_id);
+                return Ok(None);
+            }
+            Some(false) => return Err(nook_core::i18n::tr("De wachtrij is vol.", "The queue is full.").into()),
+            None => {}
+        }
+    }
+
     // "Maak ongedaan": de laatste acties, omgekeerd, als plan om goed te keuren.
     if undo::is_request(&text) {
         propose_undo(app, nook_id, &text);
@@ -236,11 +262,19 @@ fn ask_with(
         answer.notices.push("Dit brein kan geen afbeeldingen zien. Kies Claude, OpenAI, Gemini of een lokaal model dat plaatjes ziet (Qwen 3.5/3.6, Gemma 3/4) in Instellingen › Brein.".into());
     }
     let message_id = answer.id.clone();
-    let hidden = settings.private_sources();
+    // A question about the screen while the screen stays on this computer: the screen brain on this computer answers
+    // it, or writes the chosen brain a filtered note (`screen_work`). Everything else goes to the chosen brain.
+    let route = if card.is_some() { Route::Chosen } else { screen_work::route(app, &settings, nook_id, &text, !images.is_empty()) };
+    let hidden = if route.sees_everything() { BTreeSet::new() } else { settings.private_sources() };
     // As much of the conversation as this brain's window has room for, older turns shortened or folded into a recap.
     let window = conversation_window::Limits::fitting(&service::profile_for(&settings, crate::brain::memory_gb()));
-    let history = state.with_chat(|c| {
+    let (history, local_history) = state.with_chat(|c| {
         let history = c.get(nook_id).map(|conv| conv.window_hiding(&window, &hidden)).unwrap_or_default();
+        // The model on this computer reads the whole conversation for its note; the chosen brain what it may see.
+        let local = match route {
+            Route::Relay { .. } => c.get(nook_id).map(|conv| conv.window_hiding(&window, &BTreeSet::new())).unwrap_or_default(),
+            _ => history.clone(),
+        };
         let mut question = ChatMessage::user(&text);
         question.images = images.iter().map(|i| format!("data:{};base64,{}", i.media_type, i.base64)).collect();
         question.attachment = attachment.as_ref().map(|a| a.name.clone());
@@ -249,7 +283,7 @@ fn ask_with(
         if let Some(conv) = c.get_mut(nook_id) {
             conv.busy = true;
         }
-        history
+        (history, local)
     });
     // A card's answer is about its own chat only: earlier turns of this Nook stay out of it.
     let history = if card.is_some() { vec![] } else { history };
@@ -258,7 +292,8 @@ fn ask_with(
     let task_app = app.clone();
     let (nid, mid) = (nook_id.to_string(), message_id.clone());
     let handle = tauri::async_runtime::spawn(async move {
-        let answer = answer_question(&task_app, &nid, &mid, &text, &history, images, attachment, false, None);
+        let answer =
+            screen_work::answer(task_app.clone(), nid.clone(), mid.clone(), text, history, local_history, images, attachment, route);
         let answer = async move {
             match note {
                 Some(note) => ASK_NOTE.scope(note, answer).await,
@@ -405,7 +440,7 @@ fn memory_limits(settings: &Settings) -> (usize, usize) {
 }
 
 /// Wat het antwoord niet kon gebruiken omdat het alleen op dit apparaat mag, terwijl de vraag erom vroeg.
-fn withheld(settings: &Settings, text: &str, scope: &SourceScope) -> BTreeSet<String> {
+pub(crate) fn withheld(settings: &Settings, text: &str, scope: &SourceScope) -> BTreeSet<String> {
     let hidden = settings.private_sources();
     if hidden.is_empty() {
         return BTreeSet::new();
@@ -582,6 +617,12 @@ pub async fn answer_question(
         evidence: &evidence_text,
         findings: &findings,
     });
+
+    // What the screen brain wrote for this answer (`private_brief`), or what the chosen brain found for its part.
+    let context = match screen_work::brief_context().or_else(screen_work::outside_context) {
+        Some(head) => format!("{head}\n\n{context}"),
+        None => context,
+    };
 
     let mut request = text.to_string();
     // Every brain gets the text in the pictures, read on this computer: one that cannot see still knows what they show.
@@ -846,6 +887,39 @@ fn finish(app: &AppHandle, nook_id: &str) {
     state.running.lock().unwrap_or_else(|e| e.into_inner()).remove(nook_id);
     state.save_chat();
     updated(app, nook_id);
+    send_queued(app, nook_id, None);
+}
+
+/// The next question that waited in line, once the answer before it is done. `message`: that question right away (Send
+/// now), stopping the answer that runs; it also lets a line held after a stop or an error go again.
+pub fn send_queued(app: &AppHandle, nook_id: &str, message: Option<&str>) {
+    let state = app.state::<AppState>();
+    if message.is_some() && state.with_chat(|c| c.get(nook_id).is_some_and(|conv| conv.busy)) {
+        stop(app, nook_id);
+    }
+    let next = state.with_chat(|c| {
+        let conv = c.get_mut(nook_id).filter(|conv| !conv.busy)?;
+        match message {
+            Some(id) => conv.queue.take(id),
+            None => conv.queue.take_next(),
+        }
+    });
+    let Some(next) = next else { return };
+    state.save_chat();
+    // Like the Mac's `sendQueued`: it never brings the main window to the front.
+    let attachment = next.document.map(|(name, text)| Attachment { name, text });
+    if let Err(e) = ask_with(app, nook_id, &next.text, next.images, attachment, None, None, false) {
+        log::warn!("queued question for {nook_id} did not go out: {e}");
+    }
+}
+
+/// Holds the line after a stop or an error: nothing goes out on its own until you send one of its questions.
+fn hold_queue(app: &AppHandle, nook_id: &str) {
+    app.state::<AppState>().with_chat(|c| {
+        if let Some(conv) = c.get_mut(nook_id) {
+            conv.queue.hold();
+        }
+    });
 }
 
 fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, settings: &Settings) {
@@ -862,6 +936,7 @@ fn finish_error(app: &AppHandle, nook_id: &str, message_id: &str, error: &str, s
             m.text += &format!("\n\n_{error}_");
         }
     });
+    hold_queue(app, nook_id);
     finish(app, nook_id);
 }
 
@@ -899,11 +974,13 @@ fn name_after_first_answer(app: &AppHandle, nook_id: &str, message_id: &str) {
     });
     let Some((seed, question, answer)) = seed else { return };
     let (app, nid) = (app.clone(), nook_id.to_string());
+    // An answer the screen brain wrote gets its title from that same model: what it read never reaches another brain.
+    let routed = crate::state::ROUTED.try_with(Clone::clone).ok();
     tauri::async_runtime::spawn(async move {
         // Let the next question go first, as a reflection does.
         tokio::time::sleep(Duration::from_secs(2)).await;
         let state = app.state::<AppState>();
-        let settings = state.settings();
+        let settings = routed.unwrap_or_else(|| state.settings());
         // A model on this computer runs one thing at a time: a title never waits for, or holds up, an answer.
         if settings.is_local_brain() && state.with_chat(|c| c.conversations.iter().any(|conv| conv.busy)) {
             return;
@@ -978,6 +1055,8 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
         plain.iter().filter(|t| !t.from_user).map(|t| t.text.clone()).chain(std::iter::once(message.text.clone())).collect();
     brain.memory.begin_reflection(nook_id);
     let (app, nid, mid) = (app.clone(), nook_id.to_string(), message_id.to_string());
+    // An answer the screen brain wrote is reflected on by that same model: what it read never reaches another brain.
+    let routed = crate::state::ROUTED.try_with(Clone::clone).ok();
     tauri::async_runtime::spawn(async move {
         // De volgende vraag gaat voor: een reflectie zit nooit in de weg.
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -989,7 +1068,7 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
             return;
         }
         let recent: Vec<String> = user_turns.iter().rev().take(6).rev().cloned().collect();
-        let settings = state.settings();
+        let settings = routed.unwrap_or_else(|| state.settings());
         let env = env(&app, &settings);
         let known = brain.memory.recall(&recent.join("\n"), &Default::default(), 20, 3_000, settings.is_local_brain());
         let nook: Vec<String> = answers.iter().rev().take(recent.len()).rev().cloned().collect();
@@ -1052,6 +1131,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
                     m.text = "Gestopt.".into();
                 }
             }
+            conv.queue.hold();
         }
     });
     state.save_chat();

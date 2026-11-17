@@ -62,6 +62,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - `ModelProfile`, `ModelAdvisor`, `ModelDownload` (one-click Ollama install). **Tauri:** ✓. **Where:** `core/src/brain/profile.rs`, `model_download.rs`
 
+- Nook Chat queue (`NookChat.enqueue`/`moveQueued`/`holdQueue`, `QueuedMessagesStrip`): a question asked while Nook answers waits in line (Return or the queue button), goes out on its own after the answer, is held after a stop or an error until you send one; Send now, Remove, Move up/down. **Tauri:** ✓ (pictures and a document stay in memory only, as on the Mac; compared with the Mac's strip rendered offscreen). **Where:** `core/src/brain/queue.rs`, `commands/chat.rs`, `components/QueuedTray.svelte`
+
 - Nook Chat titles (`nameAfterFirstAnswer`, `ConversationTitle`): after a Nook's first answer the chosen brain writes a two-to-five-word title, only while the title is still the question's own; a local brain skips it while another answer runs. **Tauri:** ◐ (prompt and cleaning unit-tested; not run against a live brain). **Where:** `core/src/brain/conversation_title.rs`, `name_after_first_answer` in `commands/chat.rs`
 
 - Nook's own browser from Nook Chat (`read_nook_browser`, `open_in_nook_browser`): reads the open page without starting the browser; opens `https://` addresses after approval in the chat's plan and brings the browser window forward. **Tauri:** ◐ (`https` check and page formatting unit-tested; compiles for Windows; not run inside the app window). **Where:** `core/src/workspace/browser.rs`, `src-tauri/src/tools/browser.rs`
@@ -79,6 +81,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 - Plans with Run, never run twice, Undo. **Tauri:** ✓. **Where:** `src-tauri/src/commands/plans.rs`
 
 - `Research`, `Retrieval` (searching on its own, numbered sources, per-reference excerpts, strip model "Sources:" lists). **Tauri:** ✓. **Where:** `core/src/brain/research.rs`, `retrieval.rs`
+
+- Screen work on a model on this computer (`ScreenBrain`, `PrivateBrief`, `answerTogether`, Settings › Brain › Screen work): with an external brain and the screen kept here, a question about the screen (or another kept source) is answered by the chosen Ollama or LM Studio model in a run whose settings think on it; or that model writes a filtered note (secrets, mail addresses and phone numbers out) the external brain answers from, shown under the answer as *What left this computer*; a question for both has the external brain look up its part first without the screen; `compose_mail` fills in an address the note held back by name. **Tauri:** ◐ (decisions, note and filter unit-tested with the Mac's cases; not run against a live model; the note reads only the screen, so a question about another kept source is answered by the local model itself; thinking along, Double Tap and taking over still stay off while the screen is kept, see SV and BR-29; no browser-page variant until CH-60). **Where:** `core/src/brain/screen_brain.rs`, `core/src/brain/private_brief.rs`, `src-tauri/src/commands/screen_work.rs`, `state::ROUTED`, `views/settings/Brain.svelte`
 
 - `SecretStore`. **Tauri:** ✓. **Where:** Credential Manager, Secret Service, private app folder on Android
 

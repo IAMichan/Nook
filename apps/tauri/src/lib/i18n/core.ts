@@ -146,6 +146,7 @@ export const table: Table = {
   "Shrink": { de: "Verkleinern", fr: "Réduire", es: "Reducir" },
   "Enlarge": { de: "Vergrößern", fr: "Agrandir", es: "Ampliar" },
   "Thinking…": { de: "Denke nach…", fr: "Réflexion…", es: "Pensando…" },
+  "What left this computer": { de: "Was diesen Computer verlassen hat", fr: "Ce qui a quitté cet ordinateur", es: "Lo que salió de este ordenador" },
   "Try again": { de: "Erneut versuchen", fr: "Réessayer", es: "Reintentar" },
 
   // Local models
@@ -547,4 +548,10 @@ export const table: Table = {
   "Could not open terminal": { de: "Terminal konnte nicht geöffnet werden", fr: "Impossible d’ouvrir le terminal", es: "No se pudo abrir el terminal" },
   "Copy table": { de: "Tabelle kopieren", fr: "Copier le tableau", es: "Copiar tabla" },
   "Copy as CSV": { de: "Als CSV kopieren", fr: "Copier en CSV", es: "Copiar como CSV" },
+  // The queue above the composer (Mac `compose.queue.*`).
+  "Paused after an error or stop": { de: "Pausiert nach Fehler oder Stopp", fr: "En pause après une erreur ou un arrêt", es: "En pausa tras un error o una parada" },
+  "Goes out after this turn": { de: "Geht nach diesem Zug raus", fr: "Part après ce tour", es: "Sale tras este turno" },
+  "{n} images": { de: "{n} Bilder", fr: "{n} images", es: "{n} imágenes" },
+  "Move up": { de: "Nach oben", fr: "Monter", es: "Subir" },
+  "Move down": { de: "Nach unten", fr: "Descendre", es: "Bajar" },
 };

@@ -10,6 +10,7 @@
   import { askedBefore } from "../lib/recall";
   import { drafts } from "../lib/drafts";
   import { barDraft, Draft } from "../lib/draft.svelte";
+  import { api } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import { tr, locale } from "../lib/i18n.svelte";
   import { attachments } from "../lib/attachments.svelte";
@@ -19,8 +20,9 @@
   import Listening from "../views/services/Listening.svelte";
   import SourcePicker from "./SourcePicker.svelte";
   import ChatAccounts from "../views/connectors/ChatAccounts.svelte";
-  import { accessOf, nextAccess, type NookAccess } from "../lib/access";
+  import QueuedTray from "./QueuedTray.svelte";
   import BrainPicker from "./BrainPicker.svelte";
+  import { accessOf, nextAccess, type NookAccess } from "../lib/access";
 
   let { autofocus = false, compact = false }: { autofocus?: boolean; compact?: boolean } = $props();
   // The bar's field keeps its draft when the panel closes; other fields keep theirs only while they are open.
@@ -124,6 +126,7 @@
     field: tr("Bericht aan Nook", "Message Nook"),
     send: tr("Versturen (Enter)", "Send message (Enter)"),
     stop: tr("Antwoord stoppen", "Stop response"),
+    queue: tr("In de wachtrij: gaat na deze beurt", "Queue: goes after this turn"),
     attach: tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents"),
     removeImage: tr("Afbeelding weghalen", "Remove image"),
     removeFile: tr("Weghalen", "Remove"),
@@ -133,6 +136,15 @@
 </script>
 
 <div class="composer" class:compact onkeydowncapture={accessKey} onpastecapture={pastePath}>
+  {#if nook.active?.queue?.messages.length}
+    {@const id = nook.active.id}
+    <QueuedTray
+      queue={nook.active.queue}
+      remove={(m) => api.queueRemove(id, m)}
+      move={(m, to) => api.queueMove(id, m, to)}
+      sendNow={(m) => api.queueSendNow(id, m)}
+    />
+  {/if}
   <SharedComposer
     bind:this={composer}
     {draft}
@@ -143,6 +155,7 @@
     historyKey={nook.activeId}
     locale={locale()}
     busy={nook.busy}
+    queues
     escapeStops={!compact}
     onsend={send}
     onstop={() => nook.stop()}

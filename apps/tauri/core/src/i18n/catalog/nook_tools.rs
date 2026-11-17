@@ -243,6 +243,12 @@ pub const ROWS: &[Row] = &[
         "Aucune connexion au bus d'accessibilité (AT-SPI).",
         "Sin conexión con el bus de accesibilidad (AT-SPI).",
     ),
+    (
+        "Reading browser tabs is not available on this platform.",
+        "Browser-Tabs können auf dieser Plattform nicht gelesen werden.",
+        "La lecture des onglets du navigateur n'est pas disponible sur cette plateforme.",
+        "La lectura de pestañas del navegador no está disponible en esta plataforma.",
+    ),
     // System and network status tools (`tools::system`).
     ("This computer's status", "Status dieses Computers", "État de cet ordinateur", "Estado de este ordenador"),
     ("IP addresses of this computer", "IP-Adressen dieses Computers", "Adresses IP de cet ordinateur", "Direcciones IP de este ordenador"),

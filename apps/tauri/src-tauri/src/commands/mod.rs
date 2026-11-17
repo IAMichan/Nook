@@ -10,6 +10,7 @@ pub mod companion;
 pub mod games;
 pub mod maintenance;
 pub mod plans;
+pub mod screen_work;
 pub mod selection_ask;
 pub mod workspace;
 pub mod workspace_tools;
@@ -226,6 +227,33 @@ pub fn ask(
 #[tauri::command]
 pub fn stop(app: AppHandle, nook_id: String) {
     chat::stop(&app, &nook_id);
+}
+
+/// Takes a waiting question out of line.
+#[tauri::command]
+pub fn queue_remove(app: AppHandle, nook_id: String, id: String) {
+    queue_change(&app, &nook_id, |q| q.remove(&id));
+}
+
+/// Moves a waiting question to another place in line.
+#[tauri::command]
+pub fn queue_move(app: AppHandle, nook_id: String, id: String, to: usize) {
+    queue_change(&app, &nook_id, |q| q.move_to(&id, to));
+}
+
+/// Sends a waiting question now, stopping the answer that runs.
+#[tauri::command]
+pub fn queue_send_now(app: AppHandle, nook_id: String, id: String) {
+    chat::send_queued(&app, &nook_id, Some(&id));
+}
+
+fn queue_change(app: &AppHandle, nook_id: &str, change: impl FnOnce(&mut nook_core::brain::queue::MessageQueue) -> bool) {
+    let state = app.state::<AppState>();
+    let changed = state.with_chat(|c| c.get_mut(nook_id).is_some_and(|conv| change(&mut conv.queue)));
+    if changed {
+        state.save_chat();
+        updated(app, nook_id);
+    }
 }
 
 #[tauri::command]

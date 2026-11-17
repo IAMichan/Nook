@@ -66,11 +66,14 @@ pub mod model_download;
 pub mod network_guard;
 pub mod open_browser_tab;
 pub mod prepare;
+pub mod private_brief;
 pub mod profile;
 pub mod quality;
+pub mod queue;
 pub mod query_plan;
 pub mod research;
 pub mod retrieval;
+pub mod screen_brain;
 pub mod service;
 pub mod sources;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -124,6 +124,9 @@ pub struct ChatMessage {
     /// De toegestane bronnen als de gebruiker ze beperkte ("Alleen Agenda en Mail").
     pub scope_label: String,
     pub notices: Vec<String>,
+    /// The filtered note this answer was written from (`brain::private_brief`): exactly what left this computer of
+    /// what stays on it.
+    pub private_brief: String,
     pub charts: Vec<ChatChart>,
     /// The plan Nook works through (`update_plan`), shown as a checklist above the answer.
     pub tasks: Vec<crate::brain::task_steps::TaskStep>,
@@ -161,6 +164,7 @@ impl Default for ChatMessage {
             context_sources: vec![],
             scope_label: String::new(),
             notices: vec![],
+            private_brief: String::new(),
             charts: vec![],
             tasks: vec![],
             mails: vec![],
@@ -304,6 +308,9 @@ pub struct Conversation {
     pub pinned: bool,
     #[serde(default)]
     pub archived: bool,
+    /// Questions waiting for the answer that is being written (`NookChat.enqueue` on the Mac).
+    #[serde(default, skip_serializing_if = "crate::brain::queue::MessageQueue::is_empty")]
+    pub queue: crate::brain::queue::MessageQueue,
     /// The automation whose run this conversation is (a scheduled task for Nook Chat), for the "Scheduled run" marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduled_task: Option<String>,
@@ -323,6 +330,7 @@ impl Conversation {
             scope: None,
             pinned: false,
             archived: false,
+            queue: Default::default(),
             scheduled_task: None,
         }
     }
