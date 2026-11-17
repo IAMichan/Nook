@@ -1399,7 +1399,8 @@ mod tests {
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["nookAction"]["kind"], "pin");
         let answer: CompanionResponse =
-            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3})).unwrap();
+            serde_json::from_value(serde_json::json!({"id": "A", "ok": true, "conversationsFound": [], "conversationsArchived": 3}))
+                .unwrap();
         assert_eq!(answer.conversations_archived, Some(3));
         assert!(answer.conversations_found.is_some());
     }
