@@ -4,7 +4,7 @@
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
       | "code" | "sparkle" | "x" | "grip" | "tasks"
       | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass"
-      | "palette" | "keyboard" | "archive" | "bell" | "clock" | "play" | "pause";
+      | "palette" | "keyboard" | "archive" | "bell" | "clock" | "play" | "pause" | "play" | "wrap" | "image";
     size?: number;
   } = $props();
 </script>
@@ -65,5 +65,8 @@
   {:else if name === "clock"}<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" />
   {:else if name === "play"}<path d="M8 5.5v13l10-6.5Z" />
   {:else if name === "pause"}<path d="M9 6v12M15 6v12" />
+  {:else if name === "play"}<polygon points="7 5 19 12 7 19 7 5" />
+  {:else if name === "wrap"}<path d="M3 6h18M3 12h15a3 3 0 1 1 0 6h-4m0 0 2-2m-2 2 2 2M3 18h7" />
+  {:else if name === "image"}<rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="m21 15-4.5-4.5a1.5 1.5 0 0 0-2.1 0L6 19" />
   {/if}
 </svg>

@@ -1,7 +1,9 @@
 <script lang="ts">
   // Een mailconcept in de chat: aan te passen, en pas weg na een klik op Versturen (via je mailprogramma).
   import { brainApi, type MailDraft } from "../lib/brain";
-  import { tr } from "../lib/i18n.svelte";
+  import { locale, tr } from "../lib/i18n.svelte";
+  import { hasInviteFile, inviteSummary } from "../lib/mail-invite";
+  import Icon from "./Icon.svelte";
 
   let { draft, nookId }: { draft: MailDraft; nookId: string } = $props();
   let edit = $state<MailDraft>({ id: "", to: "", cc: "", subject: "", body: "", state: "draft", error: "" });
@@ -13,6 +15,8 @@
   });
 
   const sent = $derived(draft.state === "sent");
+  const inviteLine = $derived(draft.invite ? inviteSummary(draft.invite, locale()) : "");
+  const canOpenInvite = $derived(hasInviteFile(draft));
 
   async function save() {
     error = null;
@@ -42,6 +46,15 @@
       error = String(e);
     }
   }
+
+  async function openInvite() {
+    error = null;
+    try {
+      await brainApi.mailOpenInvite(nookId, edit);
+    } catch (e) {
+      error = String(e);
+    }
+  }
 </script>
 
 <div class="mail" class:sent>
@@ -53,11 +66,26 @@
     <label>{tr("Aan", "To")} <input bind:value={edit.to} placeholder={tr("naam@voorbeeld.nl", "name@example.com")} /></label>
     <label>Cc <input bind:value={edit.cc} /></label>
     <label>{tr("Onderwerp", "Subject")} <input bind:value={edit.subject} /></label>
+    {#if inviteLine}
+      <div class="invite-row">
+        <Icon name="calendar" size={13} />
+        <span class="invite-text">{tr("Uitnodiging: {summary}", "Invitation: {summary}", { summary: inviteLine })}</span>
+      </div>
+    {/if}
     <textarea bind:value={edit.body} rows="8"></textarea>
   {:else}
     <div class="row"><span class="faint">{tr("Aan", "To")}</span> {draft.to || "—"}</div>
     {#if draft.cc}<div class="row"><span class="faint">Cc</span> {draft.cc}</div>{/if}
     <div class="row"><span class="faint">{tr("Onderwerp", "Subject")}</span> <strong>{draft.subject}</strong></div>
+    {#if inviteLine}
+      <div class="invite-row">
+        <Icon name="calendar" size={13} />
+        <span class="invite-text">{tr("Uitnodiging: {summary}", "Invitation: {summary}", { summary: inviteLine })}</span>
+        {#if canOpenInvite}
+          <button class="ghost small" onclick={openInvite}>{tr("Open .ics", "Open .ics")}</button>
+        {/if}
+      </div>
+    {/if}
     <div class="body">{draft.body}</div>
   {/if}
   {#if error || draft.error}<p class="err">{error ?? draft.error}</p>{/if}
@@ -81,6 +109,9 @@
   .head { display: flex; gap: 8px; align-items: baseline; }
   .row { font-size: 13px; }
   .row .faint { display: inline-block; width: 74px; }
+  .invite-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--iris, var(--text)); padding: 4px 0; }
+  .invite-text { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.small { padding: 2px 8px; font-size: 11px; }
   .body { white-space: pre-wrap; user-select: text; border-top: 1px solid var(--line); padding-top: 6px; line-height: 1.45; }
   label { display: grid; grid-template-columns: 74px 1fr; align-items: center; font-size: 12px; color: var(--text2); }
   textarea { resize: vertical; line-height: 1.4; }

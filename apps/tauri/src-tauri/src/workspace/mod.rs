@@ -167,10 +167,11 @@ fn on_event(app: &AppHandle, event: ManagerEvent) {
             let _ = app.emit("workspace-timeline", id.to_string());
         }
         ManagerEvent::Approval(approval) => {
-            let _ = app.emit("agent-approval", approval);
-            crate::agents::open_bar(app);
+            let _ = app.emit("agent-approval", &approval);
+            crate::agents::present_approval(app, &approval);
         }
         ManagerEvent::ApprovalGone(id) => {
+            crate::agents::approval_gone(app, &id);
             let _ = app.emit("agent-approval-gone", Gone { id, message: None });
         }
         ManagerEvent::Question(question) => {
@@ -184,7 +185,9 @@ fn on_event(app: &AppHandle, event: ManagerEvent) {
             if run.status == RunStatus::Stopped {
                 return;
             }
-            let _ = app.emit("agent-attention", attention_card(&run, &last));
+            let card = attention_card(&run, &last);
+            crate::agents::present_attention(app, &card);
+            let _ = app.emit("agent-attention", card);
         }
     }
 }

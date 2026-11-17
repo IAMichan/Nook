@@ -121,6 +121,12 @@
 
   // "nook:<id>" (from the bar's Open in window) opens that same conversation, so you continue where you were.
   function applyRoute(r: string) {
+    // "settings:<subject>": Settings at that subject (`open_settings` from the chat).
+    if (r.startsWith("settings:")) {
+      try { localStorage.setItem("settings.section", r.slice(9)); } catch { /* opens on the last page instead */ }
+      route = "settings";
+      return;
+    }
     if (r.startsWith("nook:")) {
       route = "chat";
       if (mobile) showList = false;

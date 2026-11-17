@@ -8,8 +8,8 @@
   import { inbox } from "../lib/inbox.svelte";
   import { registerInboxSources } from "../lib/inbox-sources";
   import type { Target } from "../lib/inbox";
-  import { renderMarkdown } from "../lib/markdown";
   import Composer from "./Composer.svelte";
+  import Markdown from "./Markdown.svelte";
   import MessageView from "./MessageView.svelte";
   import Onboarding from "./Onboarding.svelte";
   import ForYou from "./ForYou.svelte";
@@ -104,7 +104,7 @@
         {#if reading}
           <div class="reading">
             <div class="reading-head"><span class="label">{reading.title}</span><button class="ghost" onclick={() => (reading = null)}>{tr("Sluiten", "Close")}</button></div>
-            <div class="markdown">{@html renderMarkdown(reading.markdown)}</div>
+            <Markdown text={reading.markdown} />
           </div>
         {/if}
         {#if welcome}

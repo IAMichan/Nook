@@ -38,7 +38,7 @@
       {#if total(session.tokens)} · {tr("{n} tokens", "{n} tokens", { n: formatTokens(total(session.tokens)) })}{/if}
     </div>
   </header>
-  <div class="scroll"><div class="thread-column body"><Conversation path={session.path} /></div></div>
+  <div class="scroll"><div class="thread-column body"><Conversation path={session.path} baseFolder={session.lastCwd || session.cwd} /></div></div>
   <div class="thread-column foot">
   {#if error}<p class="err">{error}</p>{/if}
   {#if oncontinue}
