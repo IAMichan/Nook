@@ -68,6 +68,9 @@ pub struct MailDraft {
     pub to: String,
     #[serde(default)]
     pub cc: String,
+    /// Blind copy recipients; empty in drafts stored before Bcc existed.
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
     pub body: String,
     /// Paths on disk attached to this draft (such as `invite.ics`).
@@ -89,6 +92,7 @@ impl MailDraft {
             id: uuid::Uuid::new_v4().to_string(),
             to: to.into(),
             cc: cc.into(),
+            bcc: String::new(),
             subject: subject.into(),
             body: body.into(),
             attachments: Vec::new(),

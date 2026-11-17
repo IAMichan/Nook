@@ -743,6 +743,7 @@ targets:
       - path: Services/AntigravityClient.swift
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
+      - path: Brain/MailTemplate.swift
       - path: Brain/MathText.swift
       - path: Brain/ChartRescue.swift
       - path: Brain/IncrementalMarkdown.swift
