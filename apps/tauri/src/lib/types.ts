@@ -240,3 +240,8 @@ export interface StreamEvent {
   messageId: string;
   text: string;
 }
+
+export interface ChatTerminal {
+  folder: string;
+  id: string;
+}

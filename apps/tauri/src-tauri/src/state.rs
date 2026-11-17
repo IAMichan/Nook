@@ -5,6 +5,14 @@ use nook_core::secrets::SecretStore;
 use nook_core::settings::Settings;
 use nook_core::store::NookStore;
 
+/// Terminal opened beside the chat in the main window when `run_command` executes.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTerminal {
+    pub folder: String,
+    pub id: String,
+}
+
 /// Alles wat de commando's delen. Eén exemplaar, beheerd door Tauri.
 pub struct AppState {
     pub settings: RwLock<Settings>,
@@ -17,6 +25,8 @@ pub struct AppState {
     pub running: Mutex<std::collections::HashMap<String, tokio::task::AbortHandle>>,
     /// Waar het hoofdvenster heen moet zodra de interface geladen is.
     pub pending_route: Mutex<Option<String>>,
+    /// Terminal die naast de chat getoond moet worden zodra het hoofdvenster geladen is.
+    pub pending_chat_terminal: Mutex<Option<ChatTerminal>>,
 }
 
 impl AppState {
@@ -30,6 +40,7 @@ impl AppState {
             secrets,
             running: Mutex::new(Default::default()),
             pending_route: Mutex::new(None),
+            pending_chat_terminal: Mutex::new(None),
         }
     }
 

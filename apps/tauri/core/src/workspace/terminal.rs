@@ -42,6 +42,43 @@ fn quote(text: &str) -> String {
     crate::agents::profiles::shell_quote(text)
 }
 
+/// What `run_command` in Nook Chat starts in a visible terminal: a validated command, resolved folder, and tab title.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandRequest {
+    pub command: String,
+    pub folder: String,
+    pub title: String,
+}
+
+/// Expands a leading `~` (`~`, `~/sub`, `~\sub`) against `home`, matching NSString.expandingTildeInPath on the Mac.
+pub fn expand_tilde(path: &str, home: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed == "~" {
+        return home.to_string();
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/").or_else(|| trimmed.strip_prefix("~\\")) {
+        let base = home.trim_end_matches(['/', '\\']);
+        let sep = if base.contains('\\') && !base.contains('/') { '\\' } else { '/' };
+        if rest.is_empty() {
+            return base.to_string();
+        }
+        return format!("{base}{sep}{rest}");
+    }
+    trimmed.to_string()
+}
+
+/// Validates and normalizes `run_command` arguments before opening a visible terminal beside the chat.
+pub fn command_request(command: &str, folder: &str, home: &str) -> Result<CommandRequest, String> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Err(crate::i18n::tr("Er is geen commando opgegeven.", "No command was given.").into());
+    }
+    let raw_folder = folder.trim();
+    let folder = if raw_folder.is_empty() { home.to_string() } else { expand_tilde(raw_folder, home) };
+    let title: String = command.chars().take(40).collect();
+    Ok(CommandRequest { command, folder, title })
+}
+
 /// Bewaart de laatste uitvoer van een terminal (ruwe tekst met escapecodes), om hem opnieuw te tonen en voor agents.
 #[derive(Debug, Clone, Default)]
 pub struct OutputBuffer {
@@ -425,5 +462,22 @@ mod tests {
         assert!(within("C:\\p\\app\\web", "C:\\p\\app"));
         assert!(!within("/p/apple", "/p/app"));
         assert!(!within("/p", ""));
+    }
+
+    #[test]
+    fn command_requests_expand_tilde_and_require_a_command() {
+        assert_eq!(expand_tilde("~", "/home/alice"), "/home/alice");
+        assert_eq!(expand_tilde(" ~/code ", "/home/alice"), "/home/alice/code");
+        assert_eq!(expand_tilde("~\\code", "C:\\Users\\alice"), "C:\\Users\\alice\\code");
+        assert_eq!(expand_tilde("/tmp/work", "/home/alice"), "/tmp/work");
+
+        assert!(command_request("   ", "", "/home/alice").is_err());
+        let default_dir = command_request("  git status  ", "", "/home/alice").unwrap();
+        assert_eq!(default_dir, CommandRequest { command: "git status".into(), folder: "/home/alice".into(), title: "git status".into() });
+
+        let long_cmd = "a".repeat(60);
+        let long = command_request(&long_cmd, "~/proj", "/home/alice").unwrap();
+        assert_eq!(long.folder, "/home/alice/proj");
+        assert_eq!(long.title.chars().count(), 40);
     }
 }

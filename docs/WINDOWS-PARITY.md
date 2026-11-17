@@ -283,7 +283,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-23** `github_merge_prs` (batch merge) · S
 
-- [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
+- [x] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
 
 - [x] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
 

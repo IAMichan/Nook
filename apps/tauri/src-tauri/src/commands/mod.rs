@@ -326,6 +326,12 @@ pub fn take_route(state: State<'_, AppState>) -> Option<String> {
     state.pending_route.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
+/// De terminal die naast de chat getoond moet worden, één keer.
+#[tauri::command]
+pub fn take_chat_terminal(state: State<'_, AppState>) -> Option<crate::state::ChatTerminal> {
+    state.pending_chat_terminal.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
 /// Zwevende stand: onthoud waar de gebruiker de balk neerzette, als afstand tot het midden van het scherm.
 #[tauri::command]
 pub fn bar_moved(app: AppHandle, state: State<'_, AppState>) {

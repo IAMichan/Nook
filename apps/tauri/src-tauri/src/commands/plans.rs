@@ -29,6 +29,22 @@ fn scope_of(app: &AppHandle, nook_id: &str) -> SourceScope {
     app.state::<AppState>().with_chat(|c| c.get(nook_id).and_then(|conv| conv.scope.clone())).unwrap_or_default()
 }
 
+pub(crate) fn step_tag(tool: &str, input: &Value) -> String {
+    match tool {
+        "remember" if !tools::text(input, "replaces").is_empty() => "vervangt".into(),
+        "forget" => "vergeet".into(),
+        "delete_event" | "delete_reminder" => "verwijdert".into(),
+        "app_menu_command" => nook_core::i18n::tr("menucommando", "menu command").into(),
+        "run_command"
+            if nook_core::brain::command_risk::assess(&tools::text(input, "command")).level
+                != nook_core::brain::command_risk::Level::Safe =>
+        {
+            nook_core::i18n::tr("controleer", "review").into()
+        }
+        _ => String::new(),
+    }
+}
+
 pub fn plan_steps(app: &AppHandle, nook_id: &str, message_id: &str) -> Vec<PlanStep> {
     let ctx = ToolCtx::new(app, "").in_nook(nook_id);
     let all = tools::all_tools(&ctx);
@@ -40,18 +56,11 @@ pub fn plan_steps(app: &AppHandle, nook_id: &str, message_id: &str) -> Vec<PlanS
         .iter()
         .map(|a| {
             let schema = all.iter().find(|t| t.name == a.tool).map(|t| t.schema.clone()).unwrap_or(Value::Null);
-            let tag = match a.tool.as_str() {
-                "remember" if !tools::text(&a.input, "replaces").is_empty() => "vervangt",
-                "forget" => "vergeet",
-                "delete_event" | "delete_reminder" => "verwijdert",
-                "app_menu_command" => nook_core::i18n::tr("menucommando", "menu command"),
-                _ => "",
-            };
             PlanStep {
                 tool: a.tool.clone(),
                 summary: tools::summarize(&a.tool, &a.input),
                 fields: action_gate::fields(&a.input, &schema),
-                tag: tag.into(),
+                tag: step_tag(&a.tool, &a.input),
             }
         })
         .collect()
@@ -302,5 +311,12 @@ mod tests {
             PlanState::Failed("1 van 3 gelukt. Stap 2 mislukt: kapot".into())
         );
         assert_eq!(outcome(&[StepState::Skipped]), PlanState::Done("Niets uitgevoerd".into()));
+    }
+
+    #[test]
+    fn run_command_step_tag_marks_non_safe_commands() {
+        assert_eq!(step_tag("run_command", &serde_json::json!({"command": "git status"})), "");
+        assert!(!step_tag("run_command", &serde_json::json!({"command": "sudo ls"})).is_empty());
+        assert!(!step_tag("run_command", &serde_json::json!({"command": "rm -rf /"})).is_empty());
     }
 }
