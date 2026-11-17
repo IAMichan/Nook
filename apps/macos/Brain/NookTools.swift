@@ -149,7 +149,7 @@ final class NookTools {
                     let title = (input["title"] as? String) ?? "Event"
                     let start = NookTools.parseDate(input, "start").map { NookDates.short($0) } ?? "?"
                     let target = ((input["calendar"] as? String).map { " · \($0)" }) ?? ""
-                    return "Calendar: \(title) · \(start)\(target)"
+                    return tr("plan.summary.calendar", "\(title) · \(start)\(target)")
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
@@ -180,12 +180,12 @@ final class NookTools {
                 kind: .action,
                 summarize: { input in
                     var parts: [String] = []
-                    if let title = input["title"] as? String { parts.append("title \"\(title)\"") }
-                    if let start = NookTools.parseDate(input, "start") { parts.append("to \(NookDates.short(start))") }
-                    if let location = input["location"] as? String { parts.append("location \(location)") }
-                    return "Update calendar: " + (parts.isEmpty ? "event" : parts.joined(separator: ", "))
+                    if let title = input["title"] as? String { parts.append(tr("plan.summary.part.title", title)) }
+                    if let start = NookTools.parseDate(input, "start") { parts.append(tr("plan.summary.part.start", NookDates.short(start))) }
+                    if let location = input["location"] as? String { parts.append(tr("plan.summary.part.location", location)) }
+                    return tr("plan.summary.updateCalendar", parts.isEmpty ? tr("plan.summary.event") : parts.joined(separator: ", "))
                 },
-                tag: { _ in ("modifies", .caution) },
+                tag: { _ in (tr("plan.tag.modifies"), .caution) },
                 run: { [weak self] input in
                     guard let self, let id = self.text(input, "id") else { throw NookError("Event ID is missing.") }
                     let changed = try await self.calendar.updateEvent(
@@ -205,8 +205,8 @@ final class NookTools {
                 kind: .action,
                 summarize: { input in
                     let title = (input["title"] as? String) ?? "Reminder"
-                    if let due = NookTools.parseDate(input, "due") { return "Reminder: \(title) · \(NookDates.short(due))" }
-                    return "Reminder: \(title)"
+                    if let due = NookTools.parseDate(input, "due") { return tr("plan.summary.reminder", "\(title) · \(NookDates.short(due))") }
+                    return tr("plan.summary.reminder", title)
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
@@ -220,8 +220,8 @@ final class NookTools {
                 description: "Removes a calendar event, by the ID from create_event or list_events. Use to undo an event Nook just made or when the user asks to remove one.",
                 schema: object(["id": string("ID of the event."), "title": string("Title of the event, shown in the plan. Optional.")], required: ["id"]),
                 kind: .action,
-                summarize: { input in "Remove from calendar: \((input["title"] as? String) ?? (input["id"] as? String) ?? "event")" },
-                tag: { _ in ("removes", .caution) },
+                summarize: { input in tr("plan.summary.removeEvent", (input["title"] as? String) ?? (input["id"] as? String) ?? tr("plan.summary.event")) },
+                tag: { _ in (tr("plan.tag.removes"), .caution) },
                 run: { [weak self] input in
                     guard let self, let id = self.text(input, "id") else { throw NookError("Event ID is missing.") }
                     let title = try await self.calendar.deleteEvent(id: id)
@@ -233,8 +233,8 @@ final class NookTools {
                 description: "Removes a reminder, by the ID from create_reminder. Use to undo a reminder Nook just made.",
                 schema: object(["id": string("ID of the reminder."), "title": string("Title of the reminder, shown in the plan. Optional.")], required: ["id"]),
                 kind: .action,
-                summarize: { input in "Remove reminder: \((input["title"] as? String) ?? (input["id"] as? String) ?? "reminder")" },
-                tag: { _ in ("removes", .caution) },
+                summarize: { input in tr("plan.summary.removeReminder", (input["title"] as? String) ?? (input["id"] as? String) ?? "?") },
+                tag: { _ in (tr("plan.tag.removes"), .caution) },
                 run: { [weak self] input in
                     guard let self, let id = self.text(input, "id") else { throw NookError("Reminder ID is missing.") }
                     let title = try await self.calendar.deleteReminder(id: id)
@@ -246,7 +246,7 @@ final class NookTools {
                 description: "Marks an active reminder as completed in Reminders. Supply the ID (from create_reminder output) or exact title from context.",
                 schema: object(["reminder": string("ID or exact title of the reminder.")], required: ["reminder"]),
                 kind: .action,
-                summarize: { input in "Complete reminder: \((input["reminder"] as? String) ?? "?")" },
+                summarize: { input in tr("plan.summary.completeReminder", (input["reminder"] as? String) ?? "?") },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let target = self.text(input, "reminder") else { throw NookError("Which reminder?") }
@@ -262,7 +262,7 @@ final class NookTools {
                     "due": string("Due date, ISO 8601. Optional.")
                 ], required: ["title"]),
                 kind: .action,
-                summarize: { input in "Remember: \((input["title"] as? String) ?? "todo")" },
+                summarize: { input in tr("plan.summary.addTodo", (input["title"] as? String) ?? "?") },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let title = self.text(input, "title") else { throw NookError("Title is missing.") }
@@ -276,7 +276,7 @@ final class NookTools {
                 description: "Marks an open todo in Nook as completed. Supply the bracketed ID from context or list_open_loops, or exact title.",
                 schema: object(["loop": string("ID (first eight characters sufficient) or exact title.")], required: ["loop"]),
                 kind: .action,
-                summarize: { input in "Complete todo: \((input["loop"] as? String) ?? "?")" },
+                summarize: { input in tr("plan.summary.completeTodo", (input["loop"] as? String) ?? "?") },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let target = self.text(input, "loop") else { throw NookError("Which todo?") }
@@ -306,7 +306,7 @@ final class NookTools {
                 schema: object(["url": string("The web URL, starting with https://")], required: ["url"]),
                 kind: .action,
                 summarize: { input in "Open \((input["url"] as? String) ?? "link")" },
-                tag: { _ in ("opens in browser", .neutral) },
+                tag: { _ in (tr("plan.tag.opensBrowser"), .neutral) },
                 run: { input in
                     guard let url = input["url"] as? String else { throw NookError("Web URL is missing.") }
                     try SystemControl.openURL(url)
@@ -353,8 +353,8 @@ final class NookTools {
                 description: "Runs an existing shortcut from the Shortcuts app by name.",
                 schema: object(["name": string("Exact name of the shortcut.")], required: ["name"]),
                 kind: .action,
-                summarize: { input in "Shortcut: \((input["name"] as? String) ?? "?")" },
-                tag: { _ in ("shortcut", .caution) },
+                summarize: { input in tr("plan.summary.shortcut", (input["name"] as? String) ?? "?") },
+                tag: { _ in (tr("plan.tag.shortcut"), .caution) },
                 run: { input in
                     guard let name = input["name"] as? String else { throw NookError("Shortcut name is missing.") }
                     _ = try await Task.detached { try SystemControl.runShortcut(name) }.value
@@ -392,7 +392,7 @@ final class NookTools {
                 summarize: { input in
                     "\((input["app"] as? String) ?? "App"): \(AppMenu.path(input["path"]).joined(separator: " › "))"
                 },
-                tag: { _ in ("menu command", .caution) },
+                tag: { _ in (tr("plan.tag.menuCommand"), .caution) },
                 run: { [weak self] input in
                     let name = self?.text(input, "app") ?? ""
                     let path = AppMenu.path(input["path"])

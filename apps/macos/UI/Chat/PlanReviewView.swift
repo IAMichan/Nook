@@ -9,6 +9,9 @@ struct PlanReview: View {
     private var app: AppModel { AppModel.shared }
     @State private var expanded: Set<Int> = []
     @State private var editing: Set<Int> = []
+    /// A settled plan shows only its summary line until it is opened.
+    @State private var showsSettledSteps = false
+    @State private var hoveredStep: Int?
 
     private var steps: [PlanStep] { app.planSteps(message.actions) }
 
@@ -45,9 +48,19 @@ struct PlanReview: View {
 
     private var header: String {
         let count = message.actions.count
-        if finished { return count == 1 ? tr("chat.plan.doneOne") : tr("chat.plan.doneMany", count) }
         if message.planArchived { return count == 1 ? tr("chat.plan.archivedOne") : tr("chat.plan.archived", count) }
         return count == 1 ? tr("chat.plan.reviewOne") : tr("chat.plan.review", count)
+    }
+
+    /// Steps left out of the run: unchecked by the user, or never reached.
+    private var leftOutCount: Int {
+        message.actions.indices.count(where: { leftOut($0) })
+    }
+
+    /// The one line a settled plan folds to: how many steps went through, and how many were left out.
+    private var settledSummary: String {
+        let count = message.actions.count
+        return succeeded < count ? tr("chat.plan.settledSome", succeeded, count) : tr("chat.plan.settledAll", count)
     }
 
     /// Where a failed plan stands, when a step shows the reason itself; nil falls back to the plan's own error.
@@ -72,61 +85,190 @@ struct PlanReview: View {
     }
 
     var body: some View {
-        // A title that says what the plan is, the steps split by a hairline, and the buttons below.
+        // Under review: a title, the steps split by a hairline, and the buttons. Once it went through, the plan needs no
+        // more attention and folds to one line that opens the steps again.
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(header)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.paper)
+            if finished {
+                settledLine
+            } else {
+                Text(header)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+            }
 
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                    if index > 0 { NookDivider(inset: 27) }
-                    stepView(index, step)
-                        .padding(.vertical, NookTheme.Spacing.md)
+            if !finished || showsSettledSteps {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                        if index > 0 { NookDivider(inset: Self.textInset) }
+                        stepView(index, step)
+                            .padding(.vertical, NookTheme.Spacing.md)
+                    }
                 }
+                .transition(.opacity)
             }
 
             if !finished {
                 controls
             }
         }
-        .padding(NookTheme.Spacing.xl)
+        .padding(.horizontal, NookTheme.Spacing.xl)
+        .padding(.vertical, finished && !showsSettledSteps ? NookTheme.Spacing.lg : NookTheme.Spacing.xl)
         .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
+    }
+
+    // MARK: Settled plan
+
+    /// A finished plan as one line: a check, what went through (the step itself when there is one), the apps it touched,
+    /// and a chevron. Clicking it shows or hides the steps.
+    private var settledLine: some View {
+        Button {
+            withNookAnimation(NookTheme.Motion.list) { showsSettledSteps.toggle() }
+        } label: {
+            HStack(alignment: .center, spacing: Self.markerGap) {
+                Image(icon: "checkmark.circle.fill")
+                    .foregroundStyle(NookTheme.mint)
+                    .frame(width: Self.markerWidth)
+                if steps.count == 1, let step = steps.first {
+                    let parts = Self.parts(of: step)
+                    if step.source != nil { StepSourceIcon(source: step.source) }
+                    Text(Self.leadAndBody(parts))
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    Text(settledSummary)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    if leftOutCount > 0 {
+                        Text(tr("chat.plan.settledSkipped", leftOutCount))
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                    sourceStack
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                DisclosureChevron(open: showsSettledSteps, style: .vertical)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .nookTip(showsSettledSteps ? tr("chat.plan.hideSteps") : tr("chat.plan.showSteps"))
+        .accessibilityLabel(settledSummary)
+    }
+
+    /// The apps a plan touched, each once, slightly overlapping like the sources above an answer.
+    private var sourceStack: some View {
+        var seen = Set<String>()
+        let sources = steps.compactMap(\.source).filter { seen.insert($0).inserted }
+        return HStack(spacing: -4) {
+            ForEach(sources.prefix(4), id: \.self) { source in
+                StepSourceIcon(source: source, size: 12)
+                    .padding(1.5)
+                    .background(Circle().fill(NookTheme.graphite))
+                    .overlay(Circle().stroke(NookTheme.field, lineWidth: 1))
+            }
+        }
+        .accessibilityHidden(true)
     }
 
     // MARK: Single step
 
+    /// Where a step's text starts: the marker's width plus the gap after it. Dividers and details line up with it.
+    private static let markerWidth: CGFloat = 18
+    private static let markerGap: CGFloat = 9
+    private static let textInset: CGFloat = markerWidth + markerGap
+
+    /// A step's summary as where it goes ("WhatsApp → Anna", "Reminder") and what it does, or only the latter.
+    static func parts(of step: PlanStep) -> (lead: String?, body: String) {
+        let split = ActionGate.splitSummary(step.text)
+        return (split.lead ?? step.source.map(SourceCatalog.title), split.body)
+    }
+
+    /// "WhatsApp → Anna · see you at 8" on one line: the target quiet, what it does bright.
+    private static func leadAndBody(_ parts: (lead: String?, body: String)) -> AttributedString {
+        var body = AttributedString(parts.body)
+        body.foregroundColor = NookTheme.paper
+        guard let lead = parts.lead else { return body }
+        var front = AttributedString("\(lead) · ")
+        front.foregroundColor = NookTheme.textSecondary
+        return front + body
+    }
+
+    /// A step left out of the run (unchecked, or never reached): it reads as quiet history, not as work still to do.
+    private func leftOut(_ index: Int) -> Bool {
+        switch state(index) {
+        case .skipped, .notRun: return true
+        case .pending: return !included(index)
+        default: return false
+        }
+    }
+
     @ViewBuilder
     private func stepView(_ index: Int, _ step: PlanStep) -> some View {
         let isOpen = expanded.contains(index) || !problems(index).isEmpty
+        let parts = Self.parts(of: step)
+        // The tag warns before the run ("sends", "removes"); once the step is settled it has nothing to warn about.
+        let warns = !step.tag.isEmpty && state(index).canRun && open
+        let quiet = leftOut(index)
+        // Once the plan is settled, a long step (a whole message) folds to two lines; the details hold the full text.
+        let folded = !open && !isOpen
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: Self.markerGap) {
                 marker(index, step)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(step.text)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    // Where it goes, small, with the app's icon: the eye finds the target before reading the content.
+                    if parts.lead != nil || warns {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            if let lead = parts.lead {
+                                if step.source != nil {
+                                    StepSourceIcon(source: step.source)
+                                        .opacity(quiet ? 0.5 : 1)
+                                }
+                                Text(lead)
+                                    .font(NookTheme.TextStyle.label)
+                                    .foregroundStyle(quiet ? NookTheme.textTertiary : NookTheme.textSecondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            if warns {
+                                NookTag(step.tag, tint: color(step.tone))
+                            }
+                        }
+                    }
+                    Text(parts.body)
                         .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(included(index) ? NookTheme.paper : NookTheme.textTertiary)
-                        .strikethrough(!included(index))
+                        .foregroundStyle(quiet ? NookTheme.textTertiary : NookTheme.paper)
+                        // Strike through only while the user can still tick it back on; afterwards the marker says it.
+                        .strikethrough(open && !included(index))
+                        .lineLimit(folded ? 2 : nil)
                         .fixedSize(horizontal: false, vertical: true)
                     stateLine(index)
                 }
-                Spacer(minLength: 4)
-                if !step.tag.isEmpty {
-                    Text(step.tag)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(color(step.tone))
-                }
+                Spacer(minLength: NookTheme.Spacing.xs)
                 ToolbarIconButton(isOpen ? "chevron.up" : "chevron.down", tr("chat.plan.details"), height: 20, width: 20) {
-                    withAnimation(NookTheme.reveal) {
-                        if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
-                    }
+                    toggleDetails(index)
                 }
+                // Details are there when wanted, out of sight at rest.
+                .revealOnHover(isOpen || hoveredStep == index, animated: true)
+            }
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { hoveredStep = index } else if hoveredStep == index { hoveredStep = nil }
             }
 
             if isOpen {
                 details(index)
-                    .padding(.leading, 27)
+                    .padding(.leading, Self.textInset)
+                    .transition(.opacity)
             }
+        }
+    }
+
+    private func toggleDetails(_ index: Int) {
+        withNookAnimation(NookTheme.Motion.list) {
+            if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
         }
     }
 
@@ -135,33 +277,35 @@ struct PlanReview: View {
     private func marker(_ index: Int, _ step: PlanStep) -> some View {
         switch state(index) {
         case .done:
-            Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+            Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: Self.markerWidth)
         case .verified:
-            Image(icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+            Image(icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: Self.markerWidth)
                 .nookTip(tr("chat.plan.verified"))
         case .approved:
-            Image(icon: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: 18)
+            Image(icon: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: Self.markerWidth)
         case .failed:
-            Image(icon: "xmark.circle.fill").foregroundStyle(NookTheme.coral).frame(width: 18)
+            Image(icon: "xmark.circle.fill").foregroundStyle(NookTheme.coral).frame(width: Self.markerWidth)
         case .running:
-            ProgressView().controlSize(.mini).frame(width: 18)
+            ProgressView().controlSize(.mini).frame(width: Self.markerWidth)
         case .duplicate:
-            Image(icon: "exclamationmark.circle.fill").foregroundStyle(NookTheme.amber).frame(width: 18)
+            Image(icon: "exclamationmark.circle.fill").foregroundStyle(NookTheme.amber).frame(width: Self.markerWidth)
+        case .skipped, .notRun:
+            Image(icon: "minus.circle").foregroundStyle(NookTheme.textTertiary).frame(width: Self.markerWidth)
         default:
             if open {
                 Button { app.setActionIncluded(message.id, index: index, !included(index)) } label: {
                     Image(icon: included(index) ? "checkmark.square.fill" : "square")
                         .foregroundStyle(included(index) ? color(step.tone) : NookTheme.textTertiary)
-                        .frame(width: 18)
+                        .frame(width: Self.markerWidth)
                 }
                 .buttonStyle(.nookPlain)
                 .nookTip(included(index) ? tr("chat.plan.exclude") : tr("chat.plan.include"))
             } else {
                 Text("\(step.number)")
                     .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(color(step.tone))
-                    .frame(width: 18, height: 18)
-                    .overlay(Circle().stroke(color(step.tone), lineWidth: 1.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: Self.markerWidth, height: Self.markerWidth)
+                    .overlay(Circle().stroke(NookTheme.textTertiary, lineWidth: 1))
             }
         }
     }
@@ -170,7 +314,8 @@ struct PlanReview: View {
     private func stateLine(_ index: Int) -> some View {
         switch state(index) {
         case .done:
-            Text(tr("chat.plan.stepDone")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
+            // The green check already says it went through; a second "Done" under every step is noise.
+            EmptyView()
         case .verified:
             Text(tr("chat.plan.stepVerified")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
         case .approved:
@@ -256,7 +401,9 @@ struct PlanReview: View {
                 // A plan from an earlier session: it shows what was proposed, but runs only from a new request.
                 Text(tr("chat.plan.notExecuted")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
             case .pending:
-                SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
+                // Says how much will happen, so the click is never a surprise.
+                SmallPrimaryButton(title: runnable.count > 1 ? tr("chat.plan.runMany", runnable.count) : tr("button.execute"),
+                                   systemName: "checkmark") { app.runPlan(message.id) }
                     .disabled(blocked)
                 SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
             case .running:
@@ -299,6 +446,18 @@ struct PlanReview: View {
         case .neutral: return NookTheme.textSecondary
         case .caution: return NookTheme.amber
         }
+    }
+}
+
+/// The app a plan step acts on (WhatsApp, Calendar, GitHub…), drawn as the sources above an answer draw it.
+struct StepSourceIcon: View {
+    let source: String?
+    var size: CGFloat = 13
+
+    var body: some View {
+        let connector = source.flatMap { AppModel.shared.connectors.source(id: $0) }
+        SiteIcon(domain: connector?.iconDomain, fallback: connector?.symbol ?? SourcesDisclosure.symbol(source),
+                 tint: NookTheme.textSecondary, size: size, source: source)
     }
 }
 

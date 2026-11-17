@@ -294,17 +294,30 @@ mod windows_security {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod tests {
     use super::*;
     use crate::agents::models::ApprovalDecision;
     use serde_json::json;
 
+    /// A Unix socket in a fresh folder, or on Windows a named pipe with the user-only security `listen` sets.
+    fn test_address() -> (String, Option<std::path::PathBuf>) {
+        let id = uuid::Uuid::new_v4();
+        #[cfg(windows)]
+        {
+            (format!(r"\\.\pipe\nook-test-{id}"), None)
+        }
+        #[cfg(unix)]
+        {
+            let dir = std::env::temp_dir().join(format!("nook-ipc-{id}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            (dir.join("hub.sock").to_string_lossy().into_owned(), Some(dir))
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn hook_round_trip_over_socket() {
-        let dir = std::env::temp_dir().join(format!("nook-ipc-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let address = dir.join("hub.sock").to_string_lossy().into_owned();
+        let (address, dir) = test_address();
         let hub = Arc::new(AgentHub::new(None, |_| {}));
         let h = hub.clone();
         let server = tokio::spawn(listen(
@@ -332,6 +345,8 @@ mod tests {
         let reply = client.await.unwrap().unwrap();
         assert!(reply.contains("\"behavior\":\"allow\""), "{reply}");
         server.abort();
-        let _ = std::fs::remove_dir_all(dir);
+        if let Some(dir) = dir {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

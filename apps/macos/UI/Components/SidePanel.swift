@@ -369,14 +369,15 @@ struct SessionBrowserRest: PreferenceKey {
 }
 
 extension View {
-    /// The docked session panel's column, so a page the agent opened rests in it.
+    /// The docked session panel's column, so a page the agent opened rests in it. It adds to the value of the views it
+    /// holds instead of replacing it (as `anchorPreference` would), so the cards inside still say where they are.
     func sessionBrowserDockColumn() -> some View {
-        anchorPreference(key: SessionBrowserRest.self, value: .bounds) { SessionBrowserRest.Value(dockColumn: $0) }
+        transformAnchorPreference(key: SessionBrowserRest.self, value: .bounds) { $0.dockColumn = $1 }
     }
 
     /// The cards of the docked session panel: a page the agent opened rests just under them.
     func sessionBrowserDockCards() -> some View {
-        anchorPreference(key: SessionBrowserRest.self, value: .bounds) { SessionBrowserRest.Value(dockCards: $0) }
+        transformAnchorPreference(key: SessionBrowserRest.self, value: .bounds) { $0.dockCards = $1 }
     }
 }
 

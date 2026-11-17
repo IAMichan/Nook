@@ -109,6 +109,36 @@ struct ScrollModel: Equatable, Sendable {
     }
 }
 
+/// The height the end of a conversation keeps while you follow a working agent: never less than it already was.
+///
+/// While the agent works, its last rows shrink as often as they grow: its thinking after a command is a row of its own
+/// until the next command ends, and then folds into the group "Ran 3 commands"; a single command's row becomes that
+/// group. The view holds its end in place, so each time the rows above the end came down by what folded away, and the
+/// conversation bounced up and down while you only watched. Held at its tallest, a fold leaves room under the rows
+/// instead, which the next output fills.
+///
+/// Let go (back to the rows' own height) when you stop following, when the agent is done, and when `key` changes: a new
+/// turn, a block you opened or closed, rows moving into the lazy part above it. Per width, as a layout asks for more
+/// than one.
+struct HeldHeight: Equatable, Sendable {
+    private var key: Int?
+    private var tallest: [Double: Double] = [:]
+
+    /// The height to take for rows `natural` high at `width`.
+    mutating func height(natural: Double, width: Double, key: Int, holds: Bool) -> Double {
+        if !holds || key != self.key {
+            self.key = key
+            tallest = [:]
+        }
+        guard holds else { return natural }
+        // A layout asks at a few widths (its ideal, zero, the real one); more than that is a resize.
+        if tallest[width] == nil, tallest.count >= 8 { tallest = [:] }
+        let held = max(natural, tallest[width] ?? 0)
+        tallest[width] = held
+        return held
+    }
+}
+
 /// Whether a lazy conversation shows any of its rows, from where the drawn rows stand and what the scroll view shows,
 /// both in the conversation's own coordinates. A lazy stack's own reports are not enough for this: the rows it reports
 /// in view go stale after a jump, and a row it keeps drawn just outside the view counts as drawn. Where the rows and

@@ -47,7 +47,6 @@
   }
 </script>
 
-<h2>{tr("Companion", "Companion")}</h2>
 <p class="muted">
   {tr(
     "Laat een gekoppelde telefoon in je eigen wifi zien welke sessies je nodig hebben, en laat je goedkeuren, antwoorden, een bericht sturen of stoppen. Werkt met Nook Companion op de iPhone en met Nook op Android. Alles gaat versleuteld; riskante goedkeuringen (zoals onbekende commando’s) kun je vanaf de telefoon alleen weigeren.",
@@ -59,7 +58,7 @@
   <div class="group">
     <label class="row">
       <span>{tr("Companion op je telefoon", "Companion on your phone")}</span>
-      <input type="checkbox" checked={info.enabled} onchange={(e) => run(() => companion.setEnabled(e.currentTarget.checked))} />
+      <input type="checkbox" role="switch" checked={info.enabled} onchange={(e) => run(() => companion.setEnabled(e.currentTarget.checked))} />
     </label>
     {#if info.enabled}
       <div class="row status">
@@ -82,6 +81,12 @@
           <div class="device">
             <span>📱 {device.name}</span>
             <span class="faint small">{device.lastSeen ? tr("Laatst gezien: {when}", "Last seen: {when}", { when: relativeTime(device.lastSeen) }) : tr("Nog niet verbonden", "Not connected yet")}</span>
+            <span class="faint small">{tr("Appversie", "App version")}: <span class:mono={!!device.appVersion}>{device.appVersion ?? tr("Nog niet bekend", "Not known yet")}</span></span>
+            {#if device.outdated}
+              <span class="err small">{tr("Update nodig: de app op deze telefoon is te oud voor deze Nook. Werk Nook Companion op de iPhone of Nook op Android bij.", "Needs an update: the app on this phone is too old for this Nook. Update Nook Companion on the iPhone or Nook on Android.")}</span>
+            {:else if device.behind}
+              <span class="muted small">{tr("Op deze telefoon draait een oudere versie. Werk hem bij voor pull requests, delen en de andere nieuwe onderdelen.", "This phone runs an older version. Update it to use pull requests, sharing and the other new parts.")}</span>
+            {/if}
           </div>
           <button onclick={() => run(() => companion.removeDevice(device.id))}>{tr("Ontkoppel", "Unpair")}</button>
         </div>
@@ -125,7 +130,7 @@
 
     {#if info.away}<CompanionAway {info} onchange={(i) => (info = i)} />{/if}
 
-    <h3>{tr("Meldingen op de iPhone", "Notifications on iPhone")}</h3>
+    <h3>{tr("Meldingen op je telefoon", "Notifications on your phone")}</h3>
     {#if info.push}<CompanionPush {info} onchange={(i) => (info = i)} />{/if}
   {/if}
 {/if}
@@ -134,6 +139,7 @@
 <style>
   .device { display: flex; flex-direction: column; gap: 2px; }
   .small { font-size: 11px; }
+  .mono { font-family: var(--mono); }
   .status { justify-content: flex-start; }
   .pairing { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
   .steps { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 10px; }

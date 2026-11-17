@@ -1,8 +1,8 @@
 import Foundation
 
 // What a session produced that is worth looking at next to the conversation: the agent's task list, the plans it
-// proposed, and the files it wrote that are made to be seen (a design as HTML or SVG, a document in Markdown, an
-// image). All of it comes from the session's own events; code it changed stays in the changes view, and the subagents it
+// proposed, and the files it wrote that are made to be seen (a design as HTML or SVG, a document in Markdown, a PDF,
+// an image). All of it comes from the session's own events; code it changed stays in the changes view, and the subagents it
 // started have a side panel of their own (`Subagents`). Everything in this
 // file depends only on Foundation so tests can use it independently.
 
@@ -17,6 +17,8 @@ struct SessionOutput: Identifiable, Equatable, Sendable {
         case design
         /// A Markdown document.
         case document
+        /// A PDF, shown page by page.
+        case pdf
         case image
         /// A video, played in place.
         case video
@@ -41,6 +43,7 @@ enum SessionOutputs {
         switch URL(fileURLWithPath: path).pathExtension.lowercased() {
         case "html", "htm", "svg": return .design
         case "md", "markdown", "mdx": return .document
+        case "pdf": return .pdf
         case "png", "jpg", "jpeg", "gif", "webp", "heic", "tiff", "bmp": return .image
         case "mp4", "mov", "m4v": return .video
         default: return nil
@@ -107,7 +110,7 @@ enum SessionOutputs {
     }
 
     /// Whether a new output of this turn (made at or after `turnStart`) opens the outputs tab by itself while the agent
-    /// works. A plan, design, image or video does; a Markdown document only when the agent handed it to you, because
+    /// works. A plan, design, PDF, image or video does; a Markdown document only when the agent handed it to you, because
     /// one it merely writes or edits (a README, notes, docs, its own instructions) is part of its work, not something
     /// to look at now. The task list never does; it has its own bar.
     static func opensByItself(_ output: SessionOutput, turnStart: Date?) -> Bool {
@@ -115,7 +118,7 @@ enum SessionOutputs {
         switch output.kind {
         case .tasks: return false
         case .document: return output.shared
-        case .plan, .design, .image, .video: return true
+        case .plan, .design, .pdf, .image, .video: return true
         }
     }
 

@@ -31,6 +31,12 @@ struct PullRequestListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                // The whole list has the panel's header, as Settings and every tab do; a session's own pull requests
+                // open inside that session and keep its bar.
+                if session == nil {
+                    PanelHeader(title: "Pull requests", showsSettings: false)
+                        .padding(.horizontal, -Theme.Spacing.xl)
+                }
                 if client.phase != .connected, let at = session == nil ? client.pullsAt : nil {
                     Label("As of \(at.formatted(date: .omitted, time: .shortened)) · not connected", systemImage: "wifi.slash")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
@@ -70,7 +76,10 @@ struct PullRequestListView: View {
         }
         .refreshable { await load() }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: String(localized: "Pull requests")) } }
+        .toolbar {
+            if session != nil { ToolbarItem(placement: .principal) { SheetTitle(title: String(localized: "Pull requests")) } }
+        }
+        .toolbar(session == nil ? .hidden : .automatic, for: .navigationBar)
         .screen()
         .navigationDestination(for: PullRoute.self) { route in PullRequestDetailView(url: route.url) }
         .confirmationDialog(asking?.title ?? "", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
@@ -299,10 +308,13 @@ private struct PullRow: View {
                 Text(pull.title.isEmpty ? "#\(pull.number)" : pull.title)
                     .font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(2)
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(verbatim: "\(pull.repo)#\(pull.number)").lineLimit(1).truncationMode(.middle)
-                    if !pull.author.isEmpty { Text(verbatim: pull.author).lineLimit(1) }
+                    // The repository by its own name and the number first, whole; who and when give way on a narrow
+                    // phone (the full "owner/name" is in the pull request itself).
+                    Text(verbatim: "\(pull.repo.split(separator: "/").last.map(String.init) ?? pull.repo)#\(pull.number)")
+                        .lineLimit(1).layoutPriority(2)
+                    if !pull.author.isEmpty { Text(verbatim: "· " + pull.author).lineLimit(1).layoutPriority(1) }
                     if let created = pull.created {
-                        Text("opened \(AgentRow.age(Date().timeIntervalSince1970 - created)) ago").lineLimit(1)
+                        Text(verbatim: "· " + AgentRow.age(Date().timeIntervalSince1970 - created)).lineLimit(1).fixedSize()
                     }
                 }
                 .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)

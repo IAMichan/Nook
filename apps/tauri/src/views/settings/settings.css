@@ -25,8 +25,43 @@
 .settings .pane > .page { max-width: 860px; margin: 0 auto; }
 .settings h2 { margin: 0 0 20px; font: var(--text-display); letter-spacing: -0.3px; }
 .settings h3 { margin: 22px 0 8px; font-size: 13px; color: var(--text2); }
-.settings .group { background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius); padding: 4px 18px; margin-top: 12px; }
-.settings .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+/* A card of rows as the Mac's SettingsFormStyle draws it: the surface with a separator line around it, rows 12 px high
+   padding and 16 px in from the sides, a line between two rows. */
+.settings .group { background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 0 var(--space-16); margin-top: var(--space-8); }
+.settings .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
+/* The name and explanation take the room; the control wraps under them only when the row is too narrow. */
+.settings .row > span:first-child { flex: 1 1 240px; min-width: 0; }
+/* A row with a switch keeps the switch beside its text, however long the explanation. */
+.settings .row:has(> input[type="checkbox"]) { flex-wrap: nowrap; }
+.settings .row:has(> input[type="checkbox"]) > span:first-child { flex: 1; min-width: 0; }
+
+/* The controls on a row, as on the Mac (SettingsFormStyle, SettingsControl): the system's fill for a control on a card,
+   and the raised fill of a chosen segment. */
+.settings { --settings-control: color-mix(in srgb, var(--paper) 15%, var(--surface)); --settings-control-on: color-mix(in srgb, var(--paper) 28%, var(--surface)); }
+
+/* On/off is a switch, never a checkbox (`SettingsRowToggleStyle`): the track in the control fill, Nook's colour when
+   on, a white knob. Weekdays and other picks from a set stay boxes. */
+.settings input[type="checkbox"]:not(.box) { appearance: none; position: relative; flex: none; width: 34px; height: 20px; margin: 0; padding: 0; border: none; border-radius: var(--radius-pill); background: var(--settings-control); cursor: pointer; transition: background var(--motion-quick, 150ms ease-out); }
+.settings input[type="checkbox"]:not(.box)::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--canvas) 30%, transparent), 0 1px 2px color-mix(in srgb, var(--canvas) 40%, transparent); transition: transform var(--motion-quick, 150ms ease-out); }
+.settings input[type="checkbox"]:not(.box):checked { background: var(--iris); }
+.settings input[type="checkbox"]:not(.box):checked::before { transform: translateX(14px); }
+.settings input[type="checkbox"]:not(.box):disabled { opacity: 0.45; cursor: default; }
+.settings input[type="checkbox"]:not(.box):focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+/* A switch with its text after it (the older "check" rows) stands on the right of its row, as every switch does. */
+.settings label.check { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); font: var(--text-body); }
+.settings label.check:last-child { border-bottom: none; }
+
+/* A choice from a list is the Mac's capsule menu: the control fill, secondary text, up/down chevrons on the right,
+   28 px high (`SettingsControl.height`). */
+.settings select { appearance: none; height: 28px; padding: 0 30px 0 var(--space-12); border: none; border-radius: var(--radius-pill); background-color: var(--settings-control); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='gray' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; color: var(--text2); font: var(--text-control); cursor: pointer; max-width: 100%; }
+.settings select:hover:not(:disabled) { color: var(--paper); }
+.settings select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+.settings select option { background: var(--menu); color: var(--paper); }
+
+/* A button on a row is the Mac's small bordered button: the control fill, secondary text, no line. Buttons that bring
+   their own look (primary, danger, ghost, swatches, tabs) keep it. */
+.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch) { height: 24px; padding: 0 var(--space-12); border: none; border-radius: var(--radius-chip); background: var(--settings-control); color: var(--text-strong); font: var(--text-control); }
+.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]):hover:not(:disabled), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch):hover:not(:disabled) { background: var(--settings-control-on); }
 .settings .row:last-child { border-bottom: none; }
 .settings .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .settings .note { font-size: 12px; margin: 6px 0 10px; }
@@ -56,8 +91,9 @@
   .settings nav .navrow { flex: none; min-height: 40px; }
   .settings .row { flex-wrap: wrap; min-height: 48px; }
   .settings .row > span:first-child { flex: 1 1 160px; }
-  .settings .row select, .settings .row input:not([type="checkbox"]) { min-height: 40px; max-width: 100%; }
-  .settings input[type="checkbox"] { width: 22px; height: 22px; }
+  .settings .row input:not([type="checkbox"]) { min-height: 40px; max-width: 100%; }
+  .settings .row select { height: 36px; }
+  .settings input[type="checkbox"].box { width: 22px; height: 22px; }
   .settings button:not(.swatch) { min-height: 40px; }
   .settings .swatch { flex: none; width: 28px; height: 28px; }
 }

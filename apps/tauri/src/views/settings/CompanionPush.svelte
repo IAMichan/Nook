@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Pushmeldingen naar de iPhone (zoals Instellingen › iPhone-metgezel › Pushmeldingen op de Mac): welke, wanneer, en
-  // de eigen Apple-sleutel waarmee deze computer ze zelf naar Apple stuurt.
-  import { companion, type CompanionInfo, type PushKind, type PushSettings } from "../../lib/companion";
+  // Pushmeldingen naar de telefoon (zoals Instellingen › iPhone-metgezel › Pushmeldingen op de Mac): welke, wanneer, en
+  // hoe ze gaan: verzegeld via de relay (Nook op Android altijd), of met je eigen Apple-sleutel rechtstreeks naar Apple.
+  import { companion, type CompanionInfo, type PushKind, type PushRoute, type PushSettings } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
 
   let { info, onchange }: { info: CompanionInfo; onchange: (i: CompanionInfo) => void } = $props();
@@ -66,22 +66,22 @@
 </script>
 
 <div class="group">
-  <label class="row"><span>{tr("Pushmeldingen", "Push notifications")}</span><input type="checkbox" checked={s.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Pushmeldingen", "Push notifications")}</span><input type="checkbox" role="switch" checked={s.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} /></label>
   <p class="faint note">
     {tr(
-      "Alleen voor Nook Companion op de iPhone. Nook stuurt de melding zelf naar Apple met je eigen sleutel; er zit geen server van ons tussen. Apple ziet de tekst, daarom noemt die alleen de agent en wat er nodig is, nooit een commando of antwoord. Nook op Android heeft geen pushmeldingen nodig: die meldt zelf wat er nieuw is zolang de app in het geheugen staat.",
-      "Only for Nook Companion on iPhone. Nook sends the notification to Apple itself with your own key; there's no server of ours in between. Apple sees the text, so it only names the agent and what's needed, never a command or answer. Nook on Android doesn't need push notifications: it reports what's new itself as long as the app is in memory.",
+      "Voor Nook Companion op de iPhone en Nook op Android. Een melding noemt alleen de agent en wat er nodig is, nooit een commando of antwoord.",
+      "For Nook Companion on iPhone and Nook on Android. A notification only names the agent and what's needed, never a command or answer.",
     )}
   </p>
   {#if s.enabled}
     {#each kinds as [kind, label] (kind)}
-      <label class="row sub"><span>{label}</span><input type="checkbox" checked={s.kinds.includes(kind)} onchange={(e) => toggleKind(kind, e.currentTarget.checked)} /></label>
+      <label class="row sub"><span>{label}</span><input type="checkbox" role="switch" checked={s.kinds.includes(kind)} onchange={(e) => toggleKind(kind, e.currentTarget.checked)} /></label>
     {/each}
-    <label class="row"><span>{tr("Alleen als ik niet bij de computer ben", "Only when I'm away from the computer")}</span><input type="checkbox" checked={s.onlyWhenAway} onchange={(e) => save({ onlyWhenAway: e.currentTarget.checked })} /></label>
-    <label class="row"><span>{tr("Noem de titel van de sessie", "Include the session title")}</span><input type="checkbox" checked={s.includeTitle} onchange={(e) => save({ includeTitle: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Alleen als ik niet bij de computer ben", "Only when I'm away from the computer")}</span><input type="checkbox" role="switch" checked={s.onlyWhenAway} onchange={(e) => save({ onlyWhenAway: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Noem de titel van de sessie", "Include the session title")}</span><input type="checkbox" role="switch" checked={s.includeTitle} onchange={(e) => save({ includeTitle: e.currentTarget.checked })} /></label>
     <label class="row">
       <span>{tr("Stille uren", "Quiet hours")}</span>
-      <input type="checkbox" checked={s.quietFrom != null} onchange={(e) => save(e.currentTarget.checked ? { quietFrom: 22, quietTo: 7 } : { quietFrom: null, quietTo: null })} />
+      <input type="checkbox" role="switch" checked={s.quietFrom != null} onchange={(e) => save(e.currentTarget.checked ? { quietFrom: 22, quietTo: 7 } : { quietFrom: null, quietTo: null })} />
     </label>
     {#if s.quietFrom != null}
       <div class="row sub">
@@ -96,12 +96,47 @@
           </select>
         </span>
       </div>
-      <label class="row sub"><span>{tr("Toestemming en vragen komen toch door", "Permissions and questions still come through")}</span><input type="checkbox" checked={s.quietAllowsUrgent} onchange={(e) => save({ quietAllowsUrgent: e.currentTarget.checked })} /></label>
+      <label class="row sub"><span>{tr("Toestemming en vragen komen toch door", "Permissions and questions still come through")}</span><input type="checkbox" role="switch" checked={s.quietAllowsUrgent} onchange={(e) => save({ quietAllowsUrgent: e.currentTarget.checked })} /></label>
     {/if}
   {/if}
 </div>
 
 {#if s.enabled}
+  <h3>{tr("Versturen via", "Send through")}</h3>
+  <div class="group">
+    <label class="row">
+      <span>{tr("Versturen via", "Send through")}</span>
+      <select value={push.route} onchange={async (e) => onchange(await companion.setPushRoute(e.currentTarget.value as PushRoute))}>
+        <option value="relay">{tr("Nooks relay", "Nook's relay")}</option>
+        <option value="own">{tr("Mijn eigen APNs-sleutel", "My own APNs key")}</option>
+      </select>
+    </label>
+    {#if push.route === "relay"}
+      <p class="faint note">
+        {tr(
+          "Geen Apple-ontwikkelaarsaccount nodig. Elke melding wordt versleuteld met de sleutel van je gekoppelde telefoon; de relay, Apple en Google zien alleen “Nook needs you”, en je telefoon toont de echte tekst.",
+          "No Apple developer account needed. Every notification is encrypted with your paired phone's key; the relay, Apple and Google only see “Nook needs you”, and your phone shows the real text.",
+        )}
+      </p>
+      {#if !push.relayReachable}
+        <p class="err small">{tr("Er is nog geen relay in gebruik. Zet hierboven bij Altijd bereikbaar een relay aan, of gebruik je eigen APNs-sleutel.", "No relay is in use yet. Turn on a relay under Always reachable above, or use your own APNs key.")}</p>
+      {/if}
+      <div class="row">
+        <button disabled={!push.relayActive || !info.devices.some((d) => d.push) || testing} onclick={test}>{tr("Stuur testmelding", "Send a test notification")}</button>
+      </div>
+      {#if testResult ?? push.lastResult}<p class="faint note">{testResult ?? push.lastResult}</p>{/if}
+    {:else}
+      <p class="faint note">
+        {tr(
+          "Nook stuurt de melding zelf naar Apple met je eigen sleutel; er zit geen server van ons tussen. Nook op Android gaat altijd via de relay.",
+          "Nook sends the notification to Apple itself with your own key; there's no server of ours in between. Nook on Android always goes through the relay.",
+        )}
+      </p>
+    {/if}
+  </div>
+{/if}
+
+{#if s.enabled && push.route === "own"}
   <h3>{tr("Apple-sleutel voor meldingen", "Apple key for notifications")}</h3>
   <div class="group">
     <p class="faint note">
@@ -138,6 +173,7 @@
 
 <style>
   .sub { padding-left: 14px; }
+  .small { font-size: 11px; }
   .file { position: relative; overflow: hidden; display: inline-block; background: var(--smoke); border: 1px solid var(--line2); border-radius: 9px; padding: 6px 12px; cursor: pointer; }
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .inline input { width: 170px; }

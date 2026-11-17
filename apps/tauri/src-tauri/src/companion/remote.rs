@@ -54,9 +54,7 @@ pub fn features(app: &AppHandle) -> Vec<&'static str> {
 
 /// The answer to one of this area's ops; `None` when it cannot.
 pub async fn handle(app: &AppHandle, request: &CompanionRequest, _device: &str) -> Option<CompanionResponse> {
-    let ws = app.try_state::<WorkspaceState>()?;
-    let manager = ws.manager.clone();
-    drop(ws);
+    let manager = app.try_state::<WorkspaceState>()?.manager.clone();
     let response = match request.op {
         CompanionOp::Options => options(app, request, manager).await,
         CompanionOp::Start => start(app, request, manager).await,
@@ -101,9 +99,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 
 /// The session list the phone gets with an answer that changed something, as `list` gives it.
 async fn listed(app: &AppHandle) -> Vec<SessionDigest> {
-    let Some(companion) = app.try_state::<Companion>() else { return Vec::new() };
-    let server = companion.server.clone();
-    drop(companion);
+    let Some(server) = app.try_state::<Companion>().map(|c| c.server.clone()) else { return Vec::new() };
     server::digests(server.sessions().await)
 }
 
@@ -114,9 +110,7 @@ fn run_of(manager: &Manager, session: &str) -> Option<WorkspaceRun> {
 /// An agent in a terminal or editor (through hooks), by its digest id (`hub:<key>`).
 fn hub_session(app: &AppHandle, session: &str) -> Option<AgentSession> {
     let key = session.strip_prefix(HUB_PREFIX)?;
-    let agents = app.try_state::<AgentsState>()?;
-    let found = agents.hub.sessions().into_iter().find(|s| s.id == key);
-    found
+    app.try_state::<AgentsState>()?.hub.sessions().into_iter().find(|s| s.id == key)
 }
 
 fn seconds(date: Option<chrono::DateTime<chrono::Utc>>) -> f64 {
@@ -448,13 +442,14 @@ async fn manage(app: &AppHandle, request: &CompanionRequest, manager: Arc<Manage
             return fail(request, CompanionError::NotAllowedFromPhone);
         }
         let Some(found) = hub_session(app, session) else { return fail(request, CompanionError::UnknownSession) };
-        let Some(agents) = app.try_state::<AgentsState>() else { return fail(request, CompanionError::Failed) };
-        let Some(pid) = agents.hub.process_id(&found.id) else { return fail(request, CompanionError::NotAllowedFromPhone) };
-        if !nook_core::agents::scanner::terminate(pid) {
-            return fail(request, CompanionError::Failed);
+        {
+            let Some(agents) = app.try_state::<AgentsState>() else { return fail(request, CompanionError::Failed) };
+            let Some(pid) = agents.hub.process_id(&found.id) else { return fail(request, CompanionError::NotAllowedFromPhone) };
+            if !nook_core::agents::scanner::terminate(pid) {
+                return fail(request, CompanionError::Failed);
+            }
+            agents.hub.forget(&found.id);
         }
-        agents.hub.forget(&found.id);
-        drop(agents);
         audit(app, "end", session);
         return CompanionResponse { sessions: Some(listed(app).await), ..CompanionResponse::success(&request.id) };
     }
@@ -482,12 +477,24 @@ async fn manage(app: &AppHandle, request: &CompanionRequest, manager: Arc<Manage
 /// turn when the phone asks to steer and the agent can take it, else in line for after the turn. The server audits it.
 async fn send(app: &AppHandle, request: &CompanionRequest, manager: Arc<Manager>) -> CompanionResponse {
     let Some(session) = request.session.as_deref() else { return fail(request, CompanionError::UnknownSession) };
-    if session.starts_with(HUB_PREFIX) {
-        if hub_session(app, session).is_none() {
-            return fail(request, CompanionError::UnknownSession);
+    if let Some(key) = session.strip_prefix(HUB_PREFIX) {
+        let Some(found) = hub_session(app, session) else { return fail(request, CompanionError::UnknownSession) };
+        if !sessions::can_continue_in_nook(&found) {
+            return fail(request, CompanionError::NotAllowedFromPhone);
         }
-        // This app cannot write into another app's terminal; the message is typed there.
-        return fail(request, CompanionError::NotAllowedFromPhone);
+        // Continued in Nook with the pictures, as the Mac does (`CompanionAgents.send`); steering a terminal is not.
+        let asked = request.clone();
+        let Some(text) = blocking(move || rd::message(&asked, &images_folder())).await.flatten() else {
+            return fail(request, CompanionError::BadRequest);
+        };
+        return match crate::commands::workspace::continue_live(app, key, Some(text), false).await {
+            Ok(_) => CompanionResponse {
+                sessions: Some(listed(app).await),
+                message: Some("sent".into()),
+                ..CompanionResponse::success(&request.id)
+            },
+            Err(message) => fail_with(request, CompanionError::NotAllowedFromPhone, message),
+        };
     }
     let Some(run) = run_of(&manager, session) else { return fail(request, CompanionError::UnknownSession) };
     let asked = request.clone();

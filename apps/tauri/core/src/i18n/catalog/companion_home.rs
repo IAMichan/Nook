@@ -25,4 +25,12 @@ pub const ROWS: &[Row] = &[
     ("Personal", "Persönlich", "Personnel", "Personal"),
     // The default model in the New session sheet (`companion::remote`).
     ("Default", "Standard", "Par défaut", "Predeterminado"),
+    // Push through the relay (`companion::relay_push`).
+    (
+        "Android needs a relay (Settings › Companion › Always reachable)",
+        "Android braucht ein Relay (Einstellungen › Companion › Immer erreichbar)",
+        "Android a besoin d’un relais (Réglages › Companion › Toujours joignable)",
+        "Android necesita un relé (Ajustes › Companion › Siempre accesible)",
+    ),
+    ("not set up", "nicht eingerichtet", "non configuré", "sin configurar"),
 ];

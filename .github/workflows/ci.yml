@@ -170,6 +170,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # TAURI.md and WINDOWS-PARITY.md change in almost every Tauri pull request; their layout keeps those merging.
+      - name: Tracker docs layout
+        run: |
+          python3 scripts/docs-merge-layout.test.py
+          python3 scripts/docs-merge-layout.py
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'

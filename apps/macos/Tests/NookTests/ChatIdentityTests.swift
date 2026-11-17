@@ -118,6 +118,19 @@ final class ChatIdentityTests: XCTestCase {
         XCTAssertNil(inbox.thread(named: "0699999999"), "a number nobody has finds no one, not a name")
         XCTAssertEqual(inbox.thread(named: anna.id)?.name, "Anna")
     }
+
+    /// Two chats with the same name in the same app (one person, two numbers): the app does not tell them apart, so
+    /// the answer gives each chat's id and number, and the id then sends to exactly that chat.
+    func testTwoChatsWithOneNameInOneAppAreToldApartByTheirId() {
+        let messages = [InboxMessage(id: "m", text: "hello", date: now)]
+        let work = InboxThread(id: "whatsapp#31611111111@s.whatsapp.net", app: "whatsapp", name: "Arjan", messages: messages)
+        let home = InboxThread(id: "whatsapp#31622222222@s.whatsapp.net", app: "whatsapp", name: "Arjan", messages: messages)
+        let inbox = inbox([work, home])
+        guard case .several(let both) = inbox.pick("Arjan", app: "whatsapp") else { return XCTFail("two Arjans: ask which") }
+        let answer = ChatInbox.which("Arjan", among: both)
+        XCTAssertTrue(answer.contains("id: " + work.id) && answer.contains("id: " + home.id), answer)
+        XCTAssertEqual(inbox.thread(named: home.id, app: "whatsapp")?.id, home.id, "the id from the answer finds that chat")
+    }
 }
 
 /// A note or birthday kept under a person's name before they were matched by their address stays theirs.

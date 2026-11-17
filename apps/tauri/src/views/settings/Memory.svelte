@@ -2,6 +2,7 @@
   // Geheugen: wat Nook over je weet, waar het vandaan komt en hoe zeker hij is. Alles is hier te zien, aan te passen,
   // vast te pinnen, op dit apparaat te houden of te vergeten. Nook leert alleen zelf als "Leer zelf" aan staat.
   import { brainApi, type MemoryItem, type MemoryOverview } from "../../lib/brain";
+  import { connectorsApi } from "../../lib/connectors";
   import { nook } from "../../lib/state.svelte";
   import { tr, locale } from "../../lib/i18n.svelte";
 
@@ -12,7 +13,8 @@
   let editing = $state<Record<string, string>>({});
   let error = $state<string | null>(null);
   let confirmClear = $state(false);
-  let imported = $state<string | null>(null);
+  let imported = $state<number | null>(null);
+  let confirmRemove = $state(false);
 
   async function refresh() {
     overview = await brainApi.memory();
@@ -75,19 +77,17 @@
 
   function importGraph(path: string) {
     act(async () => {
-      const n = await brainApi.memoryImport(path);
-      imported = n === 1 ? tr("1 herinnering geïmporteerd.", "1 memory imported.") : tr("{n} herinneringen geïmporteerd.", "{n} memories imported.", { n });
+      imported = (imported ?? 0) + (await brainApi.memoryImport(path));
     });
   }
 </script>
 
-<h2>{tr("Geheugen", "Memory")}</h2>
 <p class="muted">{tr("Wat Nook over je weet. Zeg in de chat \"onthoud dat…\" of \"vergeet…\", of pas het hier aan.", "What Nook knows about you. Say \"remember that…\" or \"forget…\" in the chat, or change it here.")}</p>
 <div class="group">
-  <label class="row"><span>{tr("Gebruik wat Nook weet bij elke vraag", "Use what Nook knows with every question")}</span><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Gebruik wat Nook weet bij elke vraag", "Use what Nook knows with every question")}</span><input type="checkbox" role="switch" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /></label>
   <label class="row">
     <span>{tr("Leer zelf van gesprekken", "Learn from conversations")}<br /><span class="faint small">{tr("Van je correcties, de plannen die je goedkeurt en de bronnen die je gebruikt.", "From your corrections, the plans you approve and the sources you use.")}</span></span>
-    <input type="checkbox" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} />
+    <input type="checkbox" role="switch" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} />
   </label>
 </div>
 {#if overview?.localOnlySource}
@@ -143,7 +143,8 @@
   <h3>{tr("Gewoontes", "Habits")}</h3>
   <p class="faint note">{tr("Nook kent {n} woorden uit je vragen en welke bronnen daarbij hielpen. Dat blijft op deze computer.", "Nook knows {n} words from your questions and which sources helped with them. That stays on this computer.", { n: overview.learnedWords })}</p>
 
-  {#if overview.importable.length}
+  <!-- Bringing over the old MCP memory server is needed once, if ever: last, as on the Mac. -->
+  {#if overview.importable.length || overview.oldServer || imported !== null}
     <h3>{tr("Importeren", "Import")}</h3>
     <div class="group">
       {#each overview.importable as [path, count] (path)}
@@ -152,8 +153,22 @@
           <button onclick={() => importGraph(path)}>{tr("Importeer", "Import")}</button>
         </div>
       {/each}
+      {#if overview.oldServer}
+        {@const [serverId, serverName] = overview.oldServer}
+        <div class="row">
+          <span>{tr("De MCP-geheugenserver {name} is niet meer nodig: Nook onthoudt nu zelf.", "The MCP memory server {name} is no longer needed: Nook remembers by itself now.", { name: serverName })}</span>
+          {#if confirmRemove}
+            <span class="actions">
+              <button class="ghost" onclick={() => (confirmRemove = false)}>{tr("Annuleer", "Cancel")}</button>
+              <button class="danger" onclick={() => act(async () => { await connectorsApi.mcpRemove(serverId); confirmRemove = false; })}>{tr("Weghalen", "Remove")}</button>
+            </span>
+          {:else}
+            <button class="ghost" onclick={() => (confirmRemove = true)}>{tr("Server weghalen…", "Remove server…")}</button>
+          {/if}
+        </div>
+      {/if}
     </div>
-    {#if imported}<p class="faint note">{imported}</p>{/if}
+    {#if imported !== null}<p class="faint note">{imported === 1 ? tr("1 herinnering geïmporteerd.", "1 memory imported.") : tr("{n} herinneringen geïmporteerd.", "{n} memories imported.", { n: imported })}</p>{/if}
   {/if}
 
   {#if overview.items.length}
@@ -170,6 +185,7 @@
 {/if}
 
 <style>
+  .actions { display: flex; gap: 6px; }
   .small { font-size: 11px; }
   .add { display: flex; gap: 8px; margin-top: 14px; }
   .add input, .grow { flex: 1; }

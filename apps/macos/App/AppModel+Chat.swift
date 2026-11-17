@@ -207,6 +207,7 @@ extension AppModel {
                                             } else {
                                                 await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
                                             }
+                                            self?.settle(replyID, conversation: conversation)
                                         }
                                     }
                                 }
@@ -215,6 +216,51 @@ extension AppModel {
                     }
                 }
             }
+        }
+        watchForStall(replyID, conversation: conversation)
+    }
+
+    /// How long an answer may show no sign of life (no word, status, lookup or step) before Nook stops waiting for it. Above
+    /// the longest single wait on the way (an agent brain's 120 s per round, a network read's 60 s), so only a brain that
+    /// really hangs is stopped.
+    static let replyStallLimit: TimeInterval = 300
+
+    /// Ends an answer that stopped moving with a clear error instead of leaving the conversation busy for good: the
+    /// queue and the composer work again, and the user can ask once more.
+    private func watchForStall(_ id: UUID, conversation: UUID) {
+        Task { [weak self] in
+            var revision = -1
+            var quietSince = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard let self, self.replies[conversation] == id, let message = self.chat.message(id) else { return }
+                if message.revision != revision {
+                    revision = message.revision
+                    quietSince = Date()
+                    continue
+                }
+                guard Date().timeIntervalSince(quietSince) >= Self.replyStallLimit else { continue }
+                Log.brain.error("answer stalled for \(Int(Self.replyStallLimit), privacy: .public) s; stopped")
+                self.chatTasks[conversation]?.cancel()
+                self.finishReply(id, error: tr("chat.stalled"), conversation: conversation)
+                return
+            }
+        }
+    }
+
+    /// Once an answer's task ended: a path that returned without finishing the answer (no text, no error) still leaves
+    /// the conversation free, so it is never stuck as busy. A stop, a newer question or the stall watch already settled it.
+    func settle(_ id: UUID, conversation: UUID) {
+        guard replies[conversation] == id, !Task.isCancelled else { return }
+        Log.brain.error("answer task ended without finishing its reply")
+        if let message = chat.message(id), !message.text.isEmpty || !message.charts.isEmpty || !message.mails.isEmpty {
+            chat.update(id) { $0.streaming = false; $0.status = "" }
+            replies[conversation] = nil
+            chatTasks[conversation] = nil
+            chat.setBusy(false, conversation: conversation)
+            chat.holdQueue(conversation: conversation)
+        } else {
+            finishReply(id, error: tr("chat.unfinished"), conversation: conversation)
         }
     }
 
@@ -672,7 +718,8 @@ extension AppModel {
             sendQueued(conversation)
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
-            finishReply(id, error: error.localizedDescription, conversation: conversation)
+            // A cancellation nobody asked for (a brain that went away) reads as an unfinished answer, not as Swift's own text.
+            finishReply(id, error: error is CancellationError ? tr("chat.unfinished") : error.localizedDescription, conversation: conversation)
         }
     }
 

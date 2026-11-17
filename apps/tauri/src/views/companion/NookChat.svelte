@@ -20,7 +20,7 @@
   import { activeMac, cacheFor, kept, recordChatLines, saveSoon } from "../../lib/companion-cache";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
   import OfflineNote from "./ui/OfflineNote.svelte";
-  import { renderMarkdown } from "../../lib/markdown";
+  import MarkdownBody from "../../components/MarkdownBody.svelte";
   import { richContent } from "../../lib/rich";
   import { tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
@@ -195,7 +195,7 @@
           <div class="user"><div class="bubble">{l.text}</div><span class="time">{messageTime(l.date)}</span></div>
         {:else if l.text}
           <div class="answer" class:failed={l.failed}>
-            <div class="markdown" use:richContent={l.text}>{@html renderMarkdown(l.text)}</div>
+            <div class="markdown" use:richContent={l.text}><MarkdownBody text={l.text} html /></div>
             {#if !l.streaming}<span class="time">{messageTime(l.date)}</span>{/if}
             {#if l.onMac}<div class="onmac"><span style:color="var(--amber)"><Ico name="laptop" size={13} /></span>{tr("Nook maakte een plan, concept of grafiek: bekijk het op je Mac.", "Nook made a plan, draft or chart: see it on your Mac.")}</div>{/if}
           </div>

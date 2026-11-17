@@ -84,7 +84,7 @@
   {/if}
 
     {#if session.transcriptPath}
-      <Conversation path={session.transcriptPath} refreshKey={session.updated ?? ""} />
+      <Conversation path={session.transcriptPath} refreshKey={session.updated ?? ""} baseFolder={session.cwd ?? null} />
     {:else}
       <div class="steps">
         {#each session.steps as step, i (i)}

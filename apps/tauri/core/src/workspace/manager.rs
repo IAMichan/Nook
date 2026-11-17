@@ -32,6 +32,7 @@ use crate::agents::models::{
     approval_title, AgentApproval, ApprovalDecision, ApprovalOrigin, QuestionItem, QuestionOption, QuestionRequest,
 };
 use crate::agents::risk::{self, RiskLevel};
+use crate::i18n::{tr, trf};
 use crate::services::recap::RecapSink;
 
 /// Een toestemmingsvraag van een sessie die Nook draait.
@@ -308,7 +309,10 @@ impl Manager {
 
     fn approval_view(run: &WorkspaceRun, p: &PendingPermission) -> AgentApproval {
         let command = tool_summary::command(&p.input);
-        let assessment = command.as_deref().map(risk::assess).unwrap_or_else(|| risk::CommandAssessment::review("Lees het even na"));
+        let assessment = command
+            .as_deref()
+            .map(risk::assess)
+            .unwrap_or_else(|| risk::CommandAssessment::review(tr("Lees het even na", "Read it over first")));
         let edit = crate::agents::hub::edit_diff(&p.tool, &p.input);
         let danger = assessment.level == RiskLevel::Danger;
         // An MCP tool by its readable name and server (in the title), with every argument it gets.
@@ -430,16 +434,20 @@ impl Manager {
             return Err(verdict.message(&project));
         }
         self.check_supported(config.provider)?;
-        let executable = (self.hooks.executable)(config.provider)
-            .ok_or_else(|| format!("{} staat niet op deze computer.", config.provider.display_name()))?;
+        let executable = (self.hooks.executable)(config.provider).ok_or_else(|| {
+            trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &config.provider.display_name())])
+        })?;
         let id = Uuid::new_v4();
         let mut working = project.clone();
         let repo_root = self.git.as_ref().and_then(|g| g.repository_root(&project));
         let mut branch = None;
         let mut worktree = None;
         if config.isolation == IsolationMode::Worktree {
-            let git = self.git.as_ref().ok_or("Git is niet gevonden. Installeer git en probeer het opnieuw.")?;
-            let root = repo_root.clone().ok_or("Deze map is geen git-repository.")?;
+            let git = self.git.as_ref().ok_or(tr(
+                "Git is niet gevonden. Installeer git en probeer het opnieuw.",
+                "Git was not found. Install git and try again.",
+            ))?;
+            let root = repo_root.clone().ok_or(tr("Deze map is geen git-repository.", "This folder is not a git repository."))?;
             let root_folder = if config.worktree_root.is_empty() { (self.hooks.worktree_root)() } else { config.worktree_root.clone() };
             let repo_name = crate::agents::text::project_name(&root);
             let path = worktree_path(&paths::normalize(&root_folder), &repo_name, &slug(&config.branch_name.replace('/', "-"), 60), |p| {
@@ -452,9 +460,10 @@ impl Manager {
         } else {
             if !allow_shared_folder {
                 if let Some(other) = Self::active_sharing(&self.lock(), &project, None) {
-                    return Err(format!(
-                        "De sessie '{}' werkt al in deze map. Kies een worktree, of bevestig dat ze de map mogen delen.",
-                        other.title
+                    return Err(trf(
+                        "De sessie '{title}' werkt al in deze map. Kies een worktree, of bevestig dat ze de map mogen delen.",
+                        "The session '{title}' already works in this folder. Choose a worktree, or confirm that they may share the folder.",
+                        &[("title", &other.title)],
                     ));
                 }
             }
@@ -519,7 +528,11 @@ impl Manager {
                     id,
                     RunEvent::new(
                         EventKind::System,
-                        format!("Worktree gemaakt: branch {} in {}", branch.unwrap_or_default(), crate::agents::tilde(path)),
+                        trf(
+                            "Worktree gemaakt: branch {branch} in {path}",
+                            "Worktree created: branch {branch} in {path}",
+                            &[("branch", &branch.unwrap_or_default()), ("path", &crate::agents::tilde(path))],
+                        ),
                     ),
                     &mut out,
                 );
@@ -566,7 +579,11 @@ impl Manager {
         }
         self.check_supported(provider)?;
         if (self.hooks.executable)(provider).is_none() {
-            return Err(format!("{} staat niet op deze computer.", provider.display_name()));
+            return Err(trf(
+                "{agent} staat niet op deze computer.",
+                "{agent} is not on this computer.",
+                &[("agent", &provider.display_name())],
+            ));
         }
         let repo_root = self.git.as_ref().and_then(|g| g.repository_root(&project));
         let branch = repo_root.as_ref().and_then(|_| self.git.as_ref().and_then(|g| g.current_branch(&project)));
@@ -625,12 +642,17 @@ impl Manager {
                 Self::append(&mut s, id, e, &mut out);
             }
             let text = if fork {
-                format!(
-                    "Kopie in Nook: je volgende bericht start een kopie van dit gesprek met {}; het origineel loopt ongestoord door.",
-                    provider.display_name()
+                trf(
+                    "Kopie in Nook: je volgende bericht start een kopie van dit gesprek met {agent}; het origineel loopt ongestoord door.",
+                    "Copy in Nook: your next message starts a copy of this conversation with {agent}; the original carries on undisturbed.",
+                    &[("agent", &provider.display_name())],
                 )
             } else {
-                format!("Overgenomen in Nook: dit gesprek gaat hier verder met {}.", provider.display_name())
+                trf(
+                    "Overgenomen in Nook: dit gesprek gaat hier verder met {agent}.",
+                    "Taken over in Nook: this conversation continues here with {agent}.",
+                    &[("agent", &provider.display_name())],
+                )
             };
             Self::append(&mut s, id, RunEvent::new(EventKind::System, text), &mut out);
             s.dirty_runs = true;
@@ -677,7 +699,7 @@ impl Manager {
     pub fn send(self: &Arc<Self>, id: Uuid, text: &str) -> Result<(), String> {
         let clean = text.trim().to_string();
         if clean.is_empty() {
-            return Err("Leeg bericht.".into());
+            return Err(tr("Leeg bericht.", "Empty message.").into());
         }
         let (run, busy) = {
             let mut s = self.lock();
@@ -685,7 +707,12 @@ impl Manager {
             if let Some(q) = s.queues.get_mut(&id) {
                 q.resume();
             }
-            let run = s.runs.iter().find(|r| r.id == id).cloned().ok_or("Deze sessie bestaat niet meer.")?;
+            let run = s
+                .runs
+                .iter()
+                .find(|r| r.id == id)
+                .cloned()
+                .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
             let busy = !run.can_continue() || s.processes.contains_key(&id);
             (run, busy)
         };
@@ -693,10 +720,15 @@ impl Manager {
             self.enqueue(id, &clean);
             return Ok(());
         }
-        let executable =
-            (self.hooks.executable)(run.provider).ok_or_else(|| format!("{} staat niet op deze computer.", run.provider.display_name()))?;
+        let executable = (self.hooks.executable)(run.provider).ok_or_else(|| {
+            trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &run.provider.display_name())])
+        })?;
         if paths::verdict(&run.working_directory) != Verdict::Ok {
-            let message = format!("De werkmap bestaat niet meer: {}", run.working_directory);
+            let message = trf(
+                "De werkmap bestaat niet meer: {dir}",
+                "The working folder no longer exists: {dir}",
+                &[("dir", &run.working_directory)],
+            );
             let mut out = Out::default();
             Self::append(&mut self.lock(), id, RunEvent::new(EventKind::Error, message.clone()), &mut out);
             self.emit(out);
@@ -825,7 +857,12 @@ impl Manager {
         let last = {
             let mut s = self.lock();
             Self::load_timeline(&self.store, &mut s, id);
-            let run = s.runs.iter().find(|r| r.id == id).cloned().ok_or("Deze sessie bestaat niet meer.")?;
+            let run = s
+                .runs
+                .iter()
+                .find(|r| r.id == id)
+                .cloned()
+                .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
             s.events.get(&id).and_then(|e| e.iter().rev().find(|e| e.kind == EventKind::User)).map(|e| e.text.clone()).unwrap_or(run.task)
         };
         self.send(id, &last)
@@ -913,7 +950,7 @@ impl Manager {
         let mut child = match spawned {
             Ok(c) => c,
             Err(e) => {
-                let message = format!("De agent starten lukte niet: {e}");
+                let message = trf("De agent starten lukte niet: {e}", "Could not start the agent: {e}", &[("e", &e)]);
                 let mut s = self.lock();
                 if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
                     if !run.status.is_active() {
@@ -1314,7 +1351,7 @@ impl Manager {
                         Self::update(s, id, |r| {
                             r.move_to(RunStatus::WaitingApproval, None, Utc::now());
                         });
-                        let mut e = RunEvent::new(EventKind::Approval, "Wacht op je antwoord…")
+                        let mut e = RunEvent::new(EventKind::Approval, tr("Wacht op je antwoord…", "Waiting for your answer…"))
                             .with_tool(tool)
                             .with_call(&request_id)
                             .with_state(EventState::Pending);
@@ -1444,7 +1481,11 @@ impl Manager {
                 });
                 if failed {
                     let text = if result.text.is_empty() {
-                        format!("De agent stopte met een fout ({}).", result.subtype)
+                        trf(
+                            "De agent stopte met een fout ({reason}).",
+                            "The agent stopped with an error ({reason}).",
+                            &[("reason", &result.subtype)],
+                        )
                     } else {
                         result.text.clone()
                     };
@@ -1470,7 +1511,13 @@ impl Manager {
                     Self::append(
                         s,
                         id,
-                        RunEvent::new(EventKind::System, "De agent heeft het gesprek samengevat om ruimte te maken in de context."),
+                        RunEvent::new(
+                            EventKind::System,
+                            tr(
+                                "De agent heeft het gesprek samengevat om ruimte te maken in de context.",
+                                "The agent summarized the conversation to make room in the context.",
+                            ),
+                        ),
                         out,
                     );
                 }
@@ -1638,7 +1685,10 @@ impl Manager {
                     Self::append(
                         s,
                         id,
-                        RunEvent::new(EventKind::Error, message.unwrap_or_else(|| "De agent stopte met een fout.".into())),
+                        RunEvent::new(
+                            EventKind::Error,
+                            message.unwrap_or_else(|| tr("De agent stopte met een fout.", "The agent stopped with an error.").into()),
+                        ),
                         out,
                     );
                 }
@@ -1881,13 +1931,15 @@ impl Manager {
                 .get(&run_id)
                 .and_then(|l| l.iter().find(|p| p.id == request_id))
                 .cloned()
-                .ok_or("Deze vraag bestaat niet meer.")?;
+                .ok_or(tr("Deze vraag bestaat niet meer.", "This question no longer exists."))?;
             let input = s.processes.get(&run_id).and_then(|p| p.input.clone());
             let Some(input) = input else {
                 Self::expire_approval(&mut s, run_id, request_id, &mut out);
                 drop(s);
                 self.emit(out);
-                return Err("De agent draait niet meer; de vraag is verlopen.".into());
+                return Err(
+                    tr("De agent draait niet meer; de vraag is verlopen.", "The agent no longer runs; the question has expired.").into()
+                );
             };
             let allow = decision != ApprovalDecision::Deny && decision != ApprovalDecision::Terminal;
             self.recap.note(|r, now| r.decision(allow, now));
@@ -1950,8 +2002,12 @@ impl Manager {
                 .get(&run_id)
                 .and_then(|l| l.iter().find(|q| q.id == request_id))
                 .cloned()
-                .ok_or("Deze vraag bestaat niet meer.")?;
-            let input = s.processes.get(&run_id).and_then(|p| p.input.clone()).ok_or("De agent draait niet meer.")?;
+                .ok_or(tr("Deze vraag bestaat niet meer.", "This question no longer exists."))?;
+            let input = s
+                .processes
+                .get(&run_id)
+                .and_then(|p| p.input.clone())
+                .ok_or(tr("De agent draait niet meer.", "The agent no longer runs."))?;
             let answers: Vec<(String, Vec<String>)> =
                 q.items.iter().zip(selections).map(|(i, sel)| (i.question.clone(), sel.clone())).collect();
             let lines = match s.processes.get_mut(&run_id).and_then(|p| p.driver.as_mut()) {
@@ -2115,7 +2171,15 @@ impl Manager {
                 return;
             }
             let mut out = Out::default();
-            Self::append(&mut s, id, RunEvent::new(EventKind::System, "De gebruikslimiet is vrij: de sessie gaat verder."), &mut out);
+            Self::append(
+                &mut s,
+                id,
+                RunEvent::new(
+                    EventKind::System,
+                    tr("De gebruikslimiet is vrij: de sessie gaat verder.", "The usage limit has reset: the session carries on."),
+                ),
+                &mut out,
+            );
             drop(s);
             self.emit(out);
         }
@@ -2131,9 +2195,14 @@ impl Manager {
     pub fn delete(&self, id: Uuid) -> Result<(), String> {
         let run = {
             let mut s = self.lock();
-            let run = s.runs.iter().find(|r| r.id == id).cloned().ok_or("Deze sessie bestaat niet meer.")?;
+            let run = s
+                .runs
+                .iter()
+                .find(|r| r.id == id)
+                .cloned()
+                .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
             if run.status.is_active() || s.processes.contains_key(&id) {
-                return Err("Kan niet terwijl de agent werkt.".into());
+                return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
             }
             s.runs.retain(|r| r.id != id);
             s.events.remove(&id);
@@ -2180,7 +2249,8 @@ impl Manager {
                     }
                 }
             } else {
-                snap.error = Some(format!("De werkmap bestaat niet meer: {dir}"));
+                snap.error =
+                    Some(trf("De werkmap bestaat niet meer: {dir}", "The working folder no longer exists: {dir}", &[("dir", &dir)]));
             }
             {
                 let mut s = manager.lock();
@@ -2195,17 +2265,17 @@ impl Manager {
     }
 
     pub fn diff(&self, id: Uuid, file: &git::FileChange) -> Result<String, String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.diff(&run.working_directory, file).map_err(|e| e.0)
     }
 
     pub fn commit(self: &Arc<Self>, id: Uuid, message: &str, paths: &[String]) -> Result<String, String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
         if run.status.is_active() {
-            return Err("Kan niet terwijl de agent werkt.".into());
+            return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let sha = git.commit(&run.working_directory, message, paths).map_err(|e| e.0)?;
         let mut out = Out::default();
         {
@@ -2224,10 +2294,10 @@ impl Manager {
     }
 
     pub fn push(self: &Arc<Self>, id: Uuid) -> Result<String, String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
-        let branch = git.current_branch(dir).ok_or("Er is geen branch uitgecheckt.")?;
+        let branch = git.current_branch(dir).ok_or(tr("Er is geen branch uitgecheckt.", "No branch is checked out."))?;
         let remotes = git.remotes(dir);
         let remote = if remotes.iter().any(|r| r == "origin") {
             "origin".to_string()
@@ -2245,11 +2315,11 @@ impl Manager {
     /// Een nieuwe branch voor een nieuwe pull request, met de niet-gecommitte wijzigingen mee. Geeft de naam en het
     /// snijpunt voor `move_onto_base`.
     pub fn start_branch(self: &Arc<Self>, id: Uuid, topic: &str) -> Result<(String, Option<String>), String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
         if run.status.is_active() {
-            return Err("Kan niet terwijl de agent werkt.".into());
+            return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let name = super::models::branch_name(topic, Uuid::new_v4());
         let cut = git.start_branch(dir, &name, &Self::push_remote(git, dir)).map_err(|e| e.0)?;
@@ -2259,7 +2329,14 @@ impl Manager {
             Self::append(
                 &mut s,
                 id,
-                RunEvent::new(EventKind::System, format!("Branch {name} gestart voor een nieuwe pull request")),
+                RunEvent::new(
+                    EventKind::System,
+                    trf(
+                        "Branch {name} gestart voor een nieuwe pull request",
+                        "Started branch {name} for a new pull request",
+                        &[("name", &name)],
+                    ),
+                ),
                 &mut out,
             );
             Self::update(&mut s, id, |r| r.branch = Some(name.clone()));
@@ -2271,14 +2348,14 @@ impl Manager {
 
     /// Alleen het nieuwe werk in de nieuwe pull request: de commits na `cut` op de basis van de sessie.
     pub fn move_onto_base(self: &Arc<Self>, id: Uuid, cut: &str) -> Result<bool, String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let remote = Self::push_remote(git, dir);
         let base = git
             .default_branch(dir, &remote)
             .or_else(|| run.base_branch.clone().map(|b| b.trim_start_matches("origin/").to_string()))
-            .ok_or("De basisbranch is onbekend.")?;
+            .ok_or(tr("De basisbranch is onbekend.", "The base branch is unknown."))?;
         let moved = git.move_onto_base(dir, &base, &remote, cut);
         self.refresh_git(id);
         Ok(moved)
@@ -2295,13 +2372,13 @@ impl Manager {
 
     /// Alleen fast-forward, nooit terwijl de agent werkt.
     pub fn pull(self: &Arc<Self>, id: Uuid) -> Result<(), String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
         if run.status.is_active() {
-            return Err("Kan niet terwijl de agent werkt.".into());
+            return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.pull_fast_forward(&run.working_directory).map_err(|e| e.0)?;
-        self.note(id, "Gepulld (alleen fast-forward)");
+        self.note(id, tr("Gepulld (alleen fast-forward)", "Pulled (fast-forward only)"));
         self.refresh_git(id);
         Ok(())
     }
@@ -2334,14 +2411,14 @@ impl Manager {
 
     /// Haalt de worktree van een sessie weg. Nooit terwijl de sessie loopt; niet-vastgelegd werk vraagt `force`.
     pub fn remove_worktree(self: &Arc<Self>, id: Uuid, force: bool) -> Result<(), String> {
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
         let (Some(path), Some(repo)) = (run.worktree_path.clone(), run.repo_root.clone()) else { return Ok(()) };
         self.remove_worktree_at(&repo, &path, force)
     }
 
     /// Haalt een worktree weg die bij geen actieve sessie hoort (vanuit het overzicht).
     pub fn remove_worktree_at(self: &Arc<Self>, repo: &str, path: &str, force: bool) -> Result<(), String> {
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let target = paths::normalize(path);
         {
             let s = self.lock();
@@ -2349,7 +2426,11 @@ impl Manager {
                 .iter()
                 .any(|r| (r.status.is_active() || s.processes.contains_key(&r.id)) && paths::normalize(&r.working_directory) == target)
             {
-                return Err("Er werkt nog een sessie in deze worktree. Stop die eerst.".into());
+                return Err(tr(
+                    "Er werkt nog een sessie in deze worktree. Stop die eerst.",
+                    "A session still works in this worktree. Stop it first.",
+                )
+                .into());
             }
         }
         git.remove_worktree(repo, path, force).map_err(|e| e.0)?;
@@ -2361,7 +2442,10 @@ impl Manager {
                 Self::append(
                     &mut s,
                     id,
-                    RunEvent::new(EventKind::System, format!("Worktree verwijderd: {}", crate::agents::tilde(path))),
+                    RunEvent::new(
+                        EventKind::System,
+                        trf("Worktree verwijderd: {path}", "Worktree removed: {path}", &[("path", &crate::agents::tilde(path))]),
+                    ),
                     &mut out,
                 );
                 Self::update(&mut s, id, |r| r.status_detail = Some("worktreeRemoved".into()));
@@ -2431,14 +2515,29 @@ impl Manager {
 
     pub fn revert_files(self: &Arc<Self>, id: Uuid, before: DateTime<Utc>) -> Result<(), String> {
         if !self.can_revert(id, before) {
-            return Err("Terugzetten kan alleen bij een sessie in een eigen worktree die niet bezig is.".into());
+            return Err(tr(
+                "Terugzetten kan alleen bij een sessie in een eigen worktree die niet bezig is.",
+                "Files can only be restored for a session in its own worktree that is not busy.",
+            )
+            .into());
         }
-        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
-        let checkpoint = run.checkpoints.iter().rev().find(|c| c.date <= before).cloned().ok_or("Geen eerder punt gevonden.")?;
-        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let checkpoint = run
+            .checkpoints
+            .iter()
+            .rev()
+            .find(|c| c.date <= before)
+            .cloned()
+            .ok_or(tr("Geen eerder punt gevonden.", "No earlier point found."))?;
+        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.restore(&run.working_directory, &checkpoint.r#ref).map_err(|e| e.0)?;
         let mut out = Out::default();
-        Self::append(&mut self.lock(), id, RunEvent::new(EventKind::System, "Bestanden teruggezet naar een eerder punt."), &mut out);
+        Self::append(
+            &mut self.lock(),
+            id,
+            RunEvent::new(EventKind::System, tr("Bestanden teruggezet naar een eerder punt.", "Files restored to an earlier point.")),
+            &mut out,
+        );
         self.emit(out);
         self.refresh_git(id);
         Ok(())
@@ -2585,14 +2684,26 @@ pub fn clean_error(raw: &str, status: i32) -> String {
     let tail = lines[lines.len().saturating_sub(6)..].join("\n");
     let lower = tail.to_lowercase();
     if lower.contains("not logged in") || lower.contains("please run /login") || lower.contains("authenticat") {
-        return "Dit account is niet ingelogd. Log in via Instellingen › Agents › Accounts en probeer opnieuw.".into();
+        return tr(
+            "Dit account is niet ingelogd. Log in via Instellingen › Agents › Accounts en probeer opnieuw.",
+            "This account is not signed in. Sign in under Settings › Agents › Accounts and try again.",
+        )
+        .into();
     }
     if lower.contains("unknown option") || lower.contains("unexpected argument") {
         let short: String = tail.chars().take(400).collect();
-        return format!("Je versie van de agent kent een van de opties niet. Werk hem bij en probeer opnieuw.\n{short}");
+        return trf(
+            "Je versie van de agent kent een van de opties niet. Werk hem bij en probeer opnieuw.\n{short}",
+            "Your version of the agent does not know one of the options. Update it and try again.\n{short}",
+            &[("short", &short)],
+        );
     }
     if tail.is_empty() {
-        return format!("De agent stopte onverwacht (code {status}).");
+        return trf(
+            "De agent stopte onverwacht (code {status}).",
+            "The agent stopped unexpectedly (code {status}).",
+            &[("status", &status)],
+        );
     }
     tail.chars().take(800).collect()
 }
@@ -2754,8 +2865,8 @@ read rest
         assert_eq!(duration(125.0), "2m 5s");
         assert_eq!(cost(0.004), "< $0,01");
         assert_eq!(cost(1.5), "$1,50");
-        assert!(clean_error("\u{1b}[31mError: not logged in\u{1b}[0m", 1).contains("niet ingelogd"));
-        assert_eq!(clean_error("", 2), "De agent stopte onverwacht (code 2).");
+        assert!(clean_error("\u{1b}[31mError: not logged in\u{1b}[0m", 1).contains("not signed in"));
+        assert_eq!(clean_error("", 2), "The agent stopped unexpectedly (code 2).");
         assert_eq!(
             result_line(&TurnUsage { duration_seconds: Some(3.0), input_tokens: Some(1200), ..Default::default() }, 1),
             "3s · 1,2k tokens · 1 geweigerd"
