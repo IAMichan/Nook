@@ -461,4 +461,33 @@ impl ScreenReader for WindowsScreen {
             }
         }
     }
+
+    fn read_browser_tab(
+        &self,
+        browser: Option<&str>,
+        tab: Option<&str>,
+    ) -> Result<nook_core::brain::open_browser_tab::BrowserTabResult, String> {
+        let all = self.list();
+        let front = self.front();
+        let mut browsers: Vec<super::browser::BrowserWindow> = all
+            .iter()
+            .filter_map(|w| {
+                let spec = nook_core::brain::open_browser_tab::match_browser(&w.exe)
+                    .or_else(|| nook_core::brain::open_browser_tab::match_browser(&w.name))?;
+                Some(super::browser::BrowserWindow { hwnd: HWND(w.hwnd as *mut _), spec, title: w.title.clone() })
+            })
+            .collect();
+        if let Some(f) = front {
+            if let Some(pos) = browsers.iter().position(|b| b.hwnd.0 as isize == f) {
+                if pos > 0 {
+                    let item = browsers.remove(pos);
+                    browsers.insert(0, item);
+                }
+            }
+        }
+        Ok(super::browser::read_browser_tab(browsers, browser, tab, |hwnd, limit| {
+            let raw = hwnd.0 as isize;
+            all.iter().find(|w| w.hwnd == raw).and_then(|w| self.read(w, limit)).map(|(text, _)| text).unwrap_or_default()
+        }))
+    }
 }

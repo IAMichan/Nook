@@ -126,4 +126,10 @@ pub const ROWS: &[Row] = &[
         "{agent} démarré dans {folder} | id de session {id}",
         "{agent} iniciado en {folder} | id de sesión {id}",
     ),
+    (
+        "Reading browser tabs is not available on this platform.",
+        "Browser-Tabs können auf dieser Plattform nicht gelesen werden.",
+        "La lecture des onglets du navigateur n'est pas disponible sur cette plateforme.",
+        "La lectura de pestañas del navegador no está disponible en esta plataforma.",
+    ),
 ];

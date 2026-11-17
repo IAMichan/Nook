@@ -57,6 +57,7 @@ pub mod local_intent;
 pub mod memory;
 pub mod model_download;
 pub mod network_guard;
+pub mod open_browser_tab;
 pub mod prepare;
 pub mod profile;
 pub mod quality;
