@@ -25,6 +25,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 mod nook;
+mod sessions;
 pub mod tasks;
 
 use super::terminals::{TerminalInfo, TerminalOwner};
@@ -312,6 +313,9 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
+        BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
+        BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
+        BridgeTool::SessionWait => sessions::session_wait(app, a).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList

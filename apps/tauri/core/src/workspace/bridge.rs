@@ -29,6 +29,9 @@ pub enum BridgeTool {
     PullRequestCreate,
     SessionList,
     SessionRead,
+    SessionStart,
+    SessionSend,
+    SessionWait,
     // Nook itself (`bridge_nook`).
     NookTools,
     NookUse,
@@ -55,7 +58,7 @@ pub const SERVER_NAME: &str = "nook";
 pub const TOOL_PREFIX: &str = "mcp__nook__";
 
 impl BridgeTool {
-    pub const ALL: [BridgeTool; 25] = [
+    pub const ALL: [BridgeTool; 28] = [
         Self::WorkspaceInfo,
         Self::TerminalRun,
         Self::TerminalRead,
@@ -72,6 +75,9 @@ impl BridgeTool {
         Self::PullRequestCreate,
         Self::SessionList,
         Self::SessionRead,
+        Self::SessionStart,
+        Self::SessionSend,
+        Self::SessionWait,
         Self::NookTools,
         Self::NookUse,
         Self::NookChatList,
@@ -101,6 +107,9 @@ impl BridgeTool {
             Self::PullRequestCreate => "pull_request_create",
             Self::SessionList => "session_list",
             Self::SessionRead => "session_read",
+            Self::SessionStart => "session_start",
+            Self::SessionSend => "session_send",
+            Self::SessionWait => "session_wait",
             t @ (Self::NookTools
             | Self::NookUse
             | Self::NookChatList
@@ -124,7 +133,9 @@ impl BridgeTool {
             | Self::TaskStatus
             | Self::TaskWait
             | Self::SessionList
-            | Self::SessionRead => Effect::Read,
+            | Self::SessionRead
+            | Self::SessionWait => Effect::Read,
+            Self::SessionStart | Self::SessionSend => Effect::Local,
             Self::TerminalRun | Self::TerminalStop | Self::BrowserOpen | Self::DelegateTask | Self::TaskCancel => Effect::Local,
             Self::PullRequestCreate => Effect::Outward,
             t @ (Self::NookTools
@@ -164,6 +175,9 @@ impl BridgeTool {
             Self::PullRequestCreate => tr("Pull request", "Pull request"),
             Self::SessionList => tr("Nook-sessies", "Nook sessions"),
             Self::SessionRead => tr("Lees sessie", "Read session"),
+            Self::SessionStart => tr("Start sessies", "Start sessions"),
+            Self::SessionSend => tr("Bericht aan sessie", "Message to session"),
+            Self::SessionWait => tr("Wacht op sessies", "Wait for sessions"),
             t @ (Self::NookTools
             | Self::NookUse
             | Self::NookChatList
@@ -200,6 +214,9 @@ impl BridgeTool {
             Self::TaskCancel => "Stops a delegated task and any tasks it delegated.",
             Self::PullRequestCreate => "Proposes a pull request for the current branch of your folder. The user approves it in Nook first; Nook then pushes the branch and opens the pull request through GitHub's API with the user's own connection (or GitHub's page in Nook's browser to finish it). Use this instead of `gh pr create`, also when gh reports a rate limit. Commit your work before calling this. Returns the link.",
             Self::SessionList => "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read.",
+            Self::SessionStart => "Starts 1-20 top-level sessions (default: beside you; or folder, worktree, or scratch). The user approves unless full rights. Returns their ids. Use delegate_task instead when you need a subtask's result.",
+            Self::SessionSend => "Sends a message to another Nook session as an agent, not the user (mode: queue after its turn (default), auto, steer into the running turn, or restart). Prefer queue: steer or restart only when the receiver must change its running work now. The receiver keeps its own task, so ask only what bears on it. The user approves unless full rights. You cannot message yourself.",
+            Self::SessionWait => "Waits until any (default) or all listed sessions finish their turn or ask the user a question (up to timeout_seconds).",
             Self::SessionRead => "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed.",
             t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => super::bridge_nook::summary(t),
         }
@@ -277,6 +294,39 @@ impl BridgeTool {
             Self::SessionRead => {
                 object(json!({"session_id": {"type": "string", "description": "The session id from session_list."}}), &["session_id"])
             }
+            Self::SessionStart => object(
+                json!({
+                    "task": {"type": "string", "description": "Self-contained first message."},
+                    "title": {"type": "string", "description": "Session title (default: from the task)."},
+                    "agent": {"type": "string", "description": "Agent id (default: Nook's default agent)."},
+                    "model": {"type": "string", "description": "Model id (default: the agent's)."},
+                    "plan": {"type": "boolean", "description": "Start in Plan mode."},
+                    "sessions": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object"}, "description": "Batch of session objects with task, title, agent, model, plan."},
+                    "folder": {"type": "string", "description": "Absolute folder path (default: yours)."},
+                    "worktree": {"type": "boolean", "description": "Create a new git worktree per session."},
+                    "base": {"type": "string", "description": "Worktree base ref (e.g. origin/main)."},
+                    "scratch": {"type": "boolean", "description": "Start in a scratch folder."},
+                    "client_request_id": {"type": "string", "description": "Idempotency key for retries."}
+                }),
+                &[],
+            ),
+            Self::SessionSend => object(
+                json!({
+                    "session_id": {"type": "string", "description": "Session id from session_list."},
+                    "message": {"type": "string", "description": "Self-contained message."},
+                    "mode": {"type": "string", "enum": ["auto", "queue", "steer", "restart"], "description": "queue (default), auto, steer or restart."},
+                    "client_request_id": {"type": "string", "description": "A retry sends nothing twice."}
+                }),
+                &["session_id", "message"],
+            ),
+            Self::SessionWait => object(
+                json!({
+                    "session_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Session ids."},
+                    "mode": {"type": "string", "enum": ["any", "all"], "description": "any (default) or all."},
+                    "timeout_seconds": {"type": "integer", "description": "Max wait seconds (default 45, max 840)."}
+                }),
+                &["session_ids"],
+            ),
             t @ (Self::NookTools
             | Self::NookUse
             | Self::NookChatList
@@ -387,8 +437,12 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, command: Option<RiskLeve
     match tool {
         BridgeTool::PullRequestCreate => Verdict::Ask(Reason::Outward),
         // A child never has more rights than its parent, and the user sees it start; with full rights it starts directly.
-        BridgeTool::DelegateTask if caller.permission == Some(PermissionPolicy::Bypass) => Verdict::Allow,
-        BridgeTool::DelegateTask => Verdict::Ask(Reason::Delegation),
+        BridgeTool::DelegateTask | BridgeTool::SessionStart | BridgeTool::SessionSend
+            if caller.permission == Some(PermissionPolicy::Bypass) =>
+        {
+            Verdict::Allow
+        }
+        BridgeTool::DelegateTask | BridgeTool::SessionStart | BridgeTool::SessionSend => Verdict::Ask(Reason::Delegation),
         BridgeTool::TerminalRun => match command.unwrap_or(RiskLevel::Review) {
             RiskLevel::Danger => Verdict::Refuse(Reason::Dangerous),
             RiskLevel::Safe => Verdict::Allow,
@@ -629,6 +683,10 @@ mod tests {
         assert_eq!(verdict(BridgeTool::DelegateTask, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
         assert_eq!(verdict(BridgeTool::TaskWait, &plan, None, true), Verdict::Allow);
         assert_eq!(verdict(BridgeTool::TaskCancel, &agent, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::SessionStart, &agent, None, true), Verdict::Ask(Reason::Delegation));
+        assert_eq!(verdict(BridgeTool::SessionSend, &bypass, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::SessionSend, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
+        assert_eq!(verdict(BridgeTool::SessionWait, &plan, None, true), Verdict::Allow);
     }
 
     #[test]

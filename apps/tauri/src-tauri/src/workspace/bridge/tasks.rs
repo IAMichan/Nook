@@ -84,7 +84,7 @@ fn active_children(app: &AppHandle, parent: Uuid) -> usize {
     l.links.children(parent).into_iter().filter(|c| ws.manager.run(*c).is_some_and(|r| r.status.is_active())).count()
 }
 
-fn installed(provider: RunProvider) -> bool {
+pub(super) fn installed(provider: RunProvider) -> bool {
     let found = find_executable(provider.kind()).map(|p| p.to_string_lossy().into_owned());
     session_executable(provider, found).is_some()
 }
