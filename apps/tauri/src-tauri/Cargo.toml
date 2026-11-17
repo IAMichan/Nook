@@ -55,6 +55,8 @@ tauri-plugin-barcode-scanner = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# The browser's screenshot goes through WebView2's DevTools protocol; same version as wry's.
+webview2-com = "0.39"
 # Must share windows-core with the `windows` crate below: windows-collections 0.3 pairs with `windows` 0.62, while 0.100
 # is built on windows-core 0.100 and mixes up HSTRING. Move both together, not just one (cpal also pins `windows` 0.62).
 windows-collections = "0.3"
@@ -108,9 +110,17 @@ windows-sys = { version = "0.61", features = [
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 zbus = "6"
 x11rb = { version = "0.14", features = ["screensaver", "xtest"] }
+# The browser's screenshot (webkit_web_view_get_snapshot); same versions as wry's.
+webkit2gtk = "=2.0.2"
+cairo-rs = "0.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# The browser's screenshot (WKWebView takeSnapshot); same versions as wry's.
+block2 = "0.6"
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"] }
 
 [lints]
 workspace = true

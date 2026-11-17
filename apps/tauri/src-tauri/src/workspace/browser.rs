@@ -269,6 +269,19 @@ impl Browser {
         serde_json::from_str(&raw).unwrap_or_default()
     }
 
+    /// A JPEG of what the page shows now, at most `max_width` pixels wide, with the page's address.
+    pub async fn screenshot(&self, app: &AppHandle, max_width: u32) -> Result<(Vec<u8>, String), String> {
+        let state = self.state();
+        let window = app
+            .get_webview_window(LABEL)
+            .filter(|_| state.open)
+            .ok_or("There is no page open in Nook's browser. Open one with browser_open first.")?;
+        let png = super::snapshot::png(&window).await?;
+        let (jpeg, _, _) =
+            tauri::async_runtime::spawn_blocking(move || super::snapshot::shrink(&png, max_width)).await.map_err(|e| e.to_string())??;
+        Ok((jpeg, state.url))
+    }
+
     pub fn close(&self, app: &AppHandle) {
         if let Some(w) = app.get_webview_window(LABEL) {
             let _ = w.close();

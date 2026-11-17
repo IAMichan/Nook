@@ -213,7 +213,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 `browser_open`, `browser_read`, `pull_request_create`, `session_list`, `session_read`, `nook_tools`, `nook_use`,
 `nook_chat_list/read/send`, `chat_list/read/send`, `take_over_screen` (read-only).
 
-- [ ] **AG-01** `browser_screenshot`: defined but filtered out of `tools/list` in `src-tauri/src/workspace/bridge_cli.rs`; capture through the webview (WebView2 `CapturePreview`) · M
+- [x] **AG-01** `browser_screenshot`: offered in `tools/list`; WebView2 through the DevTools protocol (`Page.captureScreenshot`), WebKitGTK `get_snapshot`, WKWebView `takeSnapshot` (`src-tauri/src/workspace/snapshot.rs`) · M
 - [ ] **AG-02** `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for` on `src-tauri/src/workspace/browser.rs` (DOM refs, click and type through JS) · M
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 - [ ] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` · M

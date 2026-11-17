@@ -9,6 +9,8 @@ pub mod bridge_cli;
 #[cfg(desktop)]
 pub mod browser;
 #[cfg(desktop)]
+pub mod snapshot;
+#[cfg(desktop)]
 pub mod terminals;
 
 use std::collections::BTreeMap;
