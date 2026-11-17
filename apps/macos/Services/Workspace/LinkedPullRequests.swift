@@ -29,9 +29,14 @@ enum LinkedPullRequests {
                       dismissed: Set<String>) -> [LinkedPullRequest] {
         var sources: [String: LinkedPullRequest.Source] = [:]
         var unique: [PullRequestLink] = []
+        // The same request can come in under two repository names (a renamed repository): one line for it.
+        var seen = Set<String>()
+        // Taken off under either name is taken off.
+        let gone = Set((branch + yours + earlier).filter { dismissed.contains($0.id) }.map(\.placeID))
         let found: [(links: [PullRequestLink], source: LinkedPullRequest.Source)] = [(branch, .branch), (yours, .you), (earlier, .earlierBranch)]
         for (links, source) in found {
-            for link in links where !dismissed.contains(link.id) && sources[link.id] == nil {
+            for link in links where !gone.contains(link.placeID) && sources[link.id] == nil {
+                guard seen.insert(link.placeID).inserted else { continue }
                 sources[link.id] = source
                 unique.append(link)
             }

@@ -128,6 +128,8 @@ struct SessionPanel: View {
     @AppStorage("agents.panel.hidden") private var hiddenRaw = ""
     /// The session's pull requests past the first few.
     @State private var allPullRequests = false
+    /// More than one pull request folds under a header row, so the panel keeps its overview; remembered across sessions.
+    @AppStorage("agents.panel.pullRequestsOpen") private var pullRequestsOpen = false
 
     init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
          close: @escaping () -> Void, docked: Bool = false) {
@@ -179,6 +181,29 @@ struct SessionPanel: View {
     @ViewBuilder
     private var pullRequestRows: some View {
         let links = pullRequests
+        if links.count > 1 {
+            pullRequestHeader(links)
+            if pullRequestsOpen { pullRequestList(links) }
+        } else {
+            pullRequestList(links)
+        }
+    }
+
+    /// The fold over a session's pull requests: how many, how many still open, and a chevron.
+    private func pullRequestHeader(_ links: [PullRequestLink]) -> some View {
+        let open = links.filter(\.state.isOpen).count
+        return PanelRow(icon: symbol(PullRequestIcon.generic),
+                        title: tr("agents.panel.pullRequestsCount", links.count),
+                        trailing: AnyView(HStack(spacing: NookTheme.Spacing.sm) {
+                            if open > 0 { Text(tr("agents.panel.pullRequestsOpenCount", open)).font(NookTheme.TextStyle.detail) }
+                            DisclosureChevron(open: pullRequestsOpen, size: 8.5, tint: nil, style: .vertical)
+                        }),
+                        action: { withAnimation(NookTheme.reveal) { pullRequestsOpen.toggle() } })
+            .accessibilityValue(tr(pullRequestsOpen ? "agents.panel.unfolded" : "agents.panel.folded"))
+    }
+
+    @ViewBuilder
+    private func pullRequestList(_ links: [PullRequestLink]) -> some View {
         ForEach(allPullRequests ? links[...] : links.prefix(Self.shownPullRequests)) { link in
             SessionPullRequestRow(link: link, glyph: glyph(link), runID: runID, directory: directory) {
                 if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) }

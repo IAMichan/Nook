@@ -34,6 +34,16 @@ final class LinkedPullRequestsTests: XCTestCase {
         XCTAssertEqual(lines.map(\.link.number), [2])
     }
 
+    func testARenamedRepositoryGivesOneLine() {
+        // The branch's list names the repository the folder's remote still uses; the link added later the new one.
+        let old = PullRequestLink(host: .github, repository: "acme/old", number: 7, url: "https://github.com/acme/app/pull/7")
+        let new = PullRequestLink(host: .github, repository: "acme/app", number: 7, url: "https://github.com/acme/app/pull/7")
+        let lines = LinkedPullRequests.lines(branch: [old], earlier: [], yours: [new], dismissed: [])
+        XCTAssertEqual(lines.map(\.link.number), [7])
+        XCTAssertEqual(lines.first?.source, .branch)
+        XCTAssertTrue(LinkedPullRequests.lines(branch: [old], earlier: [], yours: [new], dismissed: [old.id]).isEmpty)
+    }
+
     func testPullRequestsThatPointAtEachOtherStillGetALine() {
         let lines = LinkedPullRequests.lines(branch: [link(1, head: "a", base: "b"), link(2, head: "b", base: "a")],
                                              earlier: [], yours: [], dismissed: [])
