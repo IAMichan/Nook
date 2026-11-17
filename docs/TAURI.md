@@ -29,6 +29,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
 | Chat tables: text columns with digits in a name don't become a chart (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
 | `ActionGate`, `CommandRisk`, `Undo`, `NetworkGuard`, `LocalQuality` | ✓ | `core/src/brain/` |
+| `NookAccess`: what Nook may do by itself from the chat, chosen under the composer (a chip, or Shift+Tab) and in Settings › Assistant: ask first, small things right away (music, volume, an app, a reminder, a to-do), or more (also an event without guests, ticking off a reminder, a note); only when the user's own words ask for it; the old "small things" switch migrates | ◐ (levels, migration and the word checks unit-tested in core and the frontend; not clicked through in the running app; changing an event always asks because the app cannot see an event's guests, and taking over a task waits for BR-29) | `core/src/brain/access.rs`, `can_run_without_asking` in `commands/chat.rs`, `lib/access.ts`, `components/Composer.svelte` |
 | Memory (`Memory`, `NookMemory`, Settings › Assistant) | ✓ (importing MCP memory ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
 | Web, weather, charts, mail drafts | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
 | `ClaudeCodeBrain` | ◐ (not tested with a real `claude`) | `core/src/brain/claude_code.rs` |

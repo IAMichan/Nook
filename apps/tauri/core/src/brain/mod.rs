@@ -40,6 +40,7 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
     cached(pattern).is_some_and(|re| matches(&re, text))
 }
 
+pub mod access;
 pub mod action_gate;
 pub mod chart;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

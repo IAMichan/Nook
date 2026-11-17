@@ -169,7 +169,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.2 Access, plans, autonomy
 
-- [ ] **BR-10** Three access levels (ask, small, more) chosen in the composer with Shift+Tab (`NookAccess`); Tauri has one `auto_run_safe` toggle → `core/src/brain/access.rs`, `Composer.svelte` · M
+- [x] **BR-10** Three access levels (ask, small, more) chosen in the composer with Shift+Tab (`NookAccess`); Tauri has one `auto_run_safe` toggle → `core/src/brain/access.rs`, `Composer.svelte` · M
 - [ ] **BR-11** `update_plan`: the live step checklist above an answer → `src-tauri/src/tools/plan.rs`, `MessageView.svelte` · S
 - [ ] **BR-12** Automation autonomy (ask, decide through a judge, auto) and the unattended-tools policy (`AppModel+Autonomy`) · M
 
