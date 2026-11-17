@@ -157,7 +157,7 @@
   .error :global(.markdown) { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
-  .brief { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .brief { margin-top: 8px; font: var(--text-detail); color: var(--muted); }
   .brief summary { cursor: pointer; }
   .brief p { margin: 6px 0 0; white-space: pre-wrap; }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
