@@ -135,6 +135,9 @@ pub struct Settings {
     pub answer_style: String,
     /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
     pub instructions: String,
+    /// Which chat apps feed the inbox (Settings › Connections), under the Mac's key.
+    #[serde(rename = "chats.sources.v1")]
+    pub chat_sources: crate::chats::apps::ChatSources,
 }
 
 /// The main window's last place and size on the desktop.
@@ -220,6 +223,7 @@ impl Default for Settings {
             density: "comfortable".into(),
             answer_style: "standard".into(),
             instructions: String::new(),
+            chat_sources: Default::default(),
         }
     }
 }

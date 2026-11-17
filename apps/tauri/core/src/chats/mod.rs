@@ -4,6 +4,7 @@
 //! new, what is read, what is kept and what goes, the same for every app. WhatsApp was the first app on it; Telegram,
 //! Signal, Slack and the others reach it through the chat helper (CH-02) and their own bridges.
 
+pub mod apps;
 pub mod bridge;
 pub mod inbox;
 pub mod store;
