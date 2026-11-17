@@ -48,7 +48,7 @@ BR Nook Chat and the brain, AG coding agents, CH chat apps and connectors, SV sy
   - Progress: `i18n::tests::no_new_dutch_text_outside_tr` fails on Dutch literals outside `tr`/`trf`; `DUTCH_LEFT` in `core/src/i18n/tests.rs` lists what each file still has and only goes down. Done: `workspace/manager.rs`, `commands/workspace.rs`.
 - [ ] **FD-05** Shared desktop components in `src/components/ui/`: move Sheet, Dialog, Menu, TabBar, Toggle, SearchField, EmptyState, Banner and StatusPill out of `views/companion/ui/`, and add the Svelte twins of `NookTooltip`/`HoverCard`, `ConfirmedButton` (replaces the remaining `confirm()` calls), `NookSkeleton`/`PatientSpinner`/`BusyLine`, `NookCountBadge`, `NookFilterChip`/`ChipFlow`, `NookStatTile`, `NookTag`, `NookSectionLabel`, `ListEmptyNote`/`LoadFailedNote`, `IconDetailRow`, `CopyIconButton`, `RefreshIconButton` (with feedback), `TabCloseButton`, `HoverReveal`/`HoverRowFill`, `DisclosureChevron`, `TimelineNewDivider`/`TimelineEarlierRow`, `ProjectIconView`, `DropdownTileGrid`/`ModelPickerDropdown`, `EmojiBrowser`, `ImageModal`, `QRCodeView`, `NookAcknowledgeButton`; list them next to their Swift names in UI-COMPONENTS.md · L
 - [x] **FD-06** Keep this list complete: a line in the PR template and AGENTS.md that a Mac feature PR either ports to Tauri or adds an item here · S
-- [ ] **FD-07** Correct TAURI.md where the audit found it wrong: WhatsApp Web inside Nook is possible through WebView2 (CH-73), and rows marked ✓ that miss parts listed here · S
+- [x] **FD-07** Correct TAURI.md where the audit found it wrong: WhatsApp Web inside Nook is possible through WebView2 (CH-73), and rows marked ✓ that miss parts listed here · S
 
 ## 2. Shell, Settings, look (UI)
 
@@ -535,7 +535,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ## 7. Companion: the PC as server for the phone (CO)
 
-- [ ] **CO-01** The rest of the companion protocol. `core/src/companion/server.rs` handles hello, list, ping, bindKey, register, unregister, decide, answer, send and stop. Missing groups: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`liveActivity`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork`. One item per group is fine · L
+- [x] **CO-01** The rest of the companion protocol. The audit missed that `core/src/companion/server.rs` with `src-tauri/src/companion/backend.rs` already dispatches every group: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork` (checked during FD-07). Only `liveActivity` is missing, which is CO-07 · L
 - [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 - [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
