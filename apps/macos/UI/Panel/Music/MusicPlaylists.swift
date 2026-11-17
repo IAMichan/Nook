@@ -74,7 +74,6 @@ struct MusicPlaylistsView: View {
             Spacer(minLength: 0)
             if sidebar == nil {
                 SmallGhostButton(title: "+ " + tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
-                    .nookTip(tr("music.playlists.new"))
             }
         }
         .padding(.horizontal, MusicLayout.edge)
@@ -175,7 +174,6 @@ private struct MusicPlaylistDetailView: View {
                         SmallGhostButton(title: "+ " + tr("music.playlists.addSongs")) {
                             withAnimation(NookTheme.reveal) { adding.toggle() }
                         }
-                        .nookTip(tr("music.playlists.addSongsHelp", playlist.name))
                     }
                     if playlist.editable { moreMenu }
                     Spacer(minLength: NookTheme.Spacing.md)
@@ -453,7 +451,6 @@ struct MusicTrackRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(tr("music.play"))
             .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
             .accessibilityHint(tr("music.play"))
             actions

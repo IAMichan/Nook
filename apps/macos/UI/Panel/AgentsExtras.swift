@@ -122,7 +122,7 @@ private struct FooterIcon<Glyph: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(hint.map { label + "\n" + $0 } ?? label)
+        .nookTip(hint.map { label + "\n" + $0 } ?? label, enabled: !showsLabel)
         .accessibilityLabel(label)
     }
 }

@@ -106,8 +106,8 @@ struct AutocompleteSettingsSection: View {
             }
         case .noModel:
             StatusRow(title: tr("autocomplete.noModel"), detail: tr("autocomplete.noModelDetail"), state: .warning) {
-                if let model = downloads.downloading {
-                    ProgressView(value: downloads.progress).frame(width: 80).nookTip(model.name)
+                if downloads.downloading != nil {
+                    ProgressView(value: downloads.progress).frame(width: 80)
                 } else {
                     Button(tr("autocomplete.download.named", recommended.name)) { start(recommended) }
                         .buttonStyle(.nookProminent)
@@ -233,7 +233,7 @@ struct AutocompleteSettingsSection: View {
                 }
             }
             if !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix) {
-                LabeledContent(tr("autocomplete.lora")) {
+                LabeledContent {
                     HStack {
                         Text(store.prefs.loraAdapterPath.isEmpty ? tr("autocomplete.lora.none") : (store.prefs.loraAdapterPath as NSString).lastPathComponent)
                             .foregroundStyle(NookTheme.textSecondary)
@@ -243,8 +243,9 @@ struct AutocompleteSettingsSection: View {
                             Button(tr("autocomplete.lora.remove")) { store.prefs.loraAdapterPath = "" }
                         }
                     }
+                } label: {
+                    SettingInfoLabel(tr("autocomplete.lora"), info: tr("autocomplete.lora.detail"))
                 }
-                .nookTip(tr("autocomplete.lora.detail"))
                 .onChange(of: store.prefs.loraAdapterPath) { _, _ in autocomplete.refresh() }
             }
         } header: {
@@ -304,7 +305,6 @@ struct AutocompleteSettingsSection: View {
                 .nookTip(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
-        .nookTip(file.url.path)
     }
 
     private func trashQuestion(_ file: CompletionModelFile) -> String {

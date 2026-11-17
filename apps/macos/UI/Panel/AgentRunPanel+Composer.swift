@@ -483,7 +483,6 @@ extension AgentRunPanel {
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
             }
         }
-        .composerTip(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {

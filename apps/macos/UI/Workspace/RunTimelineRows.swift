@@ -54,7 +54,6 @@ struct EventRow: View {
             } else {
                 // "task-148 has been launched in the background…": a quiet line, as a command is.
                 TranscriptWorkLine(symbol: "clock.arrow.circlepath", label: tr("ws.event.background", background.joined(separator: ", ")))
-                    .nookTip(event.text)
             }
 
         case .thinking:
@@ -88,7 +87,6 @@ struct EventRow: View {
                                detail: event.text, mono: true, link: "arrow.up.right.square") {
                 openFile(event.detail ?? event.text)
             }
-            .nookTip(tr("ws.change.openDiff"))
 
         case .approval:
             ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
@@ -222,7 +220,6 @@ struct SharedFilesRow: View {
         let others = paths.filter { !videos.contains($0) }
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
-                .nookTip(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
             ForEach(videos, id: \.self) { path in
                 VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: (path as NSString).lastPathComponent,
                           maxHeight: 420)
@@ -331,7 +328,7 @@ struct SharedFileTile: View {
         }
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
-        .nookTip(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
+        .nookTip(AgentPathFormat.tilde(path), enabled: compact)
         .accessibilityLabel(name)
         .task(id: path) {
             let kind = SessionOutputs.kind(path: path)

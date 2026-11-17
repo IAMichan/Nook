@@ -185,7 +185,6 @@ struct ChatInfoButton: View {
         .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .pointerStyle(.link)
-        .nookTip(tr(isGroup ? "chats.info.group" : "chats.info.person"))
     }
 }
 
@@ -379,7 +378,6 @@ struct ChatSenderFace: View {
                 ChatInitialsFace(name: name, initials: WAJID.initials(name), size: size)
             }
         }
-        .nookTip(name)
         .accessibilityHidden(true)
     }
 }

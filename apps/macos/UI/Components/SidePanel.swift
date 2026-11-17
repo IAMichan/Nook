@@ -222,7 +222,9 @@ struct SidePanelToolbar<Content: View>: View {
 struct SidePanelTitle: View {
     let symbol: String
     let title: String
+    /// More than the title says (a file's whole path): shown on hover. Without it the title shows only when cut short.
     var help: String? = nil
+    @State private var cut = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -232,10 +234,10 @@ struct SidePanelTitle: View {
             Text(title)
                 .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
                 .truncationMode(.middle)
+                .lineLimit(1, reportingCut: $cut)
         }
-        .nookTip(help ?? title)
+        .nookTip(help ?? title, enabled: help != nil || cut)
     }
 }
 

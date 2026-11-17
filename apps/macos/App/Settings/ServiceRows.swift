@@ -322,7 +322,6 @@ struct MCPServiceRow: View {
                     Button(tr("connect.useKey")) { showKeySetup = true }
                         .buttonStyle(.nookBorderless)
                         .controlSize(.small)
-                        .nookTip(tr("connect.useKeyHelp"))
                 }
                 Button(failure == nil ? tr("connect.connect") : tr("connector.retry")) { signIn.connect(service, app: app) }
                     .buttonStyle(.nookProminent)

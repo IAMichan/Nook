@@ -728,7 +728,6 @@ struct AgentInboxList: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityLabel(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityValue(signal.map { count + ", " + $0.help } ?? count)
     }
@@ -1276,7 +1275,7 @@ private struct ProjectHeaderRow: View {
                 Text(name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.textStrong)
-                    .lineLimit(1)
+                    .nookTipWhenCut(name)
                     .truncationMode(.middle)
                 if pinned {
                     Image(icon: "pin.fill")
@@ -1313,7 +1312,6 @@ private struct ProjectHeaderRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(project.isEmpty ? name : project)
         .accessibilityLabel(name)
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
