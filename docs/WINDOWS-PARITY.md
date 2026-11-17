@@ -338,7 +338,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **CH-01** One inbox for all apps (`ChatInbox`, `InboxThread`, `BridgedChat`, `ChatBridge`): `core/src/chats/{inbox,bridge,store}.rs`; move WhatsApp onto it first · L
 - [ ] **CH-02** Nook's chat helper (`apps/chatd`, `ChatHelper`, `ChatServiceData`, `ChatLiveStream`, `ChatLinker`): build `nook-chatd.exe` in CI, child-process manager in `src-tauri/src/chats/helper.rs`, `/v1` client and `/v1/ws` live line in `core/src/chats/chatd.rs`. This unlocks Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack · L
 - [ ] **CH-03** Sign-in window that hands cookies or tokens to the helper (`ChatSignInWindow`, `WebSignInAgent`): a private `WebviewWindow` per step running the step's `extractJS` · M
-- [ ] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
+- [x] **CH-04** Reading other apps' notifications (`ChatCaptureService`) for Discord, Google Chat, Viber, LINE…: `UserNotificationListener` or `wpndatabase.db` on Windows, D-Bus monitor on Linux, in `src-tauri/src/platform/*/notifications.rs` · M
 - [x] **CH-05** Per-app notification layouts (`MessagingApp`, `NoticeLayout`) in `core/src/chats/apps.rs` · S
 - [ ] **CH-06** Chat history on disk, backfill, edits and deletions (`ChatStore`, `ChatArchive`, `ChatBackfill`, `ChatReconcile`): SQLite in `core/src/chats/archive.rs` · L
 - [ ] **CH-07** Chat history in Search everything (`ChatHistorySearch`, `NookSearch`, `SearchCenter`) · M

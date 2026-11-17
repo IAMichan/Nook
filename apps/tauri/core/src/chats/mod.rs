@@ -6,13 +6,14 @@
 
 pub mod apps;
 pub mod bridge;
+pub mod capture;
 pub mod inbox;
 pub mod store;
 
 use serde::{Deserialize, Serialize};
 
 pub use bridge::ChatBridge;
-pub use inbox::{BridgedChat, ChatInbox, ChatReadState, InboxMessage, InboxThread};
+pub use inbox::{BridgedChat, ChatInbox, ChatReadState, InboxMessage, InboxReaction, InboxThread};
 pub use store::InboxStore;
 
 /// The kinds of chat, the same for every app (`ChatKind` on the Mac): its app says which, else Nook guesses a person's
