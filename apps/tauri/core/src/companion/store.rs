@@ -217,6 +217,8 @@ impl CompanionStore {
             push_production: None,
             push_service: None,
             device_key: None,
+            protocol_version: None,
+            app_version: None,
         };
         self.with(
             |s| {
@@ -289,6 +291,24 @@ impl CompanionStore {
         kept
     }
 
+    /// What the phone said it runs (`noteVersions`); saved only when it changed.
+    pub fn note_versions(&self, id: &str, protocol_version: Option<i64>, app_version: Option<String>) {
+        let changed = self.with(
+            |s| match s.devices.iter_mut().find(|d| d.id == id) {
+                Some(d) if d.protocol_version != protocol_version || d.app_version != app_version => {
+                    d.protocol_version = protocol_version;
+                    d.app_version = app_version.clone();
+                    true
+                }
+                _ => false,
+            },
+            false,
+        );
+        if changed {
+            self.with(|_| (), true);
+        }
+    }
+
     /// Niet bij elke aanvraag opslaan: een minuut is precies genoeg voor "laatst gezien".
     pub fn touch(&self, id: &str, now: DateTime<Utc>) {
         let changed = self.with(
@@ -349,6 +369,12 @@ mod tests {
 
         s.begin_pairing(now);
         assert!(s.active_pending(now + Duration::seconds(301)).is_none(), "vijf minuten");
+
+        s.note_versions(&device.id, Some(3), Some("1.4.0".into()));
+        assert_eq!(
+            store(&dir, secrets.clone()).device(&device.id).map(|d| (d.protocol_version, d.app_version)),
+            Some((Some(3), Some("1.4.0".into())))
+        );
 
         // Opnieuw laden houdt het toestel; zonder sleutel in de kluis valt het weg.
         assert_eq!(store(&dir, secrets.clone()).devices().len(), 1);

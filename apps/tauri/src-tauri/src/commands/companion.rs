@@ -16,6 +16,12 @@ pub struct DeviceView {
     paired_at: DateTime<Utc>,
     last_seen: Option<DateTime<Utc>>,
     push: bool,
+    /// What the phone said it runs; `None` until it said so.
+    app_version: Option<String>,
+    /// This computer no longer works with the phone's app (`CompanionCompatibility.phoneSupported`).
+    outdated: bool,
+    /// It works, but cannot use what this Nook added since (`CompanionCompatibility.phoneBehind`).
+    behind: bool,
 }
 
 #[derive(Serialize)]
@@ -119,7 +125,20 @@ fn info(c: &Companion) -> CompanionInfo {
         devices: store
             .devices()
             .into_iter()
-            .map(|d| DeviceView { id: d.id, name: d.name, paired_at: d.paired_at, last_seen: d.last_seen, push: d.push_token.is_some() })
+            .map(|d| {
+                // A phone that never said its version is not called out of date (as on the Mac).
+                let known = d.protocol_version.is_some();
+                DeviceView {
+                    outdated: known && !nook_core::companion::phone_supported(d.protocol_version),
+                    behind: known && nook_core::companion::phone_behind(d.protocol_version),
+                    id: d.id,
+                    name: d.name,
+                    paired_at: d.paired_at,
+                    last_seen: d.last_seen,
+                    push: d.push_token.is_some(),
+                    app_version: d.app_version,
+                }
+            })
             .collect(),
         pairing,
         push: Some(PushView {

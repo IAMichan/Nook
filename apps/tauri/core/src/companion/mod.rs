@@ -569,7 +569,12 @@ mod tests {
             );
             assert_eq!(first.app_version.as_deref(), Some("1.2.3"));
             assert_eq!(first.protocol_version, Some(PROTOCOL_VERSION));
+            assert_eq!(first.oldest_phone, Some(OLDEST_PHONE));
         }
+        // The computer keeps what the phone said it runs, for Settings.
+        let device = &store.devices()[0];
+        assert_eq!(device.protocol_version, Some(PROTOCOL_VERSION));
+        assert_eq!(device.app_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
 
         // An approval answered elsewhere: the list follows by itself.
         phone.decide("S1", "p1", false).await;
