@@ -1039,10 +1039,11 @@ pub mod import {
 
     /// Waar de server zijn graaf bewaart als `npx` hem draait: naast zijn code in de npx-cache.
     pub fn candidate_files(home: &std::path::Path) -> Vec<std::path::PathBuf> {
-        let cache = home.join(".npm").join("_npx");
-        let Ok(folders) = std::fs::read_dir(cache) else { return vec![] };
+        // npm's cache: `~/.npm` on macOS and Linux, `%LOCALAPPDATA%\npm-cache` on Windows.
+        let caches = [home.join(".npm").join("_npx"), home.join("AppData").join("Local").join("npm-cache").join("_npx")];
+        let folders: Vec<_> = caches.iter().filter_map(|c| std::fs::read_dir(c).ok()).flat_map(|d| d.flatten()).collect();
         let mut files = vec![];
-        for folder in folders.flatten() {
+        for folder in folders {
             let dist = folder.path().join("node_modules/@modelcontextprotocol/server-memory/dist");
             for name in ["memory.jsonl", "memory.json"] {
                 let file = dist.join(name);
@@ -1528,6 +1529,18 @@ mod tests {
         assert!(!text::grounded("De gebruiker woont in Parijs", "ik werk bij IM Digital"));
         assert_eq!(text::subject("De vrouw van de gebruiker heet Lisa"), "Lisa");
         assert!(text::similarity("Mijn afspraken staan in Werk", "Afspraak in agenda Werk") > 0.3);
+    }
+
+    #[test]
+    fn the_graph_is_found_in_the_npx_cache_on_every_platform() {
+        let home = std::env::temp_dir().join(format!("nook-npx-{}", uuid::Uuid::new_v4()));
+        for cache in [home.join(".npm/_npx/abc"), home.join("AppData/Local/npm-cache/_npx/def")] {
+            let dist = cache.join("node_modules/@modelcontextprotocol/server-memory/dist");
+            std::fs::create_dir_all(&dist).unwrap();
+            std::fs::write(dist.join("memory.jsonl"), "{}").unwrap();
+        }
+        assert_eq!(import::candidate_files(&home).len(), 2);
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

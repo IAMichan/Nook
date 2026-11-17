@@ -3,6 +3,8 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "The MCP memory server {name} is no longer needed: Nook remembers by itself now.": { de: "Der MCP-Gedächtnisserver {name} wird nicht mehr gebraucht: Nook merkt sich jetzt selbst Dinge.", fr: "Le serveur de mémoire MCP {name} n'est plus nécessaire : Nook retient désormais les choses lui-même.", es: "El servidor de memoria MCP {name} ya no hace falta: Nook ahora recuerda por sí mismo." },
+  "Remove server…": { de: "Server entfernen…", fr: "Retirer le serveur…", es: "Quitar servidor…" },
   "About Nook": { de: "Über Nook", fr: "À propos de Nook", es: "Acerca de Nook" },
   "Nook {version} for {os}.": { de: "Nook {version} für {os}.", fr: "Nook {version} pour {os}.", es: "Nook {version} para {os}." },
   "Early version. The same Nook as on the Mac, built with Tauri: the core in Rust, the interface in Svelte.": { de: "Frühe Version. Dasselbe Nook wie auf dem Mac, gebaut mit Tauri: der Kern in Rust, die Oberfläche in Svelte.", fr: "Version précoce. Le même Nook que sur le Mac, construit avec Tauri : le cœur en Rust, l'interface en Svelte.", es: "Versión temprana. El mismo Nook que en el Mac, hecho con Tauri: el núcleo en Rust, la interfaz en Svelte." },

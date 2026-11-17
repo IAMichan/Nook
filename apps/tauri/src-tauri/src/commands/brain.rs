@@ -53,6 +53,8 @@ pub struct MemoryOverview {
     importable: Vec<(String, usize)>,
     /// Geheugen staat bij Privacy op "alleen op dit apparaat".
     local_only_source: bool,
+    /// The MCP memory server still connected (id, name): no longer needed once its graph is imported.
+    old_server: Option<(String, String)>,
 }
 
 #[tauri::command]
@@ -71,6 +73,9 @@ pub fn memory_overview(app: AppHandle, brain: State<'_, BrainState>) -> MemoryOv
         learned_words: brain.memory.learned_words(),
         importable: brain.memory.importable(&home).into_iter().map(|(p, n)| (p.to_string_lossy().to_string(), n)).collect(),
         local_only_source: app.state::<AppState>().settings().local_only_sources.contains(sources::MEMORY),
+        old_server: app.try_state::<crate::connectors::Connectors>().and_then(|c| {
+            nook_core::connectors::mcp::connector::servers(&c.env.store).into_iter().find(|s| s.is_memory_server()).map(|s| (s.id, s.name))
+        }),
     }
 }
 
@@ -105,13 +110,16 @@ pub fn memory_clear(brain: State<'_, BrainState>) {
 }
 
 #[tauri::command]
-pub fn memory_import(brain: State<'_, BrainState>, path: String) -> Res<usize> {
+pub fn memory_import(app: AppHandle, brain: State<'_, BrainState>, path: String) -> Res<usize> {
     let home = dirs::home_dir().unwrap_or_default();
     // Alleen een graaf die Nook zelf vond: geen willekeurig bestand.
     if !brain.memory.importable(&home).iter().any(|(p, _)| p.to_string_lossy() == path) {
         return Err("Dit bestand is geen kennisgraaf van de MCP-geheugenserver.".into());
     }
-    Ok(brain.memory.import_graph(std::path::Path::new(&path)))
+    let count = brain.memory.import_graph(std::path::Path::new(&path));
+    let file = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    app.state::<AppState>().store.audit("geheugen_geimporteerd", &file, &count.to_string());
+    Ok(count)
 }
 
 // Lokale modellen

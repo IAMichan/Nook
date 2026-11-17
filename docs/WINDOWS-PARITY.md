@@ -220,7 +220,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
 - [ ] **BR-61** One-click suggestions under the quick field (`DoubleTapSuggest`) · S
 - [ ] **BR-62** Selection Ask complete: the bar in the small windows, a drag across messages as context, the hidden note that the quote is material, Quote into an agent's reply box · M
-- [ ] **BR-63** Import MCP memory · S
+- [x] **BR-63** Import MCP memory · S
 
 ## 4. Coding agents and the workspace (AG)
 
