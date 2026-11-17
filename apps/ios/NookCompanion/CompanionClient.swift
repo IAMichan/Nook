@@ -78,6 +78,10 @@ final class CompanionClient: ObservableObject {
     /// With `CompanionFeature.nookChats`: the conversations the last search or the open archive found (`chatSearch`),
     /// nil while neither is asked for, and how many wait in the archive.
     @Published var nookFound: [ChatDigest]?
+    /// The choices of Nook's composer as the Mac offers them now (`CompanionFeature.nookComposer`).
+    @Published var nookComposer: NookComposerDigest?
+    /// What Nook could do next that you put away here (its conversation and first step), hidden at once.
+    @Published var dismissedSuggestions: Set<String> = []
     @Published private(set) var nookArchived = 0
     /// Nook's home as the Mac's Nook tab shows it (`CompanionOp.home`): For you, the agenda, the limits, what plays and
     /// where to start; nil until the Mac answered.
@@ -309,6 +313,8 @@ final class CompanionClient: ObservableObject {
         pairings.remove(id)
         PairingStore.save(pairings)
         otherSessions[id] = nil
+        // What was typed for this Mac's sessions and chats goes with it.
+        PhoneDrafts().clear()
         // The widget showed this Mac's agents: they go with it (the next Mac's list fills it again).
         AppGroup.remove(AgentActivitySnapshot.fileName)
         WidgetCenter.shared.reloadTimelines(ofKind: AgentActivityWidgetKind.kind)
@@ -1031,9 +1037,11 @@ final class CompanionClient: ObservableObject {
     /// Manages a session from afar (rename, archive, snooze, end), as the Mac's Agents list does.
     /// The answer, so a fork can open the session it made (`created`).
     @discardableResult
-    func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil) async -> CompanionResponse? {
+    func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil, items: [String]? = nil) async -> CompanionResponse? {
         guard can(CompanionFeature.manage) else { return nil }
-        return await perform(CompanionRequest(op: .manage, session: session.id, item: action.rawValue, text: text))
+        var request = CompanionRequest(op: .manage, session: session.id, item: action.rawValue, text: text)
+        request.items = items
+        return await perform(request)
     }
 
     // MARK: Starting a session
@@ -2125,7 +2133,25 @@ extension CompanionClient {
         features = [CompanionFeature.agentsTab, CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
                     CompanionFeature.manage, CompanionFeature.steer, CompanionFeature.images, CompanionFeature.attachments,
                     CompanionFeature.workspace, CompanionFeature.pullRequests, CompanionFeature.pullActions, CompanionFeature.notifySettings, CompanionFeature.chatActions,
-                    CompanionFeature.home, CompanionFeature.music, CompanionFeature.nookChats]
+                    CompanionFeature.home, CompanionFeature.music, CompanionFeature.nookChats, CompanionFeature.nookComposer,
+                    CompanionFeature.actionSuggestions]
+        // Nook's composer choices, as the Mac offers them.
+        nookComposer = NookComposerDigest(
+            model: "Claude Code · Opus", models: [
+                .init(id: "agent|claude|opus", title: "Opus", group: "Claude Code", chosen: true),
+                .init(id: "agent|claude|sonnet", title: "Sonnet", group: "Claude Code", chosen: false),
+                .init(id: "mlx|qwen", title: "Qwen 3", group: "On your Mac", chosen: false),
+            ],
+            access: "small", accesses: [
+                .init(id: "ask", title: "Ask first", detail: "Every action waits for your click.", chosen: false),
+                .init(id: "small", title: "Small things", detail: "Music, volume, an app, a reminder right away.", chosen: true),
+                .init(id: "more", title: "More", detail: "Also your calendar and notes.", chosen: false, macOnly: true),
+            ],
+            scope: "All sources", restricted: false,
+            only: [.init(id: "calendar", title: "Calendar", chosen: false), .init(id: "mail", title: "Mail", chosen: false),
+                   .init(id: "web", title: "Web", chosen: false)],
+            never: [.init(id: "screen", title: "Screen", chosen: false), .init(id: "web", title: "Web", chosen: false),
+                    .init(id: "clipboard", title: "Clipboard", chosen: false)])
         pulls = [
             PullDigest(url: "https://github.com/example/nook/pull/1421", repo: "example/nook", number: 1421,
                        title: "Reset the relay backoff after wake", author: "you", state: "open", ci: "passing", review: "required",
@@ -2153,6 +2179,14 @@ extension CompanionClient {
                           folder: "docs", branch: nil, updated: now - 90000, excerpt: "", items: []),
         ]
         sessions = Self.demoAgentsTab(sessions, now: now)
+        timelines["s5"] = [
+            TimelineEntry(id: "r1", kind: .user, text: "Write the release notes for 2.4.", date: now - 90400, failed: false),
+            TimelineEntry(id: "r2", kind: .tool, text: "Read CHANGELOG.md", detail: "Read", date: now - 90300, failed: false),
+            TimelineEntry(id: "r3", kind: .change, text: "Edited RELEASE-NOTES.md", detail: "docs/RELEASE-NOTES.md", date: now - 90200,
+                          failed: false, output: "@@ -1,3 +1,6 @@\n # Nook\n+## 2.4\n+- The phone shows what each turn changed.\n+- Find in a conversation.\n-Draft"),
+            TimelineEntry(id: "r4", kind: .assistant, text: "The notes for **2.4** are in `docs/RELEASE-NOTES.md`.", date: now - 90100,
+                          failed: false),
+        ]
         timelines["s2"] = [
             TimelineEntry(id: "t1", kind: .user, text: "The relay drops after the Mac sleeps. Can you find out why?", date: now - 600, failed: false),
             TimelineEntry(id: "t2", kind: .tool, text: "Read RelayClient.swift", date: now - 590, failed: false),
@@ -2160,6 +2194,9 @@ extension CompanionClient {
             TimelineEntry(id: "t4", kind: .assistant, text: "The socket is closed on sleep, but **the backoff never resets**. I'll reset it when the network comes back.", date: now - 500, failed: false),
             TimelineEntry(id: "t5", kind: .user, text: "Good, go ahead.", date: now - 300, failed: false),
             TimelineEntry(id: "t6", kind: .tool, text: "Edited RelayClient.swift", date: now - 200, failed: false),
+            TimelineEntry(id: "t6c", kind: .change, text: "Edited RelayClient.swift", detail: "Sources/Relay/RelayClient.swift",
+                          date: now - 199, failed: false,
+                          output: "@@ -41,6 +41,9 @@\n     monitor.pathUpdateHandler = { path in\n-        guard path.status == .satisfied else { return }\n+        guard path.status == .satisfied else { return }\n+        self.resetBackoff()\n+        self.reconnect()\n     }"),
             TimelineEntry(id: "t7", kind: .tool, text: "swift test --filter RelayClientTests", detail: "Bash", date: now - 150, failed: false,
                           output: "Building for debugging...\nTest Suite 'RelayClientTests' started\nTest Case 'testBackoffResetsAfterWake' passed (0.012 seconds)\nExecuted 8 tests, with 0 failures"),
             TimelineEntry(id: "t8", kind: .assistant, text: """

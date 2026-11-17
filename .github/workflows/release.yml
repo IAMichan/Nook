@@ -510,6 +510,7 @@ jobs:
     uses: ./.github/workflows/tauri.yml
     with:
       version: ${{ needs.release.outputs.marketing }}
+      release_version: ${{ needs.release.outputs.version }}
 
   desktop:
     name: Attach Windows and Linux
@@ -521,6 +522,10 @@ jobs:
       attestations: write
     timeout-minutes: 15
     steps:
+      # Only for scripts/sign-update.sh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: nook-*
@@ -530,6 +535,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
           TAG: ${{ needs.release.outputs.tag }}
+          # The macOS update key (see "Updates" at the top) also signs the Windows setup and the AppImage, which the
+          # Tauri app installs from its update button after checking them (core/src/updates).
+          NOOK_UPDATE_SIGNING_KEY: ${{ secrets.NOOK_UPDATE_SIGNING_KEY }}
+          NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
+          SIGN: ${{ github.workspace }}/scripts/sign-update.sh
         run: |
           set -euo pipefail
           VERSION="${TAG#v}"
@@ -546,6 +556,12 @@ jobs:
           pick '*.deb' "Nook-$VERSION-Linux.deb"
           pick '*.AppImage' "Nook-$VERSION-Linux.AppImage"
           cd out
+          if [ -z "$NOOK_UPDATE_SIGNING_KEY" ] || [ -z "$NOOK_UPDATE_PUBLIC_KEY" ]; then
+            echo "::error::NOOK_UPDATE_SIGNING_KEY or NOOK_UPDATE_PUBLIC_KEY is missing, so Windows and Linux could not update."
+            exit 1
+          fi
+          "$SIGN" "Nook-$VERSION-Windows-setup.exe"
+          "$SIGN" "Nook-$VERSION-Linux.AppImage"
           sha256sum -- * > SHA256SUMS-Windows-Linux.txt
           cat SHA256SUMS-Windows-Linux.txt
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -- *
@@ -599,7 +615,8 @@ jobs:
           ASSETS="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           for NAME in "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt \
             "Nook-$VERSION-macOS.intoto.jsonl" "Nook-$VERSION-Windows-Linux.intoto.jsonl" "Nook-$VERSION-Windows-setup.exe" "Nook-$VERSION-Windows.msi" "Nook-$VERSION-Linux.deb" \
-            "Nook-$VERSION-Linux.AppImage" SHA256SUMS-Windows-Linux.txt; do
+            "Nook-$VERSION-Linux.AppImage" "Nook-$VERSION-Windows-setup.exe.sig" "Nook-$VERSION-Linux.AppImage.sig" \
+            SHA256SUMS-Windows-Linux.txt; do
             grep -qxF "$NAME" <<<"$ASSETS" || { echo "::error::$NAME is missing from the draft of $TAG."; exit 1; }
           done
           # Only a regular release becomes "Latest"; a beta stays a pre-release.

@@ -108,15 +108,26 @@ struct ChatListView: View {
         .safeAreaInset(edge: .bottom) {
             if client.can(CompanionFeature.chat) {
                 ComposerDock {
-                    SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady) {
+                    let submit = {
                         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         text = ""
                         ask(question)
+                    }
+                    // With a Mac that offers them, the model, access and sources under the box, as on the Mac's home.
+                    if client.can(CompanionFeature.nookComposer) {
+                        SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, onSend: submit) {
+                            NookComposerChoices(conversation: nil)
+                        }
+                        .keepsDraft($text, for: .newNookChat)
+                    } else {
+                        SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, onSend: submit)
+                            .keepsDraft($text, for: .newNookChat)
                     }
                 }
             }
         }
         .nookChatMenu($menu)
+        .task { await client.loadNookComposer(conversation: nil) }
         .refreshable {
             await client.loadChats()
             await client.loadHome()
@@ -519,17 +530,6 @@ struct ChatView: View {
                 ForEach(waiting) { entry in
                     TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
                 }
-                // Questions that wait in line on the Mac for the answer Nook is writing, as its composer shows them.
-                if let queued = digest?.queued, !queued.isEmpty {
-                    VStack(alignment: .trailing, spacing: Theme.Spacing.sm) {
-                        ForEach(Array(queued.enumerated()), id: \.offset) { _, question in
-                            TranscriptUserMessage(text: question, pending: true)
-                        }
-                        Label("Waits for this answer", systemImage: "clock")
-                            .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                }
             }
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.vertical, Theme.Spacing.lg)
@@ -538,15 +538,33 @@ struct ChatView: View {
             EmptyView()
         } dock: { scroll in
             ComposerDock {
+                // What Nook could do next for its answer, above the box as on the Mac.
+                if let suggestion = client.shownSuggestion(digest?.suggestion) { SuggestionCard(suggestion: suggestion) }
                 if likeTheMac { ImageTray(images: $images) }
-                SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, sending: sending && !likeTheMac,
-                                allowsEmpty: !images.isEmpty, busy: busy, onStop: stop, onSend: {
-                    let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    text = ""
-                    scroll.scrollToEnd()
-                    send(question)
-                }) {
-                    if likeTheMac { AttachPictureButton(images: $images) }
+                VStack(spacing: 0) {
+                    // Questions that wait in line on the Mac for the answer Nook is writing, in a tray on top of the box
+                    // as the Mac's composer shows them, not as messages already sent.
+                    if let queued = digest?.queued, !queued.isEmpty {
+                        ComposerTray(edge: .top) { QueuedQuestionsStrip(questions: queued) }
+                    }
+                    SessionComposer(text: $text, prompt: lines.isEmpty && waiting.isEmpty ? "Ask Nook" : "Ask a follow-up or reply…",
+                                    canSend: client.brainReady, sending: sending && !likeTheMac,
+                                    allowsEmpty: !images.isEmpty, busy: busy, onStop: stop, onSend: {
+                        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        text = ""
+                        scroll.scrollToEnd()
+                        send(question)
+                    }) {
+                        if likeTheMac {
+                            InboxAttachButton(attachments: Binding(get: { InboxAttachments(images: images) },
+                                                                   set: { images = $0.images }),
+                                              photos: true, files: false)
+                        }
+                        // The Mac's model, access and sources, as under its Nook box.
+                        NookComposerChoices(conversation: id)
+                    }
+                    .keepsDraft($text, for: id.map { .nookChat($0) } ?? .newNookChat)
+                    .zIndex(1)
                 }
             }
             .readingColumn()
@@ -569,6 +587,8 @@ struct ChatView: View {
             }
         }
         .nookChatMenu($menu)
+        // The composer's choices for this chat (its sources are its own), again when it becomes a chat of its own.
+        .task(id: id) { await client.loadNookComposer(conversation: id) }
         // Deleted from its own menu: the conversation is gone, so is its screen.
         .onChange(of: menu.deleted) { _, deleted in if deleted != nil, deleted == id { dismiss() } }
         .screen()
@@ -673,6 +693,117 @@ private struct ThinkingLine: View {
             Text(status.isEmpty ? String(localized: "Thinking…") : status)
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
             PulseDot(color: Theme.textSecondary, size: 5)
+        }
+    }
+}
+
+/// The questions that wait for the answer Nook is writing, in the tray over the composer, as the Mac lists them.
+struct QueuedQuestionsStrip: View {
+    let questions: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text("Waits for this answer").font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+            ForEach(Array(questions.enumerated()), id: \.offset) { _, question in
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                    Image(icon: "clock").font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                    Text(verbatim: question).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
+// MARK: Nook's composer choices
+
+/// The Mac's row under Nook's box (`CompanionFeature.nookComposer`): the model Nook thinks with, what it may do by
+/// itself, and the sources it reads, each a quiet pill opening its list. Changes go to the Mac at your tap; without
+/// *operate* the pills show but do not open. Nook's widest access is shown and chosen at the Mac only.
+struct NookComposerChoices: View {
+    @EnvironmentObject private var client: CompanionClient
+    let conversation: String?
+
+    var body: some View {
+        if let digest = client.nookComposer {
+            let changes = client.allows(.operate) && !client.isOffline
+            modelMenu(digest).disabled(!changes || digest.models.isEmpty)
+            ComposerDivider()
+            accessMenu(digest).disabled(!changes)
+            ComposerDivider()
+            scopeMenu(digest).disabled(!changes)
+        }
+    }
+
+    private func modelMenu(_ digest: NookComposerDigest) -> some View {
+        ComposerDropdown(title: "Model") {
+            // The chosen model's own name, short as the Mac's narrow composer shows it.
+            ComposerPill(symbol: "cpu", text: digest.models.first { $0.chosen }?.title ?? digest.model).frame(maxWidth: 140)
+        } content: {
+            let groups = digest.models.reduce(into: [String]()) { if !$0.contains($1.group ?? "") { $0.append($1.group ?? "") } }
+            ForEach(groups, id: \.self) { group in
+                if !group.isEmpty { DropdownHeader(title: LocalizedStringKey(group)) }
+                ForEach(digest.models.filter { ($0.group ?? "") == group }) { model in
+                    DropdownRow(title: model.title, chosen: model.chosen) { set(.model, model.id) }
+                }
+            }
+        }
+        .accessibilityLabel("Model")
+        .accessibilityValue(Text(verbatim: digest.model))
+    }
+
+    private func accessMenu(_ digest: NookComposerDigest) -> some View {
+        let chosen = digest.accesses.first { $0.chosen }
+        return ComposerDropdown(title: "What Nook may do by itself") {
+            // Its symbol says the level; the words are in the list.
+            ComposerPill(symbol: Self.accessSymbol(digest.access), text: "",
+                         tint: digest.access == "more" ? Theme.coral : nil)
+        } content: {
+            ForEach(digest.accesses) { level in
+                DropdownRow(symbol: Self.accessSymbol(level.id), title: level.title, detail: level.detail, chosen: level.chosen,
+                            disabledReason: level.macOnly == true && !level.chosen
+                                ? String(localized: "Choose this on your Mac.") : nil) {
+                    set(.access, level.id)
+                }
+            }
+        }
+        .accessibilityLabel("What Nook may do by itself")
+        .accessibilityValue(Text(verbatim: chosen?.title ?? ""))
+    }
+
+    private func scopeMenu(_ digest: NookComposerDigest) -> some View {
+        ComposerDropdown(title: "Sources") {
+            // Only once you limited them do the sources say which.
+            ComposerPill(symbol: "line.3.horizontal.decrease", text: digest.restricted ? digest.scope : "",
+                         tint: digest.restricted ? Theme.iris : nil)
+                .frame(maxWidth: 120)
+        } content: {
+            DropdownRow(symbol: "sparkles", title: String(localized: "Automatic: all relevant sources"), chosen: !digest.restricted) {
+                set(.automatic, "")
+            }
+            DropdownHeader(title: "Only these sources")
+            ForEach(digest.only) { source in
+                DropdownRow(title: source.title, chosen: source.chosen) { set(.only, source.id, on: !source.chosen) }
+            }
+            DropdownHeader(title: "Never use")
+            ForEach(digest.never) { source in
+                DropdownRow(title: source.title, chosen: source.chosen) { set(.never, source.id, on: !source.chosen) }
+            }
+        }
+        .accessibilityLabel("Sources")
+        .accessibilityValue(Text(verbatim: digest.scope))
+    }
+
+    private func set(_ change: NookComposerChange, _ item: String, on: Bool = true) {
+        Task { await client.setNookComposer(change, item: item, on: on, conversation: conversation) }
+    }
+
+    /// The Mac's symbols for Nook's access levels (`NookAccess.symbol`).
+    static func accessSymbol(_ id: String) -> String {
+        switch id {
+        case "small": return "hand.tap"
+        case "more": return "lock.open"
+        default: return "lock"
         }
     }
 }

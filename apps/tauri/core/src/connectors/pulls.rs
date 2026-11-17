@@ -615,7 +615,7 @@ impl PullRequestDetail {
         format!("{}#{}", self.repo, self.number)
     }
 
-    fn conflicted(&self) -> bool {
+    pub fn conflicted(&self) -> bool {
         self.mergeable == Some(false) || self.merge_state == "dirty"
     }
 
@@ -1092,6 +1092,51 @@ async fn viewer_facts(env: &Env, token: &str, repo: &str, number: i64) -> Option
 }", "variables": {"owner": owner, "name": name, "number": number}});
     let root = post_graphql(env, token, &body).await.ok()?;
     Some(root["data"]["repository"].clone()).filter(Value::is_object)
+}
+
+/// Sends `PUT /repos/{repo}/pulls/{number}/merge` and turns GitHub's refusal into a `ConnectorError`.
+pub async fn merge_pull(env: &Env, token: &str, repo: &str, number: i64, method: &str, sha: Option<&str>) -> CResult<Value> {
+    let body = merge_body(method, sha);
+    let url = format!("{}/repos/{repo}/pulls/{number}/merge", api());
+    let (status, bytes) = env.http.send("PUT", &url, &super::github::headers(token), Some(&body), "GitHub").await?;
+    let result: Value = serde_json::from_slice(&bytes).unwrap_or(json!({}));
+    if !(200..300).contains(&status) || result["merged"] == json!(false) {
+        return Err(merge_error(status, &result));
+    }
+    Ok(result)
+}
+
+/// Only what deciding on a merge needs: the pull request, the repository's merge methods and access, and the checks of
+/// its head. Much lighter than `load_detail`, for merging several pull requests at once.
+pub async fn load_for_merge(env: &Env, token: &str, repo: &str, number: i64) -> CResult<PullRequestDetail> {
+    let base = format!("{}/repos/{repo}", api());
+    let headers = super::github::headers(token);
+    let get = |path: String| {
+        let url = format!("{base}{path}");
+        let headers = headers.clone();
+        async move { env.http.json("GET", &url, &headers, None, "GitHub").await }
+    };
+    let pull = get(format!("/pulls/{number}")).await?;
+    let (repository, viewer) = futures_util::join!(get(String::new()), viewer_facts(env, token, repo, number));
+    let repository = repository.ok().filter(Value::is_object);
+    let mut detail =
+        parse_detail(&pull, repository.as_ref()).ok_or_else(|| ConnectorError::new("GitHub returned an unexpected response."))?;
+    if let Some(facts) = &viewer {
+        detail.apply_viewer(facts);
+    }
+    if detail.state == DetailState::Open && !detail.base_branch.is_empty() {
+        let rules = get(rules_path(&detail.base_branch)).await.unwrap_or(Value::Null);
+        detail.methods = rule_methods(std::mem::take(&mut detail.methods), &rules);
+    }
+    if detail.state == DetailState::Open && !detail.head_sha.is_empty() {
+        let sha = detail.head_sha.clone();
+        let (runs, status) =
+            futures_util::join!(get(format!("/commits/{sha}/check-runs?per_page=100")), get(format!("/commits/{sha}/status?per_page=100")));
+        let runs = runs.unwrap_or(Value::Null);
+        let status = status.unwrap_or(Value::Null);
+        detail.checks = parse_checks(list(&runs["check_runs"]), list(&status["statuses"]));
+    }
+    Ok(detail.finish())
 }
 
 pub async fn load_detail(env: &Env, token: &str, repo: &str, number: i64) -> CResult<PullRequestDetail> {

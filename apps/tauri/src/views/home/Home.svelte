@@ -10,9 +10,9 @@
   import { daypart, type Target } from "../../lib/inbox";
   import { available, essentials, type Feature } from "../../lib/features";
   import { services } from "../../lib/services";
-  import { renderMarkdown } from "../../lib/markdown";
   import { toast } from "../../lib/toast.svelte";
   import { companion as companionApi } from "../../lib/companion";
+  import Markdown from "../../components/Markdown.svelte";
   import InboxCard from "./InboxCard.svelte";
   import Essentials from "./Essentials.svelte";
   import Customize from "./Customize.svelte";
@@ -101,7 +101,7 @@
   <div class="backdrop" role="presentation" transition:fade={{ duration: 160 }} onclick={(e) => e.target === e.currentTarget && (reading = null)}>
     <div class="sheet" role="dialog" aria-modal="true" aria-label={reading.title} in:fly={{ y: 10, duration: 220, easing: cubicOut }}>
       <header class="sheet-head"><h3>{reading.title}</h3><button class="ghost" onclick={() => (reading = null)} aria-label={tr("Sluiten", "Close")}>✕</button></header>
-      <div class="markdown body">{@html renderMarkdown(reading.markdown)}</div>
+      <div class="body"><Markdown text={reading.markdown} /></div>
     </div>
   </div>
 {/if}

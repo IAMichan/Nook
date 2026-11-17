@@ -16,4 +16,5 @@ Add a line naming the agent and model. -->
 - [ ] Build succeeds (`xcodegen && xcodebuild ... build` / `./scripts/core-tests.sh`)
 - [ ] Verified in the macOS app
 - [ ] Tauri checks pass (`npm run check && npm test` and `cargo clippy` / `cargo test` in `apps/tauri`), if `apps/tauri` changed
+- [ ] A Mac feature or change is ported to `apps/tauri` in this pull request, or has an item in `docs/WINDOWS-PARITY.md`
 - [ ] User-facing actions require explicit confirmation via an approval card/plan

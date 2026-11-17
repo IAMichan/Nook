@@ -68,8 +68,17 @@ pub struct MailDraft {
     pub to: String,
     #[serde(default)]
     pub cc: String,
+    /// Blind copy recipients; empty in drafts stored before Bcc existed.
+    #[serde(default)]
+    pub bcc: String,
     pub subject: String,
     pub body: String,
+    /// Paths on disk attached to this draft (such as `invite.ics`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
+    /// A calendar invitation attached as `invite.ics`; rewritten if To/Cc changes before sending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<crate::brain::calendar_invite::CalendarInviteEvent>,
     /// draft, sending, sent, opened of failed.
     #[serde(default)]
     pub state: String,
@@ -83,8 +92,11 @@ impl MailDraft {
             id: uuid::Uuid::new_v4().to_string(),
             to: to.into(),
             cc: cc.into(),
+            bcc: String::new(),
             subject: subject.into(),
             body: body.into(),
+            attachments: Vec::new(),
+            invite: None,
             state: "draft".into(),
             error: String::new(),
         }
@@ -116,6 +128,8 @@ pub struct ChatMessage {
     /// what stays on it.
     pub private_brief: String,
     pub charts: Vec<ChatChart>,
+    /// The plan Nook works through (`update_plan`), shown as a checklist above the answer.
+    pub tasks: Vec<crate::brain::task_steps::TaskStep>,
     pub mails: Vec<MailDraft>,
     pub actions: Vec<PlannedAction>,
     pub plan_state: Option<PlanState>,
@@ -149,6 +163,7 @@ impl Default for ChatMessage {
             notices: vec![],
             private_brief: String::new(),
             charts: vec![],
+            tasks: vec![],
             mails: vec![],
             actions: vec![],
             plan_state: None,
@@ -358,6 +373,23 @@ impl Conversation {
 
     /// Zonder de antwoorden die met een verborgen bron gemaakt zijn, en de vraag ervoor: een extern brein krijgt die niet.
     pub fn history_hiding(&self, limit: usize, hidden: &std::collections::BTreeSet<String>) -> Vec<ChatTurn> {
+        let turns: Vec<ChatTurn> =
+            self.turns_hiding(hidden).into_iter().map(|t| ChatTurn { text: t.text.chars().take(4_000).collect(), ..t }).collect();
+        let start = turns.len().saturating_sub(limit);
+        turns[start..].to_vec()
+    }
+
+    /// What goes to the brain with a new question: the whole conversation (hidden answers left out) fitted to `limits`,
+    /// newest turns in full, older ones shortened, the rest folded into a recap (`conversation_window`).
+    pub fn window_hiding(
+        &self,
+        limits: &crate::brain::conversation_window::Limits,
+        hidden: &std::collections::BTreeSet<String>,
+    ) -> Vec<ChatTurn> {
+        crate::brain::conversation_window::fit(&self.turns_hiding(hidden), limits)
+    }
+
+    fn turns_hiding(&self, hidden: &std::collections::BTreeSet<String>) -> Vec<ChatTurn> {
         let mut kept: Vec<&ChatMessage> = vec![];
         for message in &self.messages {
             if !hidden.is_empty() && !message.from_user && message.used(hidden) {
@@ -368,14 +400,11 @@ impl Conversation {
             }
             kept.push(message);
         }
-        let turns: Vec<ChatTurn> = kept
-            .into_iter()
+        kept.into_iter()
             .filter(|m| !m.is_error && !m.streaming)
-            .map(|m| ChatTurn { from_user: m.from_user, text: m.history_text().chars().take(4_000).collect() })
+            .map(|m| ChatTurn { from_user: m.from_user, text: m.history_text() })
             .filter(|t| !t.text.trim().is_empty())
-            .collect();
-        let start = turns.len().saturating_sub(limit);
-        turns[start..].to_vec()
+            .collect()
     }
 }
 
@@ -447,6 +476,7 @@ impl NookChat {
         for c in &mut chat.conversations {
             for m in &mut c.messages {
                 m.streaming = false;
+                m.tasks = crate::brain::task_steps::settled(&m.tasks);
             }
         }
         chat.active_id = stored.active.filter(|id| chat.conversations.iter().any(|c| &c.id == id));

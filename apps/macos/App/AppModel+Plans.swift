@@ -11,8 +11,15 @@ extension AppModel {
         actions.enumerated().map { index, action in
             let spec = allTools.first { $0.name == action.tool }
             let tag = spec?.tag(action.input) ?? ("", .neutral)
-            return PlanStep(number: index + 1, text: spec?.summarize(action.input) ?? action.summary ?? action.tool, tag: tag.0, tone: tag.1)
+            return PlanStep(number: index + 1, text: spec?.summarize(action.input) ?? action.summary ?? action.tool, tag: tag.0, tone: tag.1,
+                            source: Self.stepSource(action))
         }
+    }
+
+    /// What a step acts on, for its icon: the chat app a message goes through ("app" of `chat_send`), else the tool's source.
+    static func stepSource(_ action: PlannedAction) -> String? {
+        if let app = action.input["app"] as? String, let chat = MessagingApps.app(named: app) { return chat.id }
+        return SourceCatalog.source(forTool: action.tool)
     }
 
     /// Validation issues for proposed action: missing tool, disallowed source, or invalid input.
@@ -205,7 +212,10 @@ extension AppModel {
         // Every step is shown in full, so a long one ("open de app → druk op cmd+a → typ …") takes the lines it needs.
         var detailHeight = steps.reduce(CGFloat(0)) { height, step in
             let perLine = step.tag.isEmpty ? 40.0 : 30.0
-            return height + 10 + CGFloat(max(1, Int(ceil(Double(step.text.count) / perLine)))) * 20
+            // The step's target sits on a small line of its own above what it does (`StepsDetail`).
+            let split = ActionGate.splitSummary(step.text)
+            let hasLead = split.lead != nil || step.source != nil
+            return height + 10 + (hasLead ? 18 : 0) + CGFloat(max(1, Int(ceil(Double(split.body.count) / perLine)))) * 20
         }
         var contextLine = context ?? tr(steps.count == 1 ? "app.plan.steps.one" : "app.plan.steps.many", steps.count)
         var primaryLabel = tr("app.plan.run")
