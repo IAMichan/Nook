@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Above a conversation's field: what Nook could do for what was just said (`ChatActionSuggestion`), such as starting an
 /// agent on a task that came up in a chat. One panel for every conversation with a field (a chat of any chat app, an
-/// agent's session, Nook Chat) in Nook's own color, as its draft under "@nook …" is: the steps, why, Do it, "Adjust
-/// first" for a new session, and the cross. It asks for a look whenever the newest message (`turn`) or `busy` changes.
+/// agent's session, Nook Chat) on the composer tray's surface, as its draft under "@nook …" and the other bars above the
+/// field are, so it follows the look's colors: the steps, why, Do it, "Adjust first" for a new session, and the cross.
+/// It asks for a look whenever the newest message (`turn`) or `busy` changes.
 struct ActionSuggestionBar: View {
     /// The conversation's newest message; nil while there is none to read.
     let turn: ChatActionSuggestion.Turn?
@@ -33,14 +34,13 @@ struct ActionSuggestionBar: View {
                 DraftActions(actions: state.actions, run: state.run,
                              perform: { store.run(conversation, act: act) },
                              dismiss: { store.dismiss(conversation) },
-                             title: tr("chats.draft.actionsTitle"), reason: state.reason,
+                             title: tr("chats.draft.actionsTitle"), reason: state.reason, standalone: true,
                              adjust: adjustable(state).map { action in {
                                  store.dismiss(conversation)
                                  adjust?(action)
                              } })
-                    .padding(NookTheme.Spacing.md)
-                    .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2),
-                                    radius: NookTheme.Radius.sheet)
+                    .padding(NookTheme.Spacing.lg)
+                    .cardBackground(NookTheme.composerTray, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }

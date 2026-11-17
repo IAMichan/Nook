@@ -858,7 +858,7 @@ private struct DraftPanel: View {
             .padding(.top, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             if !writing, !actions.isEmpty {
-                NookDivider(tint: NookTheme.iris.opacity(0.14))
+                NookDivider(tint: NookTheme.fieldStroke)
                     .accessibilityHidden(true)
                 DraftActions(actions: actions, run: actionRun, perform: runActions, dismiss: dismissActions)
                     .padding(.horizontal, NookTheme.Spacing.md)
@@ -866,7 +866,7 @@ private struct DraftPanel: View {
                     .transition(.opacity)
             }
             if !writing, hasDraft {
-                NookDivider(tint: NookTheme.iris.opacity(0.14))
+                NookDivider(tint: NookTheme.fieldStroke)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     tweaks
@@ -877,7 +877,7 @@ private struct DraftPanel: View {
                 .transition(.opacity)
             }
         }
-        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet)
+        .cardBackground(NookTheme.composerTray, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
         .nookTip(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
@@ -1044,10 +1044,10 @@ private struct DraftPanel: View {
     }
 }
 
-/// What Nook proposes to do under "@nook …", as a short numbered list with one button: Do it runs the steps, then
-/// each line says it is done, or the failure shows under them. The cross lets the proposal go.
 /// What Nook proposes to do, each step on a row, with Do it, how running it went, and the cross that lets it go. Under
 /// "@nook …" in a chat's panel, and on its own above a conversation's field as a suggestion (`ActionSuggestionBar`).
+/// The steps sit on the card's own surface, each marked by a small badge, so the card follows the look's colors and
+/// reads as one calm block instead of boxes inside a box.
 struct DraftActions: View {
     let actions: [ChatDraftAction]
     let run: ChatDraftActionRun
@@ -1057,33 +1057,53 @@ struct DraftActions: View {
     var title = tr("chats.draft.actions")
     /// Why Nook proposes it, in a line under the title; nil for none.
     var reason: String? = nil
+    /// On its own card (a suggestion): Nook's sparkles and a stronger title, as the "@nook …" panel's header has.
+    var standalone = false
     /// A second way, beside Do it: open the step to change it first (a new session's composer); nil for none.
     var adjust: (() -> Void)? = nil
 
+    private static let badge: CGFloat = 22
+
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text(title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
-                Spacer(minLength: NookTheme.Spacing.sm)
-                if run != .running {
-                    ToolbarIconButton("xmark", tr(isDone ? "button.close" : "chats.draft.actions.dismiss"), dismiss)
-                }
-            }
-            if let reason, !reason.isEmpty {
-                Text(reason)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            header
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 ForEach(actions) { row($0) }
             }
             footer
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+            if standalone {
+                Image(icon: "sparkles")
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(NookTheme.iris)
+                    .frame(width: Self.badge, height: Self.badge)
+                    .background(Circle().fill(NookTheme.iris.opacity(0.14)))
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(title)
+                    .font(standalone ? NookTheme.TextStyle.strong : NookTheme.TextStyle.label)
+                    .foregroundStyle(standalone ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .frame(minHeight: standalone ? Self.badge : nil, alignment: .leading)
+                if let reason, !reason.isEmpty {
+                    Text(reason)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if run != .running {
+                ToolbarIconButton("xmark", tr(isDone ? "button.close" : "chats.draft.actions.dismiss"), dismiss)
+            }
+        }
     }
 
     private var isDone: Bool {
@@ -1092,34 +1112,31 @@ struct DraftActions: View {
     }
 
     private func row(_ action: ChatDraftAction) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Group {
-                if isDone {
-                    Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
-                } else {
-                    Image(icon: action.symbol).foregroundStyle(NookTheme.iris)
+        let tint = isDone ? NookTheme.mint : NookTheme.iris
+        return HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+            Image(icon: isDone ? "checkmark" : action.symbol)
+                .font(NookTheme.font(10, .semibold))
+                .foregroundStyle(tint)
+                .frame(width: Self.badge, height: Self.badge)
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(tint.opacity(0.12)))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(action.step.text)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !action.step.tag.isEmpty {
+                    Text(action.step.tag)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
                 }
             }
-            .font(NookTheme.font(11, .semibold))
-            .frame(width: 16)
-            .accessibilityHidden(true)
-            Text(action.step.text)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-            if !action.step.tag.isEmpty {
-                Text(action.step.tag)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-            }
+            .frame(minHeight: Self.badge, alignment: .leading)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, NookTheme.Spacing.sm)
-        .padding(.vertical, NookTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
     }
 
     @ViewBuilder private var footer: some View {
