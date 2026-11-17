@@ -161,11 +161,11 @@ extension AgentRunPanel {
             guard let composerModel else { return }
             store.setStash(composerModel.stash)
         }
-        let (working, project) = (run.workingDirectory, run.projectPath)
+        let (working, project, provider) = (run.workingDirectory, run.projectPath, run.provider)
         Task {
             skills = await Task.detached(priority: .utility) {
                 let folder = SkillIndex.projectFolder(workingDirectory: working, projectPath: project)
-                return SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
+                return SkillIndex.scan(roots: SkillIndex.roots(for: provider, home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
             }.value
         }
     }

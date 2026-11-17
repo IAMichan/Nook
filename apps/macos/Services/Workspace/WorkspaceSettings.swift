@@ -145,6 +145,14 @@ final class WorkspaceSettings: ObservableObject {
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
     }
+    /// Settings › Coding agents › Skills searches skills.sh (only what you type goes there). On by default.
+    @Published var skillsSearchOnline: Bool {
+        didSet { defaults.set(skillsSearchOnline, forKey: "ws.skillsSearchOnline") }
+    }
+    /// GitHub repositories you added to browse for skills ("owner/repo" or a `tree` link), besides `SkillSources.defaults`.
+    @Published var skillSources: [String] {
+        didSet { defaults.set(skillSources, forKey: "ws.skillSources") }
+    }
     /// Codex runs over `codex app-server` (approvals, questions, steering, live reasoning); off: one `codex exec` per turn.
     @Published var codexAppServer: Bool {
         didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
@@ -313,6 +321,8 @@ final class WorkspaceSettings: ObservableObject {
         worktreeKeepWhen = WorktreeCleanup.KeepWhen(rawValue: defaults.string(forKey: "ws.worktreeKeepWhen") ?? "") ?? .uncommittedChanges
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
+        skillsSearchOnline = defaults.object(forKey: "ws.skillsSearchOnline") as? Bool ?? true
+        skillSources = defaults.stringArray(forKey: "ws.skillSources") ?? []
         timelineDetail = TimelineDetail(rawValue: defaults.string(forKey: "ws.timelineDetail") ?? "") ?? .everything
         screenReaderAnnouncements = ScreenReaderAnnouncements(rawValue: defaults.string(forKey: "ws.screenReaderAnnouncements") ?? "")
             ?? .replies
