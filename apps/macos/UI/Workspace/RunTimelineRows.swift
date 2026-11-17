@@ -141,8 +141,13 @@ struct EventRow: View {
             TranscriptWorkLine(symbol: "hourglass", label: event.text)
 
         case .system where event.tool == "resume":
-            // Nook goes on by itself after a limit: on the same account at reset, or on the one you switched to.
+            // Nook goes on by itself: after a limit (on the same account at reset, or on the one you switched to), or
+            // after a switch you picked while the agent worked.
             TranscriptWorkLine(symbol: "play.circle", label: event.text)
+
+        case .system where event.tool == "switch-stop":
+            // Another agent or account picked while the agent worked: the turn stops here, the handoff follows.
+            TranscriptWorkLine(symbol: "stop.circle", label: event.text)
 
         case .system where event.tool == "origin":
             // Another agent, a script or Nook Chat started this session (`NewRunConfig.startedBy`).
