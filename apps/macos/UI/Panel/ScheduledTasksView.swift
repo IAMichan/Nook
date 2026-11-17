@@ -505,28 +505,27 @@ struct ScheduledTaskEditor: View {
                     Text(tr("sched.interval.minutes")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
                 Text(tr("sched.interval.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             case .time:
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-                    DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden()
-                }
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ForEach(ScheduledTaskText.orderedWeekdays(), id: \.self) { day in
-                        let on = weekdays.contains(day)
-                        Button {
-                            if on { weekdays.remove(day) } else { weekdays.insert(day) }
-                        } label: {
-                            Text(ScheduledTaskText.weekdayName(day))
-                                .font(NookTheme.TextStyle.strong)
-                                .foregroundStyle(on ? NookTheme.onPrimary : NookTheme.textSecondary)
-                                .padding(.horizontal, 10)
-                                .frame(height: 26)
-                                .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.primary : NookTheme.field))
-                        }
-                        .buttonStyle(.nookPlain)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                        DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden()
+                        Spacer(minLength: NookTheme.Spacing.md)
+                        // What the choice comes down to, in the words the task list uses.
+                        Label(ScheduledTaskText.summary(timeRule), icon: "clock")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
+                    WeekdayStrip(selection: $weekdays)
                 }
+                .padding(NookTheme.Spacing.lg)
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.field))
+                .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.fieldStroke, lineWidth: 1))
                 Text(tr("sched.weekdays.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             case .once:
                 HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
@@ -540,6 +539,12 @@ struct ScheduledTaskEditor: View {
                 messageEditor
             }
         }
+    }
+
+    /// The fixed-time rule as the form stands, for the summary beside the time.
+    private var timeRule: ScheduleRule {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
+        return .fixedTime(hour: parts.hour ?? 9, minute: parts.minute ?? 0, weekdays: weekdays)
     }
 
     /// The ways a task can start. Waiting for a message is for Nook Chat, which reads the chat and prepares the answer.
@@ -560,22 +565,15 @@ struct ScheduledTaskEditor: View {
     private var messageEditor: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ChipFlow(spacing: NookTheme.Spacing.sm) {
-                ForEach(ScheduledTaskText.messageApps.map(\.id), id: \.self) { id in
-                let on = messageApps.contains(id)
-                Button {
-                    if on { messageApps.remove(id) } else { messageApps.insert(id) }
-                } label: {
-                    Text(ScheduledTaskText.messageApps.first { $0.id == id }?.name ?? id)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(on ? NookTheme.onPrimary : NookTheme.textSecondary)
-                        .padding(.horizontal, 10)
-                        .frame(height: 26)
-                        .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.primary : NookTheme.field))
-                }
-                .buttonStyle(.nookPlain)
+                ForEach(ScheduledTaskText.messageApps, id: \.id) { app in
+                    let on = messageApps.contains(app.id)
+                    NookFilterChip(title: app.name, selected: on) {
+                        if on { messageApps.remove(app.id) } else { messageApps.insert(app.id) }
+                    }
                 }
             }
             Text(tr("automation.sched.message.apps.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
             TextField(tr("automation.sched.message.from"), text: $messageFrom).textFieldStyle(.plain).modifier(FieldBox())
             TextField(tr("automation.sched.message.words"), text: $messageWords).textFieldStyle(.plain).modifier(FieldBox())
             Toggle(tr("automation.sched.message.groups"), isOn: $messageGroups).compactSwitch()
@@ -988,6 +986,38 @@ private struct DestinationCard: View {
         .buttonStyle(.nookPlain)
         .onHover { hovered = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The days of the week as one segmented track, in the order the user's week starts: equal cells, the chosen ones on
+/// the accent. None chosen means every day, so then every cell reads as included, quieter than a chosen one.
+private struct WeekdayStrip: View {
+    @Binding var selection: Set<Int>
+    @State private var hovered: Int?
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            ForEach(ScheduledTaskText.orderedWeekdays(), id: \.self) { day in
+                let on = selection.contains(day)
+                Button {
+                    if on { selection.remove(day) } else { selection.insert(day) }
+                } label: {
+                    Text(ScheduledTaskText.weekdayName(day))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(on ? NookTheme.onIris : (selection.isEmpty || hovered == day ? NookTheme.textStrong : NookTheme.textTertiary))
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.iris : (hovered == day ? NookTheme.smoke : .clear)))
+                        .contentShape(NookTheme.shape(NookTheme.Radius.control))
+                }
+                .buttonStyle(.nookPlain)
+                .onHover { hovered = $0 ? day : (hovered == day ? nil : hovered) }
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(NookTheme.Spacing.xxs)
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.surface))
+        .animation(NookTheme.hover, value: hovered)
+        .animation(NookTheme.hover, value: selection)
     }
 }
 
