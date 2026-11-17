@@ -17,7 +17,7 @@ approve each action.
 | `page/agent.js` | Nook's hands on a page (find, read, click, type, scroll, key, and form and fill for Double Tap), injected only when asked |
 | `page/presence.js` | The glow and the "Nook is working · Stop" strip while Nook acts |
 | `sidepanel.*` | The side panel: status, the switch per site, pause, chat, and activity, in Nook's own theme (`look`) |
-| `composer/` | The side panel's composer: Nook's shared one (`packages/web-ui`) in the panel's tokens and texts |
-| `ui/composer.js` | `composer/` built by `npm run build`; checked in, so Nook carries the extension without a build step |
+| `composer/` | The side panel's composer (with the model chip) and transcript: Nook's shared ones (`packages/web-ui`) in the panel's tokens and texts |
+| `ui/composer.js` | `composer/` (composer and transcript) built by `npm run build`; checked in, so Nook carries the extension without a build step |
 | `scripts/package.js` | `npm run package`: the zip for the Chrome Web Store, without tests, sources and the manifest's `key` |
 | `_locales/` | Texts in English, Dutch, German, French and Spanish |

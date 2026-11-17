@@ -497,6 +497,12 @@ final class ProcessCanceller: @unchecked Sendable {
 }
 
 extension AIProvider {
+    /// The brain that thinks through an agent: Claude Code, Codex, Gemini CLI and Grok. OpenCode, Cursor, Antigravity and
+    /// ACP agents have no such brain. Used by the brain chip and the browser extension's composer.
+    static func brain(for agent: RunProvider) -> AIProvider? {
+        allCases.first { $0.subscriptionAgent.flatMap(RunProvider.init(kind:)) == agent }
+    }
+
     /// The coding agent Nook already knows (and runs) whose own login this provider thinks with; nil for the APIs and for
     /// Kimi Code and Mistral Vibe, which Nook only uses as a brain.
     var subscriptionAgent: AgentKind? {

@@ -72,7 +72,7 @@
     "message": "Vraag Nook iets over deze pagina, of vraag het hier iets te doen. Nook vraagt het je op je Mac voordat het klikt, typt of iets opent."
   },
   "askPlaceholder": {
-    "message": "Vraag het Nook…"
+    "message": "Vraag Nook iets…"
   },
   "send": {
     "message": "Versturen"
@@ -136,5 +136,35 @@
   },
   "presenceSignedIn": {
     "message": "Ga verder"
+  },
+  "modelChip": {
+    "message": "Kies het model waarmee Nook denkt"
+  },
+  "modelSearch": {
+    "message": "Modellen zoeken"
+  },
+  "modelEmpty": {
+    "message": "Geen modellen gevonden"
+  },
+  "copy": {
+    "message": "Kopieer"
+  },
+  "copyCode": {
+    "message": "Code kopiëren"
+  },
+  "copied": {
+    "message": "Gekopieerd"
+  },
+  "suggestSummary": {
+    "message": "Vat deze pagina samen"
+  },
+  "suggestImportant": {
+    "message": "Wat is hier het belangrijkst?"
+  },
+  "suggestNext": {
+    "message": "Wat moet ik hier nu doen?"
+  },
+  "pauseHint": {
+    "message": "Nook pauzeren in deze browser"
   }
 }

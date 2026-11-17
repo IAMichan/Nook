@@ -34,6 +34,8 @@ final class BrowserExtensionService: ObservableObject {
     /// asking every second, so an answer streams into the browser as fast as in Nook's own window.
     private var watches: [UUID: Watch] = [:]
     private var watching: AnyCancellable?
+    /// The models Ollama and LM Studio offered when the side panel last asked, for its brain chip.
+    private var servers: [ServerModel] = []
 
     /// The browsers that follow a conversation, each with the revision it has, so one browser reading the conversation
     /// never counts as another one having it.
@@ -277,6 +279,17 @@ final class BrowserExtensionService: ObservableObject {
             return BrowserExtensionLook.payload(choice: settings.themeChoice, themes: settings.themes,
                                                 accent: settings.accentHex, defaultAccent: NookTheme.defaultAccentHex,
                                                 density: settings.density, diffColors: settings.diffColors)
+        case "brain":
+            // The composer's brain chip: the same choices as the chip in Nook's own composer. The local servers answer
+            // over the network, so their models come in the next time the panel asks.
+            Task { [weak self] in self?.servers = await app.localServerModels() }
+            return BrowserExtensionBrain.payload(app: app, servers: servers)
+        case "setBrain":
+            guard BrowserExtensionBrain.choose(request.choice, app: app, servers: servers) else {
+                return ["ok": false, "error": tr("browserExt.panel.unknownModel")]
+            }
+            app.store.audit(tool: "browser_extension_brain", args: client.browser, result: app.settings.brainLabel)
+            return BrowserExtensionBrain.payload(app: app, servers: servers)
         default:
             return ["ok": false, "error": "Nook does not know \"\(request.kind)\"."]
         }
@@ -332,7 +345,7 @@ final class BrowserExtensionService: ObservableObject {
     private func lines(_ id: UUID) -> [[String: Any]] {
         guard let conversation = app?.chat.conversation(id) else { return [] }
         return conversation.messages.suffix(40).map { message in
-            [
+            var line: [String: Any] = [
                 "id": message.id.uuidString,
                 "fromNook": message.role == .nook,
                 "text": CompanionPolicy.clip(message.text),
@@ -343,6 +356,11 @@ final class BrowserExtensionService: ObservableObject {
                 "notice": CompanionPolicy.clip(message.notices.last ?? "", limit: 240),
                 "onMac": !message.actions.isEmpty || !message.mails.isEmpty || !message.charts.isEmpty
             ]
+            // Where Nook looked and the plan it keeps, drawn as in Nook's own window.
+            if let sources = BrowserExtensionTranscript.sources(message) { line["sources"] = sources }
+            let tasks = BrowserExtensionTranscript.tasks(message)
+            if !tasks.isEmpty { line["tasks"] = tasks }
+            return line
         }
     }
 }

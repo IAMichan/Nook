@@ -747,6 +747,11 @@ async function handlePanel(message) {
       return request({ kind: 'chat', conversation: message.conversation, watch: !!message.watch });
     case 'stopChat':
       return request({ kind: 'stopChat', conversation: message.conversation });
+    // The composer's model chip: the models Nook could think with, and picking one.
+    case 'brain':
+      return request({ kind: 'brain' });
+    case 'setBrain':
+      return request({ kind: 'setBrain', choice: String(message.choice || '').slice(0, 400) });
     default:
       return { ok: false, error: 'Unknown message.' };
   }

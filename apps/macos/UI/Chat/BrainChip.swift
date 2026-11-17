@@ -54,11 +54,8 @@ private struct BrainPicker: View {
 
     private static let macID = "mac"
 
-    /// The brain that thinks through an agent: Claude Code, Codex, Gemini CLI and Grok. OpenCode, Cursor, Antigravity and
-    /// ACP agents have no such brain, so they stay out of this rail.
-    private static func brain(for agent: RunProvider) -> AIProvider? {
-        AIProvider.allCases.first { $0.subscriptionAgent.flatMap(RunProvider.init(kind:)) == agent }
-    }
+    /// The brain that thinks through an agent (`AIProvider.brain(for:)`); agents without one stay out of this rail.
+    private static func brain(for agent: RunProvider) -> AIProvider? { AIProvider.brain(for: agent) }
 
     /// The agent in use, when Nook thinks through one.
     private var agentInUse: (provider: RunProvider, kind: AgentKind)? {

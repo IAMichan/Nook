@@ -157,8 +157,9 @@ drawn in a closed shadow root, never takes a click itself, and does not glide wh
   Nook's own browser.
 - **Only Nook's tabs close.** `chrome_close` only closes tabs Nook opened itself (its tab group).
 - **Untrusted text.** Page text, titles and console output are untrusted data for the assistant and for agents, never
-  instructions. The side panel shows Nook's answers as plain text. Code, bold and links are built as DOM nodes, never as
-  HTML.
+  instructions. The side panel draws Nook's answers as Markdown with the shared renderer
+  (`packages/web-ui/src/markdown.ts`), which escapes every character of the model's text before it adds its own tags;
+  links open only as http(s) addresses in a new tab.
 - **Who may connect.** The host manifest allows only this extension's id (`allowed_origins`). The id is fixed by the
   public key in `manifest.json`. The host talks to Nook over `browser.sock`, which only your user can open (0600, and
   each connection's user is checked). The extension has no `debugger` permission and no content scripts. It injects its
@@ -215,6 +216,17 @@ Nook's commands ─────────┘                                  
   answer, and pictures can be pasted, dropped or picked. The pictures go with the question as `images`
   (`questionImages` in `lib/core.js`: PNG, JPEG, GIF or WebP, at most 10); the Mac scales and encodes them as every
   picture it sends a model (`ImageAttachment`). Documents are not taken in the browser.
+- **The model chip.** The composer's row holds the model chip of Nook's own composer (`BrainChip`): the agent and
+  model Nook thinks with, and a menu with every connected agent that can think for Nook (Claude Code, Codex, Gemini CLI,
+  Grok) and its models, and the models on this Mac (Apple Intelligence, the installed MLX models, Ollama and LM Studio).
+  The panel asks `{"kind": "brain"}` and picks with `{"kind": "setBrain", "choice": id}`; Nook only takes an id from
+  its own list (`BrowserExtensionBrain`), and the change holds for Nook everywhere, as on the Mac. It is written to the
+  audit log.
+- **The transcript.** The conversation is Nook's shared transcript (`packages/web-ui/src/Transcript.svelte`), laid out
+  as Nook Chat on the Mac: your question in a bubble, Nook's answer as prose, the plan Nook keeps as a checklist, a
+  shimmering line of what Nook does now, and one quiet line for where it looked ("3 sources used") that opens to the
+  sources and the numbered references. Nook sends these per message as `sources` and `tasks`
+  (`BrowserExtensionTranscript`), in the user's language.
 - **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
   `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
   and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got
