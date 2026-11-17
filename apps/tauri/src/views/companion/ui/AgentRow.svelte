@@ -2,7 +2,7 @@
   // One session on a shelf (`AgentRow`): the agent's logo, the title with its state or age in the corner, and the folder
   // and branch under it. Touch and hold for what you can do with it.
   import { age, needsYouState, type SessionDigest } from "../../../lib/companion";
-  import AgentMark from "./AgentMark.svelte";
+  import AgentMark from "../../../components/ui/AgentMark.svelte";
   import StatusPill from "../../../components/ui/StatusPill.svelte";
   import Ico from "../../../components/ui/Ico.svelte";
   let { session, onopen, onhold }: { session: SessionDigest; onopen: () => void; onhold?: (r: DOMRect) => void } = $props();

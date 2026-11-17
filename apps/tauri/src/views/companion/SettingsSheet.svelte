@@ -9,7 +9,7 @@
   import ConnectionLine from "./ui/ConnectionLine.svelte";
   import SettingsRow from "./ui/SettingsRow.svelte";
   import Toggle from "../../components/ui/Toggle.svelte";
-  import AgentMark from "./ui/AgentMark.svelte";
+  import AgentMark from "../../components/ui/AgentMark.svelte";
   import Dialog from "../../components/ui/Dialog.svelte";
 
   let { view, took, onclose, onlocal, onswitch, onadd }: {

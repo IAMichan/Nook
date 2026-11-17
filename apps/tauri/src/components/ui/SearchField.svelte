@@ -2,12 +2,21 @@
   // The search field (`NookSearchField`).
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "./Ico.svelte";
-  let { value = $bindable(""), placeholder }: { value: string; placeholder: string } = $props();
+  let { value = $bindable(""), placeholder, autofocus = false, onsubmit }: {
+    value: string;
+    placeholder: string;
+    /** Takes the keys as soon as it shows (a picker's search). */
+    autofocus?: boolean;
+    /** Return in the field (a picker picks its first result). */
+    onsubmit?: () => void;
+  } = $props();
+  const focusNow = (node: HTMLInputElement) => { if (autofocus) queueMicrotask(() => node.focus()); };
 </script>
 
 <label class="search">
   <Ico name="search" size={13} stroke={2.2} />
-  <input bind:value {placeholder} aria-label={placeholder} autocapitalize="off" autocomplete="off" />
+  <input bind:value {placeholder} aria-label={placeholder} autocapitalize="off" autocomplete="off" use:focusNow
+    onkeydown={(e) => { if (e.key === "Enter" && onsubmit) { e.preventDefault(); onsubmit(); } }} />
   {#if value}<button class="clear" aria-label={tr("Wis", "Clear")} onclick={() => (value = "")}><Ico name="circle-x" size={13} /></button>{/if}
 </label>
 

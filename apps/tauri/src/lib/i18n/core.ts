@@ -507,4 +507,23 @@ export const table: Table = {
   "New since your last visit": { de: "Neu seit deinem letzten Besuch", fr: "Nouveau depuis ta dernière visite", es: "Nuevo desde tu última visita" },
   "Show earlier messages": { de: "Frühere Nachrichten zeigen", fr: "Afficher les messages précédents", es: "Mostrar mensajes anteriores" },
   "Image": { de: "Bild", fr: "Image", es: "Imagen" },
+  // Emoji browser (the Mac's emoji.* keys)
+  "Search emoji": { de: "Emoji suchen", fr: "Rechercher un emoji", es: "Buscar un emoji" },
+  "No emoji for “{query}”": { de: "Kein Emoji für „{query}“", fr: "Aucun emoji pour « {query} »", es: "Ningún emoji para «{query}»" },
+  "Groups": { de: "Gruppen", fr: "Groupes", es: "Grupos" },
+  "Frequently Used": { de: "Häufig benutzt", fr: "Fréquemment utilisés", es: "Usados con frecuencia" },
+  "Smileys & Emotion": { de: "Smileys & Emotionen", fr: "Smileys et émotions", es: "Emoticonos y emociones" },
+  "People & Body": { de: "Menschen & Körper", fr: "Personnes et corps", es: "Personas y cuerpo" },
+  "Animals & Nature": { de: "Tiere & Natur", fr: "Animaux et nature", es: "Animales y naturaleza" },
+  "Food & Drink": { de: "Essen & Trinken", fr: "Nourriture et boissons", es: "Comida y bebida" },
+  "Travel & Places": { de: "Reisen & Orte", fr: "Voyages et lieux", es: "Viajes y lugares" },
+  "Activities": { de: "Aktivitäten", fr: "Activités", es: "Actividades" },
+  "Objects": { de: "Objekte", fr: "Objets", es: "Objetos" },
+  "Symbols": { de: "Symbole", fr: "Symboles", es: "Símbolos" },
+  "Flags": { de: "Flaggen", fr: "Drapeaux", es: "Banderas" },
+  // Model picker (the Mac's compose.* keys)
+  "Search models…": { de: "Modelle suchen…", fr: "Rechercher des modèles…", es: "Buscar modelos…" },
+  "No models found": { de: "Keine Modelle gefunden", fr: "Aucun modèle trouvé", es: "No se encontraron modelos" },
+  "Places": { de: "Orte", fr: "Emplacements", es: "Lugares" },
+  "Favorite": { de: "Favorit", fr: "Favori", es: "Favorito" },
 };

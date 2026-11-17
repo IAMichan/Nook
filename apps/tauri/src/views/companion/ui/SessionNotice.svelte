@@ -3,7 +3,7 @@
   // right there, or Answer, which opens it.
   import { attentionTint, companion, may, type ClientView, type SessionDigest } from "../../../lib/companion";
   import { tr } from "../../../lib/i18n.svelte";
-  import AgentMark from "./AgentMark.svelte";
+  import AgentMark from "../../../components/ui/AgentMark.svelte";
   import StatusPill from "../../../components/ui/StatusPill.svelte";
   import DecisionButton from "./DecisionButton.svelte";
   import Ico from "../../../components/ui/Ico.svelte";

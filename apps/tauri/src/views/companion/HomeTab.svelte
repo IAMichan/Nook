@@ -17,7 +17,7 @@
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
   import Ico from "../../components/ui/Ico.svelte";
-  import AgentMark from "./ui/AgentMark.svelte";
+  import AgentMark from "../../components/ui/AgentMark.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
   import StatusPill from "../../components/ui/StatusPill.svelte";
   import PulseDot from "../../components/ui/PulseDot.svelte";

@@ -9,7 +9,7 @@
   import NookMark from "./ui/NookMark.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ComposerPill from "./ui/ComposerPill.svelte";
-  import AgentMark from "./ui/AgentMark.svelte";
+  import AgentMark from "../../components/ui/AgentMark.svelte";
   import EmptyState from "../../components/ui/EmptyState.svelte";
   import Banner from "../../components/ui/Banner.svelte";
   import Ico from "../../components/ui/Ico.svelte";

@@ -19,7 +19,7 @@
   import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
   import ComposerPill from "./ui/ComposerPill.svelte";
-  import AgentMark from "./ui/AgentMark.svelte";
+  import AgentMark from "../../components/ui/AgentMark.svelte";
   import Banner from "../../components/ui/Banner.svelte";
 
   let { view, session, onclose, took, onstarted }: { view: ClientView; session?: string; onclose: () => void; took: (v: ClientView) => void; onstarted: (id: string) => void } = $props();
