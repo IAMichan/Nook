@@ -144,12 +144,14 @@ enum TimelineSpace {
 struct ConversationRows<Item: Identifiable, Row: View>: View {
     let items: [Item]
     let eager: Int
+    /// The gap between rows in the lazy part; the plain stack around it should use the same.
+    var spacing: CGFloat = NookTheme.Spacing.sm
     @ViewBuilder let row: (Item) -> Row
 
     var body: some View {
         let split = HistoryWindow.lazyRows(count: items.count, eager: eager)
         if split > 0 {
-            LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(items[..<split]) { row($0) }
             }
             .scrollTargetLayout()
