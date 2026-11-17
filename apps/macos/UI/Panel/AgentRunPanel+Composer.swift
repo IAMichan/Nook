@@ -377,7 +377,7 @@ extension AgentRunPanel {
         let watchable = watchablePullRequest()
         let pullRequest = SessionBranches.trayPullRequest(watch: watches.first, open: watchable,
                                                           links: pullRequestSync.links[runID] ?? [])
-        let watch = pullRequest.flatMap { url in watches.first { $0.url == url.absoluteString } }
+        let watch = pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches) }
         let canWatch = watch != nil || watchable != nil
         // A session that worked on more than one branch lists each, with the state of its pull request.
         let branches = workspace.run(runID).map { run in
@@ -390,15 +390,9 @@ extension AgentRunPanel {
         // The pull requests it works on besides its own branch's: one it was asked to fix, one you linked. Open first.
         // They show above the session's own branches, so its current branch (where a new pull request appears) and the
         // one being opened stay at the bottom, right above the box.
-        let shownURLs = Set(([pullRequest] + branches.map(\.pullRequest)).compactMap { $0?.absoluteString })
-        // Every pull request the session watches shows too, not only the first.
-        let linked = pullRequestSync.others(run: runID)
-        let watchedOnly = watches.compactMap { watch in
-            linked.contains { $0.url == watch.url } ? nil : URL(string: watch.url).flatMap(PullRequestLink.init(url:))
-        }
-        let others = (linked + watchedOnly)
-            .filter { !shownURLs.contains($0.url) && URL(string: $0.url) != nil }
-            .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
+        // Every pull request the session watches shows too, not only the first; each request once.
+        let others = SessionBranches.others(linked: pullRequestSync.others(run: runID), watches: watches,
+                                            shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 })
         let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
         if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
@@ -451,7 +445,7 @@ extension AgentRunPanel {
     @ViewBuilder
     private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch]) -> some View {
         if let url = URL(string: link.url) {
-            let watch = watches.first { $0.url == link.url }
+            let watch = SessionBranches.watch(for: link.url, in: watches)
             PullRequestWatchStrip(url: url, watch: watch, title: link.title,
                                   toggle: watch != nil || (link.state.isOpen && PullRequestWatch.canWatch(url)) ? {
                 if watch == nil { workspace.watchPullRequest(runID, url: url) } else { workspace.stopWatchingPullRequest(runID, url: url) }
