@@ -321,7 +321,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 
-- [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
+- [x] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
 ### 3.6 Instructions, inspector, search
 

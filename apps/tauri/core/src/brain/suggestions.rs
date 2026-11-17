@@ -6,27 +6,38 @@ use std::collections::{BTreeMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use super::matches;
+use crate::i18n::{tr, trf};
 use crate::settings::{detect_language, BrainRuntime, BrainSelection};
 
-/// Wat er nu speelt, voor de startvragen. Wat een platform niet weet, blijft leeg.
+/// What is going on now, for the starters (`startSuggestions` on the Mac). What a platform does not know stays empty.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Moment {
     /// 0…23
     pub hour: u32,
-    /// 1 = maandag … 7 = zondag
+    /// 1 = Monday … 7 = Sunday
     pub weekday: u32,
-    /// Het venster dat voor staat: app en titel.
+    /// The window in front: app and title.
     pub front_app: Option<(String, String)>,
     pub waiting_agent: Option<String>,
     pub failed_agent: Option<String>,
-    /// Volgende afspraak binnen vier uur: titel.
+    /// The next event within six hours: its title.
     pub next_event: Option<String>,
     pub events_today: usize,
     pub events_tomorrow: usize,
     pub loops: Vec<String>,
     pub active_sources: Vec<String>,
-    pub needs_attention: Vec<String>,
+    /// A pull request whose review is asked of the user: its title.
+    pub github_review: Option<String>,
+    /// A pull request of the user's whose checks fail: its title.
+    pub github_failing: Option<String>,
+    /// Who wrote the newest unread mail.
+    pub mail_from: Option<String>,
+    /// Some reminders are overdue; `open_tasks`: some are open.
+    pub overdue_tasks: bool,
+    pub open_tasks: bool,
+    /// Nook already has an automation of its own (then the secretary line is not offered).
+    pub has_nook_task: bool,
 }
 
 fn short(text: &str, limit: usize) -> String {
@@ -42,101 +53,136 @@ fn short(text: &str, limit: usize) -> String {
 fn ideas_for_app(app: &str, title: &str) -> Vec<String> {
     let name = app.to_lowercase();
     let any = |needles: &[&str]| needles.iter().any(|n| name.contains(n));
-    let list: &[&str] = if any(&["thunderbird", "outlook", "mail", "evolution", "geary", "mailspring"]) {
-        &["Vat deze mail samen", "Schrijf een antwoord op deze mail"]
+    let list: Vec<&str> = if any(&["thunderbird", "outlook", "mail", "evolution", "geary", "mailspring"]) {
+        vec![tr("Schrijf een antwoord op deze mail", "Write a reply to this email"), tr("Vat deze mail samen", "Summarize this email")]
     } else if any(&["firefox", "chrome", "chromium", "edge", "brave", "opera", "vivaldi", "safari"]) {
-        &["Vat deze pagina samen", "Wat moet ik hiervan onthouden?"]
+        vec![tr("Vat deze pagina samen", "Summarize this page"), tr("Wat moet ik hiervan onthouden?", "What should I remember from this?")]
     } else if any(&["code", "cursor", "zed", "idea", "jetbrains", "sublime", "kate", "vim", "windsurf"]) {
-        &["Leg uit wat deze code doet", "Zie je hier een fout?"]
+        vec![tr("Zie je hier een fout?", "Do you see a bug here?"), tr("Leg uit wat deze code doet", "Explain what this code does")]
     } else if any(&["terminal", "konsole", "powershell", "cmd", "alacritty", "kitty", "wezterm", "ghostty", "tilix"]) {
-        &["Wat betekent deze foutmelding?"]
+        vec![tr("Wat betekent deze foutmelding?", "What does this error mean?")]
     } else if any(&["slack", "whatsapp", "telegram", "discord", "teams", "signal"]) {
-        &["Help me antwoorden op dit gesprek", "Staat hier iets in om te plannen?"]
+        vec![
+            tr("Help me antwoorden op dit gesprek", "Help me reply to this conversation"),
+            tr("Staat hier iets in om te plannen?", "Is there anything here to schedule?"),
+        ]
     } else if any(&["excel", "calc", "sheets", "airtable"]) {
-        &["Maak een grafiek van deze cijfers", "Wat valt op in deze cijfers?"]
+        vec![
+            tr("Wat valt op in deze cijfers?", "What stands out in these numbers?"),
+            tr("Maak een grafiek van deze cijfers", "Make a chart of these numbers"),
+        ]
     } else if any(&["word", "writer", "notion", "obsidian", "docs", "notepad", "gedit", "onenote"]) {
-        &["Maak deze tekst beter", "Vat dit samen in drie punten"]
+        vec![tr("Maak deze tekst beter", "Improve this text"), tr("Vat dit samen in drie punten", "Summarize this in three points")]
     } else if any(&["calendar", "agenda"]) {
-        &["Waar heb ik deze week nog tijd?", "Hoe druk is mijn week? Maak er een grafiek van"]
+        vec![
+            tr("Waar heb ik deze week nog tijd?", "Where do I still have time this week?"),
+            tr("Hoe druk is mijn week? Maak er een grafiek van", "How busy is my week? Make it a chart"),
+        ]
     } else if any(&["pdf", "acrobat", "okular", "evince"]) {
-        &["Vat dit document samen"]
+        vec![tr("Vat dit document samen", "Summarize this document")]
     } else if any(&["figma", "inkscape", "gimp"]) {
-        &["Wat kan beter aan dit ontwerp?"]
+        vec![tr("Wat kan beter aan dit ontwerp?", "What could be better in this design?")]
     } else if any(&["zoom", "meet", "webex"]) {
-        &["Maak notities van dit gesprek"]
+        vec![tr("Maak notities van dit gesprek", "Take notes of this call")]
     } else {
-        &[]
+        vec![]
     };
     if list.is_empty() && !title.is_empty() {
-        return vec![format!("Help me met {}", short(title, 30))];
+        return vec![trf("Help me met {what}", "Help me with {what}", &[("what", &short(title, 30))])];
     }
-    list.iter().map(|s| s.to_string()).collect()
+    list.into_iter().map(str::to_string).collect()
 }
 
-/// Startvragen die passen bij wat de gebruiker nu doet: het voorste venster, een afspraak, een wachtende agent,
-/// open punten en het moment van de dag. Hoogstens vier, zonder dubbele.
+/// Starters built from what is actually going on (`startSuggestions` on the Mac): the window in front, the agent that
+/// needs the user, a review or failing build on GitHub, the next meeting, overdue tasks, unread mail, the time of day
+/// and the week. Each names something real when it can, one per topic, at most four.
 pub fn start(moment: &Moment) -> Vec<String> {
-    let mut ideas: Vec<(u32, String)> = vec![];
+    let mut ideas: Vec<(u32, &str, String)> = vec![];
+    let active: HashSet<&str> = moment.active_sources.iter().map(String::as_str).collect();
     if let Some((app, title)) = &moment.front_app {
-        ideas.extend(ideas_for_app(app, title).into_iter().map(|i| (100, i)));
+        if let Some(idea) = ideas_for_app(app, title).into_iter().next() {
+            ideas.push((100, "front", idea));
+        }
     }
     if let Some(agent) = &moment.waiting_agent {
-        ideas.push((95, format!("Wat heeft {agent} van me nodig?")));
+        ideas.push((95, "agent", trf("Wat heeft {agent} van me nodig?", "What does {agent} need from me?", &[("agent", agent)])));
     } else if let Some(agent) = &moment.failed_agent {
-        ideas.push((90, format!("Waarom liep {agent} vast?")));
+        ideas.push((90, "agent", trf("Waarom liep {agent} vast?", "Why did {agent} get stuck?", &[("agent", agent)])));
     }
-    if let Some(event) = &moment.next_event {
-        ideas.push((85, format!("Bereid me voor op {}", short(event, 26))));
-    }
-    if moment.hour < 11 {
-        ideas.push((70, if moment.events_today > 0 { "Vat mijn dag samen".into() } else { "Wat is vandaag het belangrijkst?".into() }));
-    } else if moment.hour >= 16 {
+    if let Some(title) = &moment.github_review {
+        ideas.push((88, "github", trf("Review “{title}” voor me", "Review “{title}” for me", &[("title", &short(title, 34))])));
+    } else if let Some(title) = &moment.github_failing {
         ideas.push((
-            65,
-            if moment.events_tomorrow > 0 {
-                "Wat staat er morgen op de planning?".into()
-            } else {
-                "Wat moet ik vandaag nog afronden?".into()
-            },
+            86,
+            "github",
+            trf("Waarom faalt de CI van “{title}”?", "Why is CI failing on “{title}”?", &[("title", &short(title, 30))]),
         ));
     }
+    if let Some(event) = &moment.next_event {
+        ideas.push((80, "calendar", trf("Bereid me voor op {event}", "Prepare me for {event}", &[("event", &short(event, 26))])));
+    }
+    if moment.overdue_tasks {
+        ideas.push((78, "tasks", tr("Plan mijn verlopen taken opnieuw in", "Reschedule my overdue tasks").into()));
+    } else if moment.open_tasks && moment.hour < 17 {
+        ideas.push((56, "tasks", tr("Plan mijn open taken rond mijn agenda", "Fit my open tasks around my calendar").into()));
+    }
+    if active.contains("mail") {
+        match &moment.mail_from {
+            Some(from) => ideas.push((
+                60,
+                "mail",
+                trf("Vat de mail van {name} samen", "Summarize the mail from {name}", &[("name", &short(from, 22))]),
+            )),
+            None => ideas.push((50, "mail", tr("Welke mail moet ik beantwoorden?", "Which email should I reply to?").into())),
+        }
+    }
+    let priority = || tr("Wat is vandaag het belangrijkst?", "What matters most today?").to_string();
+    if moment.hour < 11 {
+        let line = if moment.events_today == 0 {
+            priority()
+        } else {
+            tr("Plan mijn dag rond mijn afspraken", "Plan my day around my meetings").into()
+        };
+        ideas.push((70, "day", line));
+    } else if moment.hour < 16 {
+        let line = if active.contains("calendar") || moment.events_today > 0 {
+            tr("Waar heb ik vandaag nog tijd?", "Where do I still have time today?").into()
+        } else {
+            priority()
+        };
+        ideas.push((54, "day", line));
+    } else if moment.events_tomorrow > 0 {
+        ideas.push((65, "day", tr("Wat staat er morgen op de planning?", "What's planned for tomorrow?").into()));
+    } else {
+        ideas.push((65, "day", tr("Wat moet ik vandaag nog afronden?", "What do I still need to finish today?").into()));
+    }
     if moment.weekday == 5 && moment.hour >= 14 {
-        ideas.push((60, "Hoe ging mijn week?".into()));
+        ideas.push((62, "week", tr("Hoe ging mijn week?", "How did my week go?").into()));
     }
     if moment.weekday == 1 && moment.hour < 12 {
-        ideas.push((60, "Hoe druk is mijn week? Maak er een grafiek van".into()));
+        ideas.push((62, "week", tr("Hoe druk is mijn week? Maak er een grafiek van", "How busy is my week? Make it a chart").into()));
     }
-    match moment.loops.len() {
-        0 => {}
-        1 => ideas.push((55, format!("Help me met {}", short(&moment.loops[0], 28)))),
-        n => ideas.push((55, format!("Help me mijn {n} open punten afronden"))),
-    }
-    let active: HashSet<&str> = moment.active_sources.iter().map(String::as_str).collect();
-    if active.contains("mail") {
-        ideas.push((50, "Welke mail moet ik beantwoorden?".into()));
-    }
-    if active.contains("notes") {
-        ideas.push((52, "Wat staat er in mijn Notities?".into()));
-    }
-    if active.contains("reminders") {
-        ideas.push((51, "Welke taken heb ik openstaan?".into()));
-    }
-    if let Some(source) = moment.needs_attention.first() {
-        ideas.push((52, format!("Wat moet ik doen met {source}?")));
-    }
-    if active.contains("github") {
-        ideas.push((45, "Wat wacht er op mij op GitHub?".into()));
+    if moment.loops.len() > 3 {
+        let n = moment.loops.len().to_string();
+        ideas.push((52, "loops", trf("Help me mijn {n} open punten afronden", "Help me finish my {n} open items", &[("n", &n)])));
     }
     if active.contains("stripe") {
-        ideas.push((40, "Hoe gaat de omzet deze maand? Met grafiek".into()));
+        ideas.push((40, "stripe", tr("Hoe gaat de omzet deze maand? Met grafiek", "How is revenue this month? With a chart").into()));
     }
-    // Een open vraag die altijd werkt, en een paar dingen die Nook zonder koppelingen kan.
-    ideas.push((10, if moment.hour < 12 { "Vat mijn dag samen".into() } else { "Waar kun je me nu mee helpen?".into() }));
-    ideas.push((9, "Schrijf een mail".into()));
-    ideas.push((8, "Wat is het weer morgen?".into()));
+    if !moment.has_nook_task {
+        ideas.push((
+            45,
+            "secretary",
+            tr("Geef me elke ochtend om 9:00 een update over mijn berichten", "Give me an update on my messages every morning at 9:00")
+                .into(),
+        ));
+    }
+    // Open-ended prompts that always work.
+    ideas.push((10, "fallback", tr("Vat mijn dag samen", "Summarize my day").into()));
+    ideas.push((9, "anything", tr("Waar kun je me nu mee helpen?", "What can you help me with right now?").into()));
     ideas.sort_by_key(|i| std::cmp::Reverse(i.0));
-    let mut seen = HashSet::new();
-    ideas.into_iter().map(|i| i.1).filter(|t| seen.insert(t.to_lowercase())).take(4).collect()
+    let (mut topics, mut texts) = (HashSet::new(), HashSet::new());
+    ideas.into_iter().filter(|(_, topic, text)| topics.insert(*topic) && texts.insert(text.to_lowercase())).map(|i| i.2).take(4).collect()
 }
 
 /// Wat de knop naast een chatfout moet doen. Een kale knop "Instellingen" verbergt wat er mis is.
@@ -272,21 +318,39 @@ mod tests {
 
     #[test]
     fn suggestions_fit_the_moment() {
-        let morning = start(&Moment { hour: 8, weekday: 1, events_today: 2, ..Default::default() });
-        assert_eq!(morning[0], "Vat mijn dag samen");
-        assert!(morning.contains(&"Hoe druk is mijn week? Maak er een grafiek van".to_string()));
+        let morning = start(&Moment { hour: 8, weekday: 1, events_today: 2, has_nook_task: true, ..Default::default() });
+        assert_eq!(morning[0], "Plan my day around my meetings");
+        assert_eq!(morning[1], "How busy is my week? Make it a chart");
         let busy = start(&Moment {
             hour: 14,
             weekday: 3,
-            front_app: Some(("Firefox".into(), "Nieuws".into())),
-            next_event: Some("Overleg met de klant over de offerte van volgend jaar".into()),
-            loops: vec!["Lisa bellen".into()],
+            front_app: Some(("Firefox".into(), "News".into())),
+            next_event: Some("Meeting with the client about next year's offer".into()),
+            github_failing: Some("Fix the login flow".into()),
             ..Default::default()
         });
-        assert_eq!(busy[0], "Vat deze pagina samen");
-        assert!(busy.iter().any(|s| s.starts_with("Bereid me voor op Overleg met de klant")));
+        assert_eq!(busy[0], "Summarize this page");
+        assert_eq!(busy[1], "Why is CI failing on “Fix the login flow”?");
+        assert!(busy[2].starts_with("Prepare me for Meeting with the client"));
         assert_eq!(busy.len(), 4);
-        assert_eq!(start(&Moment { hour: 13, weekday: 3, ..Default::default() })[0], "Waar kun je me nu mee helpen?");
+        let reviews = start(&Moment {
+            hour: 13,
+            weekday: 3,
+            github_review: Some("Add dark mode".into()),
+            github_failing: Some("Other".into()),
+            active_sources: vec!["mail".into()],
+            mail_from: Some("Lisa de Vries".into()),
+            overdue_tasks: true,
+            ..Default::default()
+        });
+        assert_eq!(reviews[..3], ["Review “Add dark mode” for me", "Reschedule my overdue tasks", "Summarize the mail from Lisa de Vries"]);
+        let quiet = start(&Moment { hour: 13, weekday: 3, has_nook_task: true, ..Default::default() });
+        assert_eq!(quiet, ["What matters most today?", "Summarize my day", "What can you help me with right now?"]);
+        let fresh = start(&Moment { hour: 13, weekday: 3, ..Default::default() });
+        assert!(
+            fresh.contains(&"Give me an update on my messages every morning at 9:00".to_string()),
+            "the secretary while Nook has no task"
+        );
     }
 
     #[test]

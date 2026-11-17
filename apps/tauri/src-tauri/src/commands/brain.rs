@@ -431,13 +431,39 @@ pub fn start_suggestions(app: AppHandle) -> Vec<String> {
     let ctx = tools::ToolCtx::new(&app, "");
     let mut active: Vec<String> = tools::active(&tools::tools(&ctx)).into_iter().collect();
     active.sort();
-    let moment = Moment {
+    let mut moment = Moment {
         hour: now.hour(),
         weekday: now.weekday().number_from_monday(),
         loops: state.store.open_loops().into_iter().map(|l| l.title).collect(),
         active_sources: active,
         ..Default::default()
     };
+    // What the connectors show, as on the Mac: a review asked of you ("review-") or a pull request whose checks fail
+    // ("pr-", bad) on GitHub; the newest unread mail's sender; overdue or open reminders.
+    if let Some(connectors) = app.try_state::<crate::connectors::Connectors>() {
+        use nook_core::connectors::Tone;
+        for info in connectors.hub.info().into_iter().filter(|i| i.on && i.configured) {
+            let items = &info.status.items;
+            match info.id.as_str() {
+                "github" => {
+                    moment.github_review = items.iter().find(|i| i.id.starts_with("review-")).map(|i| i.title.clone());
+                    moment.github_failing =
+                        items.iter().find(|i| i.id.starts_with("pr-") && i.tone == Tone::Bad).map(|i| i.title.clone());
+                }
+                "mail" => moment.mail_from = items.first().map(|i| i.subtitle.clone()).filter(|s| !s.is_empty()),
+                "reminders" => {
+                    moment.overdue_tasks = items.iter().any(|i| i.tone == Tone::Attention);
+                    moment.open_tasks = !items.is_empty();
+                }
+                _ => {}
+            }
+        }
+    }
+    #[cfg(desktop)]
+    if let Some(auto) = app.try_state::<crate::workspace::automation::AutomationState>() {
+        moment.has_nook_task =
+            auto.scheduler.tasks().iter().any(|t| t.target == nook_core::workspace::schedule::ScheduledTaskTarget::Nook);
+    }
     suggestions::start(&moment)
 }
 
