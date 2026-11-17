@@ -24,7 +24,7 @@ extension WorkspaceManager {
     }
 
     func isWatching(_ id: UUID, url: URL) -> Bool {
-        run(id)?.prWatches.contains { $0.url == url.absoluteString } ?? false
+        run(id).map { SessionBranches.watch(for: url.absoluteString, in: $0.prWatches) != nil } ?? false
     }
 
     /// A watch on a pull request that merged or closed moves to the newer open one the session opened from the same branch
@@ -39,7 +39,9 @@ extension WorkspaceManager {
     /// Ends the watch on one pull request; the next one takes the tray's place.
     func stopWatchingPullRequest(_ id: UUID, url: URL) {
         update(id) { run in
-            var rest = run.prWatches.filter { $0.url != url.absoluteString }
+            // The same request under another spelling of its URL (a renamed repository) is the same watch.
+            let place = SessionBranches.place(url.absoluteString)
+            var rest = run.prWatches.filter { $0.url != url.absoluteString && SessionBranches.place($0.url) != place }
             run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
             run.extraPRWatches = rest.isEmpty ? nil : rest
         }

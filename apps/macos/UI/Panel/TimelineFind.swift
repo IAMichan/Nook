@@ -146,6 +146,10 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     let eager: Int
     /// The gap between rows in the lazy part; the plain stack around it should use the same.
     var spacing: CGFloat = NookTheme.Spacing.sm
+    /// While you follow a working agent: the rows drawn in full never get shorter (`HeldHeight`), so its output folding
+    /// away at the end does not bounce the conversation. `holdKey` lets go (a new turn, a block opened or closed).
+    var holdsHeight = false
+    var holdKey = 0
     @ViewBuilder let row: (Item) -> Row
 
     var body: some View {
@@ -156,7 +160,53 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
             }
             .scrollTargetLayout()
         }
-        ForEach(items[split...]) { row($0) }
+        // Rows moving into the lazy part make the rows drawn in full shorter: that lets go too.
+        HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey &* 31 &+ split) {
+            ForEach(items[split...]) { row($0) }
+        }
+    }
+}
+
+/// A leading-aligned stack, as `VStack(alignment: .leading, spacing:)`, that while `holds` never comes out shorter than
+/// it already was at the same width (`HeldHeight`); the room it keeps is under its rows. In a layout rather than a
+/// spacer sized after the rows were measured: that would show each fold for a frame before the room came back.
+struct HeldHeightStack: Layout {
+    var spacing: CGFloat
+    var holds: Bool
+    var key: Int
+
+    func makeCache(subviews: Subviews) -> HeldHeight { HeldHeight() }
+    /// Kept when the rows change: holding across those changes is the point.
+    func updateCache(_ cache: inout HeldHeight, subviews: Subviews) {}
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout HeldHeight) -> CGSize {
+        let natural = stacked(proposal, subviews)
+        let height = cache.height(natural: natural.height, width: proposal.width ?? -1, key: key, holds: holds)
+        return CGSize(width: natural.width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout HeldHeight) {
+        let offer = ProposedViewSize(width: bounds.width, height: nil)
+        var y = bounds.minY
+        for (index, subview) in subviews.enumerated() {
+            if index > 0 { y += spacing }
+            let size = subview.sizeThatFits(offer)
+            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: size.height))
+            y += size.height
+        }
+    }
+
+    /// The rows one under the other, as a `VStack` lays them out.
+    private func stacked(_ proposal: ProposedViewSize, _ subviews: Subviews) -> CGSize {
+        let offer = ProposedViewSize(width: proposal.width, height: nil)
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(offer)
+            width = max(width, size.width)
+            height += size.height + (index > 0 ? spacing : 0)
+        }
+        return CGSize(width: width, height: height)
     }
 }
 

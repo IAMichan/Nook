@@ -63,9 +63,10 @@ describe("shell route loading", () => {
 describe("settings pages", () => {
   it("opens a known page, an alias, or Overview", () => {
     expect(settingsSection("brain")).toBe("brain");
-    expect(settingsSection("connections")).toBe("accounts");
-    expect(settingsSection("start")).toBe("overview");
-    for (const value of [null, undefined, "", "__proto__", "constructor", "missing"]) expect(settingsSection(value)).toBe("overview");
+    expect(settingsSection("connections")).toBe("connections");
+    expect(settingsSection("accounts")).toBe("connections");
+    expect(settingsSection("overview")).toBe("start");
+    for (const value of [null, undefined, "", "__proto__", "constructor", "missing"]) expect(settingsSection(value)).toBe("start");
   });
 
   it("finds a page by any word of its name or group, ignoring case and accents", () => {

@@ -41,11 +41,15 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 }
 
 pub mod action_gate;
+pub mod answer_images;
+pub mod calendar_invite;
 pub mod chart;
+pub mod chat_image;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod claude_code;
 pub mod command_risk;
 pub mod conversation_title;
+pub mod conversation_window;
 pub mod conversations;
 pub mod dates;
 pub mod follow_ups;
@@ -53,6 +57,7 @@ pub mod fuzzy;
 pub mod http;
 pub mod intent;
 pub mod local_intent;
+pub mod meeting_times;
 pub mod memory;
 pub mod model_download;
 pub mod network_guard;
@@ -65,6 +70,8 @@ pub mod retrieval;
 pub mod service;
 pub mod sources;
 pub mod suggestions;
+pub mod system_report;
+pub mod task_steps;
 pub mod text;
 pub mod tool_loop;
 pub mod undo;
@@ -241,19 +248,6 @@ pub fn alternating(history: &[ChatTurn], prompt: &str) -> Vec<(&'static str, Str
         }
     }
     result
-}
-
-/// Voor breinen zonder gestructureerde geschiedenis: het gesprek tot nu toe als tekst voor de vraag.
-pub fn history_prefix(history: &[ChatTurn], limit: usize, length: usize) -> String {
-    if history.is_empty() {
-        return String::new();
-    }
-    let start = history.len().saturating_sub(limit);
-    let lines: Vec<String> = history[start..]
-        .iter()
-        .map(|t| format!("{}: {}", if t.from_user { "User" } else { "Nook" }, t.text.chars().take(length).collect::<String>()))
-        .collect();
-    format!("Conversation so far (for follow-up context):\n{}\n\n", lines.join("\n"))
 }
 
 #[cfg(test)]

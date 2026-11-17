@@ -7,6 +7,7 @@
 pub mod agents;
 pub mod attachments;
 pub mod brain;
+pub mod chats;
 pub mod companion;
 pub mod connectors;
 pub mod error;
@@ -21,7 +22,9 @@ pub mod provider;
 pub mod secrets;
 pub mod services;
 pub mod settings;
+pub mod settings_catalog;
 pub mod store;
+pub mod updates;
 pub mod workspace;
 
 pub use error::{NookError, Result};

@@ -77,6 +77,11 @@ pub trait ScreenReader: Send + Sync {
     fn can_capture(&self) -> bool {
         false
     }
+    /// The text in a picture (RGBA, `width` × `height`), read on this computer: Windows' own OCR, tesseract on Linux.
+    /// `None` where this platform cannot read pictures.
+    fn read_image_text(&self, _rgba: &[u8], _width: u32, _height: u32) -> Option<String> {
+        None
+    }
     /// Een schermafbeelding van het scherm waar de muis is (voor een schermdeel).
     fn capture_screen(&self) -> Result<Capture, String> {
         Err("Een schermafbeelding maken kan op dit platform niet.".into())
@@ -393,5 +398,9 @@ pub trait QuietWatch: Send + Sync {
 pub trait PowerMonitor: Send + Sync {
     fn signals(&self) -> crate::services::energy::EnergySignals {
         Default::default()
+    }
+    /// Battery charge (0–100) and whether the computer is on external power, if there is a battery.
+    fn battery(&self) -> Option<(u8, bool)> {
+        None
     }
 }

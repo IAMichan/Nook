@@ -7,13 +7,15 @@ import Foundation
 extension CompanionServer {
     /// One conversation as the phone's list shows it, with the flags the Mac's list sorts and groups by.
     func nookDigest(_ conversation: Conversation) -> ChatDigest {
-        ChatDigest(id: conversation.id.uuidString, title: CompanionPolicy.excerpt(conversation.title),
+        var digest = ChatDigest(id: conversation.id.uuidString, title: CompanionPolicy.excerpt(conversation.title),
                    updated: conversation.updated.timeIntervalSince1970, busy: conversation.busy,
                    waiting: conversation.status == .waiting, preview: CompanionPolicy.clip(conversation.preview, limit: 200),
                    pinned: conversation.pinned, archived: conversation.archived, unread: conversation.unread,
                    created: conversation.created.timeIntervalSince1970, scheduled: conversation.isScheduledRun,
                    queued: conversation.queue.isEmpty ? nil
                        : conversation.queue.messages.prefix(NookChatSections.maxQueued).map { CompanionPolicy.clip($0.text, limit: 300) })
+        digest.suggestion = Self.suggestion("nook:" + conversation.id.uuidString)
+        return digest
     }
 
     /// How many conversations wait in the archive, for the shelf at the foot of the list.

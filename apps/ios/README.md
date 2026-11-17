@@ -37,8 +37,12 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
   SplitViews.swift       the iPad: the split view at a regular width, where rows open, keyboard shortcuts
   ComposerDrop.swift     dragging pictures, a file, links and text into a composer
+  SuggestionViews.swift  what Nook could do next, above the composer of a session, a chat with Nook and a chat
 NookActivity/    widget extension: the Live Activity on the Lock Screen and in the Dynamic Island
 Shared/          what the app and the extension share (ActivityKit attributes, how a phase looks)
+Core/            the phone's Foundation-only logic, tested on the Mac (PhoneCoreTests): dictation, diagrams, diff positions,
+                 the iPad layout, the Agents list by project, drafts (`PhoneDrafts`), a session as Markdown, what a
+                 turn changed (`PhoneTurnChanges`)
 ```
 
 The wire protocol, ChaCha20-Poly1305 sealing, and SHA-256/HMAC helpers are shared with the macOS app via [`packages/protocol`](../../packages/protocol).

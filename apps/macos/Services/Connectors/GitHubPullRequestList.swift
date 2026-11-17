@@ -86,9 +86,9 @@ enum GitHubPullRequestList {
     /// The pull requests in the watched organizations and repositories, the repositories each account owns itself, and
     /// (unless turned off) the organizations each account belongs to, for the accounts given by id with their login. An
     /// account whose search could not get through is left out, so its last watched rows can stay (see
-    /// `AccountPullRequests.attaching`).
+    /// `AccountPullRequests.attaching`). With `closed` false only the open ones are searched (`openOnly`).
     @MainActor
-    static func loadWatched(accounts logins: [String: String]) async -> [String: WatchedPullRequests] {
+    static func loadWatched(accounts logins: [String: String], closed: Bool = true) async -> [String: WatchedPullRequests] {
         guard ConnectorToggle.isOn("github") else { return [:] }
         let watching = PullRequestWatchSettings.shared.entries
         let ownOrganizations = PullRequestWatchSettings.shared.includeOrganizations
@@ -100,10 +100,12 @@ enum GitHubPullRequestList {
                     if ownOrganizations { organizations = await memberOrganizations(account: target.id, token: target.token) }
                     let login = logins[target.id].flatMap { $0.isEmpty ? nil : $0 } ?? target.login
                     let entries = PullRequestWatchList.including(organizations, in: watching, owner: login)
-                    guard let found = await fetchWatchedInParts(token: target.token, entries: entries) else { return (target.id, nil) }
+                    guard let found = await fetchWatchedInParts(token: target.token, entries: entries, closed: closed) else {
+                        return (target.id, nil)
+                    }
                     // Only a typed entry is worth a note; an organization found on its own that cannot be searched stays quiet.
                     return (target.id, WatchedPullRequests(items: found.items, unreadable: found.unreadable.filter { watching.contains($0) },
-                                                           failed: found.failed))
+                                                           failed: found.failed, openOnly: !closed))
                 }
             }
             var result: [String: WatchedPullRequests] = [:]
@@ -116,13 +118,13 @@ enum GitHubPullRequestList {
     /// the whole query is asked again; a few entries per request, all at once, answer much sooner. A part that could not
     /// get through only holds back its own entries (`failed`, whose last rows stay); the others come in. Nil when no
     /// part got through, so the last watched rows stay as a whole.
-    private static func fetchWatchedInParts(token: String, entries: [String])
+    private static func fetchWatchedInParts(token: String, entries: [String], closed: Bool)
         async -> (items: [PullRequestItem], unreadable: [String], failed: [String])? {
         let parts = PullRequestWatchList.parts(entries)
-        guard parts.count > 1 else { return await fetchWatched(token: token, entries: entries) }
+        guard parts.count > 1 else { return await fetchWatched(token: token, entries: entries, closed: closed) }
         let answers = await withTaskGroup(of: (Int, (items: [PullRequestItem], unreadable: [String], failed: [String])?).self) { group in
             for (index, part) in parts.enumerated() {
-                group.addTask { (index, await fetchWatched(token: token, entries: part)) }
+                group.addTask { (index, await fetchWatched(token: token, entries: part, closed: closed)) }
             }
             var answers: [(Int, (items: [PullRequestItem], unreadable: [String], failed: [String])?)] = []
             for await answer in group { answers.append(answer) }
@@ -138,11 +140,11 @@ enum GitHubPullRequestList {
     /// do that), each entry is asked on its own, so only the entries that fail are left out: as `unreadable` when GitHub
     /// refused it, as `failed` (its last rows stay) when it could not get through. Nil when the request could not get
     /// through at all, so the last watched rows can stay.
-    private static func fetchWatched(token: String, entries: [String])
+    private static func fetchWatched(token: String, entries: [String], closed: Bool)
         async -> (items: [PullRequestItem], unreadable: [String], failed: [String])? {
         guard !entries.isEmpty else { return ([], [], []) }
         do {
-            let data = try await post(PullRequestGraphQL.watchBody(entries), token: token)
+            let data = try await post(PullRequestGraphQL.watchBody(entries, closed: closed), token: token)
             let found = try PullRequestGraphQL.parseWatched(data, entries: entries)
             return (found.items, found.unreadable, [])
         } catch {
@@ -151,7 +153,7 @@ enum GitHubPullRequestList {
             guard entries.count > 1 else { return ([], entries, []) }
             return await withTaskGroup(of: (Int, (items: [PullRequestItem], unreadable: [String], failed: [String])).self) { group in
                 for (index, entry) in entries.enumerated() {
-                    group.addTask { (index, await fetchWatched(token: token, entries: [entry]) ?? ([], [], [entry])) }
+                    group.addTask { (index, await fetchWatched(token: token, entries: [entry], closed: closed) ?? ([], [], [entry])) }
                 }
                 var parts: [(Int, (items: [PullRequestItem], unreadable: [String], failed: [String]))] = []
                 for await part in group { parts.append(part) }
@@ -296,12 +298,13 @@ final class PullRequestWatchSettings: ObservableObject {
 }
 
 /// The pull request list kept between visits: the last list shows at once, also after a restart. While you look, the
-/// open pull requests are read again when older than 30 seconds, one quick request per account; the closed and merged
-/// ones and the watched organizations, which take far longer to search and hardly change, follow in the background at
-/// most every three minutes and never hold the list up. A failed refresh keeps the rows; a passing failure (no
-/// connection for a moment, GitHub slow to answer) only shows once it happened twice in a row. With the panel closed, a
-/// quiet read keeps it current (see `PullRequestBackgroundRefresh`), and after every read the pages you are most likely
-/// to open are read ahead as well (see `PullRequestDetailWarmup`).
+/// open pull requests are read again when older than 30 seconds, one quick request per account. The open pull requests
+/// of the watched organizations and repositories, a slower search, follow in the background about every minute; the
+/// closed and merged ones, which hardly change, at most every three minutes. Neither holds the list up, and the time the
+/// panel shows is that of the oldest of these reads, so "updated just now" means every open row was read just now.
+/// A failed refresh keeps the rows; a passing failure (no connection for a moment, GitHub slow to answer) only shows once
+/// it happened twice in a row. With the panel closed, a quiet read keeps it current (see `PullRequestBackgroundRefresh`),
+/// and after every read the pages you are most likely to open are read ahead as well (see `PullRequestDetailWarmup`).
 @MainActor
 final class PullRequestStore: ObservableObject {
     static let shared = PullRequestStore()
@@ -314,8 +317,11 @@ final class PullRequestStore: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var available = false
     private(set) var fetchedAt = Date.distantPast
-    /// When the list was last read from GitHub; the panel says how long ago. Unlike `fetchedAt`, never reset by `markStale`.
+    /// When the list was last read from GitHub as a whole: the older of the quick read and the watched search, so the
+    /// panel does not say "just now" while the watched rows are minutes old. Unlike `fetchedAt`, never reset by `markStale`.
     @Published private(set) var lastRead: Date?
+    private var ownReadAt: Date?
+    private var watchedReadAt: Date?
     /// A forced refresh asked for while one was running: it runs right after, so a change made meanwhile is not missed.
     private var again = false
     /// Passing failures in a row per account; the error shows from the second one, or at once without rows to show.
@@ -323,10 +329,20 @@ final class PullRequestStore: ObservableObject {
     private static let staleAfter: TimeInterval = 30
     /// The closed and merged rows and the watched search: read again at most this often, unless asked for.
     nonisolated private static let backgroundAfter: TimeInterval = 180
+    /// The open pull requests of the watched entries: searched again this often while the list is open. A little under
+    /// a minute, so every second half-minute refresh takes them along.
+    nonisolated private static let openWatchedAfter: TimeInterval = 45
     private var backgroundAt = Date.distantPast
+    private var openWatchedAt = Date.distantPast
     private var background: Task<Void, Never>?
     /// A forced refresh asked for while the background pass was running: it runs again right after.
     private var backgroundAgain = false
+    /// A refresh you asked for waits for the background pass too: the arrows turn until every row is in.
+    private var progressHeld = false
+    /// The reads after an agent's turn (see `followTurn`).
+    private var turnFollow: Task<Void, Never>?
+    /// GitHub's search lists a pull request a few seconds after it was opened: read again after these waits.
+    private static let turnFollowWaits: [TimeInterval] = [8, 25]
     private var quietLoop: Task<Void, Never>?
     /// Pull requests merged from Nook, with when. GitHub's search takes a while to see a merge; until it does (or for
     /// ten minutes at most) the list shows them merged anyway, instead of open again after the next refresh.
@@ -390,8 +406,9 @@ final class PullRequestStore: ObservableObject {
         }
         // The panel asks every half minute; a slow pass it is waiting for should not wait for a quiet read's gate.
         let slowAfter = quiet ? PullRequestBackgroundRefresh.slowInterval : Self.backgroundAfter
+        let openAfter = quiet ? PullRequestBackgroundRefresh.slowInterval : Self.openWatchedAfter
         guard force || Date().timeIntervalSince(fetchedAt) > Self.staleAfter else {
-            refreshInBackground(force: false, after: slowAfter)
+            refreshInBackground(force: false, after: slowAfter, openAfter: openAfter)
             return
         }
         loading = true
@@ -417,7 +434,10 @@ final class PullRequestStore: ObservableObject {
         }
         if !loaded { loaded = true }
         fetchedAt = Date()
-        if fresh.contains(where: { $0.error == nil }) { lastRead = fetchedAt }
+        if fresh.contains(where: { $0.error == nil }) {
+            ownReadAt = fetchedAt
+            updateLastRead()
+        }
         let cutoff = Date().addingTimeInterval(-Self.mergeGrace)
         mergedHere = mergedHere.filter { $0.value > cutoff }
         // Yours and your reviews show as soon as they are in; the closed ones and the watched rows from last time stay
@@ -431,11 +451,12 @@ final class PullRequestStore: ObservableObject {
         // Most answers repeat what is shown: only a change redraws the list and is written to disk.
         let changed = updated != accounts
         if changed { accounts = updated }
-        // A refresh asked for meanwhile runs next: the arrows keep turning through it instead of stopping in between.
-        if showsProgress, !again { showsProgress = false }
         // The pages you are most likely to open next are read ahead now, so they show at once.
         PullRequestDetailModel.warm(accounts: accounts)
-        refreshInBackground(force: force, after: slowAfter)
+        refreshInBackground(force: force, after: slowAfter, openAfter: openAfter, holdsProgress: showsProgress)
+        // A refresh asked for meanwhile runs next, and a forced background pass is still to come: the arrows keep
+        // turning through them instead of stopping in between.
+        if showsProgress, !again, !progressHeld { showsProgress = false }
         if again {
             again = false
             await refresh(force: true)
@@ -444,24 +465,37 @@ final class PullRequestStore: ObservableObject {
         if changed { save() }
     }
 
-    /// The slow part, on its own: the closed and merged rows and the watched search, both accounts' at once. It runs
-    /// when it is due (or asked for), one at a time, and puts its rows in when they are in.
-    private func refreshInBackground(force: Bool, after: TimeInterval = PullRequestStore.backgroundAfter) {
+    /// The slow part, on its own: the watched search, both accounts' at once, with the closed and merged rows when those
+    /// are due (`after`) and only the open watched ones when just those are (`openAfter`). It runs when it is due (or asked
+    /// for), one at a time, and puts its rows in when they are in.
+    private func refreshInBackground(force: Bool, after: TimeInterval = PullRequestStore.backgroundAfter,
+                                     openAfter: TimeInterval = PullRequestStore.openWatchedAfter, holdsProgress: Bool = false) {
         if background != nil {
-            if force { backgroundAgain = true }
+            if force {
+                backgroundAgain = true
+                if holdsProgress { progressHeld = true }
+            }
             return
         }
-        guard force || Date().timeIntervalSince(backgroundAt) > after else { return }
+        let now = Date()
+        let full = force || now.timeIntervalSince(backgroundAt) > after
+        guard full || now.timeIntervalSince(openWatchedAt) > openAfter else { return }
         // Each account with its login, which the search of its own repositories needs.
         let readable = Dictionary(accounts.filter { $0.error == nil }.map { ($0.id, $0.login) }, uniquingKeysWith: { first, _ in first })
         guard !readable.isEmpty else { return }
+        if holdsProgress { progressHeld = true }
         let started = Date()
         background = Task { [weak self] in
-            async let closed = GitHubPullRequestList.loadClosed(accounts: Array(readable.keys))
-            async let watched = GitHubPullRequestList.loadWatched(accounts: readable)
+            async let closed = full ? GitHubPullRequestList.loadClosed(accounts: Array(readable.keys)) : [:]
+            async let watched = GitHubPullRequestList.loadWatched(accounts: readable, closed: full)
             let (closedRows, watchedRows) = await (closed, watched)
             guard let self else { return }
-            self.backgroundAt = Date()
+            if full { self.backgroundAt = Date() }
+            self.openWatchedAt = Date()
+            if !watchedRows.isEmpty {
+                self.watchedReadAt = Date()
+                self.updateLastRead()
+            }
             let updated = self.accounts.map { account in
                 guard let rows = closedRows[account.id] else { return account }
                 return account.replacingClosed(mine: rows.mine, reviews: rows.reviews)
@@ -477,8 +511,36 @@ final class PullRequestStore: ObservableObject {
             }
             if self.backgroundAgain {
                 self.backgroundAgain = false
-                self.refreshInBackground(force: true)
+                self.refreshInBackground(force: true, holdsProgress: self.progressHeld)
+                if self.background != nil { return }
             }
+            if self.progressHeld {
+                self.progressHeld = false
+                if !self.loading, !self.again { self.showsProgress = false }
+            }
+        }
+    }
+
+    /// The older of the quick read and the watched search; none until both were read since launch.
+    private func updateLastRead() {
+        guard let own = ownReadAt, let watched = watchedReadAt else { return }
+        let read = min(own, watched)
+        if lastRead != read { lastRead = read }
+    }
+
+    /// An agent's turn ended: it may have pushed or opened a pull request. The next look refreshes, and the list is read
+    /// again twice in the next half minute, since GitHub's search lists a new pull request only after a few seconds.
+    func followTurn() {
+        markStale()
+        guard turnFollow == nil else { return }
+        turnFollow = Task { [weak self] in
+            for wait in Self.turnFollowWaits {
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, GitHubPullRequestList.isAvailable else { break }
+                self.markStale()
+                await self.refresh(quiet: true)
+            }
+            self?.turnFollow = nil
         }
     }
 

@@ -778,7 +778,7 @@ final class MailConnector: ContextSource {
                 guard let change = change(input) else { return "Change mail" }
                 return MailActions.summary(change, MailActions.selection(input))
             },
-            tag: { _ in fixed == .trash ? ("to Trash", .caution) : ("", .good) },
+            tag: { _ in fixed == .trash ? (tr("plan.tag.toTrash"), .caution) : ("", .good) },
             run: { [weak self] input in
                 guard let change = change(input) else { throw NookError("Choose read, unread, flagged or unflagged.") }
                 let selection = MailActions.selection(input)

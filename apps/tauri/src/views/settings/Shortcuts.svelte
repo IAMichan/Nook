@@ -53,7 +53,6 @@
   const groups = $derived((Object.keys(groupNames) as SheetGroup[]).filter((g) => shown.some((e) => e.group === g)));
 </script>
 
-<h2>{tr("Sneltoetsen", "Shortcuts")}</h2>
 {#if nook.info?.capabilities.globalShortcuts}
   <h3>{tr("Overal", "Everywhere")}</h3>
   <div class="group">

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::keep_awake::KeepAwakeMode;
 use super::models::{base64url_decode, base64url_encode, is_control, PairedDevice, KEY_LENGTH, PAIRING_WINDOW};
 use super::push::PushSettings;
+use super::relay_push::PushRoute;
 use crate::secrets::SecretStore;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -28,6 +29,8 @@ struct Stored {
     /// Reaching this computer away from home through a relay (Settings › Companion › Away from home).
     relay: RelaySettings,
     keep_awake: KeepAwakeMode,
+    /// How pushes reach the phones; none until chosen (`relay_push::PushRoute::default_for`).
+    push_route: Option<PushRoute>,
 }
 
 /// Whose relay, and whether it is on (`CompanionRelayClient` settings on the Mac).
@@ -212,7 +215,10 @@ impl CompanionStore {
             last_seen: Some(now),
             push_token: None,
             push_production: None,
+            push_service: None,
             device_key: None,
+            protocol_version: None,
+            app_version: None,
         };
         self.with(
             |s| {
@@ -226,15 +232,31 @@ impl CompanionStore {
     }
 
     pub fn set_push_token(&self, id: &str, token: Option<String>, production: Option<bool>) {
+        self.set_push(id, token, production, None);
+    }
+
+    /// The phone's push token, its environment and whose it is (`service`: none for Apple, "fcm" for Firebase).
+    pub fn set_push(&self, id: &str, token: Option<String>, production: Option<bool>, service: Option<&str>) {
         self.with(
             |s| {
                 if let Some(d) = s.devices.iter_mut().find(|d| d.id == id) {
                     d.push_production = if token.is_none() { None } else { production };
+                    d.push_service = token.as_ref().and(service.map(Into::into));
                     d.push_token = token;
                 }
             },
             true,
         );
+    }
+
+    /// How pushes reach the phones; `build_has_relay` decides the first choice (`PushRoute::default_for`).
+    pub fn push_route(&self, build_has_relay: bool) -> PushRoute {
+        let stored = self.with(|s| s.push_route, false);
+        stored.unwrap_or_else(|| PushRoute::default_for(self.can_push(), build_has_relay))
+    }
+
+    pub fn set_push_route(&self, route: PushRoute) {
+        self.with(|s| s.push_route = Some(route), true);
     }
 
     /// The public half of a phone's device key (`device_key`), once it bound one.
@@ -267,6 +289,24 @@ impl CompanionStore {
             self.with(|_| (), true);
         }
         kept
+    }
+
+    /// What the phone said it runs (`noteVersions`); saved only when it changed.
+    pub fn note_versions(&self, id: &str, protocol_version: Option<i64>, app_version: Option<String>) {
+        let changed = self.with(
+            |s| match s.devices.iter_mut().find(|d| d.id == id) {
+                Some(d) if d.protocol_version != protocol_version || d.app_version != app_version => {
+                    d.protocol_version = protocol_version;
+                    d.app_version = app_version.clone();
+                    true
+                }
+                _ => false,
+            },
+            false,
+        );
+        if changed {
+            self.with(|_| (), true);
+        }
     }
 
     /// Niet bij elke aanvraag opslaan: een minuut is precies genoeg voor "laatst gezien".
@@ -329,6 +369,12 @@ mod tests {
 
         s.begin_pairing(now);
         assert!(s.active_pending(now + Duration::seconds(301)).is_none(), "vijf minuten");
+
+        s.note_versions(&device.id, Some(3), Some("1.4.0".into()));
+        assert_eq!(
+            store(&dir, secrets.clone()).device(&device.id).map(|d| (d.protocol_version, d.app_version)),
+            Some((Some(3), Some("1.4.0".into())))
+        );
 
         // Opnieuw laden houdt het toestel; zonder sleutel in de kluis valt het weg.
         assert_eq!(store(&dir, secrets.clone()).devices().len(), 1);

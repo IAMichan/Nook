@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use nook_core::agents::models::AgentStatus;
 use nook_core::agents::transcript::{self, ChatKind};
 use nook_core::agents::{scanner, AgentKind};
+use nook_core::i18n::{tr, trf};
 use nook_core::workspace::git::{self, FileChange, TreeRow};
 use nook_core::workspace::manager::{GitSnapshot, Manager, ProjectInfo, WorktreeRow};
 use nook_core::workspace::models::{
@@ -26,7 +27,8 @@ use crate::workspace::WorkspaceState;
 type Res<T> = Result<T, String>;
 
 fn id(text: &str) -> Res<Uuid> {
-    Uuid::parse_str(text.strip_prefix("run:").unwrap_or(text)).map_err(|_| "Deze sessie bestaat niet meer.".to_string())
+    Uuid::parse_str(text.strip_prefix("run:").unwrap_or(text))
+        .map_err(|_| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Res<T> {
@@ -378,11 +380,11 @@ pub async fn workspace_remove_worktree(state: State<'_, WorkspaceState>, repo: S
 #[tauri::command]
 pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
     if !git::is_clone_url(&url) {
-        return Err("Dat is geen adres van een repository.".into());
+        return Err(tr("Dat is geen adres van een repository.", "That is not the address of a repository.").into());
     }
     let m = state.manager.clone();
     blocking(move || {
-        let git = m.git().ok_or("Git is niet gevonden.")?;
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let parent = near
             .and_then(|p| std::path::Path::new(&p).parent().map(|p| p.to_string_lossy().into_owned()))
             .unwrap_or_else(|| nook_core::agents::home_dir().join("Developer").to_string_lossy().into_owned());
@@ -419,7 +421,7 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
     let id = id(&run)?;
     let ws = app.state::<WorkspaceState>();
     let m = ws.manager.clone();
-    let run = m.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+    let run = m.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
     let (mut state, repository, remote, base) = blocking(move || {
         let git = m.git()?;
         let dir = run.working_directory.clone();
@@ -447,7 +449,7 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
         Some((state, repository, remote, base))
     })
     .await?
-    .ok_or("Git kon de stand van deze map niet lezen.")?;
+    .ok_or(tr("Git kon de stand van deze map niet lezen.", "Git could not read the state of this folder."))?;
     let tokens = repository.as_ref().map(|r| crate::workspace::github_tokens(&app, &r.display_name())).unwrap_or_default();
     let mut pull_request = None;
     if let (Some(repo), Some(branch)) = (&repository, &state.branch) {
@@ -513,11 +515,11 @@ pub async fn workspace_commit_all(state: State<'_, WorkspaceState>, run: String,
     let run = id(&run)?;
     let m = state.manager.clone();
     blocking(move || {
-        let r = m.run(run).ok_or("Deze sessie bestaat niet meer.")?;
+        let r = m.run(run).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
         if r.status.is_active() {
-            return Err("Kan niet terwijl de agent werkt.".to_string());
+            return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").to_string());
         }
-        let git = m.git().ok_or("Git is niet gevonden.")?;
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let sha = git.commit_all(&r.working_directory, subject.trim(), &body).map_err(|e| e.0)?;
         m.note(run, &format!("Commit {sha}: {}", subject.trim()));
         m.mark_reviewed(run);
@@ -542,12 +544,13 @@ pub async fn workspace_pull_request_draft(state: State<'_, WorkspaceState>, run:
     let run = id(&run)?;
     let m = state.manager.clone();
     blocking(move || {
-        let r = m.run(run).ok_or("Deze sessie bestaat niet meer.")?;
-        let git = m.git().ok_or("Git is niet gevonden.")?;
-        let head = git.current_branch(&r.working_directory).ok_or("Er is geen branch uitgecheckt.")?;
+        let r = m.run(run).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let head = git.current_branch(&r.working_directory).ok_or(tr("Er is geen branch uitgecheckt.", "No branch is checked out."))?;
         let root = r.repo_root.clone().unwrap_or_else(|| r.working_directory.clone());
         let body = source_control::pull_request_template(&root)
-            .unwrap_or_else(|| format!("Gemaakt met een agent in Nook.\n\nOpdracht:\n{}", r.task.trim()));
+            // Pull request text goes to GitHub, so it is always English.
+            .unwrap_or_else(|| format!("Made with an agent in Nook.\n\nTask:\n{}", r.task.trim()));
         Ok::<_, String>(PullRequestDraft { title: r.title.clone(), body, head, base })
     })
     .await?
@@ -576,7 +579,7 @@ pub async fn workspace_create_pull_request(
     let run = id(&run)?;
     let ws = app.state::<WorkspaceState>();
     let m = ws.manager.clone();
-    let r = m.run(run).ok_or("Deze sessie bestaat niet meer.")?;
+    let r = m.run(run).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
     let dir = r.working_directory.clone();
     let m2 = m.clone();
     let repository = blocking(move || {
@@ -586,30 +589,42 @@ pub async fn workspace_create_pull_request(
         git.remote_url(&dir, &remote).and_then(|u| RemoteRepository::detect(&u))
     })
     .await?
-    .ok_or("Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.")?;
+    .ok_or(tr(
+        "Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.",
+        "This repository has no remote Nook recognizes. Push the branch and open the pull request on your own host.",
+    ))?;
     let tokens = crate::workspace::github_tokens(&app, &repository.display_name());
     if repository.host == SourceControlHost::Github && !tokens.is_empty() {
         let url =
             source_control::create_github_pull_request(&tokens, &repository.display_name(), &title, &body, &head, &base, draft).await?;
-        m.note(run, &format!("Pull request geopend: {url}"));
+        m.note(run, &trf("Pull request geopend: {url}", "Pull request opened: {url}", &[("url", &url)]));
         return Ok(PullRequestResult { url, created: true });
     }
-    let url = repository
-        .new_pull_request_url(&base, &head, Some(&title), Some(&body), draft)
-        .ok_or("Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.")?;
-    m.note(run, &format!("{head} gepusht; {} geopend om de pull request af te maken", repository.host.name()));
+    let url = repository.new_pull_request_url(&base, &head, Some(&title), Some(&body), draft).ok_or(tr(
+        "Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.",
+        "This repository has no remote Nook recognizes. Push the branch and open the pull request on your own host.",
+    ))?;
+    m.note(
+        run,
+        &trf(
+            "{head} gepusht; {host} geopend om de pull request af te maken",
+            "Pushed {head}; opened {host} to finish the pull request",
+            &[("head", &head), ("host", &repository.host.name())],
+        ),
+    );
     Ok(PullRequestResult { url, created: false })
 }
 
 // MARK: Verdergaan in Nook
 
 fn nook_provider(kind: AgentKind) -> Res<RunProvider> {
-    match kind {
-        AgentKind::Claude => Ok(RunProvider::Claude),
-        AgentKind::Codex => Ok(RunProvider::Codex),
-        AgentKind::Gemini => Ok(RunProvider::Gemini),
-        other => Err(format!("Nook kan {} nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.", other.name())),
-    }
+    RunProvider::continues(kind).ok_or_else(|| {
+        trf(
+            "Nook kan {agent} nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.",
+            "Nook can't drive {agent} itself yet. It can drive Claude Code, Codex and Gemini CLI.",
+            &[("agent", &kind.name())],
+        )
+    })
 }
 
 /// Het gesprek tot nu toe voor een sessie die Nook overneemt: het hele transcript met het denken van de agent, of, als
@@ -644,6 +659,11 @@ fn earlier_conversation(path: &str, prompt: &str, reply: &str) -> Vec<(EventKind
 /// dat expliciet kiest, eerst het oorspronkelijke proces beëindigen en hetzelfde gesprek hier voortzetten.
 #[tauri::command]
 pub async fn workspace_continue_live(app: AppHandle, session_id: String, message: Option<String>, ending_terminal: bool) -> Res<String> {
+    continue_live(&app, &session_id, message, ending_terminal).await
+}
+
+/// The work of `workspace_continue_live`, also for a message from the phone to a terminal session (`companion`).
+pub async fn continue_live(app: &AppHandle, session_id: &str, message: Option<String>, ending_terminal: bool) -> Res<String> {
     let agents_state = app.state::<AgentsState>();
     let session = agents_state
         .hub
@@ -651,8 +671,10 @@ pub async fn workspace_continue_live(app: AppHandle, session_id: String, message
         .into_iter()
         .chain(agents_state.hub.detected())
         .find(|s| s.id == session_id)
-        .ok_or("Deze sessie bestaat niet meer.")?;
-    let kind = AgentKind::from_agent_name(&session.name).ok_or_else(|| format!("Nook kan {} nog niet zelf aansturen.", session.name))?;
+        .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+    let kind = AgentKind::from_agent_name(&session.name).ok_or_else(|| {
+        trf("Nook kan {agent} nog niet zelf aansturen.", "Nook can't drive {agent} itself yet.", &[("agent", &session.name)])
+    })?;
     let provider = nook_provider(kind)?;
     let history = lock(&agents_state.last_history).clone();
     let conversation = if !session.session_id.is_empty() {
@@ -663,14 +685,23 @@ pub async fn workspace_continue_live(app: AppHandle, session_id: String, message
             .iter()
             .find(|p| p.agent == kind && !session.transcript_path.is_empty() && p.path == session.transcript_path)
             .map(|p| p.session_id.clone())
-            .ok_or("Ik vind het gesprek van deze sessie niet, dus ik kan hem niet voortzetten.")?
+            .ok_or(tr(
+                "Ik vind het gesprek van deze sessie niet, dus ik kan hem niet voortzetten.",
+                "I can't find this session's conversation, so I can't continue it.",
+            ))?
     };
     let busy = !session.is_detected() && matches!(session.status, AgentStatus::Running | AgentStatus::Waiting);
     let mut fork = false;
     if ending_terminal {
-        let pid = agents_state.hub.process_id(&session.id).ok_or_else(|| format!("Ik vind het proces van {} niet meer.", session.name))?;
+        let pid = agents_state.hub.process_id(&session.id).ok_or_else(|| {
+            trf("Ik vind het proces van {agent} niet meer.", "I can no longer find the process of {agent}.", &[("agent", &session.name)])
+        })?;
         if !scanner::terminate(pid) {
-            return Err(format!("Ik kon {} niet beëindigen. Draait hij nog?", session.name));
+            return Err(trf(
+                "Ik kon {agent} niet beëindigen. Draait hij nog?",
+                "I could not end {agent}. Is it still running?",
+                &[("agent", &session.name)],
+            ));
         }
         agents_state.hub.forget(&session.id);
         // De agent even de tijd geven om het laatste van zijn gesprek weg te schrijven.
@@ -678,9 +709,10 @@ pub async fn workspace_continue_live(app: AppHandle, session_id: String, message
     } else if busy || session.is_detected() {
         // Twee processen mogen niet in één gesprek schrijven: ga verder in een kopie.
         if provider != RunProvider::Claude {
-            return Err(format!(
-                "{} draait nog in een terminal. Kies Neem over in Nook (dat sluit de terminal af), of wacht tot hij klaar is.",
-                session.name
+            return Err(trf(
+                "{agent} draait nog in een terminal. Kies Neem over in Nook (dat sluit de terminal af), of wacht tot hij klaar is.",
+                "{agent} is still running in a terminal. Choose Take over in Nook (that closes the terminal), or wait until it is done.",
+                &[("agent", &session.name)],
             ));
         }
         fork = true;
@@ -709,14 +741,27 @@ pub async fn workspace_continue_live(app: AppHandle, session_id: String, message
 #[tauri::command]
 pub async fn workspace_continue_past(app: AppHandle, key: String, message: Option<String>) -> Res<String> {
     let agents_state = app.state::<AgentsState>();
-    let past = lock(&agents_state.last_history).sessions.iter().find(|p| p.id() == key).cloned().ok_or("Deze sessie bestaat niet meer.")?;
+    let past = lock(&agents_state.last_history)
+        .sessions
+        .iter()
+        .find(|p| p.id() == key)
+        .cloned()
+        .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
     let provider = nook_provider(past.agent)?;
     let folder = past.resume_folder();
     if folder.is_empty() {
-        return Err("Deze sessie heeft geen map, dus Nook kan hem niet voortzetten.".into());
+        return Err(tr(
+            "Deze sessie heeft geen map, dus Nook kan hem niet voortzetten.",
+            "This session has no folder, so Nook can't continue it.",
+        )
+        .into());
     }
     if !std::path::Path::new(&folder).is_dir() {
-        return Err(format!("De map van deze sessie bestaat niet meer: {folder}"));
+        return Err(trf(
+            "De map van deze sessie bestaat niet meer: {folder}",
+            "This session's folder no longer exists: {folder}",
+            &[("folder", &folder)],
+        ));
     }
     let profile = {
         let profiles = lock(&agents_state.profiles);

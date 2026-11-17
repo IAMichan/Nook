@@ -246,6 +246,14 @@ struct ChatBubbleView: View {
                 || $0.value == 0x200D || $0.value == 0xFE0F }
     }
 
+    /// "0:42" or "1:05:10": how long a voice message lasts; nil when its app did not say.
+    static func length(_ seconds: Double?) -> String? {
+        guard let seconds, seconds.isFinite, seconds >= 1 else { return nil }
+        let total = Int(seconds.rounded())
+        let hours = total / 3600, minutes = total / 60 % 60, rest = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+
     var body: some View {
         if line.notice == true {
             // Someone came in or left, or the group changed: a centred line, as on the Mac (`ChatMembershipLine`).
@@ -319,10 +327,17 @@ struct ChatBubbleView: View {
                     InboxPollView(poll: poll, onVote: onVote)
                         .padding(.vertical, Theme.Spacing.xxs)
                 } else if let attachment = line.attachment {
-                    Label(attachment, systemImage: line.media == "audio" ? "waveform" : "paperclip")
-                        .font(Theme.TextStyle.label)
-                        .foregroundStyle(Theme.textStrong)
-                        .padding(.vertical, Theme.Spacing.xxs)
+                    // A voice or audio message reads with its length, as on the Mac; any other file by its name.
+                    let audio = line.media == "audio" || line.media == "voice"
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Label(attachment, systemImage: audio ? "waveform" : "paperclip")
+                        if audio, let length = Self.length(line.seconds) {
+                            Text(verbatim: length).monospacedDigit().foregroundStyle(Theme.textTertiary)
+                        }
+                    }
+                    .font(Theme.TextStyle.label)
+                    .foregroundStyle(Theme.textStrong)
+                    .padding(.vertical, Theme.Spacing.xxs)
                 }
                 // The time sits after the last line, at the bubble's right, as chat apps place it.
                 HStack(alignment: .lastTextBaseline, spacing: Theme.Spacing.md) {

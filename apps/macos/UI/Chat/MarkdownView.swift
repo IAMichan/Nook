@@ -423,6 +423,8 @@ struct MarkdownView: View, Equatable {
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
+        case .mail(let mail):
+            MailTemplateCard(template: mail)
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size).equatable()
         case .rule:

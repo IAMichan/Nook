@@ -51,7 +51,7 @@ extension GitHubConnector {
                 summarize: { input in
                     "GitHub: issue in \((input["repo"] as? String) ?? "?") · \(CloudHelp.short((input["title"] as? String) ?? "", 60))"
                 },
-                tag: { _ in ("Create", .caution) },
+                tag: { _ in (tr("plan.tag.create"), .caution) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -98,7 +98,7 @@ extension GitHubConnector {
                     if let labels = GitHubPR.text(input, "labels") { parts.append("labels \(labels)") }
                     return "GitHub: \(GitHubPR.ref(input)) " + (parts.isEmpty ? "update" : parts.joined(separator: ", "))
                 },
-                tag: { input in GitHubPR.text(input, "state") == "closed" ? ("Close", .caution) : ("Update", .caution) },
+                tag: { input in GitHubPR.text(input, "state") == "closed" ? (tr("plan.tag.close"), .caution) : (tr("plan.tag.update"), .caution) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)

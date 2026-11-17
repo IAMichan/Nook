@@ -389,6 +389,9 @@ final class BrainService {
         let selection = settings.selection
         // Whatever a tool reads on the way is filtered like the context (only when the brain is not on this Mac).
         runner.shield = { [settings] in settings.shielded($0) }
+        runner.onRetry = { attempt, error in
+            Log.brain.info("brain round failed, try \(attempt + 1, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
         if selection.runtime == .mlx, selection.model == AppleModel.id {
             return try await AppleIntelligence.run(system: system, prompt: fittedHistory + prompt, profile: profile, runner: runner, onText: onText)
         }
@@ -866,17 +869,20 @@ final class BrainService {
     }
 
     private static func networkError(_ error: URLError) -> NookError {
+        // `.network`: the round is asked again (`BrainRetry`) before this reaches the user.
         switch error.code {
         case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
-            return NookError("No internet connection. Check your network and try again.")
+            return NookError("No internet connection. Check your network and try again.", kind: .network)
         case .timedOut:
-            return NookError("The brain did not respond in time. Please try again shortly.")
+            return NookError("The brain did not respond in time. Please try again shortly.", kind: .network)
         case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-            return NookError("Cannot reach api.anthropic.com. Is there a firewall, VPN, or proxy active?")
+            return NookError("Cannot reach api.anthropic.com. Is there a firewall, VPN, or proxy active?", kind: .network)
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot:
-            return NookError("Secure connection to Anthropic failed (\(error.localizedDescription)). A VPN or network filter might be interfering.")
-        default:
+            return NookError("Secure connection to Anthropic failed (\(error.localizedDescription)). A VPN or network filter might be interfering.", kind: .config)
+        case .cancelled:
             return NookError("Network error: \(error.localizedDescription)")
+        default:
+            return NookError("Network error: \(error.localizedDescription)", kind: .network)
         }
     }
 
@@ -885,19 +891,20 @@ final class BrainService {
         switch status {
         case 400:
             if message.localizedCaseInsensitiveContains("credit") {
-                return NookError("Your Anthropic balance is depleted. Add credits at console.anthropic.com › Plans & Billing.")
+                return NookError("Your Anthropic balance is depleted. Add credits at console.anthropic.com › Plans & Billing.", kind: .config)
             }
             return NookError("Anthropic rejected the request: \(message)")
         case 401:
-            return NookError("The API key was rejected. Generate a new key at console.anthropic.com and paste it in Settings.")
+            return NookError("The API key was rejected. Generate a new key at console.anthropic.com and paste it in Settings.", kind: .auth)
         case 403:
-            return NookError("This key does not have access to this model or feature: \(message)")
+            return NookError("This key does not have access to this model or feature: \(message)", kind: .auth)
         case 404:
-            return NookError("The model \(settings.model) does not exist or is unavailable for your key. Choose a different model in Settings.")
+            return NookError("The model \(settings.model) does not exist or is unavailable for your key. Choose a different model in Settings.", kind: .config)
         case 429:
-            return NookError("Too many requests or rate limit reached. Please wait a moment and try again.")
+            return NookError("Too many requests or rate limit reached. Please wait a moment and try again.", kind: .rateLimited)
         case 500...599:
-            return NookError("Anthropic is currently experiencing issues (\(status)). Please try again shortly.")
+            // 529 (overloaded) included: it passes within seconds.
+            return NookError("Anthropic is currently experiencing issues (\(status)). Please try again shortly.", kind: .network)
         default:
             return NookError("The brain returned an error (\(status)): \(message)")
         }
@@ -905,17 +912,19 @@ final class BrainService {
 
     private func send(_ body: [String: Any], key: String) async throws -> [String: Any] {
         let request = try self.request(body, key: key)
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch let error as URLError {
-            throw Self.networkError(error)
+        return try await BrainRetry.run {
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch let error as URLError {
+                throw Self.networkError(error)
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            guard (200..<300).contains(status) else { throw apiError(status: status, object: object) }
+            return object
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard (200..<300).contains(status) else { throw apiError(status: status, object: object) }
-        return object
     }
 
     /// Streams the response (server-sent events): `onText` receives the cumulative text so far, so you
@@ -944,6 +953,8 @@ final class BrainService {
         /// the text so far. Written into `blocks` once the stream ends.
         var streamed: [Int: (text: String, thinking: String)] = [:]
         var lastEmit = Date.distantPast
+        /// Whether the stream ended the way the API ends one. A connection that closes before that left a cut-off answer.
+        var stopped = false
 
         func currentText() -> String {
             blocks.keys.sorted().compactMap { index -> String? in
@@ -961,6 +972,8 @@ final class BrainService {
                 switch type {
                 case "message_start":
                     message = (event["message"] as? [String: Any]) ?? [:]
+                case "message_stop":
+                    stopped = true
                 case "content_block_start":
                     guard let index = event["index"] as? Int, var block = event["content_block"] as? [String: Any] else { continue }
                     let kind = block["type"] as? String
@@ -1017,6 +1030,10 @@ final class BrainService {
             }
         } catch let error as URLError {
             throw Self.networkError(error)
+        }
+        // Cut off halfway: a transient failure, so the round is asked again instead of ending on half a sentence.
+        guard stopped || message["stop_reason"] is String else {
+            throw NookError("The connection to Anthropic was lost before the answer was complete. Please try again.", kind: .network)
         }
         onText(currentText())
         for (index, parts) in streamed {

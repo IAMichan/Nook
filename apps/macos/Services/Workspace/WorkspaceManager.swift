@@ -640,6 +640,16 @@ final class WorkspaceManager: ObservableObject {
         return runs.filter { $0.id != id && $0.status.isActive && WorkspacePathPolicy.normalize($0.workingDirectory) == target }
     }
 
+    /// True when any session (active, idle, or archived) uses `directory` as its working directory or project path.
+    func usesFolder(_ directory: String) -> Bool {
+        let target = WorkspacePathPolicy.normalize(directory)
+        guard !target.isEmpty else { return false }
+        return runs.contains {
+            WorkspacePathPolicy.normalize($0.workingDirectory) == target
+                || WorkspacePathPolicy.normalize($0.projectPath) == target
+        }
+    }
+
     // MARK: Turns
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
@@ -755,6 +765,10 @@ final class WorkspaceManager: ObservableObject {
             return true
         }
         // A folder on another machine cannot be checked from here; ssh and the agent there report what is wrong.
+        // A scratch folder of Nook's own that went missing comes back as an empty folder so the session can go on.
+        if !run.isRemote, WorkspacePathPolicy.verdict(for: run.workingDirectory) == .missing {
+            ScratchProjects.recreateIfMissing(run.workingDirectory)
+        }
         guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
@@ -1001,7 +1015,14 @@ final class WorkspaceManager: ObservableObject {
         var cleared = false
         if !busy {
             if fresh { cleared = clearConversation(id, quietly: true) }
-            if !fresh || cleared, send(id, text: text, shown: false, origin: origin) { return true }
+            if !fresh || cleared {
+                if send(id, text: text, shown: false, origin: origin) { return true }
+                // `send` just failed synchronously (e.g. missing folder or no executable): keep the message in a held
+                // queue rather than calling `sendQueued`, which would try `send` a second time and drop it.
+                enqueue(id, text: text, origin: origin)
+                holdQueue(id)
+                return false
+            }
         }
         enqueue(id, text: text, fresh: fresh && !cleared, origin: origin)
         sendQueued(id)
@@ -1304,8 +1325,11 @@ final class WorkspaceManager: ObservableObject {
         guard !quitting, let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
               (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
               let executable = launchExecutable(run),
-              run.provider.capabilities.rollback != .resumeAt || run.pendingRollback == nil,
-              run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
+              run.provider.capabilities.rollback != .resumeAt || run.pendingRollback == nil else { return }
+        if !run.isRemote, WorkspacePathPolicy.verdict(for: run.workingDirectory) == .missing {
+            ScratchProjects.recreateIfMissing(run.workingDirectory)
+        }
+        guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
         // What stays open between turns (`ProviderCapabilities.idleConnection`): Claude Code waits on stdin, Codex has its
         // thread open, an ACP agent its session. Pi runs a process per turn; Antigravity is not opened ahead of time.
         turnDriver(for: run, executable: executable).prewarm(id, run: run, executable: executable)
