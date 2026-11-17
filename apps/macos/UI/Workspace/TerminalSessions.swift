@@ -544,7 +544,6 @@ private struct TerminalRow: View {
                 if let owner = session.owner {
                     // Started by an agent: its mark, so you can tell its processes from your own shells.
                     AgentMark(agent: owner.agent, account: nil, size: 11, dimmed: !session.running, ring: .clear)
-                        .nookTip(tr("bridge.terminalBy", owner.agent))
                         .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
                 }
                 Text(session.title)
@@ -583,7 +582,6 @@ private struct TerminalRow: View {
             Divider()
             Button(tr("workbench.terminal.close"), role: .destructive, action: close)
         }
-        .nookTip(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
     }
 }
 
@@ -739,9 +737,8 @@ struct SessionTerminalBar: View {
             Text(AgentPathFormat.tilde(directory))
                 .font(NookTheme.mono(11))
                 .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
                 .truncationMode(.middle)
-                .nookTip(directory)
+                .nookTipWhenCut(directory)
             Spacer(minLength: NookTheme.Spacing.md)
             SessionTerminalActions(directory: directory).id(directory)
         }

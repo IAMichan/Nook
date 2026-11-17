@@ -282,7 +282,8 @@ struct SelectionBar: View {
             }
         }
         .disabled(!usable)
-        .nookTip(tooltip(action, usable: usable))
+        // A labeled button says its name already: its tip only adds why rows are left out.
+        .nookTip(tooltip(action, usable: usable), enabled: !labeled || tooltip(action, usable: usable) != action.label)
         .accessibilityLabel(action.label)
     }
 

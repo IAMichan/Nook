@@ -9,17 +9,17 @@
     type ClientView, type InboxChatDigest, type ReadState,
   } from "../../lib/companion";
   import { act, chatMenu, type ChatConfirm } from "./chat-actions";
-  import Dialog from "./ui/Dialog.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
-  import SearchField from "./ui/SearchField.svelte";
+  import SearchField from "../../components/ui/SearchField.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
   import TicksMark from "./ui/TicksMark.svelte";
-  import EmptyState from "./ui/EmptyState.svelte";
-  import Banner from "./ui/Banner.svelte";
-  import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import EmptyState from "../../components/ui/EmptyState.svelte";
+  import Banner from "../../components/ui/Banner.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
   import { fetchPictures } from "../../lib/avatars.svelte";
 
   let { view, inbox, message, onorb, oncomputers, ongear, onopen, took, onrefresh }: {

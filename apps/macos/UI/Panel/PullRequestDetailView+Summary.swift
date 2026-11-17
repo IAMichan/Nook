@@ -354,14 +354,13 @@ extension PullRequestDetailView {
                         Text(issue.title)
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textStrong)
-                            .lineLimit(1)
                             .truncationMode(.tail)
+                            .nookTipWhenCut(issue.title)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
                 .disabled(issue.url == nil)
-                .nookTip(issue.title)
             }
         }
     }

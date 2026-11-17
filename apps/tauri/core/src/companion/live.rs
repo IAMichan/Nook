@@ -50,6 +50,8 @@ pub struct Peer {
     pub watch_conversation: Option<String>,
     pub sent_messages: Option<Vec<Value>>,
     pub sent_conversations: Option<Value>,
+    /// What the phone may do (`scopes`): every update is redacted by it. Changing them ends the connection.
+    pub scopes: super::scopes::Scopes,
 }
 
 impl Peer {
@@ -70,6 +72,7 @@ impl Peer {
             compression: false,
             foreground: false,
             last_heard: Instant::now(),
+            scopes: super::scopes::all(),
             sent_sessions: None,
             watch: None,
             sent_timeline: Vec::new(),

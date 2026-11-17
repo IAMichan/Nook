@@ -2,7 +2,7 @@
   // A pushed screen's bar (the iPhone's navigation bar): back on the left, a title in the middle, buttons on the right.
   import type { Snippet } from "svelte";
   import { tr } from "../../../lib/i18n.svelte";
-  import Ico from "./Ico.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   let { onback, center, trailing, tint }: { onback: () => void; center: Snippet; trailing?: Snippet; tint?: string } = $props();
 </script>
 

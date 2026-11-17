@@ -365,9 +365,8 @@ private struct StackedDiffHeader: View {
             Text(file.path)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
-                .lineLimit(1)
                 .truncationMode(.head)
-                .nookTip(file.previousPath.map { "\($0) → \(file.path)" } ?? file.path)
+                .nookTipWhenCut(file.previousPath.map { "\($0) → \(file.path)" } ?? file.path)
             if let previous = file.previousPath {
                 Text("← " + (previous as NSString).lastPathComponent)
                     .font(NookTheme.TextStyle.caption)
@@ -548,8 +547,8 @@ private struct StackedDiffTreeRow: View {
                 Text(row.name)
                     .font(NookTheme.mono(11))
                     .foregroundStyle(row.isDirectory ? NookTheme.textTertiary : tint)
-                    .lineLimit(1)
                     .truncationMode(.middle)
+                    .nookTipWhenCut(row.path)
                 Spacer(minLength: 0)
             }
             .padding(.leading, NookTheme.Spacing.xs + CGFloat(row.depth) * 12)
@@ -559,6 +558,5 @@ private struct StackedDiffTreeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(row.path)
     }
 }

@@ -76,11 +76,9 @@ struct KeybindingsSettingsSection: View {
                         Button(tr("button.cancel")) { stopRecording() }
                     } else {
                         Button(tr("keys.record")) { beginRecording(command) }
-                            .nookTip(tr("keys.record.help"))
                     }
                     if customized && recording != command {
                         Button(tr("keys.reset")) { reset(command) }
-                            .nookTip(tr("keys.reset.help"))
                     }
                 }
                 .controlSize(.small)

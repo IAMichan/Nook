@@ -138,7 +138,6 @@ private struct MusicSidebarPlaylistRow: View {
         }
         .buttonStyle(.nookPlain)
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(tr("music.playlists.open", playlist.name))
         .contextMenu {
             Button(tr("music.play")) { service.play(playlist, shuffled: false) }
             Button(tr("music.playlists.shuffle")) { service.play(playlist, shuffled: true) }

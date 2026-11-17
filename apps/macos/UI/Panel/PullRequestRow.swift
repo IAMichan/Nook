@@ -30,8 +30,6 @@ struct PullRequestRow: View, Equatable {
     var selected = false
     /// Where it stands in a stack of pull requests built on each other, if it is in one.
     var stack: (index: Int, count: Int, merged: Int)? = nil
-    /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
-    var now = Date()
     /// In a session's own list: what the row adds there, and its ⋯ menu's actions.
     var linked: PullRequestRowLink? = nil
     var onWatch: (() -> Void)? = nil
@@ -46,7 +44,7 @@ struct PullRequestRow: View, Equatable {
         lhs.item == rhs.item && lhs.role == rhs.role && lhs.showRepo == rhs.showRepo && lhs.accountID == rhs.accountID
             && lhs.selected == rhs.selected && lhs.stack?.index == rhs.stack?.index && lhs.stack?.count == rhs.stack?.count
             && lhs.stack?.merged == rhs.stack?.merged
-            && lhs.now == rhs.now && lhs.linked == rhs.linked && lhs.readable == rhs.readable
+            && lhs.linked == rhs.linked && lhs.readable == rhs.readable
     }
 
     var body: some View {
@@ -83,7 +81,6 @@ struct PullRequestRow: View, Equatable {
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { PullRequestDetailModel.prefetch(accountID: accountID, item: item) }
         }
-        .nookTip(tr(readable ? "agents.pulls.viewOrSelect" : "agents.pulls.view"))
         .accessibilityAddTraits(selected ? .isSelected : [])
         // Into a composer, or anywhere else that takes a link.
         .onDrag { NSItemProvider(object: (item.url?.absoluteString ?? "#\(item.number)") as NSString) }
@@ -143,8 +140,7 @@ struct PullRequestRow: View, Equatable {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .nookTip(item.title)
+                        .nookTipWhenCut(item.title)
                     if linked?.watching == true, item.state == .open {
                         Image(icon: "eye")
                             .font(NookTheme.font(10, .medium))
@@ -163,21 +159,15 @@ struct PullRequestRow: View, Equatable {
                     Text(verbatim: "#\(item.number)")
                         .monospacedDigit()
                         .fixedSize()
-                        .nookTip(linked?.source ?? "")
                     if !item.author.isEmpty {
                         dot
                         HStack(spacing: NookTheme.Spacing.xs) {
                             GitHubAvatar(login: item.author, size: 14)
                             Text(item.author).lineLimit(1)
                         }
-                        .nookTip("@" + item.author)
                     }
                     if let opened = item.created ?? item.updated {
-                        Text(Self.opened(now.timeIntervalSince(opened)))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .fixedSize()
-                            .nookTip(opened.formatted(date: .abbreviated, time: .shortened))
+                        PullRequestOpenedTime(date: opened)
                     }
                     if let role = Self.roleKey(item.authorRole) {
                         NookTag(tr(role)).fixedSize()
@@ -185,9 +175,8 @@ struct PullRequestRow: View, Equatable {
                     if showRepo {
                         dot
                         Text(item.repo)
-                            .lineLimit(1)
                             .truncationMode(.middle)
-                            .nookTip(item.repo)
+                            .nookTipWhenCut(item.repo)
                             .layoutPriority(-1)
                     }
                     if let linked, linked.stackSize > 1 {
@@ -197,7 +186,6 @@ struct PullRequestRow: View, Equatable {
                             Text(verbatim: "\(linked.stackSize)").monospacedDigit()
                         }
                         .fixedSize()
-                        .nookTip(tr("agents.pr.linked.stack", linked.stackSize))
                     }
                     if let stack, linked == nil {
                         dot
@@ -210,8 +198,6 @@ struct PullRequestRow: View, Equatable {
                             }
                         }
                         .fixedSize()
-                        .nookTip(stack.merged > 0 ? tr("agents.pulls.stack.positionMerged", stack.index, stack.count, stack.merged)
-                            : tr("agents.pulls.stack.position", stack.index, stack.count))
                     }
                     if item.draft, item.state == .open {
                         dot
@@ -296,7 +282,6 @@ struct PullRequestRow: View, Equatable {
                 Text(tr(Self.reviewKey(review))).lineLimit(1)
             }
             .fixedSize()
-            .nookTip(tr(Self.reviewKey(review)))
         }
     }
 
@@ -312,8 +297,6 @@ struct PullRequestRow: View, Equatable {
                 }
             }
             .fixedSize()
-            .nookTip(item.checksTotal.map { tr("agents.pulls.row.checks", item.checksPassed ?? 0, $0) }
-                ?? tr("agents.pulls.status." + outcome.rawValue))
         }
     }
 
@@ -328,12 +311,11 @@ struct PullRequestRow: View, Equatable {
     private var branches: some View {
         if !item.headBranch.isEmpty, !item.baseBranch.isEmpty {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Text(item.headBranch).lineLimit(1).truncationMode(.middle)
+                Text(item.headBranch).truncationMode(.middle).nookTipWhenCut(item.headBranch)
                 Text(verbatim: "→").layoutPriority(1)
-                Text(item.baseBranch).lineLimit(1).truncationMode(.middle)
+                Text(item.baseBranch).truncationMode(.middle).nookTipWhenCut(item.baseBranch)
             }
             .font(NookTheme.mono(10.5))
-            .nookTip(item.headBranch + " → " + item.baseBranch)
         }
     }
 
@@ -466,6 +448,20 @@ struct PullRequestLineCounts: View {
         .monospacedDigit()
         .lineLimit(1)
         .fixedSize()
-        .nookTip(tr("agents.pulls.linesChanged", additions, deletions))
+    }
+}
+
+/// "opened 6m ago" on a pull request's row, moving on with the clock. Its own tick, so only this text redraws every
+/// half minute, not the list and every row in it.
+struct PullRequestOpenedTime: View {
+    let date: Date
+
+    var body: some View {
+        TimelineView(.nookTicks(every: 30)) { context in
+            Text(PullRequestRow.opened(context.date.timeIntervalSince(date)))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 }

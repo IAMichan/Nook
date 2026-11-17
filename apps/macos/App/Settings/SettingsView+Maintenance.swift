@@ -102,7 +102,6 @@ extension SettingsView {
         LabeledContent(title) {
             Button(tr("settings.about.open")) { NSWorkspace.shared.open(url) }
                 .controlSize(.small)
-                .nookTip(url.absoluteString)
         }
     }
 }

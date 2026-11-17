@@ -86,10 +86,9 @@ extension SettingsView {
                     Text(tr(mode.titleKey)).tag(mode)
                 }
             } label: {
-                SettingText("settings.energy.mode")
+                SettingInfoLabel(info: tr("settings.energy.modeDetail")) { SettingText("settings.energy.mode") }
             }
             .pickerStyle(.segmented)
-            .nookTip(tr("settings.energy.modeDetail"))
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: NookTheme.Spacing.sm) {

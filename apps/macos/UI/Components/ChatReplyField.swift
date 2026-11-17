@@ -17,8 +17,6 @@ struct ChatReplyField: View {
     /// The button for what is typed: its symbol ("arrow.up", "doc.on.doc") and what it does ("Send", "Copy for Telegram").
     let sendSymbol: String
     let sendLabel: String
-    /// What the status line says once Nook's message is in the field.
-    let readyNotice: String
     /// The message the host is sending, or has just sent: a panel above the field shows it, and the field waits.
     var outgoing: ChatSending? = nil
     /// Who the message goes to, named in that panel ("Sending to Arjan…"); nil says "Sending…".
@@ -91,7 +89,7 @@ struct ChatReplyField: View {
     private var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
-         sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
+         sendSymbol: String, sendLabel: String, outgoing: ChatSending? = nil, recipient: String? = nil,
          quote: BubbleQuote? = nil, cancelQuote: @escaping () -> Void = {}, onEscape: (() -> Void)? = nil,
          draft: @escaping Writer, send: @escaping () -> Void) {
         _text = text
@@ -100,7 +98,6 @@ struct ChatReplyField: View {
         self.placeholder = placeholder
         self.sendSymbol = sendSymbol
         self.sendLabel = sendLabel
-        self.readyNotice = readyNotice
         self.outgoing = outgoing
         self.recipient = recipient
         self.quote = quote
@@ -240,7 +237,7 @@ struct ChatReplyField: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
-                           edited: !asksNook && (drafted.map { $0 != text } ?? false), readyNotice: readyNotice,
+                           edited: !asksNook && (drafted.map { $0 != text } ?? false),
                            steering: steering && !drafting ? steered : nil,
                            request: request.flatMap { ChatDraft.instruction(in: $0) }, lookups: lookups,
                            version: version, versions: versions.count, showVersion: showVersion,
@@ -820,8 +817,6 @@ private struct DraftPanel: View {
     let rewriting: Bool
     /// You changed Nook's message in the field.
     let edited: Bool
-    /// What sending the draft does ("Read it…; ↩ copies it and opens Telegram"): the panel's tooltip.
-    let readyNotice: String
     /// "@nook …" typed over the draft: the draft it will change, shown here as it is no longer in the field.
     let steering: String?
     /// What you asked after "@nook" ("" for a fitting answer); nil when not known.
@@ -878,7 +873,6 @@ private struct DraftPanel: View {
             }
         }
         .cardBackground(NookTheme.composerTray, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
-        .nookTip(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
         .animation(NookTheme.reveal, value: steering)
@@ -1312,7 +1306,7 @@ private struct DraftChip: View {
                 }
                 Text(title)
                     .font(NookTheme.TextStyle.caption)
-                    .lineLimit(1)
+                    .nookTipWhenCut(title)
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
             .padding(.horizontal, NookTheme.Spacing.sm)
@@ -1326,7 +1320,6 @@ private struct DraftChip: View {
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(title)
     }
 }
 

@@ -85,6 +85,8 @@ export interface CompanionInfo {
   computerName: string;
   hosts: string[];
   devices: PairedDeviceView[];
+  /** What the phone that pairs next may do, chosen before the code is shown. */
+  pendingScopes: CompanionScope[];
   pairing: { url: string; qrSvg: string; host: string; until: string } | null;
   push: {
     settings: PushSettings;
@@ -116,6 +118,17 @@ export interface PairedDeviceView {
   appVersion: string | null;
   outdated: boolean;
   behind: boolean;
+  /** What it may do (`CompanionScope` names). */
+  scopes: CompanionScope[];
+}
+
+/** What a paired phone may do (`CompanionScope`), in the Mac's order. */
+export const COMPANION_SCOPES = ["read", "approve", "operate", "chats", "music", "nookChat"] as const;
+export type CompanionScope = (typeof COMPANION_SCOPES)[number];
+
+/** `scopes` with `scope` switched on or off, in the Mac's order. */
+export function withScope(scopes: readonly CompanionScope[], scope: CompanionScope, on: boolean): CompanionScope[] {
+  return COMPANION_SCOPES.filter((s) => (s === scope ? on : scopes.includes(s)));
 }
 
 export type RelayStatus =
@@ -175,6 +188,8 @@ export const companion = {
   beginPairing: (host?: string) => invoke<CompanionInfo>("companion_begin_pairing", { host }),
   cancelPairing: () => invoke<CompanionInfo>("companion_cancel_pairing"),
   removeDevice: (id: string) => invoke<CompanionInfo>("companion_remove_device", { id }),
+  /** What a paired phone may do (`device`), or the phone that pairs next (`device` null). */
+  setScopes: (device: string | null, scopes: CompanionScope[]) => invoke<CompanionInfo>("companion_set_scopes", { device, scopes }),
   setPush: (settings: PushSettings) => invoke<CompanionInfo>("companion_set_push", { settings }),
   setPushRoute: (route: PushRoute) => invoke<CompanionInfo>("companion_set_push_route", { route }),
   setApns: (keyId: string, teamId: string, pem?: string) => invoke<CompanionInfo>("companion_set_apns", { keyId, teamId, pem }),

@@ -748,7 +748,6 @@ struct ComposerUsageRing: View, Equatable {
         }
         .buttonStyle(.nookPlain)
         .fixedSize()
-        .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: limits, account: account, profileID: profileID, open: $open) }
     }

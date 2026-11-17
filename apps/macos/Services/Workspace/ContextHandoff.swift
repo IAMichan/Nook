@@ -277,6 +277,15 @@ enum ProviderInstance {
 }
 
 /// What changing the agent, account or model of a running session means.
+/// Another agent or account picked while a turn ran, carried out once the turn has stopped (`switchAfterStop`).
+struct PendingSwitch: Equatable, Sendable {
+    let provider: RunProvider
+    let profileID: String
+    let model: String
+    /// The turn was stopped for it: the session goes on where it stopped on the new agent or account.
+    let resume: Bool
+}
+
 enum SelectionTransition: Equatable, Sendable {
     /// Nothing changes.
     case reuse
@@ -284,6 +293,8 @@ enum SelectionTransition: Equatable, Sendable {
     case applyOnNextTurn
     /// Another agent or account has its own conversation: the session moves there with a summary of what happened.
     case createWithHandoff
+    /// Another agent or account picked while the agent works: the turn stops, then the session moves there and goes on.
+    case switchAfterStop
     case reject(String)
 
     static func decide(currentProvider: RunProvider, currentProfile: String, currentModel: String,

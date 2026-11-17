@@ -5,7 +5,7 @@
   import { companion, detailLabel, detailValue, type ClientView, type InboxChatDigest, type InboxChatInfo } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { chat, onclose, took }: { chat: InboxChatDigest; onclose: () => void; took: (v: ClientView) => void } = $props();
   let info = $state<InboxChatInfo | null>(null);

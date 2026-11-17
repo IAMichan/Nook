@@ -15,7 +15,7 @@
   import { base64Bytes } from "../../lib/images";
   import { act, chatMenu, messageMenu, type ChatConfirm } from "./chat-actions";
   import { media } from "./inbox-media.svelte";
-  import Dialog from "./ui/Dialog.svelte";
+  import Dialog from "../../components/ui/Dialog.svelte";
   import PhotoButton from "./ui/PhotoButton.svelte";
   import ImageTray from "./ui/ImageTray.svelte";
   import ChatInfo from "./ChatInfo.svelte";
@@ -23,13 +23,13 @@
   import { locale, tr } from "../../lib/i18n.svelte";
   import { haptic } from "../../lib/haptics";
   import NavBar from "./ui/NavBar.svelte";
-  import Ico from "./ui/Ico.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import InboxAvatar from "./ui/InboxAvatar.svelte";
   import TicksMark from "./ui/TicksMark.svelte";
   import SessionComposer from "./ui/SessionComposer.svelte";
-  import Menu, { type MenuItem, type MenuReactions } from "./ui/Menu.svelte";
+  import Menu, { type MenuItem, type MenuReactions } from "../../components/ui/Menu.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
-  import Sheet from "./ui/Sheet.svelte";
+  import Sheet from "../../components/ui/Sheet.svelte";
   import MessageInfo from "./MessageInfo.svelte";
   import OfflineStrip from "./ui/OfflineStrip.svelte";
   import OfflineNote from "./ui/OfflineNote.svelte";

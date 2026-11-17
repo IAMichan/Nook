@@ -1,0 +1,6 @@
+// A long first turn that is still working when the scenario steps in (to stop it, or to switch it), and a short second.
+{"replay":"text","text":"Starting on the long job now. This first part takes a while.","ms":30}
+{"replay":"sleep","ms":60000}
+{"replay":"text","text":"The long job is done.","ms":30}
+{"replay":"turn"}
+{"replay":"text","text":"Picking the long job up again where it stopped.","ms":30}

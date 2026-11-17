@@ -158,7 +158,8 @@ private struct UsageLimitRow: View {
             if let limit { LimitLineBar(limit: limit, now: now) }
         }
         .contentShape(Rectangle())
-        .nookTip(help)
+        // The row shows the usage itself; only why it is unavailable needs words on hover.
+        .nookTip(help, enabled: limit == nil)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help.isEmpty ? "\(label): \(tr("limits.unavailable"))" : help)
     }
@@ -265,7 +266,6 @@ struct LimitWindowMeters: View {
         }
         .font(NookTheme.TextStyle.caption)
         .frame(width: Self.meterWidth, alignment: .leading)
-        .nookTip(help(label: label, limit: limit, now: now))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help(label: label, limit: limit, now: now))
     }
@@ -600,7 +600,6 @@ struct UsageRefreshButton: View {
             ProgressView()
                 .controlSize(.mini)
                 .frame(width: 24, height: 24)
-                .nookTip(tr("agents.usage.refreshing"))
         } else {
             ToolbarIconButton("arrow.clockwise", tr("agents.usage.refresh")) {
                 refreshing = true
@@ -669,7 +668,6 @@ private struct LimitPoolSectionView: View {
                 // The agent's own usage page, where the plan's usage is managed and more of it bought.
                 if let page = UsageLimitSection.usagePage(section.kind) {
                     SmallGhostButton(title: tr("limits.manage") + " ↗") { NSWorkspace.shared.open(page) }
-                        .nookTip(page.host ?? page.absoluteString)
                 }
             }
             ForEach(section.pool.windows) { window in
@@ -757,7 +755,6 @@ private struct UsageBlockRows: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .nookTip(block.reported ? tr("limits.block.reported") : tr("limits.block.estimated"))
             if open {
                 VStack(spacing: 0) {
                     if block.chats.isEmpty {
