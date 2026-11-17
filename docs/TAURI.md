@@ -148,6 +148,8 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - "Hey Nook". **Tauri:** ◐ Windows · — Linux and Android. **Where:** `platform/windows/speech.rs`
 
+- App menus (`AppMenu`): `list_app_menu`, `app_menu_command` (always approved in the plan; path parsing, `&` mnemonic cleaning, validation and listing unit-tested). **Tauri:** ◐ Windows (Win32 `HMENU` + UI Automation, compiled for Windows, not run on a Windows PC) · ◐ Linux (AT-SPI menu walk and `DoAction`, not tested against a live desktop) · — Android. **Where:** `core/src/brain/app_menu.rs`, `src-tauri/src/tools/screen.rs`, `platform/windows/menu.rs`, `platform/linux/atspi.rs`
+
 - Autocomplete everywhere (`AutocompleteController`, `CompletionSuggestion`, `CompletionPrivacy`, `CompletionEmoji`, Settings › Autocomplete). **Tauri:** ◐ Windows (compiled, not run on a real PC; Testing tab on Linux too) · — Linux and Android. **Where:** `core/src/services/autocomplete/`, `src-tauri/src/services/autocomplete.rs`, `platform/windows/autocomplete.rs`
 
 - Energy plan (`EnergyPolicy`, `EnergyMonitor`): Automatic, Saver, Full power; screen reading and Think Along follow it, the orb rests. **Tauri:** ◐ (Windows: battery, power saving, CPU load; Linux: `/sys`, load average, screensaver; not tested in the app) · — Android. **Where:** `core/src/services/energy.rs`, `services/energy.rs`, Settings › General

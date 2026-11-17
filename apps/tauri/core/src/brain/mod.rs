@@ -42,6 +42,7 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 
 pub mod action_gate;
 pub mod answer_images;
+pub mod app_menu;
 pub mod calendar_invite;
 pub mod chart;
 pub mod chat_image;

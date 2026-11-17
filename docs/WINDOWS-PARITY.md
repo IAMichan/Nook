@@ -294,7 +294,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L
 
-- [ ] **BR-30** `list_app_menu`, `app_menu_command` through a UI Automation menu walk (`AppMenu`) · M
+- [x] **BR-30** `list_app_menu`, `app_menu_command` through a UI Automation menu walk (`AppMenu`) · M
 
 - [ ] **BR-31** `read_browser_tab` through the extension (CH-60) or UI Automation (`BrowserTabReader`) · M
 

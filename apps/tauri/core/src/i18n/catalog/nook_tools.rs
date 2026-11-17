@@ -151,6 +151,32 @@ pub const ROWS: &[Row] = &[
         "Le navigateur tourne sur ton ordinateur, pas sur ton téléphone.",
         "El navegador se ejecuta en tu ordenador, no en tu teléfono.",
     ),
+    ("read menus of any app", "Menüs jeder App lesen", "lire les menus de toute app", "leer los menús de cualquier app"),
+    (
+        "run a menu command in any app",
+        "Menübefehl in jeder App ausführen",
+        "exécuter une commande de menu dans toute app",
+        "ejecutar un comando de menú en cualquier app",
+    ),
+    ("menu command", "Menübefehl", "commande de menu", "comando de menú"),
+    (
+        "Reading app menus is not supported on this platform.",
+        "App-Menüs können auf dieser Plattform nicht gelesen werden.",
+        "La lecture des menus d'apps n'est pas prise en charge sur cette plateforme.",
+        "Leer los menús de las apps no es compatible con esta plataforma.",
+    ),
+    (
+        "Running app menu commands is not supported on this platform.",
+        "Menübefehle von Apps können auf dieser Plattform nicht ausgeführt werden.",
+        "L'exécution de commandes de menu n'est pas prise en charge sur cette plateforme.",
+        "Ejecutar comandos de menú de apps no es compatible con esta plataforma.",
+    ),
+    (
+        "No connection to the accessibility bus (AT-SPI).",
+        "Keine Verbindung zum Barrierefreiheits-Bus (AT-SPI).",
+        "Aucune connexion au bus d'accessibilité (AT-SPI).",
+        "Sin conexión con el bus de accesibilidad (AT-SPI).",
+    ),
     // System and network status tools (`tools::system`).
     ("This computer's status", "Status dieses Computers", "État de cet ordinateur", "Estado de este ordenador"),
     ("IP addresses of this computer", "IP-Adressen dieses Computers", "Adresses IP de cet ordinateur", "Direcciones IP de este ordenador"),

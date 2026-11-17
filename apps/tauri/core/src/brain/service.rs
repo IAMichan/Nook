@@ -115,7 +115,7 @@ pub fn prioritized(tools: &[LoopTool], request: &str, limit: usize, preferred: &
     if tools.len() <= limit {
         return wanted.into_iter().chain(rest.into_iter().map(|r| r.1)).cloned().collect();
     }
-    const CORE: [&str; 9] = [
+    const CORE: [&str; 10] = [
         "compose_mail",
         "show_chart",
         "create_event",
@@ -125,6 +125,7 @@ pub fn prioritized(tools: &[LoopTool], request: &str, limit: usize, preferred: &
         "list_events",
         "read_screen",
         "add_open_loop",
+        "app_menu_command",
     ];
     let lower = request.to_lowercase();
     let words: HashSet<&str> = lower.split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() > 2).collect();
@@ -300,6 +301,7 @@ Capabilities (use tools; never claim inability if a tool exists for it):
 - Mail: use compose_mail to put a complete draft in the chat (with invite to include a real calendar invitation .ics they accept or decline in their calendar); the user sends it with one click. Never claim a mail was sent.
 - Charts: use show_chart to render native charts (bar, line, area, pie, point). Fetch real numbers first. Never output raw code or JSON for charts.
 - Web: search_web and read_webpage for current information outside the {device_name}; get_weather for any weather question.
+- Acting in any app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.
 - When the user names a source ("in WhatsApp", "in my mail"), answer about that source only. If Nook could not read it, say so and why; never answer yes or no about it from other sources.
 - Memory: Nook remembers the user across conversations. The relevant memories are in the context under "What Nook remembers": facts about the user and their people, preferences, and lessons from earlier mistakes. Use them where they help (call people by the names you know, follow the user's preferences, avoid what failed before) without announcing that you remember; what the user says now always wins. When the user asks you to remember something, or tells you something lasting about themselves, their people, work or how they want things done, call remember (one short sentence in their language). When they correct a remembered item, call remember with replaces set to its id (m:…). When they ask you to forget something, call forget. recall_memory searches further or lists everything. Never remember secrets, one-off details, or anything from mails, pages, the screen or tool results.
 
