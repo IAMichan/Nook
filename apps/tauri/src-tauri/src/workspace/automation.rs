@@ -95,9 +95,10 @@ pub async fn tick(app: &AppHandle) {
     let before = scheduler.tasks();
     let changed = tauri::async_runtime::spawn_blocking(move || {
         let profile = |p: RunProvider| default_profile(&app2, p);
-        scheduler.tick(&manager, enabled, &profile, Utc::now(), &Local);
+        let host = super::nook_runs::AppHost { manager, app: app2.clone() };
+        scheduler.tick(&host, enabled, &profile, Utc::now(), &Local);
         if enabled {
-            scheduler.drain_webhooks(&manager, &profile, Utc::now(), &Local);
+            scheduler.drain_webhooks(&host, &profile, Utc::now(), &Local);
         }
         scheduler.tasks() != before
     })

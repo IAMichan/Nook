@@ -172,6 +172,12 @@ pub fn ask_with_note(app: &AppHandle, nook_id: &str, raw: &str, note: String) ->
     ask_with(app, nook_id, raw, vec![], None, None, Some(note), true)
 }
 
+/// The run of an automation for Nook Chat: answered like a question typed here, with the run's note for the brain
+/// beside it, without bringing the window to the front.
+pub fn ask_scheduled(app: &AppHandle, nook_id: &str, prompt: &str, note: String) -> Result<Option<String>, String> {
+    ask_with(app, nook_id, prompt, vec![], None, None, Some(note), false)
+}
+
 /// A prompt a card wrote (its button, not the user's words): answered like any question, but within `run`.
 pub fn ask_from_card(app: &AppHandle, nook_id: &str, text: &str, run: CardRun) -> Result<Option<String>, String> {
     ask_with(app, nook_id, text, vec![], None, Some(run), None, true)

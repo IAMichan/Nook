@@ -18,6 +18,7 @@ pub mod handoff;
 pub mod limits;
 pub mod manager;
 pub mod models;
+pub mod nook_schedule;
 pub mod parsers;
 pub mod paths;
 pub mod queue;
