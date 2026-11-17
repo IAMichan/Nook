@@ -375,6 +375,13 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
 
+    /// `id` with the repository the URL names: after a rename on the forge the folder's remote keeps the old name while
+    /// a link printed or added later uses the new one, and both are the same request.
+    var placeID: String {
+        let current = PullRequestRef.parse(url)?.repository ?? repository
+        return "\(host.key)/\(current.lowercased())#\(number)"
+    }
+
     /// Is this the request `number` in `repository`? `repository` comes from the folder's remote, which keeps the old name
     /// after a rename on the forge (which redirects it), while an action from Nook names the request by where it lives
     /// now. The link's URL says that too, so either name matches.
