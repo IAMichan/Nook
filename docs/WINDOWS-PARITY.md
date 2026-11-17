@@ -187,7 +187,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [x] **BR-22** `compose_mail` with an `.ics` invitation (`CalendarInvite`); `reply_to` and `from` come with CH-91 · M
 - [ ] **BR-23** `github_merge_prs` (batch merge) · S
 - [ ] **BR-24** `run_command` with `CommandRisk` and the terminal beside the chat · M
-- [ ] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
+- [x] **BR-25** `open_in_nook_browser`, `read_nook_browser` · S
 - [x] **BR-26** `network_status` and `system_status` (the Mac's `mac_status`: battery, disk, memory) · S
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 - [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
