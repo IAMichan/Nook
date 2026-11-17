@@ -6,7 +6,7 @@
   import { api } from "../lib/api";
   import { brainApi, type Recovery } from "../lib/brain";
   import { citationReferences, claimFromTextBefore, isOpenableUrl, withoutSourceList } from "../lib/citations";
-  import { renderAnswerMarkdown } from "../lib/markdown";
+  import { answerCitation } from "../lib/markdown";
   import { serviceIconUrl } from "../lib/service-icons";
   import { visibleNotices } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
@@ -16,12 +16,13 @@
   import ChartView from "./ChartView.svelte";
   import CitationPreview from "./CitationPreview.svelte";
   import MailDraftView from "./MailDraftView.svelte";
+  import MarkdownBody from "./MarkdownBody.svelte";
   import PlanCard from "./PlanCard.svelte";
   import SourcesView from "./SourcesView.svelte";
 
   let { message, nookId, last = false }: { message: ChatMessage; nookId: string; last?: boolean } = $props();
   const text = $derived(message.streaming ? (nook.streaming[message.id] ?? message.text ?? "") : message.text);
-  const html = $derived(message.fromUser ? "" : renderAnswerMarkdown(text, message.references));
+  const citation = $derived(message.fromUser || !message.references?.length ? undefined : answerCitation(message.references));
   const notices = $derived(message.streaming ? [] : visibleNotices(message));
   let enlargedImages = $state<Record<string, boolean>>({});
   let markdownEl = $state<HTMLDivElement | null>(null);
@@ -119,7 +120,8 @@
   }
 
   $effect(() => {
-    void html;
+    void text;
+    void citation;
     closePreview();
     if (!markdownEl) return;
     let alive = true;
@@ -240,21 +242,6 @@
       };
       return;
     }
-    const copy = target.closest("[data-copy-code]") as HTMLButtonElement | null;
-    if (copy) {
-      const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
-      navigator.clipboard.writeText(code).then(() => {
-        copy.textContent = tr("Gekopieerd", "Copied");
-        copy.classList.add("copied");
-        setTimeout(() => { copy.textContent = tr("Kopieer", "Copy"); copy.classList.remove("copied"); }, 1500);
-      }).catch(() => {});
-      return;
-    }
-    const a = target.closest("a[data-external]") as HTMLAnchorElement | null;
-    if (a) {
-      e.preventDefault();
-      openUrl(a.href);
-    }
   }
 
   function recoveryTitle(r: Recovery): string {
@@ -320,7 +307,9 @@
       <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="markdown" bind:this={markdownEl} onclick={click}>{@html html}</div>
+      <div class="answer-body" bind:this={markdownEl} onclick={click}>
+        <MarkdownBody text={withoutSourceList(text)} {citation} />
+      </div>
       {#if !message.streaming && !message.isError}
         <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
       {/if}
@@ -374,7 +363,7 @@
   .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
-  .error .markdown { color: var(--coral); }
+  .error :global(.markdown) { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }

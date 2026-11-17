@@ -126,7 +126,7 @@ impl RetrievalStep {
 }
 
 /// Voor tools die altijd verse gegevens nodig hebben (het scherm, beschikbaarheid vlak voor het boeken).
-pub const NEVER_CACHED: [&str; 3] = ["read_screen", "check_availability", "list_open_loops"];
+pub const NEVER_CACHED: [&str; 4] = ["read_screen", "check_availability", "find_time", "list_open_loops"];
 pub const CACHE_LIFETIME: Duration = Duration::from_secs(90);
 
 fn recent() -> &'static Mutex<HashMap<String, (Instant, String)>> {

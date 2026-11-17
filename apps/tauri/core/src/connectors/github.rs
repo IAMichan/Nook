@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use super::accounts::{self, ServiceAccount};
 use super::hub::{Connector, Env, Scope};
+use super::pull_batch_merge::{self, Outcome};
 use super::pulls::{self, PullRequestList};
 use super::{
     dates, field, int, link, list, plural, short, with_query, CResult, ConnectorError, ConnectorItem, ConnectorStatus, ErrorKind, Tone,
@@ -611,8 +612,20 @@ impl GitHub {
             LoopTool::action("github_comment_pr", "Posts a regular comment on a pull request, without a review verdict.", pr_schema(json!({"body": {"type": "string", "description": "The comment text."}}), &["body"])),
             LoopTool::action(
                 "github_merge_pr",
-                "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; without one, the repository's default (merge when its settings and rulesets allow it).",
+                "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; without one, the repository's default (merge when its settings and rulesets allow it). To merge several pull requests at once, use github_merge_prs instead.",
                 pr_schema(json!({"method": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to the first one the repository allows (merge when allowed)."}}), &[]),
+            ),
+            LoopTool::action(
+                "github_merge_prs",
+                "Merges several pull requests in one action, for 'merge all my PRs' or 'merge these PRs'. First list the pull requests the user means with github_overview (their open PRs) or github_search (for example \"is:pr is:open repo:owner/name\"), then pass every one of them here; no need to read each with github_pr_details. Right before merging, Nook checks each pull request itself and skips the ones that are a draft, closed, conflicted, or whose CI is failing, and reports why. CI that is still running does not stop a merge: approving the plan is the user's choice to merge now, so the report notes it instead. Choose the method requested by the user; without one, the repository's default (merge when allowed).",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "pulls": {"type": "string", "description": "The pull requests, comma-separated, each as owner/name#number, for example \"IAMichan/nook#12, IAMichan/nook#14\"."},
+                        "method": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Optional."}
+                    },
+                    "required": ["pulls"]
+                }),
             ),
             LoopTool::action("github_close_pr", "Closes a pull request without merging. Only use when explicitly requested by the user.", pr_schema(json!({}), &[])),
             read(
@@ -714,16 +727,11 @@ impl GitHub {
                 // `sha` (set by the pull request view, not offered to the brain) merges only the head that was shown:
                 // when someone pushed since, GitHub refuses instead of merging commits nobody looked at.
                 let sha = field(input, "sha");
-                let body = pulls::merge_body(&method, sha.as_deref());
-                let url = format!("{}/repos/{repo}/pulls/{number}/merge", api());
-                let (status, bytes) = self.env.http.send("PUT", &url, &headers(&token), Some(&body), "GitHub").await?;
-                let result: Value = serde_json::from_slice(&bytes).unwrap_or(json!({}));
-                if !(200..300).contains(&status) || result["merged"] == json!(false) {
-                    return Err(pulls::merge_error(status, &result));
-                }
+                let result = pulls::merge_pull(&self.env, &token, &repo, number, &method, sha.as_deref()).await?;
                 let merged = result["sha"].as_str().map(|s| format!(" · {}", &s[..s.len().min(7)])).unwrap_or_default();
                 Ok(format!("Samengevoegd ({method}): {repo}#{number}{merged}"))
             }
+            "github_merge_prs" => self.merge_pull_requests(input).await,
             "github_close_pr" => {
                 let (repo, number) = target(input)?;
                 self.send("PATCH", &format!("/repos/{repo}/pulls/{number}"), json!({"state": "closed"}), input).await?;
@@ -776,6 +784,49 @@ impl GitHub {
             }
             _ => Err(ConnectorError::new(format!("Onbekende actie {tool}."))),
         }
+    }
+
+    /// Merges the approved pull requests one by one. Each is read again first and merged at the head that was checked, so
+    /// nothing pushed in between gets merged unseen; what is not ready is skipped and the rest still goes ahead.
+    async fn merge_pull_requests(&self, input: &Value) -> CResult<String> {
+        let problems = pull_batch_merge::problems(input.get("pulls"));
+        if !problems.is_empty() {
+            return Err(ConnectorError::new(problems.join(" ")));
+        }
+        let requested = field(input, "method").map(|m| m.to_lowercase());
+        if requested.as_deref().is_some_and(|m| !["merge", "squash", "rebase"].contains(&m)) {
+            return Err(ConnectorError::new("The method must be merge, squash, or rebase."));
+        }
+        let (_, token) = self.credentials(input)?;
+        let mut outcomes = Vec::new();
+        for target in pull_batch_merge::targets(input.get("pulls")).0 {
+            match pulls::load_for_merge(&self.env, &token, &target.repo, target.number).await {
+                Err(e) => outcomes.push((target, Outcome::Failed(e.message))),
+                Ok(detail) => {
+                    if let Some(reason) = pull_batch_merge::skip_reason(&detail) {
+                        outcomes.push((target, Outcome::Skipped(reason.into())));
+                        continue;
+                    }
+                    let Some(chosen) = pull_batch_merge::pick_method(requested.as_deref(), &detail.methods) else {
+                        outcomes.push((
+                            target,
+                            Outcome::Skipped(format!("{} not allowed in this repository", requested.as_deref().unwrap_or("merge"))),
+                        ));
+                        continue;
+                    };
+                    match pulls::merge_pull(&self.env, &token, &target.repo, target.number, chosen, Some(&detail.head_sha)).await {
+                        Ok(_) => outcomes.push((target, Outcome::Merged(pull_batch_merge::merged_label(chosen, &detail)))),
+                        Err(e) => outcomes.push((target, Outcome::Failed(e.message))),
+                    }
+                }
+            }
+        }
+        let report = pull_batch_merge::report(&outcomes);
+        // Nothing merged at all: the step failed, with every reason, so the plan does not show it as done.
+        if !outcomes.iter().any(|(_, o)| matches!(o, Outcome::Merged(_))) {
+            return Err(ConnectorError::new(report));
+        }
+        Ok(report)
     }
 
     // Voor de werkruimte
@@ -1012,6 +1063,10 @@ impl Connector for GitHub {
                 reference(input),
                 field(input, "method").unwrap_or_else(|| "merge".into()).to_lowercase()
             ),
+            "github_merge_prs" => pull_batch_merge::summary(
+                input.get("pulls"),
+                &field(input, "method").map(|m| m.to_lowercase()).unwrap_or_else(|| "repository default".into()),
+            ),
             "github_close_pr" => format!("GitHub: sluit {}", reference(input)),
             "github_create_issue" => {
                 format!("GitHub: issue in {} · {}", super::text(input, "repo"), short(super::text(input, "title"), 60))
@@ -1194,12 +1249,18 @@ mod tests {
         TestServer::start(vec![
             ("GET /user", 200, r#"{"login":"michan"}"#.into()),
             ("GET /search/issues", 200, json!({"total_count": 1, "items": [pr_item("IAMichan/nook", 23, "Tauri-app")]}).to_string()),
+            ("GET /repos/IAMichan/nook", 200, r#"{"full_name":"IAMichan/nook","allow_merge_commit":false,"allow_squash_merge":true,"allow_rebase_merge":false,"permissions":{"push":true}}"#.into()),
             ("GET /repos/IAMichan/nook/pulls/23", 200, r#"{"number":23,"title":"Tauri-app","user":{"login":"michan"},"state":"open","head":{"sha":"abc","ref":"tauri"},"base":{"ref":"main"},"additions":10,"deletions":2,"changed_files":1,"mergeable":true,"html_url":"https://github.com/IAMichan/nook/pull/23","body":"Nieuwe app"}"#.into()),
+            ("GET /repos/IAMichan/nook/pulls/24", 200, r#"{"number":24,"title":"Batch","user":{"login":"michan"},"state":"open","head":{"sha":"def","ref":"batch"},"base":{"ref":"main"},"additions":5,"deletions":1,"changed_files":1,"mergeable":true,"mergeable_state":"clean"}"#.into()),
+            ("GET /repos/IAMichan/nook/pulls/25", 200, r#"{"number":25,"title":"WIP","user":{"login":"michan"},"state":"open","draft":true,"head":{"sha":"ghi","ref":"wip"},"base":{"ref":"main"},"mergeable":true}"#.into()),
             ("GET /repos/IAMichan/nook/pulls/23/files", 200, r#"[{"filename":"a.rs","status":"added","additions":10,"deletions":2,"patch":"+fn main() {}"}]"#.into()),
             ("GET /repos/IAMichan/nook/pulls/23/reviews", 200, "[]".into()),
             ("GET /repos/IAMichan/nook/commits/abc/check-runs", 200, r#"{"check_runs":[{"status":"completed","conclusion":"failure"}]}"#.into()),
             ("GET /repos/IAMichan/nook/commits/abc/status", 200, r#"{"total_count":0}"#.into()),
+            ("GET /repos/IAMichan/nook/commits/def/check-runs", 200, r#"{"check_runs":[{"status":"completed","conclusion":"success"}]}"#.into()),
+            ("GET /repos/IAMichan/nook/commits/def/status", 200, r#"{"total_count":0}"#.into()),
             ("PUT /repos/IAMichan/nook/pulls/23/merge", 200, r#"{"merged":true}"#.into()),
+            ("PUT /repos/IAMichan/nook/pulls/24/merge", 200, r#"{"merged":true,"sha":"deadbeef"}"#.into()),
             ("POST /repos/IAMichan/nook/pulls/23/reviews", 422, r#"{"message":"Can not approve your own pull request"}"#.into()),
             ("POST /login/device/code", 200, r#"{"device_code":"d1","user_code":"ABCD-1234","verification_uri":"https://github.com/login/device","expires_in":900,"interval":5}"#.into()),
             ("POST /login/oauth/access_token", 200, r#"{"error":"authorization_pending"}"#.into()),
@@ -1316,6 +1377,33 @@ mod tests {
         let put = server.requests().into_iter().rev().find(|r| r.method == "PUT").unwrap();
         assert_eq!(serde_json::from_str::<Value>(&put.body).unwrap(), json!({"merge_method": "merge", "sha": "abc"}));
         assert_eq!(put.header("authorization"), Some("Bearer ghp_werk"));
+
+        // Batch merge checks each PR right before merging, merges ready ones with the checked head SHA, and skips/reports the rest.
+        assert_eq!(
+            github.summarize("github_merge_prs", &json!({"pulls": "IAMichan/nook#24, IAMichan/nook#25", "account": "Werk"})).as_deref(),
+            Some("GitHub: merge 2 pull requests (repository default): IAMichan/nook#24, IAMichan/nook#25 · Werk")
+        );
+        let batch_report = github
+            .execute(
+                "github_merge_prs",
+                &json!({"pulls": "IAMichan/nook#24, IAMichan/nook#23, IAMichan/nook#25, IAMichan/nook#99", "account": work.id}),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(batch_report.starts_with("Merged 1 of 4 pull requests.\n"), "{batch_report}");
+        assert!(batch_report.contains("✓ IAMichan/nook#24 merged (squash)"), "{batch_report}");
+        assert!(batch_report.contains("– IAMichan/nook#23 skipped: CI failing"), "{batch_report}");
+        assert!(batch_report.contains("– IAMichan/nook#25 skipped: draft"), "{batch_report}");
+        assert!(batch_report.contains("✗ IAMichan/nook#99 failed:"), "{batch_report}");
+        let batch_put = server.requests().into_iter().rev().find(|r| r.method == "PUT" && r.path.contains("/pulls/24/")).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&batch_put.body).unwrap(), json!({"merge_method": "squash", "sha": "def"}));
+        let all_skipped = github
+            .execute("github_merge_prs", &json!({"pulls": "IAMichan/nook#23, IAMichan/nook#25", "account": work.id}))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(all_skipped.message.starts_with("Merged 0 of 2 pull requests.\n"), "{}", all_skipped.message);
 
         // Koppel met GitHub: de code komt, het wachten gaat door tot GitHub ja zegt.
         let code = request_code(&env, "client").await.unwrap();

@@ -52,6 +52,7 @@ check ".github/workflows/build.yml" "macos workflows"
 check ".github/workflows/release.yml" "workflows"
 check ".github/scripts/pr-overview.cjs" "github_scripts"
 check "docs/CI.md" "docs"
+check "scripts/docs-merge-layout.py" "docs"
 check "apps/macos/README.md" "macos core_tests docs"
 # Nothing to build.
 check "LICENSE" ""

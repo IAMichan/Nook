@@ -1,45 +1,99 @@
-// Answers as Markdown: the shared renderer (packages/web-ui, the browser extension's side panel uses it too) with the
-// Copy button in this app's language.
-import { escapeHtml, renderMarkdown as render } from "@nook/web-ui/markdown";
-import { citationLabel, citationReferences, isOpenableUrl, withoutSourceList } from "./citations";
+// Answers as Markdown in the Tauri app: Mac-parity blocks (syntax colors, fence filenames, <details>, standalone
+// images, callouts, link titles/hosts) built on top of `markdown-blocks` and `syntax`. Everything from the model
+// is escaped before rendering; `@nook/web-ui/markdown` remains untouched for the browser extension.
+import { escapeHtml } from "@nook/web-ui/markdown";
+import { tr } from "./i18n.svelte";
+import { parseMarkdownBlocks, renderInlineMarkdown, isNumericColumn, type InlineOptions } from "./markdown-blocks";
+import { highlightCodeToHtml } from "./syntax";
+import { citationLabel, citationReferences, isOpenableUrl } from "./citations";
 import { sourceGlyphSvg } from "./service-icons";
 import { sourceDomain } from "./sources";
-import { tr } from "./i18n.svelte";
 import type { SourceReference } from "./types";
 
 export { escapeHtml };
 
-export function renderMarkdown(source: string): string {
-  return render(source, { copy: tr("Kopieer", "Copy"), copyTitle: tr("Code kopiëren", "Copy code") });
+export function renderMarkdown(source: string, inlineOpts: InlineOptions = {}): string {
+  const copy = escapeHtml(tr("Kopieer", "Copy"));
+  const copyTitle = escapeHtml(tr("Code kopiëren", "Copy code"));
+  const detailsLabel = escapeHtml(tr("Details", "Details"));
+  const blocks = parseMarkdownBlocks(source);
+
+  return blocks
+    .map((block) => {
+      switch (block.kind) {
+        case "heading": {
+          const level = Math.min(block.level + 2, 6);
+          return `<h${level}>${renderInlineMarkdown(block.text, inlineOpts)}</h${level}>`;
+        }
+        case "paragraph":
+          return `<p>${renderInlineMarkdown(block.text, inlineOpts)}</p>`;
+        case "list": {
+          const ordered = block.items.length > 0 && block.items.every((it) => it.number !== null);
+          const tag = ordered ? "ol" : "ul";
+          const items = block.items.map((it) => `<li>${renderInlineMarkdown(it.text, inlineOpts)}</li>`).join("");
+          return `<${tag}>${items}</${tag}>`;
+        }
+        case "code": {
+          const highlighted = highlightCodeToHtml(block.code, block.language, block.title);
+          const body = highlighted ?? escapeHtml(block.code);
+          const langAttr = block.language ? ` data-lang="${escapeHtml(block.language)}"` : "";
+          const titleAttr = block.title ? ` data-title="${escapeHtml(block.title)}"` : "";
+          return `<div class="code-block"><button type="button" class="copy-code" data-copy-code title="${copyTitle}">${copy}</button><pre><code${langAttr}${titleAttr}>${body}</code></pre></div>`;
+        }
+        case "mermaid":
+          return `<div class="code-block"><button type="button" class="copy-code" data-copy-code title="${copyTitle}">${copy}</button><pre><code data-lang="mermaid">${escapeHtml(block.code)}</code></pre></div>`;
+        case "math":
+          return `<div class="code-block"><button type="button" class="copy-code" data-copy-code title="${copyTitle}">${copy}</button><pre><code data-lang="math">${escapeHtml(block.tex)}</code></pre></div>`;
+        case "details": {
+          const summary = block.summary ? renderInlineMarkdown(block.summary, inlineOpts) : detailsLabel;
+          const inner = block.body ? renderMarkdown(block.body, inlineOpts) : "";
+          return `<details class="md-details"><summary>${summary}</summary><div class="md-details-body">${inner}</div></details>`;
+        }
+        case "image":
+          return `<figure class="md-image"><img src="${escapeHtml(block.source)}" alt="${escapeHtml(block.alt)}" title="${escapeHtml(block.alt || block.source)}" /></figure>`;
+        case "table": {
+          const numeric = block.header.map((_, c) => isNumericColumn(block.rows, c));
+          const head = block.header
+            .map((c, idx) => `<th${numeric[idx] ? ' class="num"' : ""}>${renderInlineMarkdown(c, inlineOpts)}</th>`)
+            .join("");
+          const body = block.rows
+            .map(
+              (r) =>
+                `<tr>${r.map((c, idx) => `<td${numeric[idx] ? ' class="num"' : ""}>${renderInlineMarkdown(c, inlineOpts)}</td>`).join("")}</tr>`,
+            )
+            .join("");
+          return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+        }
+        case "quote":
+          if (block.callout) {
+            return `<blockquote class="callout ${block.callout.kind}"><strong>${escapeHtml(block.callout.title)}</strong>${block.callout.body ? ` ${renderInlineMarkdown(block.callout.body, inlineOpts)}` : ""}</blockquote>`;
+          }
+          return `<blockquote>${renderInlineMarkdown(block.text, inlineOpts)}</blockquote>`;
+        case "rule":
+          return `<hr class="md-rule" />`;
+        case "pullRequest":
+          return `<p><a href="${escapeHtml(block.url)}" data-external title="${escapeHtml(block.url)}">${escapeHtml(`${block.repo} #${block.number}`)}</a></p>`;
+      }
+    })
+    .join("");
 }
 
 /**
- * Renders a Nook answer: strips any model-written "Sources:" list, and turns `[1]` / `[1, 4]` / `[1][2]`
- * backed by `references` into clickable citation pills labeled by sender or short name. Unbacked numbers
- * stay as raised numbers.
+ * Citations in a Nook answer: `[1]` / `[1, 4]` / `[1][2]` backed by `references` become clickable pills labeled by
+ * sender or short name; unbacked numbers stay raised numbers. Pass it as `citation` to `MarkdownBody`.
  */
-export function renderAnswerMarkdown(source: string, references: SourceReference[]): string {
-  const cleaned = withoutSourceList(source);
-  const copy = tr("Kopieer", "Copy");
-  const copyTitle = tr("Code kopiëren", "Copy code");
-  if (!references.length) {
-    return render(cleaned, { copy, copyTitle });
-  }
-  return render(cleaned, {
-    copy,
-    copyTitle,
-    citation: (numbers) => {
-      const cited = citationReferences(numbers, references);
-      if (!cited.length) {
-        return `<sup class="cite" data-cite="${numbers.join(",")}">${numbers.join(", ")}</sup>`;
-      }
-      const first = cited[0];
-      const domain = sourceDomain(first.sourceId);
-      const nums = cited.map((r) => r.number).join(",");
-      const label = escapeHtml(citationLabel(cited));
-      const openAttr = cited.length === 1 && isOpenableUrl(first.url) ? ' data-openable="1"' : "";
-      const domainAttr = domain ? ` data-icon-domain="${escapeHtml(domain)}"` : "";
-      return `<button type="button" class="cite-pill" data-cites="${nums}"${openAttr}><span class="cite-ico"${domainAttr}>${sourceGlyphSvg(first.sourceId)}</span><span class="cite-label">${label}</span></button>`;
-    },
-  });
+export function answerCitation(references: SourceReference[]): (numbers: number[]) => string {
+  return (numbers) => {
+    const cited = citationReferences(numbers, references);
+    if (!cited.length) {
+      return `<sup class="cite" data-cite="${numbers.join(",")}">${numbers.join(", ")}</sup>`;
+    }
+    const first = cited[0];
+    const domain = sourceDomain(first.sourceId);
+    const nums = cited.map((r) => r.number).join(",");
+    const label = escapeHtml(citationLabel(cited));
+    const openAttr = cited.length === 1 && isOpenableUrl(first.url) ? ' data-openable="1"' : "";
+    const domainAttr = domain ? ` data-icon-domain="${escapeHtml(domain)}"` : "";
+    return `<button type="button" class="cite-pill" data-cites="${nums}"${openAttr}><span class="cite-ico"${domainAttr}>${sourceGlyphSvg(first.sourceId)}</span><span class="cite-label">${label}</span></button>`;
+  };
 }

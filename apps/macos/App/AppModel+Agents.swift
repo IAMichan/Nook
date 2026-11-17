@@ -183,7 +183,9 @@ extension AppModel {
         } else {
             let folder = session.resumeFolder
             // Off the main thread: the folder may sit on a slow or disconnected volume.
-            let folderExists = await Task.detached(priority: .userInitiated) { FileManager.default.fileExists(atPath: folder) }.value
+            let folderExists = await Task.detached(priority: .userInitiated) {
+                FileManager.default.fileExists(atPath: folder) || ScratchProjects.recreateIfMissing(folder)
+            }.value
             guard folderExists else { throw NookError(tr("agents.nook.folderGone", folder)) }
             let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
             let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
