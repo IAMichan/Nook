@@ -153,7 +153,7 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("core/src/connectors/pulls.rs", 9),
     ("core/src/connectors/whatsapp/link.rs", 12),
     ("core/src/platform.rs", 10),
-    ("core/src/services/autocomplete/engine.rs", 3),
+    ("core/src/services/autocomplete/engine.rs", 2),
     ("core/src/services/files.rs", 2),
     ("core/src/services/quiet.rs", 3),
     ("core/src/services/rewrite.rs", 4),

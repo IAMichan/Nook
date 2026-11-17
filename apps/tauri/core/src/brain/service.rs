@@ -438,8 +438,19 @@ fn conversation(
                     .with_thinking(thinking),
             )
         }
-        AIProvider::ClaudeCode => {
-            claude_code(&model, system, &format!("{}{prompt}", as_text(history, usize::MAX, usize::MAX)), web_allowed)?
+        AIProvider::ClaudeCode
+        | AIProvider::CodexCli
+        | AIProvider::GeminiCli
+        | AIProvider::GrokCli
+        | AIProvider::KimiCli
+        | AIProvider::VibeCli => {
+            // Brains that take one prompt: the conversation goes along as text.
+            let prompt = format!("{}{prompt}", as_text(history, usize::MAX, usize::MAX));
+            if provider == AIProvider::ClaudeCode {
+                claude_code(&model, system, &prompt, web_allowed)?
+            } else {
+                subscription(provider, &model, system, &prompt, web_allowed)?
+            }
         }
         other => {
             if other.needs_key() && env.key.as_deref().unwrap_or("").is_empty() {
@@ -464,6 +475,27 @@ fn claude_code(model: &str, system: &str, prompt: &str, web_allowed: bool) -> Re
 #[cfg(any(target_os = "android", target_os = "ios"))]
 fn claude_code(_model: &str, _system: &str, _prompt: &str, _web_allowed: bool) -> Result<Box<dyn ModelConversation>> {
     Err(NookError::new("Claude Code draait niet op een telefoon. Kies een ander brein bij Instellingen › Brein."))
+}
+
+/// Codex, Gemini CLI, Grok, Kimi Code or Mistral Vibe with your own sign-in (`subscription`).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn subscription(provider: AIProvider, model: &str, system: &str, prompt: &str, web_allowed: bool) -> Result<Box<dyn ModelConversation>> {
+    Ok(Box::new(super::subscription::CliConversation::new(provider, model, system, prompt, web_allowed)))
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn subscription(
+    provider: AIProvider,
+    _model: &str,
+    _system: &str,
+    _prompt: &str,
+    _web_allowed: bool,
+) -> Result<Box<dyn ModelConversation>> {
+    Err(NookError(crate::i18n::trf(
+        "{name} draait niet op een telefoon. Kies een ander brein bij Instellingen › Brein.",
+        "{name} does not run on a phone. Choose another brain in Settings › Brain.",
+        &[("name", &provider.title())],
+    )))
 }
 
 fn runner(tools: Vec<LoopTool>, rounds: usize, calls: usize) -> ToolRunner {
@@ -706,8 +738,9 @@ pub async fn plan(
     history: &[ChatTurn],
     sources: &[PlannerSource],
 ) -> Option<QueryPlan> {
-    // Claude Code start voor elke aanroep een hele sessie: te traag voor een stap voor elk antwoord.
-    if settings.provider == AIProvider::ClaudeCode {
+    // A subscription brain (Claude Code, Codex…) starts a whole program for each call: too slow for a step before
+    // every answer.
+    if settings.provider.is_subscription() {
         return None;
     }
     let profile = profile_for(settings, env.memory_gb);
@@ -748,7 +781,7 @@ pub async fn reflect(
     nook: &[String],
     known: &[super::memory::MemoryItem],
 ) -> Option<String> {
-    if settings.provider == AIProvider::ClaudeCode {
+    if settings.provider.is_subscription() {
         return None;
     }
     let profile = profile_for(settings, env.memory_gb);
@@ -770,6 +803,16 @@ pub fn brain_ready(settings: &Settings, has_key: bool) -> bool {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 super::claude_code::locate().is_some()
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                false
+            }
+        }
+        AIProvider::CodexCli | AIProvider::GeminiCli | AIProvider::GrokCli | AIProvider::KimiCli | AIProvider::VibeCli => {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                super::subscription::is_signed_in(settings.provider)
             }
             #[cfg(any(target_os = "android", target_os = "ios"))]
             {

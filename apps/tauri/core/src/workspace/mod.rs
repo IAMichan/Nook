@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod bridge_nook;
 pub mod bridge_sessions;
 pub mod browser;
+pub mod browser_script;
 pub mod codex_app_server;
 pub mod command;
 pub mod delegation;
