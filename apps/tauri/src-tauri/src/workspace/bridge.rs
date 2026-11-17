@@ -26,6 +26,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 mod nook;
+mod sessions;
+pub mod tasks;
 
 use super::terminals::{TerminalInfo, TerminalOwner};
 use super::WorkspaceState;
@@ -273,7 +275,7 @@ fn refusal(reason: Reason) -> &'static str {
         Reason::Disabled => "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace).",
         Reason::PlanMode => "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead.",
         Reason::Dangerous => "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed.",
-        Reason::NeedsReview | Reason::Outward => "The user did not approve this in Nook.",
+        Reason::NeedsReview | Reason::Outward | Reason::Delegation => "The user did not approve this in Nook.",
     }
 }
 
@@ -304,9 +306,17 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::BrowserOpen => browser_open(app, a, &caller).await,
         BridgeTool::BrowserRead => browser_read(app).await,
         BridgeTool::BrowserScreenshot => browser_screenshot(app, a).await,
+        BridgeTool::OrchestratorCapabilities
+        | BridgeTool::DelegateTask
+        | BridgeTool::TaskStatus
+        | BridgeTool::TaskWait
+        | BridgeTool::TaskCancel => tasks::call(app, tool, a, &caller, context).await,
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
+        BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
+        BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
+        BridgeTool::SessionWait => sessions::session_wait(app, a).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList

@@ -355,9 +355,9 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 
-- [ ] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` · M
+- [x] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` (a task's question is not yet passed to its parent; the sub-thread strip is AG-100…) · M
 
-- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M
+- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M (built except `account` and `rights` per session; no idle start without a first message, no `nook://` session links yet)
 
 - [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
 

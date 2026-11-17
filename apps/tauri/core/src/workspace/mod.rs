@@ -6,6 +6,7 @@ pub mod antigravity;
 pub mod attention;
 pub mod bridge;
 pub mod bridge_nook;
+pub mod bridge_sessions;
 pub mod browser;
 pub mod codex_app_server;
 pub mod command;
