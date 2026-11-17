@@ -447,8 +447,7 @@ pub fn start_suggestions(app: AppHandle) -> Vec<String> {
             match info.id.as_str() {
                 "github" => {
                     moment.github_review = items.iter().find(|i| i.id.starts_with("review-")).map(|i| i.title.clone());
-                    moment.github_failing =
-                        items.iter().find(|i| i.id.starts_with("pr-") && i.tone == Tone::Bad).map(|i| i.title.clone());
+                    moment.github_failing = items.iter().find(|i| i.id.starts_with("pr-") && i.tone == Tone::Bad).map(|i| i.title.clone());
                 }
                 "mail" => moment.mail_from = items.first().map(|i| i.subtitle.clone()).filter(|s| !s.is_empty()),
                 "reminders" => {
@@ -461,8 +460,7 @@ pub fn start_suggestions(app: AppHandle) -> Vec<String> {
     }
     #[cfg(desktop)]
     if let Some(auto) = app.try_state::<crate::workspace::automation::AutomationState>() {
-        moment.has_nook_task =
-            auto.scheduler.tasks().iter().any(|t| t.target == nook_core::workspace::schedule::ScheduledTaskTarget::Nook);
+        moment.has_nook_task = auto.scheduler.tasks().iter().any(|t| t.target == nook_core::workspace::schedule::ScheduledTaskTarget::Nook);
     }
     suggestions::start(&moment)
 }

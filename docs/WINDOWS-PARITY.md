@@ -325,9 +325,9 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 ### 3.6 Instructions, inspector, search
 
-- [ ] **BR-55** Saved prompts with `{{variables}}` and `/trigger`, and spaces (instructions and files per conversation) (`InstructionStores`, `PromptLibrary`, `NookSpace`) · M
+- [x] **BR-55** Saved prompts with `{{variables}}` and `/trigger`, and spaces (instructions and files per conversation) (`InstructionStores`, `PromptLibrary`, `NookSpace`) · M
 
-- [ ] **BR-56** Context inspector: each part the model reads with its token size (`ContextBreakdown`) · S
+- [x] **BR-56** Context inspector: each part the model reads with its token size (`ContextBreakdown`) · S
 
 - [ ] **BR-57** Search everything: agent sessions and transcripts (settled and archived too), chats, call notes, memories, notices, settings and actions, ranked (`AppModel+Search`); today only conversations and commands → `commands/search.rs`, `CommandPalette.svelte` · M
 

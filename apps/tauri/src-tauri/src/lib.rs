@@ -56,6 +56,7 @@ pub fn run() {
                 nook_core::paths::set_support_directory(dir);
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
+            app.manage(commands::instructions::InstructionsState::load());
             notices::setup(app.handle());
             companion::setup(app.handle());
             connectors::setup(app.handle());
@@ -99,6 +100,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::get_settings,
+            commands::instructions::instructions_view,
+            commands::instructions::prompt_save,
+            commands::instructions::prompt_remove,
+            commands::instructions::space_save,
+            commands::instructions::space_remove,
             commands::save_settings,
             commands::maintenance::maintenance_info,
             commands::maintenance::open_data_folder,
