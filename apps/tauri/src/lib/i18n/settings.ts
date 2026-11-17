@@ -5,6 +5,10 @@ import type { Table } from "./catalog";
 export const table: Table = {
   "The MCP memory server {name} is no longer needed: Nook remembers by itself now.": { de: "Der MCP-Gedächtnisserver {name} wird nicht mehr gebraucht: Nook merkt sich jetzt selbst Dinge.", fr: "Le serveur de mémoire MCP {name} n'est plus nécessaire : Nook retient désormais les choses lui-même.", es: "El servidor de memoria MCP {name} ya no hace falta: Nook ahora recuerda por sí mismo." },
   "Remove server…": { de: "Server entfernen…", fr: "Retirer le serveur…", es: "Quitar servidor…" },
+  "Also chosen under the message field, or with ⇧Tab. Mail, messages, links, commands, settings, and deleting always ask first.": { de: "Auch unter dem Eingabefeld wählbar oder mit ⇧Tab. Mails, Nachrichten, Links, Befehle, Einstellungen und Löschen fragen immer zuerst.", fr: "Aussi au choix sous le champ de saisie, ou avec ⇧Tab. Les e-mails, messages, liens, commandes, réglages et suppressions demandent toujours d'abord.", es: "También se elige bajo el campo de mensaje, o con ⇧Tab. Correos, mensajes, enlaces, comandos, ajustes y borrar siempre preguntan primero." },
+  "Ask first": { de: "Erst fragen", fr: "Demander d'abord", es: "Preguntar primero" },
+  "Small things right away": { de: "Kleines sofort", fr: "Petites choses tout de suite", es: "Cosas pequeñas al instante" },
+  "More by itself": { de: "Mehr selbst tun", fr: "Plus en autonomie", es: "Más por su cuenta" },
   "About Nook": { de: "Über Nook", fr: "À propos de Nook", es: "Acerca de Nook" },
   "Nook {version} for {os}.": { de: "Nook {version} für {os}.", fr: "Nook {version} pour {os}.", es: "Nook {version} para {os}." },
   "Early version. The same Nook as on the Mac, built with Tauri: the core in Rust, the interface in Svelte.": { de: "Frühe Version. Dasselbe Nook wie auf dem Mac, gebaut mit Tauri: der Kern in Rust, die Oberfläche in Svelte.", fr: "Version précoce. Le même Nook que sur le Mac, construit avec Tauri : le cœur en Rust, l'interface en Svelte.", es: "Versión temprana. El mismo Nook que en el Mac, hecho con Tauri: el núcleo en Rust, la interfaz en Svelte." },

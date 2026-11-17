@@ -19,6 +19,7 @@
   import Listening from "../views/services/Listening.svelte";
   import SourcePicker from "./SourcePicker.svelte";
   import ChatAccounts from "../views/connectors/ChatAccounts.svelte";
+  import { accessOf, nextAccess, type NookAccess } from "../lib/access";
   import BrainPicker from "./BrainPicker.svelte";
 
   let { autofocus = false, compact = false }: { autofocus?: boolean; compact?: boolean } = $props();
@@ -93,6 +94,30 @@
     await nook.ask(question, images.length ? images : undefined, attachment ?? undefined);
   }
 
+  // What Nook may do by itself (`brain::access`): the chip under the box, and Shift+Tab in the field, as in an
+  // agent's composer.
+  const access = $derived(nook.settings ? accessOf(nook.settings) : "ask");
+  function accessLabel(level: NookAccess) {
+    return level === "ask" ? tr("Vragen", "Ask") : level === "small" ? tr("Klein", "Small things") : tr("Meer", "More");
+  }
+  function accessDetail(level: NookAccess) {
+    return level === "ask"
+      ? tr("Elke actie wacht op je klik.", "Every action waits for your click.")
+      : level === "small"
+        ? tr("Muziek, volume, een app, een herinnering of een open punt gebeuren meteen als je erom vraagt.", "Music, volume, an app, a reminder, or a to-do happen at once when you ask for them.")
+        : tr("Ook een afspraak zonder genodigden maken, een herinnering afvinken en een notitie. Een afspraak aanpassen, of een stap die betaalt, bestelt, verstuurt, verwijdert of boekt, vraagt nog steeds eerst.", "Also adding a calendar event without guests, ticking off a reminder, and a note. Changing an event, or a step that pays, orders, sends, deletes, or books, still asks first.");
+  }
+  function cycleAccess() {
+    nook.saveSettings({ nookAccess: nextAccess(access) });
+  }
+  function accessKey(e: KeyboardEvent) {
+    if (e.key === "Tab" && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      cycleAccess();
+    }
+  }
+
   const texts = $derived({
     placeholder: tr("Vraag Nook iets…", "Ask Nook anything…"),
     placeholderFor: (name: string) => tr("Vraag iets over {name}…", "Ask about {name}…", { name }),
@@ -107,7 +132,7 @@
   });
 </script>
 
-<div class="composer" class:compact onpastecapture={pastePath}>
+<div class="composer" class:compact onkeydowncapture={accessKey} onpastecapture={pastePath}>
   <SharedComposer
     bind:this={composer}
     {draft}
@@ -133,6 +158,11 @@
         <div class="under">
           <SourcePicker />
           <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
+          <button class="chip access" class:open={access !== "ask"} onclick={cycleAccess}
+            title={`${accessDetail(access)}\n${tr("Mail, berichten, links, opdrachten, instellingen en verwijderen vragen altijd eerst.", "Mail, messages, links, commands, settings, and deleting always ask first.")}\n${tr("⇧Tab voor het volgende niveau", "⇧Tab for the next level")}`}
+            aria-label={tr("Wat Nook zelf mag", "What Nook may do")}>
+            {accessLabel(access)}
+          </button>
           <BrainPicker />
         </div>
       {/if}
@@ -172,6 +202,8 @@
   }
   .composer.compact :global(.box) { border-width: 1px 0 0; border-color: var(--line); }
   .under { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 4px; min-width: 0; }
+  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-label); padding: 2px 8px; border-radius: 999px; background: none; color: var(--text3); }
+  .chip.access.open { color: var(--text2); }
   @media (max-width: 640px) {
     .composer { width: calc(100% - 24px); margin-bottom: 12px; }
     .under { gap: 6px; }
