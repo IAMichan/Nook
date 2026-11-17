@@ -255,6 +255,19 @@ extension CompanionClient {
         sessions.first { $0.id == id } ?? olderSessions.first { $0.id == id } ?? foundSessions.first { $0.id == id }
     }
 
+    /// Opens a session from another one's lineage (`SessionDigest.lineage`): a sub-thread, side chat or parent the live list
+    /// leaves out is asked for by its id first (`history` with `items`), so it opens like any other.
+    func openRelated(_ id: String) async {
+        if session(id) == nil, can(CompanionFeature.history) {
+            var request = CompanionRequest(op: .history)
+            request.items = [id]
+            if let found = await perform(request, quiet: true)?.sessions, !found.isEmpty {
+                olderSessions = CompanionHistory.merge(live: sessions, older: olderSessions + found)
+            }
+        }
+        openSession = id
+    }
+
     /// The next page of sessions older than the live list (`CompanionOp.history`).
     func loadOlderSessions() async {
         guard can(CompanionFeature.history), !olderEnded else { return }

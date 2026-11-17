@@ -108,6 +108,8 @@ pub fn stopwords() -> &'static HashSet<&'static str> {
 pub fn terms(text: &str, history: &[ChatTurn]) -> Terms {
     let mut terms = extract(text);
     // Een korte vervolgvraag ("en het budget?") gaat over hetzelfde als de vraag ervoor.
+    // The recap of long-ago questions is not "the question before".
+    let history = super::conversation_window::without_recap(history);
     if let Some(previous) = history.iter().rev().find(|t| t.from_user) {
         if terms.words.len() < 2 && terms.phrases.is_empty() && is_follow_up(text) {
             let before = extract(&previous.text);

@@ -50,6 +50,8 @@ struct SessionActionsMenu: View {
             Section {
                 ForEach([SessionAction.retry, .settle, .reopen].filter(offered.contains), id: \.self) { button($0) }
             }
+            // Its parent, forks, delegated tasks and side chats, as the Lineage control in the Mac's header.
+            Section { LineageMenu(session: session) }
             Section {
                 ForEach([SessionAction.rename, .regenerateTitle, .fork, .restartAgent, .mainThreadOn, .mainThreadOff]
                     .filter(offered.contains), id: \.self) { button($0) }
@@ -81,13 +83,28 @@ struct SessionActionsMenu: View {
         }
     }
 
-    /// "Copy" with the session's folder, branch and id, as on the Mac.
+    /// "Copy" with the conversation, the session's folder, branch and id, as on the Mac.
     private var copyMenu: some View {
         Menu {
+            if place == .header, !conversation.isEmpty {
+                Button("Conversation") { copy(markdown) }
+                // The Mac's "Save as Markdown", the phone's way: to Files, Notes or a message through the share sheet.
+                ShareLink(item: markdown, preview: SharePreview(session.title)) {
+                    Label("Share as Markdown", systemImage: "square.and.arrow.up")
+                }
+            }
             Button("Path") { copy(session.path ?? session.folder) }
             if let branch = session.branch, !branch.isEmpty { Button("Branch") { copy(branch) } }
             Button("Session ID") { copy(session.id) }
         } label: { Label("Copy", systemImage: "doc.on.doc") }
+    }
+
+    private var conversation: [TimelineEntry] { client.conversation(session.id) }
+
+    /// What the phone has of the conversation as Markdown, as the Mac's "Copy conversation" writes it.
+    private var markdown: String {
+        SessionMarkdown.markdown(title: session.title, agent: session.agent, folder: session.folder, branch: session.branch,
+                                 entries: conversation, you: String(localized: "You"))
     }
 
     @ViewBuilder
@@ -235,37 +252,256 @@ struct SessionControlsMenu: View {
     }
 }
 
-/// The messages that wait for the end of the turn, above the composer as on the Mac, each with a way to take it out.
+/// The messages that wait for the end of the turn, in the tray over the composer as on the Mac, each with what the Mac's
+/// queue tray does with it: edit its words, send it now ahead of the rest, move it up or down, take it out. Only what
+/// the Mac lists for the session is offered (`editQueued`, `sendQueuedNow`, `moveQueued`, `unqueue`).
 struct QueuedMessagesStrip: View {
     @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
+    @State private var editing: QueuedDigest?
+    @State private var editText = ""
+
+    private var offered: Set<SessionAction> {
+        guard client.allows(.operate) else { return [] }
+        return Set((session.actions ?? []).compactMap(SessionAction.init(rawValue:)))
+    }
 
     var body: some View {
         if let queued = session.queued, !queued.isEmpty {
+            let offered = offered
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Text("Waiting for this turn").font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
-                    .padding(.horizontal, Theme.Spacing.xs)
-                ForEach(queued) { message in
+                ForEach(Array(queued.enumerated()), id: \.element.id) { index, message in
                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                         Image(icon: "clock").font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
                         Text(verbatim: message.text).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        if (session.actions ?? []).contains(SessionAction.unqueue.rawValue), client.allows(.operate) {
-                            Button {
-                                Haptics.tap()
-                                Task { await client.manage(session, .unqueue, text: message.id) }
-                            } label: {
-                                Image(icon: "xmark").font(Theme.font(10, .bold)).foregroundStyle(Theme.textSecondary)
-                                    .frame(width: 44, height: 32).contentShape(Rectangle())
+                        if offered.contains(.sendQueuedNow) {
+                            Button { run(.sendQueuedNow, message) } label: {
+                                Image(icon: "arrow.up").font(Theme.font(11, .bold)).foregroundStyle(Theme.paper)
+                                    .frame(width: 36, height: 32).contentShape(Rectangle())
                             }
                             .buttonStyle(PressFade())
-                            .accessibilityLabel("Remove from the queue")
+                            .accessibilityLabel("Send now")
+                        }
+                        if !offered.isDisjoint(with: [.editQueued, .moveQueued, .unqueue]) {
+                            Menu {
+                                if offered.contains(.editQueued) {
+                                    Button {
+                                        editText = message.text
+                                        editing = message
+                                    } label: { Label("Edit", systemImage: "pencil") }
+                                }
+                                if offered.contains(.sendQueuedNow) {
+                                    Button { run(.sendQueuedNow, message) } label: { Label("Send now", systemImage: "arrow.up") }
+                                }
+                                if offered.contains(.moveQueued) {
+                                    if index > 0 {
+                                        Button { run(.moveQueued, message, text: String(index - 1)) } label: {
+                                            Label("Move up", systemImage: "arrow.up.circle")
+                                        }
+                                    }
+                                    if index < queued.count - 1 {
+                                        Button { run(.moveQueued, message, text: String(index + 1)) } label: {
+                                            Label("Move down", systemImage: "arrow.down.circle")
+                                        }
+                                    }
+                                }
+                                if offered.contains(.unqueue) {
+                                    Button(role: .destructive) {
+                                        Haptics.tap()
+                                        Task { await client.manage(session, .unqueue, text: message.id) }
+                                    } label: { Label("Remove from the queue", systemImage: "xmark") }
+                                }
+                            } label: {
+                                Image(icon: "ellipsis").font(Theme.font(12, .bold)).foregroundStyle(Theme.textSecondary)
+                                    .frame(width: 36, height: 32).contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Queued message actions")
                         }
                     }
-                    .padding(.leading, Theme.Spacing.md)
-                    .roundedBackground(Theme.field, radius: Theme.Radius.control)
                 }
             }
+            .alert("Edit queued message", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+                TextField("Message", text: $editText, axis: .vertical)
+                Button("Save") {
+                    let words = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let message = editing, !words.isEmpty { run(.editQueued, message, text: words) }
+                    editing = nil
+                }
+                Button("Cancel", role: .cancel) { editing = nil }
+            }
+        }
+    }
+
+    private func run(_ action: SessionAction, _ message: QueuedDigest, text: String? = nil) {
+        Haptics.tap()
+        Task { await client.manage(session, action, text: text, items: [message.id]) }
+    }
+}
+
+/// The message the Mac suggests you send next (`SessionDigest.nextPrompt`), in the tray over the composer: a tap puts it
+/// in the field, as Tab takes the grey suggestion on the Mac; the cross hides it.
+struct NextPromptLine: View {
+    let text: String
+    let take: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            Button {
+                Haptics.tap()
+                take()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                    Image(icon: "sparkles").font(Theme.TextStyle.caption).foregroundStyle(Theme.iris)
+                    Text(verbatim: text).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .accessibilityLabel("Suggested next message")
+            .accessibilityValue(text)
+            .accessibilityHint("Puts it in the message field")
+            Button(action: dismiss) {
+                Image(icon: "xmark").font(Theme.font(10, .bold)).foregroundStyle(Theme.textTertiary)
+                    .frame(width: 32, height: 28).contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .accessibilityLabel("Hide the suggestion")
+        }
+    }
+}
+
+// MARK: Lineage
+
+/// The sessions related to this one (`SessionDigest.lineage`), as the Mac's Lineage control: its parent, forks and
+/// comparisons, the tasks it delegated and its side chats, each opening that session.
+struct LineageMenu: View {
+    @EnvironmentObject private var client: CompanionClient
+    let session: SessionDigest
+
+    var body: some View {
+        if let rows = session.lineage, !rows.isEmpty {
+            Menu {
+                let current = rows.filter { $0.previous != true }
+                let previous = rows.filter { $0.previous == true }
+                ForEach(current) { row in LineageRowButton(row: row) }
+                if !previous.isEmpty {
+                    Section("Previous agents") {
+                        ForEach(previous) { row in LineageRowButton(row: row) }
+                    }
+                }
+            } label: {
+                Label(LineageMenu.title(rows), systemImage: "arrow.triangle.branch")
+            }
+        }
+    }
+
+    /// "Lineage", or "Lineage · 2 running" while delegated tasks or side chats work.
+    static func title(_ rows: [LineageDigest]) -> String {
+        let running = rows.filter { $0.status == .working && ($0.role == .subThread || $0.role == .sideChat) }.count
+        return running > 0 ? String(localized: "Lineage · \(running) running") : String(localized: "Lineage")
+    }
+}
+
+private struct LineageRowButton: View {
+    @EnvironmentObject private var client: CompanionClient
+    let row: LineageDigest
+
+    var body: some View {
+        Button {
+            Task { await client.openRelated(row.id) }
+        } label: {
+            Label {
+                Text(verbatim: row.title)
+                Text(verbatim: LineageWords.role(row.role) + " · " + LineageWords.status(row.status))
+            } icon: {
+                Image(systemName: LineageWords.symbol(row.role))
+            }
+        }
+    }
+}
+
+/// Above the composer: the delegated tasks and side chats that still work or wait, as the Mac's sub-thread strip; a row
+/// opens that session.
+struct LineageStrip: View {
+    @EnvironmentObject private var client: CompanionClient
+    let session: SessionDigest
+
+    private var live: [LineageDigest] {
+        (session.lineage ?? []).filter { ($0.role == .subThread || $0.role == .sideChat) && $0.status.isLive }
+    }
+
+    var body: some View {
+        let rows = live
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                ForEach(rows.prefix(4)) { row in
+                    Button {
+                        Haptics.tap()
+                        Task { await client.openRelated(row.id) }
+                    } label: {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(icon: row.status.needsYou ? "questionmark.bubble" : LineageWords.symbol(row.role))
+                                .font(Theme.font(11, .semibold))
+                                .foregroundStyle(row.status.needsYou ? Theme.amber : Theme.textTertiary)
+                                .frame(width: 14)
+                            Text(verbatim: row.title).foregroundStyle(Theme.paper.opacity(0.85)).lineLimit(1)
+                            Spacer(minLength: Theme.Spacing.sm)
+                            Text(verbatim: LineageWords.status(row.status))
+                                .foregroundStyle(row.status.needsYou ? Theme.amber : Theme.textTertiary)
+                            Image(icon: "chevron.right").font(Theme.font(9, .semibold)).foregroundStyle(Theme.textTertiary)
+                        }
+                        .font(Theme.TextStyle.detail)
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(Text(verbatim: LineageWords.role(row.role) + ": " + row.title))
+                    .accessibilityValue(Text(verbatim: LineageWords.status(row.status)))
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.xs)
+            .roundedBackground(Theme.field, radius: Theme.Radius.control)
+        }
+    }
+}
+
+/// The words and symbols of a related session, as the Mac's Lineage control says them.
+enum LineageWords {
+    static func role(_ role: LineageDigest.Role) -> String {
+        switch role {
+        case .parentAgent: return String(localized: "Parent agent")
+        case .parentThread: return String(localized: "Parent thread")
+        case .fork: return String(localized: "Fork")
+        case .comparison: return String(localized: "Same prompt, other model")
+        case .subThread: return String(localized: "Sub-thread")
+        case .sideChat: return String(localized: "Side chat")
+        }
+    }
+
+    static func status(_ status: LineageDigest.Status) -> String {
+        switch status {
+        case .working: return String(localized: "Working")
+        case .approval: return String(localized: "Needs approval")
+        case .question: return String(localized: "Asks a question")
+        case .done: return String(localized: "Done")
+        case .failed: return String(localized: "Failed")
+        case .stopped: return String(localized: "Stopped")
+        }
+    }
+
+    static func symbol(_ role: LineageDigest.Role) -> String {
+        switch role {
+        case .parentAgent, .parentThread: return "arrow.turn.left.up"
+        case .fork: return "arrow.triangle.branch"
+        case .comparison: return "square.stack.3d.up"
+        case .subThread: return "arrow.turn.down.right"
+        case .sideChat: return "bubble.left.and.bubble.right"
         }
     }
 }
@@ -384,39 +620,137 @@ private struct QuestionChoiceRow: View {
 
 // MARK: New session
 
-/// A file for the new session, from Files (`CompanionFeature.attachments`), up to what one request carries.
-struct AttachFileButton: View {
-    @Binding var files: [CompanionFile]
-    var images: [CompanionImage] = []
-    @State private var importing = false
-    @State private var tooLarge = false
+// MARK: How a session ended
+
+/// The card at the end of a session's conversation when it needs a next step, as the Mac's timeline ends: a usage limit
+/// with when it resets and *Resume when it resets*, a failed turn with *Retry*, a settled session with *Reopen*. Only
+/// what the Mac lists for the session (`SessionDigest.actions`) is offered; the words stay without buttons otherwise.
+struct SessionEndCard: View {
+    @EnvironmentObject private var client: CompanionClient
+    let session: SessionDigest
+
+    private enum Ending { case limited, failed, settled }
+
+    private var ending: Ending? {
+        switch session.attention {
+        case "limited": return .limited
+        case "failed": return .failed
+        default: return session.settled == true ? .settled : nil
+        }
+    }
+
+    private var actions: [SessionAction] {
+        guard client.can(CompanionFeature.manage), client.allows(.operate) else { return [] }
+        return (session.actions ?? []).compactMap(SessionAction.init(rawValue:))
+    }
 
     var body: some View {
-        Button { importing = true } label: {
-            ComposerPill(symbol: "paperclip", text: String(localized: "File"), showsChevron: false)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Attach a file")
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
-            guard case .success(let url) = result else { return }
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url), data.count <= CompanionFile.maxBytes else {
-                tooLarge = true
-                Haptics.warning()
-                return
+        if let ending {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Label {
+                    Text(title(ending)).font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
+                } icon: {
+                    Image(icon: symbol(ending)).foregroundStyle(tint(ending))
+                }
+                if let detail = detail(ending) {
+                    Text(detail).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                let buttons = buttons(ending)
+                if !buttons.isEmpty {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ForEach(buttons, id: \.action) { button in
+                            Button {
+                                Haptics.tap()
+                                Task { await client.manage(session, button.action) }
+                            } label: {
+                                Label(button.title, systemImage: button.symbol)
+                                    .font(Theme.TextStyle.label)
+                                    .foregroundStyle(button.primary ? Theme.onIris : Theme.paper)
+                                    .padding(.horizontal, Theme.Spacing.lg)
+                                    .frame(minHeight: 36)
+                                    .background(Capsule().fill(button.primary ? Theme.iris : Theme.smoke))
+                            }
+                            .buttonStyle(PressFade())
+                            .disabled(client.isOffline)
+                        }
+                    }
+                }
             }
-            let next = [CompanionFile(name: url.lastPathComponent, bytes: data)]
-            guard CompanionFile.fits(images: images, files: next) else {
-                tooLarge = true
-                return
-            }
-            withAnimation(Theme.reveal) { files = next }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(tint: ending == .settled ? nil : tint(ending))
+            .padding(.top, Theme.Spacing.sm)
         }
-        .alert("Too large to send from your phone", isPresented: $tooLarge) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("A file from the phone can be at most 150 KB.")
+    }
+
+    private struct EndButton {
+        let action: SessionAction
+        let title: String
+        let symbol: String
+        var primary = false
+    }
+
+    private func buttons(_ ending: Ending) -> [EndButton] {
+        var all: [EndButton] = []
+        switch ending {
+        case .limited:
+            if actions.contains(.snoozeLimitReset), session.limitResetsAt != nil {
+                all.append(EndButton(action: .snoozeLimitReset, title: String(localized: "Resume when it resets"),
+                                     symbol: "clock.arrow.circlepath", primary: true))
+            }
+            if actions.contains(.retry) {
+                all.append(EndButton(action: .retry, title: String(localized: "Retry"), symbol: "arrow.clockwise",
+                                     primary: all.isEmpty))
+            }
+        case .failed:
+            if actions.contains(.retry) {
+                all.append(EndButton(action: .retry, title: String(localized: "Retry"), symbol: "arrow.clockwise", primary: true))
+            }
+        case .settled:
+            if actions.contains(.reopen) {
+                all.append(EndButton(action: .reopen, title: String(localized: "Reopen"), symbol: "arrow.uturn.backward"))
+            }
+        }
+        return all
+    }
+
+    private func title(_ ending: Ending) -> LocalizedStringKey {
+        switch ending {
+        case .limited: return "Usage limit reached"
+        case .failed: return "The last turn failed"
+        case .settled: return "This session is settled"
+        }
+    }
+
+    private func detail(_ ending: Ending) -> String? {
+        switch ending {
+        case .limited:
+            guard let resets = session.limitResetsAt else { return nil }
+            let date = Date(timeIntervalSince1970: resets)
+            guard date > Date() else { return String(localized: "The limit has reset: the agent can go on.") }
+            let time = date.formatted(Calendar.current.isDateInToday(date) ? .dateTime.hour().minute()
+                                                                            : .dateTime.weekday(.wide).hour().minute())
+            return String(localized: "Resets at \(time).")
+        case .failed:
+            return nil
+        case .settled:
+            return String(localized: "Done for now: it waits in Settled until you reopen it or write to it.")
+        }
+    }
+
+    private func symbol(_ ending: Ending) -> String {
+        switch ending {
+        case .limited: return "hourglass"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .settled: return "checkmark.circle"
+        }
+    }
+
+    private func tint(_ ending: Ending) -> Color {
+        switch ending {
+        case .limited: return Theme.amber
+        case .failed: return Theme.coral
+        case .settled: return Theme.mint
         }
     }
 }
@@ -433,12 +767,20 @@ extension CompanionClient {
             switch session.id {
             case "s2":
                 session.pinned = true
-                actions += ["unpin", "setEffort", "setMode", "setModel", "unqueue"]
+                actions += ["unpin", "setEffort", "setMode", "setModel", "unqueue", "editQueued", "moveQueued", "sendQueuedNow"]
                 session.controls = SessionControls(effort: "high", efforts: [.init(id: "", name: "Default"), .init(id: "medium", name: "Medium"),
                                                                              .init(id: "high", name: "High")],
                                                    mode: "agent", model: "gpt-5", models: [.init(id: "", name: "Default"), .init(id: "gpt-5", name: "GPT-5")])
-                session.queued = [QueuedDigest(id: "q1", text: "Then add a test for the wake path.")]
+                session.queued = [QueuedDigest(id: "q1", text: "Then add a test for the wake path."),
+                                  QueuedDigest(id: "q2", text: "And update the changelog.")]
                 session.canSteer = true
+                // Its lineage: a sub-thread at work, one that waits on you, one that ended, a side chat.
+                session.lineage = [
+                    LineageDigest(id: "s1", title: "Add the usage page to Settings", role: .parentThread, status: .approval),
+                    LineageDigest(id: "t1", title: "Write the wake-path test", role: .subThread, status: .working),
+                    LineageDigest(id: "t2", title: "Check the relay logs", role: .subThread, status: .question),
+                    LineageDigest(id: "t3", title: "Read the NWPathMonitor docs", role: .subThread, status: .done, previous: true),
+                ]
             case "s3":
                 actions += ["pin", "settle", "fork", "restartAgent", "delete", "deleteWithWorktree", "snoozeHour", "snoozeEvening", "snoozeTomorrow"]
                 var item = SessionDigest.Item(id: "qa", kind: .question, title: "Which languages first?", detail: "", canAllow: false, options: [])
@@ -455,6 +797,11 @@ extension CompanionClient {
                 actions += ["pin", "settle", "unsnooze", "fork", "delete"]
             case "s5":
                 session.settled = true
+                // A finished turn: the suggested next message, and what Nook could do next.
+                session.nextPrompt = "Now open a pull request for this."
+                session.suggestion = ActionSuggestionDigest(
+                    conversation: "agent:s5", steps: [.init(text: "Remind you tomorrow at 9:00 to test on a real Mac", symbol: "bell")],
+                    reason: "You said you would check it on your Mac.", state: .waiting)
                 actions += ["pin", "reopen", "retry", "fork", "delete", "archive"]
             default:
                 actions += ["pin", "settle", "fork", "snoozeHour"]

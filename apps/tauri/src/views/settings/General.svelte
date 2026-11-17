@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Segmented from "./Segmented.svelte";
   // General: language, where the bar sits, energy. The color is under Appearance, the shortcuts under Shortcuts.
   import { api } from "../../lib/api";
   import { nook } from "../../lib/state.svelte";
@@ -39,7 +40,6 @@
   });
 </script>
 
-<h2>{tr("Algemeen", "General")}</h2>
 <div class="group">
   <label class="row">
     <span>{tr("Taal van Nook", "Language")}</span>
@@ -62,7 +62,7 @@
         <option value="floating">{tr("Zwevend op het scherm", "Floating on the screen")}</option>
       </select>
     </label>
-    <label class="row"><span>{tr("Starten als ik inlog op de computer", "Open at login")}</span><input type="checkbox" checked={launchAtLogin} onchange={(e) => setLaunchAtLogin(e.currentTarget.checked)} /></label>
+    <label class="row"><span>{tr("Starten als ik inlog op de computer", "Open at login")}</span><input type="checkbox" role="switch" checked={launchAtLogin} onchange={(e) => setLaunchAtLogin(e.currentTarget.checked)} /></label>
     {#if nook.info.capabilities.os === "windows"}
       <div class="row">
         <span>{tr("Snelkoppeling in het Startmenu", "Start menu shortcut")}{#if shortcutNote} <small>{shortcutNote}</small>{/if}</span>
@@ -71,20 +71,18 @@
     {/if}
     <label class="row">
       <span>{tr("Lokaal brein zelf starten", "Start the local brain myself")}<br /><small class="faint">{tr("Is Ollama of LM Studio geïnstalleerd maar niet gestart? Dan start Nook hem op de achtergrond.", "Ollama or LM Studio installed but not running? Then Nook starts it in the background.")}</small></span>
-      <input type="checkbox" checked={s.startLocalBrain} onchange={(e) => nook.saveSettings({ startLocalBrain: e.currentTarget.checked })} />
+      <input type="checkbox" role="switch" checked={s.startLocalBrain} onchange={(e) => nook.saveSettings({ startLocalBrain: e.currentTarget.checked })} />
     </label>
-    <label class="row"><span>{tr("Groter paneel", "Larger panel")}</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Groter paneel", "Larger panel")}</span><input type="checkbox" role="switch" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
 </div>
 {#if nook.info?.capabilities.desktop}
   <h3>{tr("Energie", "Energy")}</h3>
   <div class="group">
-    <label class="row">
+    <div class="row">
       <span>{tr("Werk op de achtergrond", "Background work")}<br /><small class="faint">{tr("Scherm lezen, meedenken en meetings herkennen terwijl jij werkt. Wat je zelf vraagt gaat altijd op volle snelheid.", "Reading the screen, thinking along and spotting meetings while you work. Anything you ask for always runs at full speed.")}</small></span>
-      <select value={s.energyMode} onchange={(e) => nook.saveSettings({ energyMode: e.currentTarget.value as EnergyMode })}>
-        {#each energyModes as mode (mode.id)}<option value={mode.id}>{mode.title}</option>{/each}
-      </select>
-    </label>
+      <Segmented label={tr("Werk op de achtergrond", "Background work")} value={s.energyMode} options={energyModes.map((m) => ({ value: m.id, label: m.title }))} onchange={(mode) => nook.saveSettings({ energyMode: mode })} />
+    </div>
     <p class="faint note">{energyModes.find((m) => m.id === s.energyMode)?.detail}</p>
     <div class="row">
       <span>{tr("Nu", "Right now")}</span>

@@ -33,7 +33,14 @@ extension CompanionServer {
             if controls.mode != nil { actions.append(.setMode) }
             if (controls.models?.count ?? 0) > 1 { actions.append(.setModel) }
         }
-        if workspace.queued[id]?.messages.isEmpty == false { actions.append(.unqueue) }
+        if let queue = workspace.queued[id]?.messages, !queue.isEmpty {
+            // The queue tray's own actions: edit while no edit runs on the Mac, move with more than one, send now
+            // where a message can go out at once.
+            actions.append(.unqueue)
+            if workspace.queued[id]?.editSession == nil { actions.append(.editQueued) }
+            if queue.count > 1 { actions.append(.moveQueued) }
+            if workspace.canSendQueuedNow(id) { actions.append(.sendQueuedNow) }
+        }
         return actions
     }
 
@@ -77,6 +84,44 @@ extension CompanionServer {
         digest.controls = controls(run, workspace: workspace)
         let queue = workspace.queued[run.id]?.messages ?? []
         digest.queued = queue.isEmpty ? nil : queue.prefix(10).map { QueuedDigest.clipped(id: $0.id.uuidString, text: $0.text) }
+        digest.nextPrompt = workspace.nextPrompt(run.id).map { String($0.prefix(SessionDigest.nextPromptLimit)) }
+        digest.lineage = lineage(run.id, workspace: workspace)
+        digest.suggestion = suggestion("agent:" + run.id.uuidString)
+    }
+
+    /// The Lineage control's rows for the phone, in its order: parent and forks, working tasks, ended tasks, side chats.
+    static func lineage(_ id: UUID, workspace: WorkspaceManager) -> [LineageDigest]? {
+        let groups = workspace.lineageGroups(of: id)
+        guard !groups.isEmpty else { return nil }
+        func digest(_ row: LineageGroups.Row, previous: Bool = false) -> LineageDigest {
+            LineageDigest(id: row.node.id.uuidString, title: CompanionPolicy.clip(row.node.title, limit: 120),
+                          role: role(row.role), status: status(row.node.status), previous: previous ? true : nil)
+        }
+        let rows = groups.related.map { digest($0) } + groups.active.map { digest($0) }
+            + groups.previous.map { digest($0, previous: true) } + groups.sideChats.map { digest($0) }
+        return Array(rows.prefix(LineageDigest.limit))
+    }
+
+    private static func role(_ role: LineageGroups.Row.Role) -> LineageDigest.Role {
+        switch role {
+        case .parent(.delegated): return .parentAgent
+        case .parent: return .parentThread
+        case .child(.fork): return .fork
+        case .child(.comparison): return .comparison
+        case .child(.delegated): return .subThread
+        case .child(.side): return .sideChat
+        }
+    }
+
+    private static func status(_ status: LineageStatus) -> LineageDigest.Status {
+        switch status {
+        case .working: return .working
+        case .approval: return .approval
+        case .question: return .question
+        case .done: return .done
+        case .failed: return .failed
+        case .stopped: return .stopped
+        }
     }
 
     /// Every question of an ask as the phone shows it, with its options, previews and multi-select.
@@ -148,6 +193,25 @@ extension CompanionServer {
                 return .failure(request.id, .unknownItem)
             }
             workspace.removeQueued(id, message: message)
+        case .editQueued, .moveQueued, .sendQueuedNow:
+            guard let message = request.items?.first.flatMap(UUID.init(uuidString:)),
+                  let queue = workspace.queued[id]?.messages, queue.contains(where: { $0.id == message }) else {
+                return .failure(request.id, .unknownItem)
+            }
+            switch action {
+            case .editQueued:
+                // The Mac's edit in one step: taken out of the line's text, written back with your words.
+                guard !text.isEmpty,
+                      workspace.beginEditQueued(id, message: message, currentDraft: "") != nil else {
+                    return .failure(request.id, .badRequest)
+                }
+                workspace.endEditQueued(id, save: true, text: text)
+            case .moveQueued:
+                guard let index = Int(text), queue.indices.contains(index) else { return .failure(request.id, .badRequest) }
+                workspace.moveQueued(id, message: message, toIndex: index)
+            default:
+                workspace.sendQueuedNow(id, message: message)
+            }
         default:
             return .failure(request.id, .notAllowedFromPhone)
         }

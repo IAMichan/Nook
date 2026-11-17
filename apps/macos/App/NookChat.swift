@@ -10,6 +10,8 @@ struct MailDraft: Identifiable, Equatable {
     var cc: String
     var subject: String
     var body: String
+    /// Blind copies: they get the mail without the others seeing their address.
+    var bcc: String = ""
     /// The account to send from, when the user named one. Empty: Mail's default account.
     var from: String = ""
     /// Files on this Mac that go with it, attached at the end of its text.
@@ -633,6 +635,12 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
+    /// The scope a new conversation starts with (`lastScope`), set without one open: a phone choosing sources for a
+    /// chat it has not started yet.
+    func setLastScope(_ scope: SourceScope) {
+        UserDefaults.standard.setEncoded(scope, forKey: Self.lastScopeKey)
+    }
+
     /// Last user prompt in conversation, for retry.
     func lastQuestion(in id: UUID) -> String? {
         conversation(id)?.messages.last(where: { $0.role == .user })?.text
@@ -1033,6 +1041,7 @@ private struct StoredChart: Codable {
 private struct StoredMail: Codable {
     var to: String
     var cc: String
+    var bcc: String?
     var subject: String
     var body: String
     var from: String?
@@ -1042,6 +1051,7 @@ private struct StoredMail: Codable {
     init(_ mail: MailDraft) {
         to = mail.to
         cc = mail.cc
+        bcc = mail.bcc.isEmpty ? nil : mail.bcc
         subject = mail.subject
         body = mail.body
         from = mail.from.isEmpty ? nil : mail.from
@@ -1055,7 +1065,7 @@ private struct StoredMail: Codable {
     }
 
     func restored() -> MailDraft {
-        var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, from: from ?? "")
+        var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, bcc: bcc ?? "", from: from ?? "")
         mail.replyTo = replyTo ?? ""
         switch state {
         case "sent": mail.state = .sent

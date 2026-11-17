@@ -1855,12 +1855,18 @@ extension ChatInbox {
         pick(name, app: app, among: shown).found
     }
 
-    /// What Nook says when a name fits several chats: each with its app, so the next ask can say which.
+    /// What Nook says when a name fits several chats: each with its app, number, newest message and id, so two chats
+    /// with the same name in the same app can still be told apart, and the next call names one by its id (`pick`
+    /// finds a chat by its id first).
     static func which(_ name: String, among threads: [InboxThread]) -> String {
         let list = threads.prefix(8).map { thread in
-            "\(thread.name) (\(MessagingApps.app(id: thread.app)?.name ?? thread.app))"
-        }.joined(separator: ", ")
-        return "\"\(name)\" fits more than one chat: \(list). Ask the user which one they mean, then name it exactly (with its app)."
+            var facts = [MessagingApps.app(id: thread.app)?.name ?? thread.app]
+            if let phone = thread.phone { facts.append(phone) }
+            if let last = thread.messages.last { facts.append("newest " + stamp(last.date) + " · " + line(last, in: thread)) }
+            return "- \(thread.name) (\(facts.joined(separator: " · "))) id: \(thread.id)"
+        }.joined(separator: "\n")
+        return "\"\(name)\" fits more than one chat:\n\(list)\nPick the one the conversation points to (for a reply: the chat "
+            + "the person wrote from), else ask the user. Then pass that chat's id exactly as given in place of its name."
     }
 
     /// One line per chat, newest first: "Telegram · Anna (2 unread) · 2026-10-20 12:04 · Anna: See you at eight".

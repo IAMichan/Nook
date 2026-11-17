@@ -76,3 +76,17 @@ What the iPhone app does that the Android companion does not yet. Each follows t
 - **Allow, Deny and Reply without opening the app**: a notification's buttons now open the app, which acts and shows the
   session; the iPhone acts in the background.
 - **Live Activities on Android**: an ongoing notification for the agents that work, updated by the Mac's pushes.
+
+### What the iPhone gained in its parity pass with the Mac
+
+The iPhone companion now has these (see *COMPANION.md*); the Android views in `apps/tauri/src/views/companion` still need
+them, on the same protocol:
+
+- Drafts kept per session, Nook chat, chat and New session (`apps/ios/Core/PhoneDrafts.swift`).
+- The card at the end of a session: usage limit with its reset, failed turn with *Retry*, settled with *Reopen*.
+- The queue's *Edit*, *Move up/down* and *Send now* (`SessionAction.editQueued`, `moveQueued`, `sendQueuedNow`).
+- The suggested next message (`SessionDigest.nextPrompt`) and what Nook could do next (`suggestion` on sessions, Nook
+  chats and chats; `suggestionAct`).
+- Lineage: the *Lineage* menu and the strip of working sub-threads (`SessionDigest.lineage`, `history` with `items`).
+- Nook's composer choices: model, access and sources (`nookComposer`, `nookComposerSet`).
+- Find in a conversation, and the changed-files card under a turn (`apps/ios/Core/PhoneTurnChanges.swift`).

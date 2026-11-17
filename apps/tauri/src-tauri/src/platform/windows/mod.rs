@@ -7,6 +7,7 @@ mod quiet;
 mod screen;
 mod speech;
 mod system;
+pub mod toast;
 
 pub use autocomplete::WindowsTextInput;
 pub use media::WindowsMedia;

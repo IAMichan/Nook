@@ -16,6 +16,12 @@ pub struct DeviceView {
     paired_at: DateTime<Utc>,
     last_seen: Option<DateTime<Utc>>,
     push: bool,
+    /// What the phone said it runs; `None` until it said so.
+    app_version: Option<String>,
+    /// This computer no longer works with the phone's app (`CompanionCompatibility.phoneSupported`).
+    outdated: bool,
+    /// It works, but cannot use what this Nook added since (`CompanionCompatibility.phoneBehind`).
+    behind: bool,
 }
 
 #[derive(Serialize)]
@@ -72,6 +78,12 @@ pub struct PushView {
     has_key: bool,
     can_push: bool,
     last_result: Option<String>,
+    /// How pushes reach the phones: sealed through the relay, or with your own APNs key.
+    route: nook_core::companion::relay_push::PushRoute,
+    /// A relay is in use, so pushes can go through it (Android phones always do).
+    relay_reachable: bool,
+    /// Pushes go through the relay now.
+    relay_active: bool,
 }
 
 #[cfg(desktop)]
@@ -113,7 +125,20 @@ fn info(c: &Companion) -> CompanionInfo {
         devices: store
             .devices()
             .into_iter()
-            .map(|d| DeviceView { id: d.id, name: d.name, paired_at: d.paired_at, last_seen: d.last_seen, push: d.push_token.is_some() })
+            .map(|d| {
+                // A phone that never said its version is not called out of date (as on the Mac).
+                let known = d.protocol_version.is_some();
+                DeviceView {
+                    outdated: known && !nook_core::companion::phone_supported(d.protocol_version),
+                    behind: known && nook_core::companion::phone_behind(d.protocol_version),
+                    id: d.id,
+                    name: d.name,
+                    paired_at: d.paired_at,
+                    last_seen: d.last_seen,
+                    push: d.push_token.is_some(),
+                    app_version: d.app_version,
+                }
+            })
             .collect(),
         pairing,
         push: Some(PushView {
@@ -123,6 +148,9 @@ fn info(c: &Companion) -> CompanionInfo {
             has_key: store.apns_pem().is_some(),
             can_push: store.can_push(),
             last_result: c.server.last_push(),
+            route: c.server.push_route(),
+            relay_reachable: c.server.relay_push_reachable(),
+            relay_active: c.server.relay_push_active(),
         }),
         away: Some(AwayView {
             relay: store.relay(),
@@ -232,6 +260,24 @@ pub fn companion_set_push(companion: State<'_, Companion>, settings: PushSetting
     #[cfg(not(desktop))]
     {
         let _ = (companion, settings);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// How pushes reach the phones: sealed through the relay, or straight to Apple with your own key.
+#[tauri::command]
+pub fn companion_set_push_route(
+    companion: State<'_, Companion>,
+    route: nook_core::companion::relay_push::PushRoute,
+) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        companion.server.store().set_push_route(route);
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, route);
         Err(NO_SERVER.into())
     }
 }

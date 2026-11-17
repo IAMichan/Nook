@@ -168,7 +168,7 @@
         </div>
         <label class="toggle">
           <span><strong>{tr("Koppeling gebruiken", "Use connection")}</strong><br /><span class="faint">{tr("Wanneer ingeschakeld kan Nook deze dienst gebruiken voor context en acties.", "When on, Nook can use this service for context and actions.")}</span></span>
-          <input type="checkbox" checked={current?.on ?? true} onchange={(e) => setOn(e.currentTarget.checked)} />
+          <input type="checkbox" role="switch" checked={current?.on ?? true} onchange={(e) => setOn(e.currentTarget.checked)} />
         </label>
         <h4>{tr("Sleutels & beveiliging", "Keys & security")}</h4>
         {#if replacing && isGithub}

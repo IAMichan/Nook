@@ -77,6 +77,20 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(next.watched.map(\.id), ["acme/web#5", "globex/api#2"], "new rows come in; the timed-out entry keeps its rows")
     }
 
+    func testAnOpenOnlyWatchedSearchKeepsTheClosedRows() {
+        func item(_ number: Int, _ state: PullRequestItem.State = .open) -> PullRequestItem {
+            PullRequestItem(repo: "acme/web", number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
+        }
+        let shown = AccountPullRequests(id: "github", name: "", login: "", mine: [], reviews: [], error: nil,
+                                        watched: [item(1), item(2), item(3, .merged)])
+        // #1 is still open, #2 left the open search (merged or closed), #4 is new.
+        let found = WatchedPullRequests(items: [item(4), item(1)], unreadable: [], openOnly: true)
+        let next = AccountPullRequests.attaching(["github": found], to: [shown])[0]
+        XCTAssertEqual(next.watched.map(\.number), [4, 1, 3], "the new one comes in at once; the closed rows wait for the full search")
+        let full = AccountPullRequests.attaching(["github": WatchedPullRequests(items: [item(4)], unreadable: [])], to: [shown])[0]
+        XCTAssertEqual(full.watched.map(\.number), [4], "a full search replaces them all")
+    }
+
     func testAQuickRefreshKeepsTheClosedRowsUntilTheyAreReadAgain() {
         func item(_ number: Int, _ state: PullRequestItem.State = .open) -> PullRequestItem {
             PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
@@ -240,6 +254,17 @@ final class PullRequestGraphQLTests: XCTestCase {
         let variables = try XCTUnwrap(body["variables"] as? [String: String])
         XCTAssertEqual(variables.count, 4)
         XCTAssertEqual(variables["w1"], "is:pr is:open archived:false repo:a/b sort:updated-desc")
+    }
+
+    func testAnOpenOnlyWatchQueryHasOneSearchPerEntry() throws {
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.watchBody(["acme", "a/b"], closed: false)) as? [String: Any])
+        let query = try XCTUnwrap(body["query"] as? String)
+        XCTAssertTrue(query.contains("w1: search(query: $w1"))
+        XCTAssertFalse(query.contains("Closed"))
+        XCTAssertEqual((body["variables"] as? [String: String])?.count, 2)
+        let answer = #"{"data":{"w0":{"nodes":[]},"w1":{"nodes":[]}}}"#
+        XCTAssertEqual(try PullRequestGraphQL.parseWatched(Data(answer.utf8), entries: ["acme", "a/b"]).unreadable, [],
+                       "a missing closed search is not an unreadable entry")
     }
 
     func testOwnOrganizationsJoinTheWatchList() {

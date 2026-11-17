@@ -10,6 +10,7 @@ pub mod link;
 pub mod provider;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -168,82 +169,8 @@ pub enum ChatMode {
     Muted,
 }
 
-/// The kinds of chat WhatsApp has, told apart by the JID's server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ChatKind {
-    Person,
-    Group,
-    Status,
-    Channel,
-}
-
-/// How far your own message got, as WhatsApp's ticks show it: one grey tick when the server has it, two when it
-/// reached the phone, two blue ones once it was read. Ordered, so ticks only move forward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Receipt {
-    Failed,
-    Pending,
-    Sent,
-    Delivered,
-    Read,
-}
-
-impl Receipt {
-    /// A gateway's status word: OpenWA's `pending|sent|delivered|read|played|failed`, GOWA's `delivered|read|played`.
-    pub fn from_status(status: &str) -> Option<Self> {
-        Some(match status.to_lowercase().as_str() {
-            "pending" => Self::Pending,
-            "sent" | "server" => Self::Sent,
-            "delivered" | "delivery" => Self::Delivered,
-            "read" | "played" => Self::Read,
-            "failed" | "error" => Self::Failed,
-            _ => return None,
-        })
-    }
-
-    /// Ticks only move forward; a failure always shows.
-    pub fn advanced(self, new: Receipt) -> Receipt {
-        if new == Receipt::Failed || new > self {
-            new
-        } else {
-            self
-        }
-    }
-}
-
-/// What a message holds besides text: a label is shown, and the file itself is only fetched when the card shows it or
-/// the user opens it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Media {
-    #[default]
-    None,
-    Image,
-    Video,
-    Audio,
-    Voice,
-    Document {
-        name: Option<String>,
-    },
-    Sticker,
-    Location,
-    Contact,
-    Other,
-}
-
-impl Media {
-    /// A file Nook can fetch from the gateway and open on this computer.
-    pub fn is_openable(&self) -> bool {
-        matches!(self, Self::Image | Self::Video | Self::Audio | Self::Voice | Self::Document { .. })
-    }
-
-    /// A file the card fetches by itself to show: a photo, a video or a document (a voice note stays a button).
-    pub fn is_previewed(&self) -> bool {
-        matches!(self, Self::Image | Self::Video | Self::Document { .. })
-    }
-}
+use crate::chats::{BridgedChat, ChatInbox, InboxMessage, InboxStore, InboxThread};
+pub use crate::chats::{ChatKind, ChatMedia as Media, Receipt};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -423,7 +350,7 @@ pub fn text_mentions(text: &str, me: Option<&str>) -> bool {
 }
 
 /// Messages kept per chat (in memory only): enough for the card to scroll back a while.
-pub const KEEP: usize = 50;
+pub const KEEP: usize = ChatInbox::KEEP;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -433,26 +360,94 @@ pub enum Outcome {
     Notify,
 }
 
-/// De gesprekken, per chat: één regel per gesprek, nooit één per bericht.
-#[derive(Debug, Clone, Default)]
+/// WhatsApp's chats as the shared inbox holds them ([`crate::chats::ChatInbox`]): this only translates what the gateway
+/// says into [`BridgedChat`]s and back into the [`Conversation`]s the WhatsApp views show. What is new, read, kept and
+/// dropped is decided there, the same for every chat app. Its messages are `ephemeral`: they never reach the disk.
+#[derive(Clone)]
 pub struct Inbox {
-    pub conversations: HashMap<String, Conversation>,
+    store: Arc<InboxStore>,
     seen: HashSet<String>,
     order: VecDeque<String>,
     /// Receipts that came before their message (the webhook can beat the answer to the send itself).
     early_receipts: HashMap<String, Receipt>,
 }
 
+impl Default for Inbox {
+    fn default() -> Self {
+        Self::new(Arc::new(InboxStore::memory()))
+    }
+}
+
+/// The app id WhatsApp's chats carry in the shared inbox.
+pub const APP: &str = "whatsapp";
+
 impl Inbox {
+    pub fn new(store: Arc<InboxStore>) -> Self {
+        Self { store, seen: HashSet::new(), order: VecDeque::new(), early_receipts: HashMap::new() }
+    }
+
+    /// The shared inbox's key for a chat JID.
+    pub fn key(chat: &str) -> String {
+        ChatInbox::key(APP, &jid::normalized(chat))
+    }
+
+    /// A chat as the WhatsApp views show it. One brought back from disk without its messages (they never go there)
+    /// waits for the gateway to bring them again; its read state is kept meanwhile.
+    fn conversation(thread: &InboxThread) -> Option<Conversation> {
+        if thread.messages.is_empty() {
+            return None;
+        }
+        let id = thread.chat_id.clone()?;
+        let kind = thread.kind.unwrap_or_else(|| jid::kind(&id));
+        let messages = thread
+            .messages
+            .iter()
+            .map(|m| Message {
+                id: m.id.clone(),
+                chat: id.clone(),
+                sender: m.sender_id.clone().unwrap_or_default(),
+                sender_name: m.sender.clone(),
+                text: m.text.clone(),
+                media: m.media.clone(),
+                date: m.date,
+                from_me: m.from_me,
+                mentions_me: m.mentions_me,
+                chat_name: None,
+                receipt: m.receipt,
+            })
+            .collect();
+        Some(Conversation {
+            id,
+            name: thread.name.clone(),
+            is_group: kind == ChatKind::Group,
+            kind,
+            messages,
+            unread: thread.unread,
+            last_activity: thread.last(),
+        })
+    }
+
+    /// One chat by its JID.
+    pub fn get(&self, chat: &str) -> Option<Conversation> {
+        self.store.read(|inbox| inbox.threads.get(&Self::key(chat)).and_then(Self::conversation))
+    }
+
+    pub fn contains(&self, chat: &str) -> bool {
+        self.store.read(|inbox| inbox.threads.contains_key(&Self::key(chat)))
+    }
+
+    /// Every WhatsApp chat, by JID.
+    pub fn conversations(&self) -> HashMap<String, Conversation> {
+        self.sorted().into_iter().map(|c| (c.id.clone(), c)).collect()
+    }
+
     /// Nieuwste activiteit eerst.
-    pub fn sorted(&self) -> Vec<&Conversation> {
-        let mut list: Vec<&Conversation> = self.conversations.values().collect();
-        list.sort_by_key(|b| std::cmp::Reverse(b.last_activity));
-        list
+    pub fn sorted(&self) -> Vec<Conversation> {
+        self.store.read(|inbox| inbox.sorted_of(APP).into_iter().filter_map(Self::conversation).collect())
     }
 
     pub fn total_unread(&self) -> usize {
-        self.conversations.values().map(|c| c.unread).sum()
+        self.sorted().iter().map(|c| c.unread).sum()
     }
 
     /// Voegt een bericht toe aan zijn gesprek. `Notify` als het jou moet bereiken, `Quiet` als het bewaard wordt maar
@@ -474,99 +469,93 @@ impl Inbox {
                 }
             }
         }
+        let key = Self::key(&chat);
         let kind = jid::kind(&chat);
-        let is_group = kind == ChatKind::Group;
-        let number = jid::fallback_name(&chat);
+        let (known_name, known_unread) = self.store.read(|inbox| inbox.threads.get(&key).map(|t| (t.name.clone(), t.unread))).unzip();
         // In een privégesprek noemt de ander het: nooit je eigen naam op je eigen bericht.
         let person = (kind == ChatKind::Person && !message.from_me && !message.sender_name.is_empty()).then(|| message.sender_name.clone());
         let given = name.map(str::to_string).or_else(|| message.chat_name.clone()).filter(|n| !jid::is_placeholder_name(&chat, n));
-        let conversation = self.conversations.entry(chat.clone()).or_insert_with(|| Conversation {
-            id: chat.clone(),
-            name: given.clone().or_else(|| person.clone()).unwrap_or_else(|| number.clone()),
-            is_group,
-            kind,
-            messages: vec![],
-            unread: 0,
-            last_activity: message.date,
-        });
-        if let Some(name) = given {
-            conversation.name = name;
-        } else if jid::is_placeholder_name(&chat, &conversation.name) {
-            if let Some(person) = person {
-                conversation.name = person;
-            }
-        }
+        let chat_name = given
+            .or_else(|| known_name.clone().filter(|n| !jid::is_placeholder_name(&chat, n)))
+            .or(person)
+            .or(known_name)
+            .unwrap_or_else(|| jid::fallback_name(&chat));
         let from_me = message.from_me;
         let mentions = message.mentions_me;
-        let date = message.date;
-        let mut msg = message;
-        msg.chat = chat.clone();
-        if msg.from_me {
+        let mut receipt = message.receipt;
+        if from_me {
             // Your own message that just went out has reached WhatsApp's server: one tick.
-            if msg.receipt.is_none() && !history {
-                msg.receipt = Some(Receipt::Sent);
+            if receipt.is_none() && !history {
+                receipt = Some(Receipt::Sent);
             }
-            if let Some(early) = self.early_receipts.remove(&msg.id) {
-                msg.receipt = Some(msg.receipt.unwrap_or(Receipt::Sent).advanced(early));
+            if let Some(early) = self.early_receipts.remove(&message.id) {
+                receipt = Some(receipt.unwrap_or(Receipt::Sent).advanced(early));
             }
         }
-        conversation.messages.push(msg);
-        conversation.messages.sort_by_key(|m| m.date);
-        if conversation.messages.len() > KEEP {
-            let extra = conversation.messages.len() - KEEP;
-            conversation.messages.drain(..extra);
-        }
-        conversation.last_activity = conversation.last_activity.max(date);
-        if history {
-            Outcome::Quiet
+        let item = InboxMessage {
+            id: message.id,
+            sender: message.sender_name,
+            sender_id: (!message.sender.is_empty()).then_some(message.sender),
+            text: message.text,
+            date: message.date,
+            from_me,
+            media: message.media,
+            receipt,
+            mentions_me: mentions,
+            edited: false,
+            deleted: false,
+        };
+        // WhatsApp's gateway gives no unread count of its own: a new message from someone else is one more, your own
+        // (answered from the phone) reads the chat there, and history is never new.
+        let unread = if history {
+            None
         } else if from_me {
-            // Beantwoord vanaf de telefoon: daar gelezen.
-            conversation.unread = 0;
+            Some(0)
+        } else {
+            Some(known_unread.unwrap_or(0) + 1)
+        };
+        let bridged = BridgedChat {
+            app: APP.into(),
+            name: chat_name,
+            messages: vec![item],
+            unread,
+            chat_id: Some(chat.clone()),
+            kind: Some(kind),
+            history,
+            ephemeral: true,
+            ..Default::default()
+        };
+        self.store.with(|inbox| inbox.merge(bridged, Utc::now()));
+        if history || from_me || filters.is_quiet(&chat, mentions) {
             Outcome::Quiet
         } else {
-            conversation.unread += 1;
-            if filters.is_quiet(&chat, mentions) {
-                Outcome::Quiet
-            } else {
-                Outcome::Notify
-            }
+            Outcome::Notify
         }
     }
 
     /// A delivery or read receipt for your own messages: their ticks move forward, never back. Returns the chat whose
     /// ticks changed, `None` when none did (a receipt for an incoming message, or for one Nook doesn't keep).
     pub fn apply_receipt(&mut self, status: Receipt, ids: &[String], chat: &str) -> Option<String> {
-        let key = jid::normalized(chat);
-        // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
-        let keys: Vec<String> =
-            if self.conversations.contains_key(&key) { vec![key] } else { self.conversations.keys().cloned().collect() };
-        let mut pending: HashSet<&String> = ids.iter().collect();
-        let mut changed = None;
-        for chat_key in keys {
-            let Some(conversation) = self.conversations.get_mut(&chat_key) else { continue };
-            let mut touched = false;
-            for message in conversation.messages.iter_mut() {
-                if !pending.remove(&message.id) {
-                    continue;
-                }
-                if !message.from_me {
-                    continue;
-                }
-                let new = Some(message.receipt.unwrap_or(Receipt::Sent).advanced(status));
-                if new != message.receipt {
-                    message.receipt = new;
-                    touched = true;
+        let key = Self::key(chat);
+        let (changed, known) = self.store.with(|inbox| {
+            // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
+            let keys: Vec<String> = if inbox.threads.contains_key(&key) {
+                vec![key.clone()]
+            } else {
+                inbox.sorted_of(APP).iter().map(|t| t.id.clone()).collect()
+            };
+            let mut changed = None;
+            for k in &keys {
+                if inbox.apply_receipt(k, ids, status) {
+                    changed = inbox.threads.get(k).and_then(|t| t.chat_id.clone());
                 }
             }
-            if touched {
-                changed = Some(chat_key);
-            }
-            if pending.is_empty() {
-                break;
-            }
-        }
+            let known: HashSet<String> =
+                keys.iter().filter_map(|k| inbox.threads.get(k)).flat_map(|t| t.messages.iter().map(|m| m.id.clone())).collect();
+            (changed, known)
+        });
         // Not here yet: kept a little while for the message itself (only ids never seen; a few hundred at most).
-        for id in pending.into_iter().filter(|id| !self.seen.contains(*id)) {
+        for id in ids.iter().filter(|id| !known.contains(*id) && !self.seen.contains(*id)) {
             let kept = self.early_receipts.get(id).copied().unwrap_or(status).advanced(status);
             self.early_receipts.insert(id.clone(), kept);
         }
@@ -578,7 +567,7 @@ impl Inbox {
 
     /// The conversations the interface lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
     /// stay out unless something in them reached you.
-    pub fn visible(&self, filters: &Filters) -> Vec<&Conversation> {
+    pub fn visible(&self, filters: &Filters) -> Vec<Conversation> {
         self.sorted()
             .into_iter()
             .filter(|c| {
@@ -593,37 +582,28 @@ impl Inbox {
     }
 
     pub fn remove(&mut self, chat: &str) {
-        self.conversations.remove(&jid::normalized(chat));
+        self.store.with(|inbox| inbox.remove(&Self::key(chat), Utc::now()));
     }
 
     pub fn mark_read(&mut self, chat: &str) {
-        if let Some(c) = self.conversations.get_mut(&jid::normalized(chat)) {
-            c.unread = 0;
-        }
+        self.store.with(|inbox| inbox.mark_read(&Self::key(chat), Utc::now()));
     }
 
     /// Unread by hand: a read chat counts one unread message again. False when the chat is not here or was unread.
     pub fn mark_unread(&mut self, chat: &str) -> bool {
-        match self.conversations.get_mut(&jid::normalized(chat)) {
-            Some(c) if c.unread == 0 => {
-                c.unread = 1;
-                true
-            }
-            _ => false,
-        }
+        self.store.with(|inbox| inbox.mark_unread(&Self::key(chat), Utc::now()))
     }
 
     pub fn rename(&mut self, chat: &str, name: &str) {
-        if name.is_empty() {
-            return;
-        }
-        if let Some(c) = self.conversations.get_mut(&jid::normalized(chat)) {
-            c.name = name.into();
-        }
+        self.store.with(|inbox| inbox.rename(&Self::key(chat), name));
     }
 
+    /// Forgets WhatsApp's chats (unlinked): the other apps' chats stay.
     pub fn clear(&mut self) {
-        *self = Self::default();
+        self.store.with(|inbox| inbox.threads.retain(|_, t| t.app != APP));
+        self.seen.clear();
+        self.order.clear();
+        self.early_receipts.clear();
     }
 }
 
@@ -1134,7 +1114,7 @@ pub fn lines(messages: &[Message], chat_name: &str) -> String {
 }
 
 /// De gesprekken met iets nieuws, voor de context en het overzicht.
-pub fn overview(conversations: &[&Conversation], limit: usize) -> String {
+pub fn overview(conversations: &[Conversation], limit: usize) -> String {
     conversations
         .iter()
         .take(limit)
@@ -1192,10 +1172,10 @@ mod tests {
         let mut m = msg("g1", "120363418432353030@g.us", 0, false, false);
         m.chat_name = Some("Group 120363418432353030".into());
         inbox.add(m, &filters, None, false);
-        let name = inbox.conversations.get("120363418432353030@g.us").unwrap().name.clone();
+        let name = inbox.conversations().get("120363418432353030@g.us").unwrap().name.clone();
         assert!(jid::is_placeholder_name("120363418432353030@g.us", &name));
         inbox.rename("120363418432353030@g.us", "Familie");
-        assert_eq!(inbox.conversations.get("120363418432353030@g.us").unwrap().name, "Familie");
+        assert_eq!(inbox.conversations().get("120363418432353030@g.us").unwrap().name, "Familie");
     }
 
     #[test]
@@ -1205,14 +1185,14 @@ mod tests {
         assert_eq!(inbox.add(msg("1", "31600000001@s.whatsapp.net", 0, false, false), &f, None, false), Outcome::Notify);
         inbox.add(msg("2", "31600000001@s.whatsapp.net", 5, false, false), &f, None, false);
         inbox.add(msg("3", "31600000002@s.whatsapp.net", 3, false, false), &f, None, false);
-        assert_eq!(inbox.conversations.len(), 2);
-        assert_eq!(inbox.conversations["31600000001@s.whatsapp.net"].unread, 2);
+        assert_eq!(inbox.conversations().len(), 2);
+        assert_eq!(inbox.conversations()["31600000001@s.whatsapp.net"].unread, 2);
         assert_eq!(inbox.sorted()[0].id, "31600000001@s.whatsapp.net");
         assert_eq!(inbox.add(msg("2", "31600000001@s.whatsapp.net", 0, false, false), &f, None, false), Outcome::Duplicate);
         assert_eq!(inbox.add(msg("4", "31600000001:7@c.us", 9, false, false), &f, None, false), Outcome::Notify);
-        assert_eq!(inbox.conversations.len(), 2);
+        assert_eq!(inbox.conversations().len(), 2);
         assert_eq!(inbox.add(msg("5", "31600000002@s.whatsapp.net", 10, true, false), &f, None, false), Outcome::Quiet);
-        assert_eq!(inbox.conversations["31600000002@s.whatsapp.net"].unread, 0);
+        assert_eq!(inbox.conversations()["31600000002@s.whatsapp.net"].unread, 0);
     }
 
     #[test]
@@ -1233,12 +1213,12 @@ mod tests {
         let mut inbox = Inbox::default();
         let f = Filters::default();
         assert_eq!(inbox.add(msg("h1", "1@s.whatsapp.net", 0, false, false), &f, None, true), Outcome::Quiet);
-        assert_eq!(inbox.conversations["1@s.whatsapp.net"].unread, 0);
+        assert_eq!(inbox.conversations()["1@s.whatsapp.net"].unread, 0);
         for i in 0..60 {
             inbox.add(msg(&format!("m{i}"), "1@s.whatsapp.net", i + 1, false, false), &f, None, false);
         }
-        assert_eq!(inbox.conversations["1@s.whatsapp.net"].messages.len(), KEEP);
-        assert_eq!(inbox.conversations["1@s.whatsapp.net"].messages.last().unwrap().id, "m59");
+        assert_eq!(inbox.conversations()["1@s.whatsapp.net"].messages.len(), KEEP);
+        assert_eq!(inbox.conversations()["1@s.whatsapp.net"].messages.last().unwrap().id, "m59");
     }
 
     #[test]
@@ -1269,12 +1249,12 @@ mod tests {
         let mut status = msg("s1", "status@broadcast", 0, false, false);
         status.sender_name = "Piet".into();
         assert_eq!(inbox.add(status, &f, None, false), Outcome::Quiet);
-        assert_eq!(inbox.conversations["status@broadcast"].name, "Statusupdates");
-        assert_eq!(inbox.conversations["status@broadcast"].kind, ChatKind::Status);
+        assert_eq!(inbox.conversations()["status@broadcast"].name, "Statusupdates");
+        assert_eq!(inbox.conversations()["status@broadcast"].kind, ChatKind::Status);
         assert!(inbox.visible(&f).is_empty());
         assert_eq!(inbox.add(msg("g1", "120363000000000001@g.us", 1, false, false), &f, None, false), Outcome::Notify);
         assert_eq!(inbox.add(msg("p1", "31600000001@s.whatsapp.net", 2, false, false), &f, None, false), Outcome::Quiet);
-        let shown: Vec<&str> = inbox.visible(&f).iter().map(|c| c.id.as_str()).collect();
+        let shown: Vec<String> = inbox.visible(&f).into_iter().map(|c| c.id).collect();
         assert_eq!(shown, vec!["120363000000000001@g.us"]);
         // Old settings files without the new fields still load.
         let old: WhatsAppSettings = serde_json::from_str(r#"{"enabled":true,"muteGroups":false}"#).unwrap();
@@ -1288,7 +1268,7 @@ mod tests {
         let chat = "31600000001@s.whatsapp.net";
         inbox.add(msg("in", chat, 0, false, false), &f, None, false);
         inbox.add(msg("out", chat, 5, true, false), &f, None, false);
-        let ticks = |inbox: &Inbox, id: &str| inbox.conversations[chat].messages.iter().find(|m| m.id == id).and_then(|m| m.receipt);
+        let ticks = |inbox: &Inbox, id: &str| inbox.conversations()[chat].messages.iter().find(|m| m.id == id).and_then(|m| m.receipt);
         assert_eq!(ticks(&inbox, "out"), Some(Receipt::Sent));
         assert_eq!(ticks(&inbox, "in"), None);
         let ids = |id: &str| vec![id.to_string()];

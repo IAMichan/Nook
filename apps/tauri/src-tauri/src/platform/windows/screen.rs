@@ -340,6 +340,10 @@ impl ScreenReader for WindowsScreen {
         true
     }
 
+    fn read_image_text(&self, rgba: &[u8], width: u32, height: u32) -> Option<String> {
+        ocr(rgba, width, height).ok()
+    }
+
     fn windows(&self) -> Vec<SeenWindow> {
         let front = self.front();
         let list = self.list();

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Writing a mail in the Chats tab, in the pane where a conversation shows: a new mail, an answer to everyone, or a mail
-/// forwarded. From (each address of every account in Mail), To, Cc and the subject on lines of their own, the text below
+/// forwarded. From (each address of every account in Mail), To, Cc, Bcc and the subject on lines of their own, the text below
 /// over the rest of the pane, and Send (⌘↩), Open in Mail to finish it there, and Discard (Escape). Nothing goes before
 /// your own click; Mail sends it from the account you chose. Never build a mail form by hand.
 struct MailComposeView: View {
@@ -16,7 +16,7 @@ struct MailComposeView: View {
     /// `@` in the text: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
 
-    private enum Field: Hashable { case to, cc, subject, body }
+    private enum Field: Hashable { case to, cc, bcc, subject, body }
 
     private var locked: Bool { draft.state == .sending || draft.state == .sent }
 
@@ -29,6 +29,7 @@ struct MailComposeView: View {
                 if !senders.isEmpty { fromLine }
                 line(tr("chat.mail.to"), text: $draft.to, prompt: tr("chat.mail.emailPrompt"), field: .to)
                 line(tr("chat.mail.cc"), text: $draft.cc, prompt: tr("chat.mail.optional"), field: .cc)
+                line(tr("chat.mail.bcc"), text: $draft.bcc, prompt: tr("chat.mail.optional"), field: .bcc)
                 line(tr("chat.mail.subject"), text: $draft.subject, prompt: tr("chat.mail.subject"), field: .subject)
                 editor
                 footer

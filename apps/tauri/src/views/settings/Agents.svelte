@@ -1,29 +1,11 @@
 <script lang="ts">
-  // Instellingen › Agents: koppelen (met precies wat er verandert, een backup en pas na OK), accounts, gebruik en
-  // de werkruimte voor agents.
-  import type { Component } from "svelte";
+  // Settings › Coding agents: linking (with exactly what changes, a backup, and only after OK) and the extra accounts.
+  // Usage, Sessions and Automation are their own subjects in Settings, as on the Mac.
   import { agentApi, agentNames, type AgentKind, type AgentProfile, type Integration, type LinkPreview } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
   import { nook } from "../../lib/state.svelte";
   import DiffView from "../agents/DiffView.svelte";
-  import AgentsUsage from "./AgentsUsage.svelte";
-  import AgentsWorkspace from "./AgentsWorkspace.svelte";
-  import AgentsAutomation from "./AgentsAutomation.svelte";
   import { tr } from "../../lib/i18n.svelte";
-
-  type Tab = "link" | "accounts" | "usage" | "workspace" | "automation";
-  const tabs: { id: Tab; title: string; component?: Component }[] = $derived([
-    { id: "link", title: tr("Koppelen", "Link") },
-    { id: "accounts", title: tr("Accounts", "Accounts") },
-    { id: "usage", title: tr("Gebruik", "Usage"), component: AgentsUsage },
-    { id: "workspace", title: tr("Werkruimte", "Workspace"), component: AgentsWorkspace },
-    { id: "automation", title: tr("Automatisering", "Automation"), component: AgentsAutomation },
-  ]);
-  let tab = $state<Tab>((localStorage.getItem("settings.agents.tab") as Tab) || "link");
-  $effect(() => {
-    localStorage.setItem("settings.agents.tab", tab);
-  });
-  const Current = $derived(tabs.find((t) => t.id === tab)?.component);
 
   let integrations = $state<Integration[]>([]);
   let profiles = $state<AgentProfile[]>([]);
@@ -120,7 +102,6 @@
   }
 </script>
 
-<h2>{tr("Agents", "Agents")}</h2>
 {#if !local}
   <p class="muted">
     {tr(
@@ -129,14 +110,10 @@
     )}
   </p>
 {:else}
-  <div class="tabs">
-    {#each tabs as t (t.id)}<button class:on={tab === t.id} onclick={() => (tab = t.id)}>{t.title}</button>{/each}
-  </div>
 
   {#if status}<p class="ok note">{status}</p>{/if}
   {#if error}<p class="err">{error}</p>{/if}
 
-  {#if tab === "link"}
     <h3>{tr("Koppel je agents", "Link your agents")}</h3>
     <div class="group">
       {#each integrations.filter((i) => !i.profileId) as i (i.target)}
@@ -182,7 +159,6 @@
         {/each}
       </div>
     {/if}
-  {:else if tab === "accounts"}
     {#each groups as kind (kind)}
       <h3>{agentNames[kind]}</h3>
       <div class="group">
@@ -226,9 +202,6 @@
         "Each account has its own folder (for example ~/.claude-work) with its own login, so personal and work can live side by side. An API key is only kept in your system's keychain, never in a file.",
       )}
     </p>
-  {:else if Current}
-    <Current />
-  {/if}
 {/if}
 
 {#if pending}
@@ -250,9 +223,6 @@
 {/if}
 
 <style>
-  .tabs { display: inline-flex; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 2px; }
-  .tabs button { border: none; background: none; color: var(--text2); padding: 4px 14px; }
-  .tabs button.on { background: var(--smoke); color: var(--paper); }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; }
   .small { font-size: 12px; }

@@ -337,6 +337,37 @@ done
         let _ = std::fs::remove_file(file);
     }
 
+    /// The same round trip on Windows, through `cmd /C` and without a console window, as a real `npx.cmd` server
+    /// starts. The server is a PowerShell script, which every Windows 10 and 11 has.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn stdio_server_round_trip_on_windows() {
+        use crate::connectors::mcp::McpClient;
+
+        let script = r#"while ($null -ne ($line = [Console]::In.ReadLine())) {
+  if ($line -match '"id":(\d+)') { $id = $Matches[1] } else { continue }
+  if ($line -like '*"initialize"*') { [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":' + $id + ',"result":{"serverInfo":{"name":"pwsh"}}}') }
+  elseif ($line -like '*"tools/list"*') { [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":' + $id + ',"result":{"tools":[{"name":"echo","annotations":{"readOnlyHint":true}}]}}') }
+  [Console]::Out.Flush()
+}
+"#;
+        let file = std::env::temp_dir().join(format!("mcp-{}.ps1", uuid::Uuid::new_v4()));
+        std::fs::write(&file, script).unwrap();
+        let arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
+            .into_iter()
+            .map(String::from)
+            .chain([file.display().to_string()])
+            .collect::<Vec<_>>();
+        let transport = StdioTransport::spawn("powershell", &arguments, &[], Duration::from_secs(30)).unwrap();
+        let client = McpClient::new(Arc::new(transport));
+        client.initialize().await.unwrap();
+        assert_eq!(*client.server_name.lock().unwrap(), "pwsh");
+        let tools = client.list_tools().await.unwrap();
+        assert_eq!(tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["echo"]);
+        client.close();
+        let _ = std::fs::remove_file(file);
+    }
+
     #[tokio::test]
     async fn http_server_with_event_stream() {
         use crate::connectors::testserver::TestServer;

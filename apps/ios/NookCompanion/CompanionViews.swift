@@ -73,14 +73,8 @@ struct RootView: View {
                     Group {
                         switch section {
                         case .pulls:
-                            NavigationStack(path: $pullPath) {
-                                PullRequestListView()
-                                    .toolbar {
-                                        ToolbarItem(placement: .cancellationAction) {
-                                            Button("Done") { router.sheet = nil }.foregroundStyle(Theme.paper)
-                                        }
-                                    }
-                            }
+                            // The panel's header closes it, as Settings' does.
+                            NavigationStack(path: $pullPath) { PullRequestListView() }
                         default:
                             NavigationStack { SettingsView() }
                         }
@@ -112,7 +106,10 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(1.5))
             switch UserDefaults.standard.string(forKey: "NookDemoShow") {
             case "agents": router.tab = .agents
-            case "session", "files": router.tab = .agents; try? await Task.sleep(for: .seconds(1)); client.openSession = "s2"
+            case "session", "files":
+                router.tab = .agents
+                try? await Task.sleep(for: .seconds(1))
+                client.openSession = UserDefaults.standard.string(forKey: "NookDemoSession") ?? "s2"
             case "pulls": router.tab = .pulls
             case "settings": router.tab = .settings
             case "chats": router.tab = .chats
@@ -1162,8 +1159,7 @@ struct AgentRow: View, Equatable {
         .contentShape(Rectangle())
     }
 
-    /// Where it works: the folder, then its branch in the code font, quiet and on one line; the newest words of an
-    /// answer instead when the session waits on you without a question to show.
+    /// Where it works: the folder, then its branch in the code font, quiet and on one line, as the Mac's row.
     private var meta: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Label {

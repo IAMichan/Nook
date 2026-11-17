@@ -458,7 +458,7 @@ extension CompanionServer {
             }
         case .end: return .failure(request.id, .notAllowedFromPhone)
         case .pin, .unpin, .settle, .reopen, .markUnread, .fork, .retry, .restartAgent, .regenerateTitle, .delete,
-             .deleteWithWorktree, .setEffort, .setMode, .setModel, .unqueue:
+             .deleteWithWorktree, .setEffort, .setMode, .setModel, .unqueue, .editQueued, .moveQueued, .sendQueuedNow:
             return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)
@@ -501,6 +501,7 @@ extension CompanionServer {
             peer.sentMessages = messages
         }
         response.messagesConversation = id
+        if let uuid = UUID(uuidString: id) { Self.lookForSuggestion(conversation: uuid, app: app) }
         // The phone still has the conversation up to its last finished message (`item`, after a reconnect): only what
         // came after goes, which on a slow connection is the difference between a moment and a long wait.
         if let resumed = ConversationDelta.resume(messages, from: request.item) {
