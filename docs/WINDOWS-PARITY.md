@@ -97,6 +97,7 @@ are the visible differences that no item listed yet; the rest were already cover
 - [ ] **UI-31** Devices › Machines (SSH machines, with AG-132) · L
 - [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M
 - [ ] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L
+- [x] **UI-77** Settings controls drawn as on the Mac: a switch for every on/off row (Tauri draws checkboxes), capsule pickers with up/down chevrons instead of native selects, segmented controls for two to four choices (appearance, background work, privacy level, tone; Tauri draws tiles or a select), small grey capsule buttons, and the Mac's compact row height (Tauri rows are about a third taller); found in the visual audit, builds on UI-10. Privacy level and tone use `Segmented.svelte` when UI-32 and UI-79 add them · M
 
 - [ ] **UI-77** Settings controls drawn as on the Mac: a switch for every on/off row (Tauri draws checkboxes), capsule pickers with up/down chevrons instead of native selects, segmented controls for two to four choices (appearance, background work, privacy level, tone; Tauri draws tiles or a select), small grey capsule buttons, and the Mac's compact row height (Tauri rows are about a third taller); found in the visual audit, builds on UI-10 · M
 - [ ] **UI-78** Section headings as on the Mac: a bold title with an optional grey line under it and an action on the right ("Open setup", "Add account"); Tauri draws small grey labels · S
@@ -161,11 +162,11 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-02** Subscription brains through Codex, Gemini, Grok, Kimi and Mistral Vibe CLIs (`Brain/SubscriptionBrain.swift`); Tauri has only `ClaudeCode` → `core/src/brain/subscription.rs`, new `provider.rs` variants · M
 - [ ] **BR-03** Screen brain split: a local model reads the screen and on-device sources and writes a clean note for the external brain (`PrivateBrief`, `answerTogether`, `ScreenBrainSection`) → `core/src/brain/private_brief.rs`, Settings › Brain › Screen work · M
 - [ ] **BR-04** OpenRouter sign-in with PKCE instead of pasting a key (`OpenRouterSignIn`) · S
-- [ ] **BR-05** OCR for images sent to brains that can't see images (`ChatImage`) · S
+- [x] **BR-05** OCR for images sent to brains that can't see images (`ChatImage`) · S
 - [ ] **BR-06** Brain-written title after the first answer (`nameAfterFirstAnswer`) · S
 - [ ] **BR-07** Follow-up offers capped at 3 like the Mac (Tauri: 2) · S
 - [ ] **BR-08** Phishing and scam scoring for mail and chat messages in research context and reply suggestions (`MessageTrust`; same work as CH-39) · S
-- [ ] **BR-09** Nested command judging (`sh -c`, `xargs`, `find -exec`) in `command_risk.rs` with the Mac's tests · S
+- [x] **BR-09** Nested command judging (`sh -c`, `xargs`, `find -exec`) in `command_risk.rs` with the Mac's tests · S
 
 ### 3.2 Access, plans, autonomy
 
@@ -535,14 +536,14 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 ## 7. Companion: the PC as server for the phone (CO)
 
 - [x] **CO-01** The rest of the companion protocol. The audit missed that `core/src/companion/server.rs` with `src-tauri/src/companion/backend.rs` already dispatches every group: `options`/`start`; `timeline`/`watch`/`diff`/`entry`/`history`; `terminals`/`files`/`fileData`; `chats`/`chat`/`ask`/`chatStop`/`watchConversation`; `home`/`usage`/`music`; `inbox`/`inboxChat`/`inboxSend`/`inboxMark`/`watchChat`/`avatars`; `manage`/`subscribe`/`requestUpdate`; `pulls`/`pull`/`pullAct`/`pullWork` (checked during FD-07). Only `liveActivity` is missing, which is CO-07 · L
-- [ ] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`) · S
+- [x] **CO-02** Compression, `protocolVersion`, `appVersion`, `oldestPhone` (`CompanionWire`, `CompanionCompatibility`): compression, `protocolVersion` and `appVersion` were already there; `oldestPhone` and keeping each phone's versions came with CO-09 · S
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
-- [ ] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`) · S
-- [ ] **CO-05** Images with messages and new sessions (`CompanionImages`) · S
+- [x] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`): already in `core/src/companion/live.rs` (`receipts_answer_a_repeat_once`) and `server.rs` · S
+- [x] **CO-05** Images with messages and new sessions (`CompanionImages`): already in `core/src/companion/remote_digest.rs` (`image_bytes`, `message`, with tests) and listed as `images` · S
 - [x] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`); also Firebase pushes to Nook on Android (`register` with `fcm`) · M
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
-- [ ] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
+- [x] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
 - [ ] **CO-10** Steer and stop terminal sessions from the phone, not only approve and answer · M
 - [ ] **CO-11** Android Keystore for secrets (TAURI.md ○) · M
 

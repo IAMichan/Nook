@@ -103,10 +103,10 @@ mod platform {
         surface
             .with_data(|data| {
                 for row in data.chunks(stride).take(height as usize) {
-                    for px in row[..width as usize * 4].chunks_exact(4) {
+                    for px in row[..width as usize * 4].as_chunks::<4>().0 {
                         let argb = u32::from_ne_bytes([px[0], px[1], px[2], px[3]]);
                         let a = (argb >> 24) & 0xff;
-                        let un = |c: u32| if a == 0 { 0 } else { ((c * 255 + a / 2) / a).min(255) as u8 };
+                        let un = |c: u32| (c * 255 + a / 2).checked_div(a).map_or(0, |v| v.min(255) as u8);
                         rgba.extend_from_slice(&[un((argb >> 16) & 0xff), un((argb >> 8) & 0xff), un(argb & 0xff), a as u8]);
                     }
                 }

@@ -837,6 +837,27 @@ enum SessionBranches {
         let hidden = rows.dropLast(shownWhenFolded)
         return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.count(where: { $0.pullRequest != nil }))
     }
+
+    /// Which request a link names, whatever its URL looks like: a watch, a link you added and a branch's list can spell the
+    /// same request differently (a renamed repository, other letter case, a trailing path), and the tray shows it once.
+    static func place(_ url: String) -> String {
+        URL(string: url).flatMap(PullRequestLink.init(url:))?.placeID ?? url
+    }
+
+    /// The watch on the request `url` names, also when the watch spells its URL differently.
+    static func watch(for url: String, in watches: [PullRequestWatch]) -> PullRequestWatch? {
+        watches.first { $0.url == url } ?? watches.first { place($0.url) == place(url) }
+    }
+
+    /// The pull requests the tray lists above the session's own branches: the ones you linked plus every watched one,
+    /// each request once and none that `shown` (the branch rows) already has, open first and the newest of those on top.
+    static func others(linked: [PullRequestLink], watches: [PullRequestWatch], shown: [URL]) -> [PullRequestLink] {
+        var seen = Set(shown.map { place($0.absoluteString) })
+        let watched = watches.compactMap { URL(string: $0.url).flatMap(PullRequestLink.init(url:)) }
+        return (linked + watched)
+            .filter { URL(string: $0.url) != nil && seen.insert(place($0.url)).inserted }
+            .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
+    }
 }
 
 /// The pull requests behind a session row's badge and its hover card: the ones of the branch it is on now, and the ones

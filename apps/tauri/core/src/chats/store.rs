@@ -38,8 +38,7 @@ impl InboxStore {
 
     /// The inbox saved at `path`; an unreadable or missing file starts empty (the apps bring their chats again).
     pub fn open(path: PathBuf) -> Self {
-        let mut inbox: ChatInbox =
-            std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+        let mut inbox: ChatInbox = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
         inbox.trim(Utc::now());
         Self { inbox: Mutex::new(inbox), path: Some(path), dirty: AtomicBool::new(false) }
     }
