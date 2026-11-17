@@ -19,6 +19,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Part (Mac) | Tauri | Where |
 |---|---|---|
 | `AIProvider`, `BrainSelection`, `AppSettings` | ✓ | `core/src/provider.rs`, `core/src/settings.rs` |
+| Working indicator and error card in Nook Chat (`TypingIndicator`, `ChatErrorCard`): a pulsing dot, the current step shimmering (still when motion is reduced), the elapsed time from three seconds on, also under text that is still streaming; an answer that could not be made becomes a calm card with what happened by the fix it offers, the fix, Try again, and the raw message behind Details | ◐ (labels and explanations unit-tested; checked with svelte-check, not seen in the running app) | `components/WorkingIndicator.svelte`, `lib/working.ts`, `components/MessageView.svelte` |
 | `ToolRunner` (tool loop, recovery, cache, JSON in text) | ✓ | `core/src/brain/tool_loop.rs` |
 | Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |

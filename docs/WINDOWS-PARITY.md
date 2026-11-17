@@ -204,7 +204,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-44** Queue messages while Nook answers, reorder, hold (`NookChat.enqueue/moveQueued/holdQueue`) · M
 - [ ] **BR-45** Conversation list like the Mac: Conversations/Scheduled header tabs, For you card, one-line settled rows, hover card, archive shelf, multi-select, mark unread (`NookConversationList`) · M
 - [ ] **BR-46** Split view: an app, Nook's browser or a terminal beside the chat with a draggable divider · M
-- [ ] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
+- [x] **BR-47** Working indicator: elapsed timer, shimmering current step, error card with Details · S
 - [ ] **BR-48** Zip archives, folders and pasted paths as attachments · S
 - [ ] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 - [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S

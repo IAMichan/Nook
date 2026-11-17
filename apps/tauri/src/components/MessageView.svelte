@@ -11,6 +11,8 @@
   import { toast } from "../lib/toast.svelte";
   import type { ChatMessage } from "../lib/types";
   import TaskChecklist from "./TaskChecklist.svelte";
+  import WorkingIndicator from "./WorkingIndicator.svelte";
+  import { errorKind } from "../lib/working";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
   import PlanCard from "./PlanCard.svelte";
@@ -25,6 +27,19 @@
   function toggleImage(src: string) {
     enlargedImages[src] = !enlargedImages[src];
   }
+
+  // The error card: what happened in plain words, by the fix it offers; the raw message behind Details.
+  const failure = $derived(errorKind(message.recovery));
+  let showDetails = $state(false);
+  const explanation = $derived(
+    failure.kind === "chooseModel"
+      ? tr("Er is geen model beschikbaar. Kies er een en probeer het daarna opnieuw.", "No model is available. Choose one, then try again.")
+      : failure.kind === "server"
+        ? tr("{name} reageert niet. Open het programma en probeer het opnieuw.", "{name} is not responding. Open it and try again.", { name: failure.name })
+        : failure.kind === "credentials"
+          ? tr("De sleutel of inlog is geweigerd. Controleer die en probeer het opnieuw.", "The key or login was rejected. Check it and try again.")
+          : tr("Er ging iets mis bij het maken van het antwoord. Probeer het opnieuw.", "Something went wrong while making the answer. Try again."),
+  );
 
   let copied = $state(false);
   async function copyAnswer() {
@@ -112,8 +127,26 @@
   {:else}
     <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
     {#if message.tasks?.length}<TaskChecklist steps={message.tasks} live={message.streaming} />{/if}
-    {#if message.streaming && !text}
-      <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
+    {#if message.isError && !message.streaming}
+      <div class="error-card">
+        <div class="error-head">
+          <span class="mark">!</span>
+          <div>
+            <div class="error-title">{tr("Nook kan nu niet antwoorden", "Nook can't answer right now")}</div>
+            <div class="error-detail">{explanation}</div>
+          </div>
+        </div>
+        <div class="error-actions">
+          <div class="offers">
+            {#if message.recovery}<button class="primary" disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
+            {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>{tr("Probeer opnieuw", "Try again")}</button>{/if}
+          </div>
+          <button class="ghost details" onclick={() => (showDetails = !showDetails)}>{showDetails ? tr("Verberg details", "Hide details") : tr("Details", "Details")}</button>
+          {#if showDetails}<pre class="raw">{message.text}</pre>{/if}
+        </div>
+      </div>
+    {:else if message.streaming && !text}
+      <WorkingIndicator status={message.status} since={message.date} />
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="markdown" onclick={click}>{@html html}</div>
@@ -141,10 +174,12 @@
         {#each notices as notice (notice)}<div class="notice"><span class="mark">!</span><span>{notice}</span></div>{/each}
       </div>
     {/if}
-    {#if message.recovery || (message.isError && last)}
+    {#if message.streaming && text && message.status}
+      <WorkingIndicator status={message.status} since={message.date} />
+    {/if}
+    {#if !message.isError && message.recovery}
       <div class="offers">
         {#if message.recovery}<button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
-        {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>{tr("Probeer opnieuw", "Try again")}</button>{/if}
       </div>
     {/if}
     {#if message.offers.length && !message.streaming}
@@ -166,7 +201,14 @@
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
-  .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
+  .error-card { margin-top: 4px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, var(--coral) 7%, transparent); }
+  .error-head { display: flex; gap: 10px; align-items: flex-start; }
+  .error-head .mark { color: var(--coral); font-weight: 600; width: 16px; text-align: center; }
+  .error-title { font-weight: 600; }
+  .error-detail { color: var(--text2); font-size: 13px; }
+  .error-actions { padding-left: 26px; }
+  .details { font-size: 12px; color: var(--text3); padding: 4px 0; margin-top: 6px; }
+  .raw { font-size: 11.5px; color: var(--text3); white-space: pre-wrap; user-select: text; margin: 6px 0 0; padding: 10px; border-radius: 8px; background: var(--well, var(--smoke)); }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
