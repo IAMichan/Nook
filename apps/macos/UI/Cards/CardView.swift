@@ -628,17 +628,28 @@ private struct StepsDetail: View {
                         .foregroundStyle(color(step.tone))
                         .frame(width: 20, height: 20)
                         .background(Circle().fill(color(step.tone).opacity(0.14)))
-                    Text(step.text)
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.paper)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 1)
+                    // Where it goes, small with the app's icon, above what it does: the same step as in the chat's plan.
+                    let parts = PlanReview.parts(of: step)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        if let lead = parts.lead {
+                            HStack(spacing: NookTheme.Spacing.sm) {
+                                if step.source != nil { StepSourceIcon(source: step.source, size: 12) }
+                                Text(lead)
+                                    .font(NookTheme.TextStyle.label)
+                                    .foregroundStyle(NookTheme.textSecondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        Text(parts.body)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.paper)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 1)
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if !step.tag.isEmpty {
-                        Text(step.tag)
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(color(step.tone))
-                            .fixedSize()
+                        NookTag(step.tag, tint: color(step.tone))
                             .padding(.top, 2)
                     }
                 }

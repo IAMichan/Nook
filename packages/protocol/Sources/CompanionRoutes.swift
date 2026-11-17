@@ -366,11 +366,12 @@ struct CommandReceipts: Sendable {
     static func keeps(_ op: CompanionOp) -> Bool {
         switch op {
         case .send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop, .music, .inboxMark, .inboxAct, .chatAct,
-             .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork, .bindKey, .notifySet:
+             .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork, .bindKey, .notifySet,
+             .nookComposerSet, .suggestionAct:
             return true
         case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
              .pulls, .pull, .history, .fileData, .watchChat, .watchConversation, .avatars, .entry,
-             .inboxOlder, .inboxMedia, .inboxInfo, .inboxSearch, .chatSearch, .notifySettings:
+             .inboxOlder, .inboxMedia, .inboxInfo, .inboxSearch, .chatSearch, .notifySettings, .nookComposer:
             return false
         }
     }

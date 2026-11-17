@@ -426,7 +426,10 @@ struct NookChatView: View {
                 // chart or mail list filling in) can come to rest drawing none of its rows, even at its end.
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     let newest = chat.messages.last?.id
-                    ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl) { message in
+                    // While you follow an answer being made, it never gets shorter (`HeldHeight`): a step folding
+                    // away leaves room instead of bouncing the conversation down. A new message lets go.
+                    ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl,
+                                     holdsHeight: chat.busy && scroll.shouldFollowEnd, holdKey: chat.messages.count) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)

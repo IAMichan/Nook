@@ -164,9 +164,10 @@ struct Gowa {
 
 impl WhatsAppLink {
     pub fn new(env: Arc<Env>, desktop: bool) -> Arc<Self> {
+        let inbox = super::Inbox::new(env.chats.clone());
         Arc::new(Self {
             env,
-            inner: Mutex::default(),
+            inner: Mutex::new(Inner { inbox, ..Default::default() }),
             tasks: Mutex::default(),
             gowa: Mutex::default(),
             desktop,
@@ -510,7 +511,7 @@ impl WhatsAppLink {
     /// De gesprekken die de interface toont, nieuwste eerst.
     pub fn visible(&self) -> Vec<super::Conversation> {
         let filters = self.settings().filters();
-        self.with(|i| i.inbox.visible(&filters).into_iter().cloned().collect())
+        self.with(|i| i.inbox.visible(&filters))
     }
 
     /// Every chat for the Chats tab, as on the Mac: the ones with messages here and then the rest of the phone's chats
@@ -519,7 +520,7 @@ impl WhatsAppLink {
         let ignored = self.settings().ignored;
         self.with(|i| {
             let mut out: Vec<super::Conversation> =
-                i.inbox.sorted().into_iter().filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status).cloned().collect();
+                i.inbox.sorted().into_iter().filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status).collect();
             let have: HashSet<String> = out.iter().map(|c| c.id.clone()).collect();
             for k in &i.known {
                 let kind = jid::kind(&k.jid);
@@ -784,7 +785,7 @@ impl WhatsAppLink {
         }
         if let (true, Some(chat), true) = (announce, fresh, self.settings().notify) {
             let arrived = self.with(|i| {
-                i.inbox.conversations.get(&chat).map(|c| Arrived {
+                i.inbox.get(&chat).map(|c| Arrived {
                     chat: c.id.clone(),
                     name: c.name.clone(),
                     preview: c.messages.last().map(|m| super::label(&m.media).unwrap_or_default() + &m.text).unwrap_or_default(),
@@ -801,7 +802,7 @@ impl WhatsAppLink {
     /// Groepen komen binnen onder hun id (de webhook van GOWA noemt de naam niet): één keer gevraagd.
     fn name_group(self: &Arc<Self>, chat: &str) {
         let Some((provider, gen)) = self.with(|i| {
-            let conversation = i.inbox.conversations.get(chat)?;
+            let conversation = i.inbox.get(chat)?;
             if !jid::is_group(chat) || !jid::is_placeholder_name(chat, &conversation.name) || !i.naming.insert(chat.to_string()) {
                 return None;
             }
@@ -838,7 +839,7 @@ impl WhatsAppLink {
                 return Ok(fetched);
             }
         }
-        Ok(self.with(|i| i.inbox.conversations.get(&key).map(|c| c.messages.clone()).unwrap_or_default()))
+        Ok(self.with(|i| i.inbox.get(&key).map(|c| c.messages.clone()).unwrap_or_default()))
     }
 
     /// Markeert de chat hier en op WhatsApp als gelezen (tot het nieuwste ontvangen bericht).
@@ -846,7 +847,7 @@ impl WhatsAppLink {
         let key = jid::normalized(chat);
         let mark = self.settings().mark_read_on_reply;
         let Some((provider, last)) = self.with(|i| {
-            let conversation = i.inbox.conversations.get(&key)?;
+            let conversation = i.inbox.get(&key)?;
             let had = conversation.unread > 0;
             let last = conversation.messages.iter().rev().find(|m| !m.from_me).map(|m| m.id.clone());
             i.inbox.mark_read(&key);
@@ -939,7 +940,7 @@ impl WhatsAppLink {
         // Antwoorden leest het gesprek.
         if self.settings().mark_read_on_reply {
             let last = self.with(|i| {
-                i.inbox.conversations.get(&target).and_then(|c| c.messages.iter().rev().find(|m| !m.from_me).map(|m| m.id.clone()))
+                i.inbox.get(&target).and_then(|c| c.messages.iter().rev().find(|m| !m.from_me).map(|m| m.id.clone()))
             });
             let _ = provider.mark_read(&target, last.as_deref()).await;
         }
@@ -949,7 +950,7 @@ impl WhatsAppLink {
 
     /// One conversation as the card shows it (also a quiet or hidden one: the card asked for it by id).
     pub fn conversation(&self, chat: &str) -> Option<Conversation> {
-        self.with(|i| i.inbox.conversations.get(&jid::normalized(chat)).cloned())
+        self.with(|i| i.inbox.get(chat))
     }
 
     /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
@@ -958,7 +959,7 @@ impl WhatsAppLink {
         if !self.is_connected() || !self.with(|i| i.history_loaded.insert(key.clone())) {
             return false;
         }
-        let count = |me: &Self| me.with(|i| i.inbox.conversations.get(&key).map(|c| c.messages.len()).unwrap_or(0));
+        let count = |me: &Self| me.with(|i| i.inbox.get(&key).map(|c| c.messages.len()).unwrap_or(0));
         let before = count(self);
         let _ = self.messages_of(&key, KEEP).await;
         count(self) != before
@@ -973,7 +974,7 @@ impl WhatsAppLink {
     /// further back).
     pub fn preview_ids(&self, chat: &str) -> Vec<String> {
         self.with(|i| {
-            let Some(c) = i.inbox.conversations.get(&jid::normalized(chat)) else { return vec![] };
+            let Some(c) = i.inbox.get(&jid::normalized(chat)) else { return vec![] };
             let all: Vec<String> = c.messages.iter().filter(|m| m.media.is_previewed()).map(|m| m.id.clone()).collect();
             all[all.len().saturating_sub(PREVIEW_COUNT)..].to_vec()
         })
@@ -1061,7 +1062,7 @@ impl WhatsAppLink {
             self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
         let key = jid::normalized(chat);
         let media = self
-            .with(|i| i.inbox.conversations.get(&key)?.messages.iter().find(|m| m.id == id).map(|m| m.media.clone()))
+            .with(|i| i.inbox.get(&key)?.messages.iter().find(|m| m.id == id).map(|m| m.media.clone()))
             .filter(|m| m.is_openable())
             .ok_or_else(|| ConnectorError::new("Dit bericht is niet meer in Nook; open het op je telefoon."))?;
         let file = provider.media(&key, id).await.map_err(|e| match e {
@@ -1427,7 +1428,7 @@ impl WhatsAppLink {
                     }
                 })
                 .collect();
-            let extra = i.known.iter().filter(|k| hit(&k.name) && !i.inbox.conversations.contains_key(&k.jid)).take(3).cloned().collect();
+            let extra = i.known.iter().filter(|k| hit(&k.name) && !i.inbox.contains(&k.jid)).take(3).cloned().collect();
             (found, extra)
         });
         for chat in extra {

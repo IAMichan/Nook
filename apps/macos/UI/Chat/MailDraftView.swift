@@ -114,11 +114,8 @@ struct MailDraftView: View {
                 .disabled(locked)
 
             HStack(spacing: NookTheme.Spacing.xs) {
-                if draft.state == .sent {
-                    Label(tr("chat.mail.sent"), systemImage: "checkmark")
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.mint)
-                } else {
+                // A sent mail says so once, in its header; here only Copy stays.
+                if draft.state != .sent {
                     SmallPrimaryButton(title: draft.state == .sending ? tr("button.sending") : tr("button.send"), systemName: "paperplane.fill") {
                         onSend(edited)
                     }
@@ -145,7 +142,9 @@ struct MailDraftView: View {
         case .opened:
             Text(tr("chat.mail.openedInMail")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
         case .sent:
-            Text(tr("chat.mail.sent")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
+            Label(tr("chat.mail.sent"), icon: "checkmark")
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.mint)
         default:
             Text(tr("chat.mail.youSend")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
         }

@@ -140,6 +140,7 @@ pub fn run() {
             commands::companion::companion_cancel_pairing,
             commands::companion::companion_remove_device,
             commands::companion::companion_set_push,
+            commands::companion::companion_set_push_route,
             commands::companion::companion_set_apns,
             commands::companion::companion_remove_apns_key,
             commands::companion::companion_push_test,

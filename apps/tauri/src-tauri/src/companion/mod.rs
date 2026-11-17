@@ -182,6 +182,7 @@ pub fn setup(app: &AppHandle) {
             device_name(),
         ));
         server.set_app_version(&version);
+        server.set_build_relay(nook_relay().is_some());
         server
     };
     #[cfg(desktop)]

@@ -86,10 +86,25 @@ export interface CompanionInfo {
   hosts: string[];
   devices: { id: string; name: string; pairedAt: string; lastSeen: string | null; push: boolean }[];
   pairing: { url: string; qrSvg: string; host: string; until: string } | null;
-  push: { settings: PushSettings; keyId: string; teamId: string; hasKey: boolean; canPush: boolean; lastResult: string | null } | null;
+  push: {
+    settings: PushSettings;
+    keyId: string;
+    teamId: string;
+    hasKey: boolean;
+    canPush: boolean;
+    lastResult: string | null;
+    /** Sealed through the relay, or straight to Apple with your own APNs key. */
+    route: PushRoute;
+    /** A relay is in use, so pushes can go through it (Android phones always do). */
+    relayReachable: boolean;
+    relayActive: boolean;
+  } | null;
   /** Reaching this computer away from home and keeping it reachable; null on a phone. */
   away: AwayInfo | null;
 }
+
+/** How pushes reach the phones (`RelayPushClient.Route`). */
+export type PushRoute = "relay" | "own";
 
 export type RelayStatus =
   | { state: "off" }
@@ -149,6 +164,7 @@ export const companion = {
   cancelPairing: () => invoke<CompanionInfo>("companion_cancel_pairing"),
   removeDevice: (id: string) => invoke<CompanionInfo>("companion_remove_device", { id }),
   setPush: (settings: PushSettings) => invoke<CompanionInfo>("companion_set_push", { settings }),
+  setPushRoute: (route: PushRoute) => invoke<CompanionInfo>("companion_set_push_route", { route }),
   setApns: (keyId: string, teamId: string, pem?: string) => invoke<CompanionInfo>("companion_set_apns", { keyId, teamId, pem }),
   removeApnsKey: () => invoke<CompanionInfo>("companion_remove_apns_key"),
   pushTest: () => invoke<string>("companion_push_test"),

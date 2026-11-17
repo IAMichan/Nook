@@ -13,7 +13,6 @@
   ]);
 </script>
 
-<h2>{tr("Over Nook", "About Nook")}</h2>
 <p>{tr("Nook {version} voor {os}.", "Nook {version} for {os}.", { version: nook.info?.version ?? "", os: nook.info?.capabilities.os ?? "" })}</p>
 <p class="muted">{tr("Nook is je maatje: de ene rustige plek voor alles wat je aandacht vraagt (mensen, coding agents, muziek, je agenda en meer), zodat jij het overzicht houdt en stuurt in plaats van achter dingen aan te jagen.", "Nook is your buddy: the one calm place for everything that needs your attention (people, coding agents, music, your calendar and more), so you keep the overview and steer instead of chase.")}</p>
 <h3>{tr("App", "App")}</h3>

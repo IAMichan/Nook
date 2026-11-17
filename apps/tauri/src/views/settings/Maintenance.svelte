@@ -71,7 +71,6 @@
   }
 </script>
 
-<h2>{tr("Onderhoud", "Maintenance")}</h2>
 <h3>{tr("Updates", "Updates")}</h3>
 <div class="group">
   <div class="row">

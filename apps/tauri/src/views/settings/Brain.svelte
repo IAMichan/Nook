@@ -88,7 +88,6 @@
   }
 </script>
 
-<h2>{tr("Brein", "Brain")}</h2>
 <p class="muted">{tr("Lokaal eerst: met Ollama of LM Studio verlaat niets je computer en kost het niets per vraag. Een externe AI kies je bewust; Nook schakelt nooit zelf naar de cloud.", "Local first: with Ollama or LM Studio nothing leaves your computer and nothing costs per question. You choose an external AI on purpose; Nook never switches to the cloud by itself.")}</p>
 <div class="providers">
   {#each providers as p (p.id)}

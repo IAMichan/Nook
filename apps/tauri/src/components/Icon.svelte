@@ -4,7 +4,7 @@
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
       | "code" | "sparkle" | "x" | "grip" | "tasks"
       | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass"
-      | "palette" | "keyboard" | "archive";
+      | "palette" | "keyboard" | "archive" | "bell";
     size?: number;
   } = $props();
 </script>
@@ -27,6 +27,7 @@
   {:else if name === "lock"}<rect x="5" y="11" width="14" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
   {:else if name === "unlock"}<rect x="5" y="11" width="14" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 7.5-1.9" />
   {:else if name === "gamepad"}<path d="M7 7h10a5 5 0 0 1 4.9 6l-.6 3a2.5 2.5 0 0 1-4.3 1.2L15 15H9l-2 2.2A2.5 2.5 0 0 1 2.7 16l-.6-3A5 5 0 0 1 7 7Z" /><path d="M7 10v4M5 12h4M15.5 11h.01M18 13h.01" />
+  {:else if name === "bell"}<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
   {:else if name === "home"}<path d="M4 11.5 12 5l8 6.5V19a2 2 0 0 1-2 2h-3.5v-5.5h-5V21H6a2 2 0 0 1-2-2Z" />
   {:else if name === "memory"}<path d="M12 4a5 5 0 0 0-5 5c0 1.7.8 3 2 4v3h6v-3c1.2-1 2-2.3 2-4a5 5 0 0 0-5-5Z" /><path d="M10 20h4" />
   {:else if name === "link"}<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />

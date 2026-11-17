@@ -232,4 +232,24 @@ final class ActionStatesTests: XCTestCase {
         let filled = await ActionGate.addressed("Lisa, tom@x.nl; Onbekend", lookup: lookup)
         XCTAssertEqual(filled, "lisa@x.nl, tom@x.nl, Onbekend")
     }
+
+    func testSplitSummaryTakesTheTargetOffTheFront() {
+        let send = ActionGate.splitSummary("WhatsApp → Arjan den Hartog: Haha top: ik kijk straks")
+        XCTAssertEqual(send.lead, "WhatsApp → Arjan den Hartog")
+        XCTAssertEqual(send.body, "Haha top: ik kijk straks")
+
+        let reminder = ActionGate.splitSummary("Reminder: Arjan: vault list testen · di 17 nov 16:00")
+        XCTAssertEqual(reminder.lead, "Reminder")
+        XCTAssertEqual(reminder.body, "Arjan: vault list testen · di 17 nov 16:00")
+    }
+
+    func testSplitSummaryLeavesASentenceWhole() {
+        let plain = ActionGate.splitSummary("Open Safari")
+        XCTAssertNil(plain.lead)
+        XCTAssertEqual(plain.body, "Open Safari")
+
+        let sentence = String(repeating: "a long sentence that only later has ", count: 3) + "a colon: in it"
+        XCTAssertNil(ActionGate.splitSummary(sentence).lead)
+        XCTAssertNil(ActionGate.splitSummary("Terminal: ").lead)
+    }
 }

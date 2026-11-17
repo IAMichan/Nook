@@ -633,6 +633,12 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
+    /// The scope a new conversation starts with (`lastScope`), set without one open: a phone choosing sources for a
+    /// chat it has not started yet.
+    func setLastScope(_ scope: SourceScope) {
+        UserDefaults.standard.setEncoded(scope, forKey: Self.lastScopeKey)
+    }
+
     /// Last user prompt in conversation, for retry.
     func lastQuestion(in id: UUID) -> String? {
         conversation(id)?.messages.last(where: { $0.role == .user })?.text

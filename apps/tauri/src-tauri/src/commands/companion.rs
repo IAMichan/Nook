@@ -72,6 +72,12 @@ pub struct PushView {
     has_key: bool,
     can_push: bool,
     last_result: Option<String>,
+    /// How pushes reach the phones: sealed through the relay, or with your own APNs key.
+    route: nook_core::companion::relay_push::PushRoute,
+    /// A relay is in use, so pushes can go through it (Android phones always do).
+    relay_reachable: bool,
+    /// Pushes go through the relay now.
+    relay_active: bool,
 }
 
 #[cfg(desktop)]
@@ -123,6 +129,9 @@ fn info(c: &Companion) -> CompanionInfo {
             has_key: store.apns_pem().is_some(),
             can_push: store.can_push(),
             last_result: c.server.last_push(),
+            route: c.server.push_route(),
+            relay_reachable: c.server.relay_push_reachable(),
+            relay_active: c.server.relay_push_active(),
         }),
         away: Some(AwayView {
             relay: store.relay(),
@@ -232,6 +241,24 @@ pub fn companion_set_push(companion: State<'_, Companion>, settings: PushSetting
     #[cfg(not(desktop))]
     {
         let _ = (companion, settings);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// How pushes reach the phones: sealed through the relay, or straight to Apple with your own key.
+#[tauri::command]
+pub fn companion_set_push_route(
+    companion: State<'_, Companion>,
+    route: nook_core::companion::relay_push::PushRoute,
+) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        companion.server.store().set_push_route(route);
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, route);
         Err(NO_SERVER.into())
     }
 }
