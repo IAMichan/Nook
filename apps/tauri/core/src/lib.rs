@@ -23,6 +23,7 @@ pub mod secrets;
 pub mod services;
 pub mod settings;
 pub mod store;
+pub mod updates;
 pub mod workspace;
 
 pub use error::{NookError, Result};

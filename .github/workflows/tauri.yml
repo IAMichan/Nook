@@ -10,6 +10,12 @@ on:
         description: Release version without the leading v and the pre-release suffix (0.3.0). Empty for CI runs.
         type: string
         default: ''
+      release_version:
+        description: >-
+          The full release version with its pre-release suffix (0.3.0-beta.2). Stamped into the app with the update
+          key, so a downloaded build can find and check its updates (core/src/updates). Empty for CI runs.
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -187,6 +193,11 @@ jobs:
           VERSION: ${{ inputs.version }}
           # Nook's own relay, so a PC is reachable away from home with one switch (as NOOK_RELAY_URL in release.yml).
           NOOK_RELAY_URL: ${{ vars.NOOK_RELAY_URL }}
+          # What a release build needs to update itself (`nook_core::updates::this_build` reads them at compile time); a CI
+          # build has no release version and offers no updates.
+          NOOK_RELEASE_VERSION: ${{ inputs.release_version }}
+          NOOK_RELEASE_REPOSITORY: ${{ github.repository }}
+          NOOK_UPDATE_PUBLIC_KEY: ${{ inputs.release_version != '' && vars.NOOK_UPDATE_PUBLIC_KEY || '' }}
         shell: bash
         run: |
           # A release stamps its own version into the installers; CI builds keep the one in tauri.conf.json.
