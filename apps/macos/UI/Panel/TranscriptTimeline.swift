@@ -108,6 +108,16 @@ struct TranscriptConversation: View {
         derived.rows.map { ($0.id, $0.visitDate) }
     }
 
+    /// What lets go of the held height of the last rows (`HeldHeight`): a new turn, a block opened or closed, earlier
+    /// turns drawn above.
+    static func holdKey(turns: Int, open: Set<String>, start: Int) -> Int {
+        var hasher = Hasher()
+        hasher.combine(turns)
+        hasher.combine(open)
+        hasher.combine(start)
+        return hasher.finalize()
+    }
+
     var body: some View {
         // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
         let _ = derived.update(shown, working: working, directory: directory, path: transcriptMessages.isEmpty ? "" : path)
@@ -146,7 +156,11 @@ struct TranscriptConversation: View {
                                 if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
                             }
                         }
-                        ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start)) { row in
+                        // While you follow the agent at work, its last rows never get shorter: what folds away into
+                        // "Ran 3 commands" leaves room instead of bouncing the conversation down.
+                        ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
+                                         holdsHeight: working && scroll.shouldFollowEnd && !finding,
+                                         holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start)) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     TimelineNewDivider()
