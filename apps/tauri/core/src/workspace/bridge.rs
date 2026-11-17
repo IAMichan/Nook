@@ -7,6 +7,7 @@ use serde_json::{json, Map, Value};
 
 use super::models::{ExecutionMode, PermissionPolicy};
 use crate::agents::risk::RiskLevel;
+use crate::i18n::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -125,29 +126,27 @@ impl BridgeTool {
         Self::ALL.into_iter().find(|t| t.name() == bare)
     }
 
-    /// Kort label voor de tijdlijn.
+    /// Short label for the timeline, in the user's language.
     pub fn label(self) -> &'static str {
         match self {
-            Self::WorkspaceInfo => "Nook-werkruimte",
-            Self::TerminalRun => "Nook-terminal",
-            Self::TerminalRead => "Uitvoer Nook-terminal",
-            Self::TerminalList => "Nook-terminals",
-            Self::TerminalStop => "Stop Nook-terminal",
-            Self::BrowserOpen => "Nook-browser",
-            Self::BrowserRead => "Lees Nook-browser",
-            Self::BrowserScreenshot => "Screenshot Nook-browser",
-            Self::PullRequestCreate => "Pull request",
-            Self::SessionList => "Nook-sessies",
-            Self::SessionRead => "Lees sessie",
-            t @ (Self::NookTools
-            | Self::NookUse
-            | Self::NookChatList
-            | Self::NookChatRead
-            | Self::NookChatSend
+            Self::WorkspaceInfo => tr("Nook-werkruimte", "Nook workspace"),
+            Self::TerminalRun => tr("Nook-terminal", "Nook terminal"),
+            Self::TerminalRead => tr("Uitvoer Nook-terminal", "Nook terminal output"),
+            Self::TerminalList => tr("Nook-terminals", "Nook terminals"),
+            Self::TerminalStop => tr("Stop Nook-terminal", "Stop Nook terminal"),
+            Self::BrowserOpen => tr("Nook-browser", "Nook browser"),
+            Self::BrowserRead => tr("Lees Nook-browser", "Read Nook browser"),
+            Self::BrowserScreenshot => tr("Screenshot Nook-browser", "Nook browser screenshot"),
+            Self::PullRequestCreate => tr("Pull request", "Pull request"),
+            Self::SessionList => tr("Nook-sessies", "Nook sessions"),
+            Self::SessionRead => tr("Lees sessie", "Read session"),
+            t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend
             | Self::ChatList
             | Self::ChatRead
             | Self::ChatSend
-            | Self::TakeOverScreen) => super::bridge_nook::label(t),
+            | Self::TakeOverScreen) => {
+                super::bridge_nook::label(t)
+            }
         }
     }
 

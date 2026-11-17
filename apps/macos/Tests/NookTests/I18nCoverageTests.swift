@@ -54,6 +54,15 @@ final class I18nCoverageTests: XCTestCase {
         }
     }
 
+    func testEveryWorkspaceToolHasATimelineLabel() {
+        for tool in BridgeTool.allCases {
+            for language in ["nl", "en", "de", "fr", "es"] {
+                XCTAssertFalse((Self.tables[language]?["bridge.tool." + tool.rawValue] ?? "").isEmpty,
+                               "\(tool.rawValue) has no timeline label in \(language)")
+            }
+        }
+    }
+
     func testPlaceholdersMatchAcrossLanguages() {
         let nl = Self.tables["nl"] ?? [:], en = Self.tables["en"] ?? [:], de = Self.tables["de"] ?? [:]
         var mismatches: [String] = []

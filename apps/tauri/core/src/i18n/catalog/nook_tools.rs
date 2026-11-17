@@ -4,6 +4,18 @@
 use super::Row;
 
 pub const ROWS: &[Row] = &[
+    // Timeline labels of the workspace tools (`BridgeTool::label`).
+    ("Nook workspace", "Nook-Arbeitsbereich", "Espace de travail Nook", "Espacio de trabajo de Nook"),
+    ("Nook terminal", "Nook-Terminal", "Terminal Nook", "Terminal de Nook"),
+    ("Nook terminal output", "Ausgabe des Nook-Terminals", "Sortie du terminal Nook", "Salida del terminal de Nook"),
+    ("Nook terminals", "Nook-Terminals", "Terminaux Nook", "Terminales de Nook"),
+    ("Stop Nook terminal", "Nook-Terminal stoppen", "Arrêter le terminal Nook", "Detener el terminal de Nook"),
+    ("Nook browser", "Nook-Browser", "Navigateur Nook", "Navegador de Nook"),
+    ("Read Nook browser", "Nook-Browser lesen", "Lire le navigateur Nook", "Leer el navegador de Nook"),
+    ("Nook browser screenshot", "Bildschirmfoto des Nook-Browsers", "Capture du navigateur Nook", "Captura del navegador de Nook"),
+    ("Pull request", "Pull Request", "Pull request", "Pull request"),
+    ("Nook sessions", "Nook-Sitzungen", "Sessions Nook", "Sesiones de Nook"),
+    ("Read session", "Sitzung lesen", "Lire la session", "Leer sesión"),
     ("Nook's apps and connectors", "Nooks Apps und Verbindungen", "Apps et connexions de Nook", "Apps y conexiones de Nook"),
     ("Nook Chat conversations", "Unterhaltungen in Nook Chat", "Conversations Nook Chat", "Conversaciones de Nook Chat"),
     ("Read Nook Chat", "Nook Chat lesen", "Lire Nook Chat", "Leer Nook Chat"),

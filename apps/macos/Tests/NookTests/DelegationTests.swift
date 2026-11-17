@@ -285,7 +285,7 @@ final class DelegationTests: XCTestCase {
 
     func testTimelineLabelsDelegation() {
         XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__delegate_task", input: ["task": "Review the diff"]),
-                       "Delegate task · Review the diff")
+                       BridgeTool.delegateTask.label + " · Review the diff")
     }
 
     func testWaitingOnSeveralTasks() {
