@@ -1,0 +1,25 @@
+/* The shared components' global parts (imported once in main.ts): what is not one component's own markup. */
+
+/* The fast tooltip (`tip.ts`, the Mac's `.nookTip`): one bubble on the body, fading in over 100 ms. */
+.nook-tip {
+  position: fixed; z-index: 1000; max-width: 280px; padding: var(--space-4) var(--space-8);
+  background: var(--menu); color: var(--paper); border: 1px solid var(--line2); border-radius: var(--radius-control);
+  box-shadow: var(--shadow-popover); font: var(--text-detail); pointer-events: none; opacity: 0; display: none;
+}
+.nook-tip.on { display: block; animation: nook-tip-in 100ms ease-out forwards; }
+@keyframes nook-tip-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* `.hoverRowFill`: a row, tab or card line that lifts under the pointer, `.selected` when chosen. */
+.hover-row { border-radius: var(--radius-control); transition: background 120ms ease; }
+.hover-row:hover { background: var(--row-hover); }
+.hover-row.selected { background: var(--row-selected); }
+
+/* `.revealOnHover`: a control that shows only under the pointer (or with the keyboard on its row), and cannot be
+   clicked while hidden. Put it inside a `.hover-row` (or any `.reveal-host`). */
+.hover-reveal { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+:is(.hover-row, .reveal-host):is(:hover, :focus-within) .hover-reveal, .hover-reveal:focus-visible { opacity: 1; pointer-events: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nook-tip.on { animation: none; opacity: 1; }
+  .hover-row, .hover-reveal { transition: none; }
+}
