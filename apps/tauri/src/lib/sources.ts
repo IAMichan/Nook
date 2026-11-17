@@ -126,3 +126,42 @@ export function sourceDomain(id: string | null): string | null {
   };
   return (id && domains[id]) || null;
 }
+
+/** Localized display title for a source id (`SourceCatalog.title` on macOS). */
+export function sourceTitle(id: string | null | undefined): string {
+  if (!id) return "";
+  switch (id) {
+    case "calendar": return tr("Agenda", "Calendar");
+    case "icalfeeds": return tr("Andere agenda’s", "Other calendars");
+    case "calcom": return "Cal.com";
+    case "reminders": return tr("Herinneringen", "Reminders");
+    case "notes": return tr("Notities", "Notes");
+    case "messages": return tr("Berichten", "Messages");
+    case "whatsapp": return "WhatsApp";
+    case "bear": return "Bear";
+    case "callnotes": return tr("Gesprekken", "Calls");
+    case "system": return tr("Dit apparaat", "This computer");
+    case "things": return "Things";
+    case "loops": return tr("Open punten", "Open items");
+    case "memory": return tr("Geheugen", "Memory");
+    case "mail": return tr("Mail", "Mail");
+    case "browser": return "Browser";
+    case "terminal": return "Terminal";
+    case "files": return tr("Bestanden", "Files");
+    case "contacts": return tr("Contacten", "Contacts");
+    case "clipboard": return tr("Klembord", "Clipboard");
+    case "screen": return tr("Scherm", "Screen");
+    case "github": return "GitHub";
+    case "gitlab": return "GitLab";
+    case "vercel": return "Vercel";
+    case "stripe": return "Stripe";
+    case "notion": return "Notion";
+    case "n8n": return "n8n";
+    case "resend": return "Resend";
+    case "linear": return "Linear";
+    case "sentry": return "Sentry";
+    case "customsources": return tr("Eigen bronnen", "Custom sources");
+    case "web": return "Web";
+    default: return id;
+  }
+}

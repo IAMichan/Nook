@@ -27,9 +27,25 @@ pub struct SourceReference {
     /// Alleen https-, file- en message-adressen zijn te openen.
     #[serde(default)]
     pub url: Option<String>,
+    /// What the source said: the part of the tool's result it came from, so a citation can show what the answer rests on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
 }
 
 impl SourceReference {
+    /// Who sent a mail ("Vimexx" from its detail "Vimexx · 2026-11-14"); None for any other source.
+    pub fn sender(&self) -> Option<String> {
+        let mail = self.source_id.to_lowercase().contains("mail") || self.url.as_deref().is_some_and(|u| u.starts_with("message:"));
+        if !mail {
+            return None;
+        }
+        let name = self.detail.split(" · ").next()?.trim();
+        if name.is_empty() || name.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(name.to_string())
+    }
+
     pub fn is_openable(raw: Option<&str>) -> bool {
         let Some(raw) = raw else { return false };
         let Ok(url) = url::Url::parse(raw) else { return false };
@@ -273,6 +289,7 @@ impl RetrievalLedger {
         };
 
         let (text, found) = parse_references(&raw);
+        let alone = found.len() == 1;
         let output = {
             let mut state = self.lock();
             let source_id = state.steps[index].source_id.clone().unwrap_or_else(|| tool.to_string());
@@ -286,6 +303,7 @@ impl RetrievalLedger {
                 }
                 reference.number = state.references.len() as u32 + 1;
                 reference.source_id = source_id.clone();
+                reference.excerpt = excerpt_for(&reference.title, &text, alone);
                 state.references.push(reference.clone());
                 numbered.push(reference);
             }
@@ -348,6 +366,84 @@ pub fn reference_line(title: &str, url: Option<&str>, detail: &str) -> String {
     format!("{}{} | {} | {}", marker(), clean(title), url.unwrap_or(""), clean(detail))
 }
 
+/// The longest excerpt kept per reference: enough for a mail's opening or a few chat messages.
+pub const EXCERPT_LIMIT: usize = 900;
+
+/// The part of a tool's result that a reference with `title` came from: the block under the heading that names it
+/// (a mail, a chat, a note), or the line that names it (a calendar event, an issue in a list). `alone`: the result has
+/// only this reference, so all of it is the source when no line names it. Ids and other bookkeeping for the model are
+/// left out. None when nothing in the text belongs to it.
+pub fn excerpt_for(title: &str, text: &str, alone: bool) -> Option<String> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let keys = excerpt_keys(title);
+    let hit = lines.iter().position(|line| {
+        let lower = line.to_lowercase();
+        keys.iter().any(|k| lower.contains(k))
+    });
+    let picked: Vec<&str> = if let Some(hit) = hit {
+        let line = lines[hit].trim();
+        if line.starts_with('#') || alone {
+            let level = line.bytes().take_while(|&b| b == b'#').count();
+            let mut end = hit + 1;
+            while end < lines.len() {
+                let next = lines[end].trim();
+                let next_level = next.bytes().take_while(|&b| b == b'#').count();
+                if next_level > 0 && (level == 0 || next_level <= level) {
+                    break;
+                }
+                end += 1;
+            }
+            lines[hit..end].to_vec()
+        } else {
+            vec![lines[hit]]
+        }
+    } else if alone {
+        lines
+    } else {
+        return None;
+    };
+    let mut cleaned: Vec<String> = Vec::new();
+    for raw in picked {
+        let line = clean_excerpt_line(raw);
+        if line.is_empty() && cleaned.last().is_none_or(|last| last.is_empty()) {
+            continue;
+        }
+        cleaned.push(line);
+    }
+    let mut excerpt = cleaned.join("\n").trim().to_string();
+    if excerpt.is_empty() {
+        return None;
+    }
+    if excerpt.chars().count() > EXCERPT_LIMIT {
+        let cut: String = excerpt.chars().take(EXCERPT_LIMIT).collect();
+        let end = cut.rfind('\n').or_else(|| cut.rfind(' ')).unwrap_or(cut.len());
+        excerpt = format!("{} …", cut[..end].trim_end());
+    }
+    Some(excerpt)
+}
+
+fn excerpt_keys(title: &str) -> Vec<String> {
+    let name = match title.find(": ") {
+        Some(idx) if title[..idx].chars().count() <= 20 => &title[idx + 2..],
+        _ => title,
+    };
+    let mut keys = vec![name.to_lowercase()];
+    if let Some(hash) = name.find('#') {
+        if let Some(space_rel) = name[hash..].find(' ') {
+            keys.push(name[..hash + space_rel].to_lowercase());
+        }
+    }
+    keys.into_iter().filter(|k| k.chars().count() >= 2).collect()
+}
+
+fn clean_excerpt_line(line: &str) -> String {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+    rx!(r"\s*\[(?:id|chat): [^\]]*\]|\s*\|\s*id \S+\s*$|\s*\|\s*calendar [^|]*").replace_all(trimmed, "").into_owned()
+}
+
 /// De tekst zonder bronregels, en de bronnen.
 pub fn parse_references(raw: &str) -> (String, Vec<SourceReference>) {
     let mut kept: Vec<&str> = vec![];
@@ -366,6 +462,7 @@ pub fn parse_references(raw: &str) -> (String, Vec<SourceReference>) {
             title: title.chars().take(120).collect(),
             detail: parts.get(2).map(|d| d.chars().take(120).collect()).unwrap_or_default(),
             url,
+            excerpt: None,
         });
     }
     let text = kept.join("\n").trim().to_string();
@@ -397,6 +494,7 @@ fn links(text: &str) -> Vec<SourceReference> {
             title: title.chars().take(120).collect(),
             detail: String::new(),
             url: Some(url),
+            excerpt: None,
         });
     }
     result
@@ -427,6 +525,58 @@ pub mod citations {
             }
         }
         result
+    }
+
+    /// The answer without a list of its sources written out by the model ("Sources: [4] Vimexx · [8] WhatsApp …", or
+    /// a "Sources" heading over cited lines): Nook shows every source beside the fact it backs, so such a list only
+    /// repeats them, out of place and with bare numbers.
+    pub fn without_source_list(text: &str) -> String {
+        if !text.contains('[') || used(text).is_empty() {
+            return text.to_string();
+        }
+        let line_rx =
+            rx!(r"(?i)^\s*(?:[-*]\s+)?(?:[*_]{1,2})?(?:sources?|bronnen|bron|quellen?|fuentes?)(?:[*_]{1,2})?\s*:(?:[*_]{1,2})?(.*)$");
+        let heading_rx = rx!(r"(?i)^\s*(?:#{1,6}\s*|[*_]{1,2})(?:sources?|bronnen|bron|quellen?|fuentes?)\s*:?\s*(?:[*_]{1,2})?\s*$");
+        let mut lines: Vec<&str> = text.split('\n').collect();
+        let mut index = 0;
+        let mut changed = false;
+        while index < lines.len() {
+            let line = lines[index];
+            let remainder = if line.chars().count() < 600 {
+                line_rx.captures(line).ok().flatten().and_then(|c| c.get(1).map(|m| m.as_str()))
+            } else {
+                None
+            }
+            .or_else(|| (line.chars().count() < 60 && heading_rx.is_match(line).unwrap_or(false)).then_some(""));
+            let Some(remainder) = remainder else {
+                index += 1;
+                continue;
+            };
+            let rest = remainder.trim();
+            let mut end = index + 1;
+            if rest.is_empty() {
+                if end + 1 < lines.len() && lines[end].trim().is_empty() && !used(lines[end + 1]).is_empty() {
+                    end += 1;
+                }
+                while end < lines.len() && !lines[end].trim().is_empty() && !used(lines[end]).is_empty() {
+                    end += 1;
+                }
+                if !(end > index + 1 && !used(lines[end - 1]).is_empty()) {
+                    index += 1;
+                    continue;
+                }
+            } else if used(rest).is_empty() {
+                index += 1;
+                continue;
+            }
+            lines.drain(index..end);
+            changed = true;
+        }
+        if !changed {
+            return text.to_string();
+        }
+        let joined = lines.join("\n");
+        rx!(r"\n{3,}").replace_all(&joined, "\n\n").trim().to_string()
     }
 
     /// Haalt verwijzingen weg die bij geen bron horen; de rest blijft, ook lijstjes als [1, 4].
@@ -567,5 +717,146 @@ mod tests {
         assert!(!SourceReference::is_openable(Some("http://example.com")));
         assert!(!SourceReference::is_openable(Some("javascript:alert(1)")));
         assert!(!SourceReference::is_openable(None));
+    }
+
+    const MAILS: &str = "\
+### Achterstallige rekening | from Vimexx <billing@vimexx.nl> | 2026-11-14 [id: abc@vimexx]
+De registratie van infaris.com verloopt op 20 november.
+Betaal de openstaande factuur om de domeinnaam te behouden.
+
+### Roadmap 2026-2027 Mindlinq | from Laura van Ekris | 2026-11-15 [id: def@mindlinq]
+Zullen we een sessie plannen om de roadmap door te nemen?";
+
+    #[test]
+    fn a_mails_excerpt_is_its_own_block_without_ids() {
+        let excerpt = excerpt_for("Achterstallige rekening", MAILS, false);
+        assert_eq!(
+            excerpt.as_deref(),
+            Some(
+                "Achterstallige rekening | from Vimexx <billing@vimexx.nl> | 2026-11-14\n\
+                 De registratie van infaris.com verloopt op 20 november.\n\
+                 Betaal de openstaande factuur om de domeinnaam te behouden."
+            )
+        );
+        let other = excerpt_for("Roadmap 2026-2027 Mindlinq", MAILS, false);
+        assert_eq!(
+            other.as_deref(),
+            Some(
+                "Roadmap 2026-2027 Mindlinq | from Laura van Ekris | 2026-11-15\n\
+                 Zullen we een sessie plannen om de roadmap door te nemen?"
+            )
+        );
+    }
+
+    #[test]
+    fn a_chat_is_found_by_its_name_without_the_app() {
+        let chats = "\
+### Mama Jis | 16 nov [chat: 31612345678@s.whatsapp.net]
+- 09:12 · Mama Jis: Kom je zondag eten?
+- 09:13 · You: Ja, om zes uur";
+        let excerpt = excerpt_for("WhatsApp: Mama Jis", chats, false);
+        assert_eq!(excerpt.as_deref(), Some("Mama Jis | 16 nov\n- 09:12 · Mama Jis: Kom je zondag eten?\n- 09:13 · You: Ja, om zes uur"));
+    }
+
+    #[test]
+    fn an_event_in_a_list_is_its_own_line() {
+        let events = "\
+Daily Standup | 2026-11-16T09:00 – 2026-11-16T09:15 | calendar Werk | id E1
+Retrospective Mindlinq-team | 2026-11-16T13:00 – 2026-11-16T14:00 | id E2";
+        assert_eq!(
+            excerpt_for("Retrospective Mindlinq-team", events, false).as_deref(),
+            Some("Retrospective Mindlinq-team | 2026-11-16T13:00 – 2026-11-16T14:00")
+        );
+        assert_eq!(excerpt_for("Daily Standup", events, false).as_deref(), Some("Daily Standup | 2026-11-16T09:00 – 2026-11-16T09:15"));
+    }
+
+    #[test]
+    fn an_issue_is_found_by_its_number() {
+        let issues = "- InfarisHQ/monorepo#4358 [PR, open] 'feat(guard): hosting' · updated 15 nov";
+        assert_eq!(excerpt_for("InfarisHQ/monorepo#4358 feat(guard): hosting", issues, false).as_deref(), Some(issues));
+    }
+
+    #[test]
+    fn the_only_source_of_a_result_is_all_of_it() {
+        assert_eq!(excerpt_for("Something else", "Line one\nLine two", true).as_deref(), Some("Line one\nLine two"));
+        assert_eq!(excerpt_for("Something else", "Line one\nLine two", false), None);
+    }
+
+    #[test]
+    fn a_long_excerpt_is_cut_at_a_line() {
+        let long = (1..=200).map(|n| format!("Line number {n} of the note")).collect::<Vec<_>>().join("\n");
+        let excerpt = excerpt_for("x", &long, true).unwrap();
+        assert!(excerpt.chars().count() <= EXCERPT_LIMIT + 2);
+        assert!(excerpt.ends_with(" …"));
+    }
+
+    #[tokio::test]
+    async fn the_ledger_keeps_the_excerpt_per_reference() {
+        let ledger = RetrievalLedger::new();
+        let output = format!(
+            "{MAILS}\n{}\n{}",
+            reference_line("Achterstallige rekening", None, "Vimexx"),
+            reference_line("Roadmap 2026-2027 Mindlinq", None, "Laura")
+        );
+        ledger.run("search_mail", None, &json!({"query": "excerpt-test"}), Duration::from_secs(5), async { Ok(output) }).await.unwrap();
+        let refs = ledger.references();
+        assert_eq!(refs.len(), 2);
+        assert!(refs[0].excerpt.as_deref().is_some_and(|e| e.contains("infaris.com verloopt")));
+        assert!(refs[1].excerpt.as_deref().is_some_and(|e| e.contains("roadmap door te nemen")));
+    }
+
+    #[test]
+    fn a_reference_saved_before_excerpts_still_decodes() {
+        let old = r#"{"number":2,"sourceId":"mail","title":"Hello","detail":"","url":null}"#;
+        let reference: SourceReference = serde_json::from_str(old).unwrap();
+        assert_eq!(reference.excerpt, None);
+        assert_eq!(reference.number, 2);
+    }
+
+    #[test]
+    fn a_mails_label_is_its_sender() {
+        let mail = SourceReference {
+            number: 1,
+            source_id: "mail".into(),
+            title: "Achterstallige rekening infaris.com".into(),
+            detail: "Vimexx · 2026-11-14".into(),
+            url: None,
+            excerpt: None,
+        };
+        assert_eq!(mail.sender().as_deref(), Some("Vimexx"));
+        let event = SourceReference {
+            number: 2,
+            source_id: "calendar".into(),
+            title: "Retro".into(),
+            detail: "16 nov · Werk".into(),
+            url: None,
+            excerpt: None,
+        };
+        assert_eq!(event.sender(), None);
+    }
+
+    #[test]
+    fn a_sources_line_written_by_the_model_goes() {
+        let text = "Sources: [4] infaris.com: Achterstallige Rekening, Vimexx · [8] WhatsApp +31 6 19304231\n\nHet concept-antwoord aan Laura staat klaar [30].";
+        assert_eq!(citations::without_source_list(text), "Het concept-antwoord aan Laura staat klaar [30].");
+    }
+
+    #[test]
+    fn a_sources_heading_with_its_list_goes() {
+        let text = "Klaar [1].\n\n**Bronnen:**\n- [1] Vimexx\n- [2] Agenda";
+        assert_eq!(citations::without_source_list(text), "Klaar [1].");
+        assert_eq!(citations::without_source_list("Klaar [1].\n\n## Sources\n\n[1] Vimexx"), "Klaar [1].");
+    }
+
+    #[test]
+    fn ordinary_text_about_sources_stays() {
+        for text in [
+            "Bronwater is gezond [2].",
+            "Sources say the deadline moved [1].",
+            "Bron: niets gevonden.",
+            "## Sources\nNone of them answered.",
+        ] {
+            assert_eq!(citations::without_source_list(text), text);
+        }
     }
 }

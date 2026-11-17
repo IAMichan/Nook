@@ -1,11 +1,6 @@
-<script lang="ts" module>
-  // Eén keer per domein ophalen, voor alle iconen samen.
-  const cache = new Map<string, Promise<string | null>>();
-</script>
-
 <script lang="ts">
   // Het icoon van een dienst, van zijn eigen website (zoals op de Mac). Zonder icoon: de eerste letter in een tegel.
-  import { connectorsApi } from "../../lib/connectors";
+  import { serviceIconUrl } from "../../lib/service-icons";
 
   let { domain, title, size = 30 }: { domain?: string | null; title: string; size?: number } = $props();
   let src = $state<string | null>(null);
@@ -14,9 +9,8 @@
     src = null;
     const d = domain?.trim();
     if (!d) return;
-    if (!cache.has(d)) cache.set(d, connectorsApi.serviceIcon(d).catch(() => null));
     let live = true;
-    cache.get(d)!.then((s) => live && (src = s));
+    serviceIconUrl(d).then((s) => live && (src = s));
     return () => {
       live = false;
     };

@@ -1,26 +1,204 @@
 <script lang="ts">
   import { tr } from "../lib/i18n.svelte";
-  // Eén bericht: boven het antwoord wat er opgezocht is, dan het antwoord zelf (Markdown), grafieken, mailconcepten,
-  // het plan, de genummerde bronnen, meldingen en vervolgknoppen. Bij een fout de knop die hem oplost.
+  // Eén bericht: boven het antwoord wat er opgezocht is, dan het antwoord zelf (Markdown met bronlabels), grafieken,
+  // mailconcepten, het plan, meldingen en vervolgknoppen. Bij een fout de knop die hem oplost.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../lib/api";
   import { brainApi, type Recovery } from "../lib/brain";
-  import { renderMarkdown } from "../lib/markdown";
+  import { citationReferences, claimFromTextBefore, isOpenableUrl, withoutSourceList } from "../lib/citations";
+  import { renderAnswerMarkdown } from "../lib/markdown";
+  import { serviceIconUrl } from "../lib/service-icons";
   import { visibleNotices } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
-  import type { ChatMessage } from "../lib/types";
+  import type { ChatMessage, SourceReference } from "../lib/types";
   import TaskChecklist from "./TaskChecklist.svelte";
   import ChartView from "./ChartView.svelte";
+  import CitationPreview from "./CitationPreview.svelte";
   import MailDraftView from "./MailDraftView.svelte";
   import PlanCard from "./PlanCard.svelte";
   import SourcesView from "./SourcesView.svelte";
 
   let { message, nookId, last = false }: { message: ChatMessage; nookId: string; last?: boolean } = $props();
   const text = $derived(message.streaming ? (nook.streaming[message.id] ?? message.text ?? "") : message.text);
-  const html = $derived(message.fromUser ? "" : renderMarkdown(text));
+  const html = $derived(message.fromUser ? "" : renderAnswerMarkdown(text, message.references));
   const notices = $derived(message.streaming ? [] : visibleNotices(message));
   let enlargedImages = $state<Record<string, boolean>>({});
+  let markdownEl = $state<HTMLDivElement | null>(null);
+
+  type PillPreview = {
+    references: SourceReference[];
+    claim: string;
+    anchor: { left: number; top: number; right: number; bottom: number };
+    pinned: boolean;
+    pill: HTMLElement;
+  };
+  let preview = $state<PillPreview | null>(null);
+  let onPill = false;
+  let onPopover = false;
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearClaimHighlight() {
+    if (typeof CSS !== "undefined" && "highlights" in CSS) {
+      CSS.highlights.delete("nook-claim");
+    }
+  }
+
+  function closePreview() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    preview = null;
+    clearClaimHighlight();
+  }
+
+  function scheduleClose() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!onPill && !onPopover && preview && !preview.pinned) {
+        closePreview();
+      }
+    }, 200);
+  }
+
+  /** Extracts the sentence before `pill` within its block element and highlights it via CSS Custom Highlight API. */
+  function extractAndHighlightClaim(pill: HTMLElement, highlight: boolean): string {
+    const block = pill.closest("p, li, td, th, blockquote, h1, h2, h3, h4, h5, h6") ?? markdownEl;
+    if (!block) return "";
+    let chunks: { node: Text; text: string }[] = [];
+    const walk = (root: Node): boolean => {
+      for (const child of root.childNodes) {
+        if (child === pill) return true;
+        if (child instanceof HTMLElement && (child.classList.contains("cite-pill") || child.tagName === "BR")) {
+          chunks = [];
+          continue;
+        }
+        if (child.nodeType === Node.TEXT_NODE) {
+          const val = child.textContent ?? "";
+          if (val) chunks.push({ node: child as Text, text: val });
+        } else if (child.hasChildNodes()) {
+          if (walk(child)) return true;
+        }
+      }
+      return false;
+    };
+    walk(block);
+    const segment = chunks.map((c) => c.text).join("");
+    const claim = claimFromTextBefore(segment);
+    if (highlight && claim && typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined") {
+      const idx = segment.lastIndexOf(claim);
+      if (idx >= 0) {
+        const endIdx = idx + claim.length;
+        const range = document.createRange();
+        let pos = 0;
+        let started = false;
+        for (const chunk of chunks) {
+          const nextPos = pos + chunk.text.length;
+          if (!started && idx < nextPos) {
+            range.setStart(chunk.node, Math.max(0, idx - pos));
+            started = true;
+          }
+          if (started && endIdx <= nextPos) {
+            range.setEnd(chunk.node, Math.max(0, endIdx - pos));
+            break;
+          }
+          pos = nextPos;
+        }
+        if (started) CSS.highlights.set("nook-claim", new Highlight(range));
+      }
+    }
+    return claim;
+  }
+
+  function pillReferences(pill: HTMLElement): SourceReference[] {
+    const nums = (pill.dataset.cites ?? "")
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    return citationReferences(nums, message.references);
+  }
+
+  $effect(() => {
+    void html;
+    closePreview();
+    if (!markdownEl) return;
+    let alive = true;
+    for (const span of markdownEl.querySelectorAll<HTMLElement>(".cite-pill .cite-ico[data-icon-domain]")) {
+      const domain = span.dataset.iconDomain;
+      if (!domain) continue;
+      serviceIconUrl(domain).then((src) => {
+        if (!alive || !src) return;
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "";
+        img.className = "cite-img";
+        img.onerror = () => img.remove();
+        span.replaceChildren(img);
+      });
+    }
+    const cleanups: (() => void)[] = [];
+    for (const pill of markdownEl.querySelectorAll<HTMLElement>(".cite-pill")) {
+      const enter = () => {
+        onPill = true;
+        clearTimeout(showTimer);
+        clearTimeout(hideTimer);
+        const cited = pillReferences(pill);
+        if (!cited.length) return;
+        const claim = extractAndHighlightClaim(pill, true);
+        if (preview?.pinned) return;
+        const rect = pill.getBoundingClientRect();
+        const anchor = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+        const delay = preview ? 0 : 250;
+        showTimer = setTimeout(() => {
+          if (!alive) return;
+          preview = { references: cited, claim, anchor, pinned: false, pill };
+        }, delay);
+      };
+      const leave = () => {
+        onPill = false;
+        clearTimeout(showTimer);
+        if (!preview?.pinned) {
+          clearClaimHighlight();
+          scheduleClose();
+        }
+      };
+      pill.addEventListener("mouseenter", enter);
+      pill.addEventListener("mouseleave", leave);
+      pill.addEventListener("focus", enter);
+      pill.addEventListener("blur", leave);
+      cleanups.push(() => {
+        pill.removeEventListener("mouseenter", enter);
+        pill.removeEventListener("mouseleave", leave);
+        pill.removeEventListener("focus", enter);
+        pill.removeEventListener("blur", leave);
+      });
+    }
+    return () => {
+      alive = false;
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      clearClaimHighlight();
+      for (const fn of cleanups) fn();
+    };
+  });
+
+  $effect(() => {
+    if (!preview?.pinned) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest(".citation-popover") || t?.closest(".cite-pill") === preview?.pill) return;
+      closePreview();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePreview();
+    };
+    window.addEventListener("mousedown", onDocClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  });
 
   function toggleImage(src: string) {
     enlargedImages[src] = !enlargedImages[src];
@@ -29,14 +207,40 @@
   let copied = $state(false);
   async function copyAnswer() {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(withoutSourceList(text));
       copied = true;
       setTimeout(() => (copied = false), 1500);
     } catch { /* The clipboard can be busy; the button simply stays. */ }
   }
 
   function click(e: MouseEvent) {
-    const copy = (e.target as HTMLElement).closest("[data-copy-code]") as HTMLButtonElement | null;
+    const target = e.target as HTMLElement;
+    const pill = target.closest(".cite-pill") as HTMLElement | null;
+    if (pill) {
+      e.preventDefault();
+      const cited = pillReferences(pill);
+      if (!cited.length) return;
+      if (cited.length === 1 && cited[0].url && isOpenableUrl(cited[0].url)) {
+        openUrl(cited[0].url);
+        closePreview();
+        return;
+      }
+      if (preview?.pinned && preview.pill === pill) {
+        closePreview();
+        return;
+      }
+      const claim = extractAndHighlightClaim(pill, true);
+      const rect = pill.getBoundingClientRect();
+      preview = {
+        references: cited,
+        claim,
+        anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        pinned: true,
+        pill,
+      };
+      return;
+    }
+    const copy = target.closest("[data-copy-code]") as HTMLButtonElement | null;
     if (copy) {
       const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
       navigator.clipboard.writeText(code).then(() => {
@@ -46,7 +250,7 @@
       }).catch(() => {});
       return;
     }
-    const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
+    const a = target.closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
       openUrl(a.href);
@@ -116,7 +320,7 @@
       <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="markdown" onclick={click}>{@html html}</div>
+      <div class="markdown" bind:this={markdownEl} onclick={click}>{@html html}</div>
       {#if !message.streaming && !message.isError}
         <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
       {/if}
@@ -125,16 +329,6 @@
     {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
     {#if message.actions.length}
       <PlanCard {nookId} {message} {last} />
-    {/if}
-    {#if message.references.length && !message.streaming}
-      <ol class="refs">
-        {#each message.references as ref (ref.number)}
-          <li value={ref.number}>
-            {#if ref.url}<a href={ref.url} onclick={(e) => { e.preventDefault(); openUrl(ref.url!); }}>{ref.title}</a>{:else}{ref.title}{/if}
-            {#if ref.detail}<span class="faint"> — {ref.detail}</span>{/if}
-          </li>
-        {/each}
-      </ol>
     {/if}
     {#if notices.length}
       <div class="notices">
@@ -157,6 +351,21 @@
   {/if}
 </div>
 
+{#if preview}
+  <CitationPreview
+    references={preview.references}
+    claim={preview.claim}
+    anchor={preview.anchor}
+    edge="bottom"
+    onhover={(inside) => {
+      onPopover = inside;
+      if (inside) clearTimeout(hideTimer);
+      else scheduleClose();
+    }}
+    onopen={closePreview}
+  />
+{/if}
+
 <style>
   .msg { padding: 14px 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
@@ -167,7 +376,6 @@
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
-  .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
