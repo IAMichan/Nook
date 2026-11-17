@@ -14,7 +14,12 @@
     onselect?: () => void;
   }
 
-  let { sections, anchor, title, onclose }: { sections: MenuItem[][]; anchor?: DOMRect | null; title?: string; onclose: () => void } = $props();
+  /** A row of emoji above the rows (a message's quick reactions): the ones in `mine` are marked, a tap picks one. */
+  export interface MenuReactions { emoji: string[]; mine: string[]; onpick: (emoji: string) => void }
+
+  let { sections, anchor, title, reactions, onclose }: {
+    sections: MenuItem[][]; anchor?: DOMRect | null; title?: string; reactions?: MenuReactions; onclose: () => void;
+  } = $props();
   $effect(() => onBack(() => (onclose(), true)));
   const below = $derived(!anchor || anchor.bottom < window.innerHeight * 0.55);
   const top = $derived(anchor ? (below ? anchor.bottom + 6 : undefined) : undefined);
@@ -26,8 +31,15 @@
 <div class="scrim" onclick={onclose}>
   <div class="menu" role="menu" tabindex="-1" style:top={top !== undefined ? `${top}px` : undefined} style:bottom={bottom !== undefined ? `${bottom}px` : anchor ? undefined : "calc(16px + var(--safe-bottom, 0px))"} style:left={left !== undefined ? `${left}px` : undefined} class:centered={!anchor} onclick={(e) => e.stopPropagation()}>
     {#if title}<div class="title">{title}</div>{/if}
+    {#if reactions}
+      <div class="reactions">
+        {#each reactions.emoji as e (e)}
+          <button class="emoji" class:mine={reactions.mine.includes(e)} aria-label={e} aria-pressed={reactions.mine.includes(e)} onclick={() => { reactions.onpick(e); onclose(); }}>{e}</button>
+        {/each}
+      </div>
+    {/if}
     {#each sections.filter((s) => s.length) as section, i (i)}
-      {#if i > 0 || title}<div class="gap"></div>{/if}
+      {#if i > 0 || title || reactions}<div class="gap"></div>{/if}
       {#each section as item (item.label)}
         {#if item.onselect}
           <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { item.onselect?.(); onclose(); }}>
@@ -47,6 +59,9 @@
   .scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.25); animation: fade 160ms ease-out; }
   .menu { position: fixed; width: 250px; max-height: 70vh; overflow-y: auto; background: rgba(37, 37, 37, 0.96); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); border-radius: 13px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55); animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1); transform-origin: top left; }
   .menu.centered { left: 12px; right: 12px; width: auto; }
+  .reactions { display: flex; justify-content: space-between; padding: 6px 8px; }
+  .emoji { width: 36px; height: 36px; border-radius: 50%; font-size: 22px; display: inline-flex; align-items: center; justify-content: center; }
+  .emoji.mine { background: rgba(255, 255, 255, 0.16) !important; }
   .title { padding: 10px 16px 8px; font: var(--pt-caption); color: var(--text3); }
   .gap { height: 8px; background: rgba(0, 0, 0, 0.3); }
   .item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 16px 11px 10px; min-height: 44px; text-align: left; color: var(--paper); border-top: 0.5px solid rgba(255, 255, 255, 0.08) !important; box-sizing: border-box; }

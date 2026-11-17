@@ -8,14 +8,22 @@ enum CompanionImages {
     /// the phone may send (too many, too big, not a JPEG) or could not be saved.
     static func attach(_ images: [CompanionImage]?, to text: String) -> String? {
         guard let images, !images.isEmpty else { return text }
-        guard images.count <= CompanionImage.maxCount else { return nil }
-        var paths: [String] = []
-        for image in images {
-            guard let data = image.data, let url = save(data) else { return nil }
-            paths.append(url.path)
-        }
+        guard let paths = save(images)?.map(\.path) else { return nil }
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return (words.isEmpty ? "" : words + "\n\n") + paths.joined(separator: "\n")
+    }
+
+    /// The pictures saved on this Mac (none for nil), as a chat message from the phone sends them; nil when one is not a
+    /// picture the phone may send or could not be saved.
+    static func save(_ images: [CompanionImage]?) -> [URL]? {
+        guard let images, !images.isEmpty else { return [] }
+        guard images.count <= CompanionImage.maxCount else { return nil }
+        var urls: [URL] = []
+        for image in images {
+            guard let data = image.data, let url = save(data) else { return nil }
+            urls.append(url)
+        }
+        return urls
     }
 
     /// Saves one picture where the composer keeps pictures for agents, readable by you only.
@@ -39,14 +47,21 @@ enum CompanionFiles {
     /// The words with the files' paths under them; the words alone without files; nil when a file may not go.
     static func attach(_ files: [CompanionFile]?, images: [CompanionImage]?, to text: String) -> String? {
         guard let files, !files.isEmpty else { return text }
-        guard CompanionFile.fits(images: images ?? [], files: files) else { return nil }
-        var paths: [String] = []
-        for file in files {
-            guard let bytes = file.bytes, let name = CompanionFile.safeName(file.name), let url = save(bytes, name: name) else { return nil }
-            paths.append(url.path)
-        }
+        guard let paths = save(files, images: images)?.map(\.path) else { return nil }
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return (words.isEmpty ? "" : words + "\n\n") + paths.joined(separator: "\n")
+    }
+
+    /// The files saved on this Mac (none for nil), each under its own name; nil when one may not go.
+    static func save(_ files: [CompanionFile]?, images: [CompanionImage]?) -> [URL]? {
+        guard let files, !files.isEmpty else { return [] }
+        guard CompanionFile.fits(images: images ?? [], files: files) else { return nil }
+        var urls: [URL] = []
+        for file in files {
+            guard let bytes = file.bytes, let name = CompanionFile.safeName(file.name), let url = save(bytes, name: name) else { return nil }
+            urls.append(url)
+        }
+        return urls
     }
 
     /// One folder per file, so its own name stays and two files of the same name never meet; readable by you only.

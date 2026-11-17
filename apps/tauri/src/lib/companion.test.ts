@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyConversation, applyTimeline, attentionWord, resumePoint, parseCompanionLink, widgetData, parseNotificationAction, shortcutSessions, canStop, FileAssembly, newerMac, snoozeRange, versionNotice, filterInbox, groupSessions, has, looksLikePairingLink, matchesSession, may, needingYou, resetsIn,
   sendNotice, sessionActions, sortSessions, tabsFor, unreadChats, type InboxChatDigest, type SessionDigest,
+  chatKinds, chatsGroup, filterChats, groupChats, mergeInboxLines, pollChoice, pollVoting, prependInboxLines, readState, type InboxLine, type InboxPoll,
 } from "./companion";
 
 const session = (id: string, attention: string, updated: number, extra: Partial<SessionDigest> = {}): SessionDigest => ({
@@ -159,5 +160,62 @@ describe("companion", () => {
     expect(d.agents.map((a) => [a.id, a.waiting])).toEqual([["a", true], ["w", false]]);
     expect(d.limits).toEqual([{ name: "Claude · Work · Week", percent: 42, resetsAt: 100 }]);
     expect(d.updatedAt).toBe(7);
+  });
+
+  it("groups the Chats list as the Mac does", () => {
+    const now = new Date(2026, 10, 16, 15, 0).getTime();
+    const at = (days: number, hour = 12) => { const d = new Date(now); d.setDate(d.getDate() - days); d.setHours(hour); return d.getTime() / 1000; };
+    expect(chatsGroup({ last: at(0, 1) }, now)).toBe("today");
+    expect(chatsGroup({ last: at(1, 23) }, now)).toBe("yesterday");
+    expect(chatsGroup({ last: at(6) }, now)).toBe("week");
+    expect(chatsGroup({ last: at(20) }, now)).toBe("month");
+    expect(chatsGroup({ last: at(40) }, now)).toBe("earlier");
+    expect(chatsGroup({ last: at(40), pinned: true }, now)).toBe("pinned");
+    const groups = groupChats([chat("old", at(40)), chat("pin", at(3), 0, { pinned: true }), chat("a", at(0, 9)), chat("b", at(0, 10))], now);
+    expect(groups.map((g) => [g.group, g.chats.map((c) => c.id)])).toEqual([["pinned", ["pin"]], ["today", ["b", "a"]], ["earlier", ["old"]]]);
+  });
+
+  it("filters the Chats list by read state, app and list", () => {
+    const list = [
+      chat("new", 1, 2),
+      chat("nook", 2, 0, { waitsInApp: true }),
+      chat("read", 3, 0, { app: "telegram", appName: "Telegram" }),
+      chat("status", 4, 1, { kind: "status" }),
+      chat("channel", 5, 0, { kind: "channels" }),
+    ];
+    expect(readState(list[0])).toBe("unread");
+    expect(readState(list[1])).toBe("readInNook");
+    expect(readState(list[2])).toBe("read");
+    expect(filterChats(list, {}).map((c) => c.id)).toEqual(["new", "nook", "read"]);
+    expect(filterChats(list, { read: "readInNook" }).map((c) => c.id)).toEqual(["nook"]);
+    expect(filterChats(list, { app: "telegram" }).map((c) => c.id)).toEqual(["read"]);
+    expect(filterChats(list, { app: "whatsapp", kind: "status" }).map((c) => c.id)).toEqual(["status"]);
+    // Status and channels only with an app chosen, and they never count as unread chats.
+    expect(filterChats(list, { kind: "status" }).map((c) => c.id)).toEqual(["new", "nook", "read"]);
+    expect(chatKinds(list, "whatsapp")).toEqual(["chats", "status", "channels"]);
+    expect(chatKinds(list, "telegram")).toEqual([]);
+    expect(chatKinds(list, null)).toEqual([]);
+    expect(unreadChats(list)).toBe(1);
+  });
+
+  it("keeps the messages you paged back to when the newest come again", () => {
+    const line = (id: string): InboxLine => ({ id, text: id, date: 0, sender: "", fromMe: false, reactions: [] });
+    const ids = (l: InboxLine[]) => l.map((x) => x.id);
+    const kept = ["1", "2", "3", "4", "5"].map(line);
+    expect(ids(mergeInboxLines(["3", "4", "5", "6"].map(line), kept))).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(ids(mergeInboxLines(["7"].map(line), kept))).toEqual(["7"]);
+    expect(ids(mergeInboxLines(["1", "2"].map(line), kept))).toEqual(["1", "2"]);
+    expect(ids(prependInboxLines(["a", "b", "1"].map(line), "1", kept))).toEqual(["a", "b", "1", "2", "3", "4", "5"]);
+    expect(ids(prependInboxLines(["a"].map(line), "x", kept))).toEqual(ids(kept));
+  });
+
+  it("votes in a poll as the Mac does", () => {
+    const poll: InboxPoll = { question: "When?", multiple: false, counted: true, options: [
+      { text: "Mon", votes: 2, chosen: true }, { text: "Tue", votes: 1, chosen: false },
+    ] };
+    expect(pollChoice(poll, "Tue")).toEqual(["Tue"]);
+    expect(pollChoice(poll, "Mon")).toEqual([]);
+    expect(pollChoice({ ...poll, multiple: true }, "Tue")).toEqual(["Mon", "Tue"]);
+    expect(pollVoting(poll, ["Tue"]).options).toEqual([{ text: "Mon", votes: 1, chosen: false }, { text: "Tue", votes: 2, chosen: true }]);
   });
 });

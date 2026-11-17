@@ -5,13 +5,26 @@ import SwiftUI
 // approve or request changes, merge, or hand to an agent. The Mac reads and acts with its own accounts and rules; what
 // was read last stays readable without a connection (`PullCache`), and every action needs the Mac.
 
-/// The Mac's pull request list, or a session's linked ones (`session`).
+/// The Mac's pull request list, or a session's linked ones (`session`). With `CompanionFeature.pullActions` it is the
+/// Mac's page sized for a phone: the chips of what asks something of you, the search (with `label:`, `repo:`,
+/// `author:`, `branch:`…), the state, the order and the grouping in one menu, and rows that hold to show what you can do.
 struct PullRequestListView: View {
     @EnvironmentObject private var client: CompanionClient
     var session: String? = nil
     @State private var loaded = false
+    @State private var query = ""
+    @State private var attention: PullList.Attention?
+    @AppStorage("pulls.state") private var stateRaw = PullList.State.open.rawValue
+    @AppStorage("pulls.sort") private var sortRaw = PullList.Sort.attention.rawValue
+    @AppStorage("pulls.grouping") private var groupingRaw = PullList.Grouping.involvement.rawValue
+    @State private var asking: PullQuickAsk?
 
     private var list: [PullDigest] { session.map { client.linkedPulls[$0] ?? [] } ?? client.pulls }
+    private var full: Bool { session == nil && client.can(CompanionFeature.pullActions) }
+    private var state: PullList.State { PullList.State(rawValue: stateRaw) ?? .open }
+    private var sort: PullList.Sort { PullList.Sort(rawValue: sortRaw) ?? .attention }
+    private var grouping: PullList.Grouping { PullList.Grouping(rawValue: groupingRaw) ?? .involvement }
+    private var filtering: Bool { !query.isEmpty || attention != nil || state != .open }
 
     private func group(_ group: PullDigest.Group) -> [PullDigest] { list.filter { $0.group == group.rawValue } }
 
@@ -33,6 +46,19 @@ struct PullRequestListView: View {
                     }
                 } else if session != nil {
                     rows(list)
+                } else if full {
+                    toolbar
+                    let sections = PullList.sections(list, query: query, state: state, attention: attention, sort: sort, grouping: grouping)
+                    if sections.isEmpty {
+                        WSEmptyState(symbol: "line.3.horizontal.decrease.circle", title: String(localized: "No pull requests match"),
+                                     message: String(localized: "Try other words, or clear the filters."),
+                                     action: (String(localized: "Clear filters"), { clear() }))
+                    }
+                    ForEach(sections) { section in
+                        SectionHeader(title: title(section), count: section.pulls.count,
+                                      urgent: grouping == .involvement && section.key == PullDigest.Group.review.rawValue)
+                        rows(section.pulls)
+                    }
                 } else {
                     section(String(localized: "Yours"), group(.mine))
                     section(String(localized: "For your review"), group(.review))
@@ -47,6 +73,14 @@ struct PullRequestListView: View {
         .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: String(localized: "Pull requests")) } }
         .screen()
         .navigationDestination(for: PullRoute.self) { route in PullRequestDetailView(url: route.url) }
+        .confirmationDialog(asking?.title ?? "", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+                            titleVisibility: .visible, presenting: asking) { ask in
+            Button(ask.button, role: ask.kind.isDestructive && ask.kind != .merge ? .destructive : nil) {
+                Task { await quick(ask.pull, ask.kind) }
+            }
+        } message: { ask in
+            Text(verbatim: "\(ask.pull.repo)#\(ask.pull.number) · \(ask.pull.title)")
+        }
         .task {
             await load()
             loaded = true
@@ -56,6 +90,106 @@ struct PullRequestListView: View {
     private func load() async {
         if let session { await client.loadLinkedPulls(session) } else { await client.loadPulls() }
     }
+
+    // MARK: Search, chips and the menu
+
+    /// The Mac's attention bar, search row and Sort menu, stacked for a thumb: the chips first, then the search with the
+    /// one menu for state, order and grouping beside it.
+    private var toolbar: some View {
+        let counts = PullList.counted(list, query: query, state: state)
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    ForEach(PullList.Attention.allCases, id: \.self) { kind in
+                        let count = counts[kind] ?? 0
+                        if count > 0 || attention == kind {
+                            NookFilterChip(title: Self.chipTitle(kind), count: count, selected: attention == kind) {
+                                Haptics.tap()
+                                withAnimation(Theme.reveal) { attention = attention == kind ? nil : kind }
+                            }
+                        }
+                    }
+                }
+            }
+            HStack(spacing: Theme.Spacing.sm) {
+                NookSearchField(prompt: "Search, or label:bug repo: author:", text: $query)
+                Menu {
+                    Picker("State", selection: $stateRaw) {
+                        ForEach(PullList.State.allCases, id: \.self) { option in Text(Self.stateTitle(option)).tag(option.rawValue) }
+                    }
+                    Picker("Sort", selection: $sortRaw) {
+                        ForEach(PullList.Sort.allCases, id: \.self) { option in Text(Self.sortTitle(option)).tag(option.rawValue) }
+                    }
+                    Picker("Group by", selection: $groupingRaw) {
+                        Text("Involvement").tag(PullList.Grouping.involvement.rawValue)
+                        Text("Repository").tag(PullList.Grouping.repository.rawValue)
+                    }
+                    if filtering {
+                        Button { clear() } label: { Label("Clear filters", systemImage: "xmark.circle") }
+                    }
+                } label: {
+                    Image(icon: state == .open ? "arrow.up.arrow.down" : "line.3.horizontal.decrease.circle.fill")
+                        .font(Theme.font(15))
+                        .foregroundStyle(state == .open ? Theme.textSecondary : Theme.iris)
+                        .frame(width: 44, height: 38)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Sort and filter")
+            }
+            if state != .open {
+                Text(Self.stateTitle(state)).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+
+    private func clear() {
+        withAnimation(Theme.reveal) {
+            query = ""
+            attention = nil
+            stateRaw = PullList.State.open.rawValue
+        }
+    }
+
+    private func title(_ section: PullList.Section) -> String {
+        guard grouping == .involvement else { return section.key }
+        switch PullDigest.Group(rawValue: section.key) {
+        case .review?: return String(localized: "For your review")
+        case .mine?: return String(localized: "Yours")
+        case .watched?: return String(localized: "Watched")
+        default: return String(localized: "Linked to sessions")
+        }
+    }
+
+    static func chipTitle(_ kind: PullList.Attention) -> String {
+        switch kind {
+        case .review: return String(localized: "Review")
+        case .failing: return String(localized: "Failing")
+        case .ready: return String(localized: "Ready to merge")
+        }
+    }
+
+    static func stateTitle(_ state: PullList.State) -> String {
+        switch state {
+        case .open: return String(localized: "Open")
+        case .closed: return String(localized: "Closed")
+        case .merged: return String(localized: "Merged")
+        case .all: return String(localized: "All states")
+        }
+    }
+
+    static func sortTitle(_ sort: PullList.Sort) -> String {
+        switch sort {
+        case .attention: return String(localized: "Needs you first")
+        case .readiness: return String(localized: "Closest to merging")
+        case .blockedOnMe: return String(localized: "Blocked on me")
+        case .recent: return String(localized: "Recently updated")
+        case .oldest: return String(localized: "Least recently updated")
+        case .largest: return String(localized: "Largest change")
+        case .smallest: return String(localized: "Smallest change")
+        }
+    }
+
+    // MARK: Rows
 
     @ViewBuilder
     private func section(_ title: String, _ pulls: [PullDigest]) -> some View {
@@ -69,6 +203,81 @@ struct PullRequestListView: View {
         ForEach(pulls) { pull in
             OpenLink(value: PullRoute(url: pull.url)) { PullRow(pull: pull) }
                 .buttonStyle(RowPress())
+                .contextMenu { rowMenu(pull) }
+        }
+    }
+
+    /// What a held row offers: its link, and the Mac's quick actions (close and merge an open one, mark a draft ready,
+    /// reopen a closed one), each asked first.
+    @ViewBuilder
+    private func rowMenu(_ pull: PullDigest) -> some View {
+        if let url = URL(string: pull.url) {
+            Button { UIPasteboard.general.url = url; Haptics.success() } label: { Label("Copy link", systemImage: "link") }
+            Button { UIApplication.shared.open(url) } label: { Label("Open in browser", systemImage: "safari") }
+        }
+        if client.allows(.operate), client.phase == .connected, client.can(CompanionFeature.pullActions) {
+            Divider()
+            switch pull.state {
+            case "open":
+                Button { asking = PullQuickAsk(pull: pull, kind: .merge) } label: { Label("Merge", systemImage: "arrow.triangle.merge") }
+                Button(role: .destructive) { asking = PullQuickAsk(pull: pull, kind: .close) } label: { Label("Close", systemImage: "xmark.circle") }
+            case "draft":
+                Button { asking = PullQuickAsk(pull: pull, kind: .ready) } label: { Label("Ready for review", systemImage: "arrow.triangle.pull") }
+                Button(role: .destructive) { asking = PullQuickAsk(pull: pull, kind: .close) } label: { Label("Close", systemImage: "xmark.circle") }
+            case "closed":
+                Button { asking = PullQuickAsk(pull: pull, kind: .reopen) } label: { Label("Reopen", systemImage: "arrow.uturn.backward") }
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    /// A quick action from a row: the pull request read in full first, so it goes only at the head the Mac sees now and
+    /// only when the Mac would offer it.
+    private func quick(_ pull: PullDigest, _ kind: CompanionPullAction.Kind) async {
+        await client.loadPull(pull.url)
+        guard let detail = client.pullDetails[pull.url] else { Haptics.warning(); return }
+        let action: CompanionPullAction
+        if kind == .merge {
+            guard detail.blocker == nil, let method = detail.methods.first else {
+                client.notice = String(localized: "This pull request cannot be merged from your iPhone now.")
+                Haptics.warning()
+                return
+            }
+            action = CompanionPullAction(kind: .merge, method: method, head: detail.headSHA)
+        } else {
+            guard client.pullAllows(detail, kind) else {
+                client.notice = String(localized: "Your Mac does not offer this for this pull request now.")
+                Haptics.warning()
+                return
+            }
+            action = CompanionPullAction(kind: kind)
+        }
+        if await client.actOnPull(pull.url, action) { Haptics.success() } else { Haptics.warning() }
+    }
+}
+
+/// A quick action waiting for its yes.
+private struct PullQuickAsk: Identifiable {
+    let pull: PullDigest
+    let kind: CompanionPullAction.Kind
+    var id: String { pull.url + kind.rawValue }
+
+    var title: String {
+        switch kind {
+        case .merge: return String(localized: "Merge this pull request?")
+        case .close: return String(localized: "Close this pull request?")
+        case .ready: return String(localized: "Mark ready for review?")
+        default: return String(localized: "Reopen this pull request?")
+        }
+    }
+
+    var button: String {
+        switch kind {
+        case .merge: return String(localized: "Merge")
+        case .close: return String(localized: "Close")
+        case .ready: return String(localized: "Ready for review")
+        default: return String(localized: "Reopen")
         }
     }
 }
@@ -78,7 +287,8 @@ struct PullRoute: Hashable {
     let url: String
 }
 
-/// One pull request in a list: its state, title, where it is and how its checks and reviews stand.
+/// One pull request in a list, the Mac's `PullRequestRow` for a phone: its state, title and labels, where it is, who
+/// opened it when, the review decision, and how its checks, comments and lines stand.
 private struct PullRow: View {
     let pull: PullDigest
 
@@ -91,12 +301,32 @@ private struct PullRow: View {
                 HStack(spacing: Theme.Spacing.sm) {
                     Text(verbatim: "\(pull.repo)#\(pull.number)").lineLimit(1).truncationMode(.middle)
                     if !pull.author.isEmpty { Text(verbatim: pull.author).lineLimit(1) }
+                    if let created = pull.created {
+                        Text("opened \(AgentRow.age(Date().timeIntervalSince1970 - created)) ago").lineLimit(1)
+                    }
                 }
                 .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                if let review = PullReviewWord(review: pull.review), pull.isOpen {
+                    review.font(Theme.TextStyle.caption)
+                }
+                if let labels = pull.labels, !labels.isEmpty {
+                    PullLabels(labels: labels, colors: pull.labelColors ?? [:], limit: 3)
+                }
             }
             Spacer(minLength: Theme.Spacing.sm)
             VStack(alignment: .trailing, spacing: Theme.Spacing.xxs) {
-                ChecksMark(ci: pull.ci)
+                HStack(spacing: Theme.Spacing.xxs) {
+                    ChecksMark(ci: pull.ci)
+                    if let passed = pull.checksPassed, let total = pull.checksTotal, total > 0 {
+                        Text(verbatim: "\(passed)/\(total)").font(Theme.TextStyle.caption).monospacedDigit()
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                if let comments = pull.comments, comments > 0 {
+                    Label("\(comments)", systemImage: "bubble.left").labelStyle(.titleAndIcon)
+                        .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                        .accessibilityLabel(Text("\(comments) comments"))
+                }
                 if let added = pull.additions, let removed = pull.deletions { LineCounts(added: added, removed: removed) }
             }
         }
@@ -165,7 +395,7 @@ struct PullRequestDetailView: View {
     @EnvironmentObject private var client: CompanionClient
     let url: String
     enum Tab: String, CaseIterable, Identifiable {
-        case summary, checks, files
+        case summary, conversation, checks, files
         var id: String { rawValue }
     }
 
@@ -174,26 +404,25 @@ struct PullRequestDetailView: View {
     @State private var open: Set<String> = []
     @State private var reviewing = false
     @State private var confirmMerge = false
+    @State private var confirm: CompanionPullAction.Kind?
     @State private var working = false
     @State private var busy = false
 
     private var detail: PullDetailDigest? { client.pullDetails[url] }
     private var connected: Bool { client.phase == .connected }
     private var mayAct: Bool { connected && client.allows(.operate) }
+    /// The Mac sends the side info, the conversation and its menu's actions (`CompanionFeature.pullActions`).
+    private var full: Bool { client.can(CompanionFeature.pullActions) && detail?.actions != nil }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if let detail {
                     header(detail)
-                    Picker("Show", selection: $tab) {
-                        Text("Summary").tag(Tab.summary)
-                        Text("Checks \(detail.checks.count)").tag(Tab.checks)
-                        Text("Files \(detail.files.count)").tag(Tab.files)
-                    }
-                    .pickerStyle(.segmented)
+                    tabs(detail)
                     switch tab {
                     case .summary: summary(detail)
+                    case .conversation: PullConversationView(detail: detail, mayAct: mayAct && full, busy: busy) { action in await act(action) }
                     case .checks: checks(detail)
                     case .files: files(detail)
                     }
@@ -211,6 +440,7 @@ struct PullRequestDetailView: View {
             ToolbarItem(placement: .principal) {
                 SheetTitle(title: detail.map { "#\($0.number)" } ?? String(localized: "Pull request"), subtitle: detail?.repo)
             }
+            if let detail { ToolbarItem(placement: .topBarTrailing) { moreMenu(detail) } }
         }
         .screen()
         .sheet(isPresented: $reviewing) {
@@ -223,12 +453,28 @@ struct PullRequestDetailView: View {
         }
         .confirmationDialog("Merge this pull request?", isPresented: $confirmMerge, titleVisibility: .visible) {
             if let detail {
-                ForEach(detail.methods, id: \.self) { method in
-                    Button(methodTitle(method)) { Task { await act(CompanionPullAction(kind: .merge, method: method, head: detail.headSHA)) } }
+                if detail.blocker == nil {
+                    ForEach(detail.methods, id: \.self) { method in
+                        Button(methodTitle(method)) { Task { await act(CompanionPullAction(kind: .merge, method: method, head: detail.headSHA)) } }
+                    }
+                }
+                if mayAct, client.pullAllows(detail, .autoMergeOn) {
+                    ForEach(detail.methods, id: \.self) { method in
+                        Button(String(localized: "Auto-merge: \(methodTitle(method))")) {
+                            Task { await act(CompanionPullAction(kind: .autoMergeOn, method: method)) }
+                        }
+                    }
                 }
             }
         } message: {
             if let detail { Text("\(detail.headBranch) into \(detail.baseBranch), at the head you see now.") }
+        }
+        .confirmationDialog(confirm.map(confirmTitle) ?? "", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+                            titleVisibility: .visible, presenting: confirm) { kind in
+            Button(menuTitle(kind), role: .destructive) { Task { await act(CompanionPullAction(kind: kind)) } }
+        } message: { kind in
+            Text(kind == .deleteBranch ? String(localized: "The branch \(detail?.headBranch ?? "") is deleted from the repository.")
+                                       : String(localized: "You can reopen it later."))
         }
         .task { await client.loadPull(url) }
     }
@@ -246,6 +492,10 @@ struct PullRequestDetailView: View {
             Text(detail.title).font(Theme.TextStyle.title).foregroundStyle(Theme.paper)
             Text(verbatim: "\(detail.author) · \(detail.headBranch) → \(detail.baseBranch)")
                 .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary).lineLimit(2)
+            if let created = detail.created {
+                Text("opened \(AgentRow.age(Date().timeIntervalSince1970 - created)) ago")
+                    .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+            }
             if !connected, let at = client.pullReadAt(url) {
                 Label("As of \(at.formatted(date: .omitted, time: .shortened)) · not connected", systemImage: "wifi.slash")
                     .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
@@ -254,11 +504,41 @@ struct PullRequestDetailView: View {
         .card(padding: Theme.Spacing.lg)
     }
 
+    /// The Mac's tabs as chips that fit a phone's width: Summary, Conversation (with a Mac that sends it), Checks, Files.
+    private func tabs(_ detail: PullDetailDigest) -> some View {
+        let talk = (detail.conversation?.count ?? 0) + (detail.threads?.count ?? 0)
+        let failing = detail.checks.count(where: { $0.outcome == "failing" })
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.xs) {
+                NookFilterChip(title: String(localized: "Summary"), selected: tab == .summary) { pick(.summary) }
+                if full {
+                    NookFilterChip(title: String(localized: "Conversation"), count: talk == 0 ? nil : talk, selected: tab == .conversation) {
+                        pick(.conversation)
+                    }
+                }
+                NookFilterChip(title: String(localized: "Checks"), count: failing > 0 ? failing : detail.checks.count, selected: tab == .checks) {
+                    pick(.checks)
+                }
+                NookFilterChip(title: String(localized: "Files"), count: detail.files.count, selected: tab == .files) { pick(.files) }
+            }
+        }
+    }
+
+    private func pick(_ next: Tab) {
+        Haptics.tap()
+        withAnimation(Theme.reveal) { tab = next }
+    }
+
     @ViewBuilder
     private func summary(_ detail: PullDetailDigest) -> some View {
         if let blocker = detail.blocker, detail.state == "open" || detail.state == "draft" {
             Label(blockerText(blocker), systemImage: "exclamationmark.circle")
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
+        }
+        if full {
+            PullSideInfo(detail: detail, canUpdate: mayAct && client.pullAllows(detail, .updateBranch)) {
+                Task { await act(CompanionPullAction(kind: .updateBranch, head: detail.headSHA)) }
+            }
         }
         if !detail.verdicts.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -281,6 +561,14 @@ struct PullRequestDetailView: View {
     private func checks(_ detail: PullDetailDigest) -> some View {
         if detail.checks.isEmpty {
             Text("No checks on this head.").font(Theme.TextStyle.body).foregroundStyle(Theme.textTertiary)
+        }
+        if mayAct, client.pullAllows(detail, .rerunFailed) {
+            Button { Task { await act(CompanionPullAction(kind: .rerunFailed)) } } label: {
+                Label("Rerun failed checks", systemImage: "arrow.clockwise")
+                    .font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
+                    .frame(minHeight: 44)
+            }
+            .disabled(busy)
         }
         ForEach(detail.checks) { check in
             HStack(spacing: Theme.Spacing.md) {
@@ -330,7 +618,9 @@ struct PullRequestDetailView: View {
                 Button { working = true } label: { Label("Work on this", systemImage: "hammer") }
                     .disabled(!mayAct || !client.can(CompanionFeature.start))
                 Spacer(minLength: 0)
-                if detail.blocker == nil, !detail.methods.isEmpty {
+                if detail.autoMerge != nil {
+                    Label("Auto-merge on", systemImage: "bolt.fill").foregroundStyle(Theme.mint)
+                } else if (detail.blocker == nil && !detail.methods.isEmpty) || (mayAct && client.pullAllows(detail, .autoMergeOn)) {
                     NookPrimaryButton(title: String(localized: "Merge"), symbol: "arrow.triangle.merge") { confirmMerge = true }
                         .disabled(!mayAct || busy)
                 }
@@ -341,6 +631,75 @@ struct PullRequestDetailView: View {
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
         .background(Theme.canvas.opacity(0.96))
+    }
+
+    /// The Mac's action menu (`PullRequestActionPanel`): the link, then what the Mac offers for this pull request now.
+    private func moreMenu(_ detail: PullDetailDigest) -> some View {
+        Menu {
+            if let link = URL(string: detail.url) {
+                Button { UIPasteboard.general.url = link; Haptics.success() } label: { Label("Copy link", systemImage: "link") }
+                Button { UIApplication.shared.open(link) } label: { Label("Open in browser", systemImage: "safari") }
+            }
+            Button { Task { await client.loadPull(url) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+            if mayAct, full {
+                let kinds: [CompanionPullAction.Kind] = [.ready, .draft, .updateBranch, .rebaseBranch, .autoMergeOff, .rerunFailed, .reopen]
+                let shown = kinds.filter { client.pullAllows(detail, $0) }
+                if !shown.isEmpty { Divider() }
+                ForEach(shown, id: \.self) { kind in
+                    Button { Task { await act(menuAction(kind, detail: detail)) } } label: { Label(menuTitle(kind), systemImage: menuSymbol(kind)) }
+                }
+                if client.pullAllows(detail, .autoMergeOn) {
+                    Menu {
+                        ForEach(detail.methods, id: \.self) { method in
+                            Button(methodTitle(method)) { Task { await act(CompanionPullAction(kind: .autoMergeOn, method: method)) } }
+                        }
+                    } label: { Label("Enable auto-merge", systemImage: "bolt") }
+                }
+                let risky = [CompanionPullAction.Kind.deleteBranch, .close].filter { client.pullAllows(detail, $0) }
+                if !risky.isEmpty { Divider() }
+                ForEach(risky, id: \.self) { kind in
+                    Button(role: .destructive) { confirm = kind } label: { Label(menuTitle(kind), systemImage: menuSymbol(kind)) }
+                }
+            }
+        } label: {
+            Image(icon: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .accessibilityLabel("More")
+    }
+
+    private func menuAction(_ kind: CompanionPullAction.Kind, detail: PullDetailDigest) -> CompanionPullAction {
+        [.updateBranch, .rebaseBranch].contains(kind) ? CompanionPullAction(kind: kind, head: detail.headSHA) : CompanionPullAction(kind: kind)
+    }
+
+    private func menuTitle(_ kind: CompanionPullAction.Kind) -> String {
+        switch kind {
+        case .ready: return String(localized: "Ready for review")
+        case .draft: return String(localized: "Convert to draft")
+        case .updateBranch: return String(localized: "Update branch")
+        case .rebaseBranch: return String(localized: "Rebase branch")
+        case .autoMergeOff: return String(localized: "Disable auto-merge")
+        case .rerunFailed: return String(localized: "Rerun failed checks")
+        case .reopen: return String(localized: "Reopen")
+        case .deleteBranch: return String(localized: "Delete branch")
+        default: return String(localized: "Close")
+        }
+    }
+
+    private func menuSymbol(_ kind: CompanionPullAction.Kind) -> String {
+        switch kind {
+        case .ready: return "arrow.triangle.pull"
+        case .draft: return "circle.dashed"
+        case .updateBranch, .rebaseBranch: return "arrow.triangle.branch"
+        case .autoMergeOff: return "bolt.slash"
+        case .rerunFailed: return "arrow.clockwise"
+        case .reopen: return "arrow.uturn.backward"
+        case .deleteBranch: return "trash"
+        default: return "xmark.circle"
+        }
+    }
+
+    private func confirmTitle(_ kind: CompanionPullAction.Kind) -> String {
+        kind == .deleteBranch ? String(localized: "Delete the branch?") : String(localized: "Close this pull request?")
     }
 
     private func act(_ action: CompanionPullAction) async {

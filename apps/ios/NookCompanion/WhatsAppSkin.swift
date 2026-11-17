@@ -140,6 +140,15 @@ struct WhatsAppRow: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: Theme.Spacing.xs)
+                    // Muted and pinned, where WhatsApp's own list shows them.
+                    if chat.mutedInApp == true {
+                        Image(icon: "speaker.slash.fill").font(Theme.font(13)).foregroundStyle(WhatsAppLook.quiet)
+                            .accessibilityLabel(Text("Muted"))
+                    }
+                    if chat.pinned == true || chat.pinnedInApp == true {
+                        Image(icon: "pin.fill").font(Theme.font(13)).foregroundStyle(WhatsAppLook.quiet)
+                            .accessibilityLabel(Text("Pinned"))
+                    }
                     if unread {
                         Text(verbatim: chat.unread > 99 ? "99+" : "\(chat.unread)")
                             .font(Theme.font(12, .semibold))
@@ -163,16 +172,21 @@ struct WhatsAppRow: View {
 
 /// WhatsApp's composer: a wide rounded pill for the message on the bar's color, and one round green button that sends.
 /// While nothing is typed the microphone (dictation) sits in the pill instead.
-struct WhatsAppComposer: View {
+struct WhatsAppComposer<Leading: View>: View {
     @Binding var text: String
     var sending = false
+    /// A picture or a file goes with it: Send shows with the field empty.
+    var hasAttachments = false
     let onSend: () -> Void
+    /// Before the field inside the bar, as WhatsApp's "+": attaching pictures and files.
+    @ViewBuilder var leading: () -> Leading
     @FocusState private var focused: Bool
 
-    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasAttachments }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+            leading()
             HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
                 TextField("Message", text: $text, axis: .vertical)
                     .font(Theme.font(17))
@@ -181,7 +195,7 @@ struct WhatsAppComposer: View {
                     .lineLimit(1...6)
                     .focused($focused)
                     .frame(minHeight: 28)
-                if isEmpty { DictationButton(text: $text) }
+                if text.isEmpty { DictationButton(text: $text) }
             }
             .padding(.leading, Theme.Spacing.xl)
             .padding(.trailing, Theme.Spacing.sm)
@@ -214,6 +228,12 @@ struct WhatsAppComposer: View {
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, Theme.Spacing.sm)
         .animation(Theme.reveal, value: isEmpty)
+    }
+}
+
+extension WhatsAppComposer where Leading == EmptyView {
+    init(text: Binding<String>, sending: Bool = false, onSend: @escaping () -> Void) {
+        self.init(text: text, sending: sending, onSend: onSend) { EmptyView() }
     }
 }
 

@@ -417,7 +417,18 @@ pub struct ClientCall {
     pub images: Option<Vec<CompanionImage>>,
     pub pull_action: Option<serde_json::Value>,
     pub pull_work: Option<serde_json::Value>,
+    /// The notification settings of `notifySet` (`feature::NOTIFY_SETTINGS`).
+    pub notify: Option<serde_json::Value>,
     pub items: Option<Vec<String>>,
+    /// Files with `inboxSend` (`CompanionFile`, `feature::CHAT_ACTIONS`).
+    pub attachments: Option<Vec<CompanionFile>>,
+    /// What `inboxAct` does in the chat `item` (`InboxAction`).
+    pub chat_action: Option<InboxAction>,
+    /// What `chatAct` does to the Nook conversation `conversation` (`NookChatAction`, `feature::NOOK_CHATS`).
+    pub nook_action: Option<serde_json::Value>,
+    /// "always" with `decide`, and every question's answer with `answer` (`feature::AGENTS_TAB`).
+    pub decision: Option<String>,
+    pub answers: Option<std::collections::BTreeMap<String, Vec<String>>>,
 }
 
 struct Inner {
@@ -816,8 +827,38 @@ impl CompanionClient {
             }
             r.images = Some(images).filter(|i| !i.is_empty());
         }
+        // Files likewise: within the limits, and with the pictures within what one frame carries.
+        if let Some(files) = call.attachments {
+            let sizes: Option<Vec<usize>> = files.iter().map(CompanionFile::size).collect();
+            let pictures: usize = r.images.iter().flatten().map(|i| i.jpeg.len() * 3 / 4).sum();
+            let fits = sizes.is_some_and(|s| s.iter().sum::<usize>() + pictures <= CompanionFile::MAX_TOGETHER);
+            if files.len() > CompanionFile::MAX_COUNT || !fits {
+                self.lock().notice = Some("Dat bestand is te groot om vanaf de telefoon te sturen.".into());
+                return (self.snapshot(), None);
+            }
+            r.attachments = Some(files).filter(|f| !f.is_empty());
+        }
+        if op == CompanionOp::InboxAct && !call.chat_action.as_ref().is_some_and(InboxAction::is_complete) {
+            self.lock().notice = Some("De computer weigerde dit.".into());
+            return (self.snapshot(), None);
+        }
+        // At most one page of photos per request, as the computer answers them.
+        if op == CompanionOp::InboxMedia && call.items.as_ref().is_some_and(|i| i.len() > InboxMedia::BATCH) {
+            self.lock().notice = Some("De computer weigerde dit.".into());
+            return (self.snapshot(), None);
+        }
+        r.chat_action = call.chat_action;
+        r.nook_action = call.nook_action;
+        // The Agents tab's choices go only to a computer that reads them.
+        if self.has(feature::AGENTS_TAB) {
+            r.decision = call.decision;
+            r.answers = call.answers;
+        }
         r.pull_action = call.pull_action;
         r.pull_work = call.pull_work;
+        if self.has(feature::NOTIFY_SETTINGS) {
+            r.notify = call.notify;
+        }
         r.items = call.items;
         // What you write waits, as on the iPhone (`CompanionOutbox`): a message to a session or to a chat, a new session,
         // a question to Nook. Approvals, answers and stops mean something only now and never wait.

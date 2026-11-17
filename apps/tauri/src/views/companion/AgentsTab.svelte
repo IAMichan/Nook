@@ -3,7 +3,7 @@
   // session that needs you, then the shelves Working and Recent (the first eight, then Show more), a search once there
   // are more than eight. Touch and hold a row for snooze, archive and end.
   import {
-    actionLabel, companion, has, matchesSession, may, needsYouState, sortSessions, Feature,
+    companion, has, matchesSession, may, needsYouState, sortSessions, Feature,
     type ClientView, type SessionDigest,
   } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
@@ -21,6 +21,9 @@
   import PullRequests from "./PullRequests.svelte";
   import SnoozePicker from "./SnoozePicker.svelte";
   import WaitingRow from "./ui/WaitingRow.svelte";
+  import SessionPrompt from "./SessionPrompt.svelte";
+  import { placeSessions, ROW_MENU } from "../../lib/companion-sessions";
+  import { sessionMenu } from "./session-menu";
 
   let { view, act, took, onorb, ongear, onopen, onnew, onelsewhere }: {
     view: ClientView;
@@ -91,11 +94,25 @@
     try { localStorage.setItem("companion.shelves", JSON.stringify(open)); } catch { /* remembered for this visit */ }
   }
 
-  const needs = (s: SessionDigest) => s.items.length > 0 || needsYouState(s.attention);
+  // The Mac's shelves (`SessionShelf`): Pinned, what needs you, the rest, Working (with "Show working"), Snoozed and
+  // Settled. A computer without `agentsTab` pins, snoozes and settles nothing, so its sessions stay where they were.
+  let showWorking = $state(readShowWorking());
+  function readShowWorking(): boolean {
+    try { return localStorage.getItem("companion.showWorking") !== "0"; } catch { return true; }
+  }
+  function setShowWorking(on: boolean) {
+    haptic();
+    showWorking = on;
+    try { localStorage.setItem("companion.showWorking", on ? "1" : "0"); } catch { /* remembered for this visit */ }
+  }
+  let viewMenu = $state<DOMRect | null>(null);
+  let viewButton = $state<HTMLDivElement | null>(null);
+  let prompt = $state<{ kind: "rename" | "delete" | "end"; session: SessionDigest } | null>(null);
   const all = $derived(sortSessions(view.sessions).filter((s) => !query.trim() || matchesSession(s, query)));
-  const waiting = $derived(all.filter(needs));
-  const working = $derived(all.filter((s) => !needs(s) && s.attention === "working"));
-  const recent = $derived(all.filter((s) => !needs(s) && s.attention !== "working").sort((a, b) => b.updated - a.updated));
+  const shelves = $derived(placeSessions(all, showWorking));
+  const waiting = $derived(sortSessions(shelves.needsYou));
+  const working = $derived(shelves.working);
+  const recent = $derived(shelves.active);
   const shownRecent = $derived(more || query.trim() ? recent : recent.slice(0, SHOWN));
 
   function newSession() {
@@ -105,30 +122,24 @@
     onnew();
   }
 
-  async function manage(session: SessionDigest, action: string) {
+  async function manage(session: SessionDigest, action: string, text?: string) {
     haptic();
-    const r = await companion.call({ op: "manage", session: session.id, item: action });
+    const r = await companion.call({ op: "manage", session: session.id, item: action, text });
     took(r.view);
+    return r.response;
   }
 
+  // The Mac's row menu, in its order (`ROW_MENU`).
   const menuSections = $derived.by<MenuItem[][]>(() => {
     if (!menu) return [];
     const s = menu.session;
-    const offered = new Set(has(view, Feature.manage) && may(view, "operate") ? (s.actions ?? []) : []);
-    const snooze: MenuItem[] = offered.has("unsnooze")
-      ? [{ label: tr("Snooze opheffen", "Cancel snooze"), icon: "alarm-clock", onselect: () => manage(s, "unsnooze") }]
-      : [
-          ...(offered.has("snoozeHour") ? [{ label: tr("Een uur", "One hour"), icon: "clock", onselect: () => manage(s, "snoozeHour") }] : []),
-          ...(offered.has("snoozeEvening") ? [{ label: tr("Vanavond", "This evening"), icon: "clock", onselect: () => manage(s, "snoozeEvening") }] : []),
-          ...(offered.has("snoozeTomorrow") ? [{ label: tr("Morgenochtend", "Tomorrow morning"), icon: "clock", onselect: () => manage(s, "snoozeTomorrow") }] : []),
-          ...(offered.has("snoozeLimitReset") && s.limitResetsAt ? [{ label: tr("Tot de limiet reset", "Until the limit resets"), icon: "gauge", onselect: () => manage(s, "snoozeLimitReset") }] : []),
-          ...(offered.has("snoozeUntil") ? [{ label: tr("Kies een moment…", "Pick a time…"), icon: "calendar-clock", onselect: () => (picking = s) }] : []),
-        ];
-    const end: MenuItem[] = [
-      ...(offered.has("archive") ? [{ label: actionLabel("archive"), icon: "archive", destructive: true, onselect: () => manage(s, "archive") }] : []),
-      ...(offered.has("end") ? [{ label: tr("Beëindig sessie", "End session"), icon: "circle-x", destructive: true, onselect: () => manage(s, "end") }] : []),
-    ];
-    return [snooze, end];
+    const offered = has(view, Feature.manage) && may(view, "operate") ? (s.actions ?? []) : [];
+    return sessionMenu(ROW_MENU, s, offered, {
+      run: (action) => void manage(s, action),
+      ask: (kind) => (prompt = { kind, session: s }),
+      pickTime: () => (picking = s),
+      fork: async () => { const created = (await manage(s, "fork"))?.created; if (created) onopen(created); },
+    });
   });
 </script>
 
@@ -144,22 +155,31 @@
     </div>
     <div class="top">
       <ConnectionLine {view} />
-      {#if view.sessions.length > SHOWN || canHistory}<SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} />{/if}
+      {#if view.sessions.length > SHOWN || canHistory || has(view, Feature.agentsTab)}
+        <div class="searchrow">
+          <div class="grow"><SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} /></div>
+          {#if has(view, Feature.agentsTab)}<div bind:this={viewButton}><IconButton icon="list" label={tr("Weergave", "View")} onclick={() => (viewMenu = viewButton?.getBoundingClientRect() ?? null)} /></div>{/if}
+        </div>
+      {/if}
       {#if query.trim() && !all.length && !matches.length && !matchLoading}<p class="none">{tr("Geen sessie gevonden.", "No session matches.")}</p>{/if}
       {#each queuedStarts as q (q.id)}
         <WaitingRow icon="square-pen" title={q.text} detail={tr("Nieuwe sessie · wacht op je Mac", "New session · waiting for your Mac")} ondiscard={async () => took(await companion.discard(q.id))} />
       {/each}
-      {#each waiting as s (s.id)}
-        <SessionNotice {view} session={s} onopen={() => onopen(s.id)} {act} />
-      {/each}
     </div>
-
-    {#if working.length}
-      <ShelfHeader title={tr("Aan het werk", "Working")} count={working.length} open={open.working ?? true} ontoggle={() => toggle("working")} />
-      {#if open.working ?? true}
-        {#each working as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
+    {#if shelves.pinned.length}
+      <ShelfHeader title={tr("Vastgezet", "Pinned")} count={shelves.pinned.length} open={open.pinned ?? true} ontoggle={() => toggle("pinned")} />
+      {#if open.pinned ?? true}
+        {#each shelves.pinned as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
       {/if}
     {/if}
+    {#if waiting.length}
+      <div class="top">
+        {#each waiting as s (s.id)}
+          <SessionNotice {view} session={s} onopen={() => onopen(s.id)} {act} />
+        {/each}
+      </div>
+    {/if}
+
     {#if recent.length}
       <ShelfHeader title={tr("Recent", "Recent")} count={recent.length} open={open.recent ?? true} ontoggle={() => toggle("recent")} />
       {#if open.recent ?? true}
@@ -167,6 +187,25 @@
         {#if shownRecent.length < recent.length}
           <button class="more press" onclick={() => (more = true)}>{tr("Toon er nog {n}", "Show {n} more", { n: recent.length - shownRecent.length })}</button>
         {/if}
+      {/if}
+    {/if}
+
+    {#if working.length}
+      <ShelfHeader title={tr("Aan het werk", "Working")} count={working.length} open={open.working ?? true} ontoggle={() => toggle("working")} />
+      {#if open.working ?? true}
+        {#each working as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
+      {/if}
+    {/if}
+    {#if shelves.snoozed.length}
+      <ShelfHeader title={tr("Gesnoozed", "Snoozed")} count={shelves.snoozed.length} open={open.snoozed ?? true} ontoggle={() => toggle("snoozed")} />
+      {#if open.snoozed ?? true}
+        {#each shelves.snoozed as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
+      {/if}
+    {/if}
+    {#if shelves.settled.length}
+      <ShelfHeader title={tr("Afgerond", "Settled")} count={shelves.settled.length} open={open.settled ?? false} ontoggle={() => { haptic(); open.settled = !(open.settled ?? false); try { localStorage.setItem("companion.shelves", JSON.stringify(open)); } catch { /* remembered for this visit */ } }} />
+      {#if open.settled ?? false}
+        {#each shelves.settled as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
       {/if}
     {/if}
 
@@ -207,6 +246,15 @@
   <Sheet onclose={() => (pulls = false)}><PullRequests {view} {took} onclose={() => (pulls = false)} onstarted={(id) => { pulls = false; onopen(id); }} /></Sheet>
 {/if}
 {#if menu}<Menu sections={menuSections} anchor={menu.anchor} onclose={() => (menu = null)} />{/if}
+{#if viewMenu}
+  <Menu anchor={viewMenu} onclose={() => (viewMenu = null)} sections={[[
+    { label: tr("Toon wat werkt", "Show working"), icon: "hammer", checked: showWorking, onselect: () => setShowWorking(!showWorking) },
+  ]]} />
+{/if}
+{#if prompt}
+  {@const p = prompt}
+  <SessionPrompt kind={p.kind} session={p.session} onclose={() => (prompt = null)} onrun={(action, text) => void manage(p.session, action, text)} />
+{/if}
 {#if blocked}
   <div class="alert-scrim"><div class="alert"><p>{blocked}</p><button onclick={() => (blocked = null)}>OK</button></div></div>
 {/if}
@@ -215,6 +263,8 @@
   .tab { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .scroll { flex: 1; overflow-y: auto; padding-bottom: 24px; }
   .top { display: flex; flex-direction: column; gap: 12px; padding: 0 16px; }
+  .searchrow { display: flex; align-items: center; gap: 6px; }
+  .grow { flex: 1; min-width: 0; }
   .none { margin: 0; padding: 24px 0; text-align: center; font: var(--pt-body); color: var(--text2); }
   .on { display: flex; align-items: center; gap: 6px; }
   .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 6px; background: rgba(240, 182, 90, 0.14); color: var(--amber); font: 600 11.4px ui-rounded, var(--font); display: inline-flex; align-items: center; justify-content: center; }

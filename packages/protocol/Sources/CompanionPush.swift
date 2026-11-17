@@ -119,6 +119,72 @@ struct PushSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// The Mac's notification settings for its phones, as the phone reads and changes them (`CompanionOp.notifySettings`,
+/// `notifySet`, `CompanionFeature.notifySettings`): the same switches as Settings › Devices › Notifications on the Mac,
+/// and the quiet hours the Mac keeps for its own notices and the pushes. They hold for every paired phone.
+struct CompanionNotifySettings: Codable, Equatable, Sendable {
+    var enabled: Bool
+    /// `PushEvent.Kind` raw values, in the Mac's order.
+    var kinds: [String]
+    var onlyWhenAway: Bool
+    var includeTitle: Bool
+    /// Quiet hours as hours of the day (0...23); both nil for none.
+    var quietFrom: Int?
+    var quietTo: Int?
+    var quietAllowsUrgent: Bool
+    /// With the Mac's answer: this phone gave the Mac a token for notifications, and the Mac can send them (its own APNs
+    /// key or the relay). Ignored in a change.
+    var registered: Bool? = nil
+    var canSend: Bool? = nil
+
+    init(enabled: Bool, kinds: [String], onlyWhenAway: Bool, includeTitle: Bool, quietFrom: Int? = nil, quietTo: Int? = nil,
+         quietAllowsUrgent: Bool = true, registered: Bool? = nil, canSend: Bool? = nil) {
+        self.enabled = enabled; self.kinds = kinds; self.onlyWhenAway = onlyWhenAway; self.includeTitle = includeTitle
+        self.quietFrom = quietFrom; self.quietTo = quietTo; self.quietAllowsUrgent = quietAllowsUrgent
+        self.registered = registered; self.canSend = canSend
+    }
+
+    /// The Mac's settings with the quiet hours it keeps with its own notices.
+    init(push: PushSettings, quiet: QuietHours?) {
+        self.init(enabled: push.enabled, kinds: PushEvent.Kind.allCases.filter(push.kinds.contains).map(\.rawValue),
+                  onlyWhenAway: push.onlyWhenAway, includeTitle: push.includeTitle, quietFrom: quiet?.from, quietTo: quiet?.to,
+                  quietAllowsUrgent: quiet?.allowsUrgent ?? true)
+    }
+
+    /// Complete enough to take: known kinds only, hours of the day, and both quiet hours or neither.
+    var isValid: Bool {
+        guard kinds.allSatisfy({ PushEvent.Kind(rawValue: $0) != nil }), kinds.count <= PushEvent.Kind.allCases.count else { return false }
+        if (quietFrom == nil) != (quietTo == nil) { return false }
+        return [quietFrom, quietTo].compactMap { $0 }.allSatisfy { (0...23).contains($0) }
+    }
+
+    var quietHours: QuietHours? {
+        guard let from = quietFrom, let to = quietTo else { return nil }
+        return QuietHours(from: from, to: to, allowsUrgent: quietAllowsUrgent)
+    }
+
+    /// `push` with these switches; the quiet hours go to the Mac's notice rules (`quietHours`).
+    func applied(to push: PushSettings) -> PushSettings {
+        var push = push
+        push.enabled = enabled
+        push.kinds = Set(kinds.compactMap(PushEvent.Kind.init(rawValue:)))
+        push.onlyWhenAway = onlyWhenAway
+        push.includeTitle = includeTitle
+        return push
+    }
+
+    /// What changed, for the audit log: "kinds approval,question · quiet 22–7".
+    func changes(from old: CompanionNotifySettings) -> String {
+        var parts: [String] = []
+        if enabled != old.enabled { parts.append("enabled \(enabled ? "on" : "off")") }
+        if kinds != old.kinds { parts.append("kinds " + (kinds.isEmpty ? "none" : kinds.joined(separator: ","))) }
+        if onlyWhenAway != old.onlyWhenAway { parts.append("only when away \(onlyWhenAway ? "on" : "off")") }
+        if includeTitle != old.includeTitle { parts.append("titles \(includeTitle ? "on" : "off")") }
+        if quietHours != old.quietHours { parts.append(quietHours.map { "quiet \($0.from)–\($0.to)" + ($0.allowsUrgent ? " urgent" : "") } ?? "quiet off") }
+        return parts.isEmpty ? "unchanged" : parts.joined(separator: " · ")
+    }
+}
+
 enum PushSkip: String, Equatable, Sendable { case disabled, kindOff, atTheMac, quietHours, duplicate, noDevices }
 
 enum PushPolicy {

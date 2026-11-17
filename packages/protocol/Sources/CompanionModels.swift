@@ -167,6 +167,21 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// base64). The Mac keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it
     /// already holds a different one (the phone has to pair again).
     case bindKey
+    /// The Chats tab as on the Mac (`CompanionFeature.chatActions`, `CompanionChats.swift`): an action in a chat (`item`,
+    /// `chatAction`; answered like `inboxChat`, with `inbox`), older messages of a chat (`item`, `text` the oldest message
+    /// the phone has; `inboxLines` with `inboxBefore`), the photos of messages (`item`, `items` the messages, at most
+    /// `InboxMedia.batch`; `inboxMedia`), a chat's info (`item`; `inboxInfo`), and the chats whose name, people or
+    /// messages hold words (`text`; `inboxFound`, the matching message as each one's preview). With `chatActions`, `inbox`
+    /// with `allow` true also lists status updates and channels (`InboxChatDigest.kind`), as the Mac's per-app tabs do.
+    case inboxAct, inboxOlder, inboxMedia, inboxInfo, inboxSearch
+    /// The Mac's notification settings for its phones (`CompanionFeature.notifySettings`, `CompanionNotifySettings`):
+    /// read them (`notify` in the answer), and change them (`notify` in the request; the new ones in the answer).
+    case notifySettings, notifySet
+    /// Nook's conversations as on the Mac's Nook tab (`CompanionFeature.nookChats`, `CompanionNookChats.swift`): an action
+    /// on one (`conversation`, `nookAction`; answered with `conversations`, and `messages` after `retry`), and the
+    /// conversations whose title or last answer hold words (`text`, empty for all; `allow` true searches the archive
+    /// instead; `conversationsFound` in the answer).
+    case chatAct, chatSearch
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -181,6 +196,15 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     /// "Main thread" on or off: the agent hands its work to sub-threads that report back (`MainThread` on the Mac). The
     /// Mac lists the one that applies, only for an agent that may delegate.
     case mainThreadOn, mainThreadOff
+    /// The Agents list's row and header menus as on the Mac (`CompanionFeature.agentsTab`, `CompanionSessions.swift`):
+    /// pinned on top, settled away or back, marked unread, forked into a new session (the fork's id in `created`), the
+    /// last task again, the agent's process restarted, a new title written, and deleted (with its own worktree when no
+    /// other session uses it and Git can remove it cleanly).
+    case pin, unpin, settle, reopen, markUnread, fork, retry, restartAgent, regenerateTitle, delete, deleteWithWorktree
+    /// The composer's choices for the next turns (`SessionDigest.controls`): `text` is the reasoning effort ("" for the
+    /// agent's default), the mode ("agent" or "plan"), or the model id. And a message waiting in line taken out (`text` its
+    /// id, `SessionDigest.queued`).
+    case setEffort, setMode, setModel, unqueue
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -255,9 +279,29 @@ enum CompanionFeature {
     static let liveConversation = "liveConversation"
     /// The Mac takes `bindKey` and from then on wants the phone's requests signed (`CompanionDeviceKey`).
     static let deviceKey = "deviceKey"
-    static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
+    /// The Chats tab does what the Mac's does (`CompanionChats.swift`): `inboxAct`, `inboxOlder`, `inboxMedia`,
+    /// `inboxInfo`, pictures and files with `inboxSend`, every list (chats, status, channels) with `InboxChatDigest.kind`,
+    /// and what each chat takes in `InboxChatDigest.abilities`.
+    static let chatActions = "chatActions"
+    /// The Pull requests page does what the Mac's does (`CompanionPullRequests.swift`): the row's labels, opened time,
+    /// comments and checks (`PullDigest`), the Summary's side info, the conversation and threads, and the actions of the
+    /// Mac's menu (`PullDetailDigest.actions`, the new `CompanionPullAction.Kind`s).
+    static let pullActions = "pullActions"
+    /// The Mac answers `notifySettings` and takes `notifySet`.
+    static let notifySettings = "notifySettings"
+    /// The Nook tab does what the Mac's does (`CompanionNookChats.swift`): `chatAct`, `chatSearch`, the list's flags on
+    /// `ChatDigest` (pinned, archived, unread, created, scheduled, queued), `conversationsArchived`, a question to a
+    /// busy conversation that waits in line instead of stopping the answer, and pictures with `ask`.
+    static let nookChats = "nookChats"
+    /// The Agents tab does what the Mac's does (`CompanionSessions.swift`): more `SessionAction`s, the list's shelves
+    /// (`SessionDigest.pinned`, `settled`, `snoozedUntil`), "Always allow" (`CompanionRequest.decision`), several
+    /// questions and multi-select (`SessionDigest.Item.questions`, `CompanionRequest.answers`), the composer's effort,
+    /// mode and model (`SessionDigest.controls`), the messages in line (`SessionDigest.queued`), and effort, access,
+    /// base branch and files for a new session (`LaunchOptions`, `LaunchRequest`).
+    static let agentsTab = "agentsTab"
+    static let all = [agentsTab, workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey, chatActions, nookChats, pullActions, notifySettings]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -274,6 +318,11 @@ struct LaunchRequest: Codable, Equatable, Sendable {
     var model: String?
     /// Start as a main thread (`LaunchOptions.Agent.canMainThread`); nil from a phone that does not offer it.
     var mainThread: Bool? = nil
+    /// One of the agent's `LaunchOptions.Agent.efforts` ("" its default), one of its `permissions`, and the branch a new
+    /// worktree starts from (one of `LaunchOptions.Project.branches`); nil keeps the Mac's choice (`agentsTab`).
+    var effort: String? = nil
+    var permission: String? = nil
+    var baseBranch: String? = nil
 
     init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false,
          model: String? = nil, mainThread: Bool? = nil) {
@@ -293,6 +342,12 @@ struct LaunchOptions: Codable, Equatable, Sendable {
         var defaultModel: String? = nil
         /// The agent may delegate, so a session can start as a main thread; nil from a Mac that does not know it.
         var canMainThread: Bool? = nil
+        /// The reasoning levels of its default model ("" the agent's own default first) and the access levels a phone may
+        /// start it with (never more than "allow edits"), with the Mac's defaults; nil from a Mac without `agentsTab`.
+        var efforts: [Model]? = nil
+        var defaultEffort: String? = nil
+        var permissions: [Model]? = nil
+        var defaultPermission: String? = nil
     }
 
     /// A model an agent can run on: the id the Mac starts it with, and its name as the Mac shows it.
@@ -306,6 +361,9 @@ struct LaunchOptions: Codable, Equatable, Sendable {
         var name: String
         /// A Git repository with commits: it can get its own worktree and branch.
         var canWorktree: Bool
+        /// The branches a new worktree can start from, and the one it starts from by default (`agentsTab`).
+        var branches: [String]? = nil
+        var defaultBase: String? = nil
         var id: String { path }
     }
 
@@ -362,6 +420,18 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// stops or steers only that turn, so a Stop that arrives late, or again after a dropped connection, never stops work
     /// that started after it. Nil from an older phone (or when it saw no turn), which acts on what runs now.
     var turn: String? = nil
+    /// What `inboxAct` does in the chat `item`.
+    var chatAction: InboxAction? = nil
+    /// The notification settings `notifySet` changes to.
+    var notify: CompanionNotifySettings? = nil
+    /// With `decide` (`CompanionFeature.agentsTab`): "always" allows it and what is like it from now on
+    /// (`ApprovalChoice`); nil decides by `allow` alone, as an older phone does.
+    var decision: String? = nil
+    /// With `answer` (`agentsTab`): the answer to every question of the ask (`SessionDigest.Item.questions`), by
+    /// question id, one or more options or your own words each.
+    var answers: [String: [String]]? = nil
+    /// What `chatAct` does to the Nook conversation `conversation`.
+    var nookAction: NookChatAction? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
@@ -458,8 +528,24 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var fileChunk: FileChunk? = nil
     /// With `timeline` asked with `item`: `timeline` is the page before that entry, not the recent conversation.
     var timelineBefore: String? = nil
+    /// With `inboxOlder`: `inboxLines` is the page before this message, not the newest messages.
+    var inboxBefore: String? = nil
+    /// The photos of `inboxMedia`; a message without one (any more) is left out.
+    var inboxMedia: [InboxMedia]? = nil
+    /// The chat's info of `inboxInfo`.
+    var inboxInfo: InboxChatInfo? = nil
+    /// The chats `inboxSearch` found, the best first.
+    var inboxFound: [InboxChatDigest]? = nil
+    /// With `inboxChat`, `inboxOlder` and a watched chat: the chat's app may have older messages than these.
+    var inboxMore: Bool? = nil
     /// The entry `entry` asked for, in full (cut at `TimelineEntry.fullLimit`).
     var entryText: String? = nil
+    /// The notification settings of `notifySettings`, and of `notifySet` after the change.
+    var notify: CompanionNotifySettings? = nil
+    /// The Nook conversations `chatSearch` found, newest first (`CompanionFeature.nookChats`).
+    var conversationsFound: [ChatDigest]? = nil
+    /// With `conversations` (`CompanionFeature.nookChats`): how many conversations wait in the archive.
+    var conversationsArchived: Int? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -482,6 +568,12 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
         /// entry, empty for an option without one. Nil when no option has one, and from an older Mac; an older phone
         /// leaves it unread.
         var optionPreviews: [String]? = nil
+
+        /// An approval the agent can remember: "Always allow" is offered (`CompanionRequest.decision`, `agentsTab`).
+        var canAlways: Bool? = nil
+        /// Every question of a question item, with its options and whether several may be picked (`agentsTab`); nil
+        /// from an older Mac, which only sends a single question in `title` and `options`.
+        var questions: [SessionQuestion]? = nil
 
         /// The most of one preview that travels: a phone-sized mock-up.
         static let previewLimit = 1_200
@@ -522,6 +614,17 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The project the Mac's Agents list groups this session under (`InboxProject.key`): an agent's own worktree under
     /// the repository it was made from, "" for none (a scratch folder, your home). nil from an older Mac: `folder` then.
     var project: String? = nil
+    /// Where it sits in the Mac's Agents list (`CompanionFeature.agentsTab`, `SessionShelf`): pinned, settled, and
+    /// snoozed until then (seconds since 1970) while that hides it. Nil from an older Mac.
+    var pinned: Bool? = nil
+    var settled: Bool? = nil
+    var snoozedUntil: Double? = nil
+    /// The folder it works in, in full, for "Copy path" (`agentsTab`).
+    var path: String? = nil
+    /// The composer's effort, mode and model choices (`agentsTab`); nil when the session has none to change.
+    var controls: SessionControls? = nil
+    /// Messages that wait in line for after the turn, oldest first (`agentsTab`); nil when none wait.
+    var queued: [QueuedDigest]? = nil
 }
 
 extension SessionDigest {
@@ -588,6 +691,17 @@ struct ChatDigest: Codable, Equatable, Identifiable, Sendable {
     /// A plan or a draft waits for you (on the Mac).
     var waiting: Bool
     var preview: String
+    /// The list's flags as on the Mac (`CompanionFeature.nookChats`); nil from an older Mac.
+    var pinned: Bool? = nil
+    var archived: Bool? = nil
+    /// An answer came that you did not read yet.
+    var unread: Bool? = nil
+    /// When the conversation began (seconds since 1970).
+    var created: Double? = nil
+    /// A scheduled task's run: without a search the list shows it only while it asks something of you.
+    var scheduled: Bool? = nil
+    /// The questions that wait in line for the answer Nook is writing, oldest first (at most `NookChatSections.maxQueued`).
+    var queued: [String]? = nil
 }
 
 /// One message of a Nook chat.
@@ -628,6 +742,21 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     /// Which picture the chat has (`ChatAvatar.version`), so the phone asks for it once and again only when it changes;
     /// nil when it has none or the Mac does not say (`CompanionFeature.avatars`).
     var avatar: String? = nil
+    /// What can be done in it besides reading (`InboxAbility` names); nil from a Mac without `CompanionFeature.chatActions`.
+    var abilities: [String]? = nil
+    /// Which list it shows in, as on the Mac: "chats", "status" (an app's status updates) or "channels"; nil is "chats".
+    var kind: String? = nil
+    /// Pinned in Nook: on top of the list, under "Pinned".
+    var pinned: Bool? = nil
+    /// Pinned or muted in its app itself, where Nook can tell.
+    var pinnedInApp: Bool? = nil
+    var mutedInApp: Bool? = nil
+    /// A group (several people), so its messages say who wrote them.
+    var group: Bool? = nil
+    /// The account it is in, while its app has more than one linked.
+    var account: String? = nil
+    /// Its app says something about the chat itself (members, a description, a bio): `inboxInfo` has it.
+    var hasInfo: Bool? = nil
 }
 
 /// A chat's own picture (a contact's or a group's photo), as a small square JPEG.
@@ -687,6 +816,24 @@ struct InboxLine: Codable, Equatable, Identifiable, Sendable {
     /// Your own message: who has it and who read it (in a private chat the other person), as the message's info on the
     /// Mac lists them; nil when the app says nothing per person, or from a Mac that does not send it.
     var readers: [InboxReader]? = nil
+    /// The emoji you put on it yourself (`CompanionFeature.chatActions`), so tapping it again takes it back.
+    var myReactions: [String]? = nil
+    /// Its app says it was changed after it was sent.
+    var edited: Bool? = nil
+    /// Deleted for everyone: it keeps its place and says so.
+    var deleted: Bool? = nil
+    /// Someone came into the group or left, or the group changed: a centred line instead of a bubble, `text` says it.
+    var notice: Bool? = nil
+    /// A poll this message asks.
+    var poll: InboxPoll? = nil
+    /// What its file is ("photo", "video", "gif", "sticker", "audio", "voice", "file"); nil for none.
+    var media: String? = nil
+    /// The version of its photo the Mac can send (`inboxMedia`); nil when it has none (yet).
+    var thumb: String? = nil
+    /// How long an audio or voice message lasts.
+    var seconds: Double? = nil
+    /// Shown before its app has it back: it can be copied, nothing else.
+    var local: Bool? = nil
 }
 
 /// Nook's home on the phone, as the notch shows it on the Mac.
