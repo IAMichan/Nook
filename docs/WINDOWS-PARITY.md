@@ -537,7 +537,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CO-03** Scopes per phone: read, approve, operate, chats, music, Nook Chat (`CompanionScopes`, `CompanionSetupSheets`) · M
 - [ ] **CO-04** Request-id receipts so a retried request runs once (`CommandReceipts`) · S
 - [ ] **CO-05** Images with messages and new sessions (`CompanionImages`) · S
-- [ ] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`) · M
+- [x] **CO-06** Sealed push through the relay instead of your own .p8 key (`RelayPushClient`); also Firebase pushes to Nook on Android (`register` with `fcm`) · M
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 - [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
 - [ ] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
