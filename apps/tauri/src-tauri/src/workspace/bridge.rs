@@ -25,6 +25,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 mod nook;
+pub mod tasks;
 
 use super::terminals::{TerminalInfo, TerminalOwner};
 use super::WorkspaceState;
@@ -270,7 +271,7 @@ fn refusal(reason: Reason) -> &'static str {
         Reason::Disabled => "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace).",
         Reason::PlanMode => "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead.",
         Reason::Dangerous => "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed.",
-        Reason::NeedsReview | Reason::Outward => "The user did not approve this in Nook.",
+        Reason::NeedsReview | Reason::Outward | Reason::Delegation => "The user did not approve this in Nook.",
     }
 }
 
@@ -303,6 +304,11 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::BrowserScreenshot => {
             Err("Nook cannot take a screenshot of its browser on this platform yet. Use browser_read to check the page's text and console instead.".into())
         }
+        BridgeTool::OrchestratorCapabilities
+        | BridgeTool::DelegateTask
+        | BridgeTool::TaskStatus
+        | BridgeTool::TaskWait
+        | BridgeTool::TaskCancel => tasks::call(app, tool, a, &caller, context).await,
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
