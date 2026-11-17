@@ -452,13 +452,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
             ])
         case .chatRead:
             return object([
-                "chat": ["type": "string", "description": "Chat name (person or group) from chat_list."],
+                "chat": ["type": "string", "description": "Chat name (person or group) from chat_list, or its id when a name fits several chats."],
                 "app": ["type": "string", "description": "The chat's app, when known."],
                 "limit": ["type": "integer", "description": "Last N messages (default 20, max 50)."]
             ], required: ["chat"])
         case .chatSend:
             return object([
-                "to": ["type": "string", "description": "Chat name from chat_list."],
+                "to": ["type": "string", "description": "Chat name from chat_list, or its id when a name fits several chats."],
                 "app": ["type": "string", "description": "The chat's app, when known."],
                 "message": ["type": "string", "description": "The full text, written as the user would."]
             ], required: ["to", "message"])
