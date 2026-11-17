@@ -7,6 +7,7 @@
 pub mod bridge;
 pub mod chatd;
 pub mod inbox;
+pub mod link;
 pub mod store;
 
 use serde::{Deserialize, Serialize};

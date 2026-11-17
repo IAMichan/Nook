@@ -2,3 +2,4 @@
 //! [`nook_core::chats::InboxStore`]. The interface hears of changes through the `chats-changed` event.
 
 pub mod helper;
+pub mod link;

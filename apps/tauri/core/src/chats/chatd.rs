@@ -387,6 +387,11 @@ impl ChatdClient {
         Ok(json)
     }
 
+    /// A call without query, for the other parts of the helper's API (linking).
+    pub(crate) async fn request(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+        self.call(method, path, &[], body).await
+    }
+
     pub async fn chats(&self, limit: usize) -> Result<Vec<ServiceChat>, String> {
         Ok(chats(&self.call(reqwest::Method::GET, "/v1/chats", &[("limit", limit.to_string())], None).await?))
     }
