@@ -7,13 +7,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use nook_core::i18n::{tr, trf};
-use nook_core::workspace::bridge::{BridgeCaller, BridgeTool, Reason, ToolResult, Verdict};
+use nook_core::workspace::bridge::{question_verdict, BridgeCaller, BridgeTool, Reason, ToolResult, Verdict};
 use nook_core::workspace::bridge_sessions::{self as args, Place, SendMode, StartSession};
 use nook_core::workspace::delegation;
 use nook_core::workspace::models::{branch_name, ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
 use nook_core::workspace::paths;
 use serde_json::{json, Map, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use super::{audit, check, refusal, workspace, Context};
@@ -337,5 +337,237 @@ pub(super) async fn session_wait(app: &AppHandle, a: &Map<String, Value>) -> Res
             return Ok(ToolResult::text(args::render_session_wait(&snapshots, !over)));
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// A session as `session_list` names it.
+fn session_line(run: &nook_core::workspace::models::WorkspaceRun) -> String {
+    format!(
+        "- {} · {} · {} · {} · {}{}",
+        run.id,
+        run.title,
+        run.provider.display_name(),
+        super::serde_plain(&run.status),
+        run.working_directory,
+        run.branch.as_ref().map(|b| format!(" · {b}")).unwrap_or_default()
+    )
+}
+
+pub(super) async fn session_search(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let search = args::search(a)?;
+    let mut candidates: Vec<_> = match search.session {
+        Some(id) => ws.manager.run(id).into_iter().collect(),
+        None => ws.manager.runs().into_iter().filter(|r| search.include_archived || !r.archived).collect(),
+    };
+    if search.session.is_some() && candidates.is_empty() {
+        return Err("No such session. Use an id from session_list.".into());
+    }
+    candidates.sort_by_key(|r| std::cmp::Reverse(r.updated_at));
+    candidates.truncate(args::SEARCH_SCAN_LIMIT);
+    let manager = ws.manager.clone();
+    let query = search.query.clone();
+    let limit = search.limit;
+    // Older timelines are read from disk: off the async threads.
+    let (found, scanned) = tauri::async_runtime::spawn_blocking(move || {
+        let mut found = Vec::new();
+        let mut scanned = 0;
+        for run in &candidates {
+            scanned += 1;
+            let events = manager.timeline(run.id);
+            if let Some(text) = args::render_matches(&session_line(run), &run.title, &events, &query, 3) {
+                found.push(text);
+                if found.len() >= limit {
+                    break;
+                }
+            }
+        }
+        (found, scanned)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if found.is_empty() {
+        return Ok(ToolResult::text(format!("No session mentions \"{}\" (searched {scanned} session(s)).", search.query)));
+    }
+    Ok(ToolResult::text(format!(
+        "Sessions that mention \"{}\", most recent first (read one in full with session_read):\n\n{}",
+        search.query,
+        found.join("\n\n")
+    )))
+}
+
+pub(super) async fn session_organize(
+    app: &AppHandle,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    use args::OrganizeAction as A;
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let order = args::organize(a)?;
+    let run = ws.manager.run(order.session).ok_or("No such session. Use an id from session_list.")?;
+    if let Verdict::Refuse(reason) = check(app, BridgeTool::SessionOrganize, caller, None) {
+        return Err(refusal(reason).into());
+    }
+    let busy = |id| {
+        ws.manager.run(id).is_some_and(|r| r.status.is_active())
+            || !ws.manager.questions(id).is_empty()
+            || !ws.manager.permissions(id).is_empty()
+    };
+    if busy(run.id) && order.action.needs_free_session() {
+        return Err(format!("\"{}\" is working or waiting for the user; it can be {}d once it is free.", run.title, order.action.name()));
+    }
+    let what = order.describe();
+    if let Verdict::Ask(_) = check(app, BridgeTool::SessionOrganize, caller, None) {
+        let title = trf(
+            "{agent} wil de sessie “{title}” in je lijst aanpassen",
+            "{agent} wants to change the session “{title}” in your list",
+            &[("agent", &caller.agent), ("title", &run.title)],
+        );
+        let note = tr(
+            "Alleen je Agents-lijst verandert; de sessie zelf gaat door zoals ze was.",
+            "Only your Agents list changes; the session itself goes on as it was.",
+        );
+        if !ws.bridge.ask(app, caller, BridgeTool::SessionOrganize, title, what.clone(), note.into(), &context.connection).await {
+            audit(app, BridgeTool::SessionOrganize, caller, &format!("{} · {what}", run.title), "niet toegestaan");
+            return Err(refusal(Reason::NeedsReview).into());
+        }
+    }
+    // The session may have gone, or started working, while the card was open.
+    let current = ws.manager.run(order.session).ok_or("The session is gone.")?;
+    if busy(current.id) && order.action.needs_free_session() {
+        return Err(format!("\"{}\" started working; it cannot be {}d now.", current.title, order.action.name()));
+    }
+    let list_id = format!("run:{}", current.id);
+    match order.action {
+        A::Archive => ws.manager.set_archived(current.id, true),
+        A::Unarchive => ws.manager.set_archived(current.id, false),
+        A::MarkUnread | A::MarkRead => {
+            let agents = app.try_state::<crate::agents::AgentsState>().ok_or("Nook is not ready.")?;
+            let mut marks = lock(&agents.marks);
+            if order.action == A::MarkUnread {
+                marks.mark_unread(&list_id);
+            } else {
+                marks.visit(&list_id, chrono::Utc::now());
+            }
+        }
+        // Pins, settled and snoozed rows are the Agents list's own choices, kept by the list (`agent-inbox.ts`).
+        A::Pin | A::Unpin | A::Settle | A::Reopen | A::Snooze | A::Wake => {
+            let until = order.snooze.map(|c| c.until(chrono::Local::now()).timestamp_millis());
+            let _ = app.emit("agents-organize", json!({"id": list_id, "action": order.action.name(), "until": until}));
+        }
+    }
+    let _ = app.emit("agents-changed", ());
+    audit(app, BridgeTool::SessionOrganize, caller, &format!("{} · {what}", current.title), "gedaan");
+    Ok(ToolResult::text(format!("Done: {what} for \"{}\".", current.title)))
+}
+
+pub(super) async fn session_questions(
+    app: &AppHandle,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    use args::QuestionAction as Q;
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let request = args::questions(a)?;
+    let own = caller.run.as_deref().and_then(|r| Uuid::parse_str(r).ok());
+    let links = app.try_state::<automation::AutomationState>();
+    let parent_of = |id: Uuid| links.as_ref().and_then(|l| l.links.link(id)).map(|l| l.parent);
+    if let Verdict::Refuse(reason) = question_verdict(caller, false, false, super::enabled(app)) {
+        return Err(refusal(reason).into());
+    }
+    match request.action {
+        Q::List => {
+            let mut waiting: Vec<_> = ws
+                .manager
+                .runs()
+                .into_iter()
+                .filter(|r| Some(r.id) != own && request.session.is_none_or(|s| s == r.id))
+                .flat_map(|r| ws.manager.questions(r.id).into_iter().map(move |q| (r.clone(), q)))
+                .collect();
+            waiting.sort_by_key(|(_, q)| q.created);
+            if waiting.is_empty() {
+                return Ok(ToolResult::text("No session is waiting on a question."));
+            }
+            let lines: Vec<String> = waiting
+                .iter()
+                .map(|(run, q)| {
+                    let first = q.items.first().map(|i| i.question.as_str()).unwrap_or("");
+                    let first: String = first.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
+                    let more = if q.items.len() > 1 { format!(" (+{} more)", q.items.len() - 1) } else { String::new() };
+                    let mine = if own.is_some() && parent_of(run.id) == own { " · your task" } else { "" };
+                    format!(
+                        "- session {} · {} · {}{mine} · question {}: {first}{more}",
+                        run.id,
+                        run.title,
+                        run.provider.display_name(),
+                        q.id
+                    )
+                })
+                .collect();
+            Ok(ToolResult::text(format!("Questions sessions wait on (read one with action read):\n{}", lines.join("\n"))))
+        }
+        Q::Read | Q::Answer => {
+            let (Some(id), Some(question_id)) = (request.session, request.question.clone()) else {
+                return Err("No such session. Use an id from session_questions.".into());
+            };
+            let run = ws.manager.run(id).ok_or("No such session. Use an id from session_questions.")?;
+            if Some(id) == own {
+                return Err("That question is your own; the user answers it.".into());
+            }
+            let pending = ws
+                .manager
+                .questions(id)
+                .into_iter()
+                .find(|q| q.id == question_id)
+                .ok_or("That question is no longer waiting (answered, or the session stopped).")?;
+            if request.action == Q::Read {
+                let minutes = (chrono::Utc::now() - pending.created).num_minutes();
+                return Ok(ToolResult::text(format!(
+                    "Session {} · {} · {}\n{}",
+                    run.id,
+                    run.title,
+                    run.provider.display_name(),
+                    args::render_question(&pending.id, &pending.items, minutes)
+                )));
+            }
+            let answers = args::validate(&request.answers, &pending.items)?;
+            let own_task = own.is_some() && parent_of(id) == own;
+            let shown: Vec<String> =
+                pending.items.iter().zip(&answers).map(|(i, a)| format!("{} → {}", i.question, a.join(", "))).collect();
+            let shown = shown.join("\n");
+            match question_verdict(caller, true, own_task, super::enabled(app)) {
+                Verdict::Refuse(reason) => return Err(refusal(reason).into()),
+                Verdict::Ask(_) => {
+                    let title = trf(
+                        "{agent} wil een vraag van de sessie “{title}” beantwoorden",
+                        "{agent} wants to answer a question of the session “{title}”",
+                        &[("agent", &caller.agent), ("title", &run.title)],
+                    );
+                    let note = tr(
+                        "Het antwoord gaat naar die sessie alsof jij het gaf.",
+                        "The answer goes to that session as if you had given it.",
+                    );
+                    if !ws
+                        .bridge
+                        .ask(app, caller, BridgeTool::SessionQuestions, title, shown.clone(), note.into(), &context.connection)
+                        .await
+                    {
+                        audit(app, BridgeTool::SessionQuestions, caller, &format!("{} · {question_id}", run.title), "niet toegestaan");
+                        return Err(refusal(Reason::Delegation).into());
+                    }
+                }
+                Verdict::Allow => {}
+            }
+            // Answered in Nook while the card was open: the user's own answer stands.
+            if !ws.manager.questions(id).iter().any(|q| q.id == question_id) {
+                return Err("The user answered that question in the meantime.".into());
+            }
+            ws.manager.note(id, &trf("Beantwoord door {agent}", "Answered by {agent}", &[("agent", &caller.agent)]));
+            ws.manager.answer_question(id, &question_id, &answers)?;
+            audit(app, BridgeTool::SessionQuestions, caller, &format!("{} · {question_id}", run.title), "beantwoord");
+            Ok(ToolResult::text(format!("Answered. The session goes on with:\n{shown}")))
+        }
     }
 }

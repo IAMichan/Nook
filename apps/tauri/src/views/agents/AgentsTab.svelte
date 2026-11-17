@@ -21,17 +21,24 @@
   import RunPanel from "./run/RunPanel.svelte";
   import { ago, folderName } from "./time";
   import * as inbox from "../../lib/agent-inbox";
-  import { emptyState, needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
+  import { needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
 
   let { compact = false }: { compact?: boolean } = $props();
   let query = $state("");
   let showFinished = $state(false);
   // What you decided about the list (pins, settled, snoozed, folded projects) is remembered.
-  const STATE_KEY = "nook.agents.inbox";
-  function loadState(): InboxState {
-    try { return { ...emptyState(), ...JSON.parse(localStorage.getItem(STATE_KEY) ?? "{}") }; } catch { return emptyState(); }
-  }
+  const STATE_KEY = inbox.STATE_KEY;
+  const loadState = () => inbox.loadState(localStorage);
   let inboxState = $state<InboxState>(loadState());
+  // An agent changed the list (session_organize): in this window, or in another one through the shared storage.
+  $effect(() => {
+    if (agents.inboxRevision) inboxState = loadState();
+  });
+  $effect(() => {
+    const reload = (e: StorageEvent) => { if (e.key === STATE_KEY) inboxState = loadState(); };
+    window.addEventListener("storage", reload);
+    return () => window.removeEventListener("storage", reload);
+  });
   let settledLimit = $state(inbox.settledPage);
   let menuFor = $state<string | null>(null);
   function update(next: InboxState) {

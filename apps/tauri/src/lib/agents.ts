@@ -1,6 +1,7 @@
 // Agents: dezelfde vormen als de Rust-structs in nook_core::agents, en de aanroepen naar de Rust-kant.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { OrganizeRequest } from "./agent-inbox";
 import { locale, tr } from "./i18n.svelte";
 
 export type AgentKind = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "cursor" | "grok";
@@ -180,6 +181,7 @@ export const agentApi = {
   sound: (kind: "attention" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
 };
 
+
 export interface Gone { id: string; message: string | null }
 
 export const agentEvents = {
@@ -191,6 +193,8 @@ export const agentEvents = {
   onAttention: (cb: (s: AgentSession) => void): Promise<UnlistenFn> => listen<AgentSession>("agent-attention", (e) => cb(e.payload)),
   onUsage: (cb: () => void): Promise<UnlistenFn> => listen("agent-usage", () => cb()),
   onHistory: (cb: (h: HistoryResult) => void): Promise<UnlistenFn> => listen<HistoryResult>("agents-history", (e) => cb(e.payload)),
+  /// An agent's `session_organize` for the list's own choices (pin, settle, snooze).
+  onOrganize: (cb: (r: OrganizeRequest) => void): Promise<UnlistenFn> => listen<OrganizeRequest>("agents-organize", (e) => cb(e.payload)),
 };
 
 export const agentNames: Record<AgentKind, string> = {

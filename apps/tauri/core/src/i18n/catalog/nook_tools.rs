@@ -37,6 +37,35 @@ pub const ROWS: &[Row] = &[
     ("Start sessions", "Sitzungen starten", "Démarrer des sessions", "Iniciar sesiones"),
     ("Message to session", "Nachricht an Sitzung", "Message à la session", "Mensaje a la sesión"),
     ("Wait for sessions", "Auf Sitzungen warten", "Attendre les sessions", "Esperar sesiones"),
+    ("Search sessions", "Sitzungen durchsuchen", "Rechercher dans les sessions", "Buscar en sesiones"),
+    ("Organize session", "Sitzung ordnen", "Organiser la session", "Organizar sesión"),
+    ("Session questions", "Fragen von Sitzungen", "Questions des sessions", "Preguntas de sesiones"),
+    // Approval cards of session_organize and session_questions, and the note in the answered session.
+    (
+        "{agent} wants to change the session “{title}” in your list",
+        "{agent} möchte die Sitzung „{title}“ in deiner Liste ändern",
+        "{agent} veut modifier la session « {title} » dans votre liste",
+        "{agent} quiere cambiar la sesión “{title}” en tu lista",
+    ),
+    (
+        "Only your Agents list changes; the session itself goes on as it was.",
+        "Nur deine Agents-Liste ändert sich; die Sitzung selbst läuft weiter wie zuvor.",
+        "Seule votre liste Agents change ; la session elle-même continue comme avant.",
+        "Solo cambia tu lista de Agents; la sesión sigue como estaba.",
+    ),
+    (
+        "{agent} wants to answer a question of the session “{title}”",
+        "{agent} möchte eine Frage der Sitzung „{title}“ beantworten",
+        "{agent} veut répondre à une question de la session « {title} »",
+        "{agent} quiere responder una pregunta de la sesión “{title}”",
+    ),
+    (
+        "The answer goes to that session as if you had given it.",
+        "Die Antwort geht an diese Sitzung, als hättest du sie gegeben.",
+        "La réponse part vers cette session comme si vous l'aviez donnée.",
+        "La respuesta va a esa sesión como si la hubieras dado tú.",
+    ),
+    ("Answered by {agent}", "Beantwortet von {agent}", "Répondu par {agent}", "Respondida por {agent}"),
     // Approval cards of session_start and session_send, and the first line of a session an agent started.
     (
         "{agent} wants to start a {provider} session",

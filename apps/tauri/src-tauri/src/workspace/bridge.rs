@@ -316,6 +316,9 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
         BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
         BridgeTool::SessionWait => sessions::session_wait(app, a).await,
+        BridgeTool::SessionSearch => sessions::session_search(app, a).await,
+        BridgeTool::SessionOrganize => sessions::session_organize(app, a, &caller, context).await,
+        BridgeTool::SessionQuestions => sessions::session_questions(app, a, &caller, context).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList

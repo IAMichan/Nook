@@ -218,7 +218,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 - [x] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` (a task's question is not yet passed to its parent; the sub-thread strip is AG-100…) · M
 - [x] **AG-05** `session_start` (1–20 sessions), `session_send`, `session_wait` (no idle start without a first message, no `nook://` session links yet) · M
-- [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
+- [x] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` (search reads the timelines, there is no search index yet) · M
 - [ ] **AG-07** `session_suggest` and the suggested-session card in the timeline · M
 - [ ] **AG-08** `render_page` (`RenderedPage`, `McpApps`, `McpUI`): a sandboxed page in the timeline · M
 - [ ] **AG-09** `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `run_scheduled_task_now` (wrap `scheduler.rs`; always ask) · S

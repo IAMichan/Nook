@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyState, filterRows, pin, projectGroups, sections, settle, snooze, type InboxRow } from "./agent-inbox";
+import { emptyState, filterRows, loadState, organize, pin, projectGroups, sections, settle, snooze, STATE_KEY, type InboxRow } from "./agent-inbox";
 
 const now = 1_000_000;
 const row = (id: string, over: Partial<InboxRow> = {}): InboxRow => ({ id, title: id, project: "nook", attention: "idle", lastActivity: now, ...over });
@@ -50,5 +50,28 @@ describe("agent inbox layout", () => {
   it("searches title and project by token, ignoring case and accents", () => {
     const rows = [row("Café fix", { project: "Nook" }), row("other", { project: "site" })];
     expect(filterRows(rows, "cafe nook").map((r) => r.id)).toEqual(["Café fix"]);
+  });
+});
+
+describe("an agent organizing the list", () => {
+  it("does what the row menu does", () => {
+    let s = organize(emptyState(), { id: "run:a", action: "pin", until: null }, 0);
+    expect(s.pinned).toEqual(["run:a"]);
+    s = organize(s, { id: "run:a", action: "settle", until: null }, 0);
+    expect(s.settled).toEqual(["run:a"]);
+    expect(s.pinned).toEqual([]);
+    s = organize(s, { id: "run:a", action: "reopen", until: null }, 0);
+    expect(s.settled).toEqual([]);
+    s = organize(s, { id: "run:b", action: "snooze", until: 500 }, 0);
+    expect(s.snoozed).toEqual({ "run:b": 500 });
+    expect(organize(emptyState(), { id: "run:c", action: "snooze", until: null }, 1000).snoozed["run:c"]).toBe(3_601_000);
+    s = organize(s, { id: "run:b", action: "wake", until: null }, 0);
+    expect(s.snoozed).toEqual({});
+    expect(organize(s, { id: "run:b", action: "delete", until: null }, 0)).toBe(s);
+  });
+
+  it("reads the stored state, or starts empty", () => {
+    expect(loadState({ getItem: (k) => (k === STATE_KEY ? JSON.stringify({ pinned: ["x"] }) : null) }).pinned).toEqual(["x"]);
+    expect(loadState({ getItem: () => "{broken" })).toEqual(emptyState());
   });
 });

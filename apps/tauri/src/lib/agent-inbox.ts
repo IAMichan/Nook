@@ -167,6 +167,30 @@ export function wake(state: InboxState, id: string): InboxState {
   const { [id]: _gone, ...rest } = state.snoozed;
   return { ...state, snoozed: rest };
 }
+/// What an agent's `session_organize` asks of the list (pin, settle, snooze… as the row menu does them).
+export interface OrganizeRequest { id: string; action: string; until: number | null }
+
+/// The stored state after an agent's request; unknown actions change nothing. A snooze without an end lasts an hour.
+export function organize(state: InboxState, request: OrganizeRequest, now: number): InboxState {
+  const { id, action, until } = request;
+  switch (action) {
+    case "pin": return pin(state, id);
+    case "unpin": return unpin(state, id);
+    case "settle": return settle(state, id);
+    case "reopen": return unsettle(state, id);
+    case "snooze": return snooze(state, id, until ?? now + 3_600_000);
+    case "wake": return wake(state, id);
+    default: return state;
+  }
+}
+
+/// Where the list keeps what the user (or an agent for them) decided, shared by every window.
+export const STATE_KEY = "nook.agents.inbox";
+
+export function loadState(storage: Pick<Storage, "getItem">): InboxState {
+  try { return { ...emptyState(), ...JSON.parse(storage.getItem(STATE_KEY) ?? "{}") }; } catch { return emptyState(); }
+}
+
 export function toggleProject(state: InboxState, project: string): InboxState {
   const folded = state.collapsedProjects.includes(project);
   return { ...state, collapsedProjects: folded ? state.collapsedProjects.filter((p) => p !== project) : [...state.collapsedProjects, project] };

@@ -1,5 +1,6 @@
 // De staat van de agents in de interface (Svelte 5 runes). De waarheid staat in Rust; dit volgt de events.
 import { agentApi, agentEvents, type AgentApproval, type AgentSession, type HistoryResult, type Overview, type QuestionRequest } from "./agents";
+import { loadState, organize, STATE_KEY } from "./agent-inbox";
 import { playSound } from "./sound";
 import { nook } from "./state.svelte";
 import { toast } from "./toast.svelte";
@@ -12,6 +13,8 @@ class AgentsStore {
   /// Welke sessie rechts in de tab Agents open staat.
   selectedId = $state<string | null>(localStorage.getItem("agents.selected"));
   error = $state<string | null>(null);
+  /// Goes up when an agent changed the list's own choices (pins, settled, snoozed), so the list reads them again.
+  inboxRevision = $state(0);
   /// Alleen de balk speelt geluiden, zodat je ze niet dubbel hoort.
   sounds = false;
   private started = false;
@@ -27,6 +30,10 @@ class AgentsStore {
     this.started = true;
     await this.refresh();
     agentEvents.onChanged(() => this.refresh());
+    agentEvents.onOrganize((r) => {
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(organize(loadState(localStorage), r, Date.now()))); } catch { /* No storage. */ }
+      this.inboxRevision += 1;
+    });
     // Een nieuwe vraag zet zijn sessie rechts in de tab Agents, zodat je hem meteen ziet.
     agentEvents.onApproval((a) => {
       this.selectedId = a.sessionKey;

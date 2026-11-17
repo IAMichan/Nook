@@ -32,6 +32,9 @@ pub enum BridgeTool {
     SessionStart,
     SessionSend,
     SessionWait,
+    SessionSearch,
+    SessionOrganize,
+    SessionQuestions,
     // Nook itself (`bridge_nook`).
     NookTools,
     NookUse,
@@ -58,7 +61,7 @@ pub const SERVER_NAME: &str = "nook";
 pub const TOOL_PREFIX: &str = "mcp__nook__";
 
 impl BridgeTool {
-    pub const ALL: [BridgeTool; 28] = [
+    pub const ALL: [BridgeTool; 31] = [
         Self::WorkspaceInfo,
         Self::TerminalRun,
         Self::TerminalRead,
@@ -78,6 +81,9 @@ impl BridgeTool {
         Self::SessionStart,
         Self::SessionSend,
         Self::SessionWait,
+        Self::SessionSearch,
+        Self::SessionOrganize,
+        Self::SessionQuestions,
         Self::NookTools,
         Self::NookUse,
         Self::NookChatList,
@@ -110,6 +116,9 @@ impl BridgeTool {
             Self::SessionStart => "session_start",
             Self::SessionSend => "session_send",
             Self::SessionWait => "session_wait",
+            Self::SessionSearch => "session_search",
+            Self::SessionOrganize => "session_organize",
+            Self::SessionQuestions => "session_questions",
             t @ (Self::NookTools
             | Self::NookUse
             | Self::NookChatList
@@ -134,8 +143,11 @@ impl BridgeTool {
             | Self::TaskWait
             | Self::SessionList
             | Self::SessionRead
-            | Self::SessionWait => Effect::Read,
-            Self::SessionStart | Self::SessionSend => Effect::Local,
+            | Self::SessionWait
+            | Self::SessionSearch => Effect::Read,
+            // Reading the questions other sessions wait on is reading; answering one is decided per call
+            // (`question_verdict`).
+            Self::SessionStart | Self::SessionSend | Self::SessionOrganize | Self::SessionQuestions => Effect::Local,
             Self::TerminalRun | Self::TerminalStop | Self::BrowserOpen | Self::DelegateTask | Self::TaskCancel => Effect::Local,
             Self::PullRequestCreate => Effect::Outward,
             t @ (Self::NookTools
@@ -178,6 +190,9 @@ impl BridgeTool {
             Self::SessionStart => tr("Start sessies", "Start sessions"),
             Self::SessionSend => tr("Bericht aan sessie", "Message to session"),
             Self::SessionWait => tr("Wacht op sessies", "Wait for sessions"),
+            Self::SessionSearch => tr("Zoek in sessies", "Search sessions"),
+            Self::SessionOrganize => tr("Sessie ordenen", "Organize session"),
+            Self::SessionQuestions => tr("Vragen van sessies", "Session questions"),
             t @ (Self::NookTools
             | Self::NookUse
             | Self::NookChatList
@@ -217,6 +232,9 @@ impl BridgeTool {
             Self::SessionStart => "Starts 1-20 top-level sessions (default: beside you; or folder, worktree, or scratch). The user approves unless full rights. Returns their ids. Use delegate_task instead when you need a subtask's result.",
             Self::SessionSend => "Sends a message to another Nook session as an agent, not the user (mode: queue after its turn (default), auto, steer into the running turn, or restart). Prefer queue: steer or restart only when the receiver must change its running work now. The receiver keeps its own task, so ask only what bears on it. The user approves unless full rights. You cannot message yourself.",
             Self::SessionWait => "Waits until any (default) or all listed sessions finish their turn or ask the user a question (up to timeout_seconds).",
+            Self::SessionSearch => "Searches Nook sessions (titles, messages, commands, changed files) and returns matching session ids with excerpts. Read full hits with session_read.",
+            Self::SessionOrganize => "Organizes a session in the Agents list: pin/unpin, settle/reopen, snooze (hour, evening, tomorrow)/wake, archive/unarchive, unread/read. Active sessions cannot be settled, snoozed or archived. The user approves unless full rights.",
+            Self::SessionQuestions => "Lists (default), reads or answers pending multiple-choice questions across Nook sessions (never permission prompts). answer takes answers: question id to option label(s) or your own text. Answering your own delegated task runs directly; other sessions require user approval unless full rights.",
             Self::SessionRead => "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed.",
             t @ (Self::NookTools | Self::NookUse | Self::NookChatList | Self::NookChatRead | Self::NookChatSend | Self::ChatList | Self::ChatRead | Self::ChatSend | Self::TakeOverScreen) => super::bridge_nook::summary(t),
         }
@@ -318,6 +336,32 @@ impl BridgeTool {
                     "client_request_id": {"type": "string", "description": "A retry sends nothing twice."}
                 }),
                 &["session_id", "message"],
+            ),
+            Self::SessionSearch => object(
+                json!({
+                    "query": {"type": "string", "description": "Literal search words (case/accent-insensitive)."},
+                    "session_id": {"type": "string", "description": "Restrict to this session id."},
+                    "limit": {"type": "integer", "description": "Max sessions (default 8, max 25)."},
+                    "include_archived": {"type": "boolean", "description": "Include archived sessions (default false)."}
+                }),
+                &["query"],
+            ),
+            Self::SessionOrganize => object(
+                json!({
+                    "session_id": {"type": "string", "description": "Session id from session_list."},
+                    "action": {"type": "string", "enum": ["pin", "unpin", "settle", "reopen", "snooze", "wake", "archive", "unarchive", "mark_unread", "mark_read"], "description": "List action to apply."},
+                    "until": {"type": "string", "enum": ["hour", "evening", "tomorrow"], "description": "With snooze: hour (default), evening (18:00) or tomorrow (09:00)."}
+                }),
+                &["session_id", "action"],
+            ),
+            Self::SessionQuestions => object(
+                json!({
+                    "action": {"type": "string", "enum": ["list", "read", "answer"], "description": "list (default), read or answer."},
+                    "session_id": {"type": "string", "description": "Session id (required for read/answer)."},
+                    "question_id": {"type": "string", "description": "Question id from list (required for read/answer)."},
+                    "answers": {"type": "object", "description": "With answer: map of question id to chosen option label(s) or custom text.", "additionalProperties": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}}
+                }),
+                &[],
             ),
             Self::SessionWait => object(
                 json!({
@@ -443,6 +487,11 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, command: Option<RiskLeve
             Verdict::Allow
         }
         BridgeTool::DelegateTask | BridgeTool::SessionStart | BridgeTool::SessionSend => Verdict::Ask(Reason::Delegation),
+        // It only rearranges the user's own list, but of sessions that are not the caller's: the user sees it first.
+        BridgeTool::SessionOrganize if caller.permission == Some(PermissionPolicy::Bypass) => Verdict::Allow,
+        BridgeTool::SessionOrganize => Verdict::Ask(Reason::NeedsReview),
+        BridgeTool::SessionQuestions if caller.permission == Some(PermissionPolicy::Bypass) => Verdict::Allow,
+        BridgeTool::SessionQuestions => Verdict::Ask(Reason::Delegation),
         BridgeTool::TerminalRun => match command.unwrap_or(RiskLevel::Review) {
             RiskLevel::Danger => Verdict::Refuse(Reason::Dangerous),
             RiskLevel::Safe => Verdict::Allow,
@@ -450,6 +499,21 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, command: Option<RiskLeve
             RiskLevel::Review => Verdict::Ask(Reason::NeedsReview),
         },
         _ => Verdict::Allow,
+    }
+}
+
+/// The rule for `session_questions`: listing and reading are reading (also in Plan mode); answering a question of a
+/// task the caller delegated runs directly, anyone else's waits for the user unless the session has full rights.
+pub fn question_verdict(caller: &BridgeCaller, answers: bool, own_task: bool, enabled: bool) -> Verdict {
+    if !enabled {
+        return Verdict::Refuse(Reason::Disabled);
+    }
+    if !answers {
+        return Verdict::Allow;
+    }
+    match verdict(BridgeTool::SessionQuestions, caller, None, enabled) {
+        Verdict::Ask(_) if own_task => Verdict::Allow,
+        v => v,
     }
 }
 
@@ -687,6 +751,14 @@ mod tests {
         assert_eq!(verdict(BridgeTool::SessionSend, &bypass, None, true), Verdict::Allow);
         assert_eq!(verdict(BridgeTool::SessionSend, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
         assert_eq!(verdict(BridgeTool::SessionWait, &plan, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::SessionSearch, &plan, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::SessionOrganize, &agent, None, true), Verdict::Ask(Reason::NeedsReview));
+        assert_eq!(verdict(BridgeTool::SessionOrganize, &bypass, None, true), Verdict::Allow);
+        assert_eq!(question_verdict(&plan, false, false, true), Verdict::Allow, "listing is reading");
+        assert_eq!(question_verdict(&agent, true, false, true), Verdict::Ask(Reason::Delegation));
+        assert_eq!(question_verdict(&agent, true, true, true), Verdict::Allow, "its own task");
+        assert_eq!(question_verdict(&plan, true, true, true), Verdict::Refuse(Reason::PlanMode));
+        assert_eq!(question_verdict(&agent, false, false, false), Verdict::Refuse(Reason::Disabled));
     }
 
     #[test]
