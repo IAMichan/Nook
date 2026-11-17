@@ -459,6 +459,19 @@ switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the tw
 | `StatusPill.svelte`, `PulseDot.svelte` | `StatusBadgeLabel`, `PulseDot` | A session's state as a mark and a word in its color; the pulsing dot while it works |
 | `TabBar.svelte` | the iPhone's tab bar | Tabs along the bottom, each with its icon, name and count |
 | `Ico.svelte` | `NookIcon` | A Lucide icon in the text color around it |
+| `tip.ts` (`use:tip={label}`) | `.nookTip` | The fast tooltip: after a 150 ms rest, swapping at once to the next control within 400 ms, closing on leave, click, scroll or key, drawn once on the body so nothing clips it, flipped and clamped at the window's edge (`placeTip`). It names an icon-only control for screen readers too. Never the browser's `title` tooltip |
+| `HoverCard.svelte` | `HoverCard` | A detail card on hover that stays while the pointer is on the view or the card, and a moment after; a line inside closes it through `close` |
+| `Skeleton.svelte`, `PatientSpinner.svelte`, `BusyLine.svelte`, `Spinner.svelte` | `NookSkeleton`/`NookSkeletonLines`, `PatientSpinner`, `BusyLine` | Loading: a breathing placeholder in the shape to come where the layout is known; otherwise a spinner that waits 350 ms before it fades in; a running status line with a small spinner |
+| `CountBadge.svelte` | `NookCountBadge` | How many wait for you: a small amber count, nothing at zero |
+| `FilterChip.svelte`, `ChipFlow.svelte` | `NookFilterChip`, `ChipFlow` | A chip in a row of filters (accent when chosen, optional count and state mark); chips wrapping onto as many rows as needed |
+| `StatTile.svelte` | `NookStatTile` | One number with its label and a line under it |
+| `Tag.svelte` | `NookTag` | A short word on a soft chip, tinted or grey, `small` or `regular`; a status is a `StatusPill`, not a tag |
+| `SectionLabel.svelte` | `NookSectionLabel` | A group's name in a list or on a page, with an optional trailing control |
+| `ListEmptyNote.svelte`, `LoadFailedNote.svelte` | `ListEmptyNote`, `LoadFailedNote` | The one line of an empty list; a part that failed to load, with its reason in soft coral, a retry and an optional extra button |
+| `IconDetailRow.svelte` | `IconDetailRow` | A small icon in its color, a title, lines under it (a `path` cut in the middle, `cutMiddle`) and a trailing slot |
+| `IconButton.svelte`, `CopyIconButton.svelte`, `RefreshIconButton.svelte`, `TabCloseButton.svelte` | `NookIconButton`, `CopyIconButton`/`CopiedMoment`, `RefreshIconButton`, `TabCloseButton` | Symbol buttons with their name as tooltip: copy turns into a checkmark for 1.5 s (a second click restarts it); refresh turns its arrows while it runs, never a spinner in its place; the small × of a tab. Never a hand-rolled `copied` flag |
+| `hover-row`, `hover-reveal` classes (`ui.css`) | `.hoverRowFill`, `.revealOnHover` | A row that lifts under the pointer (`selected` when chosen); a control inside it that shows only under the pointer or with the keyboard, and cannot be clicked while hidden |
+| `DisclosureChevron.svelte` | `DisclosureChevron` | The chevron of a section that folds, turning from right to down |
 
 ## Shortcut cheat sheet
 
