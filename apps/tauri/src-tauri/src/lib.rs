@@ -306,6 +306,7 @@ pub fn run() {
             commands::brain::mail_send,
             commands::brain::mail_open,
             commands::brain::mail_open_invite,
+            commands::brain::mail_block_open,
             commands::brain::read_attachment,
             commands::brain::read_attachment_path,
             commands::brain::source_choices,

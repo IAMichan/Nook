@@ -34,6 +34,7 @@ impl ToolSource for Mail {
             json!({"type": "object", "properties": {
                 "to": {"type": "string", "description": "Recipient email address(es), comma-separated. Empty if unknown."},
                 "cc": {"type": "string", "description": "CC email address(es), optional."},
+                "bcc": {"type": "string", "description": "BCC email address(es), optional: only when the user asks for a blind copy."},
                 "subject": {"type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."},
                 "body": {"type": "string", "description": "Full text of the email, excluding subject line."},
                 "invite": {
@@ -76,13 +77,20 @@ pub fn build_draft(input: &Value, folder: &Path) -> nook_core::Result<(MailDraft
     }
     let to = text(input, "to");
     let cc = text(input, "cc");
-    let bad: Vec<&str> = to.split([',', ';']).map(str::trim).filter(|a| !a.is_empty() && !is_mail_address(a)).collect();
+    let bcc = text(input, "bcc");
+    let bad: Vec<&str> = [to.as_str(), cc.as_str(), bcc.as_str()]
+        .into_iter()
+        .flat_map(|list| list.split([',', ';']))
+        .map(str::trim)
+        .filter(|a| !a.is_empty() && !is_mail_address(a))
+        .collect();
     let note = if bad.is_empty() {
         String::new()
     } else {
         format!(" Note: {} is not a valid address; the user can fix it in the draft.", bad.join(", "))
     };
     let mut draft = MailDraft::new(&to, &cc, &subject, &body);
+    draft.bcc = bcc;
     let mut invited = String::new();
     if let Some(fields) = input.get("invite").filter(|v| !v.is_null()) {
         let mut attendees = calendar_invite::addresses(&draft.to);
@@ -117,7 +125,7 @@ pub fn sync_invite(draft: &mut MailDraft) {
     }
 }
 
-/// Een `mailto:`-adres met ontvanger, cc, onderwerp en tekst (percent-gecodeerd, zoals RFC 6068 vraagt).
+/// A `mailto:` link with recipients, cc, bcc, subject and text (percent-encoded, as RFC 6068 asks).
 pub fn mailto(draft: &MailDraft) -> String {
     let encode = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20");
     let recipients: Vec<String> =
@@ -126,6 +134,9 @@ pub fn mailto(draft: &MailDraft) -> String {
         format!("subject={}", encode(&draft.subject)),
         format!("body={}", encode(&draft.body.replace("\r\n", "\n").replace('\n', "\r\n"))),
     ];
+    if !draft.bcc.trim().is_empty() {
+        query.insert(0, format!("bcc={}", encode(draft.bcc.trim())));
+    }
     if !draft.cc.trim().is_empty() {
         query.insert(0, format!("cc={}", encode(draft.cc.trim())));
     }
@@ -139,7 +150,9 @@ fn check(draft: &MailDraft) -> Result<(), String> {
     }
     if let Some(bad) = addresses
         .iter()
-        .chain(draft.cc.split([',', ';']).map(str::trim).filter(|a| !a.is_empty()).collect::<Vec<_>>().iter())
+        .copied()
+        .chain([draft.cc.as_str(), draft.bcc.as_str()].into_iter().flat_map(|list| list.split([',', ';'])).map(str::trim))
+        .filter(|a| !a.is_empty())
         .find(|a| !is_mail_address(a))
     {
         return Err(format!("{bad} is geen geldig mailadres."));
@@ -191,6 +204,35 @@ mod tests {
         assert!(check(&MailDraft::new("", "", "x", "y")).is_err());
         assert!(check(&MailDraft::new("lisa", "", "x", "y")).is_err());
         assert!(check(&draft).is_ok());
+    }
+
+    #[test]
+    fn mailto_and_check_carry_bcc() {
+        let mut draft = MailDraft::new("lisa@example.nl", "jan@example.nl", "Hi", "Text");
+        draft.bcc = "boss@example.nl; me@example.nl".into();
+        let link = mailto(&draft);
+        assert!(
+            link.starts_with("mailto:lisa@example.nl?cc=jan%40example.nl&bcc=boss%40example.nl%3B%20me%40example.nl&subject=Hi"),
+            "{link}"
+        );
+        assert!(check(&draft).is_ok());
+        draft.bcc = "boss".into();
+        assert_eq!(check(&draft).unwrap_err(), "boss is geen geldig mailadres.");
+
+        let (built, summary) =
+            build_draft(&json!({"to": "a@b.nl", "bcc": "c@d.nl", "subject": "Hi", "body": "Text"}), &std::env::temp_dir()).unwrap();
+        assert_eq!(built.bcc, "c@d.nl");
+        assert!(!summary.contains("not a valid address"), "{summary}");
+        let (_, summary) =
+            build_draft(&json!({"to": "a@b.nl", "bcc": "nope", "subject": "Hi", "body": "Text"}), &std::env::temp_dir()).unwrap();
+        assert!(summary.contains("nope is not a valid address"), "{summary}");
+    }
+
+    #[test]
+    fn old_drafts_without_bcc_still_load() {
+        let draft: MailDraft =
+            serde_json::from_value(json!({"id": "1", "to": "a@b.nl", "subject": "Hi", "body": "Text", "state": "draft"})).unwrap();
+        assert_eq!(draft.bcc, "");
     }
 
     #[test]
