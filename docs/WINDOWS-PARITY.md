@@ -217,7 +217,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-02** `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for` on `src-tauri/src/workspace/browser.rs` (DOM refs, click and type through JS) · M
 - [ ] **AG-03** `in: "user"` on `browser_*` (`BridgeUserBrowser`): drive the user's own Chrome/Edge through the browser extension (needs CH-60) · L
 - [ ] **AG-04** `orchestrator_capabilities`, `delegate_task`, `task_status`, `task_wait`, `task_cancel` on top of `core/src/workspace/delegation.rs` · M
-- [ ] **AG-05** `session_start` (1–20 sessions), `session_send`, `session_wait` · M
+- [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M
 - [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
 - [ ] **AG-07** `session_suggest` and the suggested-session card in the timeline · M
 - [ ] **AG-08** `render_page` (`RenderedPage`, `McpApps`, `McpUI`): a sandboxed page in the timeline · M
