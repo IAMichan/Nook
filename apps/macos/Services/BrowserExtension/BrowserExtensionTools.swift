@@ -257,6 +257,49 @@ enum BrowserExtensionPanel {
     /// The most page text that goes along with one question; the extension reads about this much.
     static let textLimit = 16_000
 
+    /// The newest messages each reply and push carries; the panel asks for earlier ones page by page (`before`), so a
+    /// long conversation never makes every streamed change heavy.
+    static let window = 40
+
+    /// The most earlier conversations the panel asks about at once (its "Earlier chats" menu).
+    static let maxChats = 30
+
+    /// Which part of a conversation of `count` messages the panel gets: the newest `window` messages, or with `before`
+    /// (the index of the oldest message the panel has) the `window` messages before it. `earlier` is how many come
+    /// before the part, so the panel knows whether there is more to show.
+    static func page(count: Int, before: Int? = nil) -> (range: Range<Int>, earlier: Int) {
+        let end = min(max(before ?? count, 0), count)
+        let start = max(end - window, 0)
+        return (start..<end, start)
+    }
+
+    /// One of the panel's earlier conversations, as its menu lists it.
+    struct Chat: Equatable, Sendable {
+        let id: UUID
+        let title: String
+        let updated: Date
+        let busy: Bool
+        let messages: Int
+    }
+
+    /// The earlier conversations the panel asked about, in the order it asked, as its menu lists them. Only the ids the
+    /// panel itself started are asked about, so the browser never learns about Nook's other chats; an id Nook no longer
+    /// has (deleted, or empty) is left out, which tells the panel to forget it.
+    static func chats(asked: [String], known: [Chat]) -> [[String: Any]] {
+        let byID = Dictionary(known.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<UUID>()
+        return asked.prefix(maxChats).compactMap { raw -> [String: Any]? in
+            guard let id = UUID(uuidString: raw), seen.insert(id).inserted, let chat = byID[id], chat.messages > 0 else { return nil }
+            return [
+                "id": id.uuidString,
+                "title": String(chat.title.prefix(120)),
+                "updated": Int(chat.updated.timeIntervalSince1970 * 1000),
+                "busy": chat.busy,
+                "messages": chat.messages
+            ]
+        }
+    }
+
     struct Page: Equatable, Sendable {
         let title: String
         let url: String
@@ -354,6 +397,10 @@ struct BrowserExtensionRequest: Sendable {
     let watch: Bool
     /// The brain the side panel's composer picked (`BrowserExtensionBrain`), for `setBrain`.
     let choice: String
+    /// The conversations the side panel started, for `chats` (its "Earlier chats" menu).
+    let conversations: [String]
+    /// For `chat`: the panel wants the messages before this one (the oldest it has), to read further back.
+    let before: String?
     /// Pictures pasted, dropped or picked in the side panel's composer, as the extension sends them (`questionImages`).
     let images: [(mediaType: String, data: Data)]
 
@@ -367,6 +414,9 @@ struct BrowserExtensionRequest: Sendable {
         page = (message["page"] as? [String: Any]).flatMap(BrowserExtensionPanel.Page.init)
         watch = (message["watch"] as? Bool) ?? false
         choice = String(((message["choice"] as? String) ?? "").prefix(400))
+        conversations = ((message["conversations"] as? [Any]) ?? []).prefix(BrowserExtensionPanel.maxChats)
+            .compactMap { ($0 as? String).map { String($0.prefix(64)) } }
+        before = (message["before"] as? String).map { String($0.prefix(64)) }
         let pictures = ((message["images"] as? [[String: Any]]) ?? []).lazy.compactMap { image -> (mediaType: String, data: Data)? in
             guard let mediaType = image["mediaType"] as? String, mediaType.hasPrefix("image/"),
                   let base64 = image["base64"] as? String, let data = Data(base64Encoded: base64), !data.isEmpty else { return nil }

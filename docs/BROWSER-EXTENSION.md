@@ -229,6 +229,20 @@ Nook's commands ─────────┘                                  
   shimmering line of what Nook does now, and one quiet line for where it looked ("3 sources used") that opens to the
   sources and the numbered references. Nook sends these per message as `sources` and `tasks`
   (`BrowserExtensionTranscript`), in the user's language.
+- **Moving through it.** The panel follows Nook's answer while you read along at the end. Only your own input up (the
+  wheel, ↑, Page Up, Home, or dragging the scroll bar) stops that, never the position alone, because a streamed answer
+  makes "at the end" flicker for a frame (as t3code's timeline). Then a **Latest** button shows, marked when Nook wrote
+  more, and coming back to the end follows again. ⌥↑ and ⌥↓ (or the two arrows at the right edge) go question by
+  question, past the last one to the end; the list button in the header shows every question with its time.
+  ⌘F finds text in the conversation (the browser's own find does not reach a side panel): every match is marked with
+  a CSS highlight, Return and Shift+Return step through them. Under an answer and beside a question are its time and
+  Copy; a question also goes back into the composer to ask it again or change it.
+- **Earlier messages and chats.** Each reply and push carries the newest 40 messages (`BrowserExtensionPanel.window`)
+  and `earlier`, how many come before them; the panel reads further back with `{"kind": "chat", "before": id}`, a page
+  at a time, and keeps what it read while new messages arrive. The clock button lists the chats started in this
+  panel: the extension remembers their ids (`chats` in `chrome.storage.local`, at most 30) and asks Nook for their
+  titles with `{"kind": "chats", "conversations": [...]}`. Nook only answers about those ids, so the browser never
+  learns about Nook's other chats, and drops one it no longer has.
 - **Live answers.** The side panel follows its conversation: Nook pushes every change (at most every 100 ms) as a
   `{"kind": "chat"}` line on the host's poll (`BrowserExtensionHub.push`, a newer change replaces one still waiting),
   and the panel draws it when it changed (`revision`). The panel asks itself only every few seconds in case a push got

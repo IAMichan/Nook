@@ -166,5 +166,59 @@
   },
   "pauseHint": {
     "message": "Nook pauzeren in deze browser"
+  },
+  "copyMessage": {
+    "message": "Kopieer"
+  },
+  "askAgain": {
+    "message": "Opnieuw vragen of aanpassen"
+  },
+  "findTitle": {
+    "message": "Zoek in deze chat (⌘F)"
+  },
+  "findPlaceholder": {
+    "message": "Zoek in deze chat"
+  },
+  "findPrevious": {
+    "message": "Vorige treffer (⇧↩)"
+  },
+  "findNext": {
+    "message": "Volgende treffer (↩)"
+  },
+  "findClose": {
+    "message": "Zoeken sluiten (Esc)"
+  },
+  "findCount": {
+    "message": "$1 van $2"
+  },
+  "findNone": {
+    "message": "Niets gevonden"
+  },
+  "questionsTitle": {
+    "message": "Vragen in deze chat"
+  },
+  "questionPrevious": {
+    "message": "Vorige vraag (⌥↑)"
+  },
+  "questionNext": {
+    "message": "Volgende vraag (⌥↓)"
+  },
+  "chatsTitle": {
+    "message": "Eerdere chats"
+  },
+  "chatsEmpty": {
+    "message": "Chats die je hier begint, komen in deze lijst."
+  },
+  "chatBusy": {
+    "message": "Nook is nog aan het antwoorden"
+  },
+  "earlierMessages": {
+    "message": "Toon $1 eerdere berichten"
+  },
+  "toLatest": {
+    "message": "Nieuwste"
+  },
+  "newerMessages": {
+    "message": "Nieuw antwoord"
   }
 }

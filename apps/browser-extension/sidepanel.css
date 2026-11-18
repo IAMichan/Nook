@@ -293,9 +293,16 @@ button.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 1
 
 /* MARK: Conversation */
 
+/* The conversation and what floats over it (back to the newest answer, question by question). */
+.chat-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
 .chat {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  outline: none;
+  /* What scrolls away under the site row fades out instead of being cut off. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--space-lg));
   padding: var(--pad-xl) var(--pad-xl) var(--pad-lg);
   display: flex;
   flex-direction: column;
@@ -335,6 +342,138 @@ button.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 1
 .suggestion:hover:not(:disabled) { background: var(--row-hover); border-color: var(--line2); }
 
 @keyframes arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* MARK: Moving through the conversation */
+
+/* Earlier messages than Nook sends at once: one quiet line at the top that reads further back. */
+.earlier {
+  align-self: center;
+  margin: 0 0 var(--space-xl);
+  padding: 3px var(--space-lg);
+  border-color: transparent;
+  border-radius: 999px;
+  background: var(--graphite);
+  color: var(--text-secondary);
+  font-size: var(--label);
+}
+.earlier:hover:not(:disabled) { background: var(--row-selected); color: var(--text-strong); }
+
+/* Back to the newest answer: shows once you scroll up to read, and says when Nook wrote more meanwhile. */
+.to-latest {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-md);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 4px var(--space-lg) 4px var(--space-md);
+  border-color: var(--line2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--label);
+  box-shadow: 0 4px 16px rgb(0 0 0 / .16);
+  animation: arrive .2s var(--ease);
+}
+.to-latest:hover:not(:disabled) { background: var(--row-hover); color: var(--text-strong); }
+.to-latest svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.to-latest.fresh { color: var(--paper); border-color: var(--accent); }
+.to-latest.fresh::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+
+/* Question by question: two quiet buttons at the right edge, clearer on hover. */
+.question-nav {
+  position: absolute;
+  right: var(--space-sm);
+  bottom: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  padding: var(--space-xxs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  opacity: 0;
+  transition: opacity .15s var(--ease);
+}
+/* Out of the way while you only read along at the end; there when you point at the conversation or read back. */
+.chat-wrap:hover .question-nav, .chat-wrap.away .question-nav { opacity: .6; }
+.question-nav:hover, .question-nav:focus-within { opacity: 1; }
+.question-nav button.icon { width: 24px; height: 24px; }
+.question-nav button.icon svg { width: 14px; height: 14px; }
+
+/* A question you jumped to lights up for a moment, so the eye finds it. */
+.you-row.flash .you { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .3s var(--ease); }
+.nook.flash { border-radius: var(--radius-chip); box-shadow: -8px 0 0 -6px var(--accent); }
+
+/* Find in this conversation. */
+.find {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0 var(--pad-lg) var(--space-sm);
+  padding: var(--space-xxs) var(--space-xxs) var(--space-xxs) var(--space-md);
+  border: 1px solid var(--field-stroke);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  animation: arrive .15s var(--ease);
+}
+.find:focus-within { border-color: var(--line2); }
+.find > svg { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--text-tertiary); stroke-width: 1.8; stroke-linecap: round; }
+.find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font: var(--control)/1.3 var(--sans);
+}
+.find input::placeholder { color: var(--text-tertiary); }
+.find-count { flex: none; color: var(--text-tertiary); font-size: var(--label); font-variant-numeric: tabular-nums; }
+.find-count.none { color: var(--coral); }
+.find button.icon { width: 24px; height: 24px; }
+.find button.icon svg { width: 14px; height: 14px; }
+::highlight(nook-find) { background: color-mix(in srgb, var(--amber) 30%, transparent); color: inherit; }
+::highlight(nook-find-current) { background: var(--amber); color: var(--canvas); }
+
+/* The questions in this conversation and the earlier chats: a menu under the header (a popover, closes by itself). */
+.menu {
+  inset: 44px var(--pad-md) auto auto;
+  width: min(320px, calc(100vw - 2 * var(--pad-md)));
+  max-height: min(420px, calc(100vh - 140px));
+  margin: 0;
+  padding: var(--space-xs);
+  overflow-y: auto;
+  border: 1px solid var(--line2);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text-strong);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .22);
+}
+.menu-title { padding: var(--space-sm) var(--space-md) var(--space-xs); color: var(--text-tertiary); font-size: var(--caption); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.menu-list { list-style: none; margin: 0; padding: 0; }
+.menu-list button {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-strong);
+  font-weight: 400;
+  text-align: left;
+}
+.menu-list button:hover:not(:disabled), .menu-list button:focus-visible { background: var(--row-hover); outline: none; }
+.menu-list button.current { background: var(--row-selected); }
+.menu-list .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-list .when { flex: none; color: var(--text-tertiary); font-size: var(--caption); font-variant-numeric: tabular-nums; }
+.menu-list .busy { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+.menu-list .quiet-item { color: var(--text-secondary); }
+.menu-list .empty-item { padding: var(--space-sm) var(--space-md); color: var(--text-tertiary); font-size: var(--detail); }
+.menu-list li + li.separated { margin-top: var(--space-xs); padding-top: var(--space-xs); border-top: 1px solid var(--line); }
 
 /* MARK: Activity */
 

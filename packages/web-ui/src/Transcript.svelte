@@ -17,6 +17,8 @@
     id?: string;
     fromNook: boolean;
     text: string;
+    /** When it was said (milliseconds since 1970), for the time beside it. */
+    at?: number;
     streaming?: boolean;
     /** What Nook does right now ("Reading the page…"), while it answers. */
     status?: string;
@@ -35,6 +37,10 @@
     copy: string;
     copyTitle: string;
     copied: string;
+    /** The action under a message that copies its whole text. */
+    copyMessage?: string;
+    /** The action beside your question that puts it back in the composer, to ask it again or change it first. */
+    reuse?: string;
   }
 </script>
 
@@ -45,7 +51,32 @@
   // `--nt-*` variables. Every text from the model is escaped (`renderMarkdown`); links open in a new tab.
   import { renderMarkdown } from "./markdown";
 
-  let { messages, texts }: { messages: readonly TranscriptMessage[]; texts: TranscriptTexts } = $props();
+  let {
+    messages,
+    texts,
+    onreuse,
+    timeOf
+  }: {
+    messages: readonly TranscriptMessage[];
+    texts: TranscriptTexts;
+    /** Puts a question back in the composer; without it the action is left out. */
+    onreuse?: (text: string) => void;
+    /** How the surface writes a message's time ("14:05"); without it no time shows. */
+    timeOf?: (at: number) => string;
+  } = $props();
+
+  // The message whose text was just copied, for a moment, so its button says so.
+  let copiedKey = $state<string | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function copyMessage(message: TranscriptMessage, key: string) {
+    await navigator.clipboard?.writeText(message.text).catch(() => {});
+    copiedKey = key;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedKey = null), 1200);
+  }
+
+  const lastNook = $derived(messages.findLastIndex((message) => message.fromNook));
 
   // Which answers' sources are open, by message; an answer's line is closed until you open it, as on the Mac.
   let opened = $state<Record<string, boolean>>({});
@@ -88,11 +119,32 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="nook-transcript" onclick={click}>
   {#each messages as message, index (keyOf(message, index))}
+    {@const key = keyOf(message, index)}
+    {@const time = timeOf && message.at ? timeOf(message.at) : ""}
     {#if !message.fromNook}
-      <div class="you">{message.text}</div>
+      <div class="you-row" data-message={key} data-role="you" data-index={index}>
+        <div class="actions">
+          {#if time}<span class="time">{time}</span>{/if}
+          {#if onreuse && texts.reuse}
+            <button type="button" class="act" title={texts.reuse} aria-label={texts.reuse} onclick={() => onreuse(message.text)}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6" /><path d="M3 2.5v2.8h2.8" /></svg>
+            </button>
+          {/if}
+          {#if texts.copyMessage}
+            <button type="button" class="act" title={copiedKey === key ? texts.copied : texts.copyMessage}
+              aria-label={copiedKey === key ? texts.copied : texts.copyMessage} onclick={() => copyMessage(message, key)}>
+              {#if copiedKey === key}
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" /></svg>
+              {:else}
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5" /><path d="M11 3.5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" /></svg>
+              {/if}
+            </button>
+          {/if}
+        </div>
+        <div class="you">{message.text}</div>
+      </div>
     {:else}
-      {@const key = keyOf(message, index)}
-      <div class="nook" class:failed={message.failed}>
+      <div class="nook" class:failed={message.failed} data-message={key} data-role="nook" data-index={index}>
         {#if message.tasks?.length}
           <ul class="tasks">
             {#each message.tasks as task, i (i)}
@@ -159,6 +211,21 @@
         {#if message.onMac}
           <div class="note on-mac">{texts.onMac}</div>
         {/if}
+        {#if !message.streaming && message.text && (texts.copyMessage || time)}
+          <div class="meta" class:last={index === lastNook}>
+            {#if texts.copyMessage}
+              <button type="button" class="act" title={copiedKey === key ? texts.copied : texts.copyMessage}
+                aria-label={copiedKey === key ? texts.copied : texts.copyMessage} onclick={() => copyMessage(message, key)}>
+                {#if copiedKey === key}
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" /></svg>
+                {:else}
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5" /><path d="M11 3.5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" /></svg>
+                {/if}
+              </button>
+            {/if}
+            {#if time}<span class="time">{time}</span>{/if}
+          </div>
+        {/if}
       </div>
     {/if}
   {/each}
@@ -167,8 +234,9 @@
 <style>
   /* Every color comes from the surface (`--nt-*`); the fallbacks are Nook's own dark theme. */
   .nook-transcript { display: flex; flex-direction: column; gap: 18px; min-width: 0; color: var(--nt-text, #ececef); }
+  /* Your question with, on hover, its time and what you can do with it to its left. */
+  .you-row { align-self: stretch; display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; }
   .you {
-    align-self: flex-end;
     max-width: 85%;
     padding: 8px 13px;
     border-radius: var(--nt-bubble-radius, 16px);
@@ -278,8 +346,31 @@
   .reference a:hover { text-decoration: underline; }
 
   .note { font-size: 12px; color: var(--nt-faint, #8b8b94); }
+
+  /* What you can do with a message: quiet, and only on hover or focus, except under Nook's newest answer. */
+  .actions, .meta { display: flex; align-items: center; gap: 2px; color: var(--nt-faint, #8b8b94); font-size: 11px; opacity: 0; transition: opacity 0.15s ease; }
+  .actions { flex-shrink: 0; }
+  .meta { margin: -2px 0 0 -6px; }
+  .you-row:hover .actions, .you-row:focus-within .actions, .nook:hover .meta, .nook:focus-within .meta, .meta.last { opacity: 1; }
+  .time { padding: 0 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .act {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .act:hover { background: var(--nt-hover, rgb(127 127 127 / 0.12)); color: var(--nt-text, #ececef); }
+  .act:focus-visible { outline: 2px solid var(--nt-accent, #8ab4ff); outline-offset: 1px; }
+  .act svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
   @media (prefers-reduced-motion: reduce) {
     .shimmer, .dots i, .spin, .s-running .state { animation: none; }
+    .actions, .meta { transition: none; }
     .shimmer { color: var(--nt-faint, #8b8b94); background: none; }
   }
 </style>

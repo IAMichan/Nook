@@ -12,6 +12,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- The browser extension's side panel can now be moved through: it follows Nook's answer until you scroll up and then
+  leaves you where you read, with a **Latest** button that says when Nook wrote more. Go question by question with
+  ⌥↑ and ⌥↓ or the list of questions in the header, find text in the chat with ⌘F, read further back than the newest
+  40 messages, and go back to an earlier chat you started in the panel. Every message shows its time and can be copied,
+  and a question can be put back in the composer to ask it again.
+
 - A Windows or Linux PC is now a full computer for the iPhone and Android companion, like a Mac: sessions follow live,
   you can start sessions and read their whole conversation, chat with Nook, see Home, usage and music, use the Chats
   tab (WhatsApp) and review and merge pull requests (GitHub). With several computers paired, the name under the tab

@@ -376,3 +376,127 @@ export function watchRenewalDue(now, lastAsked) {
   return now - lastAsked >= WATCH_RENEW;
 }
 
+
+// MARK: - Moving through the side panel's conversation
+
+/** The most earlier chats the panel remembers and asks Nook about (BrowserExtensionPanel.maxChats). */
+export const MAX_CHATS = 30;
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The conversation ids a `chats` request may carry: real ids only, each once, at most MAX_CHATS. */
+export function chatIds(raw) {
+  const ids = Array.isArray(raw) ? raw.filter((id) => typeof id === 'string' && CONVERSATION_ID.test(id)) : [];
+  return [...new Set(ids)].slice(0, MAX_CHATS);
+}
+
+/**
+ * The panel's earlier chats with this one in front (newest first, each once), as it remembers them in
+ * `chrome.storage.local`: the id, a title to show while Nook does not answer, and when it was last used.
+ */
+export function rememberChat(list, chat) {
+  if (!chat?.id) return Array.isArray(list) ? list : [];
+  const before = (Array.isArray(list) ? list : []).find((entry) => entry?.id === chat.id) || {};
+  const entry = { ...before, ...chat, title: String(chat.title || before.title || '').slice(0, 120) };
+  return [entry, ...(Array.isArray(list) ? list : []).filter((other) => other?.id && other.id !== chat.id)].slice(0, MAX_CHATS);
+}
+
+/**
+ * The remembered chats as Nook knows them now: Nook's title, time and whether it is still answering, newest first. A
+ * chat Nook no longer has is dropped. Without an answer from Nook (an older Nook, or offline) the list stays as it was.
+ */
+export function mergeChats(list, fromNook) {
+  const remembered = Array.isArray(list) ? list : [];
+  if (!Array.isArray(fromNook)) return remembered;
+  const byId = new Map(fromNook.filter((chat) => chat?.id).map((chat) => [chat.id, chat]));
+  return remembered
+    .filter((entry) => byId.has(entry.id))
+    .map((entry) => {
+      const chat = byId.get(entry.id);
+      return {
+        ...entry,
+        title: String(chat.title || entry.title || '').slice(0, 120),
+        updated: Number(chat.updated) || entry.updated || 0,
+        busy: !!chat.busy
+      };
+    })
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+}
+
+/**
+ * The conversation the panel draws: the earlier messages it read back (`older`, oldest first) and the newest window
+ * Nook keeps sending. A message in both counts once, as the newest window has it.
+ */
+export function withEarlier(older, newest) {
+  const latest = Array.isArray(newest) ? newest : [];
+  if (!Array.isArray(older) || !older.length) return latest;
+  const ids = new Set(latest.map((message) => message?.id).filter(Boolean));
+  return [...older.filter((message) => !message?.id || !ids.has(message.id)), ...latest];
+}
+
+/** Where `query` occurs in `text`, ignoring case, as `[start, end]` pairs in `text`'s own indices. */
+export function matchRanges(text, query) {
+  const needle = String(query ?? '').trim();
+  const haystack = String(text ?? '');
+  if (!needle || !haystack) return [];
+  const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  const ranges = [];
+  for (const match of haystack.matchAll(pattern)) {
+    ranges.push([match.index, match.index + match[0].length]);
+    if (ranges.length >= 2_000) break;
+  }
+  return ranges;
+}
+
+/** The next of `count` items from `current`, one `step` (+1 or -1) on, going round; -1 when there are none. */
+export function stepIndex(count, current, step) {
+  if (!count) return -1;
+  if (current < 0 || current >= count) return step < 0 ? count - 1 : 0;
+  return (current + step + count) % count;
+}
+
+/**
+ * The question to jump to from the view's top: the one above it (`direction` -1) or below it (+1), by the questions'
+ * tops in the scrolled content (ascending). -1 when there is none that way. A few pixels of slack, so a question that
+ * sits at the top already counts as "here", not as the next one up.
+ */
+export function questionTarget(tops, viewTop, direction) {
+  const slack = 8;
+  if (direction < 0) {
+    for (let index = tops.length - 1; index >= 0; index -= 1) if (tops[index] < viewTop - slack) return index;
+    return -1;
+  }
+  return tops.findIndex((top) => top > viewTop + slack);
+}
+
+/** A message's time as the panel shows it: "14:05" today, "12 Nov 14:05" earlier. Empty without a time. */
+export function timeLabel(at, now = Date.now(), locale = undefined) {
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const date = new Date(at);
+  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === new Date(now).toDateString()) return time;
+  const day = date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  return `${day} ${time}`;
+}
+
+/** How long ago, as the earlier chats list says it ("5 min. ago", "yesterday"). */
+export function agoLabel(at, now = Date.now(), locale = undefined) {
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const seconds = Math.round((at - now) / 1000);
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
+  const units = [['day', 86_400], ['hour', 3_600], ['minute', 60]];
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+  }
+  return format.format(0, 'minute');
+}
+
+/**
+ * Whether an input means the user moves up to read, which stops the panel following Nook's answer. Only the user's
+ * own input up does; the position never does by itself (a streamed answer makes "at the end" flicker for a frame).
+ */
+export function movesUp(event) {
+  if (!event) return false;
+  if (event.type === 'wheel') return event.deltaY < 0;
+  if (event.type === 'keydown') return ['ArrowUp', 'PageUp', 'Home'].includes(event.key);
+  return false;
+}

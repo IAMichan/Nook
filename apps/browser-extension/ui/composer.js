@@ -4771,19 +4771,21 @@ var root_2$2 = /* @__PURE__ */ from_html(`<button type="button" class="file svel
 var root_3$2 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
 var root_4$2 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
 var root_5$2 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
-var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
-var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
-var root_8$2 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!></div></div> <!></div>`);
+var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
+var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
+var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
+var root_9$1 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!> <!></div></div> <!></div>`);
 var $$css$4 = {
 	hash: "svelte-r7ttdz",
-	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
+	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz, button.queue.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled), button.queue.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
 };
 function Composer($$anchor, $$props) {
 	push($$props, true);
 	append_styles($$anchor, $$css$4);
-	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
+	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), queues = prop($$props, "queues", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
 	/** Stops Nook's answer. Without it, a busy composer only waits. */
 	/** Nook is answering: send waits (or becomes stop when `onstop` is given). */
+	/** While busy, Return and the queue button still send: the message waits in line for after this answer. */
 	/** Nothing can be sent at all (not connected): the field is read-only. */
 	/** Your earlier questions in this conversation, newest first (`askedBefore`). */
 	/** The conversation the history belongs to: a new one starts Up from the newest question again. */
@@ -4806,7 +4808,7 @@ function Composer($$anchor, $$props) {
 		get(field)?.focus();
 	}
 	const stoppable = /* @__PURE__ */ user_derived(() => busy() && !!$$props.onstop);
-	const canSend = /* @__PURE__ */ user_derived(() => !draft().empty && !busy() && !disabled() && !draft().reading);
+	const canSend = /* @__PURE__ */ user_derived(() => !draft().empty && (!busy() || queues()) && !disabled() && !draft().reading);
 	async function send() {
 		if (!get(canSend)) return;
 		const message = {
@@ -4860,7 +4862,7 @@ function Composer($$anchor, $$props) {
 	const accept = /* @__PURE__ */ user_derived(() => draft().readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx,.odt,.pptx,.zip" : "image/*");
 	const placeholder = /* @__PURE__ */ user_derived(() => draft().attachment && $$props.texts.placeholderFor ? $$props.texts.placeholderFor(draft().attachment.name) : $$props.texts.placeholder);
 	var $$exports = { focus };
-	var div = root_8$2();
+	var div = root_9$1();
 	let classes;
 	var node = child(div);
 	snippet(node, () => $$props.top ?? noop);
@@ -4945,24 +4947,38 @@ function Composer($$anchor, $$props) {
 	var consequent_5 = ($$anchor) => {
 		var button_3 = root_6$2();
 		template_effect(() => {
-			set_attribute(button_3, "title", $$props.texts.stop);
-			set_attribute(button_3, "aria-label", $$props.texts.stop);
+			button_3.disabled = !get(canSend);
+			set_attribute(button_3, "title", $$props.texts.queue);
+			set_attribute(button_3, "aria-label", $$props.texts.queue);
 		});
-		delegated("click", button_3, () => $$props.onstop?.());
+		delegated("click", button_3, send);
 		append($$anchor, button_3);
 	};
-	var alternate = ($$anchor) => {
+	if_block(node_9, ($$render) => {
+		if (get(stoppable) && queues() && !draft().empty) $$render(consequent_5);
+	});
+	var node_10 = sibling(node_9, 2);
+	var consequent_6 = ($$anchor) => {
 		var button_4 = root_7$2();
 		template_effect(() => {
-			button_4.disabled = !get(canSend);
-			set_attribute(button_4, "title", $$props.texts.send);
-			set_attribute(button_4, "aria-label", $$props.texts.send);
+			set_attribute(button_4, "title", $$props.texts.stop);
+			set_attribute(button_4, "aria-label", $$props.texts.stop);
 		});
-		delegated("click", button_4, send);
+		delegated("click", button_4, () => $$props.onstop?.());
 		append($$anchor, button_4);
 	};
-	if_block(node_9, ($$render) => {
-		if (get(stoppable)) $$render(consequent_5);
+	var alternate = ($$anchor) => {
+		var button_5 = root_8$2();
+		template_effect(() => {
+			button_5.disabled = !get(canSend);
+			set_attribute(button_5, "title", $$props.texts.send);
+			set_attribute(button_5, "aria-label", $$props.texts.send);
+		});
+		delegated("click", button_5, send);
+		append($$anchor, button_5);
+	};
+	if_block(node_10, ($$render) => {
+		if (get(stoppable)) $$render(consequent_6);
 		else $$render(alternate, -1);
 	});
 	reset(div_3);
@@ -5465,33 +5481,50 @@ function renderMarkdown(source, texts = englishTexts) {
 	return html.join("");
 }
 // src/Transcript.svelte
-var root$1 = /* @__PURE__ */ from_html(`<div class="you svelte-xmynmn"> </div>`);
-var root_1 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" class="svelte-xmynmn"><path d="m4 8.5 2.5 2.5 5.5-6" class="svelte-xmynmn"></path></svg>`);
-var root_2 = /* @__PURE__ */ from_html(`<span class="spin svelte-xmynmn"></span>`);
-var root_3 = /* @__PURE__ */ from_html(`<li><span class="mark svelte-xmynmn" aria-hidden="true"><!></span> <span class="svelte-xmynmn"> </span></li>`);
-var root_4 = /* @__PURE__ */ from_html(`<ul class="tasks svelte-xmynmn"></ul>`);
-var root_5 = /* @__PURE__ */ from_html(`<div class="prose svelte-xmynmn"></div>`);
-var root_6 = /* @__PURE__ */ from_html(`<span class="dots svelte-xmynmn"><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i></span>`);
-var root_7 = /* @__PURE__ */ from_html(`<div class="status shimmer svelte-xmynmn"> </div>`);
-var root_8 = /* @__PURE__ */ from_html(`<span class="badge svelte-xmynmn" aria-hidden="true">!</span>`);
-var root_9 = /* @__PURE__ */ from_html(`<span class="source-detail svelte-xmynmn"> </span>`);
-var root_10 = /* @__PURE__ */ from_html(`<li><span class="state svelte-xmynmn" aria-hidden="true"></span> <span class="source-title svelte-xmynmn"> </span> <!></li>`);
-var root_11 = /* @__PURE__ */ from_html(`<a class="svelte-xmynmn"> </a>`);
-var root_12 = /* @__PURE__ */ from_html(`<span class="source-title svelte-xmynmn"> </span>`);
-var root_13 = /* @__PURE__ */ from_html(`<li class="reference svelte-xmynmn"><span class="number svelte-xmynmn"> </span> <!></li>`);
-var root_14 = /* @__PURE__ */ from_html(`<ul class="source-list svelte-xmynmn"><!> <!></ul>`);
-var root_15 = /* @__PURE__ */ from_html(`<div class="sources svelte-xmynmn"><button type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" class="svelte-xmynmn"></path></svg> <span> </span> <!></button> <!></div>`);
-var root_16 = /* @__PURE__ */ from_html(`<div class="note svelte-xmynmn"> </div>`);
-var root_17 = /* @__PURE__ */ from_html(`<div class="note on-mac svelte-xmynmn"> </div>`);
-var root_18 = /* @__PURE__ */ from_html(`<div><!> <!> <!> <!> <!> <!></div>`);
-var root_19 = /* @__PURE__ */ from_html(`<div class="nook-transcript svelte-xmynmn"></div>`);
+var root$1 = /* @__PURE__ */ from_html(`<span class="time svelte-xmynmn"> </span>`);
+var root_1 = /* @__PURE__ */ from_html(`<button type="button" class="act svelte-xmynmn"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-xmynmn"><path d="M3 8a5 5 0 1 0 1.5-3.6" class="svelte-xmynmn"></path><path d="M3 2.5v2.8h2.8" class="svelte-xmynmn"></path></svg></button>`);
+var root_2 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-xmynmn"><path d="m3.5 8.5 3 3 6-7" class="svelte-xmynmn"></path></svg>`);
+var root_3 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-xmynmn"><rect x="5" y="5" width="8" height="8" rx="1.5" class="svelte-xmynmn"></rect><path d="M11 3.5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" class="svelte-xmynmn"></path></svg>`);
+var root_4 = /* @__PURE__ */ from_html(`<button type="button" class="act svelte-xmynmn"><!></button>`);
+var root_5 = /* @__PURE__ */ from_html(`<div class="you-row svelte-xmynmn" data-role="you"><div class="actions svelte-xmynmn"><!> <!> <!></div> <div class="you svelte-xmynmn"> </div></div>`);
+var root_6 = /* @__PURE__ */ from_svg(`<svg viewBox="0 0 16 16" class="svelte-xmynmn"><path d="m4 8.5 2.5 2.5 5.5-6" class="svelte-xmynmn"></path></svg>`);
+var root_7 = /* @__PURE__ */ from_html(`<span class="spin svelte-xmynmn"></span>`);
+var root_8 = /* @__PURE__ */ from_html(`<li><span class="mark svelte-xmynmn" aria-hidden="true"><!></span> <span class="svelte-xmynmn"> </span></li>`);
+var root_9 = /* @__PURE__ */ from_html(`<ul class="tasks svelte-xmynmn"></ul>`);
+var root_10 = /* @__PURE__ */ from_html(`<div class="prose svelte-xmynmn"></div>`);
+var root_11 = /* @__PURE__ */ from_html(`<span class="dots svelte-xmynmn"><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i><i class="svelte-xmynmn"></i></span>`);
+var root_12 = /* @__PURE__ */ from_html(`<div class="status shimmer svelte-xmynmn"> </div>`);
+var root_13 = /* @__PURE__ */ from_html(`<span class="badge svelte-xmynmn" aria-hidden="true">!</span>`);
+var root_14 = /* @__PURE__ */ from_html(`<span class="source-detail svelte-xmynmn"> </span>`);
+var root_15 = /* @__PURE__ */ from_html(`<li><span class="state svelte-xmynmn" aria-hidden="true"></span> <span class="source-title svelte-xmynmn"> </span> <!></li>`);
+var root_16 = /* @__PURE__ */ from_html(`<a class="svelte-xmynmn"> </a>`);
+var root_17 = /* @__PURE__ */ from_html(`<span class="source-title svelte-xmynmn"> </span>`);
+var root_18 = /* @__PURE__ */ from_html(`<li class="reference svelte-xmynmn"><span class="number svelte-xmynmn"> </span> <!></li>`);
+var root_19 = /* @__PURE__ */ from_html(`<ul class="source-list svelte-xmynmn"><!> <!></ul>`);
+var root_20 = /* @__PURE__ */ from_html(`<div class="sources svelte-xmynmn"><button type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" class="svelte-xmynmn"></path></svg> <span> </span> <!></button> <!></div>`);
+var root_21 = /* @__PURE__ */ from_html(`<div class="note svelte-xmynmn"> </div>`);
+var root_22 = /* @__PURE__ */ from_html(`<div class="note on-mac svelte-xmynmn"> </div>`);
+var root_23 = /* @__PURE__ */ from_html(`<div><!> <!></div>`);
+var root_24 = /* @__PURE__ */ from_html(`<div data-role="nook"><!> <!> <!> <!> <!> <!> <!></div>`);
+var root_25 = /* @__PURE__ */ from_html(`<div class="nook-transcript svelte-xmynmn"></div>`);
 var $$css$1 = {
 	hash: "svelte-xmynmn",
-	code: "\n  /* Every color comes from the surface (`--nt-*`); the fallbacks are Nook's own dark theme. */.nook-transcript.svelte-xmynmn {display:flex;flex-direction:column;gap:18px;min-width:0;color:var(--nt-text, #ececef);}.you.svelte-xmynmn {align-self:flex-end;max-width:85%;padding:8px 13px;border-radius:var(--nt-bubble-radius, 16px);background:var(--nt-bubble, #26262b);color:var(--nt-text, #ececef);white-space:pre-wrap;overflow-wrap:anywhere;}.nook.svelte-xmynmn {display:flex;flex-direction:column;gap:8px;min-width:0;}.failed.svelte-xmynmn .prose:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.prose.svelte-xmynmn {overflow-wrap:anywhere;line-height:1.55;}.prose.svelte-xmynmn p {margin:0 0 10px;}.prose.svelte-xmynmn p:last-child, .prose.svelte-xmynmn ul:last-child, .prose.svelte-xmynmn ol:last-child {margin-bottom:0;}.prose.svelte-xmynmn h3, .prose.svelte-xmynmn h4, .prose.svelte-xmynmn h5, .prose.svelte-xmynmn h6 {margin:14px 0 6px;font-size:1em;font-weight:600;}.prose.svelte-xmynmn h3:first-child, .prose.svelte-xmynmn h4:first-child {margin-top:0;}.prose.svelte-xmynmn ul, .prose.svelte-xmynmn ol {margin:0 0 10px;padding-left:20px;}.prose.svelte-xmynmn li {margin:3px 0;}.prose.svelte-xmynmn li::marker {color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn strong {font-weight:600;}.prose.svelte-xmynmn a {color:var(--nt-accent, #8ab4ff);text-decoration:none;}.prose.svelte-xmynmn a:hover {text-decoration:underline;}.prose.svelte-xmynmn code {font-family:var(--nt-mono, ui-monospace, \"SF Mono\", Menlo, monospace);font-size:0.9em;padding:1px 5px;border-radius:5px;background:var(--nt-code, rgb(127 127 127 / 0.16));}.prose.svelte-xmynmn .code-block {position:relative;margin:0 0 10px;}.prose.svelte-xmynmn pre {margin:0;padding:10px 12px;overflow-x:auto;border-radius:var(--nt-card-radius, 10px);border:1px solid var(--nt-line, #2c2c31);background:var(--nt-card, #17171a);}.prose.svelte-xmynmn pre code {padding:0;background:none;font-size:12px;line-height:1.5;}.prose.svelte-xmynmn .copy-code {position:absolute;top:6px;right:6px;padding:2px 8px;border:1px solid var(--nt-line, #2c2c31);border-radius:6px;background:var(--nt-card, #17171a);color:var(--nt-faint, #8b8b94);font:inherit;font-size:11px;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}.prose.svelte-xmynmn .code-block:hover .copy-code, .prose.svelte-xmynmn .copy-code:focus-visible {opacity:1;}.prose.svelte-xmynmn blockquote {margin:0 0 10px;padding-left:10px;border-left:2px solid var(--nt-line, #2c2c31);color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn table {border-collapse:collapse;margin:0 0 10px;font-size:12px;display:block;overflow-x:auto;}.prose.svelte-xmynmn th, .prose.svelte-xmynmn td {padding:4px 8px;border:1px solid var(--nt-line, #2c2c31);text-align:left;}.prose.svelte-xmynmn th {font-weight:600;}.prose.svelte-xmynmn .cite {font-size:0.7em;padding:0 4px;margin-left:1px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);}.status.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}.shimmer.svelte-xmynmn {background:linear-gradient(90deg, var(--nt-faint, #8b8b94) 0%, var(--nt-text, #ececef) 50%, var(--nt-faint, #8b8b94) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;\n    animation: svelte-xmynmn-shimmer 1.8s linear infinite;}\n  @keyframes svelte-xmynmn-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }.dots.svelte-xmynmn {display:inline-flex;gap:4px;padding:6px 0;}.dots.svelte-xmynmn i:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-faint, #8b8b94); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(2) {animation-delay:0.15s;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(3) {animation-delay:0.3s;}\n  @keyframes svelte-xmynmn-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }.tasks.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:5px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.tasks.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:flex-start;gap:8px;}.tasks.svelte-xmynmn .mark:where(.svelte-xmynmn) {flex-shrink:0;display:grid;place-items:center;width:14px;height:14px;margin-top:2px;border:1.5px solid var(--nt-faint, #8b8b94);border-radius:50%;box-sizing:border-box;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);background:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) svg:where(.svelte-xmynmn) {width:10px;height:10px;fill:none;stroke:var(--nt-on-accent, #0b0b0c);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn), .tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) {color:var(--nt-faint, #8b8b94);}.tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) span:where(.svelte-xmynmn):last-child {text-decoration:line-through;}.tasks.svelte-xmynmn .active:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .spin:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.sources.svelte-xmynmn {display:flex;flex-direction:column;gap:6px;}.sources-line.svelte-xmynmn {align-self:flex-start;display:inline-flex;align-items:center;gap:4px;margin:0 0 0 -6px;padding:3px 8px 3px 4px;border:0;border-radius:999px;background:transparent;color:var(--nt-faint, #8b8b94);font:inherit;font-size:12px;cursor:pointer;}.sources-line.svelte-xmynmn:hover {background:var(--nt-hover, rgb(127 127 127 / 0.12));color:var(--nt-text, #ececef);}.chev.svelte-xmynmn {width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform 0.15s ease;}.chev.open.svelte-xmynmn {transform:rotate(90deg);}.badge.svelte-xmynmn {display:grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--nt-warn, #e0a23a);color:#000;font-size:10px;font-weight:700;}.source-list.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.source-list.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap;}.state.svelte-xmynmn {flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--nt-ok, #3ecf8e);transform:translateY(-1px);}.s-empty.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-faint, #8b8b94);}.s-failed.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-error, #ff6b5e);}.s-running.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.source-title.svelte-xmynmn {font-weight:500;}.source-detail.svelte-xmynmn {color:var(--nt-faint, #8b8b94);overflow-wrap:anywhere;}.s-failed.svelte-xmynmn .source-detail:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.reference.svelte-xmynmn .number:where(.svelte-xmynmn) {flex-shrink:0;min-width:16px;padding:0 4px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);font-size:10px;text-align:center;}.reference.svelte-xmynmn a:where(.svelte-xmynmn) {color:var(--nt-accent, #8ab4ff);text-decoration:none;overflow-wrap:anywhere;}.reference.svelte-xmynmn a:where(.svelte-xmynmn):hover {text-decoration:underline;}.note.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}\n  @media (prefers-reduced-motion: reduce) {.shimmer.svelte-xmynmn, .dots.svelte-xmynmn i:where(.svelte-xmynmn), .spin.svelte-xmynmn, .s-running.svelte-xmynmn .state:where(.svelte-xmynmn) { animation: none;}.shimmer.svelte-xmynmn {color:var(--nt-faint, #8b8b94);background:none;}\n  }"
+	code: "\n  /* Every color comes from the surface (`--nt-*`); the fallbacks are Nook's own dark theme. */.nook-transcript.svelte-xmynmn {display:flex;flex-direction:column;gap:18px;min-width:0;color:var(--nt-text, #ececef);}\n  /* Your question with, on hover, its time and what you can do with it to its left. */.you-row.svelte-xmynmn {align-self:stretch;display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0;}.you.svelte-xmynmn {max-width:85%;padding:8px 13px;border-radius:var(--nt-bubble-radius, 16px);background:var(--nt-bubble, #26262b);color:var(--nt-text, #ececef);white-space:pre-wrap;overflow-wrap:anywhere;}.nook.svelte-xmynmn {display:flex;flex-direction:column;gap:8px;min-width:0;}.failed.svelte-xmynmn .prose:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.prose.svelte-xmynmn {overflow-wrap:anywhere;line-height:1.55;}.prose.svelte-xmynmn p {margin:0 0 10px;}.prose.svelte-xmynmn p:last-child, .prose.svelte-xmynmn ul:last-child, .prose.svelte-xmynmn ol:last-child {margin-bottom:0;}.prose.svelte-xmynmn h3, .prose.svelte-xmynmn h4, .prose.svelte-xmynmn h5, .prose.svelte-xmynmn h6 {margin:14px 0 6px;font-size:1em;font-weight:600;}.prose.svelte-xmynmn h3:first-child, .prose.svelte-xmynmn h4:first-child {margin-top:0;}.prose.svelte-xmynmn ul, .prose.svelte-xmynmn ol {margin:0 0 10px;padding-left:20px;}.prose.svelte-xmynmn li {margin:3px 0;}.prose.svelte-xmynmn li::marker {color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn strong {font-weight:600;}.prose.svelte-xmynmn a {color:var(--nt-accent, #8ab4ff);text-decoration:none;}.prose.svelte-xmynmn a:hover {text-decoration:underline;}.prose.svelte-xmynmn code {font-family:var(--nt-mono, ui-monospace, \"SF Mono\", Menlo, monospace);font-size:0.9em;padding:1px 5px;border-radius:5px;background:var(--nt-code, rgb(127 127 127 / 0.16));}.prose.svelte-xmynmn .code-block {position:relative;margin:0 0 10px;}.prose.svelte-xmynmn pre {margin:0;padding:10px 12px;overflow-x:auto;border-radius:var(--nt-card-radius, 10px);border:1px solid var(--nt-line, #2c2c31);background:var(--nt-card, #17171a);}.prose.svelte-xmynmn pre code {padding:0;background:none;font-size:12px;line-height:1.5;}.prose.svelte-xmynmn .copy-code {position:absolute;top:6px;right:6px;padding:2px 8px;border:1px solid var(--nt-line, #2c2c31);border-radius:6px;background:var(--nt-card, #17171a);color:var(--nt-faint, #8b8b94);font:inherit;font-size:11px;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}.prose.svelte-xmynmn .code-block:hover .copy-code, .prose.svelte-xmynmn .copy-code:focus-visible {opacity:1;}.prose.svelte-xmynmn blockquote {margin:0 0 10px;padding-left:10px;border-left:2px solid var(--nt-line, #2c2c31);color:var(--nt-faint, #8b8b94);}.prose.svelte-xmynmn table {border-collapse:collapse;margin:0 0 10px;font-size:12px;display:block;overflow-x:auto;}.prose.svelte-xmynmn th, .prose.svelte-xmynmn td {padding:4px 8px;border:1px solid var(--nt-line, #2c2c31);text-align:left;}.prose.svelte-xmynmn th {font-weight:600;}.prose.svelte-xmynmn .cite {font-size:0.7em;padding:0 4px;margin-left:1px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);}.status.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}.shimmer.svelte-xmynmn {background:linear-gradient(90deg, var(--nt-faint, #8b8b94) 0%, var(--nt-text, #ececef) 50%, var(--nt-faint, #8b8b94) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;\n    animation: svelte-xmynmn-shimmer 1.8s linear infinite;}\n  @keyframes svelte-xmynmn-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }.dots.svelte-xmynmn {display:inline-flex;gap:4px;padding:6px 0;}.dots.svelte-xmynmn i:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-faint, #8b8b94); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(2) {animation-delay:0.15s;}.dots.svelte-xmynmn i:where(.svelte-xmynmn):nth-child(3) {animation-delay:0.3s;}\n  @keyframes svelte-xmynmn-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }.tasks.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:5px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.tasks.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:flex-start;gap:8px;}.tasks.svelte-xmynmn .mark:where(.svelte-xmynmn) {flex-shrink:0;display:grid;place-items:center;width:14px;height:14px;margin-top:2px;border:1.5px solid var(--nt-faint, #8b8b94);border-radius:50%;box-sizing:border-box;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);background:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) svg:where(.svelte-xmynmn) {width:10px;height:10px;fill:none;stroke:var(--nt-on-accent, #0b0b0c);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}.tasks.svelte-xmynmn .done:where(.svelte-xmynmn), .tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) {color:var(--nt-faint, #8b8b94);}.tasks.svelte-xmynmn .cancelled:where(.svelte-xmynmn) span:where(.svelte-xmynmn):last-child {text-decoration:line-through;}.tasks.svelte-xmynmn .active:where(.svelte-xmynmn) .mark:where(.svelte-xmynmn) {border-color:var(--nt-accent, #8ab4ff);}.tasks.svelte-xmynmn .spin:where(.svelte-xmynmn) {width:6px;height:6px;border-radius:50%;background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.sources.svelte-xmynmn {display:flex;flex-direction:column;gap:6px;}.sources-line.svelte-xmynmn {align-self:flex-start;display:inline-flex;align-items:center;gap:4px;margin:0 0 0 -6px;padding:3px 8px 3px 4px;border:0;border-radius:999px;background:transparent;color:var(--nt-faint, #8b8b94);font:inherit;font-size:12px;cursor:pointer;}.sources-line.svelte-xmynmn:hover {background:var(--nt-hover, rgb(127 127 127 / 0.12));color:var(--nt-text, #ececef);}.chev.svelte-xmynmn {width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform 0.15s ease;}.chev.open.svelte-xmynmn {transform:rotate(90deg);}.badge.svelte-xmynmn {display:grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--nt-warn, #e0a23a);color:#000;font-size:10px;font-weight:700;}.source-list.svelte-xmynmn {list-style:none;margin:0;padding:8px 10px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--nt-line, #2c2c31);border-radius:var(--nt-card-radius, 10px);background:var(--nt-card, #17171a);font-size:12px;}.source-list.svelte-xmynmn li:where(.svelte-xmynmn) {display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap;}.state.svelte-xmynmn {flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--nt-ok, #3ecf8e);transform:translateY(-1px);}.s-empty.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-faint, #8b8b94);}.s-failed.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-error, #ff6b5e);}.s-running.svelte-xmynmn .state:where(.svelte-xmynmn) {background:var(--nt-accent, #8ab4ff); animation: svelte-xmynmn-blink 1.2s infinite ease-in-out;}.source-title.svelte-xmynmn {font-weight:500;}.source-detail.svelte-xmynmn {color:var(--nt-faint, #8b8b94);overflow-wrap:anywhere;}.s-failed.svelte-xmynmn .source-detail:where(.svelte-xmynmn) {color:var(--nt-error, #ff6b5e);}.reference.svelte-xmynmn .number:where(.svelte-xmynmn) {flex-shrink:0;min-width:16px;padding:0 4px;border-radius:4px;background:var(--nt-code, rgb(127 127 127 / 0.16));color:var(--nt-faint, #8b8b94);font-size:10px;text-align:center;}.reference.svelte-xmynmn a:where(.svelte-xmynmn) {color:var(--nt-accent, #8ab4ff);text-decoration:none;overflow-wrap:anywhere;}.reference.svelte-xmynmn a:where(.svelte-xmynmn):hover {text-decoration:underline;}.note.svelte-xmynmn {font-size:12px;color:var(--nt-faint, #8b8b94);}\n\n  /* What you can do with a message: quiet, and only on hover or focus, except under Nook's newest answer. */.actions.svelte-xmynmn, .meta.svelte-xmynmn {display:flex;align-items:center;gap:2px;color:var(--nt-faint, #8b8b94);font-size:11px;opacity:0;transition:opacity 0.15s ease;}.actions.svelte-xmynmn {flex-shrink:0;}.meta.svelte-xmynmn {margin:-2px 0 0 -6px;}.you-row.svelte-xmynmn:hover .actions:where(.svelte-xmynmn), .you-row.svelte-xmynmn:focus-within .actions:where(.svelte-xmynmn), .nook.svelte-xmynmn:hover .meta:where(.svelte-xmynmn), .nook.svelte-xmynmn:focus-within .meta:where(.svelte-xmynmn), .meta.last.svelte-xmynmn {opacity:1;}.time.svelte-xmynmn {padding:0 4px;font-variant-numeric:tabular-nums;white-space:nowrap;}.act.svelte-xmynmn {display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;cursor:pointer;}.act.svelte-xmynmn:hover {background:var(--nt-hover, rgb(127 127 127 / 0.12));color:var(--nt-text, #ececef);}.act.svelte-xmynmn:focus-visible {outline:2px solid var(--nt-accent, #8ab4ff);outline-offset:1px;}.act.svelte-xmynmn svg:where(.svelte-xmynmn) {width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;}\n  @media (prefers-reduced-motion: reduce) {.shimmer.svelte-xmynmn, .dots.svelte-xmynmn i:where(.svelte-xmynmn), .spin.svelte-xmynmn, .s-running.svelte-xmynmn .state:where(.svelte-xmynmn) { animation: none;}.actions.svelte-xmynmn, .meta.svelte-xmynmn {transition:none;}.shimmer.svelte-xmynmn {color:var(--nt-faint, #8b8b94);background:none;}\n  }"
 };
 function Transcript($$anchor, $$props) {
 	push($$props, true);
 	append_styles($$anchor, $$css$1);
+	/** Puts a question back in the composer; without it the action is left out. */
+	/** How the surface writes a message's time ("14:05"); without it no time shows. */
+	let copiedKey = /* @__PURE__ */ state(null);
+	let copiedTimer;
+	async function copyMessage(message, key) {
+		await navigator.clipboard?.writeText(message.text).catch(() => {});
+		set(copiedKey, key, true);
+		clearTimeout(copiedTimer);
+		copiedTimer = setTimeout(() => set(copiedKey, null), 1200);
+	}
+	const lastNook = /* @__PURE__ */ user_derived(() => $$props.messages.findLastIndex((message) => message.fromNook));
 	let opened = proxy({});
 	const markdownTexts = /* @__PURE__ */ user_derived(() => ({
 		copy: $$props.texts.copy,
@@ -5526,198 +5559,304 @@ function Transcript($$anchor, $$props) {
 			if (href) window.open(href, "_blank", "noopener,noreferrer");
 		}
 	}
-	var div = root_19();
+	var div = root_25();
 	each(div, 23, () => $$props.messages, (message, index) => keyOf(message, index), ($$anchor, message, index$1) => {
+		const key = /* @__PURE__ */ user_derived(() => keyOf(get(message), get(index$1)));
+		const time = /* @__PURE__ */ user_derived(() => $$props.timeOf && get(message).at ? $$props.timeOf(get(message).at) : "");
 		var fragment = comment();
 		var node = first_child(fragment);
-		var consequent = ($$anchor) => {
-			var div_1 = root$1();
-			var text_1 = only_child(div_1, true);
-			template_effect(() => set_text(text_1, get(message).text));
+		var consequent_4 = ($$anchor) => {
+			var div_1 = root_5();
+			var div_2 = child(div_1);
+			var node_1 = child(div_2);
+			var consequent = ($$anchor) => {
+				var span = root$1();
+				var text_1 = only_child(span, true);
+				template_effect(() => set_text(text_1, get(time)));
+				append($$anchor, span);
+			};
+			if_block(node_1, ($$render) => {
+				if (get(time)) $$render(consequent);
+			});
+			var node_2 = sibling(node_1, 2);
+			var consequent_1 = ($$anchor) => {
+				var button = root_1();
+				template_effect(() => {
+					set_attribute(button, "title", $$props.texts.reuse);
+					set_attribute(button, "aria-label", $$props.texts.reuse);
+				});
+				delegated("click", button, () => $$props.onreuse(get(message).text));
+				append($$anchor, button);
+			};
+			if_block(node_2, ($$render) => {
+				if ($$props.onreuse && $$props.texts.reuse) $$render(consequent_1);
+			});
+			var node_3 = sibling(node_2, 2);
+			var consequent_3 = ($$anchor) => {
+				var button_1 = root_4();
+				var node_4 = child(button_1);
+				var consequent_2 = ($$anchor) => {
+					append($$anchor, root_2());
+				};
+				var alternate = ($$anchor) => {
+					append($$anchor, root_3());
+				};
+				if_block(node_4, ($$render) => {
+					if (get(copiedKey) === get(key)) $$render(consequent_2);
+					else $$render(alternate, -1);
+				});
+				reset(button_1);
+				template_effect(() => {
+					set_attribute(button_1, "title", get(copiedKey) === get(key) ? $$props.texts.copied : $$props.texts.copyMessage);
+					set_attribute(button_1, "aria-label", get(copiedKey) === get(key) ? $$props.texts.copied : $$props.texts.copyMessage);
+				});
+				delegated("click", button_1, () => copyMessage(get(message), get(key)));
+				append($$anchor, button_1);
+			};
+			if_block(node_3, ($$render) => {
+				if ($$props.texts.copyMessage) $$render(consequent_3);
+			});
+			reset(div_2);
+			var text_2 = only_child(sibling(div_2, 2), true);
+			reset(div_1);
+			template_effect(() => {
+				set_attribute(div_1, "data-message", get(key));
+				set_attribute(div_1, "data-index", get(index$1));
+				set_text(text_2, get(message).text);
+			});
 			append($$anchor, div_1);
 		};
-		var alternate_1 = ($$anchor) => {
-			const key = /* @__PURE__ */ user_derived(() => keyOf(get(message), get(index$1)));
-			var div_2 = root_18();
+		var alternate_3 = ($$anchor) => {
+			var div_4 = root_24();
 			let classes;
-			var node_1 = child(div_2);
-			var consequent_3 = ($$anchor) => {
-				var ul = root_4();
+			var node_5 = child(div_4);
+			var consequent_7 = ($$anchor) => {
+				var ul = root_9();
 				each(ul, 21, () => get(message).tasks, index, ($$anchor, task) => {
-					var li = root_3();
-					var span = child(li);
-					var node_2 = child(span);
-					var consequent_1 = ($$anchor) => {
-						append($$anchor, root_1());
+					var li = root_8();
+					var span_1 = child(li);
+					var node_6 = child(span_1);
+					var consequent_5 = ($$anchor) => {
+						append($$anchor, root_6());
 					};
-					var consequent_2 = ($$anchor) => {
-						append($$anchor, root_2());
+					var consequent_6 = ($$anchor) => {
+						append($$anchor, root_7());
 					};
-					if_block(node_2, ($$render) => {
-						if (get(task).status === "done") $$render(consequent_1);
-						else if (get(task).status === "active") $$render(consequent_2, 1);
+					if_block(node_6, ($$render) => {
+						if (get(task).status === "done") $$render(consequent_5);
+						else if (get(task).status === "active") $$render(consequent_6, 1);
 					});
-					reset(span);
-					var text_2 = only_child(sibling(span, 2), true);
+					reset(span_1);
+					var text_3 = only_child(sibling(span_1, 2), true);
 					reset(li);
 					template_effect(() => {
 						set_class(li, 1, clsx(get(task).status), "svelte-xmynmn");
-						set_text(text_2, get(task).text);
+						set_text(text_3, get(task).text);
 					});
 					append($$anchor, li);
 				});
 				reset(ul);
 				append($$anchor, ul);
 			};
-			if_block(node_1, ($$render) => {
-				if (get(message).tasks?.length) $$render(consequent_3);
+			if_block(node_5, ($$render) => {
+				if (get(message).tasks?.length) $$render(consequent_7);
 			});
-			var node_3 = sibling(node_1, 2);
-			var consequent_4 = ($$anchor) => {
-				var div_3 = root_5();
-				html(div_3, () => renderMarkdown(get(message).text, get(markdownTexts)), true);
-				reset(div_3);
-				append($$anchor, div_3);
+			var node_7 = sibling(node_5, 2);
+			var consequent_8 = ($$anchor) => {
+				var div_5 = root_10();
+				html(div_5, () => renderMarkdown(get(message).text, get(markdownTexts)), true);
+				reset(div_5);
+				append($$anchor, div_5);
 			};
-			var consequent_5 = ($$anchor) => {
-				var span_3 = root_6();
-				template_effect(() => set_attribute(span_3, "aria-label", $$props.texts.thinking));
-				append($$anchor, span_3);
+			var consequent_9 = ($$anchor) => {
+				var span_4 = root_11();
+				template_effect(() => set_attribute(span_4, "aria-label", $$props.texts.thinking));
+				append($$anchor, span_4);
 			};
-			if_block(node_3, ($$render) => {
-				if (get(message).text) $$render(consequent_4);
-				else if (get(message).streaming && !get(message).status) $$render(consequent_5, 1);
+			if_block(node_7, ($$render) => {
+				if (get(message).text) $$render(consequent_8);
+				else if (get(message).streaming && !get(message).status) $$render(consequent_9, 1);
 			});
-			var node_4 = sibling(node_3, 2);
-			var consequent_6 = ($$anchor) => {
-				var div_4 = root_7();
-				var text_3 = only_child(div_4, true);
-				template_effect(() => set_text(text_3, get(message).status));
-				append($$anchor, div_4);
+			var node_8 = sibling(node_7, 2);
+			var consequent_10 = ($$anchor) => {
+				var div_6 = root_12();
+				var text_4 = only_child(div_6, true);
+				template_effect(() => set_text(text_4, get(message).status));
+				append($$anchor, div_6);
 			};
-			if_block(node_4, ($$render) => {
-				if (get(message).streaming && get(message).status) $$render(consequent_6);
+			if_block(node_8, ($$render) => {
+				if (get(message).streaming && get(message).status) $$render(consequent_10);
 			});
-			var node_5 = sibling(node_4, 2);
-			var consequent_11 = ($$anchor) => {
-				var div_5 = root_15();
-				var button = child(div_5);
+			var node_9 = sibling(node_8, 2);
+			var consequent_15 = ($$anchor) => {
+				var div_7 = root_20();
+				var button_2 = child(div_7);
 				let classes_1;
-				var svg_1 = child(button);
+				var svg_3 = child(button_2);
 				let classes_2;
-				var span_4 = sibling(svg_1, 2);
+				var span_5 = sibling(svg_3, 2);
 				let classes_3;
-				var text_4 = only_child(span_4, true);
-				var node_6 = sibling(span_4, 2);
-				var consequent_7 = ($$anchor) => {
-					append($$anchor, root_8());
+				var text_5 = only_child(span_5, true);
+				var node_10 = sibling(span_5, 2);
+				var consequent_11 = ($$anchor) => {
+					append($$anchor, root_13());
 				};
 				var d = /* @__PURE__ */ user_derived(() => get(message).sources.items.some((s) => s.state === "failed"));
-				if_block(node_6, ($$render) => {
-					if (get(d)) $$render(consequent_7);
+				if_block(node_10, ($$render) => {
+					if (get(d)) $$render(consequent_11);
 				});
-				reset(button);
-				var node_7 = sibling(button, 2);
-				var consequent_10 = ($$anchor) => {
-					var ul_1 = root_14();
-					var node_8 = child(ul_1);
-					each(node_8, 17, () => get(message).sources.items, index, ($$anchor, source) => {
-						var li_1 = root_10();
-						var span_6 = sibling(child(li_1), 2);
-						var text_5 = only_child(span_6, true);
-						var node_9 = sibling(span_6, 2);
-						var consequent_8 = ($$anchor) => {
-							var span_7 = root_9();
-							var text_6 = only_child(span_7, true);
-							template_effect(() => set_text(text_6, get(source).detail));
-							append($$anchor, span_7);
+				reset(button_2);
+				var node_11 = sibling(button_2, 2);
+				var consequent_14 = ($$anchor) => {
+					var ul_1 = root_19();
+					var node_12 = child(ul_1);
+					each(node_12, 17, () => get(message).sources.items, index, ($$anchor, source) => {
+						var li_1 = root_15();
+						var span_7 = sibling(child(li_1), 2);
+						var text_6 = only_child(span_7, true);
+						var node_13 = sibling(span_7, 2);
+						var consequent_12 = ($$anchor) => {
+							var span_8 = root_14();
+							var text_7 = only_child(span_8, true);
+							template_effect(() => set_text(text_7, get(source).detail));
+							append($$anchor, span_8);
 						};
-						if_block(node_9, ($$render) => {
-							if (get(source).detail) $$render(consequent_8);
+						if_block(node_13, ($$render) => {
+							if (get(source).detail) $$render(consequent_12);
 						});
 						reset(li_1);
 						template_effect(() => {
 							set_class(li_1, 1, "s-" + get(source).state, "svelte-xmynmn");
-							set_text(text_5, get(source).title);
+							set_text(text_6, get(source).title);
 						});
 						append($$anchor, li_1);
 					});
-					each(sibling(node_8, 2), 17, () => get(message).sources.references ?? [], (reference) => reference.number, ($$anchor, reference) => {
-						var li_2 = root_13();
-						var span_8 = child(li_2);
-						var text_7 = only_child(span_8, true);
-						var node_11 = sibling(span_8, 2);
-						var consequent_9 = ($$anchor) => {
-							var a = root_11();
-							var text_8 = only_child(a, true);
+					each(sibling(node_12, 2), 17, () => get(message).sources.references ?? [], (reference) => reference.number, ($$anchor, reference) => {
+						var li_2 = root_18();
+						var span_9 = child(li_2);
+						var text_8 = only_child(span_9, true);
+						var node_15 = sibling(span_9, 2);
+						var consequent_13 = ($$anchor) => {
+							var a = root_16();
+							var text_9 = only_child(a, true);
 							template_effect(($0) => {
 								set_attribute(a, "href", $0);
-								set_text(text_8, get(reference).title);
+								set_text(text_9, get(reference).title);
 							}, [() => webHref(get(reference).url)]);
 							append($$anchor, a);
 						};
 						var d_1 = /* @__PURE__ */ user_derived(() => webHref(get(reference).url));
-						var alternate = ($$anchor) => {
-							var span_9 = root_12();
-							var text_9 = only_child(span_9, true);
-							template_effect(() => set_text(text_9, get(reference).title));
-							append($$anchor, span_9);
+						var alternate_1 = ($$anchor) => {
+							var span_10 = root_17();
+							var text_10 = only_child(span_10, true);
+							template_effect(() => set_text(text_10, get(reference).title));
+							append($$anchor, span_10);
 						};
-						if_block(node_11, ($$render) => {
-							if (get(d_1)) $$render(consequent_9);
-							else $$render(alternate, -1);
+						if_block(node_15, ($$render) => {
+							if (get(d_1)) $$render(consequent_13);
+							else $$render(alternate_1, -1);
 						});
 						reset(li_2);
-						template_effect(() => set_text(text_7, get(reference).number));
+						template_effect(() => set_text(text_8, get(reference).number));
 						append($$anchor, li_2);
 					});
 					reset(ul_1);
 					append($$anchor, ul_1);
 				};
-				if_block(node_7, ($$render) => {
-					if (opened[get(key)]) $$render(consequent_10);
+				if_block(node_11, ($$render) => {
+					if (opened[get(key)]) $$render(consequent_14);
 				});
-				reset(div_5);
+				reset(div_7);
 				template_effect(() => {
-					classes_1 = set_class(button, 1, "sources-line svelte-xmynmn", null, classes_1, { running: get(message).sources.running });
-					set_attribute(button, "aria-expanded", !!opened[get(key)]);
-					classes_2 = set_class(svg_1, 0, "chev svelte-xmynmn", null, classes_2, { open: opened[get(key)] });
-					classes_3 = set_class(span_4, 1, "svelte-xmynmn", null, classes_3, { shimmer: get(message).sources.running });
-					set_text(text_4, get(message).sources.summary);
+					classes_1 = set_class(button_2, 1, "sources-line svelte-xmynmn", null, classes_1, { running: get(message).sources.running });
+					set_attribute(button_2, "aria-expanded", !!opened[get(key)]);
+					classes_2 = set_class(svg_3, 0, "chev svelte-xmynmn", null, classes_2, { open: opened[get(key)] });
+					classes_3 = set_class(span_5, 1, "svelte-xmynmn", null, classes_3, { shimmer: get(message).sources.running });
+					set_text(text_5, get(message).sources.summary);
 				});
-				delegated("click", button, () => opened[get(key)] = !opened[get(key)]);
-				append($$anchor, div_5);
-			};
-			if_block(node_5, ($$render) => {
-				if (get(message).sources && (get(message).sources.items.length || get(message).sources.references?.length)) $$render(consequent_11);
-			});
-			var node_12 = sibling(node_5, 2);
-			var consequent_12 = ($$anchor) => {
-				var div_6 = root_16();
-				var text_10 = only_child(div_6, true);
-				template_effect(() => set_text(text_10, get(message).notice));
-				append($$anchor, div_6);
-			};
-			if_block(node_12, ($$render) => {
-				if (get(message).notice && !get(message).streaming) $$render(consequent_12);
-			});
-			var node_13 = sibling(node_12, 2);
-			var consequent_13 = ($$anchor) => {
-				var div_7 = root_17();
-				var text_11 = only_child(div_7, true);
-				template_effect(() => set_text(text_11, $$props.texts.onMac));
+				delegated("click", button_2, () => opened[get(key)] = !opened[get(key)]);
 				append($$anchor, div_7);
 			};
-			if_block(node_13, ($$render) => {
-				if (get(message).onMac) $$render(consequent_13);
+			if_block(node_9, ($$render) => {
+				if (get(message).sources && (get(message).sources.items.length || get(message).sources.references?.length)) $$render(consequent_15);
 			});
-			reset(div_2);
-			template_effect(() => classes = set_class(div_2, 1, "nook svelte-xmynmn", null, classes, { failed: get(message).failed }));
-			append($$anchor, div_2);
+			var node_16 = sibling(node_9, 2);
+			var consequent_16 = ($$anchor) => {
+				var div_8 = root_21();
+				var text_11 = only_child(div_8, true);
+				template_effect(() => set_text(text_11, get(message).notice));
+				append($$anchor, div_8);
+			};
+			if_block(node_16, ($$render) => {
+				if (get(message).notice && !get(message).streaming) $$render(consequent_16);
+			});
+			var node_17 = sibling(node_16, 2);
+			var consequent_17 = ($$anchor) => {
+				var div_9 = root_22();
+				var text_12 = only_child(div_9, true);
+				template_effect(() => set_text(text_12, $$props.texts.onMac));
+				append($$anchor, div_9);
+			};
+			if_block(node_17, ($$render) => {
+				if (get(message).onMac) $$render(consequent_17);
+			});
+			var node_18 = sibling(node_17, 2);
+			var consequent_21 = ($$anchor) => {
+				var div_10 = root_23();
+				let classes_4;
+				var node_19 = child(div_10);
+				var consequent_19 = ($$anchor) => {
+					var button_3 = root_4();
+					var node_20 = child(button_3);
+					var consequent_18 = ($$anchor) => {
+						append($$anchor, root_2());
+					};
+					var alternate_2 = ($$anchor) => {
+						append($$anchor, root_3());
+					};
+					if_block(node_20, ($$render) => {
+						if (get(copiedKey) === get(key)) $$render(consequent_18);
+						else $$render(alternate_2, -1);
+					});
+					reset(button_3);
+					template_effect(() => {
+						set_attribute(button_3, "title", get(copiedKey) === get(key) ? $$props.texts.copied : $$props.texts.copyMessage);
+						set_attribute(button_3, "aria-label", get(copiedKey) === get(key) ? $$props.texts.copied : $$props.texts.copyMessage);
+					});
+					delegated("click", button_3, () => copyMessage(get(message), get(key)));
+					append($$anchor, button_3);
+				};
+				if_block(node_19, ($$render) => {
+					if ($$props.texts.copyMessage) $$render(consequent_19);
+				});
+				var node_21 = sibling(node_19, 2);
+				var consequent_20 = ($$anchor) => {
+					var span_11 = root$1();
+					var text_13 = only_child(span_11, true);
+					template_effect(() => set_text(text_13, get(time)));
+					append($$anchor, span_11);
+				};
+				if_block(node_21, ($$render) => {
+					if (get(time)) $$render(consequent_20);
+				});
+				reset(div_10);
+				template_effect(() => classes_4 = set_class(div_10, 1, "meta svelte-xmynmn", null, classes_4, { last: get(index$1) === get(lastNook) }));
+				append($$anchor, div_10);
+			};
+			if_block(node_18, ($$render) => {
+				if (!get(message).streaming && get(message).text && ($$props.texts.copyMessage || get(time))) $$render(consequent_21);
+			});
+			reset(div_4);
+			template_effect(() => {
+				classes = set_class(div_4, 1, "nook svelte-xmynmn", null, classes, { failed: get(message).failed });
+				set_attribute(div_4, "data-message", get(key));
+				set_attribute(div_4, "data-index", get(index$1));
+			});
+			append($$anchor, div_4);
 		};
 		if_block(node, ($$render) => {
-			if (!get(message).fromNook) $$render(consequent);
-			else $$render(alternate_1, -1);
+			if (!get(message).fromNook) $$render(consequent_4);
+			else $$render(alternate_3, -1);
 		});
 		append($$anchor, fragment);
 	});
@@ -5742,7 +5881,9 @@ function PanelTranscript($$anchor, $$props) {
 		onMac: t("onMacNote"),
 		copy: t("copy"),
 		copyTitle: t("copyCode"),
-		copied: t("copied")
+		copied: t("copied"),
+		copyMessage: t("copyMessage"),
+		reuse: t("askAgain")
 	};
 	var div = root();
 	Transcript(child(div), {
@@ -5751,6 +5892,12 @@ function PanelTranscript($$anchor, $$props) {
 		},
 		get texts() {
 			return texts;
+		},
+		get onreuse() {
+			return $$props.onreuse;
+		},
+		get timeOf() {
+			return $$props.timeOf;
 		}
 	});
 	reset(div);
@@ -5801,12 +5948,19 @@ function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain }) {
 		}
 	};
 }
-/** Mounts the conversation in `target`; `set(messages)` draws it again. */
-function mountTranscript(target) {
+/**
+* Mounts the conversation in `target`; `set(messages)` draws it again. `onreuse(text)` puts a question back in the
+* composer; `timeOf(at)` writes a message's time.
+*/
+function mountTranscript(target, { onreuse, timeOf } = {}) {
 	const panel = proxy({ messages: [] });
 	mount(PanelTranscript, {
 		target,
-		props: { panel }
+		props: {
+			panel,
+			onreuse,
+			timeOf
+		}
 	});
 	return { set(messages) {
 		panel.messages = messages;

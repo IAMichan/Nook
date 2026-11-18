@@ -5,7 +5,8 @@
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
 import {
-  cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, siteOf, watchRenewalDue
+  agoLabel, cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, matchRanges, mergeChats,
+  movesUp, questionTarget, rememberChat, siteOf, stepIndex, timeLabel, watchRenewalDue, withEarlier
 } from './lib/core.js';
 import { mountComposer, mountTranscript, questionsAsked } from './ui/composer.js';
 
@@ -16,7 +17,12 @@ let status = { nook: 'connecting' };
 let options = { paused: false, blocked: [] };
 let page = null;
 let conversation = null;
+// What the panel draws: the messages it read back (`older`, oldest first) and the newest ones Nook keeps sending
+// (`latest`), together `messages`. `earlier` is how many come before what it draws.
 let messages = [];
+let latest = [];
+let older = [];
+let earlier = 0;
 let pollTimer = null;
 let windowId = null;
 // What Nook last sent of the conversation, and whether Nook pushes its changes (Nook 2 and later) or the panel asks.
@@ -67,9 +73,21 @@ const composer = mountComposer($('composer'), {
   onbrain: () => loadBrain(),
   onchoosebrain: (id) => chooseBrain(id)
 });
-const transcript = mountTranscript($('transcript'));
+const locale = chrome.i18n.getUILanguage?.() || undefined;
+const transcript = mountTranscript($('transcript'), {
+  // A question back in the composer, to ask it again or change it first.
+  onreuse: (text) => composer.fill(text),
+  timeOf: (at) => timeLabel(at, Date.now(), locale)
+});
 
 $('new-chat').addEventListener('click', () => newChat());
+for (const [id, key] of [
+  ['find-open', 'findTitle'], ['outline-open', 'questionsTitle'], ['history-open', 'chatsTitle'], ['find-prev', 'findPrevious'],
+  ['find-next', 'findNext'], ['find-close', 'findClose'], ['question-prev', 'questionPrevious'], ['question-next', 'questionNext']
+]) {
+  $(id).title = t(key);
+  $(id).setAttribute('aria-label', t(key));
+}
 
 // A suggestion puts its question in the field, so it can be sent as it is or changed first.
 for (const button of document.querySelectorAll('[data-suggest]')) {
@@ -218,28 +236,54 @@ async function renderActivity() {
 
 // MARK: - Chat
 
-/** Takes the conversation as Nook sent it; draws it again only when it changed. */
-function applyMessages(next, nextRevision) {
+/** Takes the conversation as Nook sent it (its newest messages); draws it again only when it changed. */
+function applyMessages(next, nextRevision, nextEarlier) {
   lastUpdate = Date.now();
   if (!Array.isArray(next)) return;
-  const same = nextRevision ? nextRevision === revision : JSON.stringify(next) === JSON.stringify(messages);
+  const same = nextRevision ? nextRevision === revision : JSON.stringify(next) === JSON.stringify(latest);
   revision = nextRevision || null;
   if (same && messages.length) return;
-  messages = next;
+  setLatest(next, nextEarlier);
   renderMessages();
 }
 
+/**
+ * The newest messages, with what the panel read back before them. Once the user read back, a message that leaves
+ * Nook's newest window stays with the earlier ones, so nothing drops out of the middle.
+ */
+function setLatest(next, nextEarlier) {
+  if (older.length) {
+    const ids = new Set(next.map((message) => message?.id).filter(Boolean));
+    older = messages.filter((message) => message?.id && !ids.has(message.id));
+  } else {
+    earlier = Number.isFinite(nextEarlier) ? nextEarlier : 0;
+  }
+  latest = next;
+  messages = withEarlier(older, latest);
+}
+
 function renderMessages() {
-  const chat = $('chat');
-  // Follow the answer while the user is at the bottom; leave them where they are when they scrolled up to read.
-  const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 48;
+  const changed = transcriptText !== null && JSON.stringify(messages) !== transcriptText;
+  transcriptText = JSON.stringify(messages);
   $('empty').hidden = messages.length > 0;
   $('new-chat').hidden = messages.length === 0;
+  $('find-open').hidden = messages.length === 0;
+  $('outline-open').hidden = !messages.some((message) => !message.fromNook);
+  const button = $('earlier');
+  button.hidden = !(earlier > 0 && conversation);
+  button.textContent = t('earlierMessages', String(earlier));
   transcript.set(messages);
-  // The transcript draws in a microtask; scroll once it did.
-  if (atBottom) queueMicrotask(() => requestAnimationFrame(() => (chat.scrollTop = chat.scrollHeight)));
+  // Follow the answer while following (the transcript draws in a microtask; the resize observer catches what grows
+  // later); otherwise leave the user where they read, and say Nook wrote more.
+  if (following) queueMicrotask(() => requestAnimationFrame(stickToEnd));
+  else if (changed) unseen = true;
+  queueMicrotask(() => requestAnimationFrame(() => {
+    renderNavigation();
+    if (findOpen) runFind({ keepPlace: true });
+  }));
   renderComposer();
 }
+let transcriptText = null;
 
 function renderComposer() {
   const busy = isAnswering(messages);
@@ -260,23 +304,30 @@ function failure(reply) {
 
 async function ask(text, images = []) {
   const asked = chatEpoch;
-  messages = [...messages, { fromNook: false, text }, { fromNook: true, text: '', streaming: true }];
+  // Asking brings the panel to the end and follows the answer again.
+  following = true;
+  unseen = false;
+  latest = [...latest, { fromNook: false, text }, { fromNook: true, text: '', streaming: true }];
+  messages = withEarlier(older, latest);
   renderMessages();
   const reply = await trySend({ type: 'ask', text, images, conversation, windowId });
   if (asked !== chatEpoch) return;
   if (!reply?.ok) {
-    messages = [...messages.slice(0, -1), { fromNook: true, text: failure(reply), failed: true }];
+    latest = [...latest.slice(0, -1), { fromNook: true, text: failure(reply), failed: true }];
+    messages = withEarlier(older, latest);
     renderMessages();
     return;
   }
+  const started = !conversation || conversation !== reply.conversation;
   conversation = reply.conversation || conversation;
+  rememberThisChat(started ? text : '');
   live = !!reply.live;
   // Asking starts Nook following this conversation for the panel.
   lastAsked = Date.now();
   await chrome.storage.session.set({ conversation }).catch(() => {});
   // "New chat" while that was being stored: this answer belongs to the conversation that was left.
   if (asked !== chatEpoch) return;
-  applyMessages(reply.messages, reply.revision);
+  applyMessages(reply.messages, reply.revision, reply.earlier);
   follow();
 }
 
@@ -289,7 +340,7 @@ setInterval(async () => {
   if (!conversation || !live || !watchRenewalDue(Date.now(), lastAsked)) return;
   const renewing = chatEpoch;
   const reply = await readAndFollow(conversation);
-  if (renewing === chatEpoch && reply?.ok) applyMessages(reply.messages, reply.revision);
+  if (renewing === chatEpoch && reply?.ok) applyMessages(reply.messages, reply.revision, reply.earlier);
 }, 30_000);
 
 /**
@@ -311,7 +362,7 @@ function follow(started = Date.now()) {
     if (following !== chatEpoch) return;
     if (reply?.ok) {
       live = !!reply.live;
-      applyMessages(reply.messages, reply.revision);
+      applyMessages(reply.messages, reply.revision, reply.earlier);
     }
     if (!reply?.ok || isAnswering(messages)) follow(started);
   }, every);
@@ -320,21 +371,74 @@ function follow(started = Date.now()) {
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== 'chatUpdate' || !conversation || message.conversation !== conversation) return;
   live = true;
-  applyMessages(message.messages, message.revision);
+  applyMessages(message.messages, message.revision, message.earlier);
   if (isAnswering(messages) && !pollTimer) follow();
 });
 
-async function newChat() {
+/** Leaves the conversation on screen: what it drew, where it was, and whatever was still on its way. */
+function resetConversation(id) {
   chatEpoch += 1;
   clearTimeout(pollTimer);
   pollTimer = null;
-  conversation = null;
+  conversation = id;
   messages = [];
+  latest = [];
+  older = [];
+  earlier = 0;
   revision = null;
+  following = true;
+  unseen = false;
+  transcriptText = null;
+  closeFind();
+}
+
+async function newChat() {
+  resetConversation(null);
   renderMessages();
   composer.focus();
   await chrome.storage.session.remove('conversation').catch(() => {});
 }
+
+/** Goes back to an earlier chat from the panel's list, and follows it from now on. */
+async function openChat(id) {
+  if (!id || id === conversation) return;
+  resetConversation(id);
+  renderMessages();
+  const opening = chatEpoch;
+  await chrome.storage.session.set({ conversation: id }).catch(() => {});
+  const reply = await readAndFollow(id);
+  if (opening !== chatEpoch) return;
+  if (!reply?.ok) {
+    // Nook no longer has it: off the list, and a new chat instead.
+    await forgetChat(id);
+    await newChat();
+    return;
+  }
+  live = !!reply.live;
+  applyMessages(reply.messages, reply.revision, reply.earlier);
+  if (isAnswering(messages)) follow();
+  composer.focus();
+}
+
+/** Reads further back: the messages before the oldest one the panel has, without moving what the user reads. */
+async function loadEarlier() {
+  const oldest = messages.find((message) => message?.id);
+  if (!conversation || !oldest) return;
+  const button = $('earlier');
+  button.disabled = true;
+  const reading = chatEpoch;
+  const reply = await trySend({ type: 'chat', conversation, before: oldest.id });
+  button.disabled = false;
+  if (reading !== chatEpoch || !reply?.ok || !reply.older || !Array.isArray(reply.messages)) return;
+  const before = chat.scrollHeight - chat.scrollTop;
+  older = withEarlier(reply.messages, older.length ? older : messages.filter((message) => !latest.includes(message)));
+  earlier = Number.isFinite(reply.earlier) ? reply.earlier : 0;
+  messages = withEarlier(older, latest);
+  following = false;
+  renderMessages();
+  queueMicrotask(() => requestAnimationFrame(() => (chat.scrollTop = chat.scrollHeight - before)));
+}
+$('earlier').addEventListener('click', loadEarlier);
 
 async function stopAnswer() {
   if (!conversation) return;
@@ -342,6 +446,406 @@ async function stopAnswer() {
   const reply = await send({ type: 'stopChat', conversation }).catch(() => null);
   if (stopped === chatEpoch && reply?.messages) applyMessages(reply.messages, reply.revision);
 }
+
+// MARK: - Following and moving through the conversation
+
+const chat = $('chat');
+// Whether the panel keeps the newest answer in view. Only the user's own input up stops it (a wheel or key up, or
+// dragging the scroll bar up); coming back to the end starts it again. A streamed answer makes "at the end" flicker,
+// so the position alone never stops it (as t3code's timeline does).
+let following = true;
+// Nook wrote more while the user read further up: the "to the newest" button says so.
+let unseen = false;
+let dragging = false;
+let lastTop = 0;
+
+function nearEnd() {
+  return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 24;
+}
+
+function stickToEnd() {
+  if (following) chat.scrollTop = chat.scrollHeight;
+}
+
+function release() {
+  if (!following) return;
+  following = false;
+  renderNavigation();
+}
+
+function toLatest() {
+  following = true;
+  unseen = false;
+  chat.scrollTo({ top: chat.scrollHeight, behavior: smooth() });
+  renderNavigation();
+}
+
+function smooth() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+}
+
+chat.addEventListener('wheel', (event) => { if (movesUp(event)) release(); }, { passive: true });
+chat.addEventListener('keydown', (event) => { if (movesUp(event)) release(); });
+chat.addEventListener('pointerdown', (event) => { if (event.target === chat) dragging = true; });
+addEventListener('pointerup', () => (dragging = false));
+chat.addEventListener('scroll', () => {
+  if (dragging && chat.scrollTop < lastTop) release();
+  lastTop = chat.scrollTop;
+  if (!following && nearEnd() && !jumping) {
+    following = true;
+    unseen = false;
+  }
+  renderNavigation();
+}, { passive: true });
+// What grows after it was drawn (sources opening, a code block, a font) keeps the end in view while following.
+new ResizeObserver(() => stickToEnd()).observe($('transcript'));
+$('to-latest').addEventListener('click', toLatest);
+
+/** Your questions in the conversation, top to bottom. */
+function questionRows() {
+  return [...$('transcript').querySelectorAll('[data-role="you"]')];
+}
+
+/** Where a row starts in the scrolled content. */
+function topOf(element) {
+  return element.getBoundingClientRect().top - chat.getBoundingClientRect().top + chat.scrollTop;
+}
+
+// How far below the top of the view a row lands that the panel jumps to.
+const JUMP_MARGIN = 12;
+
+// While the panel scrolls to a place it chose, reaching the end does not count as the user coming back to follow.
+let jumping = false;
+let jumpTimer = null;
+
+/** Brings a row into view near the top, and lights it up for a moment. */
+function jumpTo(element, { flash = true } = {}) {
+  if (!element) return;
+  following = false;
+  jumping = true;
+  clearTimeout(jumpTimer);
+  jumpTimer = setTimeout(() => (jumping = false), 600);
+  chat.scrollTo({ top: Math.max(0, topOf(element) - JUMP_MARGIN), behavior: smooth() });
+  if (flash) {
+    element.classList.add('flash');
+    setTimeout(() => element.classList.remove('flash'), 1_200);
+  }
+  renderNavigation();
+}
+
+/** To the question above (-1) or below (+1) the view's top; past the last one, back to the newest answer. */
+function stepQuestion(direction) {
+  const rows = questionRows();
+  // From where a jumped-to question sits, so the next step never lands on the same one.
+  const index = questionTarget(rows.map(topOf), chat.scrollTop + JUMP_MARGIN, direction);
+  if (index >= 0) jumpTo(rows[index]);
+  else if (direction > 0) toLatest();
+}
+$('question-prev').addEventListener('click', () => stepQuestion(-1));
+$('question-next').addEventListener('click', () => stepQuestion(1));
+
+/** The floating controls: "to the newest" once the user left the end, question by question once there is more than one. */
+function renderNavigation() {
+  const away = messages.length > 0 && !following && !nearEnd();
+  const button = $('to-latest');
+  button.hidden = !away;
+  button.classList.toggle('fresh', away && unseen);
+  chat.parentElement.classList.toggle('away', away);
+  $('to-latest-label').textContent = unseen ? t('newerMessages') : t('toLatest');
+  const scrolls = chat.scrollHeight > chat.clientHeight + 8;
+  $('question-nav').hidden = !(scrolls && questionRows().length > 1);
+}
+
+// MARK: - The questions in this conversation
+
+function renderOutline() {
+  const list = $('outline-list');
+  list.replaceChildren();
+  const rows = questionRows();
+  const tops = rows.map(topOf);
+  // The question being read: the last one that starts above the middle of the view.
+  const middle = chat.scrollTop + chat.clientHeight / 2;
+  let current = -1;
+  tops.forEach((top, index) => { if (top <= middle) current = index; });
+  if (earlier > 0) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'quiet-item';
+    button.textContent = t('earlierMessages', String(earlier));
+    button.addEventListener('click', () => {
+      $('outline').hidePopover();
+      loadEarlier();
+    });
+    item.append(button);
+    list.append(item);
+  }
+  const questions = messages.filter((message) => !message.fromNook);
+  rows.forEach((row, index) => {
+    const message = questions[index];
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (index === current) button.className = 'current';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = (message?.text || row.textContent || '').trim().split('\n')[0];
+    button.append(label);
+    const when = timeLabel(message?.at, Date.now(), locale);
+    if (when) {
+      const time = document.createElement('span');
+      time.className = 'when';
+      time.textContent = when;
+      button.append(time);
+    }
+    button.addEventListener('click', () => {
+      $('outline').hidePopover();
+      jumpTo(row);
+    });
+    item.append(button);
+    list.append(item);
+  });
+}
+$('outline').addEventListener('toggle', (event) => {
+  if (event.newState === 'open') {
+    renderOutline();
+    $('outline-list').querySelector('.current, button')?.focus();
+  }
+});
+
+// MARK: - Earlier chats
+
+/** The chats started in this panel, newest first, as the panel remembers them (`rememberChat`). */
+async function storedChats() {
+  const { chats = [] } = await chrome.storage.local.get('chats').catch(() => ({}));
+  return Array.isArray(chats) ? chats : [];
+}
+
+async function rememberThisChat(question) {
+  if (!conversation) return;
+  const entry = { id: conversation, updated: Date.now() };
+  if (question) entry.title = question.trim().split('\n')[0];
+  await chrome.storage.local.set({ chats: rememberChat(await storedChats(), entry) }).catch(() => {});
+}
+
+async function forgetChat(id) {
+  const chats = (await storedChats()).filter((entry) => entry.id !== id);
+  await chrome.storage.local.set({ chats }).catch(() => {});
+}
+
+async function renderHistory() {
+  const list = $('history-list');
+  let chats = await storedChats();
+  drawHistory(chats);
+  if (!chats.length || status.nook !== 'connected') return;
+  // Nook's own titles and times, and only the chats it still has.
+  const reply = await trySend({ type: 'chats', conversations: chats.map((entry) => entry.id) });
+  if (!reply?.ok || !Array.isArray(reply.chats)) return;
+  chats = mergeChats(chats, reply.chats);
+  await chrome.storage.local.set({ chats }).catch(() => {});
+  if (list.isConnected) drawHistory(chats);
+}
+
+function drawHistory(chats) {
+  const list = $('history-list');
+  list.replaceChildren();
+  const add = (button, separated = false) => {
+    const item = document.createElement('li');
+    if (separated) item.className = 'separated';
+    item.append(button);
+    list.append(item);
+  };
+  if (!chats.length) {
+    const item = document.createElement('li');
+    item.className = 'empty-item';
+    item.textContent = t('chatsEmpty');
+    list.append(item);
+  }
+  for (const entry of chats) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (entry.id === conversation) button.className = 'current';
+    if (entry.busy) {
+      const dot = document.createElement('span');
+      dot.className = 'busy';
+      dot.title = t('chatBusy');
+      button.append(dot);
+    }
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = entry.title || t('newChat');
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = agoLabel(entry.updated, Date.now(), locale);
+    button.append(label, when);
+    button.addEventListener('click', () => {
+      $('history').hidePopover();
+      openChat(entry.id);
+    });
+    add(button);
+  }
+  const fresh = document.createElement('button');
+  fresh.type = 'button';
+  fresh.className = 'quiet-item';
+  fresh.textContent = t('newChat');
+  fresh.addEventListener('click', () => {
+    $('history').hidePopover();
+    newChat();
+  });
+  add(fresh, chats.length > 0);
+}
+$('history').addEventListener('toggle', (event) => {
+  if (event.newState === 'open') renderHistory().then(() => $('history-list').querySelector('.current, button')?.focus());
+});
+
+/** Up and down in an open menu, as in a menu on the Mac. */
+for (const menu of [$('outline'), $('history')]) {
+  menu.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const buttons = [...menu.querySelectorAll('button')];
+    const index = stepIndex(buttons.length, buttons.indexOf(document.activeElement), event.key === 'ArrowDown' ? 1 : -1);
+    buttons[index]?.focus();
+    event.preventDefault();
+  });
+}
+
+// MARK: - Find in this conversation
+
+let findOpen = false;
+let findRanges = [];
+let findCurrent = -1;
+const highlights = globalThis.CSS?.highlights;
+
+function openFind() {
+  if (!messages.length) return;
+  findOpen = true;
+  $('find-bar').hidden = false;
+  const field = $('find-field');
+  // A selection in the conversation is what the user wants to find.
+  const selected = String(getSelection() || '').trim();
+  if (selected && selected.length < 100 && !selected.includes('\n')) field.value = selected;
+  field.focus();
+  field.select();
+  runFind();
+}
+
+function closeFind() {
+  if (!findOpen) return;
+  findOpen = false;
+  $('find-bar').hidden = true;
+  findRanges = [];
+  findCurrent = -1;
+  highlights?.delete('nook-find');
+  highlights?.delete('nook-find-current');
+}
+
+/** The text of the conversation as the user reads it: not the buttons, times and icons around it. */
+function readableTextNodes() {
+  const walker = document.createTreeWalker($('transcript'), NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (node.parentElement?.closest('button, svg, .actions, .meta, .dots')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  return nodes;
+}
+
+/** Marks every match; the current one stays where it was (`keepPlace`, while Nook writes) or moves to the first. */
+function runFind({ keepPlace = false } = {}) {
+  const query = $('find-field').value;
+  findRanges = [];
+  for (const node of readableTextNodes()) {
+    for (const [start, end] of matchRanges(node.data, query)) {
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      findRanges.push(range);
+    }
+  }
+  if (!keepPlace) {
+    // The first match from where the user reads, not from the top.
+    const viewTop = chat.getBoundingClientRect().top;
+    findCurrent = findRanges.findIndex((range) => range.getBoundingClientRect().top >= viewTop);
+    if (findCurrent < 0) findCurrent = findRanges.length ? 0 : -1;
+  } else if (findCurrent >= findRanges.length) {
+    findCurrent = findRanges.length - 1;
+  }
+  paintFind(!keepPlace);
+}
+
+function paintFind(reveal) {
+  const query = $('find-field').value.trim();
+  const count = $('find-count');
+  count.textContent = !query ? '' : findRanges.length ? t('findCount', String(findCurrent + 1), String(findRanges.length)) : t('findNone');
+  count.classList.toggle('none', !!query && !findRanges.length);
+  $('find-prev').disabled = findRanges.length < 2;
+  $('find-next').disabled = findRanges.length < 2;
+  if (!highlights || typeof Highlight === 'undefined') return;
+  highlights.set('nook-find', new Highlight(...findRanges));
+  const current = findRanges[findCurrent];
+  if (current) highlights.set('nook-find-current', new Highlight(current));
+  else highlights.delete('nook-find-current');
+  if (reveal && current) {
+    following = false;
+    const box = current.getBoundingClientRect();
+    const view = chat.getBoundingClientRect();
+    if (box.top < view.top + 8 || box.bottom > view.bottom - 8) {
+      jumping = true;
+      clearTimeout(jumpTimer);
+      jumpTimer = setTimeout(() => (jumping = false), 600);
+      chat.scrollTo({ top: chat.scrollTop + box.top - view.top - chat.clientHeight / 3, behavior: smooth() });
+    }
+    renderNavigation();
+  }
+}
+
+function stepFind(step) {
+  findCurrent = stepIndex(findRanges.length, findCurrent, step);
+  paintFind(true);
+}
+
+$('find-open').addEventListener('click', openFind);
+$('find-close').addEventListener('click', () => {
+  closeFind();
+  composer.focus();
+});
+$('find-prev').addEventListener('click', () => stepFind(-1));
+$('find-next').addEventListener('click', () => stepFind(1));
+$('find-field').addEventListener('input', () => runFind());
+$('find-field').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    stepFind(event.shiftKey ? -1 : 1);
+    event.preventDefault();
+  } else if (event.key === 'Escape') {
+    closeFind();
+    composer.focus();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+
+// MARK: - Keys
+
+// ⌘F / Ctrl+F finds in the conversation (the browser's own find does not reach a side panel); ⌥↑ and ⌥↓ go question
+// by question, past the last one to the newest answer (not inside a draft of more lines); ⌘↓ / Ctrl+End in the
+// conversation also goes to the newest answer.
+addEventListener('keydown', (event) => {
+  const command = event.metaKey || event.ctrlKey;
+  if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+    if (!messages.length) return;
+    event.preventDefault();
+    openFind();
+  } else if (event.altKey && !command && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    // In a draft of more than one line, ⌥↑ and ⌥↓ keep moving the cursor, as everywhere on the Mac.
+    const field = event.target?.closest?.('textarea, input, [contenteditable="true"]');
+    if (!messages.length || String(field?.value ?? field?.textContent ?? '').includes('\n')) return;
+    event.preventDefault();
+    stepQuestion(event.key === 'ArrowUp' ? -1 : 1);
+  } else if (event.target === chat && ((event.metaKey && event.key === 'ArrowDown') || (event.ctrlKey && event.key === 'End'))) {
+    event.preventDefault();
+    toLatest();
+  }
+});
 
 // MARK: - Start
 
@@ -387,11 +891,13 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   renderMessages();
   await send({ type: 'connect' }).catch(() => {});
   refreshLook();
+  // Chats from before this panel could list them: the one it shows goes on the list.
+  if (conversation && !(await storedChats()).some((entry) => entry.id === conversation)) await rememberThisChat('');
   if (conversation) {
     const reply = await readAndFollow(conversation);
     if (reply?.ok && reply.messages) {
       live = !!reply.live;
-      applyMessages(reply.messages, reply.revision);
+      applyMessages(reply.messages, reply.revision, reply.earlier);
       if (isAnswering(messages)) follow();
     } else {
       conversation = null;

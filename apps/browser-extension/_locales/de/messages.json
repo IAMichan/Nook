@@ -166,5 +166,59 @@
   },
   "pauseHint": {
     "message": "Nook in diesem Browser pausieren"
+  },
+  "copyMessage": {
+    "message": "Kopieren"
+  },
+  "askAgain": {
+    "message": "Erneut fragen oder ändern"
+  },
+  "findTitle": {
+    "message": "In diesem Chat suchen (⌘F)"
+  },
+  "findPlaceholder": {
+    "message": "In diesem Chat suchen"
+  },
+  "findPrevious": {
+    "message": "Vorheriger Treffer (⇧↩)"
+  },
+  "findNext": {
+    "message": "Nächster Treffer (↩)"
+  },
+  "findClose": {
+    "message": "Suche schließen (Esc)"
+  },
+  "findCount": {
+    "message": "$1 von $2"
+  },
+  "findNone": {
+    "message": "Keine Treffer"
+  },
+  "questionsTitle": {
+    "message": "Fragen in diesem Chat"
+  },
+  "questionPrevious": {
+    "message": "Vorherige Frage (⌥↑)"
+  },
+  "questionNext": {
+    "message": "Nächste Frage (⌥↓)"
+  },
+  "chatsTitle": {
+    "message": "Frühere Chats"
+  },
+  "chatsEmpty": {
+    "message": "Chats, die du hier beginnst, erscheinen in dieser Liste."
+  },
+  "chatBusy": {
+    "message": "Nook antwortet noch"
+  },
+  "earlierMessages": {
+    "message": "$1 frühere Nachrichten zeigen"
+  },
+  "toLatest": {
+    "message": "Neueste"
+  },
+  "newerMessages": {
+    "message": "Neue Antwort"
   }
 }
