@@ -21,6 +21,28 @@ final class BrowserExtensions: ObservableObject {
         var version: String
         var fromStore: Bool
         var enabled: Bool
+        /// Its button shows in the toolbar; unpinned, it is only in the extensions menu (the puzzle piece).
+        var pinned = true
+
+        init(id: String, name: String, version: String, fromStore: Bool, enabled: Bool, pinned: Bool = true) {
+            self.id = id
+            self.name = name
+            self.version = version
+            self.fromStore = fromStore
+            self.enabled = enabled
+            self.pinned = pinned
+        }
+
+        /// Lists saved before pinning existed have every extension pinned.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            version = try container.decode(String.self, forKey: .version)
+            fromStore = try container.decode(Bool.self, forKey: .fromStore)
+            enabled = try container.decode(Bool.self, forKey: .enabled)
+            pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? true
+        }
     }
 
     /// One extension's button in a browser's toolbar.
@@ -168,6 +190,14 @@ final class BrowserExtensions: ObservableObject {
         actionsVersion += 1
     }
 
+    /// Shows an extension's button in the toolbar, or keeps it in the extensions menu only.
+    func setPinned(_ id: String, _ pinned: Bool) {
+        guard let index = installed.firstIndex(where: { $0.id == id }) else { return }
+        installed[index].pinned = pinned
+        saveList()
+        actionsVersion += 1
+    }
+
     /// Whether the extension a store page is about is added already.
     func has(storeID id: String) -> Bool { installed.contains { $0.id == id } }
 
@@ -182,11 +212,19 @@ final class BrowserExtensions: ObservableObject {
 
     // MARK: Toolbar
 
-    /// The buttons of the extensions running in a browser's tab, in the order you added them.
+    /// The buttons of the extensions pinned to a browser's toolbar, in the order you added them.
     func buttons(for page: BrowserPage) -> [Button] {
         guard #available(macOS 15.4, *), engineBox != nil else { return [] }
         _ = actionsVersion
-        return engine.buttons(for: page, order: installed.filter(\.enabled).map(\.id))
+        return engine.buttons(for: page, order: installed.filter { $0.enabled && $0.pinned }.map(\.id))
+    }
+
+    /// The buttons of every extension running in a browser's tab, pinned or not, for the extensions menu.
+    func allButtons(for page: BrowserPage) -> [String: Button] {
+        guard #available(macOS 15.4, *), engineBox != nil else { return [:] }
+        _ = actionsVersion
+        let list = engine.buttons(for: page, order: installed.filter(\.enabled).map(\.id))
+        return Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
     }
 
     /// An extension's button was clicked in a tab: its popup opens beside `anchor`, or it does its own action.
@@ -452,6 +490,11 @@ private final class Engine: NSObject, WKWebExtensionControllerDelegate {
             completionHandler(NookError(tr("browser.extensions.noPopup")))
             return
         }
+        // The popup's page takes the appearance of the window it opens over (Nook's light or dark), not the Mac's: its
+        // web view is made before it is shown, so it read the Mac's dark mode and drew white text on a light popover.
+        let appearance = (popupAnchor?.window ?? NSApp.keyWindow)?.effectiveAppearance ?? NSApp.effectiveAppearance
+        popover.appearance = appearance
+        action.popupWebView?.appearance = appearance
         if let anchor = popupAnchor, anchor.window != nil {
             popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
         } else if let view = NSApp.keyWindow?.contentView {

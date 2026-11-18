@@ -130,14 +130,5 @@ struct BrowserExtensionsSettings: View {
         }
     }
 
-    private func pickFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.zip, .folder, UTType(filenameExtension: "crx") ?? .data]
-        panel.message = tr("settings.browser.extensions.pickMessage")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await extensions.installFromFile(url) }
-    }
+    private func pickFile() { pickExtensionFile() }
 }
