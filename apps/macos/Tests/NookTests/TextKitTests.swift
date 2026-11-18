@@ -41,4 +41,17 @@ final class TextKitTests: XCTestCase {
         XCTAssertEqual(TextKit.clip("Supercalifragilistic", to: 6, wordBoundary: true), "Super…")
         XCTAssertEqual(TextKit.clip("anything", to: 0), "")
     }
+
+    func testDroppingRedundantLinks() {
+        XCTAssertEqual(
+            TextKit.droppingRedundantLinks("Herinnering: PR #1785 (https://github.com/IAMichan/Nook/pull/1785) mergen"),
+            "Herinnering: PR #1785 mergen")
+        XCTAssertEqual(TextKit.droppingRedundantLinks("See #12 (https://gitlab.com/a/b/-/issues/12)."), "See #12.")
+        // The text does not name the number: the link is all there is, so it stays.
+        XCTAssertEqual(TextKit.droppingRedundantLinks("Merge it (https://github.com/o/r/pull/7)"),
+                       "Merge it (https://github.com/o/r/pull/7)")
+        // Another number, or a link that is not an issue or pull request, stays too.
+        XCTAssertEqual(TextKit.droppingRedundantLinks("#71 (https://github.com/o/r/pull/7)"), "#71 (https://github.com/o/r/pull/7)")
+        XCTAssertEqual(TextKit.droppingRedundantLinks("Docs (https://example.com/docs)"), "Docs (https://example.com/docs)")
+    }
 }

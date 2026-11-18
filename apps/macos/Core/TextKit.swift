@@ -105,4 +105,24 @@ enum TextKit {
         let word = head.lastIndex(of: " ").map { head[..<$0] } ?? head
         return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
     }
+
+    // MARK: Links
+
+    /// A link in brackets that only repeats what the text already says: "PR #1785 (https://github.com/o/r/pull/1785)"
+    /// reads "PR #1785". A bracketed link to an issue or pull request goes when its "#number" is in the text already;
+    /// any other link, or one whose number the text does not name, stays.
+    static func droppingRedundantLinks(_ text: String) -> String {
+        let pattern = #"\s*\((https?://[^\s()]+/(?:pull|issues|merge_requests)/(\d+)[^\s()]*)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let source = text as NSString
+        var result = text
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
+            let number = source.substring(with: match.range(at: 2))
+            let rest = source.replacingCharacters(in: match.range, with: "")
+            guard rest.range(of: #"#\#(number)\b"#, options: .regularExpression) != nil,
+                  let range = Range(match.range, in: result) else { continue }
+            result.removeSubrange(range)
+        }
+        return result
+    }
 }
