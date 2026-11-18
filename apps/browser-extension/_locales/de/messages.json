@@ -220,5 +220,41 @@
   },
   "newerMessages": {
     "message": "Neue Antwort"
+  },
+  "commandPick": {
+    "message": "Ein Element auf der Seite auswählen und für deinen Coding-Agent kopieren"
+  },
+  "pickTitle": {
+    "message": "Element zum Kopieren für deinen Agent auswählen (Alt+Shift+E)"
+  },
+  "pickStarted": {
+    "message": "Klicke auf ein Element der Seite (oder eine Stelle in einem PDF). Esc beendet."
+  },
+  "pickCopied": {
+    "message": "$1 kopiert: füge es in den Prompt deines Agents ein"
+  },
+  "pickElementHint": {
+    "message": "Klicke auf ein Element, um es für deinen Agent zu kopieren · Shift-Klick für mehr · Esc beendet"
+  },
+  "pickElementMore": {
+    "message": "$1 ausgewählt · Shift-Klick für mehr · Return kopiert"
+  },
+  "pickPointHint": {
+    "message": "Klicke auf eine Stelle im PDF, um sie für deinen Agent zu kopieren · Esc beendet"
+  },
+  "pickNotCopied": {
+    "message": "Der Browser hat das Kopieren nicht erlaubt. Klicke einmal auf die Seite und versuche es erneut."
+  },
+  "pickRestricted": {
+    "message": "Der Browser lässt Erweiterungen auf dieser Seite nichts auswählen."
+  },
+  "pickFileAccess": {
+    "message": "Für Dateien auf deinem Computer aktiviere \"Zugriff auf Datei-URLs zulassen\" in den Details dieser Erweiterung."
+  },
+  "pickNoPage": {
+    "message": "Öffne zuerst eine Seite."
+  },
+  "pickFailed": {
+    "message": "Auswählen hat nicht geklappt. Lade die Seite neu und versuche es erneut."
   }
 }

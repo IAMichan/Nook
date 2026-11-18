@@ -46,7 +46,7 @@ test('every text is there in all five languages', () => {
     }
   }
   const used = new Set();
-  for (const file of ['sidepanel.html', 'sidepanel.js', 'page/presence.js', 'page/agent.js', 'manifest.json', 'composer/PanelComposer.svelte', 'composer/PanelTranscript.svelte']) {
+  for (const file of ['sidepanel.html', 'sidepanel.js', 'page/presence.js', 'page/agent.js', 'page/pick.js', 'manifest.json', 'composer/PanelComposer.svelte', 'composer/PanelTranscript.svelte']) {
     const text = read(file);
     // say('…') is the page agent's own getMessage (the cursor's badge).
     for (const match of text.matchAll(/data-i18n(?:-placeholder)?="(\w+)"|\bt\('(\w+)'|getMessage\('(\w+)'|\bsay\('(\w+)'|__MSG_(\w+)__/g)) {

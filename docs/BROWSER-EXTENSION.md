@@ -105,6 +105,32 @@ under it says what it does, in your language: *Klikt · Verzenden*, *Typt · Lis
 Enter*. A click shows as a short press and a ripple. On the next page the cursor goes on from where it was. It is
 drawn in a closed shadow root, never takes a click itself, and does not glide when you asked for reduced motion.
 
+## Pointing at something for your agent
+
+The crosshair in the side panel's header (or **Alt+Shift+E**, which you can change at `chrome://extensions/shortcuts`)
+selects something on the page in front and copies where it is, so pasting it in a coding agent's prompt (in Nook, a
+terminal or an editor) says exactly what to change. It is the same gesture as in Nook's own browser and PDF viewer
+beside a session.
+
+- **On a web page**, the element under the pointer gets an outline in Nook's iris with a badge that names it
+  (`h2.mkt-title`). A click copies it: the page's address, a CSS selector that finds it again, its markup (up to 6,000
+  characters) and its visible text (up to 1,500), in the same text Nook's own browser gives an agent
+  (`PickedElement.snippet`). Shift-click takes several and Return copies them together; Escape (on the page or in the
+  side panel), the crosshair again or the shortcut again stops. Clicks while selecting never reach the page.
+- **In a PDF** the browser shows, its viewer keeps the page number and zoom to itself and no page script reaches it.
+  A transparent sheet takes the click instead, and the clipboard gets the file, the spot as a share of the viewer, and
+  a picture of the area around it with the spot marked by a crosshair (as `PdfPointCapture` draws it), so an agent sees
+  where it is. Pasting text only (in a terminal with ⌘V) leaves the picture out; paste it as an image where the agent
+  takes pictures.
+- **It is yours alone.** Nothing selected goes to Nook: it only goes to your clipboard. That is why it works while Nook
+  is paused or switched off for the site, and on local files once the browser's "Allow access to file URLs" is on for
+  the extension. The browser's own pages and its web store stay off limits.
+
+How: `page/pick.js` is injected only when you start selecting. It outlines and takes the element (or the spot) and
+hands it to the service worker, which turns it into text (`elementsCopy` and `pdfPointCopy` in `lib/core.js`) and, for
+a PDF, cuts the picture out of `captureVisibleTab`. `copy` in the page then writes the clipboard: the click is a moment
+old, so the page may still do that.
+
 ## Your hands and Nook's
 
 - **Nook is not in your way, and you are not in Nook's.** While Nook acts on a page, your own clicks, keys, typing,
@@ -277,6 +303,9 @@ The extension's own texts are in `_locales/{en,nl,de,fr,es}/messages.json`. The 
   permission. Most sites accept them. A key's own effect (a new line, moving focus) does not follow by itself: Enter in
   a form field submits the form, and Tab moves to the next field.
 - **One frame.** The page agent works in the page's main frame, not inside iframes.
+  Selecting for an agent likewise takes an iframe as a whole, not an element inside it.
+- **PDF pages.** The browser's PDF viewer does not tell which page or zoom it shows, so a spot in a PDF is measured in
+  the viewer and goes with a picture, not with the page number and points Nook's own PDF viewer gives.
 - **Unpacked for development.** Nook still copies the extension to `~/Library/Application Support/Nook/Browser
   Extension`; loaded unpacked in Developer mode it keeps the manifest's `key`, so its id differs from the store's and
   both are in `allowed_origins`.

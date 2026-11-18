@@ -220,5 +220,41 @@
   },
   "newerMessages": {
     "message": "Nueva respuesta"
+  },
+  "commandPick": {
+    "message": "Selecciona un elemento de la página y cópialo para tu agente de código"
+  },
+  "pickTitle": {
+    "message": "Selecciona un elemento para copiarlo para tu agente (Alt+Shift+E)"
+  },
+  "pickStarted": {
+    "message": "Haz clic en un elemento de la página (o en un punto de un PDF). Esc detiene."
+  },
+  "pickCopied": {
+    "message": "$1 copiado: pégalo en el prompt de tu agente"
+  },
+  "pickElementHint": {
+    "message": "Haz clic en un elemento para copiarlo para tu agente · Mayús-clic para más · Esc detiene"
+  },
+  "pickElementMore": {
+    "message": "$1 seleccionado(s) · Mayús-clic para más · Intro copia"
+  },
+  "pickPointHint": {
+    "message": "Haz clic en un punto del PDF para copiarlo para tu agente · Esc detiene"
+  },
+  "pickNotCopied": {
+    "message": "El navegador no permitió copiar. Haz clic una vez en la página e inténtalo de nuevo."
+  },
+  "pickRestricted": {
+    "message": "El navegador no deja que las extensiones seleccionen en esta página."
+  },
+  "pickFileAccess": {
+    "message": "Para archivos de tu ordenador, activa \"Permitir acceso a URLs de archivo\" en los detalles de esta extensión."
+  },
+  "pickNoPage": {
+    "message": "Abre primero una página."
+  },
+  "pickFailed": {
+    "message": "No se pudo seleccionar. Recarga la página e inténtalo de nuevo."
   }
 }

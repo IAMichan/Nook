@@ -500,3 +500,130 @@ export function movesUp(event) {
   if (event.type === 'keydown') return ['ArrowUp', 'PageUp', 'Home'].includes(event.key);
   return false;
 }
+
+// MARK: - Selecting on a page for an agent (page/pick.js)
+
+/** As much visible text and markup as a selected element brings along (BrowserPickScript in Nook). */
+export const PICK_TEXT_LIMIT = 1500;
+export const PICK_HTML_LIMIT = 6000;
+/** At most this many elements go along in one copy. */
+export const PICK_MAX = 20;
+
+/**
+ * Whether the user may select on this page: every page the browser lets an extension script, and also local files
+ * (the browser asks for their own switch, "Allow access to file URLs"). Nothing selected goes to Nook; it only goes to
+ * the user's clipboard, so a site switched off for Nook still allows it.
+ */
+export function mayPick(url) {
+  const text = String(url || '').trim().toLowerCase();
+  if (text.startsWith('file:')) return true;
+  return !isRestricted(text);
+}
+
+/** True for an address that is a PDF by its name; the page itself says so too (page/pick.js `isPdf`). */
+export function looksLikePdf(url) {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
+function longestBacktickRun(text) {
+  let longest = 0;
+  for (const run of String(text).match(/`+/g) || []) longest = Math.max(longest, run.length);
+  return longest;
+}
+
+/** One element as the page script took it, with every field a clipped string, or null when it is not one. */
+export function pickedElement(raw) {
+  if (!raw || typeof raw !== 'object' || typeof raw.selector !== 'string' || !raw.selector.trim()) return null;
+  const text = (value, limit) => (typeof value === 'string' ? value.slice(0, limit) : '');
+  return {
+    selector: text(raw.selector, 600).trim(),
+    label: text(raw.label, 200).trim(),
+    text: text(raw.text, PICK_TEXT_LIMIT).trim(),
+    html: text(raw.html, PICK_HTML_LIMIT + 40).trim()
+  };
+}
+
+/** The name of a selected element: what its badge showed (`h2.mkt-title`), else its selector. */
+export function elementName(element) {
+  return element.label || element.selector;
+}
+
+/**
+ * What an agent reads about one selected element, the same as Nook's own browser gives it (PickedElement.snippet):
+ * where it is, its markup as code, and its text. Everything but the address comes from the page, so it is data, never
+ * an order; the fence is longer than any run of backticks in the markup, so the page can never close it.
+ */
+export function elementSnippet(url, element) {
+  const lines = [`Element \`${elementName(element)}\` on ${url}`, `Selector: \`${element.selector}\``];
+  const markup = element.html.trim();
+  if (markup) {
+    const fence = '`'.repeat(Math.max(3, longestBacktickRun(markup) + 1));
+    lines.push('', fence + 'html', markup, fence);
+  }
+  const words = element.text.trim();
+  if (words && words !== markup) lines.push('', 'Text:', words);
+  return lines.join('\n');
+}
+
+/**
+ * Several selected elements as one text, with the name the toast shows (`h2.title +2`); null when there are none.
+ * The same as PickedElement.combined in Nook.
+ */
+export function elementsCopy(url, raw) {
+  const elements = (Array.isArray(raw) ? raw : []).map(pickedElement).filter(Boolean).slice(0, PICK_MAX);
+  if (!elements.length) return null;
+  const first = elementName(elements[0]);
+  return {
+    name: elements.length === 1 ? first : `${first} +${elements.length - 1}`,
+    text: elements.map((element) => elementSnippet(url, element)).join('\n\n---\n\n')
+  };
+}
+
+/** The file name in a PDF's address (`report.pdf`), else the address itself. */
+export function pdfName(url) {
+  try {
+    const last = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+    return decodeURIComponent(last) || url;
+  } catch {
+    return String(url || '');
+  }
+}
+
+/**
+ * A spot clicked in a PDF the browser shows. Its viewer keeps the page number and zoom to itself, so the spot is
+ * measured in the window, and the picture copied along (the area around it, the spot marked with a crosshair, as
+ * PdfPointCapture draws it in Nook) shows where it is. Null when the spot is not one.
+ */
+export function pdfPointCopy(url, raw) {
+  const number = (value) => (Number.isFinite(value) ? value : NaN);
+  const x = number(raw?.x), y = number(raw?.y), width = number(raw?.width), height = number(raw?.height);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+  const left = Math.round(Math.min(Math.max(x / width, 0), 1) * 100);
+  const top = Math.round(Math.min(Math.max(y / height, 0), 1) * 100);
+  const file = pdfName(url);
+  const lines = [
+    `Point in PDF \`${file}\` (${url})`,
+    `Where: ${left}% from the left and ${top}% from the top of the browser's PDF viewer (${Math.round(width)} × ${Math.round(height)} px); the viewer does not tell the page number or zoom.`,
+    'A picture of the area around it was copied along with this text: the point is the marked crosshair in its middle.'
+  ];
+  return { name: `${file} · ${left}%, ${top}%`, text: lines.join('\n') };
+}
+
+/**
+ * The part of a picture of the window (`imageWidth` × `imageHeight` pixels, for a window `point.width` CSS pixels
+ * wide) to cut out around the spot, and where the spot is in it: `size` CSS pixels, less where the window is smaller,
+ * moved inward at the window's edges.
+ */
+export function pdfCrop(point, imageWidth, imageHeight, size = { width: 560, height: 360 }) {
+  const scale = point.width > 0 ? imageWidth / point.width : 1;
+  const width = Math.round(Math.min(size.width * scale, imageWidth));
+  const height = Math.round(Math.min(size.height * scale, imageHeight));
+  const x = point.x * scale, y = point.y * scale;
+  const left = Math.round(Math.min(Math.max(0, x - width / 2), imageWidth - width));
+  const top = Math.round(Math.min(Math.max(0, y - height / 2), imageHeight - height));
+  return { left, top, width, height, scale, spot: { x: x - left, y: y - top } };
+}

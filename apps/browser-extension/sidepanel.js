@@ -82,7 +82,7 @@ const transcript = mountTranscript($('transcript'), {
 
 $('new-chat').addEventListener('click', () => newChat());
 for (const [id, key] of [
-  ['find-open', 'findTitle'], ['outline-open', 'questionsTitle'], ['history-open', 'chatsTitle'], ['find-prev', 'findPrevious'],
+  ['pick', 'pickTitle'], ['find-open', 'findTitle'], ['outline-open', 'questionsTitle'], ['history-open', 'chatsTitle'], ['find-prev', 'findPrevious'],
   ['find-next', 'findNext'], ['find-close', 'findClose'], ['question-prev', 'questionPrevious'], ['question-next', 'questionNext']
 ]) {
   $(id).title = t(key);
@@ -209,6 +209,38 @@ async function togglePause() {
 }
 $('pause').addEventListener('click', togglePause);
 $('resume').addEventListener('click', togglePause);
+
+// MARK: - Selecting on the page
+
+// The crosshair: select an element (or a spot in a PDF) on the page in front; the service worker copies where it is
+// for a coding agent's prompt. Pressing it again, or Escape here, stops. The same as the keyboard shortcut.
+let picking = false;
+let pickTimer = null;
+
+function pickNote(text, warn = false, stay = false) {
+  const note = $('pick-note');
+  clearTimeout(pickTimer);
+  note.textContent = text;
+  note.className = 'banner pick-note' + (warn ? ' warn' : '');
+  note.hidden = !text;
+  if (text && !stay) pickTimer = setTimeout(() => (note.hidden = true), 4000);
+}
+
+async function pick() {
+  const starting = !picking;
+  picking = starting;
+  $('pick').classList.toggle('active', starting);
+  if (starting) pickNote(t('pickStarted'), false, true);
+  const reply = await trySend({ type: 'pick', windowId });
+  // Pressing again only stops the first one, whose reply ends it here.
+  if (!starting) return;
+  picking = false;
+  $('pick').classList.remove('active');
+  if (reply?.ok && reply.name) pickNote(t('pickCopied', reply.name));
+  else if (reply?.ok) pickNote('');
+  else pickNote(t(/^pick\w+$/.test(reply?.error || '') ? reply.error : 'pickFailed'), true);
+}
+$('pick').addEventListener('click', pick);
 
 // MARK: - Activity
 
@@ -831,6 +863,11 @@ $('find-field').addEventListener('keydown', (event) => {
 // conversation also goes to the newest answer.
 addEventListener('keydown', (event) => {
   const command = event.metaKey || event.ctrlKey;
+  if (picking && event.key === 'Escape') {
+    event.preventDefault();
+    pick();
+    return;
+  }
   if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
     if (!messages.length) return;
     event.preventDefault();

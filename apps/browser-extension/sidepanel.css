@@ -208,6 +208,10 @@ body {
   line-height: 1.35;
 }
 
+/* The crosshair's line: in Nook's violet while selecting and once copied, amber when it could not. */
+.pick-note { padding-right: var(--pad-lg); background: color-mix(in srgb, var(--violet) 10%, transparent); color: var(--violet); }
+.pick-note.warn { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber); }
+
 /* The site in front, as one quiet row: which site, what Nook may do there, and its switch. */
 .site {
   display: flex;
@@ -279,6 +283,7 @@ button.icon {
 }
 button.icon:hover:not(:disabled) { background: var(--row-hover); color: var(--text-strong); }
 button.icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#pick.active { color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, transparent); }
 #pause .when-paused { display: none; }
 #pause.paused { color: var(--amber); }
 #pause.paused .when-active { display: none; }

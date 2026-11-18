@@ -12,6 +12,10 @@
     <h1 data-i18n="appName">Nook</h1>
     <span id="status" class="pill" role="status"></span>
     <span class="grow"></span>
+    <!-- Select an element (or a spot in a PDF) on the page and copy where it is, for a coding agent's prompt. -->
+    <button id="pick" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r=".6"/></svg>
+    </button>
     <button id="find-open" type="button" class="icon" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
     </button>
@@ -62,6 +66,9 @@
     <span id="paused-note" class="grow"></span>
     <button id="resume" type="button" class="warn small" data-i18n="resume"></button>
   </div>
+
+  <!-- What the crosshair did: what to click now, what it copied, or why it could not. -->
+  <div id="pick-note" class="banner pick-note" role="status" hidden></div>
 
   <section id="setup" class="card setup" hidden>
     <h2 data-i18n="setupTitle"></h2>
