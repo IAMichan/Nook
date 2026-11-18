@@ -273,7 +273,6 @@ struct SessionWorkbench<Conversation: View>: View {
     @Environment(\.sessionHeaderInset) private var headerInset
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("nook.agents.bottomTool") var lastBottomTool = SessionTool.terminal.rawValue
-    @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
     @AppStorage("nook.agents.bottomHeight") private var bottomHeight = BottomPanelLayout.standard
     /// You closed the session panel: it stays closed, in every session, until you open it again.
     @AppStorage("nook.agents.sessionPanelClosed") private var sessionPanelClosed = false
@@ -347,6 +346,15 @@ struct SessionWorkbench<Conversation: View>: View {
 
     private var covering: Bool {
         shown(.side) != .conversation && (tooNarrow || panelMaximized)
+    }
+
+    /// The side panel's width: each session has its own (`SessionPanelWidths`).
+    private var toolWidth: Double { viewModel.sessionPanelWidth(for: viewModel.selectedAgentID) }
+
+    private var toolWidthBinding: Binding<Double> {
+        let session = viewModel.selectedAgentID
+        return Binding(get: { viewModel.sessionPanelWidth(for: session) },
+                       set: { viewModel.setSessionPanelWidth($0, for: session) })
     }
 
     /// The width the right panel actually takes (not the one it was dragged to).
@@ -429,7 +437,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
                 if sideOpen && !covering {
                     panel(.side, tool: side, maximized: $panelMaximized)
-                        .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                        .sidePanel(.trailing, width: toolWidthBinding, defaultWidth: PanelLayout.tool, available: totalWidth,
                                    rest: conversationRoom)
                 }
             }

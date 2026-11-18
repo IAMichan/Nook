@@ -111,6 +111,10 @@ final class PanelViewModel: ObservableObject {
                 // The same conversation under another key: its browser, terminal and other tabs stay as they are.
                 continuingSession = false
                 sessionLayouts[oldValue] = nil
+                if sessionPanelWidths.widths[oldValue] != nil {
+                    sessionPanelWidths.move(from: oldValue, to: selectedAgentID)
+                    saveSessionPanelWidths()
+                }
             } else {
                 // The session you left keeps its panels for when you come back; the one you open shows its own, or only
                 // its conversation the first time. All in this turn and without animation, so the switch lands as one
@@ -220,6 +224,28 @@ final class PanelViewModel: ObservableObject {
         update(\.sideSubThread, to: nil)
         update(\.sidePullRequestTabs, to: [])
         update(\.activeSidePullRequest, to: nil)
+    }
+
+    /// How wide each session's side panel is, by `selectedAgentID`: resizing it in one session leaves the others alone.
+    private var sessionPanelWidths = SessionPanelWidths(
+        encoded: UserDefaults.standard.dictionary(forKey: PanelViewModel.sessionPanelWidthsKey))
+    private static let sessionPanelWidthsKey = "nook.agents.toolWidths"
+
+    /// The width `session`'s side panel was left at, or the usual width when it was never resized.
+    func sessionPanelWidth(for session: String) -> Double {
+        sessionPanelWidths.width(for: session, fallback: PanelLayout.tool)
+    }
+
+    /// Remembers the width `session`'s side panel was dragged to (written once, when the drag ends).
+    func setSessionPanelWidth(_ width: Double, for session: String) {
+        guard sessionPanelWidths.widths[session] != width else { return }
+        objectWillChange.send()
+        sessionPanelWidths.set(width, for: session)
+        saveSessionPanelWidths()
+    }
+
+    private func saveSessionPanelWidths() {
+        UserDefaults.standard.set(sessionPanelWidths.encoded, forKey: Self.sessionPanelWidthsKey)
     }
 
     /// What each session you left had open beside and under its conversation, by `selectedAgentID`, so going to
