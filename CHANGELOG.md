@@ -15,7 +15,8 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Nook's browser extension can now point at something on any page for your coding agent, as Nook's own browser and
   PDF viewer do: press the crosshair in the side panel (or Alt+Shift+E), click an element, and its address, selector,
   markup and text are on your clipboard, ready to paste in an agent's prompt. Shift-click takes several. In a PDF the
-  click takes the spot and copies a picture of it with the spot marked.
+  click takes the spot and copies a picture of it with the spot marked; the crosshair then shows a PDF page, so you
+  see which of the two it selects. On browser pages where it cannot select, it is greyed out.
 
 ## [0.1.1] - 2026-11-18
 

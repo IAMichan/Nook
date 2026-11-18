@@ -5,8 +5,8 @@
 // answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
 import {
-  agoLabel, cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, lookVariables, matchRanges, mergeChats,
-  movesUp, questionTarget, rememberChat, siteOf, stepIndex, timeLabel, watchRenewalDue, withEarlier
+  agoLabel, cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, looksLikePdf, lookVariables, matchRanges, mayPick,
+  mergeChats, movesUp, questionTarget, rememberChat, siteOf, stepIndex, timeLabel, watchRenewalDue, withEarlier
 } from './lib/core.js';
 import { mountComposer, mountTranscript, questionsAsked } from './ui/composer.js';
 
@@ -82,7 +82,7 @@ const transcript = mountTranscript($('transcript'), {
 
 $('new-chat').addEventListener('click', () => newChat());
 for (const [id, key] of [
-  ['pick', 'pickTitle'], ['find-open', 'findTitle'], ['outline-open', 'questionsTitle'], ['history-open', 'chatsTitle'], ['find-prev', 'findPrevious'],
+  ['find-open', 'findTitle'], ['outline-open', 'questionsTitle'], ['history-open', 'chatsTitle'], ['find-prev', 'findPrevious'],
   ['find-next', 'findNext'], ['find-close', 'findClose'], ['question-prev', 'questionPrevious'], ['question-next', 'questionNext']
 ]) {
   $(id).title = t(key);
@@ -187,6 +187,7 @@ function renderSite() {
   pause.className = 'icon' + (options.paused ? ' paused' : '');
   pause.title = label;
   pause.setAttribute('aria-label', label);
+  renderPick();
 }
 
 async function loadPage() {
@@ -226,11 +227,24 @@ function pickNote(text, warn = false, stay = false) {
   if (text && !stay) pickTimer = setTimeout(() => (note.hidden = true), 4000);
 }
 
+// The crosshair says what it selects on the page in front: an element, or a spot when a PDF is open (its address or
+// the viewer's title ends in .pdf; a PDF served under another name still gets a spot, the page tells the worker).
+function renderPick() {
+  const button = $('pick');
+  const pdf = looksLikePdf(page?.url) || /\.pdf$/i.test(page?.title || '');
+  const label = t(pdf ? 'pickPdfTitle' : 'pickTitle');
+  button.classList.toggle('pdf', pdf);
+  button.disabled = !page?.url || !mayPick(page.url);
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  return pdf;
+}
+
 async function pick() {
   const starting = !picking;
   picking = starting;
   $('pick').classList.toggle('active', starting);
-  if (starting) pickNote(t('pickStarted'), false, true);
+  if (starting) pickNote(t(renderPick() ? 'pickPointHint' : 'pickStarted'), false, true);
   const reply = await trySend({ type: 'pick', windowId });
   // Pressing again only stops the first one, whose reply ends it here.
   if (!starting) return;
