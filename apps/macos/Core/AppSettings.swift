@@ -681,6 +681,10 @@ final class AppSettings: ObservableObject {
     /// screen. Nook Chat, the screen brain and coding agents all read this one set.
     var keptOnMac: Set<String> { privacyLevel.keptOnMac(byHand: localOnlySources) }
 
+    /// The sources coding agents do not get (see `PrivacyLevel.keptFromAgents`): the browser extension stays theirs
+    /// unless the user keeps it on this Mac by hand.
+    var keptFromAgents: Set<String> { privacyLevel.keptFromAgents(byHand: localOnlySources) }
+
     /// Kept on this Mac by a rule (the privacy level, or with the screen) rather than by the user's own switch.
     func keptByRule(_ source: String) -> Bool {
         !localOnlySources.contains(source) && keptOnMac.contains(source)

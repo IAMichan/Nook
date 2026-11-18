@@ -168,8 +168,10 @@ drawn in a closed shadow root, never takes a click itself, and does not glide wh
 - **Your privacy settings, in the browser too.** The extension follows what you set in Nook's main window. A page in
   your browser is part of your screen: whenever the screen stays on this Mac (the Strict privacy level, or
   **Settings › Privacy** by hand), the browser extension does too (`PrivacyLevel.keptOnMac`), and you can also keep only
-  the browser here. While it stays here, an external brain never gets the page's text or the `chrome_*` tools, and
-  neither does a coding agent. With a model on this Mac picked under **Settings › Brain › Screen work**:
+  the browser here. While it stays here, an external brain never gets the page's text or the `chrome_*` tools. Coding
+  agents keep the extension when it only stays here with the screen (`PrivacyLevel.keptFromAgents`): they drive your
+  browser with every action approved in Nook. They lose it only when you keep the browser extension itself on this Mac
+  by hand. With a model on this Mac picked under **Settings › Brain › Screen work**:
   - A question about the page goes to that model (`AppModel.pageWorker`). It reads the page on this Mac and either
     answers itself, or (with "It gives Claude a short, filtered note") writes the external brain a note with only what
     the question needs (`PrivateBrief`). The note is filtered at the strictest level before it leaves: secrets, mail

@@ -29,6 +29,15 @@ enum PrivacyLevel: String, CaseIterable, Identifiable, Codable {
         if kept.contains(SourceCatalog.screen) { kept.insert(SourceCatalog.browserExtension) }
         return kept
     }
+
+    /// The sources kept from coding agents: the same, except that the browser extension goes with the screen only for
+    /// Nook's own brain. An agent drives the user's browser with each action approved in Nook, so it keeps the extension
+    /// unless the user keeps the browser extension itself on this Mac by hand.
+    func keptFromAgents(byHand: Set<String>) -> Set<String> {
+        var kept = keptOnMac(byHand: byHand)
+        if !byHand.contains(SourceCatalog.browserExtension) { kept.remove(SourceCatalog.browserExtension) }
+        return kept
+    }
 }
 
 /// Takes out what the privacy level keeps on this Mac from text Nook gathered (context, screen text, what tools read)

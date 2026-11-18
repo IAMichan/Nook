@@ -18,9 +18,11 @@ extension WorkspaceBridge {
     /// The most text one call returns.
     private static let resultLimit = 20_000
 
-    /// Sources that never go to an agent: the ones the user keeps on this Mac, whatever brain Nook Chat runs on.
+    /// Sources that never go to an agent: the ones the user keeps on this Mac, whatever brain Nook Chat runs on. The
+    /// browser extension is the exception: it only follows the screen for Nook's own brain, so agents can use it unless
+    /// the user keeps it here by hand.
     func keptOnMac(_ app: AppModel) -> Set<String> {
-        app.settings.keptOnMac
+        app.settings.keptFromAgents
     }
 
     /// The Nook tools an agent may use now: those of the sources that are on, without the ones kept on this Mac.

@@ -14,6 +14,16 @@ final class BrowserPagePrivacyTests: XCTestCase {
         XCTAssertEqual(SourceCatalog.browserExtension, BrowserExtensionTools.sourceID)
     }
 
+    func testAgentsKeepTheBrowserExtensionUnlessTheUserKeepsItHere() {
+        XCTAssertFalse(PrivacyLevel.strict.keptFromAgents(byHand: []).contains(SourceCatalog.browserExtension),
+                       "the screen kept by the level does not take the extension from agents")
+        XCTAssertFalse(PrivacyLevel.open.keptFromAgents(byHand: [SourceCatalog.screen]).contains(SourceCatalog.browserExtension),
+                       "the screen kept by hand does not take the extension from agents")
+        XCTAssertTrue(PrivacyLevel.open.keptFromAgents(byHand: [SourceCatalog.screen]).contains(SourceCatalog.screen))
+        XCTAssertTrue(PrivacyLevel.open.keptFromAgents(byHand: [SourceCatalog.browserExtension]).contains(SourceCatalog.browserExtension),
+                      "the extension kept here by hand stays away from agents")
+    }
+
     func testTheBrainIsToldWhereThePageIs() throws {
         let page = try XCTUnwrap(BrowserExtensionPanel.Page(["title": "Bank", "url": "https://bank.example.com", "text": "Saldo € 1.234"]))
         let shared = BrowserExtensionPanel.note(page: page, browser: "Arc", privacy: .shared)
