@@ -374,7 +374,7 @@ final class BrowserStore: ObservableObject {
 
 /// One tab of Nook's browser: its own web view and page.
 @MainActor
-final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
+final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
     let id = UUID()
     @Published var address = ""
     @Published private(set) var title = ""
@@ -454,12 +454,15 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
             configuration.userContentController.addUserScript(
                 WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
+        // Signing in with Google: passkeys this browser cannot use are kept out of Google's way (`WebSignInAgent`).
+        configuration.userContentController.addGoogleSignInHelp()
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
         super.init()
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         signIns.page = self
         passwords.page = self
@@ -722,12 +725,33 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         if webView.url != nil { webView.reload() } else if let url = URL(string: address) { webView.load(URLRequest(url: url)) }
     }
 
-    /// Only web pages open inside; mail, phone and app links go to the system, other schemes are refused.
+    /// Only web pages open inside; mail, phone and app links go to the system, other schemes are refused. Google's
+    /// sign-in pages turn this browser away as an app's own, so there it calls itself Firefox (`WebSignInAgent`).
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         let scheme = navigationAction.request.url?.scheme?.lowercased() ?? ""
-        if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
+        if ["http", "https", "about", "blob", "data"].contains(scheme) {
+            return webView.presentsItself(for: navigationAction, otherwise: nil) ? .cancel : .allow
+        }
         if scheme == "mailto", let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
         return .cancel
+    }
+
+    // MARK: WKUIDelegate
+
+    /// A page that opens a window of its own (`window.open`, such as "Continue with Google") gets one, tied to this
+    /// page so the sign-in can answer it (`BrowserSitePopup`); a link that asks for a new tab opens in a new tab.
+    /// Without this WebKit opened nothing, and those buttons did nothing.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if BrowserSitePopup.isWindow(navigationAction, features: windowFeatures) {
+            return BrowserSitePopup.open(configuration: configuration, features: windowFeatures, over: webView.window)
+        }
+        if let url = navigationAction.request.url, let store {
+            store.newTab().open(url)
+        } else if let url = navigationAction.request.url {
+            webView.load(URLRequest(url: url))
+        }
+        return nil
     }
 
     /// The open page in the user's own browser, for what does not work inside an app (passkeys, some sign-ins).
