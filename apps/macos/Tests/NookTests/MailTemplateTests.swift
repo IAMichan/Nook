@@ -1,6 +1,29 @@
 import XCTest
 
 final class MailTemplateTests: XCTestCase {
+    func testHeadersInOtherLanguages() {
+        let mail = MailTemplate.fenced("Aan: jan@example.com\nOnderwerp: Zips\nCci: x@example.com\n\nHoi Jan,")
+        XCTAssertEqual(mail.to, "jan@example.com")
+        XCTAssertEqual(mail.subject, "Zips")
+        XCTAssertEqual(mail.bcc, "x@example.com")
+        XCTAssertEqual(mail.body, "Hoi Jan,")
+    }
+
+    func testMailBlockWithoutHeadersIsAllText() {
+        let mail = MailTemplate.fenced("Hoi Jan,\n\nTot morgen.")
+        XCTAssertEqual(mail.to, "")
+        XCTAssertEqual(mail.body, "Hoi Jan,\n\nTot morgen.")
+    }
+
+    func testReplyScriptAddsBlindCopies() {
+        let script = MailActions.replyScript(id: "a@b", body: "Hi", to: ["x@y.nl"], cc: [], bcc: ["z@y.nl"], openWindow: false)
+        XCTAssertTrue(script.contains("make new bcc recipient at end of bcc recipients of m with properties {address:\"z@y.nl\"}"))
+    }
+}
+
+// These read the answer through MarkdownBlock, which the core tests leave out on Linux (scripts/core-tests.sh).
+#if os(macOS)
+extension MailTemplateTests {
     func testMailBlockReadsItsHeaders() {
         let text = """
         Here is the mail:
@@ -26,20 +49,6 @@ final class MailTemplateTests: XCTestCase {
         XCTAssertEqual(mail.subject, "Latest versions")
         XCTAssertTrue(mail.body.hasPrefix("Hi Jan,"))
         XCTAssertTrue(mail.body.hasSuffix("Michan"))
-    }
-
-    func testHeadersInOtherLanguages() {
-        let mail = MailTemplate.fenced("Aan: jan@example.com\nOnderwerp: Zips\nCci: x@example.com\n\nHoi Jan,")
-        XCTAssertEqual(mail.to, "jan@example.com")
-        XCTAssertEqual(mail.subject, "Zips")
-        XCTAssertEqual(mail.bcc, "x@example.com")
-        XCTAssertEqual(mail.body, "Hoi Jan,")
-    }
-
-    func testMailBlockWithoutHeadersIsAllText() {
-        let mail = MailTemplate.fenced("Hoi Jan,\n\nTot morgen.")
-        XCTAssertEqual(mail.to, "")
-        XCTAssertEqual(mail.body, "Hoi Jan,\n\nTot morgen.")
     }
 
     func testQuotedDraftBecomesAMail() {
@@ -77,9 +86,5 @@ final class MailTemplateTests: XCTestCase {
         XCTAssertEqual(mail.to, "a@b.nl")
         XCTAssertEqual(mail.body, "Short note.")
     }
-
-    func testReplyScriptAddsBlindCopies() {
-        let script = MailActions.replyScript(id: "a@b", body: "Hi", to: ["x@y.nl"], cc: [], bcc: ["z@y.nl"], openWindow: false)
-        XCTAssertTrue(script.contains("make new bcc recipient at end of bcc recipients of m with properties {address:\"z@y.nl\"}"))
-    }
 }
+#endif
