@@ -4,8 +4,8 @@
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
   GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, browserName, cleanLook, commandError, consoleText,
-  describeTabs, isAnswering, isBlocked, isRestricted, normalizeURL, panelMessageAllowed, questionImages, reconnectDelay,
-  serial, siteOf
+  describeTabs, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed,
+  pdfCrop, pdfPointCopy, questionImages, reconnectDelay, serial, siteOf
 } from './lib/core.js';
 
 const REQUEST_TIMEOUT = 20_000;
@@ -762,10 +762,121 @@ async function handlePanel(message) {
       return request({ kind: 'brain' });
     case 'setBrain':
       return request({ kind: 'setBrain', choice: String(message.choice || '').slice(0, 400) });
+    // The panel's crosshair: select an element (or a spot in a PDF) on the page in front for the clipboard.
+    case 'pick':
+      return pick(await activeTab(message.windowId));
     default:
       return { ok: false, error: 'Unknown message.' };
   }
 }
+
+// MARK: - Selecting on a page for an agent
+
+// Pointing at an element (or a spot in a PDF) on any page and copying where it is, so pasting it in a coding agent's
+// prompt says exactly what to change: the gesture of Nook's own browser and PDF viewer, in every tab. It is the user's
+// own act and what it takes only goes to their clipboard, never to Nook, so it works while Nook is paused or switched
+// off for the site. Started from the side panel's crosshair or the keyboard shortcut; starting it again stops it.
+
+/** The tabs the user is selecting in now. */
+const picking = new Set();
+
+async function pickScript(tabId, method, args = []) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['page/pick.js'] });
+  const [frame] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (name, input) => globalThis.__nookPick?.[name]?.(...input),
+    args: [method, args]
+  });
+  return frame?.result;
+}
+
+/**
+ * Selects on the page in `tab` and copies it: elements on a web page, a spot in a PDF the browser shows. Resolves
+ * when the user clicked (or stopped) with `{ ok, name }`, `{ ok: true, stopped: true }` or `{ ok: false, error }`, the
+ * error a key of the side panel's texts.
+ */
+async function pick(tab) {
+  if (!tab?.id) return { ok: false, error: 'pickNoPage' };
+  if (picking.has(tab.id)) {
+    picking.delete(tab.id);
+    await pickScript(tab.id, 'cancel').catch(() => {});
+    return { ok: true, stopped: true };
+  }
+  const url = tab.url || tab.pendingUrl || '';
+  if (!mayPick(url)) return { ok: false, error: 'pickRestricted' };
+  picking.add(tab.id);
+  // The browser stops an idle worker after 30 s, and waiting for a click is idle: a call every 20 s keeps it awake
+  // until the user clicked, so the copy does not get lost.
+  const awake = setInterval(() => chrome.runtime.getPlatformInfo?.().catch(() => {}), 20_000);
+  try {
+    const pdf = looksLikePdf(url) || await pickScript(tab.id, 'isPdf');
+    return pdf ? await pickPoint(tab, url) : await pickElements(tab, url);
+  } catch {
+    // The tab went to another page (or closed) while selecting: that only ends it.
+    const now = await chrome.tabs.get(tab.id).catch(() => null);
+    if (!now || (now.url || now.pendingUrl || '') !== url) return { ok: true, stopped: true };
+    return { ok: false, error: url.toLowerCase().startsWith('file:') ? 'pickFileAccess' : 'pickRestricted' };
+  } finally {
+    clearInterval(awake);
+    picking.delete(tab.id);
+  }
+}
+
+async function pickElements(tab, url) {
+  const picked = await pickScript(tab.id, 'element');
+  const copied = elementsCopy(url, picked);
+  if (!copied) return { ok: true, stopped: true };
+  const ok = await pickScript(tab.id, 'copy', [copied.text, null, copied.name]);
+  return ok ? { ok: true, name: copied.name } : { ok: false, error: 'pickNotCopied', text: copied.text };
+}
+
+async function pickPoint(tab, url) {
+  const point = await pickScript(tab.id, 'point');
+  const copied = pdfPointCopy(url, point);
+  if (!copied) return { ok: true, stopped: true };
+  // The picture shows the PDF as the window does; a tab no longer in front gives no picture, only the text.
+  const [front] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  const image = front?.id === tab.id ? await pdfPicture(tab.windowId, point).catch(() => null) : null;
+  const ok = await pickScript(tab.id, 'copy', [copied.text, image, copied.name]);
+  return ok ? { ok: true, name: copied.name } : { ok: false, error: 'pickNotCopied', text: copied.text };
+}
+
+/** The iris Nook marks what you selected with (PdfPointCapture.markColor). */
+const PICK_IRIS = '#7c6cf0';
+
+/** A PNG (as a data URL) of the window around the spot, the spot marked with a crosshair in a ring. */
+async function pdfPicture(windowId, point) {
+  const shot = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+  const bitmap = await createImageBitmap(await (await fetch(shot)).blob());
+  const crop = pdfCrop(point, bitmap.width, bitmap.height);
+  const canvas = new OffscreenCanvas(crop.width, crop.height);
+  const context = canvas.getContext('2d');
+  context.drawImage(bitmap, crop.left, crop.top, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  const radius = 9 * crop.scale, arm = 16 * crop.scale;
+  for (const [color, width] of [['rgba(255,255,255,.9)', 4], [PICK_IRIS, 1.75]]) {
+    context.strokeStyle = color;
+    context.lineWidth = width * crop.scale;
+    context.beginPath();
+    context.arc(crop.spot.x, crop.spot.y, radius, 0, Math.PI * 2);
+    context.moveTo(crop.spot.x - arm, crop.spot.y);
+    context.lineTo(crop.spot.x + arm, crop.spot.y);
+    context.moveTo(crop.spot.x, crop.spot.y - arm);
+    context.lineTo(crop.spot.x, crop.spot.y + arm);
+    context.stroke();
+  }
+  const png = new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer());
+  let binary = '';
+  for (let start = 0; start < png.length; start += 0x8000) binary += String.fromCharCode(...png.subarray(start, start + 0x8000));
+  return 'data:image/png;base64,' + btoa(binary);
+}
+
+chrome.tabs.onRemoved?.addListener((tabId) => picking.delete(tabId));
+
+// The keyboard shortcut (Alt+Shift+E unless the user set another in the browser's shortcuts): the same as the crosshair.
+chrome.commands?.onCommand?.addListener((command, tab) => {
+  if (command !== 'pick') return;
+  (tab?.id ? Promise.resolve(tab) : activeTab(null)).then(pick).catch(() => {});
+});
 
 async function activeTab(windowId) {
   const query = windowId ? { active: true, windowId } : { active: true, lastFocusedWindow: true };

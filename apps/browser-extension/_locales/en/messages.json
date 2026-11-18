@@ -220,5 +220,41 @@
   },
   "newerMessages": {
     "message": "New answer"
+  },
+  "commandPick": {
+    "message": "Select an element on the page and copy it for your coding agent"
+  },
+  "pickTitle": {
+    "message": "Select an element to copy for your agent (Alt+Shift+E)"
+  },
+  "pickStarted": {
+    "message": "Click an element on the page (or a spot in a PDF). Esc stops."
+  },
+  "pickCopied": {
+    "message": "Copied $1: paste it in your agent's prompt"
+  },
+  "pickElementHint": {
+    "message": "Click an element to copy it for your agent · Shift-click for more · Esc stops"
+  },
+  "pickElementMore": {
+    "message": "$1 selected · Shift-click for more · Return copies"
+  },
+  "pickPointHint": {
+    "message": "Click a spot in the PDF to copy it for your agent · Esc stops"
+  },
+  "pickNotCopied": {
+    "message": "The browser did not allow copying. Click on the page once and try again."
+  },
+  "pickRestricted": {
+    "message": "The browser does not let extensions select on this page."
+  },
+  "pickFileAccess": {
+    "message": "For files on your computer, turn on \"Allow access to file URLs\" in this extension's details."
+  },
+  "pickNoPage": {
+    "message": "Open a page first."
+  },
+  "pickFailed": {
+    "message": "Selecting did not work. Reload the page and try again."
   }
 }

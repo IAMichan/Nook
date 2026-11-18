@@ -220,5 +220,41 @@
   },
   "newerMessages": {
     "message": "Nieuw antwoord"
+  },
+  "commandPick": {
+    "message": "Selecteer een element op de pagina en kopieer het voor je coding agent"
+  },
+  "pickTitle": {
+    "message": "Selecteer een element om te kopiëren voor je agent (Alt+Shift+E)"
+  },
+  "pickStarted": {
+    "message": "Klik op een element op de pagina (of een plek in een pdf). Esc stopt."
+  },
+  "pickCopied": {
+    "message": "$1 gekopieerd: plak het in de prompt van je agent"
+  },
+  "pickElementHint": {
+    "message": "Klik op een element om het voor je agent te kopiëren · Shift-klik voor meer · Esc stopt"
+  },
+  "pickElementMore": {
+    "message": "$1 geselecteerd · Shift-klik voor meer · Return kopieert"
+  },
+  "pickPointHint": {
+    "message": "Klik op een plek in de pdf om die voor je agent te kopiëren · Esc stopt"
+  },
+  "pickNotCopied": {
+    "message": "De browser stond kopiëren niet toe. Klik één keer op de pagina en probeer het opnieuw."
+  },
+  "pickRestricted": {
+    "message": "De browser laat extensies op deze pagina niets selecteren."
+  },
+  "pickFileAccess": {
+    "message": "Zet voor bestanden op je computer \"Toegang tot bestands-URL's toestaan\" aan in de details van deze extensie."
+  },
+  "pickNoPage": {
+    "message": "Open eerst een pagina."
+  },
+  "pickFailed": {
+    "message": "Selecteren lukte niet. Laad de pagina opnieuw en probeer het nog eens."
   }
 }

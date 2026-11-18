@@ -15,6 +15,7 @@ approve each action.
 | `background.js` | Service worker: the port to Nook, the commands, and the side panel's messages |
 | `lib/core.js` | Pure logic (checks, texts for Nook), tested in `test/` |
 | `page/agent.js` | Nook's hands on a page (find, read, click, type, scroll, key, and form and fill for Double Tap), injected only when asked |
+| `page/pick.js` | Selecting an element (or a spot in a PDF) on any page and copying where it is, for a coding agent's prompt |
 | `page/presence.js` | The glow and the "Nook is working · Stop" strip while Nook acts |
 | `sidepanel.*` | The side panel: status, the switch per site, pause, chat, and activity, in Nook's own theme (`look`) |
 | `composer/` | The side panel's composer (with the model chip) and transcript: Nook's shared ones (`packages/web-ui`) in the panel's tokens and texts |
