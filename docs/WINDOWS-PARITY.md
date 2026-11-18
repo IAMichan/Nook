@@ -515,6 +515,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-105** Browser element snippets into the composer (#1570) · S
 
+- [ ] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
+
 ### 4.7 Agents list
 
 - [ ] **AG-110** Auto-settle rules, settle on PR merge (`AutoSettlePolicy`, `AutoSettleRulesRows`, #1621) · M

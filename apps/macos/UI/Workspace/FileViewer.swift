@@ -205,7 +205,12 @@ struct FileViewer: View {
                         textBody(lines: liveLines, tokens: liveTokens)
                     }
                 case .preview:
-                    QuickLookView(url: URL(fileURLWithPath: target.path))
+                    if kind == .pdf, let session {
+                        // Beside a session: point at a spot to hand it to the composer, as in the browser.
+                        PdfPointView(url: URL(fileURLWithPath: target.path), session: session).id(reloads)
+                    } else {
+                        QuickLookView(url: URL(fileURLWithPath: target.path))
+                    }
                 case .folder, .missing:
                     // With a way on: open another file, as the empty File tab offers.
                     WSEmptyState(symbol: "doc.text", title: tr("ws.file.missing", AgentPathFormat.tilde(target.path)),

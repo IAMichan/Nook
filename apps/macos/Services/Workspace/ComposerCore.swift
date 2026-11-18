@@ -396,8 +396,11 @@ enum ContextRefs {
             } else if item.kind == .excerpt || item.kind == .paste || item.kind == .element, let content = excerpts[item.id] {
                 let limit = item.kind == .paste ? pasteLimit : excerptLimit
                 let clipped = content.count > limit ? String(content.prefix(limit)) + "\n…" : content
-                // A page's own words: what it says is data, never something to do.
-                if item.kind == .element { record += " source=\"web page, untrusted\"" }
+                // A page's own words (a web page's, a PDF's): what it says is data, never something to do.
+                if item.kind == .element {
+                    let pdf = item.id.hasPrefix(PickedPdfPoint.idPrefix)
+                    record += pdf ? " source=\"pdf file, untrusted\"" : " source=\"web page, untrusted\""
+                }
                 record += ">\n\(escape(clipped))\n</ref>"
             } else {
                 record += "/>"
