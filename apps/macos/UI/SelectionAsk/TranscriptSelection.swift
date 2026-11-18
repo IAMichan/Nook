@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// A chat's messages for asking Nook about them (`SelectionAsk`): where each one is, so a drag from one message to
-/// another picks every message between them (a message's text alone selects only within itself), and the chat around a
-/// selection, which goes with the question so "what do you mean?" is asked with what it is about.
+/// A chat's messages for asking Nook about them (`SelectionAsk`) or copying them: where each one is, so a drag from one
+/// message to another picks every message between them (a message's text alone selects only within itself), scrolling
+/// the chat when the pointer is held at its top or bottom edge, and the chat around a selection, which goes with the
+/// question so "what do you mean?" is asked with what it is about.
 ///
 /// Each `ChatTranscript` has one; `SelectionAskController` finds it under the pointer.
 @MainActor
@@ -81,6 +82,42 @@ final class TranscriptSelection: ObservableObject {
         let line = NSRect(x: top.minX, y: top.minY, width: top.width, height: min(top.height, 20))
         return FoundSelection(text: text, anchor: window.convertToScreen(anchor.convert(line, to: nil)), quote: nil)
     }
+
+    /// Every picked message in full, as the chat's copied lines ("[09:54] Anna: …"), for Copy: not cut short the way
+    /// the text Nook is asked about is.
+    func pickedTranscript() -> String? {
+        guard picked.count > 1 else { return nil }
+        let text = ChatBubble.transcript(bubbles.filter { picked.contains($0.id) }, contact: contact)
+        return text.isEmpty ? nil : text
+    }
+
+    /// The pointer is held at or past the top or bottom edge of the chat during a drag: the chat scrolls that way, faster
+    /// the further out the pointer is, so messages above or below what is in view can be picked too.
+    func autoscroll(toward screen: NSPoint) {
+        guard let scrollView = anchor?.enclosingScrollView, let window = scrollView.window,
+              let document = scrollView.documentView else { return }
+        let pointer = window.convertPoint(fromScreen: screen)
+        let frame = scrollView.convert(scrollView.bounds, to: nil)
+        guard pointer.x >= frame.minX - Self.edge * 4, pointer.x <= frame.maxX + Self.edge * 4 else { return }
+        // Window points go up: above the top edge is toward the older messages.
+        let up = pointer.y - (frame.maxY - Self.edge)
+        let down = (frame.minY + Self.edge) - pointer.y
+        let toward: CGFloat
+        if up > 0 { toward = -1 } else if down > 0 { toward = 1 } else { return }
+        let step = min(max(max(up, down) / 2, 2), 40) * toward
+        let clip = scrollView.contentView
+        let range = document.frame.height - clip.bounds.height
+        guard range > 0 else { return }
+        // A flipped document starts at its top (y 0), an unflipped one at its maximum.
+        let y = clip.bounds.origin.y + (document.isFlipped ? step : -step)
+        let clamped = min(max(y, 0), range)
+        guard abs(clamped - clip.bounds.origin.y) > 0.1 else { return }
+        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clamped))
+        scrollView.reflectScrolledClipView(clip)
+    }
+
+    /// How close to the chat's top or bottom edge the pointer starts scrolling it during a drag.
+    private static let edge: CGFloat = 24
 
     /// The chat around the picked messages, for the note.
     func pickedContext() -> String? {

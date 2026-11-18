@@ -30,7 +30,7 @@ struct SelectionAskRoot: View {
 }
 
 /// Above a selection: Ask Nook first (it answers a question, or says what matters about what is not one), then Explain
-/// and Translate, and Quote where the words came from a session's answer. One quiet capsule, Nook's accent on its mark.
+/// and Translate, Quote where the words came from a session's answer, and Copy over messages picked in a chat. One quiet capsule, Nook's accent on its mark.
 private struct SelectionAskBar: View {
     @ObservedObject var model: SelectionAskModel
     let controller: SelectionAskController
@@ -50,6 +50,11 @@ private struct SelectionAskBar: View {
             if model.quote != nil {
                 if !model.quoteOnly { ComposerDivider() }
                 SelectionBarButton(symbol: "text.quote", title: tr("selectionAsk.quote")) { controller.quoteSelection() }
+            }
+            // Messages picked in a chat: all of them copied at once, also with Selection Ask off.
+            if model.copyText != nil {
+                if !model.quoteOnly || model.quote != nil { ComposerDivider() }
+                SelectionBarButton(symbol: "doc.on.doc", title: tr("selectionAsk.copy")) { controller.copySelection() }
             }
         }
         .padding(NookTheme.Spacing.xs)
