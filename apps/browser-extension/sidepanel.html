@@ -13,8 +13,10 @@
     <span id="status" class="pill" role="status"></span>
     <span class="grow"></span>
     <!-- Select an element (or a spot in a PDF) on the page and copy where it is, for a coding agent's prompt. -->
+    <!-- On a PDF it shows a page with a marked spot instead, as it then copies a spot in the PDF. -->
     <button id="pick" type="button" class="icon">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r=".6"/></svg>
+      <svg class="when-page" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r=".6"/></svg>
+      <svg class="when-pdf" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><circle cx="12" cy="14" r="3"/><circle cx="12" cy="14" r=".6"/></svg>
     </button>
     <button id="find-open" type="button" class="icon" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>

@@ -110,7 +110,9 @@ drawn in a closed shadow root, never takes a click itself, and does not glide wh
 The crosshair in the side panel's header (or **Alt+Shift+E**, which you can change at `chrome://extensions/shortcuts`)
 selects something on the page in front and copies where it is, so pasting it in a coding agent's prompt (in Nook, a
 terminal or an editor) says exactly what to change. It is the same gesture as in Nook's own browser and PDF viewer
-beside a session.
+beside a session. The button shows what it will select on the tab in front: the crosshair for an element, a page
+with a marked spot when a PDF is open (the address or the viewer's title ends in `.pdf`), and it is greyed out on pages
+the browser keeps extensions off.
 
 - **On a web page**, the element under the pointer gets an outline in Nook's iris with a badge that names it
   (`h2.mkt-title`). A click copies it: the page's address, a CSS selector that finds it again, its markup (up to 6,000
