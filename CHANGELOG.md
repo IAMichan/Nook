@@ -10,6 +10,8 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+## [0.1.1-beta.5] - 2026-11-18
+
 ### Added
 
 - A Windows or Linux PC is now a full computer for the iPhone and Android companion, like a Mac: sessions follow live,
@@ -194,106 +196,87 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Downloaded builds (the release .dmg/.zip) update themselves from GitHub Releases through the footer's Update
   button: Nook downloads the release's .zip, checks its Ed25519 signature against the key it carries, and installs it
   (`docs/UPDATES.md`, "Release builds"). The release workflow signs the .zip when `NOOK_UPDATE_SIGNING_KEY` is set.
+
 - An update that crashes the new build before it has run for a minute is rolled back on the next launch: Nook keeps
   the previous app and a snapshot of `nook.sqlite` until the new build proves healthy, puts both back, and says so
   (`docs/UPDATES.md`, "Rollback").
+
 - Push notifications for everyone, through the relay: the Mac seals each notification with the phone's pairing key,
   the relay forwards it to Apple with Nook's APNs key (opt-in Worker secrets, `POST /v1/push`, rate limited, no
   logging), and a new Notification Service Extension on the iPhone opens it. The own-`.p8` path stays
   (`docs/COMPANION.md`, "Push through Nook's relay").
+
 - A short demo video at the top of the README (`docs/assets/nook-demo.mp4`, with a GIF preview), made with the
   `nook-video` skill, which can now render landscape clips (`--size`).
+
 - Area labels (`area: macos`, `area: tauri`, …) that are added to pull requests automatically, defined in
   `.github/labels.yml`.
+
 - Release notes grouped by label, and this changelog.
+
 - Dependabot updates for the Tauri app (Cargo and npm) and `nook-chatd` (Go modules).
+
 - `CODEOWNERS`, `.editorconfig`, and `.gitattributes`.
+
 - A *Related issues* section in the pull request template.
+
 - Agent transcripts read more clearly: the thought behind the running step shows above it, a message sent while
   the agent worked splits its turn's fold ("Continued for 20s"), a stopped turn stays open ("You stopped after 12s"),
   compactions, API errors and usage limits stay in sight, and a command opens to its output.
+
 - iPhone companion: repeated commands are carried out once (an LRU receipt store), protocol and app versions with
   "Update Nook on your Mac" / "Update the app" banners, "Why can't I connect?" on the phone and *Test relay* on the Mac,
   per-phone scopes chosen at pairing, one phone paired with several Macs, a local redacted *Copy diagnostics* log, and
   shared golden protocol fixtures checked from Swift, Rust and the relay.
-
-### Fixed
-
-- A coding agent's steps with Nook's own tools (terminal, browser, sessions, simulators, scheduled tasks, Nook Chat…)
-  now show in the timeline in your language on macOS, Windows and Linux, instead of always in English on macOS and
-  partly in Dutch on Windows and Linux.
-
-- Merging a GitHub pull request in a repository whose ruleset only allows squash (or rebase) no longer fails with
-  "Merge commits are not allowed on this repository": Nook now reads the merge methods the base branch's rulesets
-  allow and picks one of those, on macOS and in the Windows, Linux and Android app.
-- Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
-  shows as selected.
-- Writing in an old chat no longer marks all its messages unread, in every chat app.
-- Sending a message no longer brings back the unread bar above the answer field for a chat you read on your phone, in
-  every chat app.
-- Two different chats of one name in Teams, Slack, Telegram or a chat helper network are now two rows with a short mark,
-  and an answer reaches the right chat. Answers in a row with two threads to one person go to the newest.
-- A Teams message with several files says how many there are.
-- A picture that never arrives shows as a named file that opens its app instead of an empty tile. Teams files in
-  SharePoint or OneDrive show that way at once.
-- Xcode 27 opens `Nook.xcodeproj` and `NookCompanion.xcodeproj` again: XcodeGen no longer lists a group or file in two
-  groups, which Xcode 27 refuses with "is a member of more than one group".
-- Scrolling through every chat of every app in the Chats tab no longer stutters: a chat picture that comes in redraws
-  only the faces instead of the whole tab, app icons are drawn once into a small bitmap, the row's hover button is
-  made only under the pointer, and a chat that changes no longer makes every other row again.
-- A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
-  one for its process): the session stays in the folder it started in, and the process scan matches it by process
-  and parent folder (macOS and Tauri).
-- Sending a mail draft from the chat no longer fails with "error -1712" when Mail was not running: Nook starts Mail
-  first and gives it time to send. Mail errors are now shown in your language, and a draft can send from the account
-  you named ("vanuit mijn gmail").
-- A mail draft (or a chat message) is the only step to approve: Nook no longer adds a second "takes over" proposal
-  for the same message, and asking for a change replaces the open draft instead of stacking a new one under it. The
-  "only on this Mac" notice for Contacts no longer shows when the request already gave the address.
-- The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
-  the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
-  only a refresh you ask for shows a spinner.
-- "Post this on LinkedIn" and other requests to post on a site that don't start with a known verb are taken over
-  again instead of being answered with text.
 
 ### Changed
 
 - Connecting Nook's browser extension is one click: Nook's host now lets in the extension from the Chrome Web Store
   (before, only the unpacked build could connect), **Connect** opens its store page when no browser has it yet, and
   Settings recognizes it by itself: connected, found and connecting, or switched off.
+
 - Nook Chat answers sooner: an API brain gets 5 s instead of 8 s to plan a question before Nook falls back to its own
   search, the connection to the brain is opened while Nook prepares (also with the chat open), and a retry (a chart, a
   corrected detail, an empty answer) reuses what was already looked up instead of planning and searching again.
+
 - Your answer style and a space's instructions now reach the brain as your own instructions instead of inside the
   context marked as third-party data, so they are followed; the prompt names the date line correctly ("Now").
+
 - Nook in your browser is much faster and answers better: a question from the side panel takes the page's text (and
   what you selected) along, so Nook answers about the page right away instead of first reading it with a tool. Nook
   pushes its answer to the side panel as it writes it, as live as in Nook's own window, instead of the panel asking
   every second. Commands on a page take one trip instead of two, clicks no longer wait a fixed time, and finding the
   buttons and fields on a long page is quicker. The page's text goes only to a brain that may see your browser.
+
 - Nook in your browser follows your privacy settings: a page in your browser is part of your screen, so it stays on
   your Mac whenever the screen does (Strict, or by hand). The model you picked for screen work then reads the page,
   answers itself or gives your external brain a short, filtered note, and fills in forms on the page itself, so what
   you fill in never goes through the cloud. The side panel says how Nook answered.
+
 - Watch Nook work in your browser: a cursor glides to what Nook clicks, types in or scrolls, with a badge under it that
   says what it does ("Klikt · Verzenden", "Typt", "Scrolt"). Nook also clicks more surely and needs fewer steps: every
   action reports what the page shows now, a cookie banner or dialog in the way is named with its buttons, buttons in
   web components are found, and a link that opens a new tab takes Nook along.
+
 - While Nook works on a page, your own clicks and keys there wait, so you never get in each other's way (scrolling and
   Stop stay free). Nook keeps working in its tab while you use another one, at full speed. When a page asks to sign
   in, Nook lets you type and click, and goes on by itself once you are in; it never sees your password.
+
 - Nook's answers stream into the iPhone and Android companions as Nook writes them: the Mac sends the open
   conversation by itself over the live connection instead of the phone asking every second and a half. Only Nook's new
   words travel, a slow connection gets one catch-up update instead of a growing backlog, a reconnect fetches only what
   was missed, and a lost update repairs itself.
+
 - Every tooltip looks and feels the same: Nook's dark card, shown after a short rest instead of the system's gray tip
   after a second. Only the items inside a menu keep the system's tooltip, since macOS draws those itself.
+
 - The side panel on the right opens its tabs faster: a pull request shows its page as soon as it is read instead of
   waiting a third of a second first, switching tabs shows the new one at once instead of animating both, the Changes
   tab lists files as soon as git knows them (before the slower branch comparison) and reads git once when it opens, the
   Pull request tab's list no longer waits for git, and a file you come back to in the File tab shows at once. The pull
   request page, its list and the Changes tab are drawn again only when what they show changed, not whenever something
   else in the window does, and a panel that opens on a tab far down a long tab row scrolls that tab into view.
+
 - Every tab of the side panel on the right was gone over:
   - **Outputs and Subagents** redraw only when what they show changed (one streaming subagent redraws only its
     card), read pictures off the main thread, and start with the same bar as every other tab. The subagents' progress
@@ -315,13 +298,17 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
     press refresh; the polling in the background stays at low priority.
 
 - The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
+
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
+
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's
   writing dots and the music bars now run in Core Animation instead of being drawn frame by frame on the main thread.
   Each of them used to make the whole window lay itself out again on every frame, over a hundred times a second with a
   dozen sessions running; now they cost the main thread nothing per frame. Nook himself is drawn without the separate
   hosting view that did the same, and looking a session up by id no longer walks every session.
+
 - A smoothness and UX pass: Escape closes the notch, the notch no longer opens while you sweep past it, toasts stay off the composer, and lists (Agents, Nook, palette, search, terminals) work with the keyboard and the pointer alike. Drafts, stashes and carets survive switching sessions, copy buttons all behave the same, Nook chat streams with far less redrawing, and Settings saves and confirms where it did not.
+
 - Smoother throughout: typing in the Nook chat and under a terminal or past agent session draws only the composer,
   not the conversation above it; starting and stopping a scroll no longer redraws every message; stickers and GIFs
   decode off the main thread; the notch opens sooner (shorter hover wait and open spring) without the hover's curve
@@ -336,20 +323,78 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   panel, a turn's diff or a file, a pull request beside its list, an artifact beside its app and the docked session
   panel get the same line, gap, 32 pt header and cross to close. A diff or file and the tool panel take turns instead
   of stacking, and the docked session panel moved to the far right so the panel toggles above it keep their place.
+
 - What the side panel's tabs show lines up: each starts with the same 34 pt bar (browser, terminal, changes, local
   servers, file), a tab with nothing in it (plans, file, artifact) says what to do instead of staying blank, a pull
   request goes back to the list from its own top bar instead of an extra row, and a session's changes can be read
   again like a folder's.
+
 - A pull request opens beside the list: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
+
 - A pull request's page is redesigned: a one-line title, segmented tabs, its tabs as `#number` whose mark turns
   into a close button, refreshing in the ⋯ menu, and a timeline with each commit as its own entry.
+
 - A pull request's Summary opens with whether it can merge: conflicts, checks, reviews and a branch behind, one line
   each with its state's color, and a click on a line goes to what needs you. Failing checks are listed first.
+
 - `docs/WERKRUIMTE-AGENTS.md` is now `docs/WORKSPACE-AGENTS.md`.
+
+### Fixed
+
+- A coding agent's steps with Nook's own tools (terminal, browser, sessions, simulators, scheduled tasks, Nook Chat…)
+  now show in the timeline in your language on macOS, Windows and Linux, instead of always in English on macOS and
+  partly in Dutch on Windows and Linux.
+
+- Merging a GitHub pull request in a repository whose ruleset only allows squash (or rebase) no longer fails with
+  "Merge commits are not allowed on this repository": Nook now reads the merge methods the base branch's rulesets
+  allow and picks one of those, on macOS and in the Windows, Linux and Android app.
+
+- Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
+  shows as selected.
+
+- Writing in an old chat no longer marks all its messages unread, in every chat app.
+
+- Sending a message no longer brings back the unread bar above the answer field for a chat you read on your phone, in
+  every chat app.
+
+- Two different chats of one name in Teams, Slack, Telegram or a chat helper network are now two rows with a short mark,
+  and an answer reaches the right chat. Answers in a row with two threads to one person go to the newest.
+
+- A Teams message with several files says how many there are.
+
+- A picture that never arrives shows as a named file that opens its app instead of an empty tile. Teams files in
+  SharePoint or OneDrive show that way at once.
+
+- Xcode 27 opens `Nook.xcodeproj` and `NookCompanion.xcodeproj` again: XcodeGen no longer lists a group or file in two
+  groups, which Xcode 27 refuses with "is a member of more than one group".
+
+- Scrolling through every chat of every app in the Chats tab no longer stutters: a chat picture that comes in redraws
+  only the faces instead of the whole tab, app icons are drawn once into a small bitmap, the row's hover button is
+  made only under the pointer, and a chat that changes no longer makes every other row again.
+
+- A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
+  one for its process): the session stays in the folder it started in, and the process scan matches it by process
+  and parent folder (macOS and Tauri).
+
+- Sending a mail draft from the chat no longer fails with "error -1712" when Mail was not running: Nook starts Mail
+  first and gives it time to send. Mail errors are now shown in your language, and a draft can send from the account
+  you named ("vanuit mijn gmail").
+
+- A mail draft (or a chat message) is the only step to approve: Nook no longer adds a second "takes over" proposal
+  for the same message, and asking for a change replaces the open draft instead of stacking a new one under it. The
+  "only on this Mac" notice for Contacts no longer shows when the request already gave the address.
+
+- The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
+  the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
+  only a refresh you ask for shows a spinner.
+
+- "Post this on LinkedIn" and other requests to post on a site that don't start with a known verb are taken over
+  again instead of being answered with text.
 
 ## [0.1.0-beta.1] - 2026-10-23
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
+[0.1.1-beta.5]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1-beta.5
 [0.1.0-beta.1]: https://github.com/IAMichan/nook/releases/tag/v0.1.0-beta.1
