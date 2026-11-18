@@ -94,6 +94,10 @@ EXCLUDE_TESTS=(
   "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
   "ChatImageRenderTests" "DayBucketsTests"
 )
+if [ "$(uname)" != "Darwin" ]; then
+  # Parse mail blocks with MarkdownBlock, which Linux leaves out (above).
+  EXCLUDE_TESTS+=("MailTemplateTests")
+fi
 
 
 write_if_changed "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'

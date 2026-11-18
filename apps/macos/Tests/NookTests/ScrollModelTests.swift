@@ -6,49 +6,65 @@ final class ScrollModelTests: XCTestCase {
     }
 
     func testScrollingUpNearTheEndStopsFollowingAtOnce() {
-        // A wheel or a drag that began at the end, still within the margin `atEnd` allows.
+        // The keyboard, or anything else without a wheel step: up while the sizes stay the same, within the margin too.
         let model = ScrollModel()
-        XCTAssertEqual(model.reaction(movedFrom: frame(1400), to: frame(1390)), .userScrolled)
+        XCTAssertTrue(model.releases(movedFrom: frame(1400), to: frame(1390)))
     }
 
     func testAWheelStepUpStopsFollowingWhileTheContentGrows() {
         // While an agent works the sizes change on nearly every frame, so a move alone cannot tell you scrolled.
         var model = ScrollModel()
-        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1500, content: 2100)))
-        XCTAssertEqual(model.reaction(toWheel: 3, nearEnd: true), .userScrolled, "up, even within the end margin")
-        model.apply(.userScrolled)
+        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1500, content: 2100)))
+        XCTAssertTrue(model.releases(wheel: 3), "up, even within the end margin")
+        model.userScrolled()
         XCTAssertFalse(model.shouldFollowEnd)
-        XCTAssertNil(model.reaction(toWheel: 3, nearEnd: false), "already free: nothing to write")
-        XCTAssertNil(model.reaction(toWheel: -3, nearEnd: false), "down, still away from the end")
-        XCTAssertNil(model.reaction(toWheel: 0.2, nearEnd: true), "a sideways step")
-        XCTAssertEqual(model.reaction(toWheel: -3, nearEnd: true), .reachedEnd)
-        model.findStarted()
-        XCTAssertNil(model.reaction(toWheel: -3, nearEnd: true), "a find owns the position")
+        XCTAssertFalse(model.releases(wheel: 3), "already free: nothing to write")
+        XCTAssertFalse(model.releases(wheel: 0.2), "a sideways step")
+    }
+
+    func testAStepDownNeverLetsGo() {
+        // While following, the end leaves the view for a frame with each new line: a scroll down then is no release.
+        let model = ScrollModel()
+        XCTAssertFalse(model.releases(wheel: -3))
+        XCTAssertFalse(model.releases(movedFrom: frame(1300), to: frame(1340)))
     }
 
     func testGrowthIsNotAScroll() {
         var model = ScrollModel()
-        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1380, content: 1980)), "a row above measured shorter")
-        XCTAssertNil(model.reaction(movedFrom: frame(1400), to: frame(1600, content: 2200)), "the reply grew")
+        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1380, content: 1980)), "a row above measured shorter")
+        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1600, content: 2200)), "the reply grew")
         model.userScrolled()
-        XCTAssertNil(model.reaction(movedFrom: frame(1200), to: frame(1100)), "already free: nothing to write")
+        XCTAssertFalse(model.releases(movedFrom: frame(1200), to: frame(1100)), "already free: nothing to write")
     }
 
     func testABounceBackToTheEndKeepsFollowing() {
         let model = ScrollModel()
-        XCTAssertNil(model.reaction(movedFrom: frame(1420), to: frame(1400)))
+        XCTAssertFalse(model.releases(movedFrom: frame(1420), to: frame(1400)))
     }
 
-    func testScrollingBackToTheVeryEndFollowsAgain() {
+    func testLettingGoAtTheEndFollowsAgainOnlyAfterLeavingIt() {
+        // As t3code: a step up that stays within the margin is not taken back by the next frame that reports the end.
         var model = ScrollModel()
         model.userScrolled()
-        XCTAssertNil(model.reaction(movedFrom: frame(1300), to: frame(1340)), "not at the end yet")
-        let reaction = model.reaction(movedFrom: frame(1340), to: frame(1360))
-        XCTAssertEqual(reaction, .reachedEnd)
-        if let reaction { model.apply(reaction) }
+        model.endInView(true)
+        XCTAssertFalse(model.shouldFollowEnd, "still at the end since you let go")
+        model.endInView(false)
+        XCTAssertFalse(model.shouldFollowEnd)
+        model.endInView(true)
+        XCTAssertTrue(model.shouldFollowEnd, "left the end and came back")
+    }
+
+    func testLettingGoAwayFromTheEndFollowsAgainAtTheEnd() {
+        // Following, but not at the end yet (a landing that has not settled): back at the end follows again.
+        var model = ScrollModel()
+        model.endInView(false)
+        model.userScrolled()
+        model.endInView(true)
         XCTAssertTrue(model.shouldFollowEnd)
+        model.endInView(false)
         model.findStarted()
-        XCTAssertNil(model.reaction(movedFrom: frame(1380), to: frame(1400)), "a find owns the position")
+        model.endInView(true)
+        XCTAssertFalse(model.shouldFollowEnd, "a find owns the position")
     }
 
     func testTheEndLeavesOutTheRoomAroundTheView() {
@@ -78,6 +94,7 @@ final class ScrollModelTests: XCTestCase {
 
     func testReachedEndResumesFollowingJumpToo() {
         var m = ScrollModel()
+        m.endInView(false)
         m.userScrolled()
         m.reachedEnd()
         XCTAssertTrue(m.shouldFollowEnd)
@@ -89,6 +106,7 @@ final class ScrollModelTests: XCTestCase {
 
     func testFindStopsFollowingAndHidesPill() {
         var m = ScrollModel()
+        m.endInView(false)
         m.findStarted()
         XCTAssertFalse(m.shouldFollowEnd)
         XCTAssertTrue(m.cancelQueuedScrolls)
@@ -104,6 +122,7 @@ final class ScrollModelTests: XCTestCase {
     func testJumpPillAfterDebounce() {
         var m = ScrollModel()
         XCTAssertFalse(m.jumpPill(awayFor: 5))
+        m.endInView(false)
         m.userScrolled()
         XCTAssertFalse(m.jumpPill(awayFor: 0.1))
         XCTAssertTrue(m.jumpPill(awayFor: 0.15))

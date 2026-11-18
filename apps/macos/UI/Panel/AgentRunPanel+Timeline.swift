@@ -129,10 +129,11 @@ extension AgentRunPanel {
                         }
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    // While you follow the agent at work, its last rows never get shorter: what folds away into
-                    // "Ran 3 commands" leaves room instead of bouncing the conversation down.
+                    // While the agent works, its last rows never get shorter: what folds away into "Ran 3 commands"
+                    // leaves room instead of bouncing the conversation down. Also once you scroll up: letting go then
+                    // shrank the end the moment you started to scroll, and the view jumped under your fingers.
                     ConversationRows(items: shownBlocks, eager: eager,
-                                     holdsHeight: active && scroll.shouldFollowEnd && !finding,
+                                     holdsHeight: active && !finding,
                                      holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start)) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
@@ -193,7 +194,7 @@ extension AgentRunPanel {
                 .coordinateSpace(name: TimelineSpace.name)
                 .readingStackTop(reading)
                 .readingScroller(reading) { deltaY in
-                    if let reaction = scroll.reaction(toWheel: deltaY, nearEnd: atEnd) { scroll.apply(reaction) }
+                    if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
                 }
                 .chatColumn()
                 .coordinateSpace(name: TimelineSpace.content)
@@ -216,16 +217,13 @@ extension AgentRunPanel {
                 ScrollFrame(geometry).nearEnd
             } action: { _, nowAtEnd in
                 atEnd = nowAtEnd
-                if nowAtEnd { scroll.reachedEnd() }
+                // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                scroll.endInView(nowAtEnd)
             }
-            .onScrollPhaseChange { _, phase in
-                scrollPhase.value = phase
-                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
-            }
-            // A drag that began at the end leaves the end while you scroll: stop following, as in an agent's own transcript.
-            .onChange(of: atEnd) { _, now in
-                if !now, scrollPhase.value != .idle && scrollPhase.value != .animating { scroll.userScrolled() }
-            }
+            // Only a step of yours up stops following (`readingScroller`), never where the view stands: while the agent
+            // works, the end leaves the view for a frame with each new line before the view catches up, and a scroll
+            // under way at that moment (also one down, to the end) stopped following, and the view stayed behind.
+            .onScrollPhaseChange { _, phase in scrollPhase.value = phase }
             .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                 ScrollFrame(geometry)
             } action: { old, frame in
@@ -234,7 +232,7 @@ extension AgentRunPanel {
                 reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop, holding: holdsReading)
                 // You scrolling (the wheel too, which reports no phase): following stops at once, not only once a drag
                 // that began at the end lets go, so the agent's output no longer pulls the view down under your fingers.
-                if scrollPhase.value != .animating, let reaction = scroll.reaction(movedFrom: old, to: frame) { scroll.apply(reaction) }
+                if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: frame) { scroll.userScrolled() }
                 keepEnd(old, frame, proxy)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
@@ -347,7 +345,11 @@ extension AgentRunPanel {
             // You sent something: it is the newest thing and shows again, also when you had scrolled up. It lands at the
             // end under what came before, and the reply is followed from there: no jump up to hold it near the top.
             .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
-            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in settleAtEnd(proxy) }
+            // A message that came in otherwise (a queued one going out, a goal's next turn, one from your phone) only
+            // while you follow: reading higher up, it pulled you down to the end.
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
+                if scroll.shouldFollowEnd { settleAtEnd(proxy) }
+            }
         }
         // VoiceOver hears the step, the finished replies and what waits on you, as for an agent's own transcript.
         .announcesAgentProgress(key: "run:" + runID.uuidString, author: run.provider.displayName, snapshot: announcement(run))
@@ -435,7 +437,6 @@ extension AgentRunPanel {
         // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a size
         // change in the same frame as your step no longer pulls the view back to the end.
         guard scroll.shouldFollowEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
-        scroll.reachedEnd()
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }

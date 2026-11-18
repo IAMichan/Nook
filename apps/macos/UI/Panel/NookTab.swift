@@ -425,10 +425,10 @@ struct NookChatView: View {
                 // chart or mail list filling in) can come to rest drawing none of its rows, even at its end.
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     let newest = chat.messages.last?.id
-                    // While you follow an answer being made, it never gets shorter (`HeldHeight`): a step folding
-                    // away leaves room instead of bouncing the conversation down. A new message lets go.
+                    // While an answer is being made, it never gets shorter (`HeldHeight`), also once you scroll up: a
+                    // step folding away leaves room instead of bouncing the conversation down. A new message lets go.
                     ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl,
-                                     holdsHeight: chat.busy && scroll.shouldFollowEnd, holdKey: chat.messages.count) { message in
+                                     holdsHeight: chat.busy, holdKey: chat.messages.count) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
@@ -442,6 +442,11 @@ struct NookChatView: View {
                 .scrollTargetLayout()
                 // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                 .coordinateSpace(name: TimelineSpace.name)
+                // A step of yours up stops following before the view moves by it, also while the answer grows on every
+                // frame (`ScrollModel.releases(wheel:)`), as in an agent's transcript.
+                .readingScroller(nil) { deltaY in
+                    if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
+                }
                 .padding(.horizontal, NookTheme.Spacing.xxs)
                 .readableChat(!compact)
                 .padding(.top, NookTheme.Spacing.md)
@@ -472,22 +477,20 @@ struct NookChatView: View {
             } action: { old, new in
                 // Called for every frame of a scroll: the state is written only when it changes, so scrolling does not
                 // draw the whole chat again for each frame.
-                if atEnd != new.atEnd { atEnd = new.atEnd }
                 let movedUp = new.offset < old.offset - 0.5 && new.content == old.content
                 let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5 && new.content == old.content
-                if movedUp || leftEnd, new.container == old.container, !new.atEnd {
-                    if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
-                } else if new.atEnd, scroll.mode == .free {
-                    scroll.reachedEnd()
+                if movedUp || leftEnd, new.container == old.container, !new.atEnd, !scroll.isFreeAfterUserScroll {
+                    scroll.userScrolled()
+                }
+                // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                if atEnd != new.atEnd {
+                    atEnd = new.atEnd
+                    scroll.endInView(new.atEnd)
                 }
             }
-            .onScrollPhaseChange { _, phase in
-                scrollPhase.value = phase
-                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
-            }
-            .onChange(of: atEnd) { _, nowAtEnd in
-                if !nowAtEnd, scrollPhase.value == .interacting || scrollPhase.value == .decelerating { scroll.userScrolled() }
-            }
+            // Not where the view stands: the end leaves the view for a frame with each few words before the view catches
+            // up, and a scroll under way at that moment (also one down, to the end) stopped following.
+            .onScrollPhaseChange { _, phase in scrollPhase.value = phase }
             // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
             // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
             // The composer growing under it (a card, a draft) changes the inset instead, and is caught up with as well.
