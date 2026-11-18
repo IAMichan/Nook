@@ -321,13 +321,13 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-49** Plan-limits card on the empty chat (`NookGlance`) · S
 
-- [ ] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
+- [x] **BR-50** More starter signals: GitHub reviews, failing builds, unread mail (`SmartSuggestions`) · S
 
 ### 3.6 Instructions, inspector, search
 
-- [ ] **BR-55** Saved prompts with `{{variables}}` and `/trigger`, and spaces (instructions and files per conversation) (`InstructionStores`, `PromptLibrary`, `NookSpace`) · M
+- [x] **BR-55** Saved prompts with `{{variables}}` and `/trigger`, and spaces (instructions and files per conversation) (`InstructionStores`, `PromptLibrary`, `NookSpace`) · M
 
-- [ ] **BR-56** Context inspector: each part the model reads with its token size (`ContextBreakdown`) · S
+- [x] **BR-56** Context inspector: each part the model reads with its token size (`ContextBreakdown`) · S
 
 - [ ] **BR-57** Search everything: agent sessions and transcripts (settled and archived too), chats, call notes, memories, notices, settings and actions, ranked (`AppModel+Search`); today only conversations and commands → `commands/search.rs`, `CommandPalette.svelte` · M
 
@@ -336,6 +336,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 - [ ] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
 
 - [ ] **BR-61** One-click suggestions under the quick field (`DoubleTapSuggest`) · S
+  - Done: the chips and the line above the field (`core/src/services/double_tap_suggest.rs`, with the Mac's words in five languages). Left: showing them, which needs the quick field itself (SV-45); tick this item with it.
 
 - [ ] **BR-62** Selection Ask complete: the bar in the small windows, a drag across messages as context, the hidden note that the quote is material, Quote into an agent's reply box · M
 

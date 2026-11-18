@@ -625,6 +625,26 @@ pub async fn answer_question(
     };
 
     let mut request = text.to_string();
+    // The space this conversation is filed in goes with the request as the user's own words (not inside the context,
+    // which is third-party data); then what the context inspector shows (`AppModel+ContextInspector`).
+    let space = app.try_state::<super::instructions::InstructionsState>().map(|s| s.space_text(nook_id)).unwrap_or_default();
+    if !space.is_empty() {
+        request += &format!("\n\n{space}");
+    }
+    let style = nook_core::instructions::style_instruction(&settings.answer_style)
+        .map(|line| format!("Answer style chosen by the user: {line}"))
+        .unwrap_or_default();
+    super::instructions::note_context(
+        app,
+        nook_core::prompt_library::ContextBreakdown::new(
+            &style,
+            &space,
+            &memories,
+            &findings.opened,
+            &context,
+            profile.context_tokens as usize,
+        ),
+    );
     // Every brain gets the text in the pictures, read on this computer: one that cannot see still knows what they show.
     if !images.is_empty() {
         let described = crate::services::screen::describe_images(app, &images).await;

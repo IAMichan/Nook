@@ -17,6 +17,7 @@ pub mod instructions;
 pub mod maintenance;
 pub mod nooks;
 pub mod paths;
+pub mod prompt_library;
 pub mod platform;
 pub mod provider;
 pub mod secrets;
