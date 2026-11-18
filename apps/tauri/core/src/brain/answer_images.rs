@@ -40,7 +40,11 @@ pub fn resolve_path(source: &str, base: Option<&str>) -> Option<PathBuf> {
     }
     if lower.starts_with("file://") {
         let parsed = url::Url::parse(trimmed).ok()?;
-        return parsed.to_file_path().ok();
+        // Windows cannot turn a drive-less `file:///tmp/a.png` into a path; keep it rooted like on the Mac.
+        return parsed.to_file_path().ok().or_else(|| {
+            let decoded = percent_encoding::percent_decode_str(parsed.path()).decode_utf8().ok()?;
+            Some(PathBuf::from(decoded.as_ref()))
+        });
     }
     let decoded = percent_encoding::percent_decode_str(trimmed).decode_utf8().ok()?;
     let raw = decoded.as_ref();
@@ -48,7 +52,8 @@ pub fn resolve_path(source: &str, base: Option<&str>) -> Option<PathBuf> {
         return Some(dirs::home_dir()?.join(rest));
     }
     let path = Path::new(raw);
-    if path.is_absolute() {
+    // A rooted path (`/tmp/a.png`, `\tmp\a.png`) is absolute even on Windows, where it lacks a drive letter.
+    if path.is_absolute() || raw.starts_with('/') || raw.starts_with('\\') {
         return Some(path.to_path_buf());
     }
     // Windows drive-letter path (`C:\…` or `C:/…`) even when parsed generically.
