@@ -20,8 +20,11 @@ final class SelectionAskModel: ObservableObject {
     @Published var draft = ""
     /// Quotes the selection into the session's reply box; nil where there is none.
     fileprivate(set) var quote: ((String) -> Void)?
-    /// Selection Ask is off: over words of a session's answer the bar is only the floating Quote button.
+    /// Selection Ask is off: the bar is only the floating Quote button over words of a session's answer, or Copy over
+    /// messages picked in a chat.
     @Published fileprivate(set) var quoteOnly = false
+    /// The messages picked in a chat in full, for Copy; nil for any other selection, which copies with ⌘C itself.
+    @Published fileprivate(set) var copyText: String?
     /// The chat around a selection made in a chat (`TranscriptSelection`), which goes with every question about it.
     fileprivate(set) var context: String?
 
@@ -126,7 +129,8 @@ final class SelectionAskController {
         TranscriptSelection.clearAll()
         stopFollowing()
         chatDrag = nil
-        if event.type == .leftMouseDown, app?.settings.selectionAsk == true, let window = event.window,
+        // Picking several messages works with Selection Ask off too: they can always be copied together.
+        if event.type == .leftMouseDown, let window = event.window,
            let hit = TranscriptSelection.hit(in: window, at: event.locationInWindow) {
             chatDrag = (hit.chat, hit.message, false, false)
             follow()
@@ -147,6 +151,7 @@ final class SelectionAskController {
             endChatDrag()
             return
         }
+        drag.chat.autoscroll(toward: NSEvent.mouseLocation)
         drag.chat.drag(from: drag.from, to: NSEvent.mouseLocation)
     }
 
@@ -174,7 +179,8 @@ final class SelectionAskController {
         reading?.cancel()
         // The first message's own selection goes: the picks are what the bar is about.
         window.makeFirstResponder(nil)
-        show(found, in: window, context: drag.chat.pickedContext())
+        model.quoteOnly = app?.settings.selectionAsk != true
+        show(found, in: window, context: drag.chat.pickedContext(), copy: drag.chat.pickedTranscript())
         return true
     }
 
@@ -203,6 +209,13 @@ final class SelectionAskController {
     /// True when the key was for the bar or card: Escape closes them first.
     private func keyDown(_ event: NSEvent) -> Bool {
         guard model.stage != .hidden else { return false }
+        // ⌘C over picked messages copies all of them; the bar stays for asking about them.
+        if model.stage == .bar, let text = model.copyText, event.window === source,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "c" {
+            Pasteboard.copy(text)
+            return true
+        }
         if event.keyCode == 53 {
             guard event.window === panel || event.window === source else { return false }
             dismiss()
@@ -238,10 +251,14 @@ final class SelectionAskController {
         }
     }
 
-    private func show(_ found: FoundSelection, in window: NSWindow, context: String?) {
-        if model.stage == .bar, model.selection == found.text, source === window { return }
+    private func show(_ found: FoundSelection, in window: NSWindow, context: String?, copy: String? = nil) {
+        if model.stage == .bar, model.selection == found.text, source === window {
+            model.copyText = copy
+            return
+        }
         closePanel()
         model.selection = found.text
+        model.copyText = copy
         model.quote = found.quote
         model.context = context
         model.draft = ""
@@ -274,6 +291,13 @@ final class SelectionAskController {
         quote?(text)
     }
 
+    /// Copy in the bar: the picked messages go to the clipboard in full.
+    func copySelection() {
+        let text = model.copyText
+        dismiss()
+        if let text { Pasteboard.copy(text) }
+    }
+
     func sendFollowUp() {
         guard let conversation = model.conversation else { return }
         let text = model.draft
@@ -293,6 +317,7 @@ final class SelectionAskController {
         TranscriptSelection.clearAll()
         model.stage = .hidden
         model.quote = nil
+        model.copyText = nil
         model.context = nil
         model.draft = ""
     }

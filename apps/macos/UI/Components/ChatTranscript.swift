@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 /// A line marks where a new day starts; messages one person sends in a row sit close together under their name (each
 /// person in a group in a color of their own); links open; a message of only emoji shows large; a long message folds
 /// open with "Read more". More than fits scrolls back through the history, starting at the newest message. Each
-/// message's text can be selected, and a drag from one message to others picks them all to ask Nook about
-/// (`TranscriptSelection`); right-click a bubble for the same menu its chevron opens. A message that answers another
+/// message's text can be selected, and a drag from one message to others picks them all to copy or ask Nook about,
+/// scrolling the chat when held at its edge (`TranscriptSelection`); right-click a bubble for the same menu its chevron opens. A message that answers another
 /// quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer on a
 /// bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch and
 /// by the Chats tab.
