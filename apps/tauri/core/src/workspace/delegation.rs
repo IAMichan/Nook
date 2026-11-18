@@ -628,7 +628,7 @@ mod tests {
         assert!(v["merge"].as_str().unwrap().contains("git merge nook/t1"));
         assert!(v.get("model").is_none());
         let running = snap("t2", TaskState::Running, false);
-        assert!(!wait_is_over(&[running.clone()], false));
+        assert!(!wait_is_over(std::slice::from_ref(&running), false));
         assert!(wait_is_over(&[running.clone(), s.clone()], false));
         assert!(!wait_is_over(&[running.clone(), s.clone()], true));
         assert!(wait_is_over(&[snap("t3", TaskState::Running, true), s.clone()], true), "a question settles too");
