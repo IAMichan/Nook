@@ -314,7 +314,8 @@ impl ChatIntent {
         }
         if has(rx!(
             r"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"
-        )) {
+        )) || asks_meaning(raw)
+        {
             kinds.push(Kind::Web);
         }
         // Wat de gebruiker wil laten maken wint van waar het over gaat: "een grafiek van mijn afspraken" is een grafiek.
@@ -359,9 +360,71 @@ impl ChatIntent {
     }
 }
 
+/// "Wat betekent PGO?", "waar staat KvK voor", "what does SLA stand for", "was bedeutet DSGVO", "que veut dire RGPD": the
+/// meaning of an abbreviation, term or word. The web knows it better than the model's memory, so Nook looks it up there.
+/// A question about what someone meant in a mail or message ("wat bedoelt Lisa in haar mail"), or about what something
+/// means for the user ("wat betekent dit voor mijn planning"), is not one.
+pub fn asks_meaning(raw: &str) -> bool {
+    let original = raw.trim();
+    let text = original.to_lowercase();
+    if text.is_empty() {
+        return false;
+    }
+    let has = |re: &fancy_regex::Regex| matches(re, &text);
+    if has(rx!(
+        r"\b(voor|for|für|pour|para) (mij|mijn|me|my|ons|onze|our|us|jou|jouw|je|u|you|your|mich|mein\w*|uns|unser\w*|dich|moi|mon|ma|mes|nous|notre|toi|mí|mi|mis|nosotros|nuestr\w*|ti)\b|\b(e-?mail|mail|mailtje|bericht\w*|messages?|nachricht\w*|courriel|mensaje|correo|chat|appje|zei|zegt|said|says|schreef|wrote|bedoelt|bedoelde|meant)\b"
+    )) {
+        return false;
+    }
+    if has(rx!(
+        r"\bwat (betekent|betekend|is de betekenis van|houdt\b[^.?!]{0,40}\bin\b)|\bwaar staat\b[^.?!]{0,40}\bvoor\b|\bafkorting\w*|\bbetekenis\b|\bdefinitie\b|\bwhat does\b[^.?!]{0,40}\b(mean|stand for)\b|\bwhat is the meaning of\b|\bmeaning of\b|\babbreviat\w*|\bacronyms?\b|\bdefinition\b|\bdefine\b|\bwas (bedeutet|heißt|heisst)\b|\bwofür steht\b|\babkürzung\w*|\bbedeutung\b|\bque (signifie|veut dire)\b|\bqu'est-ce que\b[^.?!]{0,40}\bveut dire\b|\bveut dire quoi\b|\babréviation\w*|\bsigle\b|\bsignification\b|\bqu[ée] significa\b|\bqu[ée] quiere decir\b|\babreviatura\w*|\bsiglas?\b|\bsignificado\b"
+    )) {
+        return true;
+    }
+    // "Wat is PGO?", "what's an SLA", "was ist ein KPI": a short question about a word in capitals is an abbreviation.
+    matches(
+        rx!(
+            r"^(?i:wat is|what is|what's|whats|was ist|qu'est-ce qu'(un|une)|c'est quoi|qu[ée] es)(?i: (een|de|het|an?|the|ein|eine|le|la|l'|un|une|el|una))? ?[A-Z][A-Z0-9&.-]{1,9}s?\s*\??$"
+        ),
+        original,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meaning_of_an_abbreviation_or_term_is_looked_up_on_the_web() {
+        for question in [
+            "Wat betekent PGO?",
+            "waar staat KvK voor",
+            "Wat is de afkorting van Kamer van Koophandel?",
+            "Wat is PGO?",
+            "What does SLA stand for?",
+            "what's an SLA",
+            "What is the meaning of serendipity?",
+            "Was bedeutet DSGVO?",
+            "Wofür steht KPI?",
+            "Que veut dire RGPD ?",
+            "¿Qué significa IVA?",
+        ] {
+            assert!(asks_meaning(question), "{question}");
+            assert!(ChatIntent::detect(question).kinds.contains(&Kind::Web), "{question}");
+            assert!(crate::brain::service::wants_web(question), "{question}");
+            assert_eq!(action(question), None, "{question}");
+        }
+        for question in [
+            "Wat bedoelt Lisa in haar mail?",
+            "Wat betekent dit voor mijn planning?",
+            "What does this mean for me?",
+            "Wat is er gebeurd?",
+            "Wat is morgen?",
+            "Herinner me morgen aan de tandarts",
+        ] {
+            assert!(!asks_meaning(question), "{question}");
+        }
+    }
 
     fn action(text: &str) -> Option<&'static str> {
         ChatIntent::detect(text).primary_action()

@@ -16,6 +16,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   PDF viewer do: press the crosshair in the side panel (or Alt+Shift+E), click an element, and its address, selector,
   markup and text are on your clipboard, ready to paste in an agent's prompt. Shift-click takes several. In a PDF the
   click takes the spot and copies a picture of it with the spot marked.
+- Nook Chat now looks things up on the web when you ask what an abbreviation, term or word means ("Wat betekent PGO?",
+  "What does SLA stand for?", in all five languages), instead of answering from the model's memory, and says where it
+  found the answer. With **Search the web when needed** off, nothing changes.
 
 ## [0.1.1] - 2026-11-18
 

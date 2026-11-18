@@ -396,6 +396,13 @@ extension AppModel {
                !(Self.appSources[app].map { sources.contains($0) && activeIDs.contains($0) } ?? false) {
                 calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
             }
+            // "Wat betekent PGO?", "what does SLA stand for": the meaning of an abbreviation or term is looked up on the
+            // web, next to the user's own sources, so the answer does not rest on the model's memory alone.
+            if ChatIntent.asksMeaning(text), tools.contains(where: { $0.name == "search_web" }),
+               !calls.contains(where: { $0.tool == "search_web" }) {
+                let query = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+                calls.insert(Prefetch.Call(tool: "search_web", input: ["query": query]), at: 0)
+            }
             // Only what is about the question reaches the model: unrelated items that matched one common word are left
             // out, and of an app's whole window only the passages about the question are kept.
             let searchLimit = profile.isSmall ? (roomy ? 2_500 : 1_800) : 5_000

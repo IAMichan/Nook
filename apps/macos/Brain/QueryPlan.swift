@@ -80,7 +80,9 @@ enum QueryPlanner {
     Do not add sources that merely could mention the topic: a question about chats is answered by the chat apps, not by files or code. \
     A question about the user's schedule (an appointment, meeting, call or talk with someone, being busy or free, what is planned on \
     a day) is answered by calendar first; add a chat or mail source only when it may have been arranged there and not put on the calendar. \
-    A question about what is visible right now ("this", "here", "what I'm looking at") is answered by screen.
+    A question about what is visible right now ("this", "here", "what I'm looking at") is answered by screen. \
+    The meaning of an abbreviation, term or word ("what does SLA stand for") is general, with web as the first source when it is listed; \
+    add the user's own sources only when it looks like a term of their work.
     - queries: 1 to 3 short keyword searches (1 to 3 words, the words that would literally appear in the item: names, subjects, \
     synonyms; in the language the data is likely in). Never the name of a source, never words like open/unread/latest. Empty for a listing.
     - from, to: only when the question is about a day or period (today, tomorrow, friday, next week): its first and last day, \
