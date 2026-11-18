@@ -72,7 +72,7 @@ struct CICheckLogView: View {
                 if let onBack { NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24, action: onBack) }
                 CheckOutcomeGlyph(outcome: outcome, size: 14, running: running)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(check.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
+                    Text(check.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).nookTipWhenCut(check.name)
                     CICheckStatusText(check: check, outcome: outcome, running: running,
                                       started: log?.started ?? check.started, finished: log?.finished ?? check.finished,
                                       progress: log.flatMap(progress))
