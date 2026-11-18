@@ -125,6 +125,18 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(sections(rows, state, limit: 13)[0].hiddenCount, 0)
     }
 
+    /// What you settled last sits on top, whatever its activity time says: an old chat whose time moved to now (a hook when
+    /// you close its terminal) stays where you left it. A row without a settle time goes by its last activity.
+    func testSettledListsLastSettledFirst() {
+        var old = row("old", age: 5)
+        old.settledAt = now.addingTimeInterval(-3000)
+        var recent = row("recent", age: 900)
+        recent.settledAt = now.addingTimeInterval(-60)
+        let earlier = row("earlier", age: 600)
+        let state = InboxState(settled: ["old", "recent", "earlier"])
+        XCTAssertEqual(ids(sections([old, recent, earlier], state), .settled), ["recent", "earlier", "old"])
+    }
+
     func testOpenSessionStaysOnTheSettledPage() {
         let rows = (0..<5).map { row("r\($0)", age: Double($0) * 10) }
         let state = InboxState(settled: Set(rows.map(\.id)))

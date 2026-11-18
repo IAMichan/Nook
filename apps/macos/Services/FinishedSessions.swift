@@ -25,6 +25,7 @@ final class FinishedSessions: ObservableObject {
     private static let busyKey = "agents.finishedWhileBusy"
     private static let keepsOpenSinceKey = "agents.keepsUnsettledSince"
     private static let autoSettledKey = "agents.autoSettledAt"
+    private static let settledAtKey = "agents.settledAt"
     /// How long a done session stays in the notch after its last activity. The Agents list keeps it until you settle it.
     static let autoFinishAfter: TimeInterval = 10 * 60
     /// Chats you reopened, and when.
@@ -34,6 +35,10 @@ final class FinishedSessions: ObservableObject {
     /// Chats the auto-settle rules settled, and when, for the line at the end of their conversation. A chat you settle
     /// yourself has no entry: you know you did. The entry goes with the mark.
     @Published private(set) var autoSettled: [String: Date]
+    /// When each chat was settled (by you or the auto-settle rules), so the Settled shelf lists what you handled last on
+    /// top. Its last activity is no order for that: a hook of an old chat (closing its terminal, a resume) moves it to now.
+    /// Marks from before this was kept have no entry. The entry goes with the mark.
+    @Published private(set) var settledAt: [String: Date]
     /// Chats you marked while they were busy, until that busy spell ends.
     private var markedWhileBusy: Set<String>
     /// Since when an unsettled chat stays in the Agents list for good. Before, a quiet chat left the list a day after its
@@ -50,6 +55,8 @@ final class FinishedSessions: ObservableObject {
         markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
         let auto = UserDefaults.standard.dictionary(forKey: Self.autoSettledKey) as? [String: Double] ?? [:]
         autoSettled = auto.filter { storedKeys.contains($0.key) }.mapValues { Date(timeIntervalSince1970: $0) }
+        let times = UserDefaults.standard.dictionary(forKey: Self.settledAtKey) as? [String: Double] ?? [:]
+        settledAt = times.filter { storedKeys.contains($0.key) }.mapValues { Date(timeIntervalSince1970: $0) }
         if let since = UserDefaults.standard.object(forKey: Self.keepsOpenSinceKey) as? Date {
             keepsOpenSince = since
         } else {
@@ -78,7 +85,7 @@ final class FinishedSessions: ObservableObject {
 
     /// `busy`: the chat still reads as busy, so the mark must outlast the current turn (see `reconcile(busy:)`).
     /// `automatically`: when the auto-settle rules settled it (`autoSettledAt`); a mark of yours clears that.
-    func mark(_ key: String, busy: Bool = false, automatically: Date? = nil) {
+    func mark(_ key: String, busy: Bool = false, automatically: Date? = nil, now: Date = Date()) {
         guard !key.isEmpty else { return }
         if busy, markedWhileBusy.insert(key).inserted { saveBusy() }
         if autoSettled[key] != automatically, automatically != nil || !keys.contains(key) {
@@ -90,6 +97,13 @@ final class FinishedSessions: ObservableObject {
         if order.count > Self.limit { order.removeFirst(order.count - Self.limit) }
         keys = Set(order)
         save()
+        settledAt[key] = automatically ?? now
+        saveSettledAt()
+    }
+
+    /// When this chat was settled, while it is; nil for a mark from before the time was kept.
+    func settledTime(_ key: String) -> Date? {
+        keys.contains(key) ? settledAt[key] : nil
     }
 
     func reopen(_ key: String) {
@@ -102,6 +116,7 @@ final class FinishedSessions: ObservableObject {
         order.removeAll { $0 == key }
         keys = Set(order)
         save()
+        saveSettledAt()
     }
 
     /// The chats that are busy right now. One you marked while it was busy stays finished as long as it stays busy; any other
@@ -121,6 +136,7 @@ final class FinishedSessions: ObservableObject {
             for key in gone { autoSettled[key] = nil }
             saveAutoSettled()
         }
+        saveSettledAt()
     }
 
     /// Marked by you while busy, and still in that busy spell: the list shows it as finished anyway.
@@ -157,6 +173,13 @@ final class FinishedSessions: ObservableObject {
 
     private func saveAutoSettled() {
         UserDefaults.standard.set(autoSettled.mapValues { $0.timeIntervalSince1970 }, forKey: Self.autoSettledKey)
+    }
+
+    /// Keeps only the times of chats that are still settled, so the store shrinks with the marks.
+    private func saveSettledAt() {
+        let kept = settledAt.filter { keys.contains($0.key) }
+        if kept.count != settledAt.count { settledAt = kept }
+        UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.settledAtKey)
     }
 
     private func saveBusy() {

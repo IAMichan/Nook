@@ -44,6 +44,22 @@ final class FinishedSessionsTests: XCTestCase {
     }
 
     /// The Agents list settles only what you marked: a chat that went quiet stays until you handled it.
+    /// A settle keeps its time for the order of the Settled shelf; a second mark keeps the first time, a reopen drops it.
+    func testMarkKeepsWhenItWasSettled() {
+        let store = FinishedSessions.shared
+        let first = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertNil(store.settledTime(key))
+        store.mark(key, now: first)
+        XCTAssertEqual(store.settledTime(key), first)
+        store.mark(key, now: first.addingTimeInterval(500))
+        XCTAssertEqual(store.settledTime(key), first, "already settled: the time stays")
+        store.reopenByUser(key)
+        XCTAssertNil(store.settledTime(key))
+        let auto = first.addingTimeInterval(900)
+        store.mark(key, automatically: auto)
+        XCTAssertEqual(store.settledTime(key), auto)
+    }
+
     func testQuietChatIsNotMarkedFinished() {
         let store = FinishedSessions.shared
         let quiet = Date().addingTimeInterval(-FinishedSessions.autoFinishAfter - 1)
