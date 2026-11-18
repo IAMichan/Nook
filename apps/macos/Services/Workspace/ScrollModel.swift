@@ -23,6 +23,11 @@ struct ScrollModel: Equatable, Sendable {
     /// Set by any manual scroll or find: the view must drop scrolls it already queued, or they would yank the reader
     /// back. Cleared by the next programmatic intent (`jumpedToEnd`).
     private(set) var cancelQueuedScrolls = false
+    /// Whether the end is in view (within `ScrollFrame.endMargin`), as the view last reported it (`endInView(_:)`).
+    private(set) var endIsInView = true
+    /// Let go while the end was in view: following comes back only once the end has left the view and come back, so a
+    /// step up that stays within the margin is not taken back by the next frame (as t3code's `released(atEnd:)`).
+    private var releasedAtEnd = false
 
     var shouldFollowEnd: Bool { mode == .following }
     /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
@@ -30,57 +35,46 @@ struct ScrollModel: Equatable, Sendable {
     /// each frame, which made scrolling stutter.
     var isFreeAfterUserScroll: Bool { mode == .free && cancelQueuedScrolls }
 
+    /// You moved the conversation yourself (a step up, a mark on the rail, earlier messages): following stops.
     mutating func userScrolled() {
+        if mode == .following { releasedAtEnd = endIsInView }
         mode = .free
         cancelQueuedScrolls = true
     }
 
-    /// The view moved while its sizes stayed the same: that is you scrolling, also with a mouse wheel, which reports no
-    /// scroll phase, and also within the margin `atEnd` allows. Up and off the end stops following at once, so a working
-    /// agent's output no longer pulls the view back down under your fingers (it jumped up and down while you scrolled);
-    /// down to the end (within `ScrollFrame.endMargin`) follows again. A move caused by a size change (the reply growing, a row measured) is left
-    /// to the end-keeping, as is a scroll the view animates itself.
+    /// Whether a move of the view while its sizes stayed the same, up and away from the end, is you scrolling: the
+    /// keyboard and anything else that sends no scroll-wheel step. A move caused by a size change (the reply growing, a
+    /// row measured) never is, nor is a move down: only a step of yours up lets go of the end, never where the view
+    /// happens to stand (as in t3code, where the end leaves the view for a frame with every streamed chunk).
     ///
-    /// Only says what to do (`apply`), and nothing when nothing changes: the view calls this for every frame of a scroll,
-    /// and writing its scroll state each time would draw the whole conversation again for each frame.
-    func reaction(movedFrom old: ScrollFrame, to new: ScrollFrame) -> Reaction? {
-        guard !new.resized(from: old) else { return nil }
-        let fromEnd = new.maxOffset - new.offset
-        if new.offset < old.offset - 0.5, fromEnd > 4 {
-            return isFreeAfterUserScroll ? nil : .userScrolled
-        }
-        if new.offset > old.offset, fromEnd <= ScrollFrame.endMargin, mode == .free, !isFinding {
-            return .reachedEnd
-        }
-        return nil
+    /// Nothing when nothing changes: the view calls this for every frame of a scroll, and writing its scroll state
+    /// each time would draw the whole conversation again for each frame.
+    func releases(movedFrom old: ScrollFrame, to new: ScrollFrame) -> Bool {
+        guard !new.resized(from: old), !isFreeAfterUserScroll else { return false }
+        return new.offset < old.offset - 0.5 && new.maxOffset - new.offset > 4
     }
 
-    /// A scroll-wheel or trackpad step of yours over the conversation, before the view moves by it: `deltaY` as AppKit
-    /// gives it (above zero toward the start), `nearEnd` where the view stood. The step itself is the clearest sign of
-    /// you scrolling: while an agent works, the sizes change on nearly every frame (a running command's output, a pull
-    /// request being written, a page that measures itself), so `reaction(movedFrom:to:)` took every step for a size
-    /// change and the end-keeping pulled the view back down, and it shook up and down under your fingers.
-    /// Up stops following at once, also within the margin of the end; down at the end follows again.
-    func reaction(toWheel deltaY: Double, nearEnd: Bool) -> Reaction? {
-        if deltaY > 0.5 { return isFreeAfterUserScroll ? nil : .userScrolled }
-        if deltaY < -0.5, nearEnd, mode == .free, !isFinding { return .reachedEnd }
-        return nil
+    /// Whether a scroll-wheel or trackpad step of yours over the conversation, before the view moves by it, lets go of
+    /// the end: `deltaY` as AppKit gives it (above zero toward the start). Up does, at once, also within the margin of
+    /// the end; down never does, and never follows again by itself either (`endInView(_:)` does that). While an agent
+    /// works the sizes change on nearly every frame, so the step itself is the only clear sign of you scrolling.
+    func releases(wheel deltaY: Double) -> Bool {
+        deltaY > 0.5 && !isFreeAfterUserScroll
     }
 
-    /// What a move of the view means for following (`reaction(movedFrom:to:)`).
-    enum Reaction: Equatable, Sendable {
-        case userScrolled
-        case reachedEnd
-    }
-
-    mutating func apply(_ reaction: Reaction) {
-        switch reaction {
-        case .userScrolled: userScrolled()
-        case .reachedEnd: reachedEnd()
+    /// The end came into view or left it (the view reports each change). Coming back to it follows again, unless you
+    /// let go while it was in view and it has not left since, or a find owns the position.
+    mutating func endInView(_ inView: Bool) {
+        endIsInView = inView
+        if inView {
+            reachedEnd()
+        } else if mode == .free {
+            releasedAtEnd = false
         }
     }
 
     mutating func findStarted() {
+        if mode == .following { releasedAtEnd = endIsInView }
         isFinding = true
         mode = .free
         cancelQueuedScrolls = true
@@ -90,12 +84,14 @@ struct ScrollModel: Equatable, Sendable {
 
     mutating func jumpedToEnd() {
         mode = .following
+        releasedAtEnd = false
         cancelQueuedScrolls = false
     }
 
-    /// The reader scrolled back to the end: following resumes, except while finding (the find owns the position).
+    /// The reader is back at the end: following resumes, except while finding (the find owns the position) and while
+    /// the end has not left the view since you let go there.
     mutating func reachedEnd() {
-        if mode == .free, !isFinding { mode = .following }
+        if mode == .free, !isFinding, !releasedAtEnd { mode = .following }
     }
 
     /// The "Scroll to end" pill shows only once you scrolled away yourself and the end is out of view; not while you are
@@ -185,8 +181,8 @@ struct ScrollFrame: Equatable, Sendable {
     /// put the end a composer's height further down than the view can go: at its end, a view counted as off its end.
     var maxOffset: Double { max(minOffset, content - container - insetTop) }
 
-    /// How far the view may stand from its end and still count as there (`nearEnd`).
-    static let endMargin = 48.0
+    /// How far the view may stand from its end and still count as there (`nearEnd`): t3code's 40 px.
+    static let endMargin = 40.0
 
     /// At its end, or within `endMargin` of it: following goes on from here, and no pill back to the end shows.
     var nearEnd: Bool { maxOffset - offset <= Self.endMargin }

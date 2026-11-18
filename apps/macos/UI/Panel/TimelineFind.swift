@@ -279,8 +279,8 @@ extension View {
 
     /// Lets `reading` scroll the conversation's scroll view; on a view inside its content. `wheel` gets each scroll-wheel
     /// or trackpad step of yours over the conversation (its vertical delta, above zero toward the start) before the view
-    /// moves by it (`ScrollModel.reaction(toWheel:nearEnd:)`).
-    func readingScroller(_ reading: TimelineReadingAnchor, wheel: @escaping (Double) -> Void = { _ in }) -> some View {
+    /// moves by it (`ScrollModel.releases(wheel:)`).
+    func readingScroller(_ reading: TimelineReadingAnchor?, wheel: @escaping (Double) -> Void = { _ in }) -> some View {
         background(ReadingAnchorScroller(reading: reading, wheel: wheel).frame(width: 0, height: 0))
     }
 
@@ -457,7 +457,7 @@ extension ScrollFrame {
 /// it, also over a page or a command's output in a row): the step is what tells you scrolling apart from the rows
 /// changing size under you.
 private struct ReadingAnchorScroller: NSViewRepresentable {
-    let reading: TimelineReadingAnchor
+    let reading: TimelineReadingAnchor?
     let wheel: (Double) -> Void
 
     func makeNSView(context: Context) -> NSView {
@@ -506,16 +506,27 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
             guard let scrollView = enclosingScrollView, let window, event.window === window,
                   abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX),
                   let hit = window.contentView?.hitTest(event.locationInWindow), hit.isDescendant(of: scrollView) else { return }
+            let deltaY = Double(event.scrollingDeltaY)
             var view: NSView? = hit
             while let current = view, current !== scrollView {
-                if let inner = current as? NSScrollView, inner.hasVerticalScroller || Self.scrollsVertically(inner) { return }
+                if let inner = current as? NSScrollView, Self.canScroll(inner, deltaY: deltaY) { return }
                 view = current.superview
             }
-            wheel(Double(event.scrollingDeltaY))
+            wheel(deltaY)
         }
 
-        private static func scrollsVertically(_ scrollView: NSScrollView) -> Bool {
-            (scrollView.documentView?.frame.height ?? 0) > scrollView.contentView.bounds.height + 1
+        /// Whether an inner scroll view (a long command's output) takes a step of `deltaY` itself. At its own top or
+        /// bottom it does not, and the step goes on to the conversation: it used to count as the inner view's all the
+        /// same, so a step up over a command's output moved the conversation while it still followed the end, and the
+        /// agent's output pulled it back down under your fingers.
+        private static func canScroll(_ scrollView: NSScrollView, deltaY: Double) -> Bool {
+            guard let document = scrollView.documentView else { return false }
+            let clip = scrollView.contentView.bounds
+            let range = document.frame.height - clip.height
+            guard range > 1 else { return false }
+            // Above zero is toward the start; a flipped document starts at its top (y 0), an unflipped one at its maximum.
+            let fromStart = document.isFlipped ? clip.minY : range - clip.minY
+            return deltaY > 0 ? fromStart > 0.5 : fromStart < range - 0.5
         }
 
         private func connect() {

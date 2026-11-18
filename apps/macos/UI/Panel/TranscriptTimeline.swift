@@ -156,10 +156,10 @@ struct TranscriptConversation: View {
                                 if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
                             }
                         }
-                        // While you follow the agent at work, its last rows never get shorter: what folds away into
-                        // "Ran 3 commands" leaves room instead of bouncing the conversation down.
+                        // While the agent works, its last rows never get shorter: what folds away into "Ran 3 commands"
+                        // leaves room instead of bouncing the conversation down, also once you scroll up (`AgentRunPanel`).
                         ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
-                                         holdsHeight: working && scroll.shouldFollowEnd && !finding,
+                                         holdsHeight: working && !finding,
                                          holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start)) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -191,7 +191,7 @@ struct TranscriptConversation: View {
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
                     .readingScroller(reading) { deltaY in
-                        if let reaction = scroll.reaction(toWheel: deltaY, nearEnd: atEnd) { scroll.apply(reaction) }
+                        if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
                     }
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
@@ -220,7 +220,8 @@ struct TranscriptConversation: View {
                     ScrollFrame(geometry).nearEnd
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
-                    if nowAtEnd { scroll.reachedEnd() }
+                    // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                    scroll.endInView(nowAtEnd)
                 }
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                     overflows = now
@@ -262,14 +263,8 @@ struct TranscriptConversation: View {
                         .transition(.opacity)
                     }
                 }
-                .onScrollPhaseChange { _, phase in
-                    scrollPhase.value = phase
-                    if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
-                }
-                // A drag that began at the end, or the scroll wheel, leaves the end while you scroll: stop following.
-                .onChange(of: atEnd) { _, now in
-                    if !now, scrollPhase.value != .idle && scrollPhase.value != .animating { scroll.userScrolled() }
-                }
+                // Only a step of yours up stops following (`readingScroller`), never where the view stands (`AgentRunPanel`).
+                .onScrollPhaseChange { _, phase in scrollPhase.value = phase }
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
                     VStack(spacing: NookTheme.Spacing.lg) {
@@ -440,13 +435,12 @@ struct TranscriptConversation: View {
             // size change in the same frame as your step no longer pulls the view back to the end.
             guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
                   new.maxOffset - new.offset > 0.5 else { return }
-            scroll.reachedEnd()
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             return
         }
-        if scrollPhase.value != .animating, let reaction = scroll.reaction(movedFrom: old, to: new) { scroll.apply(reaction) }
+        if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: new) { scroll.userScrolled() }
     }
 
     /// Once the conversation has loaded: its very end, with what came in since your last visit under its line. Scrolls
