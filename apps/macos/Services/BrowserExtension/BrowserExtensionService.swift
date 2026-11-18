@@ -266,7 +266,21 @@ final class BrowserExtensionService: ObservableObject {
             guard let id = request.conversation.flatMap(UUID.init(uuidString:)), app.chat.conversation(id) != nil else {
                 return ["ok": false, "error": "unknown"]
             }
+            // Reading further back: the messages before the oldest one the panel has, without following.
+            if let before = request.before.flatMap(UUID.init(uuidString:)) {
+                guard let index = app.chat.conversation(id)?.messages.firstIndex(where: { $0.id == before }) else {
+                    return ["ok": false, "error": "unknown"]
+                }
+                let (messages, earlier) = lines(id, before: index)
+                return ["ok": true, "conversation": id.uuidString, "messages": messages, "earlier": earlier, "older": true]
+            }
             return conversationReply(id, watchedBy: request.watch ? client.id : nil)
+        case "chats":
+            // The panel's "Earlier chats" menu: only the conversations it started itself (it sends their ids).
+            let known = app.chat.conversations.map {
+                BrowserExtensionPanel.Chat(id: $0.id, title: $0.title, updated: $0.updated, busy: $0.busy, messages: $0.messages.count)
+            }
+            return ["ok": true, "chats": BrowserExtensionPanel.chats(asked: request.conversations, known: known)]
         case "stopChat":
             guard let id = request.conversation.flatMap(UUID.init(uuidString:)), app.chat.conversation(id) != nil else {
                 return ["ok": false, "error": "unknown"]
@@ -297,10 +311,11 @@ final class BrowserExtensionService: ObservableObject {
 
     /// The conversation for the side panel, and from now on its changes pushed to that browser (`live`).
     private func conversationReply(_ id: UUID, watchedBy client: String?) -> [String: Any] {
-        let messages = lines(id)
+        let (messages, earlier) = lines(id)
         let revision = BrowserExtensionPanel.revision(messages)
         if let client { watch(id, client: client, revision: revision) }
-        return ["ok": true, "conversation": id.uuidString, "messages": messages, "revision": revision, "live": client != nil]
+        return ["ok": true, "conversation": id.uuidString, "messages": messages, "earlier": earlier, "revision": revision,
+                "live": client != nil]
     }
 
     private func watch(_ id: UUID, client: String, revision: String) {
@@ -326,10 +341,11 @@ final class BrowserExtensionService: ObservableObject {
                 watches[id] = nil
                 continue
             }
-            let messages = lines(id)
+            let (messages, earlier) = lines(id)
             let revision = BrowserExtensionPanel.revision(messages)
             guard entry.clients.values.contains(where: { $0 != revision }) else { continue }
-            let event: [String: Any] = ["kind": "chat", "conversation": id.uuidString, "messages": messages, "revision": revision]
+            let event: [String: Any] = ["kind": "chat", "conversation": id.uuidString, "messages": messages, "earlier": earlier,
+                                        "revision": revision]
             for (client, has) in entry.clients where has != revision {
                 entry.clients[client] = hub.push(event, to: client, key: "chat:" + id.uuidString) ? revision : nil
             }
@@ -341,12 +357,16 @@ final class BrowserExtensionService: ObservableObject {
         }
     }
 
-    /// The conversation as the side panel shows it: the newest messages, each clipped like on the iPhone companion.
-    private func lines(_ id: UUID) -> [[String: Any]] {
-        guard let conversation = app?.chat.conversation(id) else { return [] }
-        return conversation.messages.suffix(40).map { message in
+    /// The conversation as the side panel shows it: the newest messages (or with `before` the page before that index),
+    /// each clipped like on the iPhone companion, and how many come before them.
+    private func lines(_ id: UUID, before: Int? = nil) -> (messages: [[String: Any]], earlier: Int) {
+        guard let conversation = app?.chat.conversation(id) else { return ([], 0) }
+        let page = BrowserExtensionPanel.page(count: conversation.messages.count, before: before)
+        let messages = conversation.messages[page.range].map { message in
             var line: [String: Any] = [
                 "id": message.id.uuidString,
+                // When it was said, for the time beside it and to jump through the conversation (milliseconds).
+                "at": Int(message.date.timeIntervalSince1970 * 1000),
                 "fromNook": message.role == .nook,
                 "text": CompanionPolicy.clip(message.text),
                 "streaming": message.streaming,
@@ -362,5 +382,6 @@ final class BrowserExtensionService: ObservableObject {
             if !tasks.isEmpty { line["tasks"] = tasks }
             return line
         }
+        return (messages, page.earlier)
     }
 }

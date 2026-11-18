@@ -175,7 +175,10 @@ function onHostMessage(message) {
       break;
     case 'chat':
       // A conversation the side panel follows changed: Nook pushes it, so the answer streams in without asking.
-      chrome.runtime.sendMessage({ type: 'chatUpdate', conversation: message.conversation, messages: message.messages, revision: message.revision })
+      chrome.runtime.sendMessage({
+        type: 'chatUpdate', conversation: message.conversation, messages: message.messages, earlier: message.earlier,
+        revision: message.revision
+      })
         .catch(() => {});
       // Nook finished its answer: the user's hands are free again on the page it worked in, right away.
       if (Array.isArray(message.messages) && message.messages.length && !isAnswering(message.messages)) releaseCurrent();
@@ -744,7 +747,14 @@ async function handlePanel(message) {
     case 'look':
       return { ok: true, look: await refreshLook() };
     case 'chat':
+      // With `before`: the messages before the oldest one the panel has, to read further back.
+      if (typeof message.before === 'string') {
+        return request({ kind: 'chat', conversation: message.conversation, before: message.before.slice(0, 64) });
+      }
       return request({ kind: 'chat', conversation: message.conversation, watch: !!message.watch });
+    // The panel's "Earlier chats" menu: only the conversations it started itself.
+    case 'chats':
+      return request({ kind: 'chats', conversations: chatIds(message.conversations) });
     case 'stopChat':
       return request({ kind: 'stopChat', conversation: message.conversation });
     // The composer's model chip: the models Nook could think with, and picking one.

@@ -40,10 +40,13 @@ export function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain }
   };
 }
 
-/** Mounts the conversation in `target`; `set(messages)` draws it again. */
-export function mountTranscript(target) {
+/**
+ * Mounts the conversation in `target`; `set(messages)` draws it again. `onreuse(text)` puts a question back in the
+ * composer; `timeOf(at)` writes a message's time.
+ */
+export function mountTranscript(target, { onreuse, timeOf } = {}) {
   const panel = $state({ messages: [] });
-  mount(PanelTranscript, { target, props: { panel } });
+  mount(PanelTranscript, { target, props: { panel, onreuse, timeOf } });
   return {
     set(messages) {
       panel.messages = messages;

@@ -3,7 +3,7 @@
   // Chat, in the panel's tokens and with its texts from the extension's _locales.
   import Transcript from '@nook/web-ui/Transcript.svelte';
 
-  let { panel } = $props();
+  let { panel, onreuse, timeOf } = $props();
 
   const t = (key) => globalThis.chrome?.i18n?.getMessage(key) || key;
   const texts = {
@@ -11,12 +11,14 @@
     onMac: t('onMacNote'),
     copy: t('copy'),
     copyTitle: t('copyCode'),
-    copied: t('copied')
+    copied: t('copied'),
+    copyMessage: t('copyMessage'),
+    reuse: t('askAgain')
   };
 </script>
 
 <div class="panel-transcript">
-  <Transcript messages={panel.messages} {texts} />
+  <Transcript messages={panel.messages} {texts} {onreuse} {timeOf} />
 </div>
 
 <style>

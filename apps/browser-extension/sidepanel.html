@@ -12,6 +12,15 @@
     <h1 data-i18n="appName">Nook</h1>
     <span id="status" class="pill" role="status"></span>
     <span class="grow"></span>
+    <button id="find-open" type="button" class="icon" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+    </button>
+    <button id="outline-open" type="button" class="icon" popovertarget="outline" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>
+    </button>
+    <button id="history-open" type="button" class="icon" popovertarget="history">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7.5V12l3 2"/></svg>
+    </button>
     <button id="new-chat" type="button" class="icon" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2 2 0 0 1 2.9 2.9L12 14.8l-3.6.8.8-3.6Z"/></svg>
     </button>
@@ -20,6 +29,34 @@
       <svg class="when-paused" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z"/></svg>
     </button>
   </header>
+
+  <!-- Find in this conversation: every match marked (CSS highlights), the current one brought into view. -->
+  <div id="find-bar" class="find" role="search" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+    <input id="find-field" type="text" autocomplete="off" spellcheck="false" data-i18n-placeholder="findPlaceholder">
+    <span id="find-count" class="find-count" aria-live="polite"></span>
+    <button id="find-prev" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+    </button>
+    <button id="find-next" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <button id="find-close" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <!-- The questions in this conversation, to jump to one. -->
+  <div id="outline" class="menu" popover>
+    <div class="menu-title" data-i18n="questionsTitle"></div>
+    <ul id="outline-list" class="menu-list"></ul>
+  </div>
+
+  <!-- The conversations started in this panel, to go back to one. -->
+  <div id="history" class="menu" popover>
+    <div class="menu-title" data-i18n="chatsTitle"></div>
+    <ul id="history-list" class="menu-list"></ul>
+  </div>
 
   <div id="paused-banner" class="banner" role="status" hidden>
     <span id="paused-note" class="grow"></span>
@@ -48,7 +85,8 @@
     </label>
   </section>
 
-  <main id="chat" class="chat" aria-live="polite">
+  <div class="chat-wrap">
+  <main id="chat" class="chat" aria-live="polite" tabindex="-1">
     <div id="empty" class="empty">
       <img class="empty-face" src="icons/nook-128.png" alt="" width="44" height="44">
       <p class="intro" data-i18n="intro"></p>
@@ -58,9 +96,25 @@
         <button type="button" class="suggestion" data-suggest="suggestNext"></button>
       </div>
     </div>
+    <!-- Earlier messages than the newest ones Nook sends, read back page by page. -->
+    <button id="earlier" type="button" class="earlier" hidden></button>
     <!-- Nook's shared transcript (packages/web-ui), mounted by sidepanel.js from ui/composer.js. -->
     <div id="transcript"></div>
   </main>
+  <!-- Moving through the conversation: back to the newest answer once you scrolled up, and question by question. -->
+  <button id="to-latest" type="button" class="to-latest" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+    <span id="to-latest-label"></span>
+  </button>
+  <div id="question-nav" class="question-nav" hidden>
+    <button id="question-prev" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+    </button>
+    <button id="question-next" type="button" class="icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+  </div>
+  </div>
 
   <section class="activity" aria-labelledby="activity-title">
     <details id="activity-box">

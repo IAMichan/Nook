@@ -333,6 +333,40 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertEqual(seen?.1, "Vat dit samen")
     }
 
+    func testTheSidePanelReadsALongConversationPageByPage() {
+        XCTAssertEqual(BrowserExtensionPanel.page(count: 10).range, 0..<10)
+        XCTAssertEqual(BrowserExtensionPanel.page(count: 10).earlier, 0)
+        let newest = BrowserExtensionPanel.page(count: 100)
+        XCTAssertEqual(newest.range, 60..<100, "the newest window")
+        XCTAssertEqual(newest.earlier, 60)
+        let older = BrowserExtensionPanel.page(count: 100, before: 60)
+        XCTAssertEqual(older.range, 20..<60, "the page before the oldest one the panel has")
+        XCTAssertEqual(older.earlier, 20)
+        XCTAssertEqual(BrowserExtensionPanel.page(count: 100, before: 20).range, 0..<20)
+        XCTAssertEqual(BrowserExtensionPanel.page(count: 100, before: 0).range, 0..<0)
+        XCTAssertEqual(BrowserExtensionPanel.page(count: 5, before: 99).range, 0..<5, "never past the end")
+    }
+
+    func testTheSidePanelOnlyHearsAboutItsOwnChats() {
+        let mine = UUID(), other = UUID(), empty = UUID(), gone = UUID()
+        let known = [
+            BrowserExtensionPanel.Chat(id: mine, title: "Vat dit samen", updated: Date(timeIntervalSince1970: 2), busy: true, messages: 4),
+            BrowserExtensionPanel.Chat(id: other, title: "Private", updated: Date(timeIntervalSince1970: 3), busy: false, messages: 2),
+            BrowserExtensionPanel.Chat(id: empty, title: "New", updated: Date(timeIntervalSince1970: 1), busy: false, messages: 0)
+        ]
+        let list = BrowserExtensionPanel.chats(asked: [mine.uuidString, empty.uuidString, gone.uuidString, "nonsense", mine.uuidString],
+                                               known: known)
+        XCTAssertEqual(list.count, 1, "never another chat, an empty one, one Nook lost, or the same one twice")
+        XCTAssertEqual(list.first?["id"] as? String, mine.uuidString)
+        XCTAssertEqual(list.first?["title"] as? String, "Vat dit samen")
+        XCTAssertEqual(list.first?["updated"] as? Int, 2_000)
+        XCTAssertEqual(list.first?["busy"] as? Bool, true)
+
+        let asked = BrowserExtensionRequest(["kind": "chats", "conversations": [mine.uuidString, 7], "before": other.uuidString])
+        XCTAssertEqual(asked.conversations, [mine.uuidString])
+        XCTAssertEqual(asked.before, other.uuidString)
+    }
+
     // MARK: - Tools
 
     func testEveryToolHasAMethodTheExtensionKnows() {
