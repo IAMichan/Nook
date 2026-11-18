@@ -4771,19 +4771,21 @@ var root_2$2 = /* @__PURE__ */ from_html(`<button type="button" class="file svel
 var root_3$2 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
 var root_4$2 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
 var root_5$2 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
-var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
-var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
-var root_8$2 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!></div></div> <!></div>`);
+var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
+var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
+var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
+var root_9$1 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!> <!></div></div> <!></div>`);
 var $$css$4 = {
 	hash: "svelte-r7ttdz",
-	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
+	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz, button.queue.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled), button.queue.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
 };
 function Composer($$anchor, $$props) {
 	push($$props, true);
 	append_styles($$anchor, $$css$4);
-	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
+	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), queues = prop($$props, "queues", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
 	/** Stops Nook's answer. Without it, a busy composer only waits. */
 	/** Nook is answering: send waits (or becomes stop when `onstop` is given). */
+	/** While busy, Return and the queue button still send: the message waits in line for after this answer. */
 	/** Nothing can be sent at all (not connected): the field is read-only. */
 	/** Your earlier questions in this conversation, newest first (`askedBefore`). */
 	/** The conversation the history belongs to: a new one starts Up from the newest question again. */
@@ -4806,7 +4808,7 @@ function Composer($$anchor, $$props) {
 		get(field)?.focus();
 	}
 	const stoppable = /* @__PURE__ */ user_derived(() => busy() && !!$$props.onstop);
-	const canSend = /* @__PURE__ */ user_derived(() => !draft().empty && !busy() && !disabled() && !draft().reading);
+	const canSend = /* @__PURE__ */ user_derived(() => !draft().empty && (!busy() || queues()) && !disabled() && !draft().reading);
 	async function send() {
 		if (!get(canSend)) return;
 		const message = {
@@ -4860,7 +4862,7 @@ function Composer($$anchor, $$props) {
 	const accept = /* @__PURE__ */ user_derived(() => draft().readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx,.odt,.pptx,.zip" : "image/*");
 	const placeholder = /* @__PURE__ */ user_derived(() => draft().attachment && $$props.texts.placeholderFor ? $$props.texts.placeholderFor(draft().attachment.name) : $$props.texts.placeholder);
 	var $$exports = { focus };
-	var div = root_8$2();
+	var div = root_9$1();
 	let classes;
 	var node = child(div);
 	snippet(node, () => $$props.top ?? noop);
@@ -4945,24 +4947,38 @@ function Composer($$anchor, $$props) {
 	var consequent_5 = ($$anchor) => {
 		var button_3 = root_6$2();
 		template_effect(() => {
-			set_attribute(button_3, "title", $$props.texts.stop);
-			set_attribute(button_3, "aria-label", $$props.texts.stop);
+			button_3.disabled = !get(canSend);
+			set_attribute(button_3, "title", $$props.texts.queue);
+			set_attribute(button_3, "aria-label", $$props.texts.queue);
 		});
-		delegated("click", button_3, () => $$props.onstop?.());
+		delegated("click", button_3, send);
 		append($$anchor, button_3);
 	};
-	var alternate = ($$anchor) => {
+	if_block(node_9, ($$render) => {
+		if (get(stoppable) && queues() && !draft().empty) $$render(consequent_5);
+	});
+	var node_10 = sibling(node_9, 2);
+	var consequent_6 = ($$anchor) => {
 		var button_4 = root_7$2();
 		template_effect(() => {
-			button_4.disabled = !get(canSend);
-			set_attribute(button_4, "title", $$props.texts.send);
-			set_attribute(button_4, "aria-label", $$props.texts.send);
+			set_attribute(button_4, "title", $$props.texts.stop);
+			set_attribute(button_4, "aria-label", $$props.texts.stop);
 		});
-		delegated("click", button_4, send);
+		delegated("click", button_4, () => $$props.onstop?.());
 		append($$anchor, button_4);
 	};
-	if_block(node_9, ($$render) => {
-		if (get(stoppable)) $$render(consequent_5);
+	var alternate = ($$anchor) => {
+		var button_5 = root_8$2();
+		template_effect(() => {
+			button_5.disabled = !get(canSend);
+			set_attribute(button_5, "title", $$props.texts.send);
+			set_attribute(button_5, "aria-label", $$props.texts.send);
+		});
+		delegated("click", button_5, send);
+		append($$anchor, button_5);
+	};
+	if_block(node_10, ($$render) => {
+		if (get(stoppable)) $$render(consequent_6);
 		else $$render(alternate, -1);
 	});
 	reset(div_3);
