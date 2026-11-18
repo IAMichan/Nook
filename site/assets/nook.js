@@ -15,8 +15,9 @@ function whenVisible(el,fn,threshold=.3){if(!el)return;let done=false;
 
 /* Current page in the nav, and the mobile menu. */
 (function(){
-  const page=(location.pathname.split('/').pop()||'index.html');
-  $$('nav .links a').forEach(a=>{if(a.getAttribute('href')===page)a.classList.add('on')});
+  const clean=p=>p.replace(/\.html$/,'').replace(/\/index$/,'/').replace(/\/+$/,'')||'/';
+  const page=clean(location.pathname);
+  $$('nav .links a').forEach(a=>{if(clean(a.getAttribute('href'))===page)a.classList.add('on')});
   const b=$('.menu-btn'),nav=$('nav');if(!b)return;
   const set=open=>{nav.classList.toggle('open',open);b.setAttribute('aria-expanded',open)};
   b.onclick=()=>set(!nav.classList.contains('open'));

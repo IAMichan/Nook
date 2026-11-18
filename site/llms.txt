@@ -1,0 +1,24 @@
+# Nook
+
+> Nook is the one calm place for everything that needs your attention: people in every chat app, coding agents such as Claude Code, Codex, Cursor and Gemini CLI, your calendar and your music. Local-first AI on your own Mac, and nothing happens without your yes.
+
+Nook is a free, open source (MIT) app for Mac (Apple Silicon, macOS 15 or newer), with an iPhone companion and early apps for Windows, Linux and Android. Its main window is its home; the MacBook notch is an optional extra. The assistant runs on a model on your own Mac by default, and every message, command or pull request waits for your approval.
+
+## Pages
+
+- [Home](https://nook.app.infaris.com/): A free, open source Mac app for everything that needs you: chats, coding agents like Claude Code and Codex, your calendar and music. Local-first AI.
+- [Agents](https://nook.app.infaris.com/agents): Run Claude Code, Codex, Cursor, Gemini CLI and more side by side on your Mac, each in its own Git worktree, with a real terminal and browser, and your approval.
+- [Chats](https://nook.app.infaris.com/chats): WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram and Mail in one calm inbox on your Mac. Type @nook and Nook drafts the reply; you send it.
+- [Assistant](https://nook.app.infaris.com/assistant): Ask Nook anything about your day. It knows the context: your screen, calendar, mail, chats and coding agents, answered on your own Mac by default.
+- [Writing](https://nook.app.infaris.com/writing): Private AI autocomplete in every Mac app from a model on your own Mac, dictation that types where you are, and no subscription or word limits.
+- [Privacy](https://nook.app.infaris.com/privacy): Nook runs its AI on your own Mac by default, keeps what you choose on this Mac, and does nothing without your approval. Open source under the MIT license.
+- [Download](https://nook.app.infaris.com/download): Download Nook for Mac (Apple Silicon, macOS 15+), plus the iPhone companion and early Windows, Linux and Android apps. Free and open source (MIT).
+- [Thanks](https://nook.app.infaris.com/thanks): Nook is made by many hands: everyone who sent a change, and the open source projects it builds on. Thank you.
+- [Browser extension privacy](https://nook.app.infaris.com/browser-extension-privacy): The privacy policy of Nook's browser extension: what it reads, where it goes (only to the Nook app on your own Mac), and what it never does.
+
+## Source
+
+- [GitHub repository](https://github.com/IAMichan/nook): the source code, issues and releases
+- [Documentation](https://github.com/IAMichan/nook/tree/main/docs)
+- [Changelog](https://github.com/IAMichan/nook/blob/main/CHANGELOG.md)
+- [Latest release](https://github.com/IAMichan/nook/releases/latest)

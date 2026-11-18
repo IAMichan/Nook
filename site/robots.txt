@@ -1,0 +1,10 @@
+# Nook website. Everyone, including AI crawlers, is welcome to read the pages.
+User-agent: *
+Allow: /
+Disallow: /src/
+Disallow: /_partials/
+Disallow: /build.py
+Disallow: /og.py
+Disallow: /README.md
+
+Sitemap: https://nook.app.infaris.com/sitemap.xml

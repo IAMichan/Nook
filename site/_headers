@@ -5,3 +5,21 @@
   X-Frame-Options: SAMEORIGIN
   Cross-Origin-Opener-Policy: same-origin-allow-popups
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Build sources are published with the site; keep them out of search results.
+/src/*
+  X-Robots-Tag: noindex, nofollow
+/_partials/*
+  X-Robots-Tag: noindex, nofollow
+/build.py
+  X-Robots-Tag: noindex, nofollow
+/og.py
+  X-Robots-Tag: noindex, nofollow
+/README.md
+  X-Robots-Tag: noindex, nofollow
+
+/assets/og/*
+  Cache-Control: public, max-age=86400
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
