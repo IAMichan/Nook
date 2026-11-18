@@ -10,7 +10,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
-## [0.1.1-beta.5] - 2026-11-18
+## [0.1.1] - 2026-11-18
 
 ### Added
 
@@ -402,5 +402,5 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
-[0.1.1-beta.5]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1-beta.5
+[0.1.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1
 [0.1.0-beta.1]: https://github.com/IAMichan/nook/releases/tag/v0.1.0-beta.1
