@@ -27,16 +27,13 @@ struct CIChecksPopover: View {
             if checks.isEmpty {
                 message(tr("ws.ci.none"))
             } else {
-                List(checks, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { check in
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 14)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(check.name).font(NookTheme.TextStyle.label).lineLimit(1)
-                            CICheckStatusText(check: check)
-                        }
+                // Nook's own rows, not a `List`: its table shows AppKit's tooltip over a name cut short, and the name
+                // gets Nook's tip instead.
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: NookTheme.Spacing.xxs) {
+                        ForEach(checks) { check in checkRow(check) }
                     }
-                    .padding(.vertical, NookTheme.Spacing.xxs)
-                    .tag(check.id)
+                    .padding(NookTheme.Spacing.sm)
                 }
             }
         } else if unavailable {
@@ -44,6 +41,29 @@ struct CIChecksPopover: View {
         } else {
             PatientSpinner()
         }
+    }
+
+    private func checkRow(_ check: PullRequestCheck) -> some View {
+        let selected = check.id == chosen
+        return Button { pick(check.id) } label: {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 14)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(check.name)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                        .nookTipWhenCut(check.name)
+                    CICheckStatusText(check: check)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .hoverRowFill(selected: selected)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var current: PullRequestCheck? { checks?.first { $0.id == chosen } }
