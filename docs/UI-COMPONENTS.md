@@ -157,8 +157,8 @@ Nook has one visual language, and the repository guards it in three places:
    It also fails when a search field or a 1 pt divider is built inline instead of with `NookSearchField` or
    `NookDivider`, so these look and behave the same everywhere, and when a pull request icon is named or sized by hand
    (`arrow.triangle.pull`, a `PullRequestStateGlyph` outside `PullRequestIcons.swift`) instead of through `PullRequestIcon`,
-   and when an icon bypasses `NookIcon` (`Image(systemName:)`, or a `Label(_:systemImage:)` instead of `Label(_:icon:)`;
-   the chat files another change is rewriting are listed in `labelSystemImagePending` until it lands).
+   and when an icon bypasses `NookIcon` (`Image(systemName:)`, or a `Label(_:systemImage:)` instead of `Label(_:icon:)`). A `spacing:` or `.padding` that lands on the spacing scale (2, 4, 6, 8, 12, 16, 24, 32, 48)
+   is written as its `NookTheme.Spacing` token, so a change to the scale reaches every view.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` (started by `ci.yml`) runs it on every pull request that touches the app.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.

@@ -87,6 +87,15 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20, composer 24)")
     }
 
+    /// A gap or padding that lands on the spacing scale is written as its token (`NookTheme.Spacing.xs … huge`), so a
+    /// change to the scale reaches every view and a reader sees the step, not a number that happens to match.
+    func testSpacingOnTheScaleUsesItsToken() {
+        let found = offenders(#"(\bspacing:\s*|\.padding\((\.[a-zA-Z]+,\s*|\[[^\]]*\],\s*)?)(2|4|6|8|12|16|24|32|48)\s*[,)]"#) {
+            $0.hasPrefix("UI/Theme/")
+        }
+        XCTAssertEqual(found, [], "use NookTheme.Spacing (xxs 2, xs 4, sm 6, md 8, lg 12, xl 16, xxl 24, xxxl 32, huge 48)")
+    }
+
     /// A rounded shape is Nook's: `NookTheme.shape(_:)` or a `.rounded…` helper (a continuous corner on a radius from the
     /// scale), never a `RoundedRectangle(cornerRadius:)` built at the call site with a corner style of its own.
     func testRoundedShapesComeFromTheTheme() {
@@ -145,16 +154,10 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (UI/Theme/NookIcon.swift)")
     }
 
-    /// Files that still name a `Label`'s icon with `systemImage:` while another change rewrites them (the chats). Move
-    /// each off this list once that work lands; keep in step with `LABEL_SYSTEM_IMAGE_PENDING` in `scripts/ui-lint.sh`.
-    private static let labelSystemImagePending = ["UI/Chat/", "UI/Components/Chat", "UI/Panel/Chats"]
-
     /// A `Label`'s icon goes through `Image(icon:)` too: `Label(_:icon:)` (`NookIcon.swift`), never
     /// `Label(_:systemImage:)`, which draws the raw SF Symbol beside Nook's Lucide icons.
     func testLabelsGoThroughNookIcon() {
-        let found = offenders(#"\bsystemImage:"#) { path in
-            Self.labelSystemImagePending.contains { path.hasPrefix($0) }
-        }
+        let found = offenders(#"\bsystemImage:"#)
         XCTAssertEqual(found, [], "use Label(_:icon:) (UI/Theme/NookIcon.swift)")
     }
 

@@ -400,13 +400,13 @@ struct MarkdownView: View, Equatable {
         case .chart(let chart):
             ChatChartView(chart: chart)
         case .question(let text, let options):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 paragraph(text)
                 if onChoose != nil {
                     ChoiceList(options: options, size: size) { onChoose?($0) }
                 } else {
                     ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                             Text("•").foregroundStyle(NookTheme.textSecondary)
                             paragraph(option)
                         }
@@ -428,7 +428,7 @@ struct MarkdownView: View, Equatable {
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size).equatable()
         case .rule:
-            NookDivider().padding(.vertical, 4)
+            NookDivider().padding(.vertical, NookTheme.Spacing.xs)
         case .pullRequest:
             // Lives in the tray above the composer (`PullRequestWatchStrip`), where it can be followed and shows its checks.
             EmptyView()
@@ -551,7 +551,7 @@ private struct MarkdownCodeBlock: View {
                 CodeRenderView(language: language, code: code)
                     .frame(height: 280)
                     .roundedClip(NookTheme.Radius.chip)
-                    .padding(8)
+                    .padding(NookTheme.Spacing.md)
             } else if wraps {
                 codeText.fixedSize(horizontal: false, vertical: true)
             } else {
@@ -732,7 +732,7 @@ private struct TableBlock: View, Equatable {
         // Once per body: the chart and which columns are numbers do not change cell by cell.
         let chart = self.chart
         let numbers = (0..<header.count).map { numeric($0) }
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let chart {
                 NookTabBar(items: [
                     .init(value: false, title: tr("table.table"), symbol: "tablecells"),

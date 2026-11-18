@@ -83,7 +83,7 @@ struct NookSplitButton: View {
             .onHover { hoveringPrimary = $0 }
 
             Button(action: secondary.perform) {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     if let symbol = secondary.symbol { Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
                     Text(secondary.label).font(NookTheme.textFont(compact ? 13 : 14, .semibold))
                 }

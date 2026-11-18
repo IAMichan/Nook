@@ -197,7 +197,7 @@ struct FileViewer: View {
             Group {
                 switch content {
                 case nil:
-                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PatientSpinner()
                 case .text(let liveLines, let liveTokens):
                     if let viewing, let versionContent, versionContent.number == viewing {
                         textBody(lines: versionContent.lines, tokens: versionContent.tokens)

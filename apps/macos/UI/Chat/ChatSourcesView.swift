@@ -85,7 +85,7 @@ struct SourcesDisclosure: View {
             let used = list.filter { if case .found = $0.status { return true }; if case .context = $0.status { return true }; return false }.count
             let failed = failedCount
             let running = list.contains { if case .running = $0.status { return true }; return false }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Button { withAnimation(NookTheme.reveal) { expanded.toggle() } } label: {
                     HStack(spacing: 7) {
                         iconStack(list)
@@ -97,7 +97,7 @@ struct SourcesDisclosure: View {
                                 .font(NookTheme.TextStyle.caption)
                                 .foregroundStyle(NookTheme.amber)
                                 .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
+                                .padding(.vertical, NookTheme.Spacing.xxs)
                                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
                         }
                         DisclosureChevron(open: expanded, size: 8, style: .vertical)
@@ -113,7 +113,7 @@ struct SourcesDisclosure: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(list.enumerated()), id: \.element.id) { index, group in
                             if index > 0 {
-                                NookDivider().padding(.horizontal, 8)
+                                NookDivider().padding(.horizontal, NookTheme.Spacing.md)
                             }
                             groupView(group)
                         }
@@ -154,8 +154,8 @@ struct SourcesDisclosure: View {
     private func groupView(_ group: SourceGroup) -> some View {
         let cited = Citations.used(in: message.text)
         let failure: String? = { if case .failed(let reason) = group.status { return Self.readable(reason) }; return nil }()
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 sourceIcon(group)
                 Text(group.title)
                     .font(NookTheme.TextStyle.body)
@@ -183,7 +183,7 @@ struct SourcesDisclosure: View {
     /// The status of a source as a small chip: green when it was used, red when it could not be read.
     @ViewBuilder
     private func statusChip(_ group: SourceGroup) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             if case .running = group.status {
                 ProgressView().controlSize(.mini).scaleEffect(0.6).frame(width: 9, height: 9)
             }
@@ -193,7 +193,7 @@ struct SourcesDisclosure: View {
         }
         .foregroundStyle(statusColor(group.status))
         .padding(.horizontal, 7)
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
         .background(NookTheme.shape(NookTheme.Radius.chip).fill(chipFill(group.status)))
     }
 
@@ -317,7 +317,7 @@ private struct SourceFixButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            Label(title, icon: symbol)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(prominent ? NookTheme.onPaper : NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
@@ -441,14 +441,14 @@ struct NoticeList: View {
 
     var body: some View {
         let buttons = buttons
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(notices, id: \.self) { notice in
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                     Image(icon: "exclamationmark.circle.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         Text(notice)
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
@@ -598,7 +598,7 @@ struct ScopeMenu: View {
         let current = scope
         Menu {
             Button { app.setScope(.automatic) } label: {
-                Label(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic"), systemImage: "sparkles")
+                Label(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic"), icon: "sparkles")
             }
             Section(tr("scope.onlyThese")) {
                 ForEach(app.connectors.active.map { $0.id }, id: \.self) { id in
@@ -653,12 +653,12 @@ struct ComposerMoreMenu: View {
 
     var body: some View {
         ComposerPlusMenu(attach: { app.attachFile() }) {
-            Button { app.captureScreenPart() } label: { Label(tr("chat.capture.menu"), systemImage: "camera.viewfinder") }
+            Button { app.captureScreenPart() } label: { Label(tr("chat.capture.menu"), icon: "camera.viewfinder") }
             Button { NoteTaker.shared.toggle() } label: {
-                Label(NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), systemImage: "waveform.badge.mic")
+                Label(NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), icon: "waveform.badge.mic")
             }
             Divider()
-            Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
+            Button { showContext = true } label: { Label(tr("chat.contextShort"), icon: "eye") }
         }
         .popover(isPresented: $showContext, arrowEdge: .top) { ContextInspector(chat: chat) }
     }

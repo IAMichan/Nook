@@ -320,7 +320,7 @@ struct PlanReview: View {
         case .approved:
             Text(tr("chat.plan.approved")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
         case .failed(let error):
-            StepFailure(error: error).padding(.top, 4)
+            StepFailure(error: error).padding(.top, NookTheme.Spacing.xs)
         case .duplicate(let when):
             Text(tr("chat.plan.duplicate", when)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
         case .notRun:
@@ -366,7 +366,7 @@ struct PlanReview: View {
             }
             // The raw tool output (ids and all) stays available here, out of the way.
             if let result = state(index).result {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("chat.plan.result"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -378,7 +378,7 @@ struct PlanReview: View {
                 }
             }
             ForEach(problems(index), id: \.self) { problem in
-                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                Label(problem, icon: "exclamationmark.triangle.fill")
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
             }
@@ -421,7 +421,7 @@ struct PlanReview: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !message.planArchived {
-                        HStack(spacing: 6) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
                             if !runnable.isEmpty {
                                 SmallPrimaryButton(title: onlyRetries ? tr("chat.retry") : tr("chat.plan.continue"),
                                                    systemName: "arrow.clockwise") { app.runPlan(message.id) }

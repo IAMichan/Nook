@@ -37,7 +37,7 @@ struct ImageModal: View {
                     Button(tr("card.attachment.open"), action: onOpen)
                 }
 
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
                 zoomButton("xmark", label: tr("button.close"), action: onClose)
             }

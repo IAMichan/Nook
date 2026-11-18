@@ -215,7 +215,7 @@ struct ChatVideoFailure: View {
 
     private func button(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(label, systemImage: symbol)
+            Label(label, icon: symbol)
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.sm)

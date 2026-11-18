@@ -84,7 +84,7 @@ struct NookTabBar<Value: Hashable>: View {
                         TabCloseButton(tr("tab.close"), spoken: tr("tab.close") + " " + item.title, target: 20) {
                             onClose(item.value)
                         }
-                        .padding(.trailing, 4)
+                        .padding(.trailing, NookTheme.Spacing.xs)
                     }
                 }
                 .onHover { inside in

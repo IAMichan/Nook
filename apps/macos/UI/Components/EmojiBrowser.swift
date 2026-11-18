@@ -84,9 +84,7 @@ struct EmojiBrowser: View {
     }
 
     private func header(_ key: String) -> some View {
-        Text(tr(key))
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
+        NookSectionLabel(tr(key), inset: 0)
             .padding(.vertical, NookTheme.Spacing.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(NookTheme.surface)

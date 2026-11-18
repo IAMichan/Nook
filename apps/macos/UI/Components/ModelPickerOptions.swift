@@ -71,20 +71,20 @@ struct ModelPickerOptions: View {
     @ViewBuilder
     private var speedChoice: some View {
         if !speedTiers.isEmpty {
-            HStack(spacing: 2) {
+            HStack(spacing: NookTheme.Spacing.xxs) {
                 segment(tr("compose.speed.standard"), symbol: "hare", on: speed == nil) { pickSpeed(nil) }
                 ForEach(speedTiers, id: \.id) { tier in
                     segment(tier.name, symbol: "bolt.fill", on: speed == tier.id) { pickSpeed(tier.id) }
                 }
             }
-            .padding(2)
+            .padding(NookTheme.Spacing.xxs)
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         }
     }
 
     private func segment(_ title: String, symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(icon: symbol).font(NookTheme.font(12, .medium))
                 Text(title).lineLimit(1)
             }
@@ -123,8 +123,8 @@ private struct ModelPickerPermissions: View {
     var body: some View {
         let shown = hovered ?? access.chosen
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(tr("compose.access")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
-            HStack(spacing: 2) {
+            NookSectionLabel(tr("compose.access"), inset: 0)
+            HStack(spacing: NookTheme.Spacing.xxs) {
                 ForEach(access.provider.capabilities.policies) { policy in
                     let on = access.chosen == policy
                     Button {
@@ -145,7 +145,7 @@ private struct ModelPickerPermissions: View {
                     .accessibilityLabel(policy.label)
                 }
             }
-            .padding(2)
+            .padding(NookTheme.Spacing.xxs)
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
             Text(shown.label).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
             Text(shown.help(for: access.provider))
@@ -164,7 +164,7 @@ struct ModelPickerReasoning: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text(tr("compose.effort")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                NookSectionLabel(tr("compose.effort"), inset: 0)
                 Spacer(minLength: 4)
                 Text(effort.modelName).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
             }
@@ -188,7 +188,7 @@ struct ModelPickerReasoning: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
     private func row(symbol: String, title: String, on: Bool, action: @escaping () -> Void) -> some View {

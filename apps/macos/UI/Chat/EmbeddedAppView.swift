@@ -348,7 +348,7 @@ struct EmbeddedAppPane: View {
     var body: some View {
         if let current = store.current, current.isMacApp || store.webView != nil {
             VStack(spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(icon: current.symbol)
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)

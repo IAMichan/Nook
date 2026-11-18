@@ -804,7 +804,7 @@ private struct SessionQuestionOptionButton: View {
                             Text(badge)
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(NookTheme.amber)
-                                .padding(.horizontal, 6)
+                                .padding(.horizontal, NookTheme.Spacing.sm)
                                 .padding(.vertical, 1.5)
                                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.18)))
                         }
@@ -870,7 +870,7 @@ private struct SessionQuestionOptionButton: View {
             Image(icon: chosen ? "checkmark.square.fill" : "square")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
-                .padding(.top, 2)
+                .padding(.top, NookTheme.Spacing.xxs)
         } else {
             Image(icon: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))

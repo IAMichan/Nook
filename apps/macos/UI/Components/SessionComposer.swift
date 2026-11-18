@@ -1100,7 +1100,7 @@ struct ComposerPill: View {
     }
 
     private var content: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if let agent {
                 AgentMark(agent: agent, account: account, size: 15, ring: SessionComposer<EmptyView>.surface)
                     .padding(.trailing, account == nil ? 0 : 3)
@@ -1119,7 +1119,7 @@ struct ComposerPill: View {
             }
             if let badge, density != .icons {
                 Image(icon: badge.symbol).font(NookTheme.font(12, .medium))
-                    .padding(.leading, 2)
+                    .padding(.leading, NookTheme.Spacing.xxs)
                     .nookTip(badge.help)
                     .accessibilityLabel(badge.help)
             }
@@ -1148,7 +1148,7 @@ private struct RoomyText: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            Text(text).lineLimit(1).padding(.leading, 6)
+            Text(text).lineLimit(1).padding(.leading, NookTheme.Spacing.sm)
             Color.clear.frame(width: 0, height: 0)
         }
         .frame(minWidth: 0, idealWidth: 0, alignment: .leading)

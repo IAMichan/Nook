@@ -520,9 +520,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             .roundedBackground(NookTheme.iris.opacity(0.1), radius: NookTheme.Radius.card)
         case .failed(let message):
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coral)
+                SettingNote(message, tone: .error)
                 Button(tr("button.tryAgain")) { gitHubSignIn.start() }
             }
         case .idle, .checkingCLI, .waitingForCLI, .done:

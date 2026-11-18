@@ -110,7 +110,7 @@ struct ChatsListHints: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 if waiting {
                     // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
-                    Label(tr("chats.status.waiting"), systemImage: "tray")
+                    Label(tr("chats.status.waiting"), icon: "tray")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

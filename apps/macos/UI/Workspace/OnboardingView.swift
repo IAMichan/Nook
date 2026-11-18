@@ -115,7 +115,7 @@ struct OnboardingView: View {
             } else {
                 PatientSpinner().frame(height: 60)
             }
-            if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
+            if let error { InlineErrorText(error) }
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
                 .buttonStyle(.nookLink)
                 .foregroundStyle(NookTheme.blue)

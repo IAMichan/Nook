@@ -474,7 +474,7 @@ struct ComposerSuggestionList: View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(model.suggestions.enumerated()), id: \.element.id) { index, row in
                 Button { accept(row) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         NookSymbol(row.symbol, size: 12)
                             .font(NookTheme.font(11, .medium))
                             .foregroundStyle(index == model.selection ? tint : NookTheme.textTertiary)

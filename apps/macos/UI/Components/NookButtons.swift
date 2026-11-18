@@ -161,7 +161,7 @@ private struct NookActionBarItem: View {
 
     var body: some View {
         Button(action: action.perform) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 if let symbol = action.symbol {
                     Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold))
                 }

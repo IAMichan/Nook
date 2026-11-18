@@ -317,6 +317,8 @@ extension SettingsView {
                 }
             }
             .padding(.vertical, NookTheme.Spacing.xxs)
+            .confirmDelete($themeToRemove, question: { tr("confirm.remove", Self.title(for: $0)) },
+                           detail: tr("confirm.removeTheme.detail"), confirmTitle: tr("theme.remove")) { removeTheme($0) }
             HStack {
                 Button(tr("theme.import")) { importVSCodeTheme() }
                 Spacer()
@@ -341,6 +343,13 @@ extension SettingsView {
         theme.custom ? theme.name : tr("theme.name.\(theme.id)")
     }
 
+    /// Deletes an imported theme; an appearance that used it goes back to Nook's own.
+    private func removeTheme(_ theme: NookColorTheme) {
+        settings.customThemes.removeAll { $0.id == theme.id }
+        if settings.darkThemeID == theme.id { settings.darkThemeID = NookColorTheme.nook.id }
+        if settings.lightThemeID == theme.id { settings.lightThemeID = NookColorTheme.nook.id }
+    }
+
     /// One theme: its name, and a preview per appearance it has; the one in use for dark or light carries a ring.
     private func themeCard(_ theme: NookColorTheme) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -348,11 +357,7 @@ extension SettingsView {
                 Text(Self.title(for: theme)).font(NookTheme.TextStyle.strong).lineLimit(1)
                 Spacer(minLength: 0)
                 if theme.custom {
-                    ToolbarIconButton("trash", tr("theme.remove"), height: 18, width: 18) {
-                        settings.customThemes.removeAll { $0.id == theme.id }
-                        if settings.darkThemeID == theme.id { settings.darkThemeID = NookColorTheme.nook.id }
-                        if settings.lightThemeID == theme.id { settings.lightThemeID = NookColorTheme.nook.id }
-                    }
+                    ToolbarIconButton("trash", tr("theme.remove"), height: 18, width: 18) { themeToRemove = theme }
                 }
             }
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -469,7 +474,7 @@ struct ColorTokensSettings: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
-                    Button(tr("colors.resetAll")) {
+                    ConfirmedButton(tr("colors.resetAll"), question: tr("confirm.resetColors"), detail: tr("confirm.resetColors.detail")) {
                         var all = settings.colorOverrides
                         if dark { all.dark = [:] } else { all.light = [:] }
                         settings.colorOverrides = all

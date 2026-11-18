@@ -24,14 +24,14 @@
 #      pointing hand, never the system .plain / .borderless / .borderedProminent / .link, which keep the arrow; menus
 #      likewise use .nookBorderlessButton / .nookButton.
 #  11. A Label's icon goes through Image(icon:) as well: Label(_:icon:) (UI/Theme/NookIcon.swift), never
-#      Label(_:systemImage:). LABEL_SYSTEM_IMAGE_PENDING lists the chat files another change is rewriting.
+#      Label(_:systemImage:).
 #  12. A section that folds open turns a DisclosureChevron, a control hidden at rest uses .revealOnHover
 #      (UI/Components/HoverReveal.swift), and a clock time comes from NookDates.clock (Core/RelativeTime.swift).
 #      PanelParts.swift keeps its own chevron: the iPhone app shares it, and there it follows Dynamic Type.
 #  13. A tooltip is a .nookTip (.sharedTip in UI/Shared, .composerTip under a composer), never SwiftUI's .help,
 #      which has the system's look and a one-second wait; only an item inside a menu keeps .help (marked // menu item).
-# Keep OWN_COLORS equal to UIConsistencyTests.ownColors, and LABEL_SYSTEM_IMAGE_PENDING to
-# UIConsistencyTests.labelSystemImagePending.
+#  14. A spacing: or .padding that lands on the scale (2, 4, 6, 8, 12, 16, 24, 32, 48) is its NookTheme.Spacing token.
+# Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 # `report` reads each check from a process substitution, so it runs in this shell and the status it sets is the one
 # the script exits with. (Not `cmd | report` with `shopt -s lastpipe`: macOS's /bin/bash 3.2 has no lastpipe, so
@@ -52,13 +52,6 @@ OWN_COLORS=(
   "App/Settings/SettingsView+Appearance.swift"
 )
 
-# Path prefixes that still use Label(_:systemImage:) while the chats are being rewritten elsewhere;
-# drop each once that work lands.
-LABEL_SYSTEM_IMAGE_PENDING=(
-  "UI/Chat/"
-  "UI/Components/Chat"
-  "UI/Panel/Chats"
-)
 
 status=0
 report() {  # $1 = rule, stdin = offending lines
@@ -79,6 +72,8 @@ report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))"
 report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)" < <(grep -rnE '(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]' UI App --include='*.swift' \
   | grep -v -e '^UI/Character/' -e '^UI/Theme/NookTheme.swift')
 
+report "spacing on the scale uses NookTheme.Spacing (no 2/4/6/8/12/16/24/32/48 in a spacing: or .padding)" < <(grep -rnE '(\bspacing:[[:space:]]*|\.padding\((\.[a-zA-Z]+,[[:space:]]*|\[[^]]*\],[[:space:]]*)?)(2|4|6|8|12|16|24|32|48)[[:space:]]*[,)]' UI App --include='*.swift' | grep -v '^UI/Theme/')
+
 report "text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))" < <(grep -rnE '\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' UI App --include='*.swift' \
   | grep -v '^UI/Theme/NookTheme.swift')
 
@@ -94,9 +89,7 @@ report "search fields are a NookSearchField (no magnifying glass and text field 
 report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)" < <(grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' UI App --include='*.swift' \
   | grep -v '^UI/Theme/NookIcon.swift:')
 
-pending=()
-for prefix in "${LABEL_SYSTEM_IMAGE_PENDING[@]}"; do pending+=(-e "^$prefix"); done
-report "labels draw their icon through Label(_:icon:) (no Label(_:systemImage:))" < <(grep -rnE '\bsystemImage:' UI App --include='*.swift' | grep -v "${pending[@]}")
+report "labels draw their icon through Label(_:icon:) (no Label(_:systemImage:))" < <(grep -rnE '\bsystemImage:' UI App --include='*.swift')
 
 report "rounded shapes come from NookTheme.shape / .roundedBackground / .roundedStroke / .roundedClip (no RoundedRectangle built inline)" < <(grep -rnE 'RoundedRectangle\(cornerRadius:' UI App --include='*.swift' \
   | grep -v '^UI/Theme/NookTheme.swift:')

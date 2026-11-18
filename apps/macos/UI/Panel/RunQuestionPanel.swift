@@ -217,7 +217,7 @@ struct RunQuestionPanel: View {
                 Button {
                     submitOwn(item)
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         Text(isLast ? tr("ws.question.send") : tr("ws.question.next"))
                             .font(NookTheme.font(12, .semibold))
                         Image(icon: "return")
@@ -225,7 +225,7 @@ struct RunQuestionPanel: View {
                     }
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, NookTheme.Spacing.xs)
                     .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.35)))
                 }
                 .buttonStyle(.nookPlain)
@@ -347,7 +347,7 @@ private struct QuestionOptionRow: View {
                             Text(badge)
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(NookTheme.amber)
-                                .padding(.horizontal, 6)
+                                .padding(.horizontal, NookTheme.Spacing.sm)
                                 .padding(.vertical, 1.5)
                                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.18)))
                         }
@@ -415,7 +415,7 @@ private struct QuestionOptionRow: View {
             Image(icon: isPicked ? "checkmark.square.fill" : "square")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isPicked ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
-                .padding(.top, 2)
+                .padding(.top, NookTheme.Spacing.xxs)
         } else {
             Image(icon: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))

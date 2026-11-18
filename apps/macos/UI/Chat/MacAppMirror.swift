@@ -738,10 +738,10 @@ struct MacAppMirrorPane: View {
                 Text(notice)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, NookTheme.Spacing.lg)
+                    .padding(.vertical, NookTheme.Spacing.md)
                     .background(NookTheme.shape(NookTheme.Radius.chip).fill(Color.black.opacity(0.75)))
-                    .padding(.bottom, 12)
+                    .padding(.bottom, NookTheme.Spacing.lg)
                     .allowsHitTesting(false)
             }
         }

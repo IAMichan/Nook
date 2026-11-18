@@ -66,9 +66,7 @@ struct PortfolioSettings: View {
                 .nookTip(tr("portfolio.removeAddress"))
             }
             if let message = portfolio.error(for: wallet) {
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coral)
+                SettingNote(message, tone: .error)
             }
         }
     }

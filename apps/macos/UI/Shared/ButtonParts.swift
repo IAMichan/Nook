@@ -48,7 +48,7 @@ struct NookGhostButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 if let symbol { Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
                 Text(title).font(NookTheme.textFont(compact ? 13 : 14, .semibold))
             }

@@ -90,7 +90,7 @@ struct ChatOptionsSection: View {
             Button(tr("chats.slack.save")) { saveGiphyKey() }
                 .disabled(giphyKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if giphySet {
-                Button(tr("chats.giphy.remove")) {
+                ConfirmedButton(tr("chats.giphy.remove"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
                     Keychain.remove(Giphy.keyAccount)
                     giphySet = false
                 }

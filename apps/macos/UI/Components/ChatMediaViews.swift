@@ -510,7 +510,7 @@ struct ChatGIFView: View {
                 .font(NookTheme.font(9.5, .bold))
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.xs)
-                .padding(.vertical, 2)
+                .padding(.vertical, NookTheme.Spacing.xxs)
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.6)))
                 .padding(NookTheme.Spacing.xs)
         }
@@ -632,7 +632,7 @@ struct ChatAudioView: View {
             }
             .frame(width: 150)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
         .onDisappear { player.stop() }
     }
 

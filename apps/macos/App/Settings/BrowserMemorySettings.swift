@@ -19,7 +19,8 @@ struct BrowserHistoryRow: View {
             HStack {
                 SettingLabel(tr("settings.browser.history.kept"), detail: tr("settings.browser.history.count", count))
                 Spacer()
-                Button(tr("settings.browser.history.clear")) { clear() }
+                ConfirmedButton(tr("settings.browser.history.clear"), question: tr("confirm.clearBrowserHistory"),
+                                detail: tr("confirm.clearBrowserHistory.detail")) { clear() }
             }
         }
         Color.clear.frame(height: 0)
@@ -54,7 +55,8 @@ struct BrowserPasswordsRow: View {
                         NSPasteboard.general.setString(credential.password, forType: .string)
                         ToastCenter.shared.success(tr("settings.browser.passwords.copied"))
                     }
-                    Button(tr("settings.browser.passwords.remove")) { passwords.remove(credential.id) }
+                    ConfirmedButton(tr("settings.browser.passwords.remove"), question: tr("confirm.remove", credential.site),
+                                    detail: tr("confirm.removePassword.detail")) { passwords.remove(credential.id) }
                 }
             }
             if !book.neverSites.isEmpty {
@@ -98,7 +100,7 @@ struct BrowserExtensionsSettings: View {
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.small)
-                        Button(tr("browser.extensions.remove")) { extensions.remove(item.id) }
+                        ConfirmedButton(tr("browser.extensions.remove"), question: tr("confirm.remove", item.name)) { extensions.remove(item.id) }
                     }
                 }
                 HStack(spacing: NookTheme.Spacing.sm) {

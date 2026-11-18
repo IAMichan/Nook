@@ -62,7 +62,7 @@ struct WorkflowRunDetail: View {
             HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
                 NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24, action: onClose)
                 CheckOutcomeGlyph(outcome: current.outcome, size: 16, running: current.running)
-                    .padding(.top, 4)
+                    .padding(.top, NookTheme.Spacing.xs)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(current.title)
                         .font(NookTheme.TextStyle.title)

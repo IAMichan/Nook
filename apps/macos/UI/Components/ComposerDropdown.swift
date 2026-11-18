@@ -48,7 +48,7 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     private var panel: some View {
         if scrolls {
             DropdownList(maxHeight: Self.scrollingHeight) { content() }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, NookTheme.Spacing.xs)
         } else {
             VStack(alignment: .leading, spacing: 0) { content() }
         }
@@ -116,7 +116,7 @@ struct DropdownHeader: View {
 /// A thin line between groups.
 struct DropdownDivider: View {
     var body: some View {
-        NookDivider().padding(.horizontal, 8).padding(.vertical, 4)
+        NookDivider().padding(.horizontal, NookTheme.Spacing.md).padding(.vertical, NookTheme.Spacing.xs)
     }
 }
 
@@ -199,7 +199,7 @@ struct DropdownRow: View {
                         .frame(width: 15)
                         .padding(.top, detail == nil ? 0 : 1)
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(title)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(tint ?? NookTheme.paper)
@@ -390,7 +390,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
         HStack(alignment: .top, spacing: 0) {
             if hasFooter || filledGroups.joined().count > 1 { rail.frame(maxHeight: .infinity) }
             VStack(alignment: .leading, spacing: 0) { detail(current) }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -408,17 +408,17 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
     }
 
     private var rail: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: NookTheme.Spacing.xs) {
             ForEach(Array(filledGroups.enumerated()), id: \.offset) { index, group in
                 if index > 0 {
-                    Rectangle().fill(NookTheme.line2).frame(width: 18, height: 1).padding(.vertical, 2)
+                    Rectangle().fill(NookTheme.line2).frame(width: 18, height: 1).padding(.vertical, NookTheme.Spacing.xxs)
                 }
                 ForEach(group, id: \.self) { place in railButton(place) }
             }
             Spacer(minLength: 0)
             footer()
         }
-        .padding(6)
+        .padding(NookTheme.Spacing.sm)
         .frame(width: 44)
         .background(NookTheme.paper.opacity(0.03))
         .overlay(alignment: .trailing) { NookDivider(vertical: true) }
@@ -435,7 +435,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 // Top corner: the bottom one holds the account badge.
                 .overlay(alignment: .topTrailing) {
                     if place == chosen && place != current {
-                        Circle().fill(NookTheme.paper.opacity(0.7)).frame(width: 4, height: 4).padding(4)
+                        Circle().fill(NookTheme.paper.opacity(0.7)).frame(width: 4, height: 4).padding(NookTheme.Spacing.xs)
                     }
                 }
                 .contentShape(Rectangle())
@@ -484,7 +484,7 @@ struct DropdownList<Rows: View>: View {
                     }
                     rows()
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, NookTheme.Spacing.xs)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .onChange(of: scrollTarget) { _, target in

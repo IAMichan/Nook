@@ -315,7 +315,7 @@ struct ApprovalView: View {
             // Branch flow bar
             HStack(spacing: NookTheme.Spacing.xs) {
                 if !pr.repository.isEmpty {
-                    HStack(spacing: 4) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         Image(icon: "shippingbox.fill")
                             .font(NookTheme.font(10, .medium))
                             .foregroundStyle(NookTheme.textTertiary)

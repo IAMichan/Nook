@@ -133,7 +133,7 @@ struct PullRequestRow: View, Equatable {
 
     private var content: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            stateMark.padding(.top, 2)
+            stateMark.padding(.top, NookTheme.Spacing.xxs)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 // The title leads, with its labels (in a session's own list its branches) right behind it.
                 HStack(spacing: NookTheme.Spacing.sm) {

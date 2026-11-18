@@ -875,7 +875,7 @@ private struct ChatBubbleView: View, Equatable {
         // Each read once per draw: they are read in several places below.
         let link = self.link
         let long = !bubble.text.isEmpty && self.long
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             if first, !bubble.sender.isEmpty {
                 Text(bubble.sender)
                     .font(NookTheme.TextStyle.label)
@@ -886,7 +886,7 @@ private struct ChatBubbleView: View, Equatable {
             if bubble.deleted, !bubble.keepsDeleted {
                 // Deleted for everyone: where it was, what became of it, with its time beside it.
                 HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Label(bubble.deletedLine, systemImage: "nosign")
+                    Label(bubble.deletedLine, icon: "nosign")
                         .font(NookTheme.TextStyle.body.italic())
                         .foregroundStyle(NookTheme.chatStamp)
                     if showsStamp { stampSlot }
@@ -1586,7 +1586,7 @@ struct VideoTile: View {
         .overlay(alignment: .topTrailing) {
             if showEnlarge {
                 MediaOverlayButton("arrow.up.left.and.arrow.down.right", label: enlargeLabel, detail: name) { enlarge() }
-                    .padding(6)
+                    .padding(NookTheme.Spacing.sm)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -2072,7 +2072,7 @@ private struct DeletedMark: View {
     let color: Color
 
     var body: some View {
-        Label(tr("chat.message.deletedTag"), systemImage: "nosign")
+        Label(tr("chat.message.deletedTag"), icon: "nosign")
             .labelStyle(.titleAndIcon)
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(color)

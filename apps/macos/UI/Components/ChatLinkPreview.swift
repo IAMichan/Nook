@@ -184,10 +184,10 @@ private struct ChatRemotePicture: View {
                     Button {
                         withAnimation(NookTheme.reveal) { enlarged.toggle() }
                     } label: {
-                        Label(label, systemImage: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        Label(label, icon: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }
                     Button { NSWorkspace.shared.open(url) } label: {
-                        Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
+                        Label(tr("card.attachment.open"), icon: "arrow.up.forward.app")
                     }
                 }
                 .accessibilityLabel("\(label): \(url.lastPathComponent)")

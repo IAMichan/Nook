@@ -163,9 +163,9 @@ struct ChatChartView: View {
     }
 
     private func pieLegend(_ parts: [Row], total: Double) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     NookTheme.shape(2)
                         .fill(Self.palette[index % Self.palette.count])
                         .frame(width: 10, height: 10)

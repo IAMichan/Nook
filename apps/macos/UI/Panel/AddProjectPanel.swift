@@ -103,10 +103,7 @@ struct AddProjectPalette: View {
             .nookClickable()
             .onTapGesture(perform: submit)
         if let error {
-            Text(error)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coral)
-                .fixedSize(horizontal: false, vertical: true)
+            InlineErrorText(error)
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.xs)
         }
