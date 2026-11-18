@@ -1115,7 +1115,7 @@ struct DraftActions: View {
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(tint.opacity(0.12)))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(action.step.text)
+                Text(TextKit.droppingRedundantLinks(action.step.text))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textStrong)
                     .lineLimit(3)
