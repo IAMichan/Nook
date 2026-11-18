@@ -35,6 +35,9 @@ struct BrowserTakeoverOverlay: View {
                     .transition(.opacity)
             }
         }
+        // The whole page, with the pill at its bottom edge: without it the overlay took only the pill's size and sat in
+        // the middle of the page, over what you were reading.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .animation(NookTheme.reveal, value: store.drivenBy)
         .animation(NookTheme.reveal, value: store.agentsStopped)
     }
