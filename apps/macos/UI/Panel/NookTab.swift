@@ -70,7 +70,7 @@ struct NookChatView: View {
     @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
     @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
 
-    /// The terminal side panel's width, shared with a session's side panel in Agents: one panel, one width.
+    /// The terminal side panel's width beside the chat (a session's side panel in Agents keeps its own, per session).
     @AppStorage("nook.agents.toolWidth") private var terminalWidth = PanelLayout.tool
 
     /// An app, Nook's browser or a terminal is open next to the chat.
