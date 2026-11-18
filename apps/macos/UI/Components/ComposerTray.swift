@@ -40,7 +40,7 @@ struct ComposerTray<Content: View>: View {
 /// The hairline between two sections of one tray.
 struct ComposerTrayDivider: View {
     var body: some View {
-        NookDivider().padding(.vertical, 2)
+        NookDivider().padding(.vertical, NookTheme.Spacing.xxs)
     }
 }
 

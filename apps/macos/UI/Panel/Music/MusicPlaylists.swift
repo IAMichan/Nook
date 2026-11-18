@@ -361,9 +361,7 @@ private struct MusicPlaylistAdder: View {
     private func list(title: String?, tracks: [MusicTrack]) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             if let title {
-                Text(title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textTertiary)
+                NookSectionLabel(title, inset: 0)
             }
             LazyVStack(spacing: 0) {
                 ForEach(Array(tracks.enumerated()), id: \.offset) { _, track in

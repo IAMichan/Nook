@@ -1114,7 +1114,7 @@ struct AgentHoverCard: View {
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.textTertiary)
             if !item.firstPrompt.isEmpty && item.firstPrompt != item.title {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("agents.card.task"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)

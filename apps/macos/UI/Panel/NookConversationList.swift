@@ -36,7 +36,7 @@ struct NookList: View {
         let items = attention + pinned + rest
         // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
         let shown = (attention + pinned + rest + (showArchived ? archived : [])).map(\.id)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
                 .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
                                confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
@@ -46,7 +46,7 @@ struct NookList: View {
                 NookScheduledList(chat: chat, query: query)
             } else {
                 TimelineView(.nookTicks(every: 30)) { context in
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
                         // Archived ones still wait in the shelf below.
                         if query.isEmpty && items.isEmpty && !showArchived {
@@ -55,7 +55,7 @@ struct NookList: View {
                         } else {
                             ScrollView(showsIndicators: false) {
                                 // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
-                                LazyVStack(alignment: .leading, spacing: 2) {
+                                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                                     if items.isEmpty && (archivedCount == 0 || !showArchived) {
                                         ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                                     }
@@ -205,7 +205,7 @@ struct NookList: View {
     /// "For you": the Nooks that ask something of you, on a card above the rest, each with its badge (new answer, needs
     /// you, working) and the line that says what it did. The rest of the list keeps to one line a Nook.
     private func attentionCard(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 NookSectionLabel(tr("nooks.section.forYou"), inset: 0)
                 NookCountBadge(count: conversations.count)
@@ -222,7 +222,7 @@ struct NookList: View {
     /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
     /// with a click. Its header stays put and its rows open above it, scrolling on their own once they no longer fit.
     private func archiveShelf(_ archived: [Conversation], count: Int, now: Date, shown: [UUID]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             if showArchived {
                 ViewThatFits(in: .vertical) {
                     archivedRows(archived, now: now, shown: shown)
@@ -252,7 +252,7 @@ struct NookList: View {
     }
 
     private func archivedRows(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
-        VStack(alignment: .leading, spacing: 2) { rows(archived, now: now, shown: shown) }
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) { rows(archived, now: now, shown: shown) }
     }
 
     @ViewBuilder
@@ -433,7 +433,7 @@ private struct NookRow: View, Equatable {
     }
 
     private var hoverActions: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             if !conversation.archived {
                 rowButton(conversation.pinned ? "pin.slash" : "pin", tr(conversation.pinned ? "nooks.unpin" : "nooks.pin"), onPin)
             }
@@ -547,7 +547,7 @@ private struct NookHoverCard: View {
                 HoverCardRow(symbol: "magnifyingglass", text: tr("nooks.card.sources", sources))
             }
             if let prompt = promptText {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("nooks.card.request"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -559,7 +559,7 @@ private struct NookHoverCard: View {
                 }
             }
             if !summaryText.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("nooks.card.summary"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)

@@ -44,49 +44,7 @@ struct SessionDetailView: View {
     var body: some View {
         if let session {
             ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    if client.can(CompanionFeature.timeline), !entries.isEmpty {
-                        if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
-                            EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(scroll) }
-                        }
-                        TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working",
-                                               found: finding ? currentMatch : nil)
-                            // The match shown: in sight, in the middle of the screen.
-                            .onChange(of: finding ? currentMatch : nil) { _, match in
-                                guard let match else { return }
-                                let rows = TranscriptRow.rows(entries, working: session.attention == "working")
-                                if let row = rows.first(where: { $0.holds(match) }) {
-                                    withAnimation(Theme.reveal) { scroll.scrollTo(row.id, anchor: .center) }
-                                }
-                            }
-                            // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
-                            .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
-                                message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
-                                composerFocused = true
-                            } : nil)
-                    } else if !session.excerpt.isEmpty {
-                        SectionHeader(title: String(localized: "Latest reply"))
-                        TranscriptReply(text: session.excerpt, footer: false)
-                    } else if client.can(CompanionFeature.timeline) {
-                        if client.isOffline {
-                            OfflineNote(text: String(localized: "This conversation is not kept on this iPhone yet. It opens once your Mac is connected."))
-                                .padding(.top, Theme.Spacing.xxl)
-                                .appearsAfterDelay()
-                        } else {
-                            TranscriptLoading()
-                        }
-                    }
-                    // Messages that wait in the outbox until the Mac takes them.
-                    let waiting = client.outbox.waiting(for: session.id)
-                    ForEach(waiting) { entry in
-                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
-                    }
-                    // How the session ended when it needs a next step: a usage limit, a failed turn, or settled.
-                    if waiting.isEmpty, session.items.isEmpty { SessionEndCard(session: session) }
-                }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.bottom, Theme.Spacing.lg)
-                .readingColumn()
+                conversation(session, scroll)
             } floating: {
                 FloatingWorkingControl(
                     workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
@@ -239,6 +197,61 @@ struct SessionDetailView: View {
     /// What a drop may add: pictures and a file where this Mac takes them.
     private var dropImages: Binding<[CompanionImage]>? { client.can(CompanionFeature.images) ? $images : nil }
     private var dropFiles: Binding<[CompanionFile]>? { client.can(CompanionFeature.attachments) ? $files : nil }
+
+    /// The conversation itself: earlier messages, the transcript, what waits in the outbox, and how it ended. Its own
+    /// function, so the compiler type-checks `body` in reasonable time.
+    @ViewBuilder
+    private func conversation(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            if client.can(CompanionFeature.timeline), !entries.isEmpty {
+                if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
+                    EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(scroll) }
+                }
+                TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working",
+                                       found: finding ? currentMatch : nil)
+                    // The match shown: in sight, in the middle of the screen.
+                    .onChange(of: finding ? currentMatch : nil) { _, match in
+                        guard let match else { return }
+                        let rows = TranscriptRow.rows(entries, working: session.attention == "working")
+                        if let row = rows.first(where: { $0.holds(match) }) {
+                            withAnimation(Theme.reveal) { scroll.scrollTo(row.id, anchor: .center) }
+                        }
+                    }
+                    // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+                    .environment(\.replyToAnswer, replyToAnswer(session))
+            } else if !session.excerpt.isEmpty {
+                SectionHeader(title: String(localized: "Latest reply"))
+                TranscriptReply(text: session.excerpt, footer: false)
+            } else if client.can(CompanionFeature.timeline) {
+                if client.isOffline {
+                    OfflineNote(text: String(localized: "This conversation is not kept on this iPhone yet. It opens once your Mac is connected."))
+                        .padding(.top, Theme.Spacing.xxl)
+                        .appearsAfterDelay()
+                } else {
+                    TranscriptLoading()
+                }
+            }
+            // Messages that wait in the outbox until the Mac takes them.
+            let waiting = client.outbox.waiting(for: session.id)
+            ForEach(waiting) { entry in
+                TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
+            }
+            // How the session ended when it needs a next step: a usage limit, a failed turn, or settled.
+            if waiting.isEmpty, session.items.isEmpty { SessionEndCard(session: session) }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.lg)
+        .readingColumn()
+    }
+
+    /// "Reply" on an answer: a quote of it at the top of the message, where you can write one; nil where you cannot send.
+    private func replyToAnswer(_ session: SessionDigest) -> ((String) -> Void)? {
+        guard client.allows(.operate), session.canSend != false else { return nil }
+        return { answer in
+            message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+            composerFocused = true
+        }
+    }
 
     /// Under the conversation, at the reading width: the working control, then what waits on you or the composer.
     private func dock(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {

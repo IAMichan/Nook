@@ -133,7 +133,7 @@ struct MailDraftView: View {
 
             if case .failed(let message) = draft.state {
                 InlineErrorText(message)
-                    .padding(.top, 6)
+                    .padding(.top, NookTheme.Spacing.sm)
             }
         }
         .padding(NookTheme.Spacing.xl)

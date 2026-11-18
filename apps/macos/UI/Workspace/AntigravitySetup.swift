@@ -38,7 +38,7 @@ struct AntigravitySetupRow: View {
                 }
             }
             if case .failed(let message) = installer.phase {
-                Text(message).foregroundStyle(NookTheme.coralSoft).fixedSize(horizontal: false, vertical: true)
+                InlineErrorText(message)
             }
             if inSettings || !installed {
                 Text(tr("ws.antigravity.note")).foregroundStyle(NookTheme.textTertiary).fixedSize(horizontal: false, vertical: true)

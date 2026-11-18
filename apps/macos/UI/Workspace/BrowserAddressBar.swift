@@ -150,7 +150,7 @@ private struct ExtensionButton: View {
                     Text(verbatim: button.badge)
                         .font(NookTheme.font(7.5, .bold))
                         .foregroundStyle(NookTheme.paper)
-                        .padding(.horizontal, 2)
+                        .padding(.horizontal, NookTheme.Spacing.xxs)
                         .roundedBackground(NookTheme.coral, radius: NookTheme.Radius.chip)
                         .lineLimit(1)
                 }

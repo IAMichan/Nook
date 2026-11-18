@@ -267,7 +267,7 @@ struct LimitMenuLabel: View {
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, NookTheme.Spacing.xs)
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
         .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

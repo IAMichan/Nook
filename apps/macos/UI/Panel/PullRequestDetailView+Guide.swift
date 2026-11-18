@@ -43,8 +43,7 @@ extension PullRequestDetailView {
                     Text(tr("agents.pr.guide.intro")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if guideFailed {
-                        Text(tr("agents.pr.guide.failed")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
-                            .fixedSize(horizontal: false, vertical: true)
+                        InlineErrorText(tr("agents.pr.guide.failed"))
                     }
                     NookPrimaryButton(title: tr("agents.pr.guide.write"), symbol: "map") { writeGuide(detail, key: key) }
                         .fixedSize()

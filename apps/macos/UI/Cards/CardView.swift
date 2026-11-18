@@ -648,7 +648,7 @@ private struct StepsDetail: View {
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if !step.tag.isEmpty {
                         NookTag(step.tag, tint: color(step.tone))
-                            .padding(.top, 2)
+                            .padding(.top, NookTheme.Spacing.xxs)
                     }
                 }
             }

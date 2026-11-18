@@ -444,7 +444,7 @@ struct ImageAttachmentStrip: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     ForEach(images) { image in
                         ZStack(alignment: .topTrailing) {
                             thumbnail(image)

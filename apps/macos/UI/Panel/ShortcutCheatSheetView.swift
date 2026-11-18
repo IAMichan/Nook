@@ -33,8 +33,7 @@ struct ShortcutCheatSheetView: View {
                         let rows = shown.filter { $0.group == group }
                         if !rows.isEmpty {
                             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                Text(tr("cheatsheet.group." + group.rawValue))
-                                    .font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                                NookSectionLabel(tr("cheatsheet.group." + group.rawValue), inset: 0)
                                 ForEach(rows) { row in
                                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                                         Text(tr("keys.command." + row.command))

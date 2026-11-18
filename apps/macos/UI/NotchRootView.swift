@@ -263,7 +263,7 @@ struct NotchRootView: View {
                 Spacer(minLength: 0)
             }
             .padding(.leading, 14)
-            .padding(.trailing, 8)
+            .padding(.trailing, NookTheme.Spacing.md)
             .frame(width: wing, height: nh)
 
             Spacer(minLength: 0)

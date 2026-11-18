@@ -135,6 +135,8 @@ struct SettingsView: View {
     @State var installFraction: Double = 0
     @State var usingRecommendation = false
     @State var testing = false
+    /// The imported theme whose trash can was clicked: Settings asks before deleting it.
+    @State var themeToRemove: NookColorTheme?
     @State var testResult: (ok: Bool, message: String)?
     @State var pendingChange: AgentConfigInstaller.Change?
     @State var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]

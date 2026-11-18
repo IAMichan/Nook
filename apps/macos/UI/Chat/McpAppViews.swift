@@ -24,13 +24,13 @@ struct McpAppBlock: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             header
             if let link = resource.link {
                 Button(tr("ws.mcpApp.open")) { NSWorkspace.shared.open(link) }
                     .controlSize(.small)
             } else if session.closed || session.left {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(session.left ? tr("ws.mcpApp.left") : tr("ws.mcpApp.closed", session.reference.tool))
                         .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                     Button(tr("ws.mcpApp.show")) { session.reload() }.controlSize(.small)
@@ -39,7 +39,7 @@ struct McpAppBlock: View {
                 // The row keeps its inline height while the app is fullscreen, so the timeline does not jump.
                 Group {
                     if session.mode == .fullscreen {
-                        HStack(spacing: 8) {
+                        HStack(spacing: NookTheme.Spacing.md) {
                             Image(icon: "arrow.up.left.and.arrow.down.right").font(NookTheme.TextStyle.detail)
                             Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.TextStyle.detail)
                             Button(tr("ws.mcpApp.exitFullscreen")) { session.exitFullscreen() }.controlSize(.small)
@@ -68,7 +68,7 @@ struct McpAppBlock: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             Image(icon: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
             Text(session.reference.server.map { "\($0) · \(session.reference.tool)" } ?? tr("ws.mcpApp.title"))
                 .font(NookTheme.TextStyle.label)
@@ -502,7 +502,7 @@ private struct McpAppFullscreenView: View {
                     .keyboardShortcut(.cancelAction)
             }
             .foregroundStyle(NookTheme.textSecondary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 40)
             Divider()
             McpAppSurface(session: session, mode: .fullscreen)

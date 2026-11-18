@@ -23,7 +23,7 @@ struct SelectableRow: ViewModifier {
                 }
                 .buttonStyle(.nookPlain)
                 .accessibilityLabel(tr("select.start"))
-                .padding(.leading, 2)
+                .padding(.leading, NookTheme.Spacing.xxs)
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
             content

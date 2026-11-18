@@ -77,6 +77,9 @@ struct MarkdownBlockView: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
+        case .mail(let mail):
+            // The phone has no mail card yet: the mail as the agent wrote it, in a card with a copy button.
+            MarkdownCodeBlock(language: "mail", code: Self.mailText(mail))
         case .table(let header, let rows):
             MarkdownTableView(header: header, rows: rows)
         case .rule:
@@ -230,6 +233,16 @@ struct MarkdownCodeBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .roundedBackground(Theme.well, radius: Theme.Radius.card)
         .overlay(Theme.shape(Theme.Radius.card).strokeBorder(Theme.hairline, lineWidth: 0.5))
+    }
+}
+
+extension MarkdownBlockView {
+    /// A mail block back as its header lines and body, the way it reads in the agent's answer.
+    static func mailText(_ mail: MailTemplate) -> String {
+        let headers = [("From", mail.from), ("To", mail.to), ("Cc", mail.cc), ("Bcc", mail.bcc), ("Subject", mail.subject)]
+            .filter { !$0.1.isEmpty }
+            .map { "\($0.0): \($0.1)" }
+        return headers.isEmpty ? mail.body : headers.joined(separator: "\n") + "\n\n" + mail.body
     }
 }
 

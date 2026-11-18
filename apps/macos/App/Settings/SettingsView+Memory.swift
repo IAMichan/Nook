@@ -60,8 +60,7 @@ struct MemorySettingsSection: View {
                 ForEach(MemoryItem.Kind.allCases, id: \.self) { kind in
                     let group = visible.filter { $0.kind == kind }
                     if !group.isEmpty {
-                        Text(tr("memory.kind.\(kind.rawValue)"))
-                            .font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                        NookSectionLabel(tr("memory.kind.\(kind.rawValue)"), inset: 0)
                             .padding(.top, NookTheme.Spacing.sm)
                         ForEach(group) { item in row(item) }
                     }

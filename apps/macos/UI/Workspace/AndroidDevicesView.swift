@@ -11,7 +11,7 @@ struct AndroidDevicesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if !devices.isEmpty {
-                Text(tr("sim.android.title")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                NookSectionLabel(tr("sim.android.title"), inset: 0)
                 ForEach(devices) { device in
                     HStack(spacing: NookTheme.Spacing.md) {
                         Text(device.name).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)

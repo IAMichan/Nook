@@ -193,7 +193,7 @@ private struct TypingIndicator: View {
     private var label: String { status.isEmpty ? tr("chat.thinking") : status }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             PulseDot(color: NookTheme.iris, animated: !reduceMotion)
                 .frame(width: 14, height: 14)
             Group {

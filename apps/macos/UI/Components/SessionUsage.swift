@@ -138,8 +138,7 @@ struct SessionUsageSection: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                    Text(tr("usage.session.context")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
-                        .accessibilityAddTraits(.isHeader)
+                    NookSectionLabel(tr("usage.session.context"), inset: 0)
                     // What the window means now (getting long, or when it summarizes by itself) behind an ⓘ, in the
                     // context's tone once it suggests summarizing, instead of a sentence under the bar.
                     if let note = contextNote(snapshot) {
@@ -504,7 +503,7 @@ private struct SessionUsageLeadTag: View {
             }
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
         .roundedBackground(lead.fill.opacity(0.14), radius: NookTheme.Radius.chip)
         .accessibilityElement(children: .combine)
     }

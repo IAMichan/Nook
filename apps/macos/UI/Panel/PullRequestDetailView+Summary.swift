@@ -325,7 +325,7 @@ extension PullRequestDetailView {
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 20, height: 20)
             .background(Circle().fill(NookTheme.rowHover))
-            .padding(2)
+            .padding(NookTheme.Spacing.xxs)
             .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1.5))
             .nookTip(tr("agents.pr.reviews.waiting", name))
     }
@@ -387,7 +387,7 @@ extension PullRequestDetailView {
 
     func reviewer(_ login: String, ring: Color, help: String) -> some View {
         GitHubAvatar(login: login, size: 20)
-            .padding(2)
+            .padding(NookTheme.Spacing.xxs)
             .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
             .nookTip(help)
     }

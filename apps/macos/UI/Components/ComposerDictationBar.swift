@@ -153,7 +153,7 @@ struct ComposerDictationBar: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
                 // Set straight on layers from the measured voice level: no SwiftUI update per frame.
-                LayerLevelBars(count: 12, barWidth: 2, spacing: 2, color: tint,
+                LayerLevelBars(count: 12, barWidth: 2, spacing: NookTheme.Spacing.xxs, color: tint,
                                fps: dictator.state.phase == .listening ? 20 : 0) {
                     Self.barLevels(VoiceLevel.shared.current)
                 }

@@ -966,7 +966,7 @@ struct ChatAttachmentKindMenu: View {
             Menu {
                 ForEach(kinds, id: \.self) { kind in
                     Button { change(kind) } label: {
-                        if kind == file.kind { Label(Self.title(kind), systemImage: "checkmark") } else { Text(Self.title(kind)) }
+                        if kind == file.kind { Label(Self.title(kind), icon: "checkmark") } else { Text(Self.title(kind)) }
                     }
                 }
             } label: {

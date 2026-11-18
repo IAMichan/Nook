@@ -1189,11 +1189,7 @@ struct ChatsTab: View {
             let name = MessagingApps.app(id: filter)?.name ?? filter
             VStack(spacing: NookTheme.Spacing.sm) {
                 if let problem = capture.bridgeProblems[filter] {
-                    Text(problem)
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                    InlineErrorText(problem, alignment: .center)
                 } else if filter == capture.mailBridge.app {
                     mailEmpty
                 } else if let bridge = capture.bridge(for: filter),
@@ -1240,31 +1236,17 @@ struct ChatsTab: View {
 
     // MARK: Nothing yet
 
+    @ViewBuilder
     private var empty: some View {
-        VStack(spacing: NookTheme.Spacing.md) {
-            Image(icon: "tray.full")
-                .font(NookTheme.font(30))
-                .foregroundStyle(NookTheme.textTertiary)
-            Text(capture.enabled ? tr("chats.waiting.title") : tr("chats.empty.title"))
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
-            Text(capture.enabled ? tr("chats.waiting.detail") : tr("chats.empty.detail"))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 420)
-            if !capture.enabled {
+        if capture.enabled {
+            WSEmptyState(symbol: "tray.full", title: tr("chats.waiting.title"), message: tr("chats.waiting.detail"))
+        } else {
+            WSEmptyState(symbol: "tray.full", title: tr("chats.empty.title"), message: tr("chats.empty.detail")) {
                 // Every chat app is on by default: one click starts collecting, Settings is for choosing.
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    NookPrimaryButton(title: tr("chats.empty.turnOn"), symbol: "tray.and.arrow.down") { turnOn() }
-                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openConnections(.add(.chats)) }
-                }
-                .fixedSize()
-                .padding(.top, NookTheme.Spacing.xs)
+                NookPrimaryButton(title: tr("chats.empty.turnOn"), symbol: "tray.and.arrow.down") { turnOn() }
+                NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openConnections(.add(.chats)) }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func turnOn() {
@@ -1574,7 +1556,7 @@ private struct ChatsHoverCard: View {
                 HoverCardRow(symbol: "text.alignleft", text: about)
             }
             if !entry.preview.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("chats.card.newest"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)

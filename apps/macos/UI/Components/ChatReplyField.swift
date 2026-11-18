@@ -970,7 +970,7 @@ private struct DraftPanel: View {
                 .foregroundStyle(NookTheme.textStrong)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
-            Label(tr("chats.draft.steering"), systemImage: "return")
+            Label(tr("chats.draft.steering"), icon: "return")
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.iris)
                 .lineLimit(1)
@@ -1158,13 +1158,13 @@ struct DraftActions: View {
                     .font(NookTheme.TextStyle.label)
             }
         case .done(let summary):
-            Label(summary, systemImage: "checkmark")
+            Label(summary, icon: "checkmark")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.mint)
                 .lineLimit(2)
         case .failed(let failure):
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                Label(failure, systemImage: "exclamationmark.triangle")
+                Label(failure, icon: "exclamationmark.triangle")
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral)
                     .lineLimit(3)

@@ -104,7 +104,7 @@ struct NookScheduledList: View {
                 WSEmptyState(symbol: "clock", title: tr("nookTask.none"), message: tr("nookTask.none.detail"),
                              action: (tr("nookTask.add"), { editing = NookTaskEdit(task: nil) }))
             } else {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         NookSectionLabel(tr("nookTask.count", tasks.count))
                         Spacer(minLength: 0)
@@ -113,7 +113,7 @@ struct NookScheduledList: View {
                     }
                     .padding(.bottom, NookTheme.Spacing.xxs)
                     ScrollView(showsIndicators: false) {
-                        LazyVStack(alignment: .leading, spacing: 2) {
+                        LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             if tasks.isEmpty {
                                 ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                             }
@@ -239,7 +239,7 @@ private struct NookTaskRow: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             ToolbarIconButton("play", tr("sched.runNow"), height: 22, width: 22) { NookTaskText.runNow(task) }
                 .disabled(running)
             ToolbarIconButton(task.enabled ? "pause" : "play.circle", tr(task.enabled ? "nookTask.pause" : "nookTask.resume"),

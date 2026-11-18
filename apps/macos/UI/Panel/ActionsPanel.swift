@@ -306,7 +306,7 @@ struct WorkflowRunRow: View {
             HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                 CheckOutcomeGlyph(outcome: run.outcome, size: 14, running: run.running)
                     .frame(width: 16)
-                    .padding(.top, 2)
+                    .padding(.top, NookTheme.Spacing.xxs)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         Text(run.title)
@@ -371,7 +371,7 @@ struct WorkflowRunGhostRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Circle().fill(NookTheme.rowHover).frame(width: 14, height: 14).padding(.top, 2)
+            Circle().fill(NookTheme.rowHover).frame(width: 14, height: 14).padding(.top, NookTheme.Spacing.xxs)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     PullRequestGhostBar(width: title, height: 10)
