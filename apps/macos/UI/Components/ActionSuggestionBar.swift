@@ -71,8 +71,8 @@ struct ActionSuggestionBar: View {
 
 /// A suggestion before you act on it: one quiet line on a dashed outline, the way something not yet real looks, so it
 /// needs no "nothing happens until…" line. The steps, Do it (and "Adjust first" for a new session), and the cross. On
-/// hover it fills in as a card, and why Nook proposes it shows as the line's tip. Running it hands over to the full
-/// `DraftActions` card, which shows how it went.
+/// hover it fills in as a card, and why Nook proposes it shows as the line's tip; a click on the line unfolds the steps in
+/// full with that why. Running it hands over to the full `DraftActions` card, which shows how it went.
 private struct WhisperSuggestion: View {
     let actions: [ChatDraftAction]
     let reason: String?
@@ -81,9 +81,11 @@ private struct WhisperSuggestion: View {
     var adjust: (() -> Void)? = nil
 
     @State private var hovering = false
+    /// Clicked open: the steps in full and why Nook proposes them.
+    @State private var expanded = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: NookTheme.Spacing.sm) {
+        HStack(alignment: expanded ? .top : .center, spacing: NookTheme.Spacing.sm) {
             Image(icon: "sparkles")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(hovering ? NookTheme.iris : NookTheme.textTertiary)
@@ -92,13 +94,25 @@ private struct WhisperSuggestion: View {
                 ForEach(actions) { action in
                     Text(TextKit.droppingRedundantLinks(action.step.text))
                         .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(hovering ? NookTheme.textStrong : NookTheme.textSecondary)
-                        .lineLimit(2)
+                        .foregroundStyle(hovering || expanded ? NookTheme.textStrong : NookTheme.textSecondary)
+                        .lineLimit(expanded ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Unfolded, why Nook proposes it shows under the steps instead of only as the tip.
+                if expanded, let reason, !reason.isEmpty {
+                    Text(reason)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nookTip(reason ?? "")
+            .contentShape(Rectangle())
+            // A click on the line unfolds every detail of a step cut off at two lines, and folds it back.
+            .onTapGesture { expanded.toggle() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(tr(expanded ? "agents.message.showLess" : "agents.message.showFull"))
+            .nookTip(expanded ? "" : (reason ?? ""))
             if let adjust {
                 NookGhostButton(title: tr("suggestActions.adjust"), compact: true, action: adjust)
                     .fixedSize()
@@ -110,12 +124,13 @@ private struct WhisperSuggestion: View {
         .padding(.leading, NookTheme.Spacing.lg)
         .padding(.trailing, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(NookTheme.shape(NookTheme.Radius.sheet).fill(hovering ? NookTheme.composerTray : Color.clear))
+        .background(NookTheme.shape(NookTheme.Radius.sheet).fill(hovering || expanded ? NookTheme.composerTray : Color.clear))
         .overlay(NookTheme.shape(NookTheme.Radius.sheet)
-            .strokeBorder(NookTheme.fieldStroke, style: StrokeStyle(lineWidth: 1, dash: hovering ? [] : [4, 3])))
+            .strokeBorder(NookTheme.fieldStroke, style: StrokeStyle(lineWidth: 1, dash: hovering || expanded ? [] : [4, 3])))
         .contentShape(NookTheme.shape(NookTheme.Radius.sheet))
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
+        .animation(NookTheme.reveal, value: expanded)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("chats.draft.actionsTitle"))
     }
