@@ -542,6 +542,8 @@ impl UpdatePolicy {
 
     /// `/etc/nook/policy.json`: `{"disableUpdates": true, "disableBetaChannel": true}` (both optional). None when
     /// absent, `Err` when it is not that.
+    // The caller only needs to know the file is broken (it then keeps updates off), not why.
+    #[allow(clippy::result_unit_err)]
     pub fn parse_json(text: Option<&str>) -> Result<Option<(bool, bool)>, ()> {
         let Some(text) = text else { return Ok(None) };
         let value: serde_json::Value = serde_json::from_str(text).map_err(|_| ())?;
