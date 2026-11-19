@@ -30,6 +30,23 @@ enum ConnectorErrorKind: String, Equatable, Codable, Sendable {
         }
     }
 
+    /// The kind that belongs to a refused answer, headers and body included: GitHub (and others) answer a used-up rate
+    /// limit with 403, which is not a rejected sign-in, so signing in again would never fix it.
+    static func forHTTP(_ response: HTTPURLResponse, body: Data?) -> ConnectorErrorKind {
+        isRateLimit(response, body: body) ? .rateLimited : forHTTP(status: response.statusCode)
+    }
+
+    /// A 403 or 429 that says the limit is used up: no requests left, a wait asked for, or a message naming the limit.
+    static func isRateLimit(_ response: HTTPURLResponse, body: Data?) -> Bool {
+        guard [403, 429].contains(response.statusCode) else { return false }
+        if response.statusCode == 429 { return true }
+        if response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0" { return true }
+        if response.value(forHTTPHeaderField: "Retry-After") != nil { return true }
+        let text = body.flatMap { String(data: $0.prefix(4096), encoding: .utf8) } ?? ""
+        return text.localizedCaseInsensitiveContains("rate limit")
+            || text.localizedCaseInsensitiveContains("abuse detection mechanism")
+    }
+
     /// The kind that belongs to any error thrown while talking to a service.
     static func classify(_ error: Error) -> ConnectorErrorKind {
         if let nook = error as? NookError { return nook.kind }

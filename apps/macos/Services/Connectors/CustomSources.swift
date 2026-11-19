@@ -200,6 +200,9 @@ final class CustomSourcesConnector: CloudConnectorConfig {
         let (data, response) = try await ConnectorHTTP.session.data(for: request, delegate: SameHostRedirects(host: url.host))
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
+            if let http = response as? HTTPURLResponse, ConnectorErrorKind.isRateLimit(http, body: data) {
+                throw NookError("\(source.name): too many requests. Please try again shortly.", kind: .rateLimited)
+            }
             switch code {
             case 401, 403: throw NookError("\(source.name) rejected credentials (\(code)). Check them in Settings › Integrations.")
             case 404: throw NookError("\(source.name): not found (404). Is the path correct?")

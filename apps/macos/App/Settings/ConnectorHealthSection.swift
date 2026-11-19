@@ -53,11 +53,20 @@ struct ConnectorHealthSection: View {
 
     private func fix(_ entry: ConnectorHealthEntry) {
         switch entry.fix {
-        case .reconnect, .inspect:
+        case .reconnect:
+            // Opening the page you are already on does nothing you can see: the connector's own row signs in again.
+            app.openSettings(section: .connections)
+            NotificationCenter.default.post(name: .connectorRepairRequested, object: entry.id)
+        case .inspect:
             app.openSettings(section: .connections)
         case .retry:
             guard let source = hub.sources.first(where: { $0.id == entry.id }) else { return }
             Task { await source.refresh() }
         }
     }
+}
+
+extension Notification.Name {
+    /// "Sign this connector in again" from the health list; the object is the connector's id. Its row does the repair.
+    static let connectorRepairRequested = Notification.Name("NookConnectorRepairRequested")
 }

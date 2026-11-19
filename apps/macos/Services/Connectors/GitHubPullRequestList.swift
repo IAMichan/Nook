@@ -249,6 +249,9 @@ enum GitHubPullRequestList {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
+        if let http = response as? HTTPURLResponse, ConnectorErrorKind.isRateLimit(http, body: data) {
+            throw NookError(ConnectorHTTP.rateLimitMessage(http, data), kind: .rateLimited)
+        }
         switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
         case 200..<300: return data
         case 401, 403: throw NookError("The credentials were rejected. Check them in Settings › Integrations.", kind: .auth)

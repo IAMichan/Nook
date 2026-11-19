@@ -126,7 +126,7 @@ enum GitHubActions {
         guard (200..<300).contains(status) else {
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             let message = (object["message"] as? String).map { "GitHub: \($0) (\(status))" } ?? "GitHub returned an error (\(status))."
-            throw NookError(message, kind: status == 401 ? .auth : ConnectorErrorKind.forHTTP(status: status))
+            throw NookError(message, kind: status == 401 ? .auth : (response as? HTTPURLResponse).map { ConnectorErrorKind.forHTTP($0, body: data) } ?? .other)
         }
         return data
     }
