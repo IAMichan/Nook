@@ -203,7 +203,8 @@ final class BrowserExtensionRefs: @unchecked Sendable {
     private var lastTab: Int?
 
     /// Learns from chrome_find's text: the page's address on its first line, then `[e7] button "Send" …` lines.
-    func learn(_ text: String, tab: Int?) {
+    /// `merge`: what an action's result shows in view (`Now: title | address`) adds to what is known of that page.
+    func learn(_ text: String, tab: Int?, merge: Bool = false) {
         let lines = text.components(separatedBy: "\n")
         let address = lines.first?.components(separatedBy: " | ").last ?? ""
         let site = URL(string: address)?.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? ""
@@ -222,6 +223,7 @@ final class BrowserExtensionRefs: @unchecked Sendable {
         }
         let key = tab ?? -1
         lock.lock()
+        if merge, let known = pages[key], known.site == site { names = known.names.merging(names) { _, new in new } }
         pages[key] = Page(site: site, names: names)
         lastTab = key
         lock.unlock()

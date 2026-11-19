@@ -42,7 +42,7 @@
     "message": "De browser houdt zijn eigen pagina’s voor zichzelf; Nook kan ze niet lezen of gebruiken."
   },
   "siteAllowed": {
-    "message": "Nook mag deze site lezen en erop werken als je het vraagt, nadat je het op je Mac goedkeurt."
+    "message": "Nook mag op deze site lezen en werken als je het vraagt."
   },
   "siteBlocked": {
     "message": "Uit voor deze site: Nook leest of raakt hem niet aan."
@@ -69,7 +69,7 @@
     "message": "Nog niets."
   },
   "intro": {
-    "message": "Vraag Nook iets over deze pagina, of vraag het hier iets te doen. Nook vraagt het je op je Mac voordat het klikt, typt of iets opent."
+    "message": "Vraag Nook iets over deze pagina, of vraag het hier iets te doen. Nook doet het stap voor stap en vraagt het je hier voordat het klikt, typt of iets opent."
   },
   "askPlaceholder": {
     "message": "Vraag Nook iets…"
@@ -259,5 +259,35 @@
   },
   "pickFailed": {
     "message": "Selecteren lukte niet. Laad de pagina opnieuw en probeer het nog eens."
+  },
+  "trustName": {
+    "message": "Doen zonder te vragen"
+  },
+  "trustSwitch": {
+    "message": "Laat Nook op $1 werken zonder te vragen"
+  },
+  "trustOn": {
+    "message": "Nook klikt en typt hier zonder eerst te vragen. Betalen, versturen en verwijderen vraagt het nog wel."
+  },
+  "trustOff": {
+    "message": "Nook vraagt hier vóór elke klik en elke tekst die het typt."
+  },
+  "approvalTitle": {
+    "message": "Nook wil"
+  },
+  "approvalUnnamed": {
+    "message": "Een stap zetten op deze pagina"
+  },
+  "approvalFinal": {
+    "message": "Dit kan niet ongedaan worden: het kan iets betalen, versturen, verwijderen of boeken."
+  },
+  "approvalAllow": {
+    "message": "Toestaan"
+  },
+  "approvalAlways": {
+    "message": "Altijd op $1"
+  },
+  "approvalDeny": {
+    "message": "Niet toestaan"
   }
 }

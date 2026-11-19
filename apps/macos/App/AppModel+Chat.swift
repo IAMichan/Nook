@@ -137,10 +137,11 @@ extension AppModel {
     /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
     /// (see `ReplyContext`). `target` asks in that conversation instead of the active one, and `reveal: false` leaves the
     /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
-    /// `ReplyContext.selfContained`.
+    /// `ReplyContext.selfContained`. `browser`: the browser whose side panel asked (its client id): steps in that
+    /// browser then run live (`BrowserTask`).
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
              in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false,
-             page: ScreenSnapshot? = nil) {
+             page: ScreenSnapshot? = nil, browser: String? = nil) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         // A follow-up after a scheduled quiet check is the user's own question: it gets its answer and notice as usual.
@@ -192,6 +193,12 @@ extension AppModel {
         // The model on this Mac reads the whole conversation for its note, the chosen brain what it may see.
         let local = relay.map { _ in chat.history(before: question.id, limits: historyLimits) } ?? []
         let replyID = reply.id
+        let browserTask = browser.map { client in
+            BrowserTask { [weak self] tool, input in
+                guard let self else { return ("Nook is not available.", true) }
+                return await self.browserStep(tool, input, browser: client, reply: replyID)
+            }
+        }
         // The answer's task inherits the brain it runs on.
         chatTasks[conversation] = ScreenBrain.$routed.withValue(screenBrain) {
             Task { [weak self] in
@@ -202,12 +209,14 @@ extension AppModel {
                                 await ReplyContext.$note.withValue(note) {
                                     await ReplyContext.$selfContained.withValue(selfContained) {
                                         await ReplyContext.$page.withValue(page) {
-                                            if let relay {
-                                                await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
-                                            } else {
-                                                await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                            await ReplyContext.$browserTask.withValue(browserTask) {
+                                                if let relay {
+                                                    await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
+                                                } else {
+                                                    await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                                }
+                                                self?.settle(replyID, conversation: conversation)
                                             }
-                                            self?.settle(replyID, conversation: conversation)
                                         }
                                     }
                                 }
@@ -218,6 +227,21 @@ extension AppModel {
             }
         }
         watchForStall(replyID, conversation: conversation)
+    }
+
+    /// One step of a task from the browser's side panel, run live in that browser: the answer's status line says what
+    /// Nook does, the side panel asks the user first unless they let Nook act on the site without asking, and the step
+    /// lands in the audit log as every action does.
+    private func browserStep(_ tool: String, _ input: [String: Any], browser: String, reply: UUID) async -> (output: String, isError: Bool) {
+        guard let definition = BrowserExtensionTools.definition(tool), definition.isAction else { return ("Unknown tool \(tool).", true) }
+        var input = input
+        if BridgeArgs.string(input["browser"]) == nil { input["browser"] = browser }
+        let summary = BrowserExtensionTools.summary(definition, input)
+        chat.update(reply) { $0.status = summary }
+        let result = await BrowserExtensionConnector.runLive(definition, input, summary: summary)
+        let args = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        store.audit(tool: tool, args: args, result: result.isError ? result.output : "browser task: " + summary)
+        return result
     }
 
     /// How long an answer may show no sign of life (no word, status, lookup or step) before Nook stops waiting for it. Above

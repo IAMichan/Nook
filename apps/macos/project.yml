@@ -624,6 +624,7 @@ targets:
       - path: Services/BrowserExtension/BrowserExtensionHub.swift
       - path: Services/BrowserExtension/BrowserExtensionLook.swift
       - path: Services/BrowserExtension/BrowserExtensionTools.swift
+      - path: Services/BrowserExtension/BrowserTask.swift
       - path: Services/Workspace/SessionCommandReceipts.swift
       - path: Services/Workspace/SecretFiles.swift
       - path: Services/Workspace/SudoAskpass.swift

@@ -61,6 +61,12 @@ final class BrainService {
            let plan = allTools.first(where: { $0.name == ChatTools.planTool }) {
             offered.append(plan)
         }
+        // A task from the browser's side panel works in that browser: its chrome_* tools are always there.
+        let browserTask = ReplyContext.browserTask.flatMap { task in allTools.contains { BrowserTask.isLive($0.name) } ? task : nil }
+        if browserTask != nil {
+            let have = Set(offered.map(\.name))
+            offered += allTools.filter { BrowserExtensionTools.definition($0.name) != nil && !have.contains($0.name) }
+        }
         // Web search by the provider itself (Claude's web_search, Claude Code's WebSearch) follows the same rule as Nook's own
         // web tools: only when the Web source is allowed for this request.
         let webAllowed = settings.webSearch && allTools.contains { SourceCatalog.source(forTool: $0.name) == SourceCatalog.web }
@@ -114,7 +120,7 @@ final class BrainService {
         let language = ownRequest ? settings.ownLanguageInstruction : settings.languageInstruction(for: userText)
         // Asked for the text of a message: write it out, so the user has it even when the action is not proposed.
         let draftNote = intent.wantsDraft ? " The user wants the text of the message: always write it out in full in your answer, so they can copy it." : ""
-        let note = ReplyContext.note.isEmpty ? "" : " " + ReplyContext.note
+        let note = (ReplyContext.note.isEmpty ? "" : " " + ReplyContext.note) + (browserTask == nil ? "" : " " + BrowserTask.instruction)
         // The answer style and the space's instructions the user chose: their own words, so they go with the request,
         // never inside the context that is marked as third-party data.
         let chosen = instructions.isEmpty ? "" : "The user's instructions for this conversation (follow them):\n" + instructions.joined(separator: "\n\n") + "\n\n"
@@ -143,10 +149,18 @@ final class BrainService {
 
         let runner = ToolRunner(
             tools: offeredWithDiscovery.map { Self.loopTool($0, compact: profile.compactDescriptions) },
-            limits: .init(rounds: profile.rounds, calls: profile.isSmall ? 8 : 20, repairs: 2),
+            limits: browserTask == nil
+                ? .init(rounds: profile.rounds, calls: profile.isSmall ? 8 : 20, repairs: 2)
+                : .init(rounds: max(profile.rounds, BrowserTask.rounds), calls: BrowserTask.calls, repairs: 3),
             validate: { tool, input, schema in ActionGate.problems(tool: tool, input: input, schema: schema, parseDate: NookDates.parse) },
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
+        if let browserTask {
+            // Each step in the browser runs at once and the brain sees what it did; other actions stay proposals.
+            runner.perform = browserTask.step
+            runner.performs = BrowserTask.isLive
+            runner.liveReads = BrowserTask.liveReads
+        }
 
         runnerRef = runner
 
@@ -156,12 +170,14 @@ final class BrainService {
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: fitted[0], history: history,
                                      webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
                                      images: images, onText: onText)
+        // A task in the browser did its steps itself: what it says it did is what ran, not a claim to hold it to.
+        if browserTask != nil, runner.trace.contains(where: BrowserTask.isLive) { return plan }
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
         // model gets the same second chance when it claims the action is done or prepared without proposing it.
         let claimsReady = ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) || ChatIntent.announces(plan.text)
-        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
+        if browserTask == nil, profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             // The second chance follows the same instructions of the conversation (a signature, a tone) as the first.
             if let focused = try await fillIn(spec, request: chosen + userText, language: language, history: history, context: fitted[1],

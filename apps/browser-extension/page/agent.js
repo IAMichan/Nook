@@ -123,7 +123,7 @@
     cursor.badge.textContent = label;
     cursor.wrap.classList.add('on');
     const distance = Math.hypot(x - cursor.x, y - cursor.y);
-    const duration = still() ? 0 : Math.round(Math.max(140, Math.min(460, 120 + distance * 0.35)));
+    const duration = still() ? 0 : Math.round(Math.max(90, Math.min(240, 70 + distance * 0.2)));
     cursor.wrap.style.transition = `opacity .2s ease-out, transform ${duration}ms cubic-bezier(.22,.8,.24,1)`;
     cursor.wrap.style.transform = `translate(${x}px, ${y}px)`;
     cursor.x = x;
@@ -487,14 +487,14 @@
     } else if ('value' in field) {
       const start = params.append ? String(field.value || '') : '';
       if (!still() && value.length > 1 && value.length <= 80) {
-        const steps = Math.min(8, value.length);
+        const steps = Math.min(4, value.length);
         const size = Math.ceil(value.length / steps);
         for (let index = size; index < value.length + size; index += size) {
           // A page that replaced the field while Nook typed (some frameworks redraw it on input): stop, and say so
           // below, rather than type the rest into a field nobody sees.
           if (!field.isConnected) break;
           setValue(field, start + value.slice(0, index), value.slice(index - size, index));
-          await sleep(18);
+          await sleep(12);
         }
         if (!field.isConnected) {
           return { ok: false, cursor: where(), error: `The page replaced ${describe(field)} while Nook typed. Look with chrome_find and type again into the field that is there now.` };
@@ -787,12 +787,15 @@
    */
   function quiet(params = {}) {
     // In a background tab every timer waits about a second anyway: one wait is enough there.
-    const idle = document.hidden ? 0 : Math.max(50, Math.min(Number(params.idle) || 160, 1000));
-    const limit = Math.max(idle, Math.min(Number(params.limit) || 1500, 5000));
+    const idle = document.hidden ? 0 : Math.max(50, Math.min(Number(params.idle) || 120, 1000));
+    const limit = Math.max(idle, Math.min(Number(params.limit) || 1200, 5000));
     return new Promise((resolve) => {
       const started = Date.now();
       let timer = null;
-      const observer = new MutationObserver(() => {
+      // Only changes to what the page holds count: a carousel, a spinner or a CSS animation that keeps touching style
+      // and class would otherwise keep every action waiting for the full limit. Nook's own cursor never counts.
+      const observer = new MutationObserver((records) => {
+        if (!records.some(meaningful)) return;
         clearTimeout(timer);
         timer = setTimeout(done, idle);
       });
@@ -803,9 +806,30 @@
         resolve({ ok: true, waited: Date.now() - started });
       };
       const cap = setTimeout(done, limit);
-      observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+      observer.observe(document.documentElement, {
+        subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: QUIET_ATTRIBUTES
+      });
       timer = setTimeout(done, idle);
     });
+  }
+
+  /** The attributes whose change means the page shows something else (a menu opened, a field got its value). */
+  const QUIET_ATTRIBUTES = ['open', 'hidden', 'disabled', 'value', 'checked', 'selected', 'src', 'href', 'aria-expanded',
+    'aria-hidden', 'aria-busy', 'aria-selected', 'aria-checked', 'aria-invalid', 'aria-live'];
+
+  function meaningful(record) {
+    const node = record.target;
+    if (cursor.host && (node === cursor.host || cursor.host.contains?.(node))) return false;
+    return true;
+  }
+
+  /**
+   * Everything Nook needs after an action, in one trip to the page: waits until the page is quiet, then whether it now
+   * asks to sign in and what the user sees (`glance`). Three trips before; the page is asked once now.
+   */
+  async function after(params = {}) {
+    const waited = params.wait === false ? { waited: 0 } : await quiet(params);
+    return { ok: true, waited: waited.waited, signIn: signin(), look: glance(params) };
   }
 
   /**
@@ -832,9 +856,35 @@
     return { ok: true, needed: fields.length > 0, site, url: location.href };
   }
 
+  /**
+   * What a step would touch, in the page's own words, before it runs: the element's name, and for typing that submits
+   * (or Enter in a form field) the form's send button too. The side panel decides from this whether the step cannot be
+   * undone (paying, sending, deleting…) and so always asks first. Nothing on the page changes.
+   */
+  function intent(params = {}) {
+    const words = [];
+    let field = null;
+    if (params.ref || params.selector || params.text) {
+      const { found } = element(params);
+      if (found) {
+        words.push(describe(found));
+        field = found.tagName === 'LABEL' && found.control ? found.control : found;
+      }
+    } else {
+      field = document.activeElement;
+    }
+    const submits = params.submit === true || (String(params.key || '').trim().toLowerCase() === 'enter' && field && field.tagName !== 'TEXTAREA');
+    const form = submits ? field?.form || field?.closest?.('form') : null;
+    if (form) {
+      const button = form.querySelector('button[type=submit],input[type=submit],button:not([type])');
+      if (button) words.push(describe(button));
+    }
+    return { ok: true, words: clip(words.join(' · '), 400) };
+  }
+
   async function run(method, params) {
     try {
-      const handler = { find, read, click, type, scroll, key, condition, quiet, glance, signin, form, fill }[method];
+      const handler = { find, read, click, type, scroll, key, condition, quiet, glance, signin, form, fill, after, intent }[method];
       if (!handler) return { ok: false, error: `The page agent has no ${method}.` };
       return await handler(params || {});
     } catch (error) {

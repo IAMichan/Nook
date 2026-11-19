@@ -110,6 +110,9 @@ final class ToolRunner {
     /// Taking over a task (`TakeoverPolicy`): action tools run right away through this, after their input is checked,
     /// instead of becoming proposals. It decides itself what needs the user's yes first.
     var perform: (@MainActor (_ tool: String, _ input: [String: Any]) async -> (output: String, isError: Bool))?
+    /// Which actions go through `perform`; nil for all of them. The rest are proposed as usual (a live task in the
+    /// user's browser runs its `chrome_*` steps, while a mail it writes along the way still waits for a click).
+    var performs: ((String) -> Bool)?
     /// Pictures the tools of this round took, for a brain that can see (`look_ui` while taking over a task).
     var pictures: (@MainActor () -> [PromptImage])?
     /// Read tools whose answer changes by itself (a window that is still loading): read again on every call instead of
@@ -171,7 +174,7 @@ final class ToolRunner {
                 repairsUsed += 1
                 return ("Not proposed: " + problems.joined(separator: "; ") + ". Fix these fields and call \(name) again.", true)
             }
-            if let perform {
+            if let perform, performs?(name) ?? true {
                 guard problems.isEmpty else { return ("Not run: " + problems.joined(separator: "; ") + ".", true) }
                 // What was read before this action may be out of date now: the next read reads again.
                 cache.removeAll()

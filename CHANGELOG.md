@@ -12,6 +12,15 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- Ask Nook to do something on a page from its browser side panel ("fill in this form", "find the cheapest flight")
+  and it now does it right there, step by step, seeing what each click did before the next, as Claude in Chrome does.
+  Before, it made a plan you had to run in Nook's window. Each step waits for **Allow** in the side panel, or turn on
+  **Act without asking** for a site (or press **Always on this site**). Paying, ordering, sending, deleting and booking
+  always ask first. Needs version 1.4 of the extension.
+- The browser extension works much faster: after a click it looks at the page once instead of three times, no longer
+  waits a fixed quarter of a second, goes on as soon as a new page can be used instead of waiting for every picture and
+  advert, ignores animations that never stop, and its cursor glides quicker.
+
 - Nook on Windows (and the Linux AppImage) now updates itself, as on the Mac: when a new release is out, an **Update**
   button appears in the sidebar footer, and **Install and restart** in Settings › Maintenance downloads it, checks its
   signature, installs it over the current version and starts Nook again. No more uninstalling and reinstalling; your

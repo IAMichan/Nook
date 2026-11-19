@@ -3,13 +3,14 @@
 Nook's browser extension (`apps/browser-extension`) brings Nook into the browser you already use: Chrome, Brave, Edge,
 Arc, Vivaldi or Chromium. You get two things:
 
-- **Ask Nook about the page you are on.** Click Nook's icon in the toolbar and the side panel opens. Ask "what is this
-  about?" or "fill in my name here". The same assistant answers as in Nook's main window, with the same conversations,
-  sources and memory. Nook knows which page you have in front.
+- **Ask Nook about the page you are on, or give it a task there.** Click Nook's icon in the toolbar and the side panel
+  opens. Ask "what is this about?", or "fill in my name here" and Nook does it on the page step by step (see "A task
+  from the side panel"). The same assistant answers as in Nook's main window, with the same conversations, sources and
+  memory. Nook knows which page you have in front.
 - **Nook can read and act in your tabs.** Nook Chat and every coding agent (through `nook_tools`/`nook_use`) can list
   your tabs, read a page as you see it (signed in), find the buttons and fields on it, and open, click, type and press
-  keys there. Reading runs directly. Every action waits for your approval in Nook first and is written to the audit log,
-  like every other side effect.
+  keys there. Reading runs directly. Every action waits for your approval first (in Nook, or in the side panel for a task
+  you gave there) and is written to the audit log, like every other side effect.
 
 The extension is a thin pair of hands. Nook decides what may happen, and the extension carries it out. Nothing runs on
 a page until Nook is asked, and the extension sends nothing anywhere but to Nook on your Mac.
@@ -74,7 +75,7 @@ take them. The other tools (`chrome_tabs`, `chrome_key`, `chrome_scroll`, `chrom
 A command goes to the tab it names (`tab`), else to the tab Nook worked in last, else to the active tab of the window
 in front. When several browsers run the extension, `browser` picks one; otherwise the one you used last gets it. The
 approval card says what Nook will do and where. For example: *Click button "Send" · mail.example.com*. Nook takes the
-element's name from the last `chrome_find` (`BrowserExtensionRefs`).
+element's name from the last `chrome_find` and from what each action's result shows in view (`BrowserExtensionRefs`).
 
 ### Double Tap in the browser
 
@@ -151,12 +152,51 @@ old, so the page may still do that.
   waits up to 5 minutes and never sees what you type. Meanwhile the extension gives that command more time in Nook
   (`{"kind": "extend"}` to `BrowserExtensionHub`, only for the browser that runs it, at most 6 minutes at a time).
 
+## A task from the side panel
+
+A request in the side panel that acts on the page ("fill in this form", "add the cheapest one to my cart") runs live in
+that browser, as in Claude in Chrome. The brain gets the `chrome_*` tools and works through the task one step at a
+time: every `chrome_open`, `chrome_click`, `chrome_type`, `chrome_key` and `chrome_close` runs at once, and its result
+(what the page shows now, with refs) comes back before the brain chooses the next step. Nook does not first make a plan
+to run on the Mac, which the brain had to guess without seeing what each click did. The answer's status line says what
+Nook does, and every step lands in the audit log.
+
+- **Asking first.** Every step goes to the extension with `ask` (the approval line, `BrowserTask.ask`). The side panel
+  shows a card with that line and **Allow**, **Always on <site>** and **Don't allow**; Nook's deadline for the command
+  moves on while you decide (up to 5 minutes, `extend`). The service worker keeps the waiting steps in session storage,
+  so a panel you open later shows them too.
+- **Acting without asking.** Under the site's own switch, **Act without asking** lets Nook take steps on that site (and
+  its subdomains) without the card; **Always on <site>** turns it on from a card. It is stored in the extension
+  (`trusted` in `chrome.storage.local`), next to the sites you switched Nook off for.
+- **What always asks.** A step that cannot be undone always shows the card, also on such a site, and then offers no
+  **Always**: typing that submits a form (`submits` from Nook), and a click or Enter whose button says it pays, orders,
+  sends, deletes, books, publishes, confirms or cancels, in any of Nook's five languages. The page agent reads the
+  button's own words before the step runs (`intent`), and `pointOfNoReturn` in `lib/core.js` decides.
+- **Your brakes.** **Pause**, the strip's **Stop** and stopping Nook's answer refuse every waiting step. A page cannot
+  answer a card: only the side panel may send `decide`.
+- **Only from the side panel, only a new extension.** Steps from anywhere else (Nook Chat on the Mac, Think Along, a
+  coding agent) come without `ask`; they passed Nook's own approval card already. An extension older than 1.4 does not
+  know `ask` and would run a step without asking, so its side panel's requests go the old way: a plan to run on the Mac
+  (`BrowserTask.supported`). Other actions of the same answer (a mail, an event) stay proposals for a click as always
+  (`ToolRunner.performs`).
+
 ## Quick, and sure of where it clicks
 
 - **One step at a time, no extra looks.** After every click, key and typing, the extension waits until the page has
   done what the action caused (a new page loading, a link that opened a tab, a menu or results appearing, never a
   fixed wait) and sends what the page shows now and what can be used in view, with refs. `chrome_open` and
   `chrome_scroll` do the same. Nook takes its next step from that, without a `chrome_find` round in between.
+- **One trip to the page.** Waiting until the page is quiet, checking for a sign-in and the look at what is in view are
+  one call to the page agent (`after`), and the strip and the agent are injected only when they are not in the page yet.
+  A navigation or a new tab is heard from the browser's own events, set up before the action, so nothing waits on a
+  timer to find out.
+- **Quiet means the content.** Only changes to what the page holds count (nodes, text, and attributes such as `open`,
+  `hidden`, `aria-expanded` or `value`), never `style` or `class` alone: a carousel or a spinner that never stops would
+  otherwise keep every step waiting for the full limit.
+- **Usable, not finished.** A new page counts as loaded once its document is parsed (`interactive`), not when every
+  picture, font and advert is in. Only a document newer than the action counts (`performance.timeOrigin`), so the old
+  page still showing is never taken for the new one. A site you switched off is never asked; there the browser's own
+  `complete` decides.
 - **The right element.** By text, what you can see wins: an exact name before one that starts with it before one that
   contains it, in view before off screen, a button or link before a label. Refs, selectors and text also reach into
   web components (open shadow roots).
@@ -172,7 +212,8 @@ old, so the page may still do that.
 
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions
   (`ToolSpec.Kind.action`). They go through Nook's approval card and the audit log, whoever asks: Nook Chat, a
-  Think-Along card or a coding agent.
+  Think-Along card or a coding agent. A task you give in the side panel asks there instead, step by step, unless you
+  let Nook act on that site without asking; paying, sending and deleting always ask (see "A task from the side panel").
 - **Your brakes in the browser.** The side panel has a switch per site ("Nook on github.com"). A site you switch off is
   never read or touched, including its subdomains. **Pause** stops Nook in the whole browser until you resume, and the
   toolbar icon shows a badge while it is paused. While Nook acts on a page, a violet glow and a strip with **Stop** show
