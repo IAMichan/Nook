@@ -283,6 +283,13 @@ final class PullRequestSync: ObservableObject {
         refresh(now: now)
     }
 
+    /// The session's agent pushed (`PullRequestToolCall.pushes`): a linked pull request starts its checks, and one may
+    /// now be opened on the forge's page. Its branch is asked again now and the badges read again, not at their next tick.
+    func pushed(_ id: UUID, now: Date = Date()) {
+        recheck(id, now: now)
+        PullRequestStatusStore.shared.wakeFollowers()
+    }
+
     /// A pull request for the session's branch is being made where Nook cannot see it (GitHub's page in the browser):
     /// the tray above its composer shows it as soon as GitHub has it, not a minute later.
     func expect(_ id: UUID, now: Date = Date()) {
@@ -323,12 +330,14 @@ final class PullRequestSync: ObservableObject {
     }
 
     /// How long a branch's answer stays fresh: at once while a pull request is expected and none is known yet.
-    private func interval(_ key: String, _ known: [PullRequestLink], now: Date, quietSince: Date? = nil) -> TimeInterval {
+    /// `seesCreation`: a Nook session, whose `gh pr create` and pushes ask at once (`noticeCreatedPullRequest`, `pushed`).
+    private func interval(_ key: String, _ known: [PullRequestLink], now: Date, quietSince: Date? = nil,
+                          seesCreation: Bool = false) -> TimeInterval {
         if known.isEmpty, let until = expected[key] {
             if until > now { return 0 }
             expected[key] = nil
         }
-        return PullRequestSettlement.syncInterval(links: known, quietSince: quietSince, now: now)
+        return PullRequestSettlement.syncInterval(links: known, quietSince: quietSince, now: now, seesCreation: seesCreation)
     }
 
     /// One branch to ask about: a session Nook runs, or another agent's folder.
@@ -407,7 +416,7 @@ final class PullRequestSync: ObservableObject {
             guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { continue }
             let known = links[run.id] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now,
-                                                  interval: stretched(interval(run.id.uuidString, known, now: now, quietSince: run.updatedAt),
+                                                  interval: stretched(interval(run.id.uuidString, known, now: now, quietSince: run.updatedAt, seesCreation: true),
                                                                       lane(run.workingDirectory))) else { continue }
             due.append(Due(lane: lane(run.workingDirectory), job: .run(run.id, branch: branch),
                            open: PullRequestSettlement.anyOpen(links: known), last: checked[run.id] ?? .distantPast))

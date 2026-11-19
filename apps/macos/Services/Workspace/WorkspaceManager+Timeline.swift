@@ -27,6 +27,8 @@ extension WorkspaceManager {
                 if let input {
                     let texts = PullRequestToolCall.texts(in: input.object)
                     if PullRequestToolCall.closesPullRequest(command: texts) { PullRequestSync.shared.recheck(id) }
+                    // A push: the branch's pull request (or one opened for it now) is read at once, for every agent alike.
+                    else if PullRequestToolCall.pushes(command: texts) { PullRequestSync.shared.pushed(id) }
                     // A pull request the agent works on with the forge's CLI joins the session's list, for every agent alike.
                     noticePullRequests(id, PullRequestMentions.inCommand(texts), mustExist: false)
                     // A worktree the agent made itself: the session may move there when the turn ends.

@@ -9,7 +9,8 @@ import Foundation
 /// - the polls that read GitHub in the background wait longer as the limit runs low (`slowdown`) and stop under the
 ///   last tenth (`allowsBackground`), which is kept for what you do yourself (opening a pull request, merging);
 /// - once the limit is used up, `ForgeRateGate` answers each request itself, without the network, until the reset;
-/// - reads that have another way in (`prefersGraphQL`) take GitHub's GraphQL API, which has a limit of its own.
+/// - a pull request's status goes through GitHub's GraphQL API, batched and on a limit of its own, with REST as the
+///   way back (`prefersGraphQL`).
 ///
 /// Foundation only, so it is tested anywhere.
 final class ForgeRateBudget: @unchecked Sendable {
@@ -153,9 +154,10 @@ final class ForgeRateBudget: @unchecked Sendable {
         return orGraphQL ? min(rest, slowdown(host: host, resource: "graphql", now: now)) : rest
     }
 
-    /// Whether a read that GraphQL can also answer (a pull request's status) should take it: REST is paused or under
-    /// half, and GraphQL has more of its own limit left. While REST has room it goes first: an unchanged answer to a
-    /// conditional REST read (304) costs nothing, a GraphQL query always does.
+    /// Whether a read that GraphQL can also answer (a pull request's status) should take it. GraphQL goes first, as
+    /// t3code reads pull requests: batched, one request covers many (`GitHubSnapshotBatcher`), and it keeps the REST
+    /// limit for what only REST can do (logs, Actions, the branch lookup). REST takes over while GraphQL is paused, or
+    /// under a quarter and lower than REST.
     func prefersGraphQL(host: String = "api.github.com", now: Date = Date()) -> Bool {
         func left(_ resource: String) -> Double? {
             window(host: host, resource: resource, now: now).map { Double($0.remaining) / Double($0.limit) }
@@ -163,8 +165,8 @@ final class ForgeRateBudget: @unchecked Sendable {
         if let url = URL(string: "https://\(host)/graphql"), pausedUntil(url, now: now) != nil { return false }
         let restPaused = URL(string: "https://\(host)/").flatMap { pausedUntil($0, now: now) } != nil
         let rest = restPaused ? 0 : (left("core") ?? 1)
-        guard rest < 0.5 else { return false }
-        return (left("graphql") ?? 1) > rest
+        let graph = left("graphql") ?? 1
+        return graph >= 0.25 || graph > rest
     }
 
     /// Forgets everything (tests).

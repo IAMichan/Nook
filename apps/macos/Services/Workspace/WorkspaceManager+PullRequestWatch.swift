@@ -231,6 +231,9 @@ extension WorkspaceManager {
         PullRequestStatusStore.shared.wakeFollowers()
         guard let all = events[id], let made = RunPullRequestLinks.created(in: all, before: &pullRequestWatcher.beforeTurn[id]) else { return }
         if let ref = PullRequestRef.parse(made.absoluteString) { noticePullRequests(id, [ref], mustExist: false) }
+        // The session's row lists it now (Nook no longer asks a branch without one every minute: this is how it learns).
+        // No branch: the agent may have opened it for another one, and the next answer from the forge says which.
+        PullRequestSync.shared.opened(id, url: made, branch: nil)
         pullRequestCreated?(id, made)
         watchCreatedPullRequest(id, url: made)
     }

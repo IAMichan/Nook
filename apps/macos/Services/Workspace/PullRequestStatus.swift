@@ -399,6 +399,14 @@ final class PullRequestStatusStore: ObservableObject {
         return (status.isChanging ? 10 : 30) * plan.slowdown
     }
 
+    /// `seconds` from `now`, stretched to the next whole `grid` of the clock: badges with the same interval wake on the
+    /// same beat, so their reads join one batched request (`GitHubSnapshotBatcher`) instead of one each.
+    nonisolated static func aligned(_ seconds: TimeInterval, now: Date, grid: TimeInterval = 10) -> TimeInterval {
+        guard grid > 0, seconds > 0 else { return seconds }
+        let target = now.timeIntervalSince1970 + seconds
+        return (target / grid).rounded(.up) * grid - now.timeIntervalSince1970
+    }
+
     // MARK: Waking the followers
 
     /// Bumped by `wakeFollowers`: every shown pull request reads again within a few seconds instead of at its next tick.

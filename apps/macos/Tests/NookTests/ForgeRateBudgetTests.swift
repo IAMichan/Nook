@@ -63,20 +63,21 @@ final class ForgeRateBudgetTests: XCTestCase {
         XCTAssertEqual(budget.pausedUntil(url, now: now), now.addingTimeInterval(90))
     }
 
-    func testGraphQLTakesOverOnceRestRunsLow() {
+    func testGraphQLGoesFirstUntilItRunsLow() {
         let budget = ForgeRateBudget()
-        XCTAssertFalse(budget.prefersGraphQL(now: now), "nothing known: REST, whose unchanged answers are free")
-        budget.record(answer(remaining: 3000), now: now)
-        XCTAssertFalse(budget.prefersGraphQL(now: now))
-        budget.record(answer(remaining: 1000), now: now)
-        XCTAssertTrue(budget.prefersGraphQL(now: now))
-        budget.record(answer("/graphql", remaining: 500, resource: "graphql"), now: now)
-        XCTAssertFalse(budget.prefersGraphQL(now: now), "GraphQL has less left than REST")
-        budget.record(answer("/graphql", remaining: 4000, resource: "graphql"), now: now)
+        XCTAssertTrue(budget.prefersGraphQL(now: now), "nothing known: GraphQL, batched")
+        budget.record(answer("/graphql", remaining: 1500, resource: "graphql"), now: now)
+        XCTAssertTrue(budget.prefersGraphQL(now: now), "still over a quarter")
+        budget.record(answer("/graphql", remaining: 1000, resource: "graphql"), now: now)
+        XCTAssertFalse(budget.prefersGraphQL(now: now), "under a quarter, and REST has more left")
+        budget.record(answer(remaining: 500), now: now)
+        XCTAssertTrue(budget.prefersGraphQL(now: now), "REST has even less")
         budget.record(answer(status: 403, remaining: 0), now: now)
         XCTAssertTrue(budget.prefersGraphQL(now: now))
         XCTAssertTrue(budget.allowsBackground(forPage: URL(string: "https://github.com/a/b/pull/1"), orGraphQL: true, now: now))
         XCTAssertFalse(budget.allowsBackground(forPage: URL(string: "https://github.com/a/b/pull/1"), now: now))
+        budget.record(answer("/graphql", status: 403, remaining: 0, resource: "graphql"), now: now)
+        XCTAssertFalse(budget.prefersGraphQL(now: now), "GraphQL used up: REST, even when it is too")
     }
 
     func testResourceOfARequest() {

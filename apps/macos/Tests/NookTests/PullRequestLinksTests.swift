@@ -311,8 +311,9 @@ final class PullRequestLinksTests: XCTestCase {
         func link(_ state: PullRequestState, updated: Date?) -> PullRequestLink {
             PullRequestLink(host: .github, repository: "a/b", number: 1, state: state, updatedAt: updated)
         }
-        // An open request is asked about at the same pace however old it is.
-        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: old)], now: now), 30)
+        // An open request is asked about every 30 seconds while it moves, every 5 minutes once quiet for half an hour.
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: old)], now: now), 300)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: nil)], now: now), 30)
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: recent)], now: now), 900)
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: old)], now: now), 21_600)
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.closed, updated: old), link(.merged, updated: recent)], now: now), 900)
@@ -323,6 +324,11 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], quietSince: recent, now: now), 60)
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], quietSince: old, now: now), 900)
         XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], now: now), 60)
+        // A Nook session sees its pull requests being made (and its pushes): a branch without one is asked rarely.
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], quietSince: recent, now: now, seesCreation: true), 900)
+        // An open request nobody touched for half an hour is asked every 5 minutes (as t3code).
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: now.addingTimeInterval(-31 * 60))], now: now), 300)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: now.addingTimeInterval(-29 * 60))], now: now), 30)
     }
 
     func testSettlementRules() {
@@ -632,6 +638,17 @@ final class PullRequestLinksTests: XCTestCase {
                         "az repos pr update --id 9 --title x", "git merge main", "gh prompt merge"] {
             XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: [command]), command)
         }
+    }
+
+    func testPushesOfEveryStackTool() {
+        for command in ["git push", "git push -u origin HEAD", "git -C repo push", "cd x && git push --force-with-lease",
+                        "gh stack push", "gh stack submit", "cafe stack submit", "jj git push", "npm test; git push"] {
+            XCTAssertTrue(PullRequestToolCall.pushes(command: [command]), command)
+        }
+        for command in ["git pushd", "echo git-push", "git stash push", "git log --grep push", "gh pr create"] {
+            XCTAssertFalse(PullRequestToolCall.pushes(command: [command]), command)
+        }
+        XCTAssertTrue(PullRequestToolCall.pushes(command: PullRequestToolCall.texts(in: ["command": ["git", "push"]])))
     }
 
     func testShellMergeFoundInEveryAgentsToolInput() {
