@@ -27,7 +27,7 @@ final class ToolUpdates {
             try? await Task.sleep(for: Self.firstCheck)
             await self?.check()
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 3600) { _ in
             Task { @MainActor in await ToolUpdates.shared.check() }
         }
     }

@@ -1020,7 +1020,8 @@ struct WAInbox: Equatable, Sendable {
         // named chat first, then every other one for what it does not hold. A group's id is always the same.
         let others = WAJID.kind(key) == .group && conversations[key] != nil ? [] : conversations.keys.filter { $0 != key }
         let keys = (conversations[key] != nil ? [key] : []) + others
-        var pending = Set(ids)
+        let named = Set(ids)
+        var pending = named
         var changed: String?
         for chatKey in keys {
             guard var conversation = conversations[chatKey] else { continue }
@@ -1040,7 +1041,6 @@ struct WAInbox: Equatable, Sendable {
             }
             // In a private chat, reading a message reads everything you sent before it, as WhatsApp itself shows: a
             // receipt often names only the newest of them, and the earlier ones would wait at two grey ticks.
-            let named = Set(ids)
             if WAJID.kind(chatKey) == .person, status >= .read,
                let newest = conversation.messages.lazy.filter({ $0.fromMe && named.contains($0.id) }).map(\.date).max() {
                 for index in conversation.messages.indices where conversation.messages[index].fromMe

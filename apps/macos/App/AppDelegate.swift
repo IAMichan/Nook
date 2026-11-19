@@ -154,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Debounced saves still waiting for their moment: written now, or the last edits are lost with the process.
         model.chat.flush()
         ComposerDraftStore.shared.flush()
+        TimelineVisitStore.shared.flush()
         UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()
         ChatHelper.shared.stop()

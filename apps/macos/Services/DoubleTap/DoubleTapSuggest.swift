@@ -158,11 +158,17 @@ extension DoubleTapLogic {
         return app == .en ? nil : "en"
     }
 
+    private static let dateDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+    private static let clockOnlyRegex = try? NSRegularExpression(
+        pattern: #"^\s*\d{1,2}[:.]\d{2}\s*(am|pm|uur|h)?\s*$"#,
+        options: [.caseInsensitive]
+    )
+
     /// Whether the window names a day: a date from yesterday to a year from now, written with a day in it (not only a
     /// clock time, which nearly every window shows).
     static func hasDates(_ text: String, now: Date = Date()) -> Bool {
         let sample = String(text.prefix(4_000))
-        guard !sample.isEmpty, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else {
+        guard !sample.isEmpty, let detector = Self.dateDetector else {
             return false
         }
         let from = now.addingTimeInterval(-24 * 3_600)
@@ -172,8 +178,7 @@ extension DoubleTapLogic {
             guard let date = match.date, date >= from, date <= until else { continue }
             let written = ns.substring(with: match.range)
             // "14:30" alone is a clock; "12 november", "di 14 nov 14:30", "11-12" name a day.
-            let clockOnly = written.range(of: #"^\s*\d{1,2}[:.]\d{2}\s*(am|pm|uur|h)?\s*$"#,
-                                          options: [.regularExpression, .caseInsensitive]) != nil
+            let clockOnly = Self.clockOnlyRegex?.firstMatch(in: written, range: NSRange(location: 0, length: (written as NSString).length)) != nil
             if !clockOnly { return true }
         }
         return false

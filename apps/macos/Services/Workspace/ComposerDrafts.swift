@@ -160,10 +160,15 @@ struct UnsentDraft: Identifiable, Equatable, Sendable {
 
     /// The first line that says something, cut to fit a row.
     static func preview(of text: String) -> String {
-        let line = text.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty } ?? ""
-        return String(line.prefix(120))
+        var index = text.startIndex
+        while index < text.endIndex {
+            let lineEnd = text[index...].firstIndex(where: \.isNewline) ?? text.endIndex
+            let trimmed = text[index..<lineEnd].trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { return String(trimmed.prefix(120)) }
+            guard lineEnd < text.endIndex else { break }
+            index = text.index(after: lineEnd)
+        }
+        return ""
     }
 }
 

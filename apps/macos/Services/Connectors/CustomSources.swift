@@ -41,7 +41,7 @@ final class CustomSourcesConnector: CloudConnectorConfig {
     }
 
     var isConfigured: Bool { !sources().isEmpty }
-    var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
+    var isActive: Bool { ConnectorToggle.isOn(id) && isConfigured }
 
     // MARK: Source List
 

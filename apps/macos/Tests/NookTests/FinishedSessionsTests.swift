@@ -146,4 +146,45 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertNil(FinishedSessions.ownConversation(id: "proc-42", sessionID: "", cwd: "/repo", detected: true),
                      "a process does not borrow a transcript's id")
     }
+
+    func testBatchMarkAndReopenByUser() {
+        let store = FinishedSessions.shared
+        let k1 = "Test Agent|batch-\(UUID().uuidString)"
+        let k2 = "Test Agent|batch-\(UUID().uuidString)"
+        defer {
+            store.reopen(k1)
+            store.reopen(k2)
+        }
+        let at = Date(timeIntervalSince1970: 1_900_000_000)
+        store.mark([(key: k1, busy: false), (key: k2, busy: true)], automatically: at, now: at)
+        XCTAssertTrue(store.contains(k1))
+        XCTAssertTrue(store.contains(k2))
+        XCTAssertFalse(store.isMarkedWhileBusy(k1))
+        XCTAssertTrue(store.isMarkedWhileBusy(k2))
+        XCTAssertEqual(store.autoSettledAt(k1), at)
+        XCTAssertEqual(store.settledTime(k2), at)
+
+        store.reopenByUser([k1, k2])
+        XCTAssertFalse(store.contains(k1))
+        XCTAssertFalse(store.contains(k2))
+        XCTAssertFalse(store.isMarkedWhileBusy(k2))
+        XCTAssertNil(store.autoSettledAt(k1))
+        XCTAssertNil(store.settledTime(k2))
+    }
+
+    func testBatchMarkAccountsForEvictionBeforeSkippingLaterKey() throws {
+        let suiteName = "ai.nook.tests.finished-sessions.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = FinishedSessions(defaults: defaults, limit: 3)
+        store.mark([(key: "A", busy: false), (key: "B", busy: false), (key: "C", busy: false)])
+        XCTAssertEqual(store.keys, ["A", "B", "C"])
+
+        // "X" evicts oldest key "A"; marking "A" later in the same batch must re-add "A" and evict "B".
+        store.mark([(key: "X", busy: false), (key: "A", busy: false)])
+        XCTAssertEqual(store.keys, ["C", "X", "A"])
+        XCTAssertTrue(store.contains("A"))
+        XCTAssertFalse(store.contains("B"))
+    }
 }

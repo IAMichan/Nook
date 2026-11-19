@@ -327,8 +327,8 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
 
 /// One entry in the timeline: a review, a comment, a comment on a line of the diff, a commit, or something that
 /// happened to the pull request (a label, a review request, a force-push, the merge…).
-struct PullRequestEvent: Identifiable, Equatable, Sendable {
-    enum Kind: Equatable, Sendable {
+struct PullRequestEvent: Identifiable, Hashable, Sendable {
+    enum Kind: Hashable, Sendable {
         case comment
         /// APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.
         case review(String)
@@ -391,7 +391,7 @@ struct PullRequestThreadState: Equatable, Sendable {
 }
 
 /// One emoji on a comment and how many people chose it.
-struct PullRequestReaction: Identifiable, Equatable, Sendable {
+struct PullRequestReaction: Identifiable, Hashable, Sendable {
     /// GitHub's name for it: +1, -1, laugh, hooray, confused, heart, rocket or eyes.
     let content: String
     let count: Int

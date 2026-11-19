@@ -48,7 +48,7 @@ final class GitHubConnector: CloudConnectorConfig {
     }
 
     var isConfigured: Bool { !accounts.isEmpty }
-    var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
+    var isActive: Bool { ConnectorToggle.isOn(id) && isConfigured }
 
     /// The account a tool call is for. Without `account` a read uses the primary account; an action with several accounts
     /// has `account` as a required field, so the review screen never runs it on a guessed account.

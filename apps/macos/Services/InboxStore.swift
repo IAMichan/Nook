@@ -222,10 +222,8 @@ final class InboxStore: ObservableObject {
     /// `automatically`: the auto-settle rules did it, which the end of the conversation then says (`AutoSettledLine`).
     func settle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true, automatically: Bool = false) {
         let keys = items.map(\.finishKey)
-        for item in items {
-            state.unpin(item.id)
-            FinishedSessions.shared.mark(item.finishKey, busy: item.isBusy, automatically: automatically ? now : nil)
-        }
+        for item in items { state.unpin(item.id) }
+        FinishedSessions.shared.mark(items.map { ($0.finishKey, $0.isBusy) }, automatically: automatically ? now : nil, now: now)
         let busy = items.filter(\.isBusy).map(\.id)
         if !busy.isEmpty { settleBusy?(busy) }
         if record { undoLog.record(.settled, ids: keys, now: now) }
@@ -239,7 +237,7 @@ final class InboxStore: ObservableObject {
 
     /// Un-settles by the sessions' finish keys, for a view that has the conversation but not its list row.
     func unsettle(keys: [String], now: Date = Date(), record: Bool = true) {
-        for key in keys { FinishedSessions.shared.reopenByUser(key) }
+        FinishedSessions.shared.reopenByUser(keys)
         if record { undoLog.record(.unsettled, ids: keys, now: now) }
     }
 
@@ -256,8 +254,8 @@ final class InboxStore: ObservableObject {
     func undo(now: Date = Date()) -> Bool {
         guard let entry = undoLog.undo(now: now) else { return false }
         switch entry.kind {
-        case .settled, .autoSettled: for key in entry.ids { FinishedSessions.shared.reopenByUser(key) }
-        case .unsettled: for key in entry.ids { FinishedSessions.shared.mark(key) }
+        case .settled, .autoSettled: FinishedSessions.shared.reopenByUser(entry.ids)
+        case .unsettled: FinishedSessions.shared.mark(entry.ids.map { ($0, false) }, now: now)
         case .pinned: for id in entry.ids { state.unpin(id) }
         case .unpinned: for id in entry.ids { state.pin(id) }
         case .snoozed: undoSnooze?(entry.ids)

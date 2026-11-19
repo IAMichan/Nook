@@ -73,4 +73,14 @@ final class I18nCoverageTests: XCTestCase {
         }
         XCTAssertEqual(mismatches.sorted(), [])
     }
+
+    func testNonVariadicLookupTracksActiveLanguage() {
+        let previous = I18n.shared.language
+        defer { I18n.shared.language = previous }
+        I18n.shared.language = .nl
+        XCTAssertEqual(tr("button.send"), I18n.lookup("button.send", for: .nl))
+        I18n.shared.language = .en
+        XCTAssertEqual(tr("button.send"), I18n.lookup("button.send", for: .en))
+        XCTAssertEqual(tr("nonexistent.key.xyz"), "nonexistent.key.xyz")
+    }
 }

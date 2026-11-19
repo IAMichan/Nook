@@ -4,13 +4,13 @@ import UniformTypeIdentifiers
 import Combine
 
 /// What `AgentRunPanel` draws from a session's events: the shown events, their blocks, the turns that changed files, the
-/// outputs and the running command. Each walks the whole timeline, and the panel's body runs on every keystroke in its
-/// composer (the draft is its state), on hover and while the side panels resize; this makes them again only when the
-/// events or the session's tasks, folder or activity change. Comparing the same array again is cheap: Swift sees it is
-/// the same storage.
+/// outputs and the running command. Each walks the whole timeline, and the panel's body runs on hover, resize and
+/// unrelated updates; this makes them again only when the timeline's version or the session's tasks, folder or activity
+/// change. Keying on monotonic version counters (`WorkspaceManager.timelineVersion`) avoids both O(N) `Array.==` scans
+/// and retaining a copy of `[RunEvent]` (which would defeat copy-on-write on `WorkspaceManager.events` during streaming).
 @MainActor
 final class RunTimelineDerived {
-    private var key: (all: [RunEvent], active: Bool, tasks: [RunTaskStep]?, directory: String, detail: TimelineDetail)?
+    private var key: (version: UInt64, structureVersion: UInt64, count: Int, active: Bool, tasks: [RunTaskStep]?, directory: String, detail: TimelineDetail)?
     private(set) var events: [RunEvent] = []
     private(set) var blocks: [TimelineBlock] = []
     private(set) var turns: [TurnDiff] = []
@@ -55,8 +55,8 @@ final class RunTimelineDerived {
     private var blockCache = TimelineBlockCache()
     /// Each finished turn's changed files, so only a turn whose events changed is read again.
     private var turnCache = TurnDiffCache()
-    /// The last search in the find bar, for the events it searched.
-    private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
+    /// The last search in the find bar, keyed by query + timeline version + detail filter.
+    private var found: (query: String, version: UInt64, detail: TimelineDetail?, result: TimelineSearchResult)?
 
     /// The last one per session: opening a session again takes its blocks, turns and caches as they were, so unchanged
     /// events cost nothing before the first frame and new ones only lay out the turn that changed (as
@@ -72,13 +72,15 @@ final class RunTimelineDerived {
 
     /// Whether it was made from any events yet: a session whose timeline is still being read from disk keeps what it
     /// showed last time instead of being laid out again from nothing.
-    var hasContent: Bool { key.map { !$0.all.isEmpty } ?? false }
+    var hasContent: Bool { key.map { $0.count > 0 } ?? false }
 
     /// The find bar's matches, searched again only when the query or the events changed.
     func search(_ query: String) -> TimelineSearchResult {
-        if let found, found.query == query, found.events == events { return found.result }
+        let version = key?.version ?? 0
+        let detail = key?.detail
+        if let found, found.query == query, found.version == version, found.detail == detail { return found.result }
         let result = TimelineSearch.search(events, query: query)
-        found = (query, events, result)
+        found = (query, version, detail, result)
         return result
     }
 
@@ -94,26 +96,40 @@ final class RunTimelineDerived {
     }
 
     @discardableResult
-    func update(_ all: [RunEvent], run: WorkspaceRun, detail: TimelineDetail) -> RunTimelineDerived {
+    func update(_ all: [RunEvent], version: UInt64, structureVersion: UInt64,
+                run: WorkspaceRun, detail: TimelineDetail) -> RunTimelineDerived {
         let active = run.status.isActive
         let sameRun = key.map {
             $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks && $0.detail == detail
         } ?? false
-        if sameRun, let key, key.all == all { return self }
+        if sameRun, let key, key.version == version, key.count == all.count { return self }
         defer { remember(run.id) }
-        // While the agent writes, only the text of its last answer grows, many times a second. The blocks show that text;
-        // the turns, outputs, running command and earlier links do not read it, and each walks the whole session (an edit's
-        // diff, every tool's input as JSON), so they stay as they are.
-        let streamed = sameRun && key.map { Self.onlyStreamed(from: $0.all, to: all) } == true
-        key = (all, active, run.tasks, run.workingDirectory, detail)
+        // While the agent writes or streams command output, `structureVersion` stays unchanged so we know in O(1) that
+        // only the last event grew. Turns, outputs, subagents, commands and earlier PR links do not change.
+        let streamed = sameRun && key.map { $0.structureVersion == structureVersion && $0.count == all.count && $0.count > 0 } == true
+        key = (version, structureVersion, all.count, active, run.tasks, run.workingDirectory, detail)
+        if streamed, let last = all.last {
+            if events.last?.id == last.id {
+                events[events.count - 1] = last
+                if !TimelinePresentation.updateLastEvent(last, active: active, cache: &blockCache,
+                                                         blocks: &blocks, rowsPerTurn: &rowsPerTurn) {
+                    blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
+                    rowsPerTurn = blockCache.turns.map(\.blocks.count)
+                }
+            }
+            if last.kind == .tool {
+                let reported = WorkProgress.reported(in: last.output)
+                let expected = progress[last.id]?.expected
+                progress[last.id] = (reported != nil || expected != nil)
+                    ? WorkProgress(reported: reported, started: last.date, expected: expected) : nil
+            }
+            createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
+            return self
+        }
         // Only what is shown is filtered: the turns, outputs and subagents below still read every event.
         events = detail.filter(all.filter { !($0.kind == .system && $0.tool == "launch") })
         blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
         rowsPerTurn = blockCache.turns.map(\.blocks.count)
-        if streamed, let last = all.last {
-            createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
-            return self
-        }
         revision &+= 1
         turnOfEvent = nil
         // Also the turns without an edit: git may find files they changed by a command (`countTurns`).
@@ -180,18 +196,5 @@ final class RunTimelineDerived {
             Self.order.append(id)
             while Self.order.count > Self.limit { Self.byRun[Self.order.removeFirst()] = nil }
         }
-    }
-
-    /// Whether `new` is `old` with only more (or other) text in its last answer or thinking: the same events, the last one
-    /// the same apart from its text, already written to, and not a plan (whose text is an output) nor turning into a
-    /// background notice.
-    private static func onlyStreamed(from old: [RunEvent], to new: [RunEvent]) -> Bool {
-        guard old.count == new.count, var before = old.last, let after = new.last, before.id == after.id,
-              before.kind == .assistant || before.kind == .thinking, before.tool != "plan",
-              // The first words make an answer of an empty event: the turns read which event answers.
-              !before.text.isEmpty else { return false }
-        let wasNotice = BackgroundWork.isNotice(before)
-        before.text = after.text
-        return before == after && wasNotice == BackgroundWork.isNotice(after) && old.dropLast().elementsEqual(new.dropLast())
     }
 }

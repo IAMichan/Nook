@@ -87,13 +87,26 @@ enum ComposerFieldStyle {
         return editor
     }
 
+    private static var lastRestyle: (editor: ObjectIdentifier, delegate: ObjectIdentifier?, hasSpans: Bool, length: Int)?
+    private static var lastChips: (editor: ObjectIdentifier, delegate: ObjectIdentifier?, offsets: [Int], chips: [ContextRef])?
+
     static func restyle(_ editor: NSTextView, markdown: Bool = true) {
         guard markdown, !editor.hasMarkedText(), let storage = editor.textStorage else { return }
         let length = storage.length
+        let spans = ComposerMarkdownStyle.spans(storage.string)
+        let editorID = ObjectIdentifier(editor)
+        let delegateID = editor.delegate.map(ObjectIdentifier.init)
+        // Normal typing in plain text does not introduce Markdown spans: skip wiping `.font` across the whole storage,
+        // which would force NSLayoutManager to invalidate glyphs and line fragments on every keystroke.
+        if spans.isEmpty, let last = lastRestyle,
+           last.editor == editorID, last.delegate == delegateID, !last.hasSpans,
+           length <= last.length + 2 {
+            lastRestyle = (editorID, delegateID, false, length)
+            return
+        }
         let whole = NSRange(location: 0, length: length)
         let base = NSFont.systemFont(ofSize: size)
         let text = NSColor(NookTheme.paper)
-        let spans = ComposerMarkdownStyle.spans(storage.string)
         storage.beginEditing()
         storage.removeAttribute(.backgroundColor, range: whole)
         storage.removeAttribute(.strikethroughStyle, range: whole)
@@ -108,6 +121,7 @@ enum ComposerFieldStyle {
         editor.typingAttributes[.font] = base
         editor.typingAttributes[.foregroundColor] = text
         editor.typingAttributes[.backgroundColor] = nil
+        lastRestyle = (editorID, delegateID, !spans.isEmpty, length)
     }
 
     private static func order(_ kind: ComposerMarkdownStyle.Kind) -> Int {
@@ -165,6 +179,17 @@ enum ComposerFieldStyle {
         guard !editor.hasMarkedText(), let storage = editor.textStorage else { return }
         guard !chips.isEmpty || storage.containsAttachments else { return }
         let offsets = ComposerChips.markOffsets(in: storage.string)
+        let editorID = ObjectIdentifier(editor)
+        let delegateID = editor.delegate.map(ObjectIdentifier.init)
+        let expectedOffsets = offsets.count == chips.count ? offsets.filter { $0 < storage.length } : []
+        if let last = lastChips, last.editor == editorID, last.delegate == delegateID,
+           last.offsets == offsets, last.chips == chips,
+           attributePositionsMatch(.attachment, offsets: expectedOffsets, in: storage),
+           attributePositionsMatch(.toolTip, offsets: expectedOffsets, in: storage) {
+            editor.typingAttributes[.attachment] = nil
+            editor.typingAttributes[.toolTip] = nil
+            return
+        }
         let whole = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
         storage.removeAttribute(.attachment, range: whole)
@@ -179,6 +204,30 @@ enum ComposerFieldStyle {
         storage.endEditing()
         editor.typingAttributes[.attachment] = nil
         editor.typingAttributes[.toolTip] = nil
+        lastChips = (editorID, delegateID, offsets, chips)
+    }
+
+    /// True when non-nil runs of `key` in `storage` sit at the exact chip positions in `offsets` and nowhere else.
+    /// Typing beside a chip can carry its attachment or tooltip onto the new character while mark offsets stay unchanged.
+    private static func attributePositionsMatch(_ key: NSAttributedString.Key, offsets: [Int], in storage: NSTextStorage) -> Bool {
+        if key == .attachment, offsets.isEmpty { return !storage.containsAttachments }
+        var matched = 0
+        var valid = true
+        storage.enumerateAttribute(key, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
+            guard value != nil else { return }
+            let end = range.location + range.length
+            var pos = range.location
+            while pos < end {
+                guard matched < offsets.count, offsets[matched] == pos else {
+                    valid = false
+                    stop.pointee = true
+                    return
+                }
+                matched += 1
+                pos += 1
+            }
+        }
+        return valid && matched == offsets.count
     }
 }
 

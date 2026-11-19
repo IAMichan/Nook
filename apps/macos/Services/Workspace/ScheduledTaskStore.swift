@@ -239,6 +239,7 @@ final class ScheduledTaskStore: ObservableObject {
             let timer = Timer(timeInterval: Self.tickSeconds, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.tick() }
             }
+            timer.tolerance = Self.tickSeconds * 0.2
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
             tick()

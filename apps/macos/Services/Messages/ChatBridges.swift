@@ -2086,13 +2086,16 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                     let jsons = try await pages("conversations.history", parameters, auth: auth,
                                                 maxPages: newest[conversation.id] == nil ? 1 : Self.catchUpPages)
                     var read = jsons.flatMap { SlackData.messages($0, conversation: conversation, users: users, me: me) }
-                    for ts in stale[conversation.id] ?? [] {
-                        let again = try await call("conversations.history", [
-                            "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
-                        ], auth: auth)
-                        for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
-                        where !read.contains(where: { $0.id == message.id }) {
-                            read.append(message)
+                    if let staleList = stale[conversation.id], !staleList.isEmpty {
+                        var readIDs = Set(read.map(\.id))
+                        for ts in staleList {
+                            let again = try await call("conversations.history", [
+                                "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
+                            ], auth: auth)
+                            for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
+                            where readIDs.insert(message.id).inserted {
+                                read.append(message)
+                            }
                         }
                     }
                     let seen = known[conversation.id] ?? []
@@ -2225,9 +2228,10 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The newest messages read of a conversation, to count from.
     private func remember(_ messages: [InboxMessage], in conversation: String) {
         var known = recent[conversation] ?? []
+        var seen = Set(known.map(\.ts))
         for message in messages {
             let ts = message.date.timeIntervalSince1970
-            if !known.contains(where: { $0.ts == ts }) { known.append((ts, message.isMine)) }
+            if seen.insert(ts).inserted { known.append((ts, message.isMine)) }
         }
         recent[conversation] = Array(known.sorted { $0.ts < $1.ts }.suffix(Self.counted))
     }

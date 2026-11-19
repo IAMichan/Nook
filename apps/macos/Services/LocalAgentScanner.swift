@@ -76,14 +76,16 @@ enum LocalAgentScanner {
     /// hundreds of other processes on a Mac cost one small kernel read each instead of a copy of their whole argument
     /// area, and no string work at all.
     nonisolated(unsafe) private static var seen: [pid_t: Seen] = [:]
+    /// Reused across scans on `queue` to avoid allocating and zeroing a ~1 MiB `kern.argmax` buffer every 10 seconds.
+    nonisolated(unsafe) private static var scanBuffer: [UInt8] = []
 
     /// Reads the process table straight from the kernel, as `ps`, `ps -E` and `lsof` would, but without starting any of
     /// them: this runs every ten seconds, and three short-lived processes per scan cost far more than the reads themselves.
     private static func scanNow() -> [DetectedAgent] {
         let me = ProcessInfo.processInfo.processIdentifier
-        var buffer: [UInt8] = []
         var found: [DetectedAgent] = []
         var alive: [pid_t: Seen] = [:]
+        alive.reserveCapacity(seen.count)
         for pid in allProcesses() where pid > 0 && pid != me {
             guard let info = processInfo(pid) else { continue }
             let started = (info.pbi_start_tvsec, info.pbi_start_tvusec)
@@ -91,8 +93,8 @@ enum LocalAgentScanner {
             if let known = seen[pid], known.started == started {
                 entry = known
             } else {
-                if buffer.isEmpty { buffer = [UInt8](repeating: 0, count: argumentsMax) }
-                entry = Seen(started: started, agent: inspect(pid, buffer: &buffer))
+                if scanBuffer.isEmpty { scanBuffer = [UInt8](repeating: 0, count: argumentsMax) }
+                entry = Seen(started: started, agent: inspect(pid, buffer: &scanBuffer))
             }
             alive[pid] = entry
             // Ignore Nook's own helper processes (codex app-server, claude -p).

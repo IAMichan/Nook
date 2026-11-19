@@ -38,78 +38,125 @@ enum ComposerMarkdownStyle {
     private static let strike = try! NSRegularExpression(pattern: #"(~~)(?=\S)([^\n]+?)(?<=\S)~~"#)
 
     static func spans(_ text: String) -> [Span] {
+        let utf16Count = text.utf16.count
+        guard utf16Count > 0, utf16Count <= limit else { return [] }
+        // Single-pass UTF-8 scan: plain text skips all 8 regexes and the line-by-line fence walk.
+        var hasBacktick = false
+        var hasHash = false
+        var hasGreater = false
+        var hasStarOrUnderscore = false
+        var hasTilde = false
+        var hasListStart = false
+        var hasBracket = false
+        for byte in text.utf8 {
+            switch byte {
+            case 0x60: hasBacktick = true // `
+            case 0x23: hasHash = true // #
+            case 0x3E: hasGreater = true // >
+            case 0x2A: hasStarOrUnderscore = true; hasListStart = true // *
+            case 0x5F: hasStarOrUnderscore = true // _
+            case 0x7E: hasTilde = true // ~
+            case 0x2D, 0x2B, 0x2E, 0x29: hasListStart = true // - + . )
+            case 0x5B: hasBracket = true // [
+            default: break
+            }
+        }
+        guard hasBacktick || hasHash || hasGreater || hasStarOrUnderscore || hasTilde || hasListStart else { return [] }
+
         let ns = text as NSString
-        guard ns.length > 0, ns.length <= limit else { return [] }
         var spans: [Span] = []
         let whole = NSRange(location: 0, length: ns.length)
 
         // Code blocks first: nothing inside them is Markdown.
         var blocked: [NSRange] = []
-        var lineStart = 0
-        var open: Int?
-        while lineStart < ns.length {
-            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-            let content = ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
-            if content.hasPrefix("```") {
-                if let start = open {
-                    blocked.append(NSRange(location: start, length: NSMaxRange(line) - start))
-                    open = nil
-                } else {
-                    open = line.location
+        if hasBacktick {
+            var lineStart = 0
+            var open: Int?
+            while lineStart < ns.length {
+                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+                let content = ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+                if content.hasPrefix("```") {
+                    if let start = open {
+                        blocked.append(NSRange(location: start, length: NSMaxRange(line) - start))
+                        open = nil
+                    } else {
+                        open = line.location
+                    }
+                }
+                lineStart = NSMaxRange(line)
+            }
+            // An open fence styles to the end while you are still writing the block.
+            if let start = open { blocked.append(NSRange(location: start, length: ns.length - start)) }
+            for range in blocked { spans.append(Span(kind: .codeBlock, range: range)) }
+        }
+        func free(_ range: NSRange) -> Bool {
+            blocked.isEmpty || !blocked.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
+        if hasHash {
+            for match in heading.matches(in: text, range: whole) where free(match.range) {
+                let hashes = match.range(at: 1)
+                spans.append(Span(kind: .heading(hashes.length), range: match.range))
+                spans.append(Span(kind: .syntax, range: hashes))
+            }
+        }
+        if hasGreater {
+            for match in quote.matches(in: text, range: whole) where free(match.range) {
+                spans.append(Span(kind: .quote, range: match.range))
+            }
+        }
+        if hasListStart {
+            for match in listItem.matches(in: text, range: whole) where free(match.range) {
+                spans.append(Span(kind: .listMarker, range: match.range))
+            }
+            if hasBracket {
+                for match in task.matches(in: text, range: whole) where free(match.range) {
+                    let box = match.range(at: 1)
+                    let done = ns.substring(with: box).lowercased() == "[x]"
+                    spans.append(Span(kind: .task(done: done), range: box))
                 }
             }
-            lineStart = NSMaxRange(line)
-        }
-        // An open fence styles to the end while you are still writing the block.
-        if let start = open { blocked.append(NSRange(location: start, length: ns.length - start)) }
-        for range in blocked { spans.append(Span(kind: .codeBlock, range: range)) }
-        func free(_ range: NSRange) -> Bool { !blocked.contains { NSIntersectionRange($0, range).length > 0 } }
-
-        for match in heading.matches(in: text, range: whole) where free(match.range) {
-            let hashes = match.range(at: 1)
-            spans.append(Span(kind: .heading(hashes.length), range: match.range))
-            spans.append(Span(kind: .syntax, range: hashes))
-        }
-        for match in quote.matches(in: text, range: whole) where free(match.range) {
-            spans.append(Span(kind: .quote, range: match.range))
-        }
-        for match in listItem.matches(in: text, range: whole) where free(match.range) {
-            spans.append(Span(kind: .listMarker, range: match.range))
-        }
-        for match in task.matches(in: text, range: whole) where free(match.range) {
-            let box = match.range(at: 1)
-            let done = ns.substring(with: box).lowercased() == "[x]"
-            spans.append(Span(kind: .task(done: done), range: box))
         }
         // Inline: code spans first, so a `*` inside one is not emphasis.
         var codeRanges: [NSRange] = []
-        for match in code.matches(in: text, range: whole) where free(match.range) {
-            codeRanges.append(match.range)
-            spans.append(Span(kind: .code, range: match.range))
-            let ticks = match.range(at: 1).length
-            spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: ticks)))
-            spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - ticks, length: ticks)))
+        if hasBacktick {
+            for match in code.matches(in: text, range: whole) where free(match.range) {
+                codeRanges.append(match.range)
+                spans.append(Span(kind: .code, range: match.range))
+                let ticks = match.range(at: 1).length
+                spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: ticks)))
+                spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - ticks, length: ticks)))
+            }
         }
         func inline(_ range: NSRange) -> Bool {
-            free(range) && !codeRanges.contains { NSIntersectionRange($0, range).length > 0 }
+            free(range) && (codeRanges.isEmpty || !codeRanges.contains { NSIntersectionRange($0, range).length > 0 })
         }
         var boldRanges: [NSRange] = []
-        for (regex, kind) in [(bold, Kind.bold), (strike, Kind.strike)] {
-            for match in regex.matches(in: text, range: whole) where inline(match.range) {
-                if kind == .bold { boldRanges.append(match.range) }
-                spans.append(Span(kind: kind, range: match.range))
+        if hasStarOrUnderscore {
+            for match in bold.matches(in: text, range: whole) where inline(match.range) {
+                boldRanges.append(match.range)
+                spans.append(Span(kind: .bold, range: match.range))
                 spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: 2)))
                 spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - 2, length: 2)))
             }
         }
-        for match in italic.matches(in: text, range: whole) where inline(match.range) {
-            // A bold's own markers are not italic.
-            guard !boldRanges.contains(where: { NSLocationInRange(match.range.location, $0) && (match.range.location == $0.location || NSMaxRange(match.range) == NSMaxRange($0)) }) else { continue }
-            // A `*` that starts a list item is its marker, not emphasis.
-            guard !spans.contains(where: { $0.kind == .listMarker && NSLocationInRange(match.range.location, $0.range) }) else { continue }
-            spans.append(Span(kind: .italic, range: match.range))
-            spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: 1)))
-            spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - 1, length: 1)))
+        if hasTilde {
+            for match in strike.matches(in: text, range: whole) where inline(match.range) {
+                spans.append(Span(kind: .strike, range: match.range))
+                spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: 2)))
+                spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - 2, length: 2)))
+            }
+        }
+        if hasStarOrUnderscore {
+            for match in italic.matches(in: text, range: whole) where inline(match.range) {
+                // A bold's own markers are not italic.
+                guard !boldRanges.contains(where: { NSLocationInRange(match.range.location, $0) && (match.range.location == $0.location || NSMaxRange(match.range) == NSMaxRange($0)) }) else { continue }
+                // A `*` that starts a list item is its marker, not emphasis.
+                guard !spans.contains(where: { $0.kind == .listMarker && NSLocationInRange(match.range.location, $0.range) }) else { continue }
+                spans.append(Span(kind: .italic, range: match.range))
+                spans.append(Span(kind: .syntax, range: NSRange(location: match.range.location, length: 1)))
+                spans.append(Span(kind: .syntax, range: NSRange(location: NSMaxRange(match.range) - 1, length: 1)))
+            }
         }
         return spans
     }

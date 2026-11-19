@@ -315,6 +315,8 @@ struct MarkdownView: View, Equatable {
     /// panel), where drawing every paragraph, table and code block at once held the main thread for seconds. An answer
     /// in a conversation is already a row of a lazy timeline and stays eager.
     var lazy = false
+    /// Keeps one `OpenURLAction` instance across streaming redraws so finished sibling blocks keep `.equatable()`.
+    @State private var linkHandler = StableMarkdownLinkHandler()
 
     /// The same text at the same size draws the same: a row that redraws on hover or while scrolling past skips it.
     nonisolated static func == (a: MarkdownView, b: MarkdownView) -> Bool {
@@ -324,6 +326,9 @@ struct MarkdownView: View, Equatable {
     var body: some View {
         let blocks = MarkdownCache.blocks(text)
         let choices = onChoose == nil ? nil : MarkdownBlock.trailingChoices(blocks)
+        let openURL = linkHandler.bind(fileLinkBase: fileLinkBase,
+                                       pullRequestLinksBeside: pullRequestLinksBeside,
+                                       answerReferences: answerReferences)
         Group {
             if lazy {
                 LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { segments(blocks, choices: choices) }
@@ -333,34 +338,7 @@ struct MarkdownView: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
-        .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside, answerReferences] url in
-            if let number = MarkdownBlock.citationNumber(url) {
-                MainActor.assumeIsolated { AnswerCitation.open(number, in: answerReferences) }
-                return .handled
-            }
-            if MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
-                return .handled
-            }
-            if MarkdownBlock.isFileLink(url) {
-                return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
-                    ? .handled : .discarded
-            }
-            guard MarkdownBlock.isSafeLink(url) else { return .discarded }
-            // A pull request opens in Nook: beside the session, or on the Pull requests page.
-            if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
-            // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
-            if pullRequestLinksBeside {
-                // Your own browser: while Nook is the default browser that is the one you had before, not Nook again.
-                return MainActor.assumeIsolated {
-                    if !AppModel.shared.openLinkBeside(url) { DefaultBrowser.openOutside(url) }
-                    return .handled
-                }
-            }
-            // An artifact opens beside the chat, next to the app that made it.
-            guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
-            Task { @MainActor in AppModel.shared.openArtifact(url) }
-            return .handled
-        })
+        .environment(\.openURL, openURL)
     }
 
     private func segments(_ blocks: [MarkdownBlock], choices: (index: Int, options: [String])?) -> some View {
@@ -582,23 +560,85 @@ private struct MarkdownCodeBlock: View {
 }
 
 /// Colors and actions of a code block in an answer.
+/// Holds one `OpenURLAction` for the lifetime of a `MarkdownView` while reading the latest environment values on click,
+/// so streaming redraws do not replace the `.openURL` environment value and invalidate finished sibling blocks.
+@MainActor
+private final class StableMarkdownLinkHandler {
+    private var fileLinkBase: String?
+    private var pullRequestLinksBeside = false
+    private var answerReferences: [SourceReference] = []
+
+    private lazy var action = OpenURLAction { [weak self] url in
+        guard let self else { return .discarded }
+        let (fileLinkBase, pullRequestLinksBeside, answerReferences) = MainActor.assumeIsolated {
+            (self.fileLinkBase, self.pullRequestLinksBeside, self.answerReferences)
+        }
+        if let number = MarkdownBlock.citationNumber(url) {
+            MainActor.assumeIsolated { AnswerCitation.open(number, in: answerReferences) }
+            return .handled
+        }
+        if MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
+            return .handled
+        }
+        if MarkdownBlock.isFileLink(url) {
+            return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
+                ? .handled : .discarded
+        }
+        guard MarkdownBlock.isSafeLink(url) else { return .discarded }
+        // A pull request opens in Nook: beside the session, or on the Pull requests page.
+        if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
+        // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
+        if pullRequestLinksBeside {
+            // Your own browser: while Nook is the default browser that is the one you had before, not Nook again.
+            return MainActor.assumeIsolated {
+                if !AppModel.shared.openLinkBeside(url) { DefaultBrowser.openOutside(url) }
+                return .handled
+            }
+        }
+        // An artifact opens beside the chat, next to the app that made it.
+        guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
+        Task { @MainActor in AppModel.shared.openArtifact(url) }
+        return .handled
+    }
+
+    func bind(fileLinkBase: String?, pullRequestLinksBeside: Bool, answerReferences: [SourceReference]) -> OpenURLAction {
+        self.fileLinkBase = fileLinkBase
+        self.pullRequestLinksBeside = pullRequestLinksBeside
+        self.answerReferences = answerReferences
+        return action
+    }
+}
+
 enum CodeBlockStyle {
+    private struct LineKey: Hashable {
+        let syntax: SyntaxLanguage
+        let carry: SyntaxTokenizer.Carry
+        let line: String
+    }
+
+    private struct HighlightedLine {
+        let styled: AttributedString
+        let next: SyntaxTokenizer.Carry
+    }
+
     private static let cache = BoundedCache<String, AttributedString>(limit: 200)
+    /// Per-line highlight cache so streaming code blocks only tokenize the newly written trailing line on each frame.
+    private static let lineCache = BoundedCache<LineKey, HighlightedLine>(limit: 2_000)
     /// Past this a block stays plain: coloring it on every token of a streaming answer would cost more than it gives.
     static let colorLimit = 20_000
 
     private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "shell", "console", "shellsession", "powershell", "pwsh", "ps1"]
+    private static let aliases: [String: String] = [
+        "typescript": "ts", "javascript": "js", "tsx": "tsx", "jsx": "jsx", "python": "py", "py": "py", "rust": "rs",
+        "golang": "go", "yml": "yaml", "shell": "sh", "console": "sh", "zsh": "zsh", "bash": "sh", "sh": "sh",
+        "markdown": "md", "md": "md", "xml": "xml", "svg": "svg", "vue": "vue", "svelte": "svelte", "jsonc": "jsonc",
+        "json5": "json5", "scss": "scss", "less": "less"
+    ]
 
     static func isShell(_ language: String) -> Bool { shells.contains(language) }
 
     /// The language a fence names, as the tokenizer knows it; the file name decides when the fence names none.
     static func syntax(_ language: String, title: String?) -> SyntaxLanguage? {
-        let aliases: [String: String] = [
-            "typescript": "ts", "javascript": "js", "tsx": "tsx", "jsx": "jsx", "python": "py", "py": "py", "rust": "rs",
-            "golang": "go", "yml": "yaml", "shell": "sh", "console": "sh", "zsh": "zsh", "bash": "sh", "sh": "sh",
-            "markdown": "md", "md": "md", "xml": "xml", "svg": "svg", "vue": "vue", "svelte": "svelte", "jsonc": "jsonc",
-            "json5": "json5", "scss": "scss", "less": "less"
-        ]
         if !language.isEmpty, let known = SyntaxLanguage.detect(path: "x." + (aliases[language] ?? language)) { return known }
         return title.flatMap { SyntaxLanguage.detect(path: $0) }
     }
@@ -615,15 +655,25 @@ enum CodeBlockStyle {
         if let hit = cache.value(for: key) { return hit }
         var result = AttributedString()
         var carry = SyntaxTokenizer.Carry.none
+        let newline = AttributedString("\n")
         for (index, line) in code.components(separatedBy: "\n").enumerated() {
-            if index > 0 { result += AttributedString("\n") }
-            let (tokens, next) = SyntaxTokenizer.tokenize(line, language: syntax, carry: carry)
-            carry = next
-            let units = Array(line.utf16)
-            for segment in DiffSyntax.segments(length: units.count, tokens: tokens, changed: nil) {
-                var part = AttributedString(String(decoding: units[segment.start..<segment.end], as: UTF16.self))
-                part.foregroundColor = segment.kind.map(DiffSyntaxStyle.color) ?? NookTheme.textStrong
-                result += part
+            if index > 0 { result += newline }
+            let lineKey = LineKey(syntax: syntax, carry: carry, line: line)
+            if let cachedLine = lineCache.value(for: lineKey) {
+                result += cachedLine.styled
+                carry = cachedLine.next
+            } else {
+                let (tokens, next) = SyntaxTokenizer.tokenize(line, language: syntax, carry: carry)
+                var styledLine = AttributedString()
+                let units = Array(line.utf16)
+                for segment in DiffSyntax.segments(length: units.count, tokens: tokens, changed: nil) {
+                    var part = AttributedString(String(decoding: units[segment.start..<segment.end], as: UTF16.self))
+                    part.foregroundColor = segment.kind.map(DiffSyntaxStyle.color) ?? NookTheme.textStrong
+                    styledLine += part
+                }
+                lineCache.set(HighlightedLine(styled: styledLine, next: next), for: lineKey)
+                result += styledLine
+                carry = next
             }
         }
         cache.set(result, for: key)

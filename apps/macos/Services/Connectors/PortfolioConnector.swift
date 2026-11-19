@@ -243,7 +243,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
     }
 
     var isActive: Bool {
-        (!wallets.isEmpty || !configuredExchanges.isEmpty) && ConnectorToggle.isOn(id)
+        ConnectorToggle.isOn(id) && (!wallets.isEmpty || !configuredExchanges.isEmpty)
     }
 
     // MARK: - Settings

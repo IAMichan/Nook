@@ -309,6 +309,19 @@ final class ChatsShownMemo {
         var kept: Set<String>
         /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
         var day: Date
+
+        static func == (lhs: Key, rhs: Key) -> Bool {
+            lhs.needle == rhs.needle && lhs.view == rhs.view && lhs.filter == rhs.filter
+                && lhs.account == rhs.account && lhs.listKind == rhs.listKind
+                && lhs.selection == rhs.selection && lhs.kept == rhs.kept && lhs.day == rhs.day
+                && (Self.sameStorage(lhs.all, rhs.all) || lhs.all == rhs.all)
+        }
+
+        fileprivate static func sameStorage(_ a: [ChatsEntry], _ b: [ChatsEntry]) -> Bool {
+            a.withUnsafeBufferPointer { lhs in
+                b.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress && lhs.count == rhs.count }
+            }
+        }
     }
 
     private var key: Key?
@@ -347,12 +360,19 @@ final class ChatsCountsMemo {
         var newByKind: [ChatsListKind: Int] = [:]
     }
 
+    private static func sameEntries(_ a: [ChatsEntry], _ b: [ChatsEntry]) -> Bool {
+        let sameBuffer = a.withUnsafeBufferPointer { lhs in
+            b.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress && lhs.count == rhs.count }
+        }
+        return sameBuffer || a == b
+    }
+
     private var key: (all: [ChatsEntry], filter: String?, account: String?, listKind: ChatsListKind)?
     private var value = Counts(views: [:], newByApp: [:], newByAccount: [:])
 
     func counts(all: [ChatsEntry], filter: String?, account: String?, listKind: ChatsListKind = .chats,
                 make: () -> Counts) -> Counts {
-        if let key, key.filter == filter, key.account == account, key.listKind == listKind, key.all == all { return value }
+        if let key, key.filter == filter, key.account == account, key.listKind == listKind, Self.sameEntries(key.all, all) { return value }
         value = make()
         key = (all, filter, account, listKind)
         return value
@@ -363,7 +383,7 @@ final class ChatsCountsMemo {
 
     /// The chosen app's accounts: read through `shownAccount` many times per redraw, and they only change with the chats.
     func accounts(all: [ChatsEntry], filter: String?, make: () -> [String]) -> [String] {
-        if let accountsKey, accountsKey.filter == filter, accountsKey.all == all { return accountsValue }
+        if let accountsKey, accountsKey.filter == filter, Self.sameEntries(accountsKey.all, all) { return accountsValue }
         accountsValue = make()
         accountsKey = (all, filter)
         return accountsValue
@@ -374,7 +394,7 @@ final class ChatsCountsMemo {
 
     /// The apps that have chats, in the sidebar's order: a grouping and a sort over every chat.
     func apps(all: [ChatsEntry], make: () -> [String]) -> [String] {
-        if let appsKey, appsKey == all { return appsValue }
+        if let appsKey, Self.sameEntries(appsKey, all) { return appsValue }
         appsValue = make()
         appsKey = all
         return appsValue

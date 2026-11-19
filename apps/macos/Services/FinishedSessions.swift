@@ -31,7 +31,9 @@ final class FinishedSessions: ObservableObject {
     /// Chats you reopened, and when.
     @Published private(set) var kept: [String: Date]
     /// A mark that falls off brings its chat back to the list, so keep plenty.
-    private static let limit = 5000
+    private nonisolated static let defaultLimit = 5000
+    private let defaults: UserDefaults
+    private let limit: Int
     /// Chats the auto-settle rules settled, and when, for the line at the end of their conversation. A chat you settle
     /// yourself has no entry: you know you did. The entry goes with the mark.
     @Published private(set) var autoSettled: [String: Date]
@@ -45,23 +47,25 @@ final class FinishedSessions: ObservableObject {
     /// last activity without a mark, so an update must not bring back what had already gone (see `isSettled`).
     let keepsOpenSince: Date
 
-    private init() {
-        let stored = UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? []
+    init(defaults: UserDefaults = .standard, limit: Int = FinishedSessions.defaultLimit) {
+        self.defaults = defaults
+        self.limit = limit
+        let stored = defaults.stringArray(forKey: Self.defaultsKey) ?? []
         order = stored
         let storedKeys = Set(stored)
         keys = storedKeys
-        let raw = UserDefaults.standard.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
+        let raw = defaults.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
         kept = raw.mapValues { Date(timeIntervalSince1970: $0) }
-        markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
-        let auto = UserDefaults.standard.dictionary(forKey: Self.autoSettledKey) as? [String: Double] ?? [:]
+        markedWhileBusy = Set(defaults.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
+        let auto = defaults.dictionary(forKey: Self.autoSettledKey) as? [String: Double] ?? [:]
         autoSettled = auto.filter { storedKeys.contains($0.key) }.mapValues { Date(timeIntervalSince1970: $0) }
-        let times = UserDefaults.standard.dictionary(forKey: Self.settledAtKey) as? [String: Double] ?? [:]
+        let times = defaults.dictionary(forKey: Self.settledAtKey) as? [String: Double] ?? [:]
         settledAt = times.filter { storedKeys.contains($0.key) }.mapValues { Date(timeIntervalSince1970: $0) }
-        if let since = UserDefaults.standard.object(forKey: Self.keepsOpenSinceKey) as? Date {
+        if let since = defaults.object(forKey: Self.keepsOpenSinceKey) as? Date {
             keepsOpenSince = since
         } else {
             keepsOpenSince = Date()
-            UserDefaults.standard.set(keepsOpenSince, forKey: Self.keepsOpenSinceKey)
+            defaults.set(keepsOpenSince, forKey: Self.keepsOpenSinceKey)
         }
     }
 
@@ -86,19 +90,52 @@ final class FinishedSessions: ObservableObject {
     /// `busy`: the chat still reads as busy, so the mark must outlast the current turn (see `reconcile(busy:)`).
     /// `automatically`: when the auto-settle rules settled it (`autoSettledAt`); a mark of yours clears that.
     func mark(_ key: String, busy: Bool = false, automatically: Date? = nil, now: Date = Date()) {
-        guard !key.isEmpty else { return }
-        if busy, markedWhileBusy.insert(key).inserted { saveBusy() }
-        if autoSettled[key] != automatically, automatically != nil || !keys.contains(key) {
-            autoSettled[key] = automatically
+        mark([(key: key, busy: busy)], automatically: automatically, now: now)
+    }
+
+    /// Marks multiple chats finished in one batch so `UserDefaults` and `@Published` properties update once instead of O(N) times.
+    func mark(_ items: [(key: String, busy: Bool)], automatically: Date? = nil, now: Date = Date()) {
+        guard !items.isEmpty else { return }
+        var busyChanged = false
+        var autoChanged = false
+        var keysChanged = false
+        var currentKeys = keys
+        var currentAuto = autoSettled
+        var currentSettledAt = settledAt
+        var evictIndex = 0
+        for (key, busy) in items where !key.isEmpty {
+            if busy, markedWhileBusy.insert(key).inserted { busyChanged = true }
+            if currentAuto[key] != automatically, automatically != nil || !currentKeys.contains(key) {
+                currentAuto[key] = automatically
+                autoChanged = true
+            }
+            guard !currentKeys.contains(key) else { continue }
+            order.append(key)
+            currentKeys.insert(key)
+            currentSettledAt[key] = automatically ?? now
+            keysChanged = true
+            // Account for evictions immediately so a key evicted earlier in this batch can be re-marked later in it.
+            while order.count - evictIndex > limit {
+                let evicted = order[evictIndex]
+                evictIndex += 1
+                currentKeys.remove(evicted)
+            }
+        }
+        if busyChanged { saveBusy() }
+        if autoChanged {
+            autoSettled = currentAuto
             saveAutoSettled()
         }
-        guard !keys.contains(key) else { return }
-        order.append(key)
-        if order.count > Self.limit { order.removeFirst(order.count - Self.limit) }
-        keys = Set(order)
-        save()
-        settledAt[key] = automatically ?? now
-        saveSettledAt()
+        if keysChanged {
+            if evictIndex > 0 {
+                order.removeFirst(evictIndex)
+                currentKeys = Set(order)
+            }
+            keys = currentKeys
+            save()
+            settledAt = currentSettledAt
+            saveSettledAt()
+        }
     }
 
     /// When this chat was settled, while it is; nil for a mark from before the time was kept.
@@ -110,7 +147,7 @@ final class FinishedSessions: ObservableObject {
         if markedWhileBusy.remove(key) != nil { saveBusy() }
         if autoSettled.removeValue(forKey: key) != nil { saveAutoSettled() }
         if kept.removeValue(forKey: key) != nil {
-            UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
+            defaults.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
         }
         guard keys.contains(key) else { return }
         order.removeAll { $0 == key }
@@ -144,14 +181,39 @@ final class FinishedSessions: ObservableObject {
 
     /// You reopen a chat: it leaves "Finished", and a done session shows in the notch again until it has new activity.
     func reopenByUser(_ key: String) {
-        reopen(key)
-        guard !key.isEmpty else { return }
-        kept[key] = Date()
-        if kept.count > Self.limit {
-            let oldest = kept.sorted { $0.value < $1.value }.prefix(kept.count - Self.limit).map(\.key)
-            for old in oldest { kept[old] = nil }
+        reopenByUser([key])
+    }
+
+    /// Reopens multiple chats in a single batch, writing `UserDefaults` once.
+    func reopenByUser(_ rawKeys: [String]) {
+        let valid = rawKeys.filter { !$0.isEmpty }
+        guard !valid.isEmpty else { return }
+        let target = Set(valid)
+        if !markedWhileBusy.isDisjoint(with: target) {
+            markedWhileBusy.subtract(target)
+            saveBusy()
         }
-        UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
+        if autoSettled.keys.contains(where: target.contains) {
+            var nextAuto = autoSettled
+            for key in target { nextAuto[key] = nil }
+            autoSettled = nextAuto
+            saveAutoSettled()
+        }
+        if !keys.isDisjoint(with: target) {
+            order.removeAll { target.contains($0) }
+            keys = Set(order)
+            save()
+            saveSettledAt()
+        }
+        let now = Date()
+        var nextKept = kept
+        for key in valid { nextKept[key] = now }
+        if nextKept.count > limit {
+            let oldest = nextKept.sorted { $0.value < $1.value }.prefix(nextKept.count - limit).map(\.key)
+            for old in oldest { nextKept[old] = nil }
+        }
+        kept = nextKept
+        defaults.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
     }
 
     func toggle(_ key: String) {
@@ -168,22 +230,22 @@ final class FinishedSessions: ObservableObject {
     }
 
     private func save() {
-        UserDefaults.standard.set(order, forKey: Self.defaultsKey)
+        defaults.set(order, forKey: Self.defaultsKey)
     }
 
     private func saveAutoSettled() {
-        UserDefaults.standard.set(autoSettled.mapValues { $0.timeIntervalSince1970 }, forKey: Self.autoSettledKey)
+        defaults.set(autoSettled.mapValues { $0.timeIntervalSince1970 }, forKey: Self.autoSettledKey)
     }
 
     /// Keeps only the times of chats that are still settled, so the store shrinks with the marks.
     private func saveSettledAt() {
         let kept = settledAt.filter { keys.contains($0.key) }
         if kept.count != settledAt.count { settledAt = kept }
-        UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.settledAtKey)
+        defaults.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.settledAtKey)
     }
 
     private func saveBusy() {
-        UserDefaults.standard.set(Array(markedWhileBusy), forKey: Self.busyKey)
+        defaults.set(Array(markedWhileBusy), forKey: Self.busyKey)
     }
 
     // MARK: Keys

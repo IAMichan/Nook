@@ -163,8 +163,23 @@ enum MailChatData {
     /// The mail read before that is now in the Trash, by its id in Nook: Mail may give a mail it moved a new id, so it
     /// is found by its account, person, subject and time.
     static func trashed(_ trash: [Row], among known: [Row]) -> [String] {
-        known.filter { row in
-            trash.contains { $0.isSameMail(as: row) }
+        guard !trash.isEmpty, !known.isEmpty else { return [] }
+        struct MailKey: Hashable {
+            let account: String
+            let subject: String
+            let fromMe: Bool
+            let address: String
+        }
+        var datesByKey: [MailKey: [Date]] = [:]
+        datesByKey.reserveCapacity(trash.count)
+        for row in trash {
+            let key = MailKey(account: row.account, subject: row.subject, fromMe: row.fromMe, address: address(row.person))
+            datesByKey[key, default: []].append(row.date)
+        }
+        return known.filter { row in
+            let key = MailKey(account: row.account, subject: row.subject, fromMe: row.fromMe, address: address(row.person))
+            guard let dates = datesByKey[key] else { return false }
+            return dates.contains { abs($0.timeIntervalSince(row.date)) <= 2 }
         }.map(\.nookID)
     }
 

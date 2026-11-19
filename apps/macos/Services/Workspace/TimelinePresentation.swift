@@ -227,6 +227,36 @@ enum TimelinePresentation {
         return blocks
     }
 
+    /// Updates `blocks` and `cache` in place when only the last event of `events` changed (streamed answer/thinking text
+    /// or running tool output). Re-presents only the trailing turn instead of re-splitting and comparing every earlier
+    /// turn on each 50 ms frame. Returns false when a full `blocks(_:active:cache:)` pass is needed instead.
+    static func updateLastEvent(_ event: RunEvent, active: Bool, cache: inout TimelineBlockCache,
+                                blocks: inout [TimelineBlock], rowsPerTurn: inout [Int]) -> Bool {
+        guard !cache.turns.isEmpty else { return false }
+        let lastTurnIndex = cache.turns.count - 1
+        guard cache.turns[lastTurnIndex].open == active,
+              !cache.turns[lastTurnIndex].superseded,
+              let lastEventIndex = cache.turns[lastTurnIndex].events.indices.last,
+              cache.turns[lastTurnIndex].events[lastEventIndex].id == event.id
+        else { return false }
+        let previousBlockCount = cache.turns[lastTurnIndex].blocks.count
+        guard blocks.count >= previousBlockCount, rowsPerTurn.count == cache.turns.count else { return false }
+        cache.turns[lastTurnIndex].events[lastEventIndex] = event
+        let tallies = cache.tallies
+        let shown = visible(turn: cache.turns[lastTurnIndex].events, hidingRunning: active)
+        let made = present(shown, open: active) { run in
+            if let known = tallies[run[0].id], known.events == run { return known.tally }
+            return ToolTally(run)
+        }
+        cache.turns[lastTurnIndex].blocks = made
+        blocks.removeLast(previousBlockCount)
+        blocks.append(contentsOf: made)
+        rowsPerTurn[lastTurnIndex] = made.count
+        cache.tallies = [:]
+        for case .tools(let id, let events, let tally) in made { cache.tallies[id] = (events, tally) }
+        return true
+    }
+
     /// `visible` for one turn: the approvals that let a call of the turn through, and the running tool when it is the
     /// last turn and still at work.
     private static func visible(turn: [RunEvent], hidingRunning: Bool) -> [RunEvent] {

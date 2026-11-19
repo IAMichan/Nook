@@ -458,4 +458,35 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(legacy?.accountChanged, false)
         XCTAssertEqual(legacy?.handoff, false)
     }
+
+    func testUpdateLastEventMatchesFullBuildForStreamingAssistantAndTool() {
+        var events = finishedTurn() + [
+            event(.user, "Next task", at: 200),
+            event(.tool, "Read · a.swift", tool: "Read", state: .done, at: 205),
+            event(.assistant, "Working", state: .running, at: 210),
+        ]
+        var cache = TimelineBlockCache()
+        var blocks = TimelinePresentation.blocks(events, active: true, cache: &cache)
+        var rowsPerTurn = cache.turns.map(\.blocks.count)
+
+        // Stream prose tokens onto the trailing assistant event.
+        events[events.count - 1].text = "Working on the fix now."
+        XCTAssertTrue(TimelinePresentation.updateLastEvent(events[events.count - 1], active: true, cache: &cache,
+                                                           blocks: &blocks, rowsPerTurn: &rowsPerTurn))
+        XCTAssertEqual(blocks, TimelinePresentation.blocks(events, active: true))
+
+        // Stream output onto a trailing running tool event.
+        events.append(event(.tool, "Bash · swift test", tool: "Bash", state: .running, at: 215))
+        blocks = TimelinePresentation.blocks(events, active: true, cache: &cache)
+        rowsPerTurn = cache.turns.map(\.blocks.count)
+        events[events.count - 1].output = "Test Suite passed\n"
+        XCTAssertTrue(TimelinePresentation.updateLastEvent(events[events.count - 1], active: true, cache: &cache,
+                                                           blocks: &blocks, rowsPerTurn: &rowsPerTurn))
+        XCTAssertEqual(blocks, TimelinePresentation.blocks(events, active: true))
+
+        // Rejects non-matching event IDs cleanly.
+        let unknown = event(.assistant, "Other", state: .running, at: 220)
+        XCTAssertFalse(TimelinePresentation.updateLastEvent(unknown, active: true, cache: &cache,
+                                                            blocks: &blocks, rowsPerTurn: &rowsPerTurn))
+    }
 }

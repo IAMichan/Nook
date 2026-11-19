@@ -1706,17 +1706,22 @@ final class WhatsAppLink: ObservableObject {
         let wanted = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !wanted.isEmpty else { return nil }
         var chats: [(jid: String, name: String)] = inbox.sorted.map { ($0.id, $0.name) }
-        for chat in knownChats where !chats.contains(where: { $0.jid == chat.jid }) {
+        var seenJIDs = Set(chats.map(\.jid))
+        for chat in knownChats where seenJIDs.insert(chat.jid).inserted {
             chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
         }
         let extra = also.map { (jid: WAJID.normalized($0.jid), name: $0.name) }
             .filter { !$0.jid.isEmpty && !WAJID.isStatus($0.jid) && !$0.jid.contains("broadcast") }
+        var extraNamed: [String: String] = [:]
+        for chat in extra where extraNamed[chat.jid] == nil && !WAJID.isPlaceholderName(chat.name, for: chat.jid) {
+            extraNamed[chat.jid] = chat.name
+        }
         for index in chats.indices where WAJID.isPlaceholderName(chats[index].name, for: chats[index].jid) {
-            if let named = extra.first(where: { $0.jid == chats[index].jid && !WAJID.isPlaceholderName($0.name, for: $0.jid) }) {
-                chats[index].name = named.name
+            if let named = extraNamed[chats[index].jid] {
+                chats[index].name = named
             }
         }
-        for chat in extra where !chats.contains(where: { $0.jid == chat.jid }) {
+        for chat in extra where seenJIDs.insert(chat.jid).inserted {
             chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
         }
         return WhatsAppRecipients.match(wanted, in: chats)

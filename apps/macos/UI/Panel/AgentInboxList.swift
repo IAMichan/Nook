@@ -370,14 +370,14 @@ struct AgentInboxList: View {
                              projects: [String: String]) -> some View {
         switch section.kind {
         case .pinned, .active:
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 ForEach(rows(of: section)) { entry in
                     entryRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
             .padding(.bottom, section.kind == .pinned ? NookTheme.Spacing.md : 0)
         case .working, .snoozed, .settled:
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 shelfHeader(section)
                 ForEach(rows(of: section)) { entry in
                     entryRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
@@ -413,7 +413,7 @@ struct AgentInboxList: View {
                              shown: [String], projects: [String: String]) -> some View {
         let home = Dictionary(sections.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+        return LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             projectHeader(group, folder: folder(of: group, byID: byID), byID: byID)
             // Full width, so a row's fill runs under the header's; each row indents its name to the project's name.
             ForEach(rows(of: group), id: \.entry.id) { pair in
@@ -1476,6 +1476,25 @@ final class InboxListMemo {
         let collapsedProjects: Set<String>
         let openedThreads: Set<String>
         let foldedThreads: Set<String>
+
+        static func == (lhs: Key, rhs: Key) -> Bool {
+            lhs.state == rhs.state && lhs.query == rhs.query && lhs.showWorking == rhs.showWorking
+                && lhs.now == rhs.now && lhs.settledLimit == rhs.settledLimit && lhs.current == rhs.current
+                && lhs.groupByProject == rhs.groupByProject && lhs.pinnedProjects == rhs.pinnedProjects
+                && lhs.archivedProjects == rhs.archivedProjects && lhs.projects == rhs.projects
+                && lhs.collapsedShelves == rhs.collapsedShelves && lhs.collapsedProjects == rhs.collapsedProjects
+                && lhs.openedThreads == rhs.openedThreads && lhs.foldedThreads == rhs.foldedThreads
+                && Self.sameArray(lhs.items, rhs.items)
+                && Self.sameArray(lhs.past, rhs.past)
+                && Self.sameArray(lhs.rows, rhs.rows)
+        }
+
+        private static func sameArray<T: Equatable>(_ a: [T], _ b: [T]) -> Bool {
+            let sameBuffer = a.withUnsafeBufferPointer { lhs in
+                b.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress && lhs.count == rhs.count }
+            }
+            return sameBuffer || a == b
+        }
     }
 
     struct Layout {

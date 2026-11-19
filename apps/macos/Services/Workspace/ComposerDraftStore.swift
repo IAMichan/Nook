@@ -17,8 +17,9 @@ final class ComposerDraftStore: ObservableObject {
     private(set) var stash = PromptStash()
     private let url: URL
     private var pending: Task<Void, Never>?
+    private let saveQueue = DispatchQueue(label: "ai.nook.composer-drafts", qos: .utility)
 
-    private struct Stored: Codable {
+    private struct Stored: Codable, Sendable {
         var drafts: ComposerDrafts?
         var stash: PromptStash?
     }
@@ -73,20 +74,32 @@ final class ComposerDraftStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self else { return }
             pending = nil
-            write()
+            writeAsync()
         }
     }
 
     /// Writes a change that is still waiting for its moment right away (on quit), so the last keystrokes are kept.
     func flush() {
-        guard let task = pending else { return }
-        task.cancel()
+        let hadPending = pending != nil
+        pending?.cancel()
         pending = nil
-        write()
+        if hadPending {
+            let stored = Stored(drafts: drafts, stash: stash)
+            let url = url
+            saveQueue.sync { Self.persist(stored, to: url) }
+        } else {
+            // Drain any in-flight async write before exit.
+            saveQueue.sync {}
+        }
     }
 
-    private func write() {
+    private func writeAsync() {
         let stored = Stored(drafts: drafts, stash: stash)
+        let url = url
+        saveQueue.async { Self.persist(stored, to: url) }
+    }
+
+    private nonisolated static func persist(_ stored: Stored, to url: URL) {
         guard let data = try? JSONEncoder().encode(stored) else { return }
         try? SafeStorage.write(data, to: url)
     }
