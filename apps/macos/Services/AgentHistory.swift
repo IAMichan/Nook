@@ -1112,7 +1112,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
     /// A conversation Nook ran itself rather than the user.
     static func isOwn(_ cwd: String, ownFolder: String) -> Bool {
-        cwd == ownFolder || TextGenerationRunner.isScratchFolder(cwd)
+        cwd == ownFolder || TextGenerationRunner.isScratchFolder(cwd) || NookPaths.isOwnScratch(cwd)
     }
 
     private func summarize(_ parsed: [Parsed], excludingFolder ownFolder: String) -> AgentUsageSummary {

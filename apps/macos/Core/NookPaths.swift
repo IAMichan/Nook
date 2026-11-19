@@ -30,6 +30,25 @@ enum NookPaths {
         return dir
     }
 
+    /// Whether `path` is one of Nook's own working folders in the temporary directory: the brain's (or a run folder in
+    /// it) or the model probe's. Conversations an agent keeps there are Nook's own calls, never sessions of the user's.
+    /// Worked out from the text alone, as the history scan asks for every transcript; `/private` is stripped from both
+    /// sides, as agents write the resolved temporary folder (`/private/var/folders/…`).
+    static func isOwnScratch(_ path: String, temporaryDirectory: String = ownScratchBase) -> Bool {
+        let strip = { (text: String) -> String in
+            let trimmed = text.hasSuffix("/") ? String(text.dropLast()) : text
+            return trimmed.hasPrefix("/private/") ? String(trimmed.dropFirst("/private".count)) : trimmed
+        }
+        let base = strip(temporaryDirectory)
+        let target = strip(path)
+        return ["nook-brain", "nook-models"].contains { name in
+            let folder = base + "/" + name
+            return target == folder || target.hasPrefix(folder + "/")
+        }
+    }
+
+    private static let ownScratchBase = FileManager.default.temporaryDirectory.path
+
     static var socketURL: URL { supportDirectory.appendingPathComponent("hub.sock") }
     static var hookScriptURL: URL { supportDirectory.appendingPathComponent("nook-hook.sh") }
     /// Symlink to the hook script at a path without spaces (~/.nook/nook-hook), for agents that do not parse quoted commands.
