@@ -130,7 +130,7 @@ struct PullRequestCodeTab: View {
                          }
                      } : nil,
                      annotationLines: Set(onLine.compactMap(Self.line)),
-                     annotationVersion: onLine.map { "\($0.id) \($0.events.count) \($0.root.resolved)" }.joined(separator: ","),
+                     annotationVersion: onLine.isEmpty ? AnyHashable(0) : AnyHashable(AnnotationState(items: onLine, now: now)),
                      annotation: { line in
                          AnyView(ForEach(onLine.filter { Self.line($0) == line }) { item in
                              PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
@@ -141,6 +141,11 @@ struct PullRequestCodeTab: View {
                 PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
             }
         }
+    }
+
+    private struct AnnotationState: Hashable {
+        let items: [PullRequestConversationItem]
+        let now: Date
     }
 
     private static func line(_ item: PullRequestConversationItem) -> Int? {

@@ -27,12 +27,16 @@ final class CompanionNotifier: ObservableObject {
                 enabled && push.enabled && devices.contains(where: \.wantsLiveActivities)
             }
             .removeDuplicates()
-            .sink { [weak self] active in
-                self?.setLiveMonitoring(active)
+            // `@Published` fires before the new value is stored; wait a run-loop turn so `refreshLiveActivities` reads it.
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.syncLiveMonitoring()
             }
     }
 
-    private func setLiveMonitoring(_ active: Bool) {
+    private func syncLiveMonitoring() {
+        let store = CompanionStore.shared
+        let active = store.enabled && store.push.enabled && store.devices.contains(where: \.wantsLiveActivities)
         guard active, let app else {
             liveWatch = nil
             liveTimer?.invalidate()

@@ -379,6 +379,7 @@ final class ChatCaptureService: ObservableObject {
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = nil
         armTimer()
+        startBackfill()
         lastPlan = EnergyMonitor.shared.plan
         planWatch = EnergyMonitor.shared.$plan.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] plan in self?.planChanged(plan) }

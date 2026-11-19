@@ -168,7 +168,7 @@ struct DiffText: View, Equatable {
     var onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil
     /// New-file lines with something drawn under them, what is drawn, and what tells one drawing from the next.
     var annotationLines: Set<Int> = []
-    var annotationVersion = ""
+    var annotationVersion: AnyHashable = AnyHashable(0)
     var annotation: ((Int) -> AnyView)? = nil
     /// Accepts (stages) or rejects (discards) the hunk with this number, counted from the first: its header offers both.
     /// Nil where the diff is not git's own (a turn's edits, a pull request), so there is nothing to apply it to.
@@ -203,7 +203,8 @@ struct DiffText: View, Equatable {
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
          onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil,
-         onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil, annotationLines: Set<Int> = [], annotationVersion: String = "",
+         onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil, annotationLines: Set<Int> = [],
+         annotationVersion: AnyHashable = AnyHashable(0),
          annotation: ((Int) -> AnyView)? = nil, onHunk: ((_ hunk: Int, _ action: HunkAction) -> Void)? = nil) {
         self.onHunk = onHunk
         self.onRowComment = onRowComment
@@ -272,7 +273,8 @@ struct DiffText: View, Equatable {
         a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.scope == b.scope
             && a.anchor == b.anchor && a.comments == b.comments
             && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
-            && (a.onRowComment == nil) == (b.onRowComment == nil) && a.annotationVersion == b.annotationVersion
+            && (a.onRowComment == nil) == (b.onRowComment == nil)
+            && a.annotationLines == b.annotationLines && a.annotationVersion == b.annotationVersion
             && (a.onHunk == nil) == (b.onHunk == nil)
     }
 

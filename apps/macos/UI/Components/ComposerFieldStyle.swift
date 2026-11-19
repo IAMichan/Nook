@@ -181,8 +181,13 @@ enum ComposerFieldStyle {
         let offsets = ComposerChips.markOffsets(in: storage.string)
         let editorID = ObjectIdentifier(editor)
         let delegateID = editor.delegate.map(ObjectIdentifier.init)
+        let expectedOffsets = offsets.count == chips.count ? offsets.filter { $0 < storage.length } : []
         if let last = lastChips, last.editor == editorID, last.delegate == delegateID,
-           last.offsets == offsets, last.chips == chips, storage.containsAttachments == !chips.isEmpty {
+           last.offsets == offsets, last.chips == chips,
+           attributePositionsMatch(.attachment, offsets: expectedOffsets, in: storage),
+           attributePositionsMatch(.toolTip, offsets: expectedOffsets, in: storage) {
+            editor.typingAttributes[.attachment] = nil
+            editor.typingAttributes[.toolTip] = nil
             return
         }
         let whole = NSRange(location: 0, length: storage.length)
@@ -200,6 +205,29 @@ enum ComposerFieldStyle {
         editor.typingAttributes[.attachment] = nil
         editor.typingAttributes[.toolTip] = nil
         lastChips = (editorID, delegateID, offsets, chips)
+    }
+
+    /// True when non-nil runs of `key` in `storage` sit at the exact chip positions in `offsets` and nowhere else.
+    /// Typing beside a chip can carry its attachment or tooltip onto the new character while mark offsets stay unchanged.
+    private static func attributePositionsMatch(_ key: NSAttributedString.Key, offsets: [Int], in storage: NSTextStorage) -> Bool {
+        if key == .attachment, offsets.isEmpty { return !storage.containsAttachments }
+        var matched = 0
+        var valid = true
+        storage.enumerateAttribute(key, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
+            guard value != nil else { return }
+            let end = range.location + range.length
+            var pos = range.location
+            while pos < end {
+                guard matched < offsets.count, offsets[matched] == pos else {
+                    valid = false
+                    stop.pointee = true
+                    return
+                }
+                matched += 1
+                pos += 1
+            }
+        }
+        return valid && matched == offsets.count
     }
 }
 

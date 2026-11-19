@@ -149,19 +149,24 @@ final class NowPlayingService: ObservableObject {
             energyWatch = EnergyMonitor.shared.$signals
                 .combineLatest(EnergyMonitor.shared.$plan)
                 .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
-                .sink { [weak self] _ in self?.armTimer() }
+                .sink { [weak self] signals, plan in
+                    self?.armTimer(signals: signals, plan: plan)
+                }
         }
         loadHistory()
         poll()
     }
 
     /// Computes when the next safety-net poll should fire, or `nil` when nobody can see it and no queue needs tracking.
-    private func nextPollDelay(now: Date = Date()) -> TimeInterval? {
+    private func nextPollDelay(now: Date = Date(),
+                               signals: EnergySignals? = nil,
+                               plan: EnergyPlan? = nil) -> TimeInterval? {
+        let signals = signals ?? EnergyMonitor.shared.signals
+        let plan = plan ?? EnergyMonitor.shared.plan
         // A queue in Nook starts its next track from the position read here, and a seek in the player is not always
-        // announced: it keeps following while music plays, also with nobody at the Mac.
+        // announced: it keeps following while music plays, also with nobody at the Mac or the screen off.
         let queued = !playQueue.isEmpty && current?.isPlaying == true
-        let signals = EnergyMonitor.shared.signals
-        if viewers == 0, signals.unseen || (signals.away && !queued) { return nil }
+        if viewers == 0, !queued, signals.unseen || signals.away { return nil }
         // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
         // launch it keeps checking every few seconds until a player answers: a player that was still starting (or a cold
         // first AppleScript run) should not keep the Music tab away for ten seconds.
@@ -169,16 +174,17 @@ final class NowPlayingService: ObservableObject {
         // On screen: every few seconds, for the volume (the position is estimated between polls, and each poll is a
         // dozen Apple Events to the player, which wake it). Out of sight: the players' notifications announce every
         // track and play/pause change and the position is estimated, so this is only the safety net.
-        let interval: TimeInterval = settling ? 4 : (viewers > 0 ? 5 : queued ? 15 : 60 * EnergyMonitor.shared.plan.slowdown)
+        let interval: TimeInterval = settling ? 4 : (viewers > 0 ? 5 : queued ? 15 : 60 * plan.slowdown)
         let elapsed = now.timeIntervalSince(lastPoll)
         return max(0.5, interval - elapsed)
     }
 
     /// Arms a single one-shot timer for the computed interval instead of waking up every 2 seconds 24/7.
-    private func armTimer() {
+    private func armTimer(signals: EnergySignals? = nil,
+                          plan: EnergyPlan? = nil) {
         timer?.invalidate()
         timer = nil
-        guard let delay = nextPollDelay() else { return }
+        guard let delay = nextPollDelay(signals: signals, plan: plan) else { return }
         let next = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }

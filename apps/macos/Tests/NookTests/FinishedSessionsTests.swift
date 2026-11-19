@@ -171,4 +171,20 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertNil(store.autoSettledAt(k1))
         XCTAssertNil(store.settledTime(k2))
     }
+
+    func testBatchMarkAccountsForEvictionBeforeSkippingLaterKey() throws {
+        let suiteName = "ai.nook.tests.finished-sessions.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = FinishedSessions(defaults: defaults, limit: 3)
+        store.mark([(key: "A", busy: false), (key: "B", busy: false), (key: "C", busy: false)])
+        XCTAssertEqual(store.keys, ["A", "B", "C"])
+
+        // "X" evicts oldest key "A"; marking "A" later in the same batch must re-add "A" and evict "B".
+        store.mark([(key: "X", busy: false), (key: "A", busy: false)])
+        XCTAssertEqual(store.keys, ["C", "X", "A"])
+        XCTAssertTrue(store.contains("A"))
+        XCTAssertFalse(store.contains("B"))
+    }
 }

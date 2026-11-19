@@ -2,7 +2,7 @@ import Foundation
 
 /// One entry of the Summary's conversation: a comment or review on its own, or a thread on a line of the diff with the
 /// replies under its first comment.
-struct PullRequestConversationItem: Identifiable, Equatable, Sendable {
+struct PullRequestConversationItem: Identifiable, Hashable, Sendable {
     let root: PullRequestEvent
     var replies: [PullRequestEvent] = []
 
