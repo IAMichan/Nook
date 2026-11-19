@@ -167,7 +167,8 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-37** Resizable sidebar with a remembered width, floating toggle on Agents (`PanelResize`, `PanelSidebarToggle`) · S
 
-- [ ] **UI-38** Update button in the footer and the what's new / install / restart panel (with SV-01) · M
+- [x] **UI-38** Update button in the footer and the what's new / install / restart panel (with SV-01) · M
+  - Done: the footer button opens Settings › Maintenance › Updates, which shows what is new, the steps with download progress, failures and what the last update brought.
 
 - [ ] **UI-39** Clone progress stack at the top right with Hide and Cancel (`CloneNoticeStack`) · S
 
@@ -736,9 +737,9 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ### 6.1 Updates and telemetry
 
-- [ ] **SV-01** App updater: `tauri-plugin-updater` on GitHub Releases with signatures, check at launch, every 30 min and on wake, Update button (`AppUpdater`, `ReleaseUpdateCore`, `Ed25519Verifier`) → `src-tauri/src/updates.rs` · L
-  - Progress: `core/src/updates` (versions, channel, release choice, Ed25519 check, release notes, receipt) with the Mac's tests; the release signs the Windows setup and the AppImage (`scripts/sign-update.sh`) and stamps version and key into the build. Still to do: checking, downloading and installing in `src-tauri/src/updates.rs`, and the button and panel (with UI-38). The Mac checks every 4 minutes, not 30.
-- [ ] **SV-02** Stable/Beta channel (`ReleaseChannel`) · S
+- [x] **SV-01** App updater on GitHub Releases with signatures, check at launch and every 4 minutes, Update button (`AppUpdater`, `ReleaseUpdateCore`, `Ed25519Verifier`) → `src-tauri/src/updates.rs` · L
+  - Done: `core/src/updates` (versions, channel, release choice, Ed25519 check, release notes, receipt, install kind) with the Mac's tests, and `src-tauri/src/updates.rs` checks, downloads, verifies and installs: the Windows setup runs passively (`/P /UPDATE /R`) and starts Nook again, the AppImage is swapped and restarted. The `.msi` (msiexec, `AUTOLAUNCHAPP`) and `.deb` (pkexec apt/dpkg) update themselves too. Checks read the update feed on the latest release (API as fallback); an administrator policy can turn updates off; the phone can install them (`installUpdate`). No wake trigger: the 4-minute check covers it.
+- [x] **SV-02** Stable/Beta channel (`ReleaseChannel`) · S
 
 - [ ] **SV-03** Update trial and rollback after a crash (`UpdateTrial`, `UpdateTrialRunner`) · M
 

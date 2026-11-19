@@ -42,6 +42,8 @@ enum CompanionScopes {
         .manage: .scope(.operate),
         // Reviewing, merging and working on a pull request act for you, as sending and starting do.
         .pullAct: .scope(.operate), .pullWork: .scope(.operate),
+        // Installing restarts Nook on the Mac and stops what its agents do, so it needs the same right as stopping them.
+        .installUpdate: .scope(.operate),
         // The notification settings: what they are is part of what the phone reads; changing them, for every paired
         // phone, acts for you as managing a session does.
         .notifySettings: .scope(.read), .notifySet: .scope(.operate),

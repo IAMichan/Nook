@@ -290,7 +290,7 @@ export function looksLikePairingLink(text: string): boolean {
 // phone only offers what the computer lists in `features`, and what its `scopes` allow.
 
 export type Op =
-  | "terminals" | "files" | "fileData" | "history" | "entry" | "requestUpdate" | "avatars"
+  | "terminals" | "files" | "fileData" | "history" | "entry" | "requestUpdate" | "installUpdate" | "avatars"
   | "watch" | "watchChat" | "watchConversation" | "diff" | "pulls" | "pull" | "pullAct" | "pullWork"
   | "list" | "decide" | "answer" | "send" | "stop" | "options" | "start" | "timeline" | "chats" | "chat" | "ask" | "chatStop"
   | "home" | "usage" | "music" | "inbox" | "inboxChat" | "inboxSend" | "inboxMark" | "manage"
@@ -544,7 +544,12 @@ export interface HomeDigest {
   suggestions: string[];
   track?: { title: string; artist: string; album: string; app: string; playing: boolean; position: number; duration: number };
   accounts: UsageAccount[];
+  /** A new Nook the computer can install (`installUpdate`); absent when there is none. */
+  update?: UpdateOffer;
 }
+
+/** A Nook update on the computer (`UpdateOffer`): "available", "installing", "readyToRestart" (waits for agents) or "failed". */
+export interface UpdateOffer { version: string; state: "available" | "installing" | "readyToRestart" | "failed"; changes: number; progress?: number }
 
 /** What the computer sent back, as it came (only the parts the phone reads). */
 export interface CompanionResponse {
@@ -600,7 +605,7 @@ export interface CallResult { view: ClientView; response: CompanionResponse | nu
 /** `CompanionFeature` names this phone reads. */
 export const Feature = {
   diff: "diff", pullRequests: "pullRequests", images: "images", workspace: "workspace", filePreview: "filePreview",
-  history: "history", fullTranscript: "fullTranscript", requestUpdate: "requestUpdate", avatars: "avatars", appIcons: "appIcons",
+  history: "history", fullTranscript: "fullTranscript", requestUpdate: "requestUpdate", installUpdate: "installUpdate", avatars: "avatars", appIcons: "appIcons",
   stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", liveConversation: "liveConversation", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
   retry: "retry", chatActions: "chatActions", nookChats: "nookChats", agentsTab: "agentsTab", pullActions: "pullActions", notifySettings: "notifySettings",
@@ -952,7 +957,7 @@ export const OLDEST_MAC = 1;
 /** Every feature this phone knows; a computer that lists more is newer than this app. */
 export const KNOWN_FEATURES = [
   "workspace", "start", "timeline", "chat", "home", "usage", "music", "inbox", "liveActivity", "manage", "stream", "routes", "retry",
-  "relay", "requestUpdate", "steer", "liveTimeline", "diff", "images", "clock", "revoke", "foreground", "resume", "pullRequests",
+  "relay", "requestUpdate", "installUpdate", "steer", "liveTimeline", "diff", "images", "clock", "revoke", "foreground", "resume", "pullRequests",
   "attachments", "history", "compression", "filePreview", "liveChats", "avatars", "fullTranscript", "appIcons",
   "liveConversation", "deviceKey", "chatActions", "nookChats", "agentsTab", "pullActions", "notifySettings",
 ];

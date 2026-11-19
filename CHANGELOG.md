@@ -12,6 +12,17 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Added
 
+- Nook on Windows (and the Linux AppImage) now updates itself, as on the Mac: when a new release is out, an **Update**
+  button appears in the sidebar footer, and **Install and restart** in Settings › Maintenance downloads it, checks its
+  signature, installs it over the current version and starts Nook again. No more uninstalling and reinstalling; your
+  data and settings stay. Pick Stable or Beta there too.
+- The `.msi` and `.deb` installs of Nook update themselves as well (Windows or your system asks for permission once
+  per update), and from your phone you can now install an update on your computer: the home shows a **Nook update**
+  card with **Install** (or **Restart now** when agents are still working).
+- Administrators can turn updates off, or keep Nook on Stable, with a configuration profile on the Mac, a registry
+  policy on Windows or `/etc/nook/policy.json` on Linux; `NOOK_DISABLE_UPDATES=1` does it for one machine.
+- Nook checks for updates through a small file on the latest release instead of GitHub's API, so many copies behind
+  one internet connection no longer run into GitHub's rate limit.
 - Nook's browser extension can now point at something on any page for your coding agent, as Nook's own browser and
   PDF viewer do: press the crosshair in the side panel (or Alt+Shift+E), click an element, and its address, selector,
   markup and text are on your clipboard, ready to paste in an agent's prompt. Shift-click takes several. In a PDF the

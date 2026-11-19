@@ -118,7 +118,7 @@ releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`
 
 ### Windows and Linux (the Tauri app)
 
-The Windows setup (`Nook-<version>-Windows-setup.exe`) and the Linux AppImage (`Nook-<version>-Linux.AppImage`) follow
+The Windows setup (`Nook-<version>-Windows-setup.exe`), the `.msi`, the Linux AppImage (`Nook-<version>-Linux.AppImage`) and the `.deb` follow
 the same rules with the same key; `nook_core::updates` is the port of `ReleaseUpdateCore.swift` with the same tests.
 
 - `tauri.yml` stamps `NOOK_RELEASE_VERSION` (the full version; the installer's own version has no beta suffix),
@@ -127,9 +127,60 @@ the same rules with the same key; `nook_core::updates` is the port of `ReleaseUp
 - The release's *Attach Windows and Linux* job signs both files with `scripts/sign-update.sh` (OpenSSL 3, the same raw
   base64 keys and `.sig` format as `sign-update.swift`) and uploads `<file>.sig`; *Publish the release* waits for both.
   Without the key the release fails, as it does for the Mac.
-- The `.msi` and `.deb` are left to the package manager that installed them; Nook updates what its own setup or
+- The `.msi` and `.deb` are signed the same way and update themselves too: an `.msi` runs with
+  `msiexec /i … /passive /norestart AUTOLAUNCHAPP=True` (Windows asks for administrator rights, as for any per-machine
+  install), a `.deb` is installed with `pkexec apt-get install` (or `pkexec dpkg -i` without apt), which asks for your
+  password, before Nook restarts. Nook knows a `.deb` by `dpkg-query -S` on its executable and an `.msi` by the missing
+  `uninstall.exe` of the setup.
   AppImage put there.
-- The app side (checking, downloading, the steps and the button) is SV-01 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md).
+- `src-tauri/src/updates.rs` checks 20 seconds after launch and every 4 minutes (with the same `ETag`), shows an
+  **Update** button in the sidebar footer and the details in Settings › Maintenance › Updates (what is new, the steps
+  with download progress, Stable/Beta, automatic checks). **Install and restart** downloads the installer and its
+  `.sig`, checks the signature, and then:
+  - **Windows** (Nook's own setup, recognised by `uninstall.exe` next to `nook.exe`): saves the setup in
+    `%APPDATA%\nl.imdigital.nook\Updates`, runs it with `/P /UPDATE /R` (a progress window without questions, the
+    shortcuts kept, Nook started again afterwards) and quits. The per-user setup needs no administrator rights, and
+    your data stays where it is.
+  - **Linux AppImage** (`$APPIMAGE`): writes the new file next to the old one, renames it over it, and starts it once
+    this Nook has quit.
+- When agents are still working, Nook does not stop them behind your back: the verified update waits as **Ready to
+  restart** with a **Restart now** button (as on the Mac). Before handing over, Nook stops the agents and the WhatsApp
+  gateway itself and saves their state, because the Windows setup would otherwise close Nook before that ran.
+- A verified download is kept until the restart: retrying after a failed restart checks the file on disk again
+  instead of downloading it again.
+- A receipt (`Updates/receipt.json`) lets the next launch show what came in, or say that the update did not take.
+
+### The update feed
+
+Every downloaded Nook asks for releases every few minutes. GitHub's API allows 60 requests an hour per address without
+a login, which an office with several copies behind one address can run out of. So the release workflow's *Publish*
+job also writes `nook-releases.json`: the last 30 public releases in exactly the shape of GitHub's API (tag, name,
+pre-release, page, date, notes and the files), uploaded to the release marked **Latest** (a beta refreshes it there
+too). Nook reads it from `https://github.com/<repo>/releases/latest/download/nook-releases.json`, a static download
+without a rate limit, with `If-None-Match`; when it is missing (before the first release that wrote it) or is not a
+list, Nook asks the API as before. The file decides nothing on its own: every installer is still checked against its
+signature.
+
+### Turning updates off (administrators)
+
+The same two switches on every platform:
+
+| | Mac | Windows | Linux |
+| --- | --- | --- | --- |
+| Where | A configuration profile for `nl.imdigital.nook` (forced preferences) | `HKLM\SOFTWARE\Policies\Nook` (then `HKCU`), DWORD | `/etc/nook/policy.json` |
+| No updates | `DisableUpdates` = true | `DisableUpdates` = 1 | `{"disableUpdates": true}` |
+| Stable only | `DisableBetaChannel` = true | `DisableBetaChannel` = 1 | `{"disableBetaChannel": true}` |
+
+`NOOK_DISABLE_UPDATES=1` in the environment turns updates off for one machine or one launch. With updates off, Nook
+does not check, shows no button, and Settings says who turned them off; with Beta off, the channel stays Stable and
+Settings says so. On Linux a policy file that exists but cannot be read turns updates off (fail closed), so a broken
+policy never lets through what it may forbid.
+
+### From the phone
+
+With a paired iPhone (or Android), the phone's home shows a **Nook update** card when the computer has one, with
+**Install**, or **Restart now** when the update waits for agents. It needs the pairing's *operate* right and installs
+exactly as the button on the computer does. See "Versions" in [COMPANION.md](COMPANION.md).
 
 ### Setting up the signing key (once, for maintainers)
 

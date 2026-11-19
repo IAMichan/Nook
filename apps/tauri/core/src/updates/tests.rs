@@ -273,3 +273,105 @@ fn reads_what_the_release_script_signs() {
     assert!(UpdateSignature::verify(b"Nook update", file, &key()));
     assert_eq!(STANDARD.encode(key_pair().sign(b"Nook update")), std::str::from_utf8(file).unwrap().trim(), "Ed25519 is deterministic");
 }
+
+#[test]
+fn knows_which_copies_update_themselves() {
+    assert_eq!(InstallKind::detect("windows", true, None, false), InstallKind::WindowsSetup);
+    assert_eq!(InstallKind::detect("windows", false, None, false), InstallKind::WindowsMsi);
+    assert_eq!(
+        InstallKind::detect("linux", false, Some("/home/a/Nook.AppImage"), false),
+        InstallKind::AppImage { path: "/home/a/Nook.AppImage".into() }
+    );
+    assert_eq!(InstallKind::detect("linux", false, Some("  "), true), InstallKind::Deb);
+    assert_eq!(InstallKind::detect("linux", false, None, true), InstallKind::Deb);
+    assert_eq!(InstallKind::detect("linux", false, None, false), InstallKind::Package);
+    assert_eq!(InstallKind::detect("android", false, None, false), InstallKind::Unsupported);
+    assert_eq!(InstallKind::WindowsSetup.platform(), Some(UpdatePlatform::Windows));
+    assert_eq!(InstallKind::WindowsMsi.platform(), Some(UpdatePlatform::WindowsMsi));
+    assert_eq!(InstallKind::Deb.platform(), Some(UpdatePlatform::LinuxDeb));
+    assert_eq!(InstallKind::detect("linux", false, Some("/x"), false).platform(), Some(UpdatePlatform::LinuxAppImage));
+    assert_eq!(InstallKind::Package.platform(), None);
+}
+
+#[test]
+fn packages_take_their_own_signed_file() {
+    let build =
+        ReleaseBuild { version: ReleaseVersion::parse("0.1.0").unwrap(), repository: DEFAULT_REPOSITORY.into(), public_key: Some(key()) };
+    let mut next = release("v0.2.0", None, true, false);
+    for check in [UpdatePlatform::WindowsMsi, UpdatePlatform::LinuxDeb] {
+        assert!(matches!(super::check(&[next.clone()], &build, check, None), ReleaseCheck::Unsigned { .. }), "no .sig yet");
+    }
+    next.assets.push(asset("Nook-0.2.0-Windows.msi.sig", 89));
+    next.assets.push(asset("Nook-0.2.0-Linux.deb", 10));
+    next.assets.push(asset("Nook-0.2.0-Linux.deb.sig", 89));
+    let ReleaseCheck::Available(msi) = super::check(&[next.clone()], &build, UpdatePlatform::WindowsMsi, None) else { panic!("msi") };
+    assert_eq!(msi.installer.name, "Nook-0.2.0-Windows.msi");
+    let ReleaseCheck::Available(deb) = super::check(&[next], &build, UpdatePlatform::LinuxDeb, None) else { panic!("deb") };
+    assert_eq!(deb.signature.name, "Nook-0.2.0-Linux.deb.sig");
+}
+
+#[test]
+fn packages_install_quietly_and_start_nook_again() {
+    assert_eq!(msi_args("C:\\u\\n.msi"), ["/i", "C:\\u\\n.msi", "/passive", "/norestart", "AUTOLAUNCHAPP=True"]);
+    assert_eq!(deb_command("/h/n.deb", true)[..3], ["pkexec", "apt-get", "install"]);
+    assert_eq!(deb_command("/h/n.deb", false), ["pkexec", "dpkg", "-i", "/h/n.deb"]);
+}
+
+#[test]
+fn setup_runs_as_a_quiet_update_that_restarts_nook() {
+    assert!(WINDOWS_SETUP_ARGS.contains(&"/UPDATE"));
+    assert!(WINDOWS_SETUP_ARGS.contains(&"/R"));
+    assert!(!WINDOWS_SETUP_ARGS.contains(&"/S"), "passive shows progress, silent would show nothing for a minute");
+}
+
+#[test]
+fn download_names_stay_in_the_updates_folder() {
+    assert_eq!(download_name("Nook-0.2.0-beta.1-Windows-setup.exe"), Some("Nook-0.2.0-beta.1-Windows-setup.exe"));
+    assert_eq!(download_name("../nook.exe"), None);
+    assert_eq!(download_name("a/b.exe"), None);
+    assert_eq!(download_name("a\\b.exe"), None);
+    assert_eq!(download_name(".hidden"), None);
+    assert_eq!(download_name(""), None);
+}
+
+#[test]
+fn an_administrator_or_the_environment_can_turn_updates_off() {
+    assert_eq!(UpdatePolicy::resolve(None, Ok(None)), UpdatePolicy::default());
+    assert_eq!(UpdatePolicy::resolve(Some("0"), Ok(None)), UpdatePolicy::default());
+    let env = UpdatePolicy::resolve(Some("1"), Ok(None));
+    assert!(env.disabled && env.source == Some(PolicySource::Environment));
+    let beta = UpdatePolicy::resolve(None, Ok(Some((false, true))));
+    assert!(!beta.disabled && beta.beta_disabled && beta.source == Some(PolicySource::Administrator));
+    assert_eq!(beta.channel(UpdateChannel::Beta), UpdateChannel::Stable);
+    assert!(UpdatePolicy::resolve(None, Ok(Some((true, false)))).disabled);
+    // Fails closed: a policy that is there but unreadable turns updates off.
+    let broken = UpdatePolicy::resolve(None, Err(()));
+    assert!(broken.disabled && broken.source == Some(PolicySource::Unreadable));
+}
+
+#[test]
+fn reads_the_linux_policy_file() {
+    assert_eq!(UpdatePolicy::parse_json(None), Ok(None));
+    assert_eq!(UpdatePolicy::parse_json(Some(r#"{"disableUpdates": true}"#)), Ok(Some((true, false))));
+    assert_eq!(UpdatePolicy::parse_json(Some(r#"{"disableBetaChannel": true}"#)), Ok(Some((false, true))));
+    assert_eq!(UpdatePolicy::parse_json(Some(r#"{"disableUpdates": "yes"}"#)), Err(()));
+    assert_eq!(UpdatePolicy::parse_json(Some("not json")), Err(()));
+}
+
+#[test]
+fn the_feed_is_a_file_on_the_latest_release() {
+    let build = ReleaseBuild { version: ReleaseVersion::parse("0.1.0").unwrap(), repository: "IAMichan/nook".into(), public_key: None };
+    assert_eq!(build.feed_url(), "https://github.com/IAMichan/nook/releases/latest/download/nook-releases.json");
+    // The feed has GitHub's own shape, so the same parser reads it.
+    let feed = r#"[{"tag_name":"v0.2.0","name":"Nook 0.2.0","draft":false,"prerelease":false,"html_url":null,"published_at":null,"body":"","assets":[{"name":"a","size":1,"browser_download_url":"https://github.com/x"}]}]"#;
+    assert_eq!(GitHubRelease::list(feed).len(), 1);
+}
+
+#[test]
+fn reads_the_windows_policy_from_reg_query() {
+    let out = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Nook\r\n    DisableUpdates    REG_DWORD    0x1\r\n";
+    assert_eq!(UpdatePolicy::parse_reg_query(out, "DisableUpdates"), Some(true));
+    assert_eq!(UpdatePolicy::parse_reg_query("    DisableBetaChannel    REG_DWORD    0x0", "DisableBetaChannel"), Some(false));
+    assert_eq!(UpdatePolicy::parse_reg_query(out, "DisableBetaChannel"), None);
+    assert_eq!(UpdatePolicy::parse_reg_query("    DisableUpdates    REG_SZ    1", "DisableUpdates"), None);
+}

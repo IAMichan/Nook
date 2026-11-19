@@ -37,6 +37,23 @@ pub struct HomeDigest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<HomeTrack>,
     pub accounts: Vec<UsageAccount>,
+    /// A new version of Nook the computer can install (`feature::INSTALL_UPDATE`); absent when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<UpdateOffer>,
+}
+
+/// A Nook update on the computer, as the phone's home shows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateOffer {
+    pub version: String,
+    /// "available", "installing", "readyToRestart" (waits for agents) or "failed".
+    pub state: String,
+    /// How many changes it brings (pull requests or commits); 0 when unknown.
+    pub changes: u32,
+    /// How far the download is (0…1), while it downloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
 }
 
 /// A row of "For you". `icon` is "symbol:<SF Symbol>", "agent:<agent name>" or "source:<connection id>"; `tone` is
@@ -483,9 +500,17 @@ mod tests {
             suggestions: vec!["Plan my day".into()],
             track: None,
             accounts: vec![UsageAccount { id: "claude".into(), agent: "Claude".into(), account: "Personal".into(), limits: vec![] }],
+            update: None,
         };
         let json = serde_json::to_value(&digest).unwrap();
         assert!(json.get("track").is_none(), "nil is left out, as Swift does");
+        assert!(json.get("update").is_none(), "no update, no key");
+        let offered = HomeDigest {
+            update: Some(UpdateOffer { version: "0.2.0".into(), state: "readyToRestart".into(), changes: 3, progress: None }),
+            ..digest.clone()
+        };
+        let offer = serde_json::to_value(&offered).unwrap()["update"].clone();
+        assert_eq!(offer, serde_json::json!({ "version": "0.2.0", "state": "readyToRestart", "changes": 3 }));
         let event = &json["events"][0];
         for key in ["id", "title", "start", "end", "location", "calendar"] {
             assert!(event.get(key).is_some(), "{key}");

@@ -79,6 +79,27 @@
     if (r.response?.home) home = r.response.home;
     else took?.(r.view);
   }
+  // The computer's Nook update (`installUpdate`): Install, or Restart now when it waits for agents. Installing stops
+  // what the agents there do, so it needs the right to operate.
+  const offer = $derived(has(view, Feature.installUpdate) && may(view, "operate") ? home?.update : undefined);
+  async function installUpdate() {
+    const r = await companion.call({ op: "installUpdate" });
+    if (r.response?.home) home = r.response.home;
+    const said = ({
+      installing: tr("Nook op je computer installeert de update en start daarna vanzelf weer.", "Nook on your computer is installing the update. It starts again by itself."),
+      waiting: tr("Er werken nog agents op je computer. Tik op Nu herstarten om ze te stoppen en de update af te maken.", "Agents on your computer are still working. Tap Restart now to stop them and finish the update."),
+      restarting: tr("Nook op je computer herstart in de nieuwe versie.", "Nook on your computer is restarting into the new version."),
+      blocked: tr("Voor deze update moet je op je computer iets kiezen. Nook heeft hem daar geopend.", "This update needs a choice on your computer. Nook opened it there."),
+      none: tr("Nook op je computer heeft nog geen update klaarstaan.", "Nook on your computer has no update ready yet."),
+    } as Record<string, string>)[r.response?.message ?? ""] ?? tr("Nook op je computer kan zichzelf niet bijwerken.", "Nook on your computer cannot update itself.");
+    took?.({ ...r.view, notice: said });
+  }
+  const offerStatus = $derived(!offer ? "" : offer.state === "installing"
+    ? (offer.progress != null ? tr("Downloaden {percent}%", "Downloading {percent}%", { percent: String(Math.round(offer.progress * 100)) }) : tr("Installeren…", "Installing…"))
+    : offer.state === "readyToRestart" ? tr("Wacht op agents", "Waiting for agents")
+    : offer.state === "failed" ? tr("Mislukt", "Failed") : tr("Klaar", "Ready"));
+  const offerAction = $derived(!offer || offer.state === "installing" ? "" : offer.state === "readyToRestart" ? tr("Nu herstarten", "Restart now")
+    : offer.state === "failed" ? tr("Opnieuw proberen", "Try again") : tr("Installeren", "Install"));
   const suggestions = $derived(home?.suggestions.length ? home.suggestions.slice(0, 4) : fallback);
   const macLines = $derived(home ? home.lines.slice(0, 6) : null);
   const todayEnd = $derived(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() / 1000);
@@ -206,10 +227,17 @@
       {/if}
     </div>
 
-    {#if home && (home.events.length || limits.length || home.track)}
+    {#if home && (home.events.length || limits.length || home.track || offer)}
       <div class="glance">
         <span class="label pad16">{tr("In één oogopslag", "At a glance")}</span>
         <div class="cards">
+          {#if offer}
+            <div class="gcard">
+              <span class="ghead"><Ico name="circle-arrow-down" size={12} /><span>{tr("Nook-update", "Nook update")}</span><span class="sp"></span><small>{offerStatus}</small></span>
+              <span class="track"><strong>Nook {offer.version}</strong>{#if offer.changes}<span>{tr("{count} wijzigingen", "{count} changes", { count: String(offer.changes) })}</span>{/if}</span>
+              {#if offerAction}<button class="update press" onclick={installUpdate}>{offerAction}</button>{/if}
+            </div>
+          {/if}
           {#if home.events.length}
             <div class="gcard">
               <span class="ghead"><Ico name="calendar" size={12} /><span>{tr("Agenda", "Agenda")}</span><span class="sp"></span>{#if todays.length}<small>{tr("{count} vandaag", "{count} today", { count: String(todays.length) })}</small>{/if}</span>
@@ -391,6 +419,7 @@
   .event { display: flex; align-items: baseline; gap: 8px; min-height: 28px; text-align: left; }
   .event .at { font: var(--pt-detail); color: var(--text2); font-variant-numeric: tabular-nums; }
   .event strong, .track strong { font: var(--pt-strong); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .update { align-self: flex-start; min-height: 36px; padding: 0 var(--space-12); border: none; border-radius: var(--radius-control); background: var(--smoke); color: var(--paper); font: var(--pt-strong); }
   .track { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .track span { font: var(--pt-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .player { display: flex; gap: 12px; }

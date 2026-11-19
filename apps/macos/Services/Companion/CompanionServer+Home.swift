@@ -24,8 +24,71 @@ extension CompanionServer {
                              position: info.estimatedPosition(at: now), duration: Double(info.duration))
         }
         let digest = HomeDigest(lines: Array(lines), events: Array(events), suggestions: app.startSuggestions.prefix(4).map { CompanionPolicy.clip($0.text, limit: 200) },
-                                track: track, accounts: accounts(app))
+                                track: track, accounts: accounts(app), update: updateOffer())
         return CompanionResponse(id: request.id, ok: true, sessions: digests(app), home: digest)
+    }
+
+    // MARK: Updates
+
+    /// The update the phone's home shows; nil when there is nothing to install.
+    func updateOffer() -> UpdateOffer? {
+        let updater = AppUpdater.shared
+        let version: String
+        let changes: Int
+        if let release = updater.releaseUpdate {
+            version = release.version.description
+            changes = release.changeCount
+        } else if let available = updater.available {
+            version = available.shortTarget
+            changes = available.count
+        } else {
+            return nil
+        }
+        let state: String
+        switch updater.phase {
+        case .installing: state = "installing"
+        case .readyToRestart, .readyToBuildInXcode: state = "readyToRestart"
+        case .failed: state = "failed"
+        default: state = "available"
+        }
+        let installing = if case .installing = updater.phase { true } else { false }
+        return UpdateOffer(version: version, state: state, changes: changes, progress: installing ? updater.downloadProgress : nil)
+    }
+
+    /// `installUpdate`: installs what the update button offers, or restarts into an update that waited for agents. A
+    /// checkout that needs a decision (uncommitted changes, another branch) or a run from Xcode stays a click on the Mac.
+    func installUpdate(_ request: CompanionRequest, app: AppModel, deviceID: String) -> CompanionResponse {
+        let updater = AppUpdater.shared
+        let message: String
+        switch updater.phase {
+        case .unavailable:
+            message = "unavailable"
+        case .installing:
+            message = "installing"
+        case .readyToRestart:
+            message = "restarting"
+            audit("update_restart", deviceName(deviceID))
+            // A moment, so the answer reaches the phone before Nook quits.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { updater.restart() }
+        default:
+            if !updater.hasUpdate {
+                message = "none"
+            } else if updater.fromXcode || (updater.available.map { $0.preflight != .ready } ?? false) {
+                updater.showPanel()
+                message = "blocked"
+            } else {
+                audit("update_install", deviceName(deviceID))
+                updater.install()
+                message = "installing"
+            }
+        }
+        var answer = home(request, app: app)
+        answer.message = message
+        return answer
+    }
+
+    private func deviceName(_ id: String) -> String {
+        CompanionStore.shared.devices.first { $0.id == id }?.name ?? ""
     }
 
     /// The player's buttons. Only what the notch's player offers; nothing else on the Mac is controlled from here.

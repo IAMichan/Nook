@@ -535,8 +535,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
           TAG: ${{ needs.release.outputs.tag }}
-          # The macOS update key (see "Updates" at the top) also signs the Windows setup and the AppImage, which the
-          # Tauri app installs from its update button after checking them (core/src/updates).
+          # The macOS update key (see "Updates" at the top) also signs the Windows setup and .msi, the AppImage and the
+          # .deb, which the Tauri app installs from its update button after checking them (core/src/updates).
           NOOK_UPDATE_SIGNING_KEY: ${{ secrets.NOOK_UPDATE_SIGNING_KEY }}
           NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
           SIGN: ${{ github.workspace }}/scripts/sign-update.sh
@@ -562,6 +562,8 @@ jobs:
           fi
           "$SIGN" "Nook-$VERSION-Windows-setup.exe"
           "$SIGN" "Nook-$VERSION-Linux.AppImage"
+          "$SIGN" "Nook-$VERSION-Windows.msi"
+          "$SIGN" "Nook-$VERSION-Linux.deb"
           sha256sum -- * > SHA256SUMS-Windows-Linux.txt
           cat SHA256SUMS-Windows-Linux.txt
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -- *
@@ -616,6 +618,7 @@ jobs:
           for NAME in "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt \
             "Nook-$VERSION-macOS.intoto.jsonl" "Nook-$VERSION-Windows-Linux.intoto.jsonl" "Nook-$VERSION-Windows-setup.exe" "Nook-$VERSION-Windows.msi" "Nook-$VERSION-Linux.deb" \
             "Nook-$VERSION-Linux.AppImage" "Nook-$VERSION-Windows-setup.exe.sig" "Nook-$VERSION-Linux.AppImage.sig" \
+            "Nook-$VERSION-Windows.msi.sig" "Nook-$VERSION-Linux.deb.sig" \
             SHA256SUMS-Windows-Linux.txt; do
             grep -qxF "$NAME" <<<"$ASSETS" || { echo "::error::$NAME is missing from the draft of $TAG."; exit 1; }
           done
@@ -626,6 +629,24 @@ jobs:
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           fi
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" | tee -a "$GITHUB_STEP_SUMMARY"
+      # The update feed (docs/UPDATES.md, "The update feed"): the public releases in the same JSON as GitHub's API, as a
+      # file on the release marked Latest. A downloaded Nook reads it from
+      # https://github.com/<repo>/releases/latest/download/nook-releases.json, a static download that does not count
+      # against GitHub's API rate limit; the API stays its fallback. A beta updates the feed on the current Latest
+      # release, so Beta builds hear about it too.
+      - name: Update the update feed
+        env:
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
+        run: |
+          set -euo pipefail
+          FEED="$RUNNER_TEMP/nook-releases.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" --jq '[.[] | select(.draft | not)
+            | {tag_name, name, draft, prerelease, html_url, published_at, body,
+               assets: [.assets[] | {name, size, browser_download_url}]}]' > "$FEED"
+          test "$(jq length "$FEED")" -gt 0
+          LATEST="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          gh release upload "$LATEST" --repo "$GITHUB_REPOSITORY" --clobber -- "$FEED"
+          echo "Update feed refreshed on $LATEST." | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Once the release is public, the Unreleased entries it shipped move under its version in CHANGELOG.md
   # (scripts/changelog-release.py), so nobody has to do it by hand. main only takes changes through a pull request that

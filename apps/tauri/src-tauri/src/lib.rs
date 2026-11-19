@@ -14,6 +14,7 @@ mod platform;
 mod services;
 mod state;
 mod tools;
+mod updates;
 mod workspace;
 
 use tauri::Manager;
@@ -65,7 +66,9 @@ pub fn run() {
             agents::setup(app.handle());
             workspace::setup(app.handle());
             games::setup(app.handle());
+            updates::setup(app.handle());
             services::start(app.handle());
+            updates::start(app.handle());
             #[cfg(desktop)]
             games::start(app.handle());
             #[cfg(desktop)]
@@ -111,6 +114,12 @@ pub fn run() {
             commands::maintenance::clear_caches,
             commands::maintenance::export_settings,
             commands::maintenance::reset_settings,
+            updates::update_status,
+            updates::update_check,
+            updates::update_install,
+            updates::update_restart,
+            updates::update_set_prefs,
+            updates::update_dismiss,
             commands::providers,
             commands::openrouter_sign_in,
             commands::list_models,
