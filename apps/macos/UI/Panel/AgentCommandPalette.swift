@@ -74,7 +74,7 @@ struct AgentCommandPalette: View {
         var keyHint: String? = nil
         /// A project's folder: the row shows the project's icon (yours, else its favicon or app icon) for the symbol.
         var project: String? = nil
-        /// Stays in a footer under the list, out of the scroll and the filter ("No project" under the projects).
+        /// Stays in a footer under the list, out of the scroll and the filter ("No project" and "New project…" under the projects).
         var pinned = false
         /// Runs it; true keeps the palette open (a step into a list).
         let run: () -> Bool
@@ -340,7 +340,7 @@ struct AgentCommandPalette: View {
     }
 
     /// "New session in…" (and the new-session button): your favorite projects, then the recent ones, then a session
-    /// without a project, in a folder of its own under ~/.nook/scratch.
+    /// without a project, in a folder of its own under ~/.nook/scratch, and a new project.
     private var projectEntries: [Entry] {
         let settings = app.workspace.settings
         var seen = Set<String>()
@@ -361,6 +361,13 @@ struct AgentCommandPalette: View {
             let folder = NookPaths.scratchDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true).path
             PromptLinkInbox.shared.requestProject(folder)
             viewModel.selectedAgentID = "new"
+            return false
+        })
+        // A new folder with a repository in it, offered to publish on GitHub at once (the composer's "New project…").
+        out.append(Entry(id: "p:new", group: .projects, symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"),
+                         detail: tr("sc.newProject.detail"), pinned: true) {
+            viewModel.selectedAgentID = "new"
+            PromptLinkInbox.shared.requestNewProject()
             return false
         })
         return out

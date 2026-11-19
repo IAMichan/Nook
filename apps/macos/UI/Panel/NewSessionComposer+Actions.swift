@@ -64,6 +64,12 @@ extension NewSessionComposer {
         DispatchQueue.main.async { focused = true }
     }
 
+    /// "New project…" from the command palette: the save panel waits a turn, so it opens after the palette closed.
+    func applyNewProjectRequest() {
+        guard promptLinks.claimNewProject() else { return }
+        DispatchQueue.main.async { chooseNewProject() }
+    }
+
     /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
     /// typing before Nook quit). Opened from a session, the box shows that session's project.
     func restoreOrPrepare() {
