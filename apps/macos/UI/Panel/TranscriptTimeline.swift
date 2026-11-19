@@ -160,7 +160,8 @@ struct TranscriptConversation: View {
                         // leaves room instead of bouncing the conversation down, also once you scroll up (`AgentRunPanel`).
                         ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
                                          holdsHeight: working && !finding,
-                                         holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start)) { row in
+                                         holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start),
+                                         holdsSplit: !scroll.shouldFollowEnd) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     TimelineNewDivider()
@@ -191,7 +192,11 @@ struct TranscriptConversation: View {
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
                     .readingScroller(reading) { deltaY in
-                        if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
+                        if scroll.releases(wheel: deltaY) {
+                            scroll.userScrolled()
+                        } else if scroll.returns(wheel: deltaY) {
+                            scroll.userScrolledDown()
+                        }
                     }
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
@@ -220,7 +225,8 @@ struct TranscriptConversation: View {
                     ScrollFrame(geometry).nearEnd
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
-                    // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                    // Back at the end follows again when you scrolled down to it, not when it came into view by itself
+                    // (`ScrollModel.endInView`).
                     scroll.endInView(nowAtEnd)
                 }
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in

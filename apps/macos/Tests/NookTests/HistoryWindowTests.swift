@@ -120,4 +120,16 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertLessThanOrEqual(shown, HistoryWindow.initialTurns * 4, "a folded turn is four rows: message, fold, answer, end")
         XCTAssertLessThan(elapsed, 0.05)
     }
+
+    func testTheSplitHoldsWhileYouReadBack() {
+        // 16 new rows would move 16 rows into the lazy stack: held where it was, they stay drawn in full.
+        XCTAssertEqual(HistoryWindow.heldSplit(natural: 224, held: 208), 208)
+        // A fold at the end would move rows out of the lazy stack again: held too.
+        XCTAssertEqual(HistoryWindow.heldSplit(natural: 192, held: 208), 192 + 16)
+        // The row that was the first drawn in full is gone, or nothing was held yet.
+        XCTAssertEqual(HistoryWindow.heldSplit(natural: 224, held: nil), 224)
+        // The part drawn in full grew too long while you read: back to the usual split.
+        XCTAssertEqual(HistoryWindow.heldSplit(natural: 500, held: 208, maxGrowth: 200), 500)
+        XCTAssertEqual(HistoryWindow.heldSplit(natural: 408, held: 208, maxGrowth: 200), 208)
+    }
 }
