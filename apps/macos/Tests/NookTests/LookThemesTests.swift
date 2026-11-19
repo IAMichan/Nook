@@ -252,6 +252,14 @@ final class LookThemesTests: XCTestCase {
         XCTAssertTrue(ComposerMarkdownStyle.spans(String(repeating: "**a** ", count: 5_000)).isEmpty)
     }
 
+    func testPlainTextAndTriggerFastPaths() {
+        XCTAssertTrue(ComposerMarkdownStyle.spans("Just typing a normal sentence with punctuation, commas, and 123.").isEmpty)
+        XCTAssertTrue(has("use _underscores_ here", .italic, "_underscores_"))
+        XCTAssertTrue(has("use __double__ here", .bold, "__double__"))
+        XCTAssertTrue(has("+ plus item", .listMarker, "+ "))
+        XCTAssertTrue(has("2) ordered item", .listMarker, "2) "))
+    }
+
     func testTabNestsListItems() {
         let text = "- one\n- two"
         let caret = NSRange(location: 8, length: 0)

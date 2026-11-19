@@ -9,6 +9,7 @@ final class TimelineVisitStore {
     private(set) var visits = TimelineVisits()
     private let url: URL
     private var pending: Task<Void, Never>?
+    private let saveQueue = DispatchQueue(label: "ai.nook.timeline-visits", qos: .utility)
 
     init(url: URL = NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true)
             .appendingPathComponent("visits.json")) {
@@ -30,9 +31,13 @@ final class TimelineVisitStore {
         pending = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self else { return }
-            guard let data = try? JSONEncoder().encode(visits) else { return }
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: url, options: .atomic)
+            let snapshot = visits
+            let url = url
+            saveQueue.async {
+                guard let data = try? JSONEncoder().encode(snapshot) else { return }
+                try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 }

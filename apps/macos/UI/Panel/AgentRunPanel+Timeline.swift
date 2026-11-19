@@ -5,11 +5,25 @@ import Combine
 
 /// The conversation: its rows, the bar under it, where you left it, and the turns that changed files.
 extension AgentRunPanel {
+    /// Keeps `derived` up to date for `run` using O(1) timeline version checks, preserving cached content while an
+    /// evicted timeline reloads from disk.
+    @discardableResult
+    func currentDerived(_ run: WorkspaceRun) -> RunTimelineDerived {
+        guard workspace.isTimelineLoaded(runID) || !derived.hasContent else { return derived }
+        return derived.update(
+            workspace.timeline(runID),
+            version: workspace.timelineVersion(runID),
+            structureVersion: workspace.timelineStructureVersion(runID),
+            run: run,
+            detail: timelineDetail(run)
+        )
+    }
+
     // MARK: Turn diffs
 
     /// The finished turns that changed files, with the files and lines git counted where it did.
     func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)).turns
+        currentDerived(run).turns
             .map { counted($0, run: run) }
             .filter { !$0.isEmpty }
     }
@@ -82,7 +96,7 @@ extension AgentRunPanel {
     }
 
     func timeline(_ run: WorkspaceRun) -> some View {
-        let memo = derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run))
+        let memo = currentDerived(run)
         let events = memo.events
         let blocks = memo.blocks
         let cards = memo.cards
@@ -413,7 +427,7 @@ extension AgentRunPanel {
     /// The timeline's blocks in order with their times, as `timeline(_:)` shows them (already made as it opens).
     private var visitRows: [TimelineLanding.Row] {
         guard let run = workspace.run(runID) else { return [] }
-        return derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)).blocks.map { ($0.id.uuidString, $0.visitDate) }
+        return currentDerived(run).blocks.map { ($0.id.uuidString, $0.visitDate) }
     }
 
     /// The very end of the session, with what came in since your last visit under its line.

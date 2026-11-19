@@ -350,7 +350,8 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.followTerminalContinuations() }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
-        profiles.$all.removeDuplicates().sink { [weak self] all in
+        history.profiles = profiles.all
+        profiles.$all.removeDuplicates().dropFirst().sink { [weak self] all in
             guard let self else { return }
             self.history.profiles = all
             self.history.refresh(minimumInterval: 0)

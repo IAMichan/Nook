@@ -149,6 +149,7 @@ final class WorkspaceManager: ObservableObject {
         didSet {
             // A change that does not keep the byte counts right itself: which timeline it touched is not known here.
             if !timelineStore.countingBytes { timelineStore.bytes.forgetAll() }
+            timelineStore.bumpVersion(for: timelineStore.changing, structural: !timelineStore.tailStreamOnly)
             eventsDidChange(timelineStore.changing)
         }
     }

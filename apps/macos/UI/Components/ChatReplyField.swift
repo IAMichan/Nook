@@ -211,7 +211,8 @@ struct ChatReplyField: View {
 
     /// The first link in what is typed, previewed above the field as chat apps do; nil once you closed its preview.
     private var typedLink: URL? {
-        guard !drafting, let link = ChatFormat.firstLink(text), link != dismissedLink else { return nil }
+        guard !drafting, text.contains(".") || text.contains("://"),
+              let link = ChatFormat.firstLink(text), link != dismissedLink else { return nil }
         return link
     }
 
@@ -469,6 +470,10 @@ struct ChatReplyField: View {
     /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language, and the
     /// chat's people whose name fits what follows the "@".
     private func updateMenu(_ text: String) {
+        guard text.contains("@") else {
+            if menu.isOpen { menu.close() }
+            return
+        }
         let presets = ChatDraft.presetKeys.map { tr($0) }
         // "@nook" leads with what it does; the ready-made requests under it read as plain lines ("Say yes"), without
         // repeating "@nook" and the same explanation on every row.

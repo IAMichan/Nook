@@ -209,9 +209,11 @@ extension AppModel {
     /// What a Think Along offer is about for `NoticePacer`: one at a time, whatever it is about.
     static let suggestionPace = "suggestion"
 
+    private static let dateDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+
     /// Dates the offer talks about ("2027-09-20", "next Friday"), as the system's date detector reads them.
     static func mentionedDates(in text: String) -> [Date] {
-        guard !text.isEmpty, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else {
+        guard !text.isEmpty, let detector = Self.dateDetector else {
             return NudgeFilter.numericDates(in: text)
         }
         return detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.date) + NudgeFilter.numericDates(in: text)

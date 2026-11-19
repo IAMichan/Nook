@@ -696,24 +696,32 @@ struct ChatProfile: Codable, Equatable, Sendable {
 }
 
 extension ChatFormat {
+    private static let callClockRegex = try! NSRegularExpression(pattern: #"\d{1,2}:\d{2}(:\d{2})?"#)
+    private static let callMinutesRegex = try! NSRegularExpression(pattern: #"\d+\s*min"#)
+
     /// A message that is a call: the line an app puts in the chat for one ("Incoming call", "Missed video call",
     /// "Gemiste spraakoproep", "Appel vocal (2:13)"), in English, Dutch, German, French and Spanish. Nil for anything
     /// else, also a sentence that only talks about calling ("Call me?").
     static func call(_ text: String) -> ChatCall? {
         guard text.count <= 60, !text.contains("?"), !text.contains("\n") else { return nil }
         let lower = text.lowercased()
-        var call = ChatCall()
-        if let clock = lower.range(of: #"\d{1,2}:\d{2}(:\d{2})?"#, options: .regularExpression) {
-            let parts = lower[clock].split(separator: ":").compactMap { Double($0) }
-            call.seconds = parts.reduce(0) { $0 * 60 + $1 }
-        } else if let minutes = lower.range(of: #"\d+\s*min"#, options: .regularExpression) {
-            call.seconds = Double(lower[minutes].prefix { $0.isNumber }).map { $0 * 60 }
-        }
         let words = lower.split { !$0.isLetter }.map(String.init)
             .filter { !Self.callUnits.contains($0) }
         guard !words.isEmpty, words.contains(where: Self.callWords.contains),
-              words.allSatisfy({ Self.callWords.contains($0) || Self.callModifiers.contains($0) }),
-              words.contains(where: Self.callModifiers.contains) || call.seconds != nil else { return nil }
+              words.allSatisfy({ Self.callWords.contains($0) || Self.callModifiers.contains($0) }) else { return nil }
+        var call = ChatCall()
+        if lower.utf8.contains(where: { $0 >= 48 && $0 <= 57 }) {
+            let full = NSRange(lower.startIndex..., in: lower)
+            if let match = Self.callClockRegex.firstMatch(in: lower, range: full),
+               let clock = Range(match.range, in: lower) {
+                let parts = lower[clock].split(separator: ":").compactMap { Double($0) }
+                call.seconds = parts.reduce(0) { $0 * 60 + $1 }
+            } else if let match = Self.callMinutesRegex.firstMatch(in: lower, range: full),
+                      let minutes = Range(match.range, in: lower) {
+                call.seconds = Double(lower[minutes].prefix { $0.isNumber }).map { $0 * 60 }
+            }
+        }
+        guard words.contains(where: Self.callModifiers.contains) || call.seconds != nil else { return nil }
         call.video = words.contains { $0.hasPrefix("video") || $0.hasPrefix("vidéo") }
         call.missed = words.contains(where: Self.missedWords.contains)
         if words.contains(where: Self.incomingWords.contains) { call.outgoing = false }

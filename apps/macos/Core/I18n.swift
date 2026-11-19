@@ -27,20 +27,13 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 public final class I18n: ObservableObject, @unchecked Sendable {
     public static let shared = I18n()
 
-    private let lock = NSLock()
-    private var cachedLanguage: AppLanguage
-
     public var currentLanguage: AppLanguage {
-        lock.lock()
-        defer { lock.unlock() }
-        return cachedLanguage
+        Self.resolved.currentLanguage
     }
 
     @Published public var language: AppLanguage {
         didSet {
-            lock.lock()
-            cachedLanguage = language
-            lock.unlock()
+            Self.resolved.setActive(language)
             UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
         }
     }
@@ -55,7 +48,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
             if let lang = AppLanguage(rawValue: preferred) { initial = lang }
             else { initial = .en }
         }
-        self.cachedLanguage = initial
+        Self.resolved.setActive(initial)
         self.language = initial
     }
 
@@ -79,10 +72,40 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         private var merged: [AppLanguage: [String: String]] = [:]
         /// One language's keys with its fallbacks underneath: what `lookup` reads.
         private var resolved: [AppLanguage: [String: String]] = [:]
+        /// The active language and a direct handle to its resolved table so `tr(_:)` takes one lock and one probe.
+        private var activeLanguage: AppLanguage = .en
+        private var activeTexts: [String: String]?
 
-        func texts(for language: AppLanguage) -> [String: String] {
+        var currentLanguage: AppLanguage {
             lock.lock()
             defer { lock.unlock() }
+            return activeLanguage
+        }
+
+        func setActive(_ language: AppLanguage) {
+            lock.lock()
+            activeLanguage = language
+            activeTexts = resolved[language]
+            lock.unlock()
+        }
+
+        func lookupActive(_ key: String) -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            if let texts = activeTexts { return texts[key] ?? key }
+            let texts = textsLocked(for: activeLanguage)
+            activeTexts = texts
+            return texts[key] ?? key
+        }
+
+        func lookup(_ key: String, for language: AppLanguage) -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            return textsLocked(for: language)[key] ?? key
+        }
+
+        /// Called with the lock held.
+        private func textsLocked(for language: AppLanguage) -> [String: String] {
             if let texts = resolved[language] { return texts }
             // Everyone but a Dutch reader falls back to English before Dutch.
             let fallbacks: [AppLanguage] = language == .nl ? [.en] : [.en, .nl].filter { $0 != language }
@@ -111,7 +134,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
     private static let locales: [AppLanguage: Locale] = Dictionary(uniqueKeysWithValues: AppLanguage.allCases.map { ($0, Locale(identifier: $0.rawValue)) })
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        resolved.texts(for: lang)[key] ?? key
+        resolved.lookup(key, for: lang)
     }
 
     public func lookup(_ key: String, for lang: AppLanguage) -> String {
@@ -125,9 +148,18 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         return String(format: format, locale: locales[lang], arguments: args)
     }
 
+    public func tr(_ key: String) -> String {
+        Self.resolved.lookupActive(key)
+    }
+
     public func tr(_ key: String, _ args: CVarArg...) -> String {
         Self.text(key, args, for: currentLanguage)
     }
+}
+
+/// Translates a key to the active language (fast non-variadic path for keys without format arguments).
+public func tr(_ key: String) -> String {
+    I18n.shared.tr(key)
 }
 
 /// Translates a key to the active language.

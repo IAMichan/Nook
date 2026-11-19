@@ -225,18 +225,45 @@ struct DiffText: View, Equatable {
         if let parsed = Self.parsed.value(for: key) {
             rows = parsed.rows
             numberWidth = parsed.numberWidth
+            hunkNumbers = parsed.hunkNumbers
         } else {
             let parsedRows = UnifiedDiff.rows(text)
             let largest = parsedRows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
             let width = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
+            var numbers: [Int: Int] = [:]
+            var newLines = Set<Int>()
+            for (index, row) in parsedRows.enumerated() {
+                if row.kind == .hunk { numbers[index] = numbers.count }
+                if let new = row.new { newLines.insert(new) }
+            }
             // The cache counts diffs, not bytes: a huge one (a generated file) is parsed each time instead of kept.
-            if text.utf8.count <= 1_000_000 { Self.parsed.set((rows: parsedRows, numberWidth: width), for: key) }
+            if text.utf8.count <= 1_000_000 {
+                Self.parsed.set((rows: parsedRows, numberWidth: width, hunkNumbers: numbers, newLines: newLines), for: key)
+            }
             rows = parsedRows
             numberWidth = width
+            hunkNumbers = numbers
         }
+    }
+
+    /// The new-file line numbers present in `text`, sharing `DiffText`'s parse cache so callers (like PR line-comment
+    /// placement) do not parse the diff a second time on the main thread.
+    static func newLineNumbers(for text: String, path: String?) -> Set<Int> {
+        let key = DiffSyntax.Key(path: path ?? DiffSyntax.firstPath(in: text), text: text)
+        if let parsed = Self.parsed.value(for: key) { return parsed.newLines }
+        let parsedRows = UnifiedDiff.rows(text)
+        let largest = parsedRows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
+        let width = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
         var numbers: [Int: Int] = [:]
-        for (index, row) in rows.enumerated() where row.kind == .hunk { numbers[index] = numbers.count }
-        hunkNumbers = numbers
+        var newLines = Set<Int>()
+        for (index, row) in parsedRows.enumerated() {
+            if row.kind == .hunk { numbers[index] = numbers.count }
+            if let new = row.new { newLines.insert(new) }
+        }
+        if text.utf8.count <= 1_000_000 {
+            Self.parsed.set((rows: parsedRows, numberWidth: width, hunkNumbers: numbers, newLines: newLines), for: key)
+        }
+        return newLines
     }
 
     /// Drawn again only when what it shows changed (with `.equatable()` where it is used): every line of a long diff is
@@ -251,7 +278,8 @@ struct DiffText: View, Equatable {
 
     /// The rows of the diffs shown lately: a diff is made again with each redraw of the view around it (a side panel
     /// beside a session that streams redraws many times a second), and reading every line of it again is for nothing.
-    private static let parsed = BoundedCache<DiffSyntax.Key, (rows: [UnifiedDiff.Row], numberWidth: CGFloat)>(limit: 48)
+    private static let parsed = BoundedCache<DiffSyntax.Key, (rows: [UnifiedDiff.Row], numberWidth: CGFloat, hunkNumbers: [Int: Int], newLines: Set<Int>)>(limit: 48)
+    private static let parsedSplit = BoundedCache<DiffSyntax.Key, [SplitDiff.Line]>(limit: 48)
 
     private static let hunkColor = NookTheme.blue
     private var gutterWidth: CGFloat { numberWidth * 2 + DiffLineRow.markerWidth }
@@ -325,7 +353,12 @@ struct DiffText: View, Equatable {
     /// under the line they are on; new ones are written in the one-column view.
     @ViewBuilder
     private var splitLines: some View {
-        let split = SplitDiff.lines(rows)
+        let split: [SplitDiff.Line] = {
+            if let cached = Self.parsedSplit.value(for: syntaxKey) { return cached }
+            let computed = SplitDiff.lines(rows)
+            if text.utf8.count <= 1_000_000 { Self.parsedSplit.set(computed, for: syntaxKey) }
+            return computed
+        }()
         ForEach(split.indices, id: \.self) { index in
             let line = split[index]
             if let full = line.full {

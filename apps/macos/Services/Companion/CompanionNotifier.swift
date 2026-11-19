@@ -16,24 +16,50 @@ final class CompanionNotifier: ObservableObject {
     private var live: [String: LiveActivityPlanner] = [:]
     private var liveWatch: AnyCancellable?
     private var liveTimer: Timer?
+    private var storeWatch: AnyCancellable?
 
     func attach(app: AppModel) {
         self.app = app
-        // A session that starts, waits or finishes changes the workspace or the hub. Streaming text changes them many
-        // times a second, so at most one look every three seconds; the planner sends only what changed.
-        liveWatch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange)
-            .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: true)
-            // `objectWillChange` fires before the change lands; look on a later turn of the run loop.
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLiveActivities() } }
-        // Heartbeats (which move the stale date on) and phase changes held back by the rate limit.
-        liveTimer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
-            Task { @MainActor in
-                let store = CompanionStore.shared
-                guard store.enabled, store.canPush, store.push.enabled,
-                      store.devices.contains(where: \.wantsLiveActivities) else { return }
-                self?.refreshLiveActivities()
+        let store = CompanionStore.shared
+        storeWatch = store.$enabled
+            .combineLatest(store.$push, store.$devices)
+            .map { enabled, push, devices in
+                enabled && push.enabled && devices.contains(where: \.wantsLiveActivities)
+            }
+            .removeDuplicates()
+            .sink { [weak self] active in
+                self?.setLiveMonitoring(active)
+            }
+    }
+
+    private func setLiveMonitoring(_ active: Bool) {
+        guard active, let app else {
+            liveWatch = nil
+            liveTimer?.invalidate()
+            liveTimer = nil
+            if !live.isEmpty { refreshLiveActivities() }
+            return
+        }
+        if liveWatch == nil {
+            // A session that starts, waits or finishes changes the workspace or the hub. Streaming text changes them many
+            // times a second, so at most one look every three seconds; the planner sends only what changed.
+            liveWatch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange)
+                .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: true)
+                // `objectWillChange` fires before the change lands; look on a later turn of the run loop.
+                .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLiveActivities() } }
+        }
+        if liveTimer == nil {
+            // Heartbeats (which move the stale date on) and phase changes held back by the rate limit.
+            liveTimer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
+                Task { @MainActor in
+                    let store = CompanionStore.shared
+                    guard store.enabled, store.canPush, store.push.enabled,
+                          store.devices.contains(where: \.wantsLiveActivities) else { return }
+                    self?.refreshLiveActivities()
+                }
             }
         }
+        refreshLiveActivities()
     }
 
     /// Idle for two minutes, or the screen is locked (`AttentionContext.awayFromMac`).

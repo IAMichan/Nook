@@ -504,8 +504,16 @@ private struct FileCodeView: View, Equatable {
 
     /// Drawn again only when the file, its colors or the marked line changed (with `.equatable()` where it is used).
     nonisolated static func == (a: FileCodeView, b: FileCodeView) -> Bool {
-        a.line == b.line && a.endLine == b.endLine && a.scrollKey == b.scrollKey && a.lines == b.lines && a.tokens == b.tokens
-            && (a.comment == nil) == (b.comment == nil)
+        guard a.line == b.line, a.endLine == b.endLine, a.scrollKey == b.scrollKey,
+              (a.comment == nil) == (b.comment == nil) else { return false }
+        let sameLines = a.lines.withUnsafeBufferPointer { lhs in
+            b.lines.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress && lhs.count == rhs.count }
+        }
+        guard sameLines || a.lines == b.lines else { return false }
+        let sameTokens = a.tokens.withUnsafeBufferPointer { lhs in
+            b.tokens.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress && lhs.count == rhs.count }
+        }
+        return sameTokens || a.tokens == b.tokens
     }
 
     private var numberWidth: CGFloat { CGFloat(max(String(lines.count).count, 2)) * 6.6 + 18 }

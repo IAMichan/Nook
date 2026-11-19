@@ -29,7 +29,7 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
     private var loaded = false
 
     var isConfigured: Bool { !urls().isEmpty }
-    var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
+    var isActive: Bool { ConnectorToggle.isOn(id) && isConfigured }
 
     // MARK: URLs
 

@@ -134,8 +134,7 @@ struct AgentRunPanel: View {
     var body: some View {
         if let run = workspace.run(runID) {
             // While an evicted timeline is read from disk again, what it showed last time stays (and its caches with it).
-            let _ = workspace.isTimelineLoaded(runID) || !derived.hasContent
-                ? derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)) : derived
+            let _ = currentDerived(run)
             let outputs = derived.outputs
             let signatures = derived.outputSignatures
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {

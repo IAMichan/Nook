@@ -6,7 +6,7 @@ import Foundation
 // right about everything: an unknown construct simply stays plain. Foundation only, so it is tested on its own and runs
 // off the main thread (`DiffSyntax`).
 
-enum SyntaxLanguage: String, CaseIterable, Sendable {
+enum SyntaxLanguage: String, CaseIterable, Hashable, Sendable {
     case swift, typescript, python, rust, go, json, yaml, shell, css, html, markdown
 
     /// The language of a file by its name; nil for one the tokenizer does not know (it is shown plain).
@@ -45,7 +45,7 @@ struct SyntaxToken: Equatable, Sendable {
 
 enum SyntaxTokenizer {
     /// What a line leaves open for the next one.
-    enum Carry: Equatable, Sendable {
+    enum Carry: Equatable, Hashable, Sendable {
         case none
         case blockComment
         /// Inside a string that spans lines, closed by this delimiter (Python's `"""`, a JavaScript template).
@@ -96,40 +96,68 @@ enum SyntaxTokenizer {
         var signedNumbers = false
         /// A `#` comment only starts at the line's start or after a space (shell, YAML: `${#x}`, `a#b`).
         var hashNeedsSpace = false
+        /// Precomputed UTF-16 comment markers so `Lexer.init` does zero heap allocations per line.
+        let lineCommentUnits: [(text: String, units: [UInt16])]
+        let blockOpenUnits: [UInt16]?
+
+        init(lineComments: [String] = [], block: (open: String, close: String)? = nil,
+             quotes: Set<UInt16> = [quote, apostrophe], tripleQuotes: Bool = false, multilineBacktick: Bool = false,
+             keywords: Set<String> = [], literals: Set<String> = [], capitalizedTypes: Bool = false,
+             attributes: Bool = false, variables: Bool = false, keys: Bool = false, dashInNames: Bool = false,
+             hashNumbers: Bool = false, signedNumbers: Bool = false, hashNeedsSpace: Bool = false) {
+            self.lineComments = lineComments
+            self.block = block
+            self.quotes = quotes
+            self.tripleQuotes = tripleQuotes
+            self.multilineBacktick = multilineBacktick
+            self.keywords = keywords
+            self.literals = literals
+            self.capitalizedTypes = capitalizedTypes
+            self.attributes = attributes
+            self.variables = variables
+            self.keys = keys
+            self.dashInNames = dashInNames
+            self.hashNumbers = hashNumbers
+            self.signedNumbers = signedNumbers
+            self.hashNeedsSpace = hashNeedsSpace
+            self.lineCommentUnits = lineComments.map { ($0, Array($0.utf16)) }
+            self.blockOpenUnits = block.map { Array($0.open.utf16) }
+        }
+
+        private static let swiftSpec = Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], tripleQuotes: true,
+                                            keywords: swiftKeywords, literals: ["true", "false", "nil"], capitalizedTypes: true, attributes: true)
+        private static let typescriptSpec = Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote, apostrophe, backtick],
+                                                 multilineBacktick: true, keywords: typescriptKeywords,
+                                                 literals: ["true", "false", "null", "undefined", "NaN"], capitalizedTypes: true, attributes: true)
+        private static let pythonSpec = Spec(lineComments: ["#"], tripleQuotes: true, keywords: pythonKeywords,
+                                             literals: ["True", "False", "None"], capitalizedTypes: true, attributes: true)
+        private static let rustSpec = Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], keywords: rustKeywords,
+                                           literals: ["true", "false"], capitalizedTypes: true)
+        private static let goSpec = Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote, apostrophe, backtick],
+                                         multilineBacktick: true, keywords: goKeywords, literals: ["true", "false", "nil", "iota"],
+                                         capitalizedTypes: true)
+        private static let jsonSpec = Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], literals: ["true", "false", "null"],
+                                           keys: true, signedNumbers: true)
+        private static let yamlSpec = Spec(lineComments: ["#"], literals: ["true", "false", "null", "yes", "no", "on", "off", "~"],
+                                           keys: true, dashInNames: true, signedNumbers: true, hashNeedsSpace: true)
+        private static let shellSpec = Spec(lineComments: ["#"], keywords: shellKeywords, literals: ["true", "false"], variables: true,
+                                            hashNeedsSpace: true)
+        private static let cssSpec = Spec(block: ("/*", "*/"), keywords: ["important"], attributes: true, keys: true, dashInNames: true,
+                                          hashNumbers: true)
+        private static let emptySpec = Spec()
 
         static func of(_ language: SyntaxLanguage) -> Spec {
             switch language {
-            case .swift:
-                return Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], tripleQuotes: true,
-                            keywords: swiftKeywords, literals: ["true", "false", "nil"], capitalizedTypes: true, attributes: true)
-            case .typescript:
-                return Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote, apostrophe, backtick],
-                            multilineBacktick: true, keywords: typescriptKeywords,
-                            literals: ["true", "false", "null", "undefined", "NaN"], capitalizedTypes: true, attributes: true)
-            case .python:
-                return Spec(lineComments: ["#"], tripleQuotes: true, keywords: pythonKeywords,
-                            literals: ["True", "False", "None"], capitalizedTypes: true, attributes: true)
-            case .rust:
-                return Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], keywords: rustKeywords,
-                            literals: ["true", "false"], capitalizedTypes: true)
-            case .go:
-                return Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote, apostrophe, backtick],
-                            multilineBacktick: true, keywords: goKeywords, literals: ["true", "false", "nil", "iota"],
-                            capitalizedTypes: true)
-            case .json:
-                return Spec(lineComments: ["//"], block: ("/*", "*/"), quotes: [quote], literals: ["true", "false", "null"],
-                            keys: true, signedNumbers: true)
-            case .yaml:
-                return Spec(lineComments: ["#"], literals: ["true", "false", "null", "yes", "no", "on", "off", "~"],
-                            keys: true, dashInNames: true, signedNumbers: true, hashNeedsSpace: true)
-            case .shell:
-                return Spec(lineComments: ["#"], keywords: shellKeywords, literals: ["true", "false"], variables: true,
-                            hashNeedsSpace: true)
-            case .css:
-                return Spec(block: ("/*", "*/"), keywords: ["important"], attributes: true, keys: true, dashInNames: true,
-                            hashNumbers: true)
-            case .html, .markdown:
-                return Spec()
+            case .swift: return swiftSpec
+            case .typescript: return typescriptSpec
+            case .python: return pythonSpec
+            case .rust: return rustSpec
+            case .go: return goSpec
+            case .json: return jsonSpec
+            case .yaml: return yamlSpec
+            case .shell: return shellSpec
+            case .css: return cssSpec
+            case .html, .markdown: return emptySpec
             }
         }
     }
@@ -139,17 +167,14 @@ enum SyntaxTokenizer {
     private struct Lexer {
         let units: [UInt16]
         let spec: Spec
-        /// The comment markers as UTF-16, worked out once per line instead of at every character.
-        let lineComments: [(text: String, units: [UInt16])]
-        let blockOpen: [UInt16]?
+        var lineComments: [(text: String, units: [UInt16])] { spec.lineCommentUnits }
+        var blockOpen: [UInt16]? { spec.blockOpenUnits }
         var tokens: [SyntaxToken] = []
         var i = 0
 
         init(units: [UInt16], spec: Spec) {
             self.units = units
             self.spec = spec
-            lineComments = spec.lineComments.map { ($0, Array($0.utf16)) }
-            blockOpen = spec.block.map { Array($0.open.utf16) }
         }
 
         mutating func run(carry: Carry) -> (tokens: [SyntaxToken], carry: Carry) {

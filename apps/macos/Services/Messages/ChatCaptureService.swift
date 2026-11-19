@@ -461,6 +461,8 @@ final class ChatCaptureService: ObservableObject {
         planWatch = nil
         timer?.invalidate()
         timer = nil
+        backfillTimer?.invalidate()
+        backfillTimer = nil
         generation += 1
         telegramBridge.stop()
         serviceBridge.stop()
@@ -1169,17 +1171,21 @@ final class ChatCaptureService: ObservableObject {
         }
         guard ChatBackfill.allowed(EnergyMonitor.shared.plan, freeBytes: freeBytes?.bytes) else { return }
         // Chats with something written (a walk starts below it), newest first; among them the one asked longest ago, so
-        // one long chat does not keep the others waiting.
-        let candidates = inbox.sorted.filter { thread in
+        // one long chat does not keep the others waiting. Filter before sorting so idle ticks skip sorting all threads.
+        let candidates = inbox.threads.values.filter { thread in
             oldestStored[thread.id] != nil && isShown(thread) && !thread.messages.isEmpty
                 && (walks[thread.id] != nil || now.timeIntervalSince(walkedAt[thread.id] ?? .distantPast) >= ChatBackfill.rewalk)
                 && (backfillDue[thread.app] ?? .distantPast) <= now
                 && !liveBusy(thread.app, now: now)
         }
-        let ordered = candidates.enumerated().sorted { a, b in
-            let (x, y) = (backfillAsked[a.element.id] ?? .distantPast, backfillAsked[b.element.id] ?? .distantPast)
-            return x != y ? x < y : a.offset < b.offset
-        }.map(\.element)
+        guard !candidates.isEmpty else { return }
+        let ordered = candidates.map { (thread: $0, asked: backfillAsked[$0.id] ?? .distantPast, last: $0.last) }
+            .sorted { a, b in
+                if a.asked != b.asked { return a.asked < b.asked }
+                if a.last != b.last { return a.last > b.last }
+                return a.thread.id < b.thread.id
+            }
+            .map(\.thread)
         guard let (thread, source) = ordered.lazy.compactMap({ thread in self.historySource(thread).map { (thread, $0) } }).first,
               let first = thread.messages.first
         else { return }

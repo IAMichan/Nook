@@ -60,7 +60,7 @@ protocol TokenCloudConnector: CloudConnectorConfig {
 
 extension TokenCloudConnector {
     var isConfigured: Bool { Self.secretAccounts.allSatisfy { CloudHelp.secret($0) != nil } }
-    var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
+    var isActive: Bool { ConnectorToggle.isOn(id) && isConfigured }
 
     func refresh() async {
         // The toggle first: a connector switched off does not read the Keychain.

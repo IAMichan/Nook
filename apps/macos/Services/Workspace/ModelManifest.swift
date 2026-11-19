@@ -85,12 +85,17 @@ struct ModelManifest: Codable, Equatable, Sendable {
         guard data.count <= maxBytes else { throw ModelManifestError.tooLarge }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        // The version first: a later schema may not decode as this one, and should read as "unsupported", not "broken".
-        struct Header: Decodable { var version: Int }
-        guard let header = try? decoder.decode(Header.self, from: data) else { throw ModelManifestError.unreadable }
-        guard header.version == schemaVersion else { throw ModelManifestError.unsupportedVersion(header.version) }
         let manifest: ModelManifest
-        do { manifest = try decoder.decode(ModelManifest.self, from: data) } catch { throw ModelManifestError.unreadable }
+        do {
+            manifest = try decoder.decode(ModelManifest.self, from: data)
+        } catch {
+            // A later schema may not decode as this one, and should read as "unsupported", not "broken".
+            struct Header: Decodable { var version: Int }
+            if let header = try? decoder.decode(Header.self, from: data), header.version != schemaVersion {
+                throw ModelManifestError.unsupportedVersion(header.version)
+            }
+            throw ModelManifestError.unreadable
+        }
         try manifest.validate()
         return manifest
     }

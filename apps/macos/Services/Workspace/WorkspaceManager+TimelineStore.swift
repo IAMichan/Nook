@@ -198,10 +198,21 @@ extension WorkspaceManager {
         if event.kind == .user { noticePullRequests(id, PullRequestMentions.inMessage(event.text), mustExist: true) }
     }
 
+    /// Monotonic version of session `id`'s timeline, bumped on every change to it.
+    func timelineVersion(_ id: UUID) -> UInt64 {
+        timelineStore.version(for: id)
+    }
+
+    /// Monotonic structural version of session `id`'s timeline: stays unchanged when only the tail event streams text
+    /// or running tool output, so derived views skip full-timeline rescans without holding a copy of `[RunEvent]`.
+    func timelineStructureVersion(_ id: UUID) -> UInt64 {
+        timelineStore.structureVersion(for: id)
+    }
+
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
         // An event read again after a crash changes the one it took the place of.
         let eventID = keptReplays[id]?.resolve(eventID) ?? eventID
-        // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
+        // In place: this runs for every streamed token, and holding a local copy of the array would copy the whole timeline each time.
         guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else {
             // Appended while its timeline is read back: changed where it waits (`installTimeline` saves it).
             if events[id] == nil, let at = timelineStore.bufferedAppends[id]?.lastIndex(where: { $0.id == eventID }) {
@@ -209,18 +220,36 @@ extension WorkspaceManager {
                 var event = timelineStore.bufferedAppends[id]![at]
                 let wasRunning = event.state == .running
                 change(&event)
-                event.noteEnd(wasRunning: wasRunning)
+                if wasRunning { event.noteEnd(wasRunning: true) }
                 timelineStore.bufferedAppends[id]?[at] = event
             }
             return
         }
-        timelineStore.changing = id
-        timelineStore.countingBytes = true
+        let isTail = index == (events[id]?.count ?? 0) - 1
         let before = events[id]![index].approximateBytes
         let wasRunning = events[id]![index].state == .running
-        change(&events[id]![index])
-        events[id]![index].noteEnd(wasRunning: wasRunning)
-        timelineStore.bytes.changed(id, from: before, to: events[id]![index].approximateBytes)
+        let streamCheck = isTail ? TimelineStreamCheck(events[id]![index]) : nil
+        // Mutate in a single subscript write so `events.didSet` fires once and `events[id]` stays uniquely referenced.
+        timelineStore.changing = id
+        timelineStore.countingBytes = true
+        var tailStreamOnly = false
+        var afterBytes = before
+        // Inspect the tail mutation inside the single `events` write so `didSet` sees the exact `tailStreamOnly` flag.
+        func apply(_ event: inout RunEvent) {
+            change(&event)
+            if wasRunning { event.noteEnd(wasRunning: true) }
+            afterBytes = event.approximateBytes
+            tailStreamOnly = streamCheck?.isTailStream(to: event) == true
+        }
+        // Pre-mark `tailStreamOnly` via a single-pass helper; if the mutation turns out structural, bump structureVersion
+        // right after `didSet`.
+        timelineStore.tailStreamOnly = streamCheck != nil
+        apply(&events[id]![index])
+        timelineStore.tailStreamOnly = false
+        if streamCheck != nil && !tailStreamOnly {
+            timelineStore.bumpStructure(for: id)
+        }
+        timelineStore.bytes.changed(id, from: before, to: afterBytes)
         timelineStore.countingBytes = false
         timelineStore.changing = nil
         scheduleEventSave(id)
@@ -318,6 +347,42 @@ struct TimelineStore {
     /// The session whose timeline `append` or `mutateEvent` is changing, so only views of that session hear about it.
     /// Any other change to `events` (a load, a rollback, a fork) is announced to every session.
     var changing: UUID?
+    /// Set by `mutateEvent` while mutating the tail event, so `events.didSet` leaves `structureVersions` unchanged
+    /// when only streamed text or running tool output changed.
+    var tailStreamOnly = false
+    /// Monotonic counter bumped on every change to `events`, so derived views check a single integer instead of
+    /// retaining and deep-comparing `[RunEvent]`.
+    private var nextVersion: UInt64 = 0
+    private var versions: [UUID: UInt64] = [:]
+    private var allVersion: UInt64 = 0
+    private var structureVersions: [UUID: UInt64] = [:]
+    private var allStructureVersion: UInt64 = 0
+
+    func version(for id: UUID) -> UInt64 {
+        max(versions[id] ?? 0, allVersion)
+    }
+
+    func structureVersion(for id: UUID) -> UInt64 {
+        max(structureVersions[id] ?? 0, allStructureVersion)
+    }
+
+    mutating func bumpVersion(for id: UUID?, structural: Bool) {
+        nextVersion &+= 1
+        if let id {
+            versions[id] = nextVersion
+            if structural { structureVersions[id] = nextVersion }
+        } else {
+            allVersion = nextVersion
+            if structural { allStructureVersion = nextVersion }
+        }
+    }
+
+    mutating func bumpStructure(for id: UUID) {
+        nextVersion &+= 1
+        versions[id] = nextVersion
+        structureVersions[id] = nextVersion
+    }
+
     var saveTask: Task<Void, Never>?
     var eventSaves: [UUID: Task<Void, Never>] = [:]
     /// A pending save of the session list that streaming asked for (see `scheduleRunsCatchUp`).
@@ -374,5 +439,76 @@ struct TimelineStore {
         shown[id] = nil
         prefetching.remove(id)
         awaited.remove(id)
+        versions[id] = nil
+        structureVersions[id] = nil
+    }
+}
+
+/// Captures the non-streaming fields of a tail `RunEvent` before an in-place mutation without retaining the field that
+/// is about to grow (`text` for assistant/thinking, `output` for a running tool), so copy-on-write string storage stays
+/// uniquely referenced while `mutateEvent` detects whether the change was a pure tail stream.
+struct TimelineStreamCheck {
+    private let id: UUID
+    private let date: Date
+    private let kind: RunEvent.Kind
+    private let tool: String?
+    private let callID: String?
+    private let detail: String?
+    private let state: RunEvent.State?
+    private let rolledBack: Bool?
+    private let source: String?
+    private let background: Bool?
+    private let steer: RunEvent.SteerKind?
+    private let steerStatus: RunEvent.SteerStatus?
+    private let change: ModelSwitch?
+    private let ended: Date?
+    private let hasSubagentSteps: Bool
+    private let hadText: Bool
+    private let wasNotice: Bool
+    private let isSimpleRunningTool: Bool
+    /// Only retained for the field NOT being streamed.
+    private let nonStreamedText: String?
+    private let nonStreamedOutput: String?
+
+    init(_ event: RunEvent) {
+        id = event.id
+        date = event.date
+        kind = event.kind
+        tool = event.tool
+        callID = event.callID
+        detail = event.detail
+        state = event.state
+        rolledBack = event.rolledBack
+        source = event.source
+        background = event.background
+        steer = event.steer
+        steerStatus = event.steerStatus
+        change = event.change
+        ended = event.ended
+        hasSubagentSteps = event.subagentSteps != nil
+        hadText = !event.text.isEmpty
+        let isProse = (event.kind == .assistant || event.kind == .thinking) && event.tool != "plan"
+        wasNotice = isProse && BackgroundWork.isNotice(event)
+        let isSimpleTool = event.kind == .tool && event.state == .running && event.subagentSteps == nil
+            && !Subagents.isLaunch(event) && !BackgroundCommands.isCommand(event)
+        isSimpleRunningTool = isSimpleTool
+        nonStreamedText = isSimpleTool ? event.text : nil
+        nonStreamedOutput = isProse ? event.output : nil
+    }
+
+    func isTailStream(to after: RunEvent) -> Bool {
+        guard !hasSubagentSteps, after.subagentSteps == nil,
+              id == after.id, date == after.date, kind == after.kind, tool == after.tool, callID == after.callID,
+              detail == after.detail, state == after.state, rolledBack == after.rolledBack, source == after.source,
+              background == after.background, steer == after.steer, steerStatus == after.steerStatus,
+              change == after.change, ended == after.ended
+        else { return false }
+        if (kind == .assistant || kind == .thinking), tool != "plan", hadText {
+            return nonStreamedOutput == after.output && wasNotice == BackgroundWork.isNotice(after)
+        }
+        if isSimpleRunningTool {
+            return nonStreamedText == after.text
+        }
+        return false
     }
 }

@@ -57,8 +57,22 @@ struct PullRequestCodeTab: View {
 
     var body: some View {
         let files = files
+        let filesByPath = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let detailFilesByPath = commit == nil ? filesByPath
+            : Dictionary(detail.files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
         let stacked = files.map(Self.stacked)
-        VStack(spacing: 0) {
+        var threadsByPath: [String: [PullRequestConversationItem]] = [:]
+        if commit == nil {
+            for item in PullRequestConversation.items(detail.events) {
+                if case .lineComment(let path, _) = item.root.kind {
+                    threadsByPath[path, default: []].append(item)
+                }
+            }
+        }
+        let commentsByPath: [String: [ReviewComment]] = commit == nil
+            ? Dictionary(grouping: actions.lineComments, by: { $0.review.path }).mapValues { $0.map(\.review) }
+            : [:]
+        return VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     scopeMenu
@@ -86,10 +100,11 @@ struct PullRequestCodeTab: View {
                 ListEmptyNote(tr("agents.pr.files.none"))
             } else {
                 StackedDiffList(files: stacked, scope: "pull \(detail.id) \(commit ?? detail.headSHA)", expanded: $expanded, showsTree: showsTree,
-                                focus: focus, headerAccessory: viewedMark, onScroll: onScroll, diff: { file, _ in
-                    files.first { $0.path == file.path }?.patch ?? ""
+                                focus: focus, headerAccessory: { viewedMark($0, in: detailFilesByPath) }, onScroll: onScroll, diff: { file, _ in
+                    filesByPath[file.path]?.patch ?? ""
                 }) { file, text in
-                    body(of: file, text: text)
+                    body(of: file, text: text, threads: threadsByPath[file.path] ?? [],
+                         comments: commentsByPath[file.path] ?? [])
                 }
             }
         }
@@ -99,13 +114,14 @@ struct PullRequestCodeTab: View {
 
     /// The diff with what is said about it: pending comments and conversations under their line, the rest under the file.
     @ViewBuilder
-    private func body(of file: StackedDiffFile, text: String) -> some View {
-        let lines = UnifiedDiff.rows(text).compactMap(\.new)
-        let threads = commit == nil ? PullRequestConversation.items(detail.events).filter { $0.root.isOn(path: file.path) } : []
+    private func body(of file: StackedDiffFile, text: String, threads: [PullRequestConversationItem],
+                      comments: [ReviewComment]) -> some View {
+        let lines = threads.isEmpty ? Set<Int>() : DiffText.newLineNumbers(for: text, path: file.path)
         let onLine = threads.filter { item in Self.line(item).map(lines.contains) ?? false }
-        let moved = threads.filter { item in !onLine.contains(item) }
+        let onLineIDs = Set(onLine.map(\.id))
+        let moved = threads.filter { !onLineIDs.contains($0.id) }
         VStack(alignment: .leading, spacing: 0) {
-            DiffText(text: text, comments: commit == nil ? actions.lineComments.filter { $0.review.path == file.path }.map(\.review) : [],
+            DiffText(text: text, comments: comments,
                      onRemoveComment: commit == nil ? { id in actions.lineComments.removeAll { $0.id == id } } : nil,
                      stacked: true, path: file.path, scope: "pull \(detail.id)",
                      onRowComment: commit == nil && detail.isOpen && detail.features.lineComments ? { row, first, comment in
@@ -120,6 +136,7 @@ struct PullRequestCodeTab: View {
                              PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
                          })
                      })
+            .equatable()
             ForEach(moved) { item in
                 PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
             }
@@ -182,8 +199,8 @@ struct PullRequestCodeTab: View {
         }
     }
 
-    private func viewedMark(_ file: StackedDiffFile) -> AnyView {
-        guard commit == nil, let found = detail.files.first(where: { $0.path == file.path }) else { return AnyView(EmptyView()) }
+    private func viewedMark(_ file: StackedDiffFile, in filesByPath: [String: PullRequestFile]) -> AnyView {
+        guard commit == nil, let found = filesByPath[file.path] else { return AnyView(EmptyView()) }
         let status = viewed.status(found, in: key)
         let seen = status == .viewed
         return AnyView(HStack(spacing: NookTheme.Spacing.xs) {

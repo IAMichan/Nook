@@ -146,4 +146,29 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertNil(FinishedSessions.ownConversation(id: "proc-42", sessionID: "", cwd: "/repo", detected: true),
                      "a process does not borrow a transcript's id")
     }
+
+    func testBatchMarkAndReopenByUser() {
+        let store = FinishedSessions.shared
+        let k1 = "Test Agent|batch-\(UUID().uuidString)"
+        let k2 = "Test Agent|batch-\(UUID().uuidString)"
+        defer {
+            store.reopen(k1)
+            store.reopen(k2)
+        }
+        let at = Date(timeIntervalSince1970: 1_900_000_000)
+        store.mark([(key: k1, busy: false), (key: k2, busy: true)], automatically: at, now: at)
+        XCTAssertTrue(store.contains(k1))
+        XCTAssertTrue(store.contains(k2))
+        XCTAssertFalse(store.isMarkedWhileBusy(k1))
+        XCTAssertTrue(store.isMarkedWhileBusy(k2))
+        XCTAssertEqual(store.autoSettledAt(k1), at)
+        XCTAssertEqual(store.settledTime(k2), at)
+
+        store.reopenByUser([k1, k2])
+        XCTAssertFalse(store.contains(k1))
+        XCTAssertFalse(store.contains(k2))
+        XCTAssertFalse(store.isMarkedWhileBusy(k2))
+        XCTAssertNil(store.autoSettledAt(k1))
+        XCTAssertNil(store.settledTime(k2))
+    }
 }
