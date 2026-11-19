@@ -13,9 +13,15 @@ extension WorkspaceManager {
         apply(CompactionProgress.start(timeline(id), done: compactedText(id)), to: id)
     }
 
-    /// The conversation is compacted (`.notice("compact")` of every agent).
-    func compactionFinished(_ id: UUID) {
+    /// The conversation is compacted (`.notice("compact")` of every agent). `contextAfter`: the tokens the conversation
+    /// holds now, when the agent says them (Claude Code's `post_tokens`). A compaction reports no usage of its own, so
+    /// the size from before it stays wrong until the next request: the context ring and its breakdown take the new size
+    /// at once, or show nothing until the agent reports again rather than the old, full context. Size compaction reads
+    /// the same figure, so it does not fire again on a size that is gone.
+    func compactionFinished(_ id: UUID, contextAfter: Int? = nil) {
         turns[id]?.compacted = true
+        turns[id]?.lastContext = contextAfter
+        if run(id)?.usage.contextTokens != contextAfter { update(id) { $0.usage.contextTokens = contextAfter } }
         // A summary may leave out that this is a main thread: your next message says it again (`MainThread`).
         if run(id)?.mainThreadTold != nil { update(id) { $0.mainThreadTold = nil } }
         apply(CompactionProgress.finish(timeline(id), text: compactedText(id)), to: id)
