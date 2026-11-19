@@ -70,8 +70,9 @@ struct ActionSuggestionBar: View {
 }
 
 /// A suggestion before you act on it: one quiet line on a dashed outline, the way something not yet real looks, so it
-/// needs no "nothing happens until…" line. The steps, Do it (and "Adjust first" for a new session), and the cross. On
-/// hover it fills in as a card, and why Nook proposes it shows as the line's tip; a click on the line unfolds the steps in
+/// needs no "nothing happens until…" line. It sits on the composer tray's fill like the other bars above the composer,
+/// so a transcript scrolling behind it never shows through. The steps, Do it (and "Adjust first" for a new session), and
+/// the cross. On hover its outline turns solid, and why Nook proposes it shows as the line's tip; a click on the line unfolds the steps in
 /// full with that why. Running it hands over to the full `DraftActions` card, which shows how it went.
 private struct WhisperSuggestion: View {
     let actions: [ChatDraftAction]
@@ -124,7 +125,7 @@ private struct WhisperSuggestion: View {
         .padding(.leading, NookTheme.Spacing.lg)
         .padding(.trailing, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(NookTheme.shape(NookTheme.Radius.sheet).fill(hovering || expanded ? NookTheme.composerTray : Color.clear))
+        .background(NookTheme.shape(NookTheme.Radius.sheet).fill(NookTheme.composerTray))
         .overlay(NookTheme.shape(NookTheme.Radius.sheet)
             .strokeBorder(NookTheme.fieldStroke, style: StrokeStyle(lineWidth: 1, dash: hovering || expanded ? [] : [4, 3])))
         .contentShape(NookTheme.shape(NookTheme.Radius.sheet))
