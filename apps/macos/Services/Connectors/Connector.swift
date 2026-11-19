@@ -160,6 +160,9 @@ enum ConnectorHTTP {
             : try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
+            if let http = response as? HTTPURLResponse, ConnectorErrorKind.isRateLimit(http, body: data) {
+                throw NookError(rateLimitMessage(http, data), kind: .rateLimited)
+            }
             switch status {
             case 401, 403: throw NookError("The credentials were rejected (\(status)). Check them in Settings › Integrations.", kind: .auth)
             case 404: throw NookError("Not found (404). Is the URL correct?", kind: .config)
@@ -168,5 +171,11 @@ enum ConnectorHTTP {
             }
         }
         return try JSONSerialization.jsonObject(with: data)
+    }
+
+    /// The service's own limit message in your language with the time it lifts (GitHub), or a plain "wait a moment".
+    static func rateLimitMessage(_ response: HTTPURLResponse, _ data: Data) -> String {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return GitHubRateLimit.message(response, object?["message"] as? String) ?? "Too many requests. Nook will retry shortly."
     }
 }

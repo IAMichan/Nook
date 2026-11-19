@@ -12,6 +12,22 @@ final class ConnectorErrorTests: XCTestCase {
         XCTAssertEqual(ConnectorErrorKind.forHTTP(status: 504), .network)
     }
 
+    /// GitHub answers a used-up rate limit with 403: that asks for a wait, not a new sign-in.
+    func testRateLimited403IsNotRejectedCredentials() {
+        let url = URL(string: "https://api.github.com/user")!
+        func response(_ status: Int, _ headers: [String: String] = [:]) -> HTTPURLResponse {
+            HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
+        }
+        let limitBody = Data(#"{"message":"API rate limit exceeded for user ID 1."}"#.utf8)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(403, ["X-RateLimit-Remaining": "0"]), body: nil), .rateLimited)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(403), body: limitBody), .rateLimited)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(403, ["Retry-After": "60"]), body: nil), .rateLimited)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(429), body: nil), .rateLimited)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(403, ["X-RateLimit-Remaining": "4999"]),
+                                                  body: Data(#"{"message":"Bad credentials"}"#.utf8)), .auth)
+        XCTAssertEqual(ConnectorErrorKind.forHTTP(response(401), body: limitBody), .auth)
+    }
+
     func testRetryAsksAgainAfterAPassingFailure() async throws {
         var calls = 0
         let value = try await ConnectorRetry.run(delay: 0) { () async throws -> Int in

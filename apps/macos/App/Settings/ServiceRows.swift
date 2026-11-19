@@ -392,5 +392,9 @@ private struct LinkedMCPServiceRow: View {
             ServiceSignInSheet(service: service, capabilities: SourceCapabilities.line(service.id,
                 tools: app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }))
         }
+        .onReceive(NotificationCenter.default.publisher(for: .connectorRepairRequested)) { note in
+            guard note.object as? String == connector.id, !signIn.isConnecting(config.id) else { return }
+            signIn.signIn(config, app: app)
+        }
     }
 }

@@ -131,6 +131,10 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
             ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
         }
         .onAppear { isOn = ConnectorToggle.isOn(connector.id) }
+        .onReceive(NotificationCenter.default.publisher(for: .connectorRepairRequested)) { note in
+            guard note.object as? String == connector.id, !signingIn else { return }
+            repair()
+        }
         .sheet(isPresented: $showSetup, onDismiss: {
             isOn = ConnectorToggle.isOn(connector.id)
             onChange()
