@@ -374,16 +374,17 @@ extension AgentRunPanel {
         // The watched pull request while it can still change, else the session's open one, else the one that merged or
         // closed: its state stays in view. A watch that ended never hides a newer open one. Only one that can still change
         // can be watched.
+        let aliases = PullRequestStatusStore.shared.repoAliases
         let watchable = watchablePullRequest()
         let pullRequest = SessionBranches.trayPullRequest(watch: watches.first, open: watchable,
-                                                          links: pullRequestSync.links[runID] ?? [])
-        let watch = pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches) }
+                                                          links: pullRequestSync.links[runID] ?? [], aliases: aliases)
+        let watch = pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches, aliases: aliases) }
         let canWatch = watch != nil || watchable != nil
         // A session that worked on more than one branch lists each, with the state of its pull request.
         let branches = workspace.run(runID).map { run in
             SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
                                  current: run.branch, currentPullRequest: pullRequest,
-                                 currentLinks: pullRequestSync.links[runID] ?? [])
+                                 currentLinks: pullRequestSync.links[runID] ?? [], aliases: aliases)
         } ?? []
         // A pull request the git button is writing or opening shows here already, where it will appear.
         let pending = workspace.quickGitProgress(runID).flatMap { $0.action.proposes ? $0.step : nil }
@@ -392,7 +393,8 @@ extension AgentRunPanel {
         // one being opened stay at the bottom, right above the box.
         // Every pull request the session watches shows too, not only the first; each request once.
         let others = SessionBranches.others(linked: pullRequestSync.others(run: runID), watches: watches,
-                                            shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 })
+                                            shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 },
+                                            aliases: aliases)
         let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
         if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
@@ -403,7 +405,7 @@ extension AgentRunPanel {
                                            jump: { quote in jumpToQuote(quote) })
                         if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
-                    ForEach(others) { link in otherRow(link, watches: watches) }
+                    ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases) }
                     if !branches.isEmpty {
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,
                                       pullRequestSync: pullRequestSync, showsOlderBranches: $showsOlderBranches)
@@ -443,9 +445,9 @@ extension AgentRunPanel {
     /// A pull request the session works on that is not its own branch's, in the same row as those: its state, title and
     /// checks, watched from here (CI and reviews then wake the agent) while it can still change.
     @ViewBuilder
-    private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch]) -> some View {
+    private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch], aliases: [String: String]) -> some View {
         if let url = URL(string: link.url) {
-            let watch = SessionBranches.watch(for: link.url, in: watches)
+            let watch = SessionBranches.watch(for: link.url, in: watches, aliases: aliases)
             PullRequestWatchStrip(url: url, watch: watch, title: link.title,
                                   toggle: watch != nil || (link.state.isOpen && PullRequestWatch.canWatch(url)) ? {
                 if watch == nil { workspace.watchPullRequest(runID, url: url) } else { workspace.stopWatchingPullRequest(runID, url: url) }

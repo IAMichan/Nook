@@ -26,17 +26,18 @@ enum LinkedPullRequests {
     /// The list as it reads from top to bottom: each chain from its bottom up, indented by depth, open chains first and
     /// the newest of those on top. A pull request found twice keeps the source closest to the session.
     static func lines(branch: [PullRequestLink], earlier: [PullRequestLink], yours: [PullRequestLink],
-                      dismissed: Set<String>) -> [LinkedPullRequest] {
+                      dismissed: Set<String>, aliases: [String: String] = [:]) -> [LinkedPullRequest] {
         var sources: [String: LinkedPullRequest.Source] = [:]
         var unique: [PullRequestLink] = []
         // The same request can come in under two repository names (a renamed repository): one line for it.
         var seen = Set<String>()
         // Taken off under either name is taken off.
-        let gone = Set((branch + yours + earlier).filter { dismissed.contains($0.id) }.map(\.placeID))
+        let gone = Set((branch + yours + earlier).filter { dismissed.contains($0.id) }.map { $0.placeID(aliases: aliases) })
         let found: [(links: [PullRequestLink], source: LinkedPullRequest.Source)] = [(branch, .branch), (yours, .you), (earlier, .earlierBranch)]
         for (links, source) in found {
-            for link in links where !gone.contains(link.placeID) && sources[link.id] == nil {
-                guard seen.insert(link.placeID).inserted else { continue }
+            for link in links {
+                let place = link.placeID(aliases: aliases)
+                guard !gone.contains(place), sources[link.id] == nil, seen.insert(place).inserted else { continue }
                 sources[link.id] = source
                 unique.append(link)
             }

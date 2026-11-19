@@ -657,4 +657,70 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertTrue(SessionBranches.others(linked: [linked], watches: [watch],
                                              shown: [URL(string: "https://github.com/acme/app/pull/7")!]).isEmpty)
     }
+
+    func testRenamedRepositoryCollapsesDuplicateTrayAndSidebarPullRequests() {
+        let aliases = ["github/infarishq/pulse": "github/infarishq/monorepo"]
+        let oldURL = URL(string: "https://github.com/InfarisHQ/pulse/pull/4655")!
+        let newURL = URL(string: "https://github.com/InfarisHQ/monorepo/pull/4655")!
+        let oldLink = PullRequestLink(host: .github, repository: "InfarisHQ/pulse", number: 4655,
+                                      url: oldURL.absoluteString, title: "feat(guard): inline add panel", state: .open, headBranch: "feat/guard")
+        let newLink = PullRequestLink(host: .github, repository: "InfarisHQ/monorepo", number: 4655,
+                                      url: newURL.absoluteString, title: "feat(guard): inline add panel", state: .merged, headBranch: "feat/guard")
+        let oldWatch = PullRequestWatch(url: oldURL.absoluteString)
+        var newWatch = PullRequestWatch(url: newURL.absoluteString)
+        newWatch.state = "merged"
+
+        // The tray never shows the same PR twice across `others`, `shown`, or two watches under old/new names.
+        XCTAssertEqual(SessionBranches.others(linked: [newLink, oldLink], watches: [newWatch, oldWatch], shown: [], aliases: aliases).count, 1)
+        XCTAssertTrue(SessionBranches.others(linked: [oldLink], watches: [oldWatch], shown: [newURL], aliases: aliases).isEmpty)
+        XCTAssertEqual(SessionBranches.watch(for: newURL.absoluteString, in: [oldWatch], aliases: aliases)?.url, oldURL.absoluteString)
+        XCTAssertEqual(SessionBranches.keeping([newLink], in: [oldLink], aliases: aliases).count, 1)
+        XCTAssertEqual(SessionBranches.keeping([newLink], in: [oldLink], aliases: aliases).first?.state, .merged)
+
+        // Branch rows deduplicate both alias URLs and different URL spellings of the same request.
+        let rows = SessionBranches.rows(earlier: ["feat/guard"], earlierLinks: [oldLink], current: "feat/next",
+                                        currentPullRequest: newURL, aliases: aliases)
+        XCTAssertEqual(rows.map(\.pullRequest), [oldURL, nil])
+
+        let casedRows = SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat/guard",
+                                             currentPullRequest: URL(string: "https://github.com/infarishq/monorepo/pull/4655/files")!,
+                                             currentLinks: [newLink], aliases: aliases)
+        XCTAssertTrue(casedRows.isEmpty, "one request on one branch needs no multi-row tray")
+
+        // Sidebar pull requests and agent prompt lines also collapse old and new repository names.
+        let sessionPRs = SessionPullRequests(current: [newLink, oldLink], earlier: [oldLink], aliases: aliases)
+        XCTAssertEqual(sessionPRs.current.count, 1)
+        XCTAssertTrue(sessionPRs.earlier.isEmpty)
+        let lines = LinkedPullRequests.lines(branch: [newLink], earlier: [oldLink], yours: [oldLink], dismissed: [], aliases: aliases)
+        XCTAssertEqual(lines.count, 1)
+    }
+
+    func testDeduplicatedWatchesMergesRenamedRepositoryWatchesIntoOneCanonicalWatch() {
+        let aliases = ["github/infarishq/pulse": "github/infarishq/monorepo"]
+        let oldURL = "https://github.com/InfarisHQ/pulse/pull/4655"
+        let newURL = "https://github.com/InfarisHQ/monorepo/pull/4655"
+        var openOld = PullRequestWatch(url: oldURL, wakeAgent: true)
+        openOld.checks = "success"
+        openOld.reviewCount = 2
+        openOld.commentCount = 1
+        openOld.checkedAt = Date(timeIntervalSince1970: 1_000)
+
+        var mergedNew = PullRequestWatch(url: newURL, wakeAgent: false)
+        mergedNew.state = "merged"
+        mergedNew.checks = ""
+        mergedNew.reviewCount = 1
+        mergedNew.commentCount = 3
+        mergedNew.checkedAt = Date(timeIntervalSince1970: 1_010)
+
+        let deduped = SessionBranches.deduplicatedWatches([openOld, mergedNew], aliases: aliases) { raw in
+            raw == oldURL ? newURL : raw
+        }
+        XCTAssertEqual(deduped.count, 1)
+        XCTAssertEqual(deduped.first?.url, newURL)
+        XCTAssertEqual(deduped.first?.state, "merged")
+        XCTAssertEqual(deduped.first?.checks, "success")
+        XCTAssertEqual(deduped.first?.reviewCount, 2)
+        XCTAssertEqual(deduped.first?.commentCount, 3)
+        XCTAssertEqual(deduped.first?.wakeAgent, true)
+    }
 }

@@ -377,9 +377,18 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
 
     /// `id` with the repository the URL names: after a rename on the forge the folder's remote keeps the old name while
     /// a link printed or added later uses the new one, and both are the same request.
-    var placeID: String {
+    var placeID: String { placeID(aliases: [:]) }
+
+    /// `placeID` resolved through known repository renames (`"github/old/repo" -> "github/new/repo"`).
+    func placeID(aliases: [String: String]) -> String {
         let current = PullRequestRef.parse(url)?.repository ?? repository
-        return "\(host.key)/\(current.lowercased())#\(number)"
+        var key = "\(host.key)/\(current.lowercased())"
+        var hops = 0
+        while let next = aliases[key], next != key, hops < 4 {
+            key = next
+            hops += 1
+        }
+        return "\(key)#\(number)"
     }
 
     /// Is this the request `number` in `repository`? `repository` comes from the folder's remote, which keeps the old name
@@ -763,10 +772,16 @@ enum SessionBranches {
 
     /// The pull requests of a branch the session left, added to the ones it left before (a newer read of the same
     /// request replaces the older one).
-    static func keeping(_ left: [PullRequestLink], in earlier: [PullRequestLink]) -> [PullRequestLink] {
+    static func keeping(_ left: [PullRequestLink], in earlier: [PullRequestLink],
+                        aliases: [String: String] = [:]) -> [PullRequestLink] {
         var list = earlier
         for link in left where !link.url.isEmpty {
-            if let index = list.firstIndex(where: { $0.url == link.url }) { list[index] = link } else { list.append(link) }
+            let target = place(link.url, aliases: aliases)
+            if let index = list.firstIndex(where: { place($0.url, aliases: aliases) == target }) {
+                list[index] = link
+            } else {
+                list.append(link)
+            }
         }
         return list
     }
@@ -782,10 +797,13 @@ enum SessionBranches {
     /// the session's open one (`open`), else the watched one that merged or closed, else the newest of `links`. A watch
     /// that ended never hides an open pull request the session made after it, as when a chat opens a new pull request
     /// from the branch of one that already merged.
-    static func trayPullRequest(watch: PullRequestWatch?, open: URL?, links: [PullRequestLink]) -> URL? {
+    static func trayPullRequest(watch: PullRequestWatch?, open: URL?, links: [PullRequestLink],
+                                aliases: [String: String] = [:]) -> URL? {
         let watched = watch.flatMap { URL(string: $0.url) }
         let live = watched.flatMap { url -> URL? in
-            let stillOpen = watch?.state == "open" && (links.first { $0.url == url.absoluteString }?.state.isOpen ?? true)
+            let target = place(url.absoluteString, aliases: aliases)
+            let stillOpen = watch?.state == "open"
+                && (links.first { place($0.url, aliases: aliases) == target }?.state.isOpen ?? true)
             return stillOpen ? url : nil
         }
         return live ?? open ?? watched ?? PullRequestLink.shown(in: links)
@@ -798,31 +816,36 @@ enum SessionBranches {
     /// be a watched request of an earlier branch; `currentLinks` are what the forge says the current branch has, so such
     /// a watch never hides the current branch's own pull request.
     static func rows(earlier: [String], earlierLinks: [PullRequestLink], current: String?, currentPullRequest: URL?,
-                     currentLinks: [PullRequestLink] = []) -> [Row] {
+                     currentLinks: [PullRequestLink] = [], aliases: [String: String] = [:]) -> [Row] {
+        func key(_ url: URL) -> String { place(url.absoluteString, aliases: aliases) }
         func newest(_ branch: String) -> URL? {
             earlierLinks.filter { $0.headBranch == branch }
                 .max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
                 .flatMap { URL(string: $0.url) }
         }
         let own = currentLinks.filter { $0.headBranch.map { $0 == current } ?? true }
-        let picked = currentPullRequest.flatMap { url in own.contains { $0.url == url.absoluteString } ? url : nil }
-            ?? PullRequestLink.shown(in: own) ?? currentPullRequest
+        let picked = currentPullRequest.flatMap { url in
+            own.contains { place($0.url, aliases: aliases) == key(url) } ? url : nil
+        } ?? PullRequestLink.shown(in: own) ?? currentPullRequest
+        let pickedKey = picked.map(key)
         let names = earlier.filter { $0 != current }
         var rows = names.map { Row(branch: $0, pullRequest: newest($0), isCurrent: false) }
+        var seen = Set(rows.compactMap(\.pullRequest).map(key))
         for link in earlierLinks where link.headBranch.map({ !names.contains($0) && $0 != current }) ?? true {
-            guard !link.url.isEmpty, let url = URL(string: link.url), url != picked,
-                  !rows.contains(where: { $0.pullRequest == url }) else { continue }
+            guard !link.url.isEmpty, let url = URL(string: link.url) else { continue }
+            let target = key(url)
+            guard target != pickedKey, seen.insert(target).inserted else { continue }
             rows.append(Row(branch: link.headBranch, pullRequest: url, isCurrent: false))
         }
         for link in own.sorted(by: { $0.number < $1.number }) {
-            guard !link.url.isEmpty, let url = URL(string: link.url), url != picked,
-                  !rows.contains(where: { $0.pullRequest == url }) else { continue }
+            guard !link.url.isEmpty, let url = URL(string: link.url) else { continue }
+            let target = key(url)
+            guard target != pickedKey, seen.insert(target).inserted else { continue }
             rows.append(Row(branch: current, pullRequest: url, isCurrent: true))
         }
         guard !rows.isEmpty else { return [] }
         // A pull request an earlier row already shows (one still watched after the switch) is not the current one.
-        let taken = Set(rows.compactMap(\.pullRequest))
-        let mine = [picked, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
+        let mine = [picked, current.flatMap(newest)].compactMap { $0 }.first { !seen.contains(key($0)) }
         rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
         return rows
     }
@@ -840,23 +863,66 @@ enum SessionBranches {
 
     /// Which request a link names, whatever its URL looks like: a watch, a link you added and a branch's list can spell the
     /// same request differently (a renamed repository, other letter case, a trailing path), and the tray shows it once.
-    static func place(_ url: String) -> String {
-        URL(string: url).flatMap(PullRequestLink.init(url:))?.placeID ?? url
+    static func place(_ url: String, aliases: [String: String] = [:]) -> String {
+        URL(string: url).flatMap(PullRequestLink.init(url:))?.placeID(aliases: aliases) ?? url
     }
 
-    /// The watch on the request `url` names, also when the watch spells its URL differently.
-    static func watch(for url: String, in watches: [PullRequestWatch]) -> PullRequestWatch? {
-        watches.first { $0.url == url } ?? watches.first { place($0.url) == place(url) }
+    /// The watch on the request `url` names, also when the watch spells its URL differently or under an old repository name.
+    static func watch(for url: String, in watches: [PullRequestWatch], aliases: [String: String] = [:]) -> PullRequestWatch? {
+        let target = place(url, aliases: aliases)
+        return watches.first { $0.url == url } ?? watches.first { place($0.url, aliases: aliases) == target }
     }
 
     /// The pull requests the tray lists above the session's own branches: the ones you linked plus every watched one,
     /// each request once and none that `shown` (the branch rows) already has, open first and the newest of those on top.
-    static func others(linked: [PullRequestLink], watches: [PullRequestWatch], shown: [URL]) -> [PullRequestLink] {
-        var seen = Set(shown.map { place($0.absoluteString) })
+    static func others(linked: [PullRequestLink], watches: [PullRequestWatch], shown: [URL],
+                       aliases: [String: String] = [:]) -> [PullRequestLink] {
+        var seen = Set(shown.map { place($0.absoluteString, aliases: aliases) })
         let watched = watches.compactMap { URL(string: $0.url).flatMap(PullRequestLink.init(url:)) }
         return (linked + watched)
-            .filter { URL(string: $0.url) != nil && seen.insert(place($0.url)).inserted }
+            .filter { URL(string: $0.url) != nil && seen.insert(place($0.url, aliases: aliases)).inserted }
             .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
+    }
+
+    /// Collapses watches that point to the same pull request (under another spelling or an old repository name),
+    /// rewriting each URL through `canonical` and keeping the settled or most recently checked state.
+    static func deduplicatedWatches(_ watches: [PullRequestWatch], aliases: [String: String] = [:],
+                                    canonical: (String) -> String = { $0 }) -> [PullRequestWatch] {
+        var result: [PullRequestWatch] = []
+        var indexByPlace: [String: Int] = [:]
+        for var watch in watches {
+            watch.url = canonical(watch.url)
+            let key = place(watch.url, aliases: aliases)
+            if let index = indexByPlace[key] {
+                result[index] = mergedWatch(result[index], watch)
+            } else {
+                indexByPlace[key] = result.count
+                result.append(watch)
+            }
+        }
+        return result
+    }
+
+    private static func mergedWatch(_ first: PullRequestWatch, _ second: PullRequestWatch) -> PullRequestWatch {
+        let firstSettled = first.state != "open"
+        let secondSettled = second.state != "open"
+        var winner: PullRequestWatch
+        let other: PullRequestWatch
+        if firstSettled != secondSettled {
+            winner = firstSettled ? first : second
+            other = firstSettled ? second : first
+        } else if (second.checkedAt ?? .distantPast) > (first.checkedAt ?? .distantPast) {
+            winner = second
+            other = first
+        } else {
+            winner = first
+            other = second
+        }
+        if winner.checks.isEmpty { winner.checks = other.checks }
+        winner.reviewCount = max(winner.reviewCount, other.reviewCount)
+        winner.commentCount = max(winner.commentCount, other.commentCount)
+        winner.wakeAgent = winner.wakeAgent || other.wakeAgent
+        return winner
     }
 }
 
@@ -868,10 +934,10 @@ struct SessionPullRequests: Equatable, Sendable {
     /// Newest first, without the ones `current` already has.
     var earlier: [PullRequestLink]
 
-    init(current: [PullRequestLink], earlier: [PullRequestLink] = []) {
+    init(current: [PullRequestLink], earlier: [PullRequestLink] = [], aliases: [String: String] = [:]) {
         var seen = Set<String>()
-        self.current = current.filter { seen.insert($0.id).inserted }
-        self.earlier = earlier.filter { seen.insert($0.id).inserted }
+        self.current = current.filter { seen.insert($0.placeID(aliases: aliases)).inserted }
+        self.earlier = earlier.filter { seen.insert($0.placeID(aliases: aliases)).inserted }
             .sorted { ($0.updatedAt ?? .distantPast, $0.number) > ($1.updatedAt ?? .distantPast, $1.number) }
     }
 

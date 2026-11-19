@@ -118,7 +118,8 @@ struct AgentInboxList: View {
     private var pullRequestSources: InboxPullRequestMemo.Sources {
         InboxPullRequestMemo.Sources(
             links: pullRequests.links, folderLinks: pullRequests.folderLinks, earlier: pullRequests.earlier,
-            added: pullRequests.added, dismissed: pullRequests.dismissed, statuses: pullRequestStatuses.statuses)
+            added: pullRequests.added, dismissed: pullRequests.dismissed, statuses: pullRequestStatuses.statuses,
+            aliases: pullRequestStatuses.repoAliases)
     }
 
     /// A row's pull request badges (`sessionPullRequests`), kept per row until the pull requests or what the row reads
@@ -150,33 +151,40 @@ struct AgentInboxList: View {
     /// the sync has found one, the pull request the chat itself shows: the same one as the tray above its composer. Like
     /// that tray, the ones it works on besides its branches' (linked, or opened elsewhere and watched) count too.
     private func sessionPullRequests(_ item: AgentListItem, reply: String?) -> SessionPullRequests {
+        let aliases = pullRequestStatuses.repoAliases
         if let id = runID(item) {
             let earlier = pullRequestStatuses.current(pullRequests.earlier[id] ?? [])
+            let earlierPlaces = Set(earlier.map { $0.placeID(aliases: aliases) })
             // An earlier branch's own request stays under that heading, not with these.
-            let others = otherPullRequests(run: id).filter { link in !earlier.contains { $0.id == link.id } }
+            let others = otherPullRequests(run: id, aliases: aliases)
+                .filter { !earlierPlaces.contains($0.placeID(aliases: aliases)) }
             if let links = pullRequests.links[id], !links.isEmpty {
-                return SessionPullRequests(current: pullRequestStatuses.current(links) + others, earlier: earlier)
+                return SessionPullRequests(current: pullRequestStatuses.current(links) + others, earlier: earlier, aliases: aliases)
             }
             // The watched one may be one of an earlier branch: it is listed there, not as this branch's.
             let known = knownPullRequest(run: id).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
-            return SessionPullRequests(current: pullRequestStatuses.current(known.filter { link in !earlier.contains { $0.id == link.id } }) + others,
-                                       earlier: earlier)
+            return SessionPullRequests(
+                current: pullRequestStatuses.current(known.filter { !earlierPlaces.contains($0.placeID(aliases: aliases)) }) + others,
+                earlier: earlier, aliases: aliases)
         }
         if let branch = item.branch,
            let links = pullRequests.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)], !links.isEmpty {
-            return SessionPullRequests(current: pullRequestStatuses.current(links))
+            return SessionPullRequests(current: pullRequestStatuses.current(links), aliases: aliases)
         }
         // The session's last reply, as `pullRequestBadges` read it: an earlier session's, or the running one's.
         let printed = reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
-        return SessionPullRequests(current: pullRequestStatuses.current(printed))
+        return SessionPullRequests(current: pullRequestStatuses.current(printed), aliases: aliases)
     }
 
     /// The pull requests a session works on besides its branches', as the tray above its composer lists them: the ones
     /// linked to it, then every one it watches that is not linked. Open first, newest number first.
-    private func otherPullRequests(run id: UUID) -> [PullRequestLink] {
+    private func otherPullRequests(run id: UUID, aliases: [String: String]) -> [PullRequestLink] {
         let linked = pullRequests.others(run: id)
-        let watched = (app.workspace.run(id)?.prWatches ?? []).compactMap { watch in
-            linked.contains { $0.url == watch.url } ? nil : URL(string: watch.url).flatMap(PullRequestLink.init(url:))
+        var seen = Set(linked.map { $0.placeID(aliases: aliases) })
+        let watched = (app.workspace.run(id)?.prWatches ?? []).compactMap { watch -> PullRequestLink? in
+            guard let url = URL(string: watch.url), let link = PullRequestLink(url: url),
+                  seen.insert(link.placeID(aliases: aliases)).inserted else { return nil }
+            return link
         }
         return (linked + pullRequestStatuses.current(watched))
             .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
@@ -1511,6 +1519,7 @@ final class InboxPullRequestMemo {
         let added: [String: [PullRequestLink]]
         let dismissed: [String: Set<String>]
         let statuses: [String: PullRequestStatus]
+        let aliases: [String: String]
     }
 
     struct RowKey: Equatable {

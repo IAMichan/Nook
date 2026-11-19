@@ -320,7 +320,13 @@ extension AppModel {
         workspace.pullRequestEvents = { GitHubPullRequestEventStream.changes($0) }
         // The tray above the composer reads its pull request with the same accounts, into the one shared status.
         PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
-        PullRequestSync.shared.seedStatuses(watches: workspace.runs.compactMap(\.prWatch))
+        PullRequestStatusStore.shared.onAliasRecorded = { [weak workspace] in
+            workspace?.deduplicatePullRequestWatches()
+            PullRequestSync.shared.deduplicateStored()
+        }
+        PullRequestSync.shared.seedStatuses(watches: workspace.runs.flatMap(\.prWatches))
+        workspace.deduplicatePullRequestWatches()
+        PullRequestSync.shared.deduplicateStored()
         workspace.pullRequestLookup = { repo, branch in
             guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return (nil, false) }
             let open = found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }

@@ -116,8 +116,8 @@ extension WorkspaceManager {
             let repository = await sync.repository(directory: directory)
             for ref in refs.prefix(Self.mentionsPerEvent) {
                 guard let host = ref.host ?? repository?.host, let path = ref.repository ?? repository?.path else { continue }
-                let id = PullRequestLink(host: host, repository: path, number: ref.number).id
-                guard !sync.knows(id, session: key) else { continue }
+                let candidate = PullRequestLink(host: host, repository: path, number: ref.number, url: ref.url?.absoluteString ?? "")
+                guard !sync.knows(candidate, session: key) else { continue }
                 if let link = await PullRequestResolver.resolve(ref, repository: repository, mustExist: mustExist) {
                     sync.mention(link, session: key)
                 }
