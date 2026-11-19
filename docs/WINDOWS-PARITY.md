@@ -664,7 +664,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ### 5.5 Suggestions, notices and calls
 
-- [ ] **CH-60** Browser extension: native-messaging host for Chrome, Edge and Brave, the `chrome_*` tools, Settings page (`BrowserExtensionService/Host/Hub/Tools/Look`, `BrowserExtensionSection`, #1573, #1627) in `src-tauri/src/browser_ext/` · L
+- [ ] **CH-60** Browser extension: native-messaging host for Chrome, Edge and Brave, the `chrome_*` tools, Settings page (`BrowserExtensionService/Host/Hub/Tools/Look`, `BrowserExtensionSection`, #1573, #1627), and live side panel tasks that ask per step in the panel (`BrowserTask`, `ToolRunner.performs`) in `src-tauri/src/browser_ext/` · L
 
 - [ ] **CH-61** Suggested reply as ghost text in the empty field (#1654), ghost completion while typing · S
 
