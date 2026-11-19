@@ -76,7 +76,10 @@ final class CompactionProgressTests: XCTestCase {
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"system","subtype":"status","status":null,"compact_result":"success"}"#), [],
                        "the result is compact_boundary")
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"manual"}}"#),
-                       [.notice("compact")])
+                       [.compacted(contextAfter: nil)])
+        // A `/compact` turn reports no usage: the size after it comes only from here.
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"manual","pre_tokens":41245,"post_tokens":14540}}"#),
+                       [.compacted(contextAfter: 14540)])
         XCTAssertFalse(ClaudeStreamEvent.isWork(.compaction(.started)))
     }
 

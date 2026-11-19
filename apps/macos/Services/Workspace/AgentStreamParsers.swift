@@ -124,8 +124,11 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case result(ClaudeTurnResult)
     case notice(String)
     /// Claude Code started compacting the conversation (`system/status` with `status: "compacting"`), or a compaction
-    /// failed (`compact_result: "failed"`); the result itself is the `compact` notice (`compact_boundary`).
+    /// failed (`compact_result: "failed"`); the result itself is `compacted` (`compact_boundary`).
     case compaction(CompactionPhase)
+    /// The conversation is compacted (`compact_boundary`), with the tokens it holds now (`post_tokens`) when Claude Code
+    /// says them. A `/compact` turn reports no usage of its own, so this is the only word of the smaller context.
+    case compacted(contextAfter: Int?)
     /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
     /// A limit changed; with the details when Claude Code gave them (a blocked window and when it resets).
     case rateLimits(UsageLimits.ClaudeEvent?)
@@ -252,7 +255,10 @@ enum ClaudeStreamParser {
                 if object["mcp_servers"] != nil { events.append(.connectorsNeedingSignIn(ConnectorSignIns.claude(object["mcp_servers"]))) }
                 return events
             }
-            if subtype == "compact_boundary" { return [.notice("compact")] }
+            if subtype == "compact_boundary" {
+                let after = ((object["compact_metadata"] as? [String: Any])?["post_tokens"] as? NSNumber)?.intValue
+                return [.compacted(contextAfter: after)]
+            }
             if subtype == "status" {
                 if object["status"] as? String == "compacting" { return [.compaction(.started)] }
                 if object["compact_result"] as? String == "failed" { return [.compaction(.failed(object["compact_error"] as? String))] }
