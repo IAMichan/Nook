@@ -427,6 +427,52 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertEqual(BrowserExtensionTools.summary(open, ["url": "back"], refs: refs), tr("browserExt.summary.back") + " · mail.example.com")
     }
 
+    func testALiveStepGoesToTheBrowserWithWhatTheSidePanelAsks() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Google Chrome"])
+        let poll = send(hub, "c1", ["kind": "poll"])
+        let click = BrowserExtensionTools.definition("chrome_click")!
+        hub.send("click", params: ["ref": "e3"], browser: "c1", timeout: 5,
+                 ask: BrowserTask.ask(click, ["ref": "e3"], summary: "Click button “Next”")) { _ in }
+        let ask = poll.object?["ask"] as? [String: Any]
+        XCTAssertEqual(ask?["summary"] as? String, "Click button “Next”")
+        XCTAssertEqual(ask?["submits"] as? Bool, false)
+
+        let type = BrowserExtensionTools.definition("chrome_type")!
+        XCTAssertEqual(BrowserTask.ask(type, ["ref": "e4", "value": "Hi", "submit": true], summary: "")["submits"] as? Bool, true,
+                       "typing that sends a form always asks in the side panel")
+        let plain = send(hub, "c1", ["kind": "poll"])
+        hub.send("read", params: [:], browser: nil, timeout: 5) { _ in }
+        XCTAssertNil(plain.object?["ask"], "a command approved in Nook carries no ask")
+    }
+
+    func testOnlyTheBrowsersActionsRunLiveInATask() {
+        XCTAssertTrue(BrowserTask.isLive("chrome_click"))
+        XCTAssertTrue(BrowserTask.isLive("chrome_open"))
+        XCTAssertFalse(BrowserTask.isLive("chrome_read"), "reads run as always")
+        XCTAssertFalse(BrowserTask.isLive("send_mail"), "other actions stay proposals")
+        XCTAssertTrue(BrowserTask.liveReads.contains("chrome_find"), "a page that changed is read again")
+    }
+
+    func testOnlyAnExtensionThatAsksFirstGetsLiveSteps() {
+        XCTAssertTrue(BrowserTask.supported(extensionVersion: "1.4.0"))
+        XCTAssertTrue(BrowserTask.supported(extensionVersion: "1.10"))
+        XCTAssertTrue(BrowserTask.supported(extensionVersion: "2.0.0"))
+        XCTAssertFalse(BrowserTask.supported(extensionVersion: "1.3.0"), "it would run a step without asking")
+        XCTAssertFalse(BrowserTask.supported(extensionVersion: ""))
+        XCTAssertFalse(BrowserTask.supported(extensionVersion: "0.9"))
+    }
+
+    func testAStepsResultNamesTheElementsForTheNextApproval() throws {
+        let refs = BrowserExtensionRefs()
+        refs.learn("Shop | https://shop.example/\n[e1] link \"Shoes\"", tab: 2)
+        refs.learn("Now: Shop | https://shop.example/\nIn view:\n[e9] button \"Next\"", tab: 2, merge: true)
+        XCTAssertEqual(refs.name("e1", tab: 2), "link “Shoes”", "what was known stays")
+        XCTAssertEqual(refs.name("e9", tab: 2), "button “Next”")
+        refs.learn("Now: Bank | https://bank.example/\nIn view:\n[e2] button \"Go\"", tab: 2, merge: true)
+        XCTAssertNil(refs.name("e1", tab: 2), "another site starts over")
+    }
+
     func testTheSidePanelsPageGoesAlongAsANote() {
         let page = BrowserExtensionPanel.Page(["title": "Invoice 12", "url": "https://shop.example.com/invoice/12", "tab": 4])
         XCTAssertNotNil(page)

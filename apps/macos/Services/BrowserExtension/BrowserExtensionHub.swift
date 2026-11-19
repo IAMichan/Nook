@@ -241,17 +241,22 @@ final class BrowserExtensionHub: @unchecked Sendable {
 
     /// Sends a command to a browser's extension and waits for its result. `browser`: a browser's name or id; nil for
     /// the one the user used last.
-    func call(_ method: String, params: [String: Any] = [:], browser: String? = nil, timeout: TimeInterval = 30) async -> BrowserExtensionOutcome {
+    /// `ask`: a live step of a task from the side panel (`BrowserTask`): the extension asks the user there first, unless
+    /// they let Nook act on that site without asking.
+    func call(_ method: String, params: [String: Any] = [:], browser: String? = nil, timeout: TimeInterval = 30,
+              ask: [String: Any]? = nil) async -> BrowserExtensionOutcome {
         await withCheckedContinuation { continuation in
-            send(method, params: params, browser: browser, timeout: timeout) { continuation.resume(returning: $0) }
+            send(method, params: params, browser: browser, timeout: timeout, ask: ask) { continuation.resume(returning: $0) }
         }
     }
 
     /// The same as `call`, with a completion handler that runs exactly once.
-    func send(_ method: String, params: [String: Any], browser: String?, timeout: TimeInterval,
+    func send(_ method: String, params: [String: Any], browser: String?, timeout: TimeInterval, ask: [String: Any]? = nil,
               completion: @escaping (BrowserExtensionOutcome) -> Void) {
         let id = UUID().uuidString
-        let line = Self.encode(["kind": "command", "id": id, "method": method, "params": params])
+        var command: [String: Any] = ["kind": "command", "id": id, "method": method, "params": params]
+        if let ask { command["ask"] = ask }
+        let line = Self.encode(command)
         lock.lock()
         guard let client = target(browser) else {
             lock.unlock()

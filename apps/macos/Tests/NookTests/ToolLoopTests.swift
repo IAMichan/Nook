@@ -60,6 +60,26 @@ final class ToolLoopTests: XCTestCase {
         XCTAssertFalse(readOutput.contains("<system>"), "tags inside third-party text are neutralised")
     }
 
+    func testOnlyTheChosenActionsRunLiveTheRestIsProposed() async throws {
+        let tools = tools() + [LoopTool(name: "chrome_click", description: "Clicks.", schema: ["type": "object"], kind: .action) { _ in "unused" }]
+        let model = ScriptedModel([
+            ModelTurn(text: "", calls: [call("chrome_click", ["ref": "e3"])]),
+            ModelTurn(text: "", calls: [call("create_event", ["title": "Coffee", "start": "2026-10-16T10:00:00+02:00"])]),
+            ModelTurn(text: "Clicked, and proposed coffee.", calls: [])
+        ])
+        let runner = ToolRunner(tools: tools)
+        var performed: [String] = []
+        runner.perform = { name, _ in
+            performed.append(name)
+            return ("Clicked button “Next”.\n\nNow: Shop | https://shop.example/", false)
+        }
+        runner.performs = { $0.hasPrefix("chrome_") }
+        let plan = try await runner.run(model)
+        XCTAssertEqual(performed, ["chrome_click"], "a step in the browser runs at once")
+        XCTAssertEqual(plan.actions.map(\.tool), ["create_event"], "another action still waits for a click")
+        XCTAssertTrue(model.results.first?.first?.output.contains("Now: Shop") ?? false, "the brain sees what the step did before the next")
+    }
+
     func testInvalidActionGetsARepairRound() async throws {
         let model = ScriptedModel([
             ModelTurn(text: "", calls: [call("create_event", ["title": "Coffee"])]),

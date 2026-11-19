@@ -532,3 +532,21 @@ button.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 1
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Acting without asking on this site: a second, quieter row under the site's own switch. */
+.site.trust { margin-top: var(--space-xs); }
+.site.trust .site-name { font-size: var(--detail); font-weight: 500; }
+
+/* A step of a task waiting for the user's yes. */
+.approvals { display: flex; flex-direction: column; gap: var(--space-sm); padding: 0 var(--pad-xl) var(--space-sm); }
+.approval {
+  padding: var(--space-md) var(--pad-lg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.approval.final { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 9%, var(--surface)); }
+.approval-title { color: var(--text-tertiary); font-size: var(--caption); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.approval-step { margin-top: var(--space-xs); color: var(--paper); font-size: var(--body); line-height: 1.4; overflow-wrap: anywhere; }
+.approval-note { margin-top: var(--space-xs); color: var(--amber); font-size: var(--label); line-height: 1.35; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-md); }

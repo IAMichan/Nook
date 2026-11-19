@@ -1097,6 +1097,9 @@ enum ReplyContext {
     /// (`BrowserExtensionPanel.Page`): it goes with the question like a dropped file, so Nook answers about the page at
     /// once instead of first reading it with a tool. Only when the conversation's sources allow the browser extension.
     @TaskLocal static var page: ScreenSnapshot?
+    /// A question from the browser's side panel: its steps in that browser run live, one at a time, each result seen
+    /// before the next (`BrowserTask`), as in Claude in Chrome, instead of becoming a plan to run on the Mac.
+    @TaskLocal static var browserTask: BrowserTask?
     /// What the chosen brain found for a question both brains work on (`ScreenBrain.needsBoth`).
     @TaskLocal static var outside = ""
     /// The note the model on this Mac wrote for the chosen brain (`PrivateBrief`), and the mail addresses it read: those

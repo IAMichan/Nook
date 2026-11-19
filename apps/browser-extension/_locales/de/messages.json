@@ -42,7 +42,7 @@
     "message": "Der Browser behält seine eigenen Seiten für sich; Nook kann sie nicht lesen oder bedienen."
   },
   "siteAllowed": {
-    "message": "Nook darf diese Seite lesen und darauf arbeiten, wenn du es möchtest, nachdem du auf dem Mac zustimmst."
+    "message": "Nook darf auf dieser Seite lesen und arbeiten, wenn du darum bittest."
   },
   "siteBlocked": {
     "message": "Für diese Seite aus: Nook liest und berührt sie nicht."
@@ -69,7 +69,7 @@
     "message": "Noch nichts."
   },
   "intro": {
-    "message": "Frag Nook zu dieser Seite oder bitte es, hier etwas zu tun. Nook fragt dich auf dem Mac, bevor es klickt, tippt oder etwas öffnet."
+    "message": "Frag Nook zu dieser Seite oder bitte es, hier etwas zu tun. Nook macht es Schritt für Schritt und fragt dich hier, bevor es klickt, tippt oder etwas öffnet."
   },
   "askPlaceholder": {
     "message": "Frag Nook…"
@@ -259,5 +259,35 @@
   },
   "pickFailed": {
     "message": "Auswählen hat nicht geklappt. Lade die Seite neu und versuche es erneut."
+  },
+  "trustName": {
+    "message": "Ohne Nachfrage handeln"
+  },
+  "trustSwitch": {
+    "message": "Nook auf $1 ohne Nachfrage handeln lassen"
+  },
+  "trustOn": {
+    "message": "Nook klickt und tippt hier, ohne vorher zu fragen. Bezahlen, Senden und Löschen fragt es weiterhin."
+  },
+  "trustOff": {
+    "message": "Nook fragt hier vor jedem Klick und jedem Text, den es tippt."
+  },
+  "approvalTitle": {
+    "message": "Nook möchte"
+  },
+  "approvalUnnamed": {
+    "message": "Einen Schritt auf dieser Seite machen"
+  },
+  "approvalFinal": {
+    "message": "Das lässt sich nicht rückgängig machen: Es kann etwas bezahlen, senden, löschen oder buchen."
+  },
+  "approvalAllow": {
+    "message": "Erlauben"
+  },
+  "approvalAlways": {
+    "message": "Immer auf $1"
+  },
+  "approvalDeny": {
+    "message": "Nicht erlauben"
   }
 }

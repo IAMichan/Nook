@@ -303,3 +303,84 @@ test('a page that redirects to a site the user switched off is never touched: no
   assert.match(result.text, /switched Nook off/);
 });
 
+
+// A task from the side panel: its steps come with `ask` and wait for the user's yes there, unless they let Nook act on
+// the site without asking; a step that cannot be undone always asks.
+const shopTabs = () => [{ id: 1, windowId: 1, url: 'https://shop.example/', title: 'Shop', status: 'complete', active: true, groupId: -1 }];
+const agentSays = (chrome, intent) => {
+  chrome.scripting.executeScript = async ({ args }) => {
+    if (args?.[0] === 'intent') return [{ result: { ok: true, words: intent } }];
+    return [{ result: { ok: true, text: 'Clicked.', element: 'button', signIn: { needed: false }, look: { ok: true, text: 'Now: Shop | https://shop.example/' } } }];
+  };
+};
+const step = (id, ask = { summary: 'Click button “Next” · shop.example' }) => ({ kind: 'command', id, method: 'click', params: { tab: 1, ref: 'e1' }, ask });
+
+test('a step of a task waits for the user in the side panel, and runs once allowed', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs() });
+  agentSays(chrome, 'button “Next”');
+  ports[0].onMessage.fire(step('s1'));
+  await wait(50);
+  await settle();
+  const cards = chrome.storage.session.data.approvals;
+  assert.equal(cards?.length, 1);
+  assert.equal(cards[0].summary, 'Click button “Next” · shop.example');
+  assert.equal(cards[0].final, false);
+  assert.ok(ports[0].sent.some((m) => m.kind === 'extend' && m.id === 's1'), 'Nook gives the step more time while the user decides');
+  assert.equal(ports[0].sent.find((m) => m.kind === 'result'), undefined, 'nothing ran yet');
+  assert.deepEqual(await message(chrome, { type: 'decide', id: 's1', decision: 'site' }, panel), { ok: true });
+  await wait(100);
+  await settle();
+  const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 's1');
+  assert.equal(result?.ok, true, result?.error);
+  assert.deepEqual(chrome.storage.local.data.trusted, ['shop.example']);
+  assert.deepEqual(chrome.storage.session.data.approvals, []);
+});
+
+test('on a site that acts without asking a step runs at once, but paying still asks', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs(), local: { trusted: ['shop.example'] } });
+  agentSays(chrome, 'button “Next”');
+  ports[0].onMessage.fire(step('s2'));
+  await wait(100);
+  await settle();
+  assert.equal(ports[0].sent.find((m) => m.kind === 'result' && m.id === 's2')?.ok, true);
+  assert.ok(!chrome.storage.session.data.approvals?.length);
+
+  agentSays(chrome, 'button “Pay now”');
+  ports[0].onMessage.fire(step('s3', { summary: 'Click button “Pay now”' }));
+  await wait(50);
+  await settle();
+  const cards = chrome.storage.session.data.approvals;
+  assert.equal(cards?.length, 1);
+  assert.equal(cards[0].final, true);
+  // "Always" is no answer for a final step: it counts as no.
+  await message(chrome, { type: 'decide', id: 's3', decision: 'site' }, panel);
+  await wait(50);
+  await settle();
+  const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 's3');
+  assert.equal(result.ok, false);
+  assert.match(result.error, /said no/);
+});
+
+test('pausing Nook refuses every step that waits, and a page cannot answer for the user', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs() });
+  agentSays(chrome, 'button “Next”');
+  ports[0].onMessage.fire(step('s4'));
+  await wait(50);
+  await settle();
+  assert.deepEqual(await message(chrome, { type: 'decide', id: 's4', decision: 'once' }, page), { ok: false, error: 'Not allowed.' });
+  await message(chrome, { type: 'pause', paused: true }, page);
+  await wait(50);
+  await settle();
+  const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 's4');
+  assert.equal(result.ok, false);
+});
+
+test('a step without ask (approved in Nook already) never waits in the side panel', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs() });
+  agentSays(chrome, 'button “Send”');
+  ports[0].onMessage.fire({ kind: 'command', id: 's5', method: 'click', params: { tab: 1, ref: 'e1' } });
+  await wait(100);
+  await settle();
+  assert.equal(ports[0].sent.find((m) => m.kind === 'result' && m.id === 's5')?.ok, true);
+  assert.ok(!chrome.storage.session.data.approvals?.length);
+});

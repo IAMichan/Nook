@@ -94,6 +94,19 @@
     </label>
   </section>
 
+  <!-- Whether Nook asks before each step of a task here, or acts on this site without asking (paying, sending and
+       deleting always ask). -->
+  <section id="trust" class="site trust" hidden>
+    <div class="grow">
+      <div class="site-name" data-i18n="trustName"></div>
+      <div id="trust-note" class="site-note"></div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="trust-switch" role="switch">
+      <span aria-hidden="true"></span>
+    </label>
+  </section>
+
   <div class="chat-wrap">
   <main id="chat" class="chat" aria-live="polite" tabindex="-1">
     <div id="empty" class="empty">
@@ -131,6 +144,9 @@
       <ul id="activity"></ul>
     </details>
   </section>
+
+  <!-- The steps of a task waiting for the user's yes (a task from this panel runs live in the browser). -->
+  <section id="approvals" class="approvals" aria-live="assertive" hidden></section>
 
   <!-- Nook's shared composer (packages/web-ui), mounted by sidepanel.js from ui/composer.js. -->
   <div id="composer" class="composer"></div>

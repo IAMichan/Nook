@@ -49,6 +49,76 @@ export function isBlocked(url, blocked) {
   return (blocked || []).some((entry) => site === entry || site.endsWith('.' + entry));
 }
 
+// MARK: - Asking before a step of a task from the side panel
+
+/**
+ * Words on a button (or a form's send button) for a step that cannot be undone: paying, ordering, sending, deleting,
+ * booking, signing up, publishing, confirming. Such a step always waits for the user's yes in the side panel, also on a
+ * site they let Nook act on without asking. In Nook's five languages; stems, so "bestellen" and "Bestellung" count.
+ */
+const NO_RETURN_WORDS = [
+  // Whole words only: short ones that also start other words ("Postcode", "Bookmarks", "Placeholder").
+  'pay', 'buy', 'order', 'send', 'submit', 'delete', 'remove', 'book', 'reserve', 'transfer', 'donate', 'publish', 'post',
+  'confirm', 'cancel', 'place order', 'sign up', 'check out', 'checkout', 'purchase', 'subscribe', 'unsubscribe',
+  'koop', 'boek', 'stuur', 'wis', 'plaats', 'kauf', 'kaufen', 'buchen', 'spenden', 'zahlen', 'senden', 'pagar', 'donar'
+];
+const NO_RETURN_STEMS = [
+  // Dutch
+  'betaal', 'betalen', 'kopen', 'bestel', 'afrekenen', 'verstuur', 'versturen', 'verzend', 'verwijder', 'reserveer',
+  'overmaken', 'doneer', 'abonneer', 'opzeg', 'zeg op', 'publiceer', 'bevestig', 'annuleer', 'aanmelden', 'inschrijven',
+  // German
+  'bezahl', 'bestell', 'zur kasse', 'absenden', 'versenden', 'lösch', 'entfern', 'reservier', 'überweis', 'abonnier',
+  'kündig', 'veröffentlich', 'bestätig', 'storn', 'registrier',
+  // French
+  'payer', 'paiement', 'acheter', 'commander', 'envoyer', 'supprimer', 'réserver', 'virement', 'faire un don',
+  's\'abonner', 'désabonner', 'publier', 'confirmer', 'valider', 'annuler', 's\'inscrire',
+  // Spanish
+  'comprar', 'pedido', 'enviar', 'eliminar', 'borrar', 'reservar', 'transferir', 'suscrib', 'publicar', 'confirmar',
+  'cancelar', 'registrar'
+];
+const escaped = (words) => words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+/**
+ * Words on a button (or a form's send button) for a step that cannot be undone: paying, ordering, sending, deleting,
+ * booking, signing up, publishing, confirming. Such a step always waits for the user's yes in the side panel, also on a
+ * site they let Nook act on without asking. In Nook's five languages; stems where a word has many forms.
+ */
+const POINT_OF_NO_RETURN = new RegExp(
+  `(?:^|[^\\p{L}])(?:(?:${escaped(NO_RETURN_WORDS)})(?![\\p{L}])|(?:${escaped(NO_RETURN_STEMS)}))`, 'iu');
+
+/** True when a step's words say it cannot be undone (`POINT_OF_NO_RETURN`). */
+export function pointOfNoReturn(words) {
+  return typeof words === 'string' && POINT_OF_NO_RETURN.test(words);
+}
+
+/**
+ * Whether a step of a task from the side panel must wait for the user's yes there. Not when they let Nook act on the
+ * step's site without asking (`trusted`, subdomains included) and nothing about the step is final; always when it is
+ * (`ask.submits` from Nook: typing that sends a form, or the words on what it clicks).
+ */
+export function mustAsk({ url, trusted, submits = false, words = '' }) {
+  if (submits || pointOfNoReturn(words)) return { ask: true, final: true };
+  return { ask: !siteOf(url) || !isBlocked(url, trusted), final: false };
+}
+
+/** A step waiting for the user, as the side panel's card shows it: only plain, clipped text. */
+export function approvalCard(id, ask, site, final) {
+  if (typeof id !== 'string' || !id) return null;
+  return {
+    id: id.slice(0, 64),
+    summary: clip(typeof ask?.summary === 'string' ? ask.summary.replace(/\s+/g, ' ').trim() : '', 240),
+    site: typeof site === 'string' ? site.slice(0, 120) : '',
+    final: !!final,
+    at: Date.now()
+  };
+}
+
+/** What the side panel may answer for a step: once, always on this site (never for a final step), or no. */
+export function approvalDecision(decision, card) {
+  if (decision === 'once' || decision === 'deny') return decision;
+  if (decision === 'site' && card && !card.final && card.site) return 'site';
+  return 'deny';
+}
+
 /**
  * An address the user or Nook typed, made openable: "example.com" becomes https, plain http only for this Mac.
  * Returns null for anything else (a script, a file, the browser's own pages).

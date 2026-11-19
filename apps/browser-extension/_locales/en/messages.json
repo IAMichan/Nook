@@ -42,7 +42,7 @@
     "message": "The browser keeps its own pages to itself; Nook cannot read or use them."
   },
   "siteAllowed": {
-    "message": "Nook may read and work on this site when you ask, after you approve on your Mac."
+    "message": "Nook may read and work on this site when you ask."
   },
   "siteBlocked": {
     "message": "Off for this site: Nook will not read or touch it."
@@ -69,7 +69,7 @@
     "message": "Nothing yet."
   },
   "intro": {
-    "message": "Ask Nook about this page, or ask it to do something here. Nook asks you on your Mac before it clicks, types or opens anything."
+    "message": "Ask Nook about this page, or ask it to do something here. Nook does it step by step and asks you here before it clicks, types or opens anything."
   },
   "askPlaceholder": {
     "message": "Ask Nook…"
@@ -259,5 +259,35 @@
   },
   "pickFailed": {
     "message": "Selecting did not work. Reload the page and try again."
+  },
+  "trustName": {
+    "message": "Act without asking"
+  },
+  "trustSwitch": {
+    "message": "Let Nook act on $1 without asking"
+  },
+  "trustOn": {
+    "message": "Nook clicks and types here without asking first. Paying, sending and deleting still ask."
+  },
+  "trustOff": {
+    "message": "Nook asks here before each click and each text it types."
+  },
+  "approvalTitle": {
+    "message": "Nook wants to"
+  },
+  "approvalUnnamed": {
+    "message": "Take a step on this page"
+  },
+  "approvalFinal": {
+    "message": "This can't be undone: it may pay, send, delete or book something."
+  },
+  "approvalAllow": {
+    "message": "Allow"
+  },
+  "approvalAlways": {
+    "message": "Always on $1"
+  },
+  "approvalDeny": {
+    "message": "Don't allow"
   }
 }

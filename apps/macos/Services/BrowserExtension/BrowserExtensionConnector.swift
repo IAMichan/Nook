@@ -60,14 +60,24 @@ final class BrowserExtensionConnector: ContextSource {
         )
     }
 
-    private static func run(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any]) async throws -> String {
+    /// One live step of a task from the side panel (`BrowserTask`): the side panel asks the user first unless they let
+    /// Nook act on that site without asking. What the page shows after it comes back as the result.
+    static func runLive(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any], summary: String) async -> (output: String, isError: Bool) {
+        do {
+            return (try await run(definition, input, ask: BrowserTask.ask(definition, input, summary: summary)), false)
+        } catch {
+            return ("Error: \(error.localizedDescription)", true)
+        }
+    }
+
+    private static func run(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any], ask: [String: Any]? = nil) async throws -> String {
         let params: [String: Any]
         switch BrowserExtensionTools.params(for: definition, input) {
         case .success(let value): params = value
         case .failure(let error): throw NookError(error.message)
         }
         let browser = BridgeArgs.string(input["browser"])
-        let outcome = await BrowserExtensionService.shared.hub.call(definition.method, params: params, browser: browser, timeout: definition.timeout)
+        let outcome = await BrowserExtensionService.shared.hub.call(definition.method, params: params, browser: browser, timeout: definition.timeout, ask: ask)
         guard outcome.ok else { throw NookError(outcome.error.isEmpty ? "The browser could not do that." : outcome.error) }
         switch definition.method {
         case "find":
@@ -75,6 +85,12 @@ final class BrowserExtensionConnector: ContextSource {
             return outcome.text
         case "screenshot":
             return try saveScreenshot(outcome)
+        case "click", "type", "key", "open", "scroll":
+            // What the page shows after the step names its elements for the next step's approval line.
+            if let now = outcome.text.range(of: "Now: ") {
+                BrowserExtensionRefs.shared.learn(String(outcome.text[now.lowerBound...]), tab: params["tab"] as? Int, merge: true)
+            }
+            return outcome.text
         default:
             return outcome.text
         }

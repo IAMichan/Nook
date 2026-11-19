@@ -259,7 +259,8 @@ final class BrowserExtensionService: ObservableObject {
                 NSImage(data: image.data).flatMap { ImageAttachment(image: $0, name: "browser-\(index + 1)") }
             }
             app.ask(text, images: images, in: id, reveal: false, note: BrowserExtensionPanel.note(page: request.page, browser: client.browser, privacy: privacy),
-                    page: privacy == .keptHere ? nil : reading)
+                    page: privacy == .keptHere ? nil : reading,
+                    browser: BrowserTask.supported(extensionVersion: client.version) ? client.id : nil)
             app.store.audit(tool: "browser_extension_ask", args: client.browser, result: app.chat.conversation(id)?.title ?? "")
             return conversationReply(id, watchedBy: client.id)
         case "chat":

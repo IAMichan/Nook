@@ -42,7 +42,7 @@
     "message": "Le navigateur garde ses propres pages pour lui ; Nook ne peut ni les lire ni les utiliser."
   },
   "siteAllowed": {
-    "message": "Nook peut lire ce site et y agir quand vous le demandez, après votre accord sur le Mac."
+    "message": "Nook peut lire et agir sur ce site quand vous le demandez."
   },
   "siteBlocked": {
     "message": "Désactivé pour ce site : Nook ne le lit pas et n’y touche pas."
@@ -69,7 +69,7 @@
     "message": "Rien pour l’instant."
   },
   "intro": {
-    "message": "Posez une question à Nook sur cette page, ou demandez-lui d’y faire quelque chose. Nook vous demande sur le Mac avant de cliquer, saisir ou ouvrir quoi que ce soit."
+    "message": "Posez une question à Nook sur cette page, ou demandez-lui d’y faire quelque chose. Nook le fait étape par étape et vous demande ici avant de cliquer, saisir ou ouvrir quoi que ce soit."
   },
   "askPlaceholder": {
     "message": "Demandez à Nook…"
@@ -259,5 +259,35 @@
   },
   "pickFailed": {
     "message": "La sélection n'a pas marché. Recharge la page et réessaie."
+  },
+  "trustName": {
+    "message": "Agir sans demander"
+  },
+  "trustSwitch": {
+    "message": "Laisser Nook agir sur $1 sans demander"
+  },
+  "trustOn": {
+    "message": "Nook clique et tape ici sans demander d'abord. Payer, envoyer et supprimer demandent toujours."
+  },
+  "trustOff": {
+    "message": "Nook demande ici avant chaque clic et chaque texte qu'il tape."
+  },
+  "approvalTitle": {
+    "message": "Nook veut"
+  },
+  "approvalUnnamed": {
+    "message": "Faire une étape sur cette page"
+  },
+  "approvalFinal": {
+    "message": "Impossible d'annuler : cela peut payer, envoyer, supprimer ou réserver quelque chose."
+  },
+  "approvalAllow": {
+    "message": "Autoriser"
+  },
+  "approvalAlways": {
+    "message": "Toujours sur $1"
+  },
+  "approvalDeny": {
+    "message": "Ne pas autoriser"
   }
 }

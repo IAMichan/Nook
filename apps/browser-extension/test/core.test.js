@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import {
   activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
   isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError,
-  WATCH_LEASE, WATCH_RENEW, watchRenewalDue, questionImages, MAX_QUESTION_IMAGES, MAX_IMAGE_BASE64
+  WATCH_LEASE, WATCH_RENEW, watchRenewalDue, questionImages, MAX_QUESTION_IMAGES, MAX_IMAGE_BASE64, pointOfNoReturn, mustAsk,
+  approvalCard, approvalDecision
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -234,4 +235,33 @@ test('only pictures Nook can read go with a question', () => {
   assert.deepEqual(questionImages([{ mediaType: 'image/png', base64: 'not base64!' }]), [], 'not base64');
   assert.deepEqual(questionImages([{ mediaType: 'image/png', base64: 'A'.repeat(MAX_IMAGE_BASE64 + 4) }]), [], 'too large');
   assert.equal(questionImages(Array(MAX_QUESTION_IMAGES + 3).fill(png)).length, MAX_QUESTION_IMAGES);
+});
+
+test('a step that pays, sends or deletes is final in every language, a plain one is not', () => {
+  for (const words of ['button “Place order”', 'Bestellen en betalen', 'Weiter zur Kasse', 'Envoyer', 'Pagar ahora', 'Delete account', 'button “Send”']) {
+    assert.equal(pointOfNoReturn(words), true, words);
+  }
+  for (const words of ['link “Home”', 'Zoeken', 'Postcode', 'Bookmarks', 'Add to cart', 'Volgende', 'search', '']) {
+    assert.equal(pointOfNoReturn(words), false, words);
+  }
+  assert.equal(pointOfNoReturn(undefined), false);
+});
+
+test('a step asks unless its site acts without asking, and a final step always asks', () => {
+  const trusted = ['example.com'];
+  assert.deepEqual(mustAsk({ url: 'https://shop.example.com/a', trusted, words: 'link “Shoes”' }), { ask: false, final: false });
+  assert.deepEqual(mustAsk({ url: 'https://other.org/', trusted, words: 'link “Shoes”' }), { ask: true, final: false });
+  assert.deepEqual(mustAsk({ url: 'https://example.com/', trusted, words: 'button “Pay now”' }), { ask: true, final: true });
+  assert.deepEqual(mustAsk({ url: 'https://example.com/', trusted, submits: true }), { ask: true, final: true });
+  assert.equal(mustAsk({ url: '', trusted }).ask, true);
+});
+
+test('the side panel can only answer a waiting step as it may', () => {
+  const card = approvalCard('c1', { summary: '  Click   button “Next” ' }, 'example.com', false);
+  assert.equal(card.summary, 'Click button “Next”');
+  assert.equal(approvalCard('', {}, 'x', false), null);
+  assert.equal(approvalDecision('once', card), 'once');
+  assert.equal(approvalDecision('site', card), 'site');
+  assert.equal(approvalDecision('site', { ...card, final: true }), 'deny');
+  assert.equal(approvalDecision('anything', card), 'deny');
 });

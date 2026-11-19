@@ -8,7 +8,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
     .en: [
         "browserExt.settings.title": "Nook in your browser",
         "browserExt.settings.label": "Chrome, Brave, Edge and Arc",
-        "browserExt.settings.detail": "Nook's extension lets Nook read your tabs as you see them and click, type and open pages there, and lets you ask Nook about the page you are on from the browser's side panel. Every action waits for your approval here first.",
+        "browserExt.settings.detail": "Nook's extension lets Nook read your tabs as you see them and click, type and open pages there, and lets you ask Nook about the page you are on from the browser's side panel. Every action waits for your approval first: here, or in the side panel for a task you give there.",
         "browserExt.settings.connect": "Connect",
         "browserExt.settings.disconnect": "Disconnect",
         "browserExt.settings.waiting": "Not in your browser yet. Add it from the Chrome Web Store: Nook recognizes it by itself.",
@@ -41,7 +41,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "browserExt.settings.title": "Nook in je browser",
         "browserExt.settings.label": "Chrome, Brave, Edge en Arc",
-        "browserExt.settings.detail": "Met Nook's extensie leest Nook je tabbladen zoals jij ze ziet en kan het daar klikken, typen en pagina's openen, en vraag je Nook vanuit het zijpaneel van de browser iets over de pagina waar je bent. Elke actie wacht eerst hier op je goedkeuring.",
+        "browserExt.settings.detail": "Met Nook's extensie leest Nook je tabbladen zoals jij ze ziet en kan het daar klikken, typen en pagina's openen, en vraag je Nook vanuit het zijpaneel van de browser iets over de pagina waar je bent. Elke actie wacht eerst op je goedkeuring: hier, of in het zijpaneel voor een taak die je daar geeft.",
         "browserExt.settings.connect": "Verbinden",
         "browserExt.settings.disconnect": "Loskoppelen",
         "browserExt.settings.waiting": "Nog niet in je browser. Voeg hem toe via de Chrome Web Store: Nook herkent hem vanzelf.",
@@ -74,7 +74,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
     .de: [
         "browserExt.settings.title": "Nook in deinem Browser",
         "browserExt.settings.label": "Chrome, Brave, Edge und Arc",
-        "browserExt.settings.detail": "Mit Nooks Erweiterung liest Nook deine Tabs so, wie du sie siehst, und kann dort klicken, tippen und Seiten öffnen; im Seitenbereich des Browsers fragst du Nook zur Seite, auf der du bist. Jede Aktion wartet zuerst hier auf deine Zustimmung.",
+        "browserExt.settings.detail": "Mit Nooks Erweiterung liest Nook deine Tabs so, wie du sie siehst, und kann dort klicken, tippen und Seiten öffnen; im Seitenbereich des Browsers fragst du Nook zur Seite, auf der du bist. Jede Aktion wartet zuerst auf deine Zustimmung: hier oder im Seitenbereich für eine Aufgabe, die du dort gibst.",
         "browserExt.settings.connect": "Verbinden",
         "browserExt.settings.disconnect": "Trennen",
         "browserExt.settings.waiting": "Noch nicht in deinem Browser. Füge sie über den Chrome Web Store hinzu: Nook erkennt sie von selbst.",
@@ -107,7 +107,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
     .fr: [
         "browserExt.settings.title": "Nook dans votre navigateur",
         "browserExt.settings.label": "Chrome, Brave, Edge et Arc",
-        "browserExt.settings.detail": "Avec l'extension de Nook, Nook lit vos onglets tels que vous les voyez et peut y cliquer, saisir et ouvrir des pages, et vous interrogez Nook sur la page ouverte depuis le panneau latéral du navigateur. Chaque action attend d'abord votre accord ici.",
+        "browserExt.settings.detail": "Avec l'extension de Nook, Nook lit vos onglets tels que vous les voyez et peut y cliquer, saisir et ouvrir des pages, et vous interrogez Nook sur la page ouverte depuis le panneau latéral du navigateur. Chaque action attend d'abord votre accord : ici, ou dans le panneau latéral pour une tâche que vous y donnez.",
         "browserExt.settings.connect": "Connecter",
         "browserExt.settings.disconnect": "Déconnecter",
         "browserExt.settings.waiting": "Pas encore dans votre navigateur. Ajoutez-la depuis le Chrome Web Store : Nook la reconnaît tout seul.",
@@ -140,7 +140,7 @@ let browserExtensionTranslations: [AppLanguage: [String: String]] = [
     .es: [
         "browserExt.settings.title": "Nook en tu navegador",
         "browserExt.settings.label": "Chrome, Brave, Edge y Arc",
-        "browserExt.settings.detail": "Con la extensión de Nook, Nook lee tus pestañas tal como las ves y puede hacer clic, escribir y abrir páginas en ellas, y desde el panel lateral del navegador preguntas a Nook sobre la página en la que estás. Cada acción espera primero tu aprobación aquí.",
+        "browserExt.settings.detail": "Con la extensión de Nook, Nook lee tus pestañas tal como las ves y puede hacer clic, escribir y abrir páginas en ellas, y desde el panel lateral del navegador preguntas a Nook sobre la página en la que estás. Cada acción espera primero tu aprobación: aquí, o en el panel lateral para una tarea que das allí.",
         "browserExt.settings.connect": "Conectar",
         "browserExt.settings.disconnect": "Desconectar",
         "browserExt.settings.waiting": "Aún no está en tu navegador. Añádela desde la Chrome Web Store: Nook la reconoce sola.",

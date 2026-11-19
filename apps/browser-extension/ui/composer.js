@@ -5524,7 +5524,10 @@ function Transcript($$anchor, $$props) {
 		clearTimeout(copiedTimer);
 		copiedTimer = setTimeout(() => set(copiedKey, null), 1200);
 	}
-	const lastNook = /* @__PURE__ */ user_derived(() => $$props.messages.findLastIndex((message) => message.fromNook));
+	const lastNook = /* @__PURE__ */ user_derived(() => {
+		for (let index = $$props.messages.length - 1; index >= 0; index--) if ($$props.messages[index].fromNook) return index;
+		return -1;
+	});
 	let opened = proxy({});
 	const markdownTexts = /* @__PURE__ */ user_derived(() => ({
 		copy: $$props.texts.copy,

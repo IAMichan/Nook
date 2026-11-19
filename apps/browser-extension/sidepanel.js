@@ -2,7 +2,8 @@
 // browser, a chat with Nook about the page, and what Nook did here lately. The conversation and the composer are Nook's
 // shared ones (packages/web-ui): the answer as Nook's own window draws it (where Nook looked, its plan, Markdown) and
 // the model chip to choose the model Nook thinks with. Questions go to Nook on the Mac and are
-// answered by the same assistant as in its main window; anything with a side effect still waits for approval there.
+// answered by the same assistant as in its main window. A task on the page runs live in this browser, each step
+// waiting for the user's yes here unless they let Nook act on the site without asking.
 // It wears Nook's look: the theme, accent and density chosen in Nook's Settings › Appearance.
 import {
   agoLabel, cleanLook, isAnswering, isBlocked, isRestricted, lookIsDark, looksLikePdf, lookVariables, matchRanges, mayPick,
@@ -14,7 +15,7 @@ const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
 
 let status = { nook: 'connecting' };
-let options = { paused: false, blocked: [] };
+let options = { paused: false, blocked: [], trusted: [] };
 let page = null;
 let conversation = null;
 // What the panel draws: the messages it read back (`older`, oldest first) and the newest ones Nook keeps sending
@@ -178,6 +179,12 @@ function renderSite() {
   toggle.checked = allowed;
   toggle.disabled = restricted;
   toggle.setAttribute('aria-label', t('siteSwitch', site || ''));
+  // Acting without asking: only on a site Nook may use at all.
+  const trusted = allowed && isBlocked(url, options.trusted);
+  $('trust').hidden = !allowed || !site;
+  $('trust-switch').checked = trusted;
+  $('trust-switch').setAttribute('aria-label', t('trustSwitch', site || ''));
+  $('trust-note').textContent = trusted ? t('trustOn') : t('trustOff');
 
   // Paused: an amber line with Resume under the header; otherwise only the quiet pause button in the header says it.
   $('paused-banner').hidden = !options.paused;
@@ -203,6 +210,65 @@ $('site-switch').addEventListener('change', async (event) => {
   const reply = await trySend({ type: 'site', url: page?.url, allowed: event.target.checked });
   if (!reply?.ok) renderSite();
 });
+
+$('trust-switch').addEventListener('change', async (event) => {
+  const reply = await trySend({ type: 'trust', url: page?.url, allowed: event.target.checked });
+  if (!reply?.ok) renderSite();
+});
+
+// MARK: - Steps waiting for the user
+
+// A task from this panel runs live in the browser: a step waits here for the user's yes, unless they let Nook act on
+// the site without asking. The service worker keeps the waiting steps in session storage, so a panel that opens later
+// shows them too.
+let approvals = [];
+
+function renderApprovals() {
+  const box = $('approvals');
+  box.replaceChildren(...approvals.map((card) => {
+    const item = document.createElement('div');
+    item.className = 'approval' + (card.final ? ' final' : '');
+    item.setAttribute('role', 'alertdialog');
+    const title = document.createElement('div');
+    title.className = 'approval-title';
+    title.textContent = t('approvalTitle');
+    const step = document.createElement('div');
+    step.className = 'approval-step';
+    step.textContent = card.summary || t('approvalUnnamed');
+    item.append(title, step);
+    if (card.final) {
+      const note = document.createElement('div');
+      note.className = 'approval-note';
+      note.textContent = t('approvalFinal');
+      item.append(note);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'approval-actions';
+    const button = (label, decision, kind) => {
+      const element = document.createElement('button');
+      element.type = 'button';
+      element.className = kind + ' small';
+      element.textContent = label;
+      element.addEventListener('click', () => {
+        for (const other of actions.querySelectorAll('button')) other.disabled = true;
+        trySend({ type: 'decide', id: card.id, decision });
+      });
+      return element;
+    };
+    actions.append(button(t('approvalAllow'), 'once', 'primary'));
+    if (!card.final && card.site) actions.append(button(t('approvalAlways', card.site), 'site', ''));
+    actions.append(button(t('approvalDeny'), 'deny', 'quiet'));
+    item.append(actions);
+    return item;
+  }));
+  box.hidden = !approvals.length;
+  if (approvals.length) box.querySelector('button.primary')?.focus({ preventScroll: true });
+}
+
+function setApprovals(next) {
+  approvals = Array.isArray(next) ? next.filter((card) => card && typeof card.id === 'string') : [];
+  renderApprovals();
+}
 
 async function togglePause() {
   const reply = await trySend({ type: 'pause', paused: !options.paused });
@@ -910,10 +976,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     look = cleanLook(changes.look.newValue);
     applyLook();
   }
-  if (area === 'local' && (changes.paused || changes.blocked)) {
+  if (area === 'session' && changes.approvals) setApprovals(changes.approvals.newValue);
+  if (area === 'local' && (changes.paused || changes.blocked || changes.trusted)) {
+    const list = (change, fallback) => (change ? (Array.isArray(change.newValue) ? change.newValue : []) : fallback);
     options = {
       paused: changes.paused ? !!changes.paused.newValue : options.paused,
-      blocked: changes.blocked ? (Array.isArray(changes.blocked.newValue) ? changes.blocked.newValue : []) : options.blocked
+      blocked: list(changes.blocked, options.blocked),
+      trusted: list(changes.trusted, options.trusted)
     };
     renderSite();
   }
@@ -931,11 +1000,16 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   look = cleanLook((await chrome.storage.local.get('look')).look);
   applyLook();
   windowId = (await chrome.windows.getCurrent().catch(() => null))?.id ?? null;
-  const stored = await chrome.storage.session.get(['status', 'conversation']);
+  const stored = await chrome.storage.session.get(['status', 'conversation', 'approvals']);
   status = stored.status || status;
   conversation = stored.conversation || null;
-  const local = await chrome.storage.local.get({ paused: false, blocked: [] });
-  options = { paused: !!local.paused, blocked: Array.isArray(local.blocked) ? local.blocked : [] };
+  setApprovals(stored.approvals);
+  const local = await chrome.storage.local.get({ paused: false, blocked: [], trusted: [] });
+  options = {
+    paused: !!local.paused,
+    blocked: Array.isArray(local.blocked) ? local.blocked : [],
+    trusted: Array.isArray(local.trusted) ? local.trusted : []
+  };
   renderStatus();
   await loadPage();
   await renderActivity();
