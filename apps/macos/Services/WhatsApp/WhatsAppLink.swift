@@ -1045,7 +1045,7 @@ final class WhatsAppLink: ObservableObject {
     /// video or a document (megabytes, often never opened) is still fetched when its bubble comes into view.
     nonisolated static func fetchesOnArrival(_ media: WAMedia) -> Bool {
         switch media {
-        case .image, .sticker, .voice: return true
+        case .image, .gif, .sticker, .voice: return true
         case .none, .video, .audio, .document, .location, .contact, .other: return false
         }
     }
@@ -1819,12 +1819,13 @@ final class WhatsAppLink: ObservableObject {
         }
     }
 
-    /// What a sent file is in WhatsApp's own terms; a GIF is the looping video it was sent as.
+    /// What a sent file is in WhatsApp's own terms; a GIF stays a GIF, so its bubble plays it as one.
     private static func media(of file: ChatAttachment) -> WAMedia {
         let seconds = file.seconds.map { Int($0.rounded()) }
         switch file.kind {
         case .photo: return .image
-        case .video, .gif: return .video
+        case .video: return .video
+        case .gif: return .gif
         case .sticker: return .sticker
         case .audio: return .audio(seconds: seconds)
         case .voice: return .voice(seconds: seconds)

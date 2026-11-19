@@ -917,6 +917,16 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(WAMedia.contact.chatMedia())
     }
 
+    /// A GIF WhatsApp loops is a GIF in its bubble (it plays by itself), not a video to click, from every gateway.
+    func testAGatewayGIFIsAGIF() {
+        XCTAssertEqual(WAWebhook.gowaMedia(["video": ["gif_playback": true]]), .gif)
+        XCTAssertEqual(WAWebhook.gowaMedia(["video": ["url": "x"]]), .video)
+        XCTAssertEqual(WAWebhook.openwaMedia("video", gif: true), .gif)
+        XCTAssertEqual(WAWebhook.openwaMedia("video"), .video)
+        XCTAssertEqual(WAMedia.gif.chatMedia(path: "/x.mp4"), ChatMedia(kind: .gif, path: "/x.mp4"))
+        XCTAssertEqual(WhatsAppRecipients.label(.gif), "[GIF]")
+    }
+
     func testAChatReadsTheGatewayHistoryTogetherWithWhatCameInLive() {
         let old = message("1", chat: "c", text: "Kun je de taak oppakken?", at: 0)
         let stored = message("2", chat: "c", text: "Bedankt!", at: 60, fromMe: true, name: "")

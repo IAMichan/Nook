@@ -45,6 +45,8 @@ enum WAMedia: Equatable, Sendable {
     case none
     case image
     case video
+    /// A short silent video WhatsApp loops: a GIF.
+    case gif
     case audio(seconds: Int?)
     case voice(seconds: Int?)
     case document(name: String?)
@@ -411,6 +413,7 @@ extension WAMedia {
         switch self {
         case .image: return ChatMedia(kind: .photo, path: path)
         case .video: return ChatMedia(kind: .video, path: path)
+        case .gif: return ChatMedia(kind: .gif, path: path)
         case .audio(let seconds): return ChatMedia(kind: .audio, path: path, seconds: seconds.map(Double.init))
         case .voice(let seconds): return ChatMedia(kind: .voice, path: path, seconds: seconds.map(Double.init))
         case .document(let name): return ChatMedia(kind: .file, name: name, path: path)
@@ -422,7 +425,7 @@ extension WAMedia {
     /// A file Nook can fetch from the gateway and open on this Mac.
     var isOpenable: Bool {
         switch self {
-        case .image, .video, .audio, .voice, .document, .sticker: return true
+        case .image, .video, .gif, .audio, .voice, .document, .sticker: return true
         case .none, .location, .contact, .other: return false
         }
     }
@@ -435,6 +438,7 @@ extension WAMedia {
         case .document(let own): name = own ?? given ?? "document"
         case .image: name = given ?? "photo"
         case .video: name = given ?? "video"
+        case .gif: name = given ?? "gif"
         case .audio, .voice: name = given ?? "voice message"
         case .sticker: name = given ?? "sticker"
         default: name = given ?? "attachment"
@@ -457,6 +461,7 @@ extension WAMessage {
         case .none: return ("", text)
         case .image: return ("whatsapp.media.photo", text)
         case .video: return ("whatsapp.media.video", text)
+        case .gif: return ("chat.media.gif", text)
         case .audio(let s), .voice(let s): return ("whatsapp.media.voice", s.map(WAJID.duration) ?? "")
         case .document(let name): return ("whatsapp.media.document", name ?? text)
         case .sticker: return ("whatsapp.media.sticker", "")
@@ -1772,7 +1777,8 @@ enum WAWebhook {
     /// GOWA puts each media under its own key; only the label matters to Nook.
     static func gowaMedia(_ p: [String: Any]) -> WAMedia {
         if p["image"] != nil { return .image }
-        if p["video"] != nil || p["video_note"] != nil { return .video }
+        if let video = p["video"] { return isGIF(video as? [String: Any]) ? .gif : .video }
+        if p["video_note"] != nil { return .video }
         if p["audio"] != nil { return .voice(seconds: nil) }
         if let doc = p["document"] {
             return .document(name: (doc as? [String: Any]).flatMap { nonEmpty($0["filename"]) })
@@ -1810,7 +1816,7 @@ enum WAWebhook {
             sender: nonEmpty(d["author"]) ?? (d["from"] as? String) ?? chat,
             senderName: nonEmpty(contact?["name"]) ?? nonEmpty(contact?["pushName"]) ?? "",
             text: (d["body"] as? String) ?? "",
-            media: openwaMedia(type, filename: nonEmpty(media?["filename"])),
+            media: openwaMedia(type, filename: nonEmpty(media?["filename"]), gif: isGIF(d) || isGIF(media)),
             date: ChatJSON.epoch(seconds: d["timestamp"]) ?? Date(),
             fromMe: fromMe)
         if let poll = WAPollData.openwa(d["poll"]) {
@@ -1918,12 +1924,21 @@ enum WAWebhook {
         return .receipt(ids: [id], chat: chat, status: status)
     }
 
-    /// OpenWA's `type` (text|image|video|audio|voice|document|sticker|location|contact|poll|…).
-    static func openwaMedia(_ type: String, filename: String? = nil) -> WAMedia {
+    /// Whether a gateway's video is one WhatsApp loops (a GIF), when the gateway says so: WhatsApp's own
+    /// `gifPlayback`, under any of the names gateways give it. Nil or silent: a plain video.
+    static func isGIF(_ fields: [String: Any]?) -> Bool {
+        guard let fields else { return false }
+        return ["gif_playback", "gifPlayback", "is_gif", "isGif"].contains { fields[$0] as? Bool == true }
+    }
+
+    /// OpenWA's `type` (text|image|video|audio|voice|document|sticker|location|contact|poll|…); `gif` when it says a
+    /// video is a GIF.
+    static func openwaMedia(_ type: String, filename: String? = nil, gif: Bool = false) -> WAMedia {
         switch type {
         case "text", "":  return .none
         case "image":     return .image
-        case "video":     return .video
+        case "gif":       return .gif
+        case "video":     return gif ? .gif : .video
         case "audio":     return .audio(seconds: nil)
         case "voice":     return .voice(seconds: nil)
         case "document":  return .document(name: filename)
@@ -2461,7 +2476,8 @@ enum WAOpenWA {
             var msg = WAMessage(
                 id: id, chat: chat, sender: nonEmpty(m["author"]) ?? (m["from"] as? String) ?? chat,
                 senderName: "", text: (m["body"] as? String) ?? "",
-                media: WAWebhook.openwaMedia(type, filename: nonEmpty(media?["filename"])),
+                media: WAWebhook.openwaMedia(type, filename: nonEmpty(media?["filename"]),
+                                             gif: WAWebhook.isGIF(m) || WAWebhook.isGIF(media)),
                 date: ChatJSON.epoch(seconds: m["timestamp"]) ?? .distantPast,
                 fromMe: m["direction"] as? String == "outgoing")
             msg.chatName = nonEmpty(m["chatName"])
@@ -2570,7 +2586,7 @@ enum WhatsAppRecipients {
         case .location: return "[location]"
         case .contact: return "[contact]"
         case .other: return "[attachment]"
-        case .image, .video, .audio, .voice, .document, .sticker: return media.chatMedia()?.placeholder
+        case .image, .video, .gif, .audio, .voice, .document, .sticker: return media.chatMedia()?.placeholder
         }
     }
 

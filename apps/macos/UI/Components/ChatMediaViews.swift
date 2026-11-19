@@ -6,8 +6,8 @@ import ImageIO
 import QuickLookThumbnailing
 
 // What a chat message's file looks like in a bubble, the same in every chat (the notch card and the Chats tab, for
-// WhatsApp, Messages, Telegram, Slack, Signal…): a sticker as itself without a bubble, a GIF that plays by itself in a
-// loop, an audio or voice message with a play button and how far it got. Photos, videos and other files are drawn by
+// WhatsApp, Messages, Telegram, Slack, Signal…): a sticker as itself without a bubble, a GIF that plays by itself a few
+// times, an audio or voice message with a play button and how far it got. Photos, videos and other files are drawn by
 // `ChatTranscript` itself. A bridge only has to fill `InboxMessage.media`; `ChatBubble.init(_:time:)` does the rest.
 
 extension ChatBubble {
@@ -470,15 +470,22 @@ struct ChatStickerView: View {
 
 // MARK: GIF
 
-/// A GIF in a bubble: it plays by itself, in a loop and without sound, as chat apps show them. A real GIF (or WebP) is
-/// drawn frame by frame; one that came as a short video (as WhatsApp, Telegram and Slack send them) loops as a video.
+/// A GIF in a bubble: it plays by itself and without sound, as chat apps show them, `plays` times over; then it stops
+/// on its last frame with a replay button over it, so a chat full of GIFs does not keep moving. A real GIF (or WebP) is
+/// drawn frame by frame; one that came as a short video (as WhatsApp, Telegram and Slack send them) plays as a video.
 struct ChatGIFView: View {
     static let maxWidth: CGFloat = 280
     static let maxHeight: CGFloat = 220
+    /// How many times a GIF plays by itself before it waits for the replay button.
+    static let plays = 5
 
     let url: URL
     let name: String
     @Environment(\.chatMediaLive) private var live
+    /// It played its rounds and waits for the replay button.
+    @State private var finished = false
+    /// Raised by the replay button: the GIF plays its rounds again.
+    @State private var round = 0
 
     private var size: CGSize {
         // From the file's header: drawing a chat does not decode its GIFs.
@@ -494,17 +501,34 @@ struct ChatGIFView: View {
             // Far from view it neither moves nor plays: a long chat's GIFs do not all run at once.
             if ChatMediaImages.isPicture(url) {
                 Group {
-                    if live { AnimatedPicture(url: url) } else { ChatMediaStandIn() }
+                    if live {
+                        CountedAnimatedPicture(url: url, plays: Self.plays, round: round) { finished = true }
+                    } else {
+                        ChatMediaStandIn()
+                    }
                 }
                 .frame(width: size.width, height: size.height)
             } else {
                 Group {
-                    if live { LoopingVideo(url: url) } else { ChatMediaStandIn() }
+                    if live {
+                        CountedVideo(url: url, plays: Self.plays, round: round) { finished = true }
+                    } else {
+                        ChatMediaStandIn()
+                    }
                 }
                 .frame(width: Self.maxWidth, height: Self.maxHeight)
             }
         }
         .roundedClip(NookTheme.Radius.card)
+        .overlay {
+            if finished && live {
+                MediaOverlayButton("arrow.counterclockwise", label: tr("chat.media.gif.replay"), size: .play,
+                                   detail: name) {
+                    finished = false
+                    round += 1
+                }
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             Text(tr("chat.media.gif"))
                 .font(NookTheme.font(9.5, .bold))
@@ -514,12 +538,15 @@ struct ChatGIFView: View {
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.6)))
                 .padding(NookTheme.Spacing.xs)
         }
-        .accessibilityElement()
+        // Back in view it plays its rounds again, as a fresh GIF does.
+        .onChange(of: live) { _, now in if now { finished = false } }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(name)
     }
 }
 
-/// A picture that moves when it has frames (GIF, WebP, APNG), drawn whole by AppKit.
+/// A picture that moves when it has frames (GIF, WebP, APNG), drawn whole by AppKit, in an endless loop: a sticker, a
+/// GIF picked to send.
 struct AnimatedPicture: NSViewRepresentable {
     let url: URL
 
@@ -542,40 +569,162 @@ struct AnimatedPicture: NSViewRepresentable {
     func updateNSView(_ view: NSImageView, context: Context) {}
 }
 
-/// A short video that plays by itself, silent and in a loop, without controls: a GIF as a video.
-private struct LoopingVideo: NSViewRepresentable {
+/// A moving picture (GIF, WebP, APNG) that plays `plays` times, then stays on its last frame and calls `onFinished`. A
+/// new `round` plays it that many times again. Frames come from ImageIO with their own timing; a still never finishes.
+private struct CountedAnimatedPicture: NSViewRepresentable {
     let url: URL
+    let plays: Int
+    let round: Int
+    let onFinished: () -> Void
 
+    @MainActor
     final class Coordinator {
-        var looper: AVPlayerLooper?
+        var data: Data?
+        var round = 0
+        /// Which run the frames belong to: a frame of an earlier run stops that run.
+        var run = 0
+        var onFinished: () -> Void = {}
         var loading: Task<Void, Never>?
+
+        func start(in view: NSView, plays: Int) {
+            guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return }
+            run += 1
+            let current = run
+            let frames = CGImageSourceGetCount(source)
+            var loop = 0
+            var previous = -1
+            let options = [kCGImageAnimationLoopCount: plays] as CFDictionary
+            CGAnimateImageDataWithBlock(data as CFData, options) { [weak self, weak view] index, image, stop in
+                MainActor.assumeIsolated {
+                    guard let self, let view, self.run == current else {
+                        stop.pointee = true
+                        return
+                    }
+                    if index <= previous { loop += 1 }
+                    previous = index
+                    view.layer?.contents = image
+                    guard frames > 1, loop >= plays - 1, index == frames - 1 else { return }
+                    stop.pointee = true
+                    self.onFinished()
+                }
+            }
+        }
+
+        func stop() {
+            run += 1
+            loading?.cancel()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.contentsGravity = .resizeAspect
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        let coordinator = context.coordinator
+        coordinator.round = round
+        coordinator.onFinished = onFinished
+        // Read off the main thread: the whole file at once stalled scrolling for each GIF that came in.
+        let url = url, plays = plays
+        coordinator.loading = Task { @MainActor [weak view] in
+            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+            guard let data, let view, !Task.isCancelled else { return }
+            coordinator.data = data
+            coordinator.start(in: view, plays: plays)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.onFinished = onFinished
+        guard coordinator.round != round else { return }
+        coordinator.round = round
+        coordinator.start(in: view, plays: plays)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+}
+
+/// A short video that plays by itself, silent and without controls, `plays` times: a GIF as a video. Then it stays on
+/// its last frame and calls `onFinished`; a new `round` plays it that many times again.
+private struct CountedVideo: NSViewRepresentable {
+    let url: URL
+    let plays: Int
+    let round: Int
+    let onFinished: () -> Void
+
+    @MainActor
+    final class Coordinator {
+        var round = 0
+        var played = 0
+        var onFinished: () -> Void = {}
+        var loading: Task<Void, Never>?
+        var ended: NSObjectProtocol?
+
+        func replay(_ player: AVPlayer) {
+            played = 0
+            player.seek(to: .zero)
+            player.play()
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> AVPlayerView {
-        let player = AVQueuePlayer()
+        let player = AVPlayer()
         player.isMuted = true
+        // It stays on its last frame at the end; a next round starts it again.
+        player.actionAtItemEnd = .pause
         let view = AVPlayerView()
         view.controlsStyle = .none
         view.videoGravity = .resizeAspect
         view.player = player
-        // It loops once its file is complete and playable (`ChatVideoAsset`), not on a file still coming in.
         let coordinator = context.coordinator
+        coordinator.round = round
+        coordinator.onFinished = onFinished
+        // It plays once its file is complete and playable (`ChatVideoAsset`), not on a file still coming in.
+        let plays = plays
         coordinator.loading = Task { @MainActor [url] in
             guard let asset = await ChatVideoAsset.load(url), !Task.isCancelled else { return }
-            coordinator.looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
+            let item = AVPlayerItem(asset: asset)
+            coordinator.ended = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
+            ) { [weak player] _ in
+                MainActor.assumeIsolated {
+                    guard let player else { return }
+                    coordinator.played += 1
+                    if coordinator.played < plays {
+                        player.seek(to: .zero)
+                        player.play()
+                    } else {
+                        coordinator.onFinished()
+                    }
+                }
+            }
+            player.replaceCurrentItem(with: item)
             player.play()
         }
         return view
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {}
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.onFinished = onFinished
+        guard coordinator.round != round else { return }
+        coordinator.round = round
+        if let player = view.player, player.currentItem != nil { coordinator.replay(player) }
+    }
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: Coordinator) {
         coordinator.loading?.cancel()
+        if let ended = coordinator.ended { NotificationCenter.default.removeObserver(ended) }
         view.player?.pause()
-        coordinator.looper = nil
         view.player = nil
     }
 }

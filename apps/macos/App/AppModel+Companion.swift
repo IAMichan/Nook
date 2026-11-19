@@ -8,10 +8,10 @@ extension AppModel {
     /// How many of a chat's newest photos, videos and documents an opened chat or card fetches to show.
     static let whatsAppPreviewCount = 12
 
-    /// A file a chat shows by itself once fetched: a photo, a video, a document, a sticker or a voice message.
+    /// A file a chat shows by itself once fetched: a photo, a video, a GIF, a document, a sticker or a voice message.
     static func whatsAppPreviews(_ media: WAMedia) -> Bool {
         switch media {
-        case .image, .video, .document, .sticker, .audio, .voice: return true
+        case .image, .video, .gif, .document, .sticker, .audio, .voice: return true
         default: return false
         }
     }
