@@ -697,6 +697,8 @@ final class CompanionServer: ObservableObject {
             updater.showPanel()
             audit("update_request", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
             return CompanionResponse(id: request.id, ok: true, message: "available")
+        case .installUpdate:
+            return installUpdate(request, app: app, deviceID: deviceID)
         case .register:
             if request.item == FCMToken.service {
                 // Nook on Android: a Firebase token, whose pushes go through the relay (`RelayPushRequest.service`).

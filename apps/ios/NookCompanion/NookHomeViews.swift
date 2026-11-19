@@ -18,13 +18,14 @@ struct HomeGlanceRow: View {
     }
 
     var body: some View {
-        if !home.events.isEmpty || !home.accounts.isEmpty || home.track != nil {
+        if !home.events.isEmpty || !home.accounts.isEmpty || home.track != nil || offer != nil {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text("At a glance")
                     .font(Theme.TextStyle.label)
                     .foregroundStyle(Theme.textTertiary)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                        if let offer { HomeUpdateCard(offer: offer) }
                         if !home.events.isEmpty { agenda }
                         if home.accounts.contains(where: { !$0.limits.isEmpty }) { limits }
                         if let track = home.track { HomeMusicCard(track: track) }
@@ -35,6 +36,9 @@ struct HomeGlanceRow: View {
             }
         }
     }
+
+    /// The Mac's update, when this phone may install it: what needs a decision comes first, as on the Mac.
+    private var offer: UpdateOffer? { client.installsMacUpdate ? home.update : nil }
 
     private var agenda: some View {
         let events = today.isEmpty ? Array(home.events.prefix(2)) : Array(today.prefix(3))
@@ -100,6 +104,58 @@ struct HomeGlanceRow: View {
 }
 
 /// What plays on the Mac, with its buttons when this phone may use them (`CompanionScope.music`).
+/// A new Nook for the Mac: its version and how much it brings, with Install (or Restart now when it waits for agents).
+private struct HomeUpdateCard: View {
+    @EnvironmentObject private var client: CompanionClient
+    let offer: UpdateOffer
+
+    private var status: String {
+        switch offer.state {
+        case "installing":
+            if let progress = offer.progress { return String(localized: "Downloading \(Int(progress * 100))%") }
+            return String(localized: "Installing…")
+        case "readyToRestart": return String(localized: "Waiting for agents")
+        case "failed": return String(localized: "Failed")
+        default: return String(localized: "Ready")
+        }
+    }
+
+    private var action: String? {
+        switch offer.state {
+        case "installing": return nil
+        case "readyToRestart": return String(localized: "Restart now")
+        case "failed": return String(localized: "Try again")
+        default: return String(localized: "Install")
+        }
+    }
+
+    var body: some View {
+        GlanceCard(symbol: "arrow.down", title: String(localized: "Nook update"), status: status) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text("Nook \(offer.version)").font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
+                if offer.changes > 0 {
+                    Text("\(offer.changes) changes").font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+            }
+            if let action {
+                Button {
+                    Haptics.tap()
+                    Task { await client.installMacUpdate() }
+                } label: {
+                    Text(verbatim: action)
+                        .font(Theme.TextStyle.strong)
+                        .foregroundStyle(Theme.paper)
+                        .frame(minWidth: 88, minHeight: 36)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .roundedBackground(Theme.smoke, radius: Theme.Radius.control)
+                }
+                .buttonStyle(PressFade())
+                .accessibilityHint("Installs the update on your Mac. Nook there restarts by itself.")
+            }
+        }
+    }
+}
+
 private struct HomeMusicCard: View {
     @EnvironmentObject private var client: CompanionClient
     let track: HomeDigest.Track

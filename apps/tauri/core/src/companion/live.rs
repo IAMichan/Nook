@@ -156,6 +156,7 @@ pub fn keeps(op: CompanionOp) -> bool {
             | Register
             | Unregister
             | RequestUpdate
+            | InstallUpdate
             | PullAct
             | PullWork
             | BindKey

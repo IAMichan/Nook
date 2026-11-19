@@ -233,6 +233,10 @@ pub enum CompanionOp {
     Entry,
     /// Opens Nook's update panel on the Mac (`feature::REQUEST_UPDATE`); never installs anything.
     RequestUpdate,
+    /// Installs the update `home.update` offers, or restarts into one that waits for agents (`feature::INSTALL_UPDATE`).
+    /// `message` in the answer: "installing", "waiting" (agents still work; send it again to restart now), "restarting",
+    /// "none", "blocked" (only on the computer itself) or "unavailable"; `home` comes along.
+    InstallUpdate,
     /// The pictures of chats (`items`; `avatars` in the answer, `feature::AVATARS`).
     Avatars,
     /// The phone's own device key (`device_key`, `feature::DEVICE_KEY`): `text` is its public half (X9.63, base64). The
@@ -320,6 +324,7 @@ pub mod feature {
     pub const HISTORY: &str = "history";
     pub const FULL_TRANSCRIPT: &str = "fullTranscript";
     pub const REQUEST_UPDATE: &str = "requestUpdate";
+    pub const INSTALL_UPDATE: &str = "installUpdate";
     pub const AVATARS: &str = "avatars";
     pub const APP_ICONS: &str = "appIcons";
     pub const RETRY: &str = "retry";

@@ -68,6 +68,8 @@ pub fn requirement(op: CompanionOp) -> Option<CompanionScope> {
         Send | Stop | Options | Start | Manage => Some(Operate),
         // Reviewing, merging and working on a pull request act for you, as sending and starting do.
         PullAct | PullWork => Some(Operate),
+        // Installing restarts the computer's Nook and stops what its agents do, so it needs the same right as stopping them.
+        InstallUpdate => Some(Operate),
         // What the notification settings are is part of what the phone reads; changing them, for every paired phone,
         // acts for you as managing a session does.
         NotifySettings => Some(Read),

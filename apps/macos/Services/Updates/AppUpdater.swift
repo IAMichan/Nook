@@ -85,6 +85,8 @@ final class AppUpdater: ObservableObject {
         }
     }
 
+    /// What an administrator (a configuration profile) or `NOOK_DISABLE_UPDATES` allows.
+    let policy: UpdatePolicy
     let source: BuildSource?
     /// A downloaded build made by the release workflow; only used when there is no `source`.
     let release: ReleaseBuild?
@@ -99,7 +101,7 @@ final class AppUpdater: ObservableObject {
     private var releaseTask: Task<Void, Never>?
     /// GitHub's answer to the last release check with its ETag: the next check asks "changed since?", and an unchanged
     /// list (304) does not count against the rate limit.
-    private var releaseListCache: (etag: String, data: Data)?
+    private var releaseListCache: (url: URL, etag: String, data: Data)?
 
     /// The release channel a downloaded build follows. Saved only once you pick one; until then it is the build's own
     /// (a beta follows betas). Picking one checks right away.
@@ -129,11 +131,23 @@ final class AppUpdater: ObservableObject {
         self.source = source
         self.release = source == nil ? release : nil
         self.fromXcode = fromXcode
+        self.policy = Self.readPolicy()
         self.autoCheck = UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true
         self.channel = UserDefaults.standard.string(forKey: Self.channelKey).flatMap(UpdateChannel.init(rawValue:))
             ?? release?.defaultChannel ?? .stable
-        if source == nil, release == nil { phase = .unavailable }
+        if (source == nil && release == nil) || policy.disabled { phase = .unavailable }
     }
+
+    /// Forced preferences from a configuration profile for this app, and the environment variable.
+    private static func readPolicy() -> UpdatePolicy {
+        let defaults = UserDefaults.standard
+        let forced = { (key: String) -> Bool? in defaults.objectIsForced(forKey: key) ? defaults.bool(forKey: key) : nil }
+        return UpdatePolicy.resolve(environment: ProcessInfo.processInfo.environment[UpdatePolicy.environmentKey],
+                                    managedDisabled: forced(UpdatePolicy.disableKey), managedBeta: forced(UpdatePolicy.disableBetaKey))
+    }
+
+    /// The channel the checks follow: yours, unless an administrator keeps Nook on Stable.
+    var effectiveChannel: UpdateChannel { policy.channel(channel) }
 
     /// This is a downloaded build: updates come from GitHub Releases.
     var isReleaseBuild: Bool { release != nil }
@@ -152,6 +166,11 @@ final class AppUpdater: ObservableObject {
         } else if let release {
             loadReceipt(for: release.version.description)
         } else {
+            phase = .unavailable
+            return
+        }
+        // An administrator (or NOOK_DISABLE_UPDATES) turned updates off: no checks, no button.
+        guard !policy.disabled else {
             phase = .unavailable
             return
         }
@@ -243,30 +262,21 @@ final class AppUpdater: ObservableObject {
 
     /// Asks GitHub for the releases and picks the newest this downloaded build can take. Quiet when it fails, like `check`.
     private func checkRelease(_ release: ReleaseBuild) {
-        guard !checking, !isBusy, let url = release.releasesURL else { return }
+        guard !checking, !isBusy, !policy.disabled, let api = release.releasesURL else { return }
         checking = true
         if releaseUpdate == nil, !isFailed { phase = .checking }
         Task { @MainActor in
             let result: Result<ReleaseCheck, Error>
             do {
-                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-                request.setValue("Nook/\(release.version)", forHTTPHeaderField: "User-Agent")
-                let cached = releaseListCache
-                if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
-                let (body, response) = try await URLSession.shared.data(for: request)
-                let http = response as? HTTPURLResponse
-                let status = http?.statusCode ?? 0
+                // The feed first (a static file, no rate limit); GitHub's API while the feed is not there or fails.
                 let data: Data
-                if status == 304, let cached {
-                    data = cached.data
+                if let feed = release.feedURL, let list = try? await fetchReleaseList(feed, release: release, api: false) {
+                    data = list
                 } else {
-                    guard status == 200 else { throw NookError(tr("update.release.problem.status", status)) }
-                    data = body
-                    releaseListCache = (http?.value(forHTTPHeaderField: "ETag")).map { ($0, body) }
+                    data = try await fetchReleaseList(api, release: release, api: true)
                 }
                 // Read after the answer arrives, so a channel picked during the request counts.
-                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release, channel: channel))
+                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release, channel: effectiveChannel))
             } catch {
                 result = .failure(error)
             }
@@ -291,6 +301,26 @@ final class AppUpdater: ObservableObject {
                 if !isFailed, !isBusy { phase = releaseUpdate == nil ? .idle : .available }
             }
         }
+    }
+
+    /// One answer with the release list from `url`, conditional on the last one from the same address.
+    private func fetchReleaseList(_ url: URL, release: ReleaseBuild, api: Bool) async throws -> Data {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        if api { request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept") }
+        request.setValue("Nook/\(release.version)", forHTTPHeaderField: "User-Agent")
+        let cached = releaseListCache.flatMap { $0.url == url ? $0 : nil }
+        if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
+        let (body, response) = try await URLSession.shared.data(for: request)
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        if status == 304, let cached { return cached.data }
+        guard status == 200 else { throw NookError(tr("update.release.problem.status", status)) }
+        // A feed that is not a list (an error page) counts as missing, so the API is asked instead.
+        guard body.first(where: { !" \t\r\n".utf8.contains($0) }) == UInt8(ascii: "[") else {
+            throw NookError(tr("update.release.problem.status", status))
+        }
+        releaseListCache = (http?.value(forHTTPHeaderField: "ETag")).map { (url, $0, body) }
+        return body
     }
 
     /// Reads the checkout off the main thread. Nil when main has nothing this build lacks.
@@ -346,6 +376,7 @@ final class AppUpdater: ObservableObject {
     /// Starts the install you confirmed. `stash`: set all uncommitted changes aside and put them back after. Without it,
     /// changes the update does not touch stay in place and the ones it does go into a stash that stays.
     func install(stash: Bool = false) {
+        guard !policy.disabled else { return }
         rememberScreen()
         if source == nil, let release, let candidate = releaseUpdate {
             installRelease(candidate, over: release)

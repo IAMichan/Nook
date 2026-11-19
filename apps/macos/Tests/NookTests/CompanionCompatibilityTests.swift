@@ -76,6 +76,18 @@ final class CompanionCompatibilityTests: XCTestCase {
         XCTAssertTrue(CommandReceipts.keeps(.requestUpdate))
         XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.requestUpdate))
     }
+
+    func testInstallingAnUpdateFromThePhoneIsKeptOnceAndNeedsOperate() {
+        XCTAssertTrue(CommandReceipts.keeps(.installUpdate))
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.installUpdate))
+        XCTAssertEqual(CompanionScopes.table[.installUpdate], .scope(.operate))
+        // An older Mac sends a home without `update`; it still decodes.
+        let old = #"{"lines":[],"events":[],"suggestions":[],"accounts":[]}"#
+        XCTAssertNil(try JSONDecoder().decode(HomeDigest.self, from: Data(old.utf8)).update)
+        let offer = #"{"lines":[],"events":[],"suggestions":[],"accounts":[],"update":{"version":"0.2.0","state":"available","changes":3}}"#
+        XCTAssertEqual(try JSONDecoder().decode(HomeDigest.self, from: Data(offer.utf8)).update,
+                       UpdateOffer(version: "0.2.0", state: "available", changes: 3))
+    }
 }
 
 /// The gentle notice when both work together but one speaks an older protocol (`CompanionCompatibility.notice`).

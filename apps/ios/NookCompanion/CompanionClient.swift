@@ -1456,6 +1456,23 @@ final class CompanionClient: ObservableObject {
         }
     }
 
+    /// Whether this phone may install the Mac's update: the Mac takes it and the pairing may operate there.
+    var installsMacUpdate: Bool { can(CompanionFeature.installUpdate) && allows(.operate) }
+
+    /// Installs the update the home offers on the Mac, or restarts into one that waited for working agents. The answer
+    /// carries the home again, so the card follows; `notice` says what happens.
+    func installMacUpdate() async {
+        guard installsMacUpdate, !Self.isDemo, let response = await perform(CompanionRequest(op: .installUpdate)) else { return }
+        switch response.message {
+        case "installing": notice = String(localized: "Nook on your Mac is installing the update. It starts again by itself.")
+        case "waiting": notice = String(localized: "Agents on your Mac are still working. Tap Restart now to stop them and finish the update.")
+        case "restarting": notice = String(localized: "Nook on your Mac is restarting into the new version.")
+        case "blocked": notice = String(localized: "This update needs a choice on your Mac. Nook opened it there.")
+        case "none": notice = String(localized: "Nook on your Mac has no update ready yet.")
+        default: notice = String(localized: "Nook on your Mac cannot update itself. Update it the way you installed it.")
+        }
+    }
+
     /// Sends a request and takes in whatever the answer carries. The answer when the Mac said yes, else nil with the reason
     /// in `notice`. `quiet` is for the requests a screen repeats by itself: a session or chat that is gone says so on that
     /// screen instead of in an alert every few seconds.

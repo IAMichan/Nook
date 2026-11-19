@@ -28,6 +28,7 @@
   import { tr } from "../lib/i18n.svelte";
   import MicButton from "../components/MicButton.svelte";
   import Music from "./services/Music.svelte";
+  import { footerState, startUpdates, updater } from "../lib/updates.svelte";
 
   let route = $state<Route>(resumeRoute());
   let paletteOpen = $state(false);
@@ -239,6 +240,20 @@
     if (next === "chat" && mobile) showList = false;
   }
 
+  // The footer's update button (`UpdateFooterButton` on the Mac): only when there is something to say.
+  startUpdates();
+  const updateState = $derived(footerState(updater.status));
+  const updateLabel = $derived(({
+    available: tr("Update naar {version}", "Update to {version}", { version: updater.status?.candidate?.version ?? "" }),
+    installing: tr("Bijwerken…", "Updating…"),
+    ready: tr("Herstarten", "Restart"),
+    failed: tr("Update mislukt", "Update failed"),
+    updated: tr("Bijgewerkt naar {version}", "Updated to {version}", { version: updater.status?.receipt?.to ?? "" }),
+  } as const)[updateState ?? "available"]);
+  function openUpdates() {
+    openTarget({ kind: "settings", section: "maintenance" });
+  }
+
   /// Opens a page of the Agents tab: pull requests or usage (the footer's buttons, as on the Mac).
   function openAgentsPage(page: "pulls" | "usage") {
     agents.select(page);
@@ -328,6 +343,12 @@
             title={tabs.length + i < 9 ? `${titleOf(page.route)} (Ctrl+${tabs.length + i + 1})` : titleOf(page.route)} aria-label={titleOf(page.route)}><Icon name={page.icon} size={16} /></button>
         {/each}
         <span class="spacer"></span>
+        {#if updateState}
+          <button class="ghost update" class:available={updateState === "available" || updateState === "ready"} class:failed={updateState === "failed"} onclick={openUpdates} title={updateLabel} aria-label={updateLabel}>
+            <Icon name={updateState === "installing" ? "loader" : updateState === "failed" ? "alert" : updateState === "updated" ? "circle-check" : "arrow"} size={14} />
+            <span>{updateState === "available" ? tr("Update", "Update") : updateLabel}</span>
+          </button>
+        {/if}
         <span class="status" title={status} role="status" aria-label={status}><span class="dot" class:waiting={nook.waiting > 0} class:working={nook.working > 0} class:unread={!nook.waiting && !nook.working && !!nook.info?.brainReady}></span></span>
       </div>
     {/if}
@@ -408,6 +429,10 @@
   .side-list :global(.list) { flex: 1; background: transparent; border-right: 0; }
   .footer { display: flex; align-items: center; gap: 2px; padding: 6px 0 0; flex: none; border-top: 1px solid var(--hairline); margin-top: 4px; }
   .footer .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--line2); flex: none; }
+  .update { display: inline-flex; align-items: center; gap: var(--space-4); height: 26px; padding: 0 var(--space-8); border-radius: var(--radius-pill); font: var(--text-control); color: var(--text2); max-width: 160px; }
+  .update span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .update.available { color: var(--mint); background: color-mix(in srgb, var(--mint) 14%, transparent); }
+  .update.failed { color: var(--coral); }
   .status { display: grid; place-items: center; width: 28px; height: 28px; flex: none; cursor: default; }
   .status .dot { background-color: var(--text3); }
   .status .dot.waiting { background-color: var(--amber); }

@@ -21,6 +21,9 @@ pub const CHANGE_LIMIT: usize = 60;
 pub const FIRST_CHECK_SECONDS: u64 = 20;
 pub const CHECK_INTERVAL_SECONDS: u64 = 4 * 60;
 
+/// The update feed's file name on the latest release (`release.yml`, "Update the update feed").
+pub const FEED_NAME: &str = "nook-releases.json";
+
 // MARK: Versions
 
 /// A release version as the tags write it: `v0.2.0`, `v0.2.0-beta.3`. Ordered like SemVer: a pre-release comes before
@@ -123,8 +126,7 @@ impl UpdateChannel {
     }
 }
 
-/// Which installer this platform takes. An installed `.deb` or `.msi` is the package manager's to update; Nook updates
-/// what its own setup or AppImage put there.
+/// Which release file updates this copy: the same kind of file that installed it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdatePlatform {
@@ -132,6 +134,10 @@ pub enum UpdatePlatform {
     Windows,
     /// `Nook-<version>-Linux.AppImage` (the running AppImage file is swapped).
     LinuxAppImage,
+    /// `Nook-<version>-Windows.msi` (Windows Installer, per machine: Windows asks for administrator rights).
+    WindowsMsi,
+    /// `Nook-<version>-Linux.deb` (installed with apt or dpkg through pkexec, which asks for your password).
+    LinuxDeb,
 }
 
 impl UpdatePlatform {
@@ -140,6 +146,8 @@ impl UpdatePlatform {
         match self {
             UpdatePlatform::Windows => format!("Nook-{version}-Windows-setup.exe"),
             UpdatePlatform::LinuxAppImage => format!("Nook-{version}-Linux.AppImage"),
+            UpdatePlatform::WindowsMsi => format!("Nook-{version}-Windows.msi"),
+            UpdatePlatform::LinuxDeb => format!("Nook-{version}-Linux.deb"),
         }
     }
 
@@ -180,9 +188,15 @@ impl ReleaseBuild {
         }
     }
 
-    /// GitHub's list of releases, newest first.
+    /// GitHub's list of releases, newest first. The fallback when the feed is not there (a release from before it).
     pub fn releases_url(&self) -> String {
         format!("https://api.github.com/repos/{}/releases?per_page=20", self.repository)
+    }
+
+    /// The update feed: the same list as a file on the latest release (the release workflow refreshes it with every
+    /// release, betas included). A static download, so it does not count against GitHub's API rate limit.
+    pub fn feed_url(&self) -> String {
+        format!("https://github.com/{}/releases/latest/download/{FEED_NAME}", self.repository)
     }
 }
 
@@ -396,6 +410,171 @@ pub fn parse_notes(body: &str, date: Option<DateTime<Utc>>) -> Vec<IncomingChang
             Some(IncomingChange { title: title.to_string(), pull_request: number, author: author.to_string(), date })
         })
         .collect()
+}
+
+// MARK: Where this copy came from
+
+/// How the running copy of Nook was installed, which decides how it replaces itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum InstallKind {
+    /// Nook's own Windows setup (NSIS, per user): it leaves `uninstall.exe` next to `nook.exe`, and the next setup
+    /// replaces the app in place without asking for administrator rights.
+    WindowsSetup,
+    /// The `.msi` (per machine, in Program Files): the next `.msi` upgrades it, after Windows asks for administrator
+    /// rights.
+    WindowsMsi,
+    /// An AppImage; `path` is the file that runs (`$APPIMAGE`), which the update swaps.
+    AppImage { path: String },
+    /// The `.deb` (dpkg owns the executable): the next `.deb` is installed through pkexec, which asks for your password.
+    Deb,
+    /// Put there some other way (built by hand, another package format): Nook links to the release instead.
+    Package,
+    /// A build that updates in another way (macOS has `AppUpdater`; Android has no downloads yet).
+    Unsupported,
+}
+
+impl InstallKind {
+    /// Reads the copy that runs: `os` is `std::env::consts::OS`, `has_uninstaller` whether `uninstall.exe` sits next to
+    /// the executable, `appimage` the `APPIMAGE` variable the AppImage runtime sets, `dpkg_owned` whether
+    /// `dpkg-query -S` names a package for the executable.
+    pub fn detect(os: &str, has_uninstaller: bool, appimage: Option<&str>, dpkg_owned: bool) -> Self {
+        match os {
+            "windows" if has_uninstaller => InstallKind::WindowsSetup,
+            "windows" => InstallKind::WindowsMsi,
+            "linux" => match appimage.map(str::trim).filter(|p| !p.is_empty()) {
+                Some(path) => InstallKind::AppImage { path: path.to_string() },
+                None if dpkg_owned => InstallKind::Deb,
+                None => InstallKind::Package,
+            },
+            _ => InstallKind::Unsupported,
+        }
+    }
+
+    /// Which release file updates this copy; None when Nook does not update it by itself.
+    pub fn platform(&self) -> Option<UpdatePlatform> {
+        match self {
+            InstallKind::WindowsSetup => Some(UpdatePlatform::Windows),
+            InstallKind::WindowsMsi => Some(UpdatePlatform::WindowsMsi),
+            InstallKind::AppImage { .. } => Some(UpdatePlatform::LinuxAppImage),
+            InstallKind::Deb => Some(UpdatePlatform::LinuxDeb),
+            InstallKind::Package | InstallKind::Unsupported => None,
+        }
+    }
+}
+
+/// `msiexec` arguments for an `.msi` update (Tauri's WiX template): `/passive` shows progress without questions,
+/// `/norestart` never restarts Windows, and `AUTOLAUNCHAPP=True` starts Nook again when it is done.
+pub fn msi_args(path: &str) -> Vec<String> {
+    vec!["/i".into(), path.into(), "/passive".into(), "/norestart".into(), "AUTOLAUNCHAPP=True".into()]
+}
+
+/// The command that installs a `.deb` update as root: apt when it is there (it also fetches new dependencies), else
+/// dpkg. pkexec asks for your password in a system dialog.
+pub fn deb_command(path: &str, has_apt: bool) -> Vec<String> {
+    if has_apt {
+        ["pkexec", "apt-get", "install", "-y", "--no-install-recommends", path].map(String::from).to_vec()
+    } else {
+        ["pkexec", "dpkg", "-i", path].map(String::from).to_vec()
+    }
+}
+
+/// The arguments for Nook's Windows setup when it runs as an update (Tauri's NSIS template): `/P` passive, a progress
+/// window without questions; `/UPDATE` keeps the shortcuts and skips the "already installed" page; `/R` starts Nook
+/// again once the files are in place. The setup closes a Nook that still runs before it copies.
+pub const WINDOWS_SETUP_ARGS: [&str; 3] = ["/P", "/UPDATE", "/R"];
+
+/// The file name the downloaded installer is kept under while it runs; only letters, digits, dots and dashes, so a
+/// release name can never point outside the updates folder.
+pub fn download_name(name: &str) -> Option<&str> {
+    let safe = !name.is_empty()
+        && name.len() <= 120
+        && !name.starts_with('.')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        && !name.contains("..");
+    safe.then_some(name)
+}
+
+// MARK: Policy
+
+/// What an administrator allows, the same keys on every platform (docs/UPDATES.md, "Turning updates off"):
+/// `DisableUpdates` stops checking and installing, `DisableBetaChannel` keeps Nook on Stable. The environment variable
+/// `NOOK_DISABLE_UPDATES=1` turns updates off for one machine or one launch.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePolicy {
+    pub disabled: bool,
+    pub beta_disabled: bool,
+    /// Where the restriction comes from, for Settings ("your administrator", "NOOK_DISABLE_UPDATES"); None when free.
+    pub source: Option<PolicySource>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PolicySource {
+    /// The environment variable.
+    Environment,
+    /// A managed policy (registry, `/etc/nook/policy.json`, a configuration profile on the Mac).
+    Administrator,
+    /// A policy that is there but cannot be read: updates are off rather than doing what it may forbid.
+    Unreadable,
+}
+
+/// The policy file on Linux.
+pub const LINUX_POLICY_PATH: &str = "/etc/nook/policy.json";
+/// The registry key on Windows (under HKEY_LOCAL_MACHINE, then HKEY_CURRENT_USER); DWORD values.
+pub const WINDOWS_POLICY_KEY: &str = r"SOFTWARE\Policies\Nook";
+
+impl UpdatePolicy {
+    /// Combines the sources. `env` is `NOOK_DISABLE_UPDATES`; `managed` the managed values that were found
+    /// (`DisableUpdates`, `DisableBetaChannel`), or `Err` when a policy exists but cannot be read.
+    pub fn resolve(env: Option<&str>, managed: Result<Option<(bool, bool)>, ()>) -> Self {
+        let env_off = env.map(str::trim).is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"));
+        match managed {
+            Err(()) => UpdatePolicy { disabled: true, beta_disabled: true, source: Some(PolicySource::Unreadable) },
+            Ok(Some((disabled, beta))) if disabled || beta => {
+                UpdatePolicy { disabled: disabled || env_off, beta_disabled: beta, source: Some(PolicySource::Administrator) }
+            }
+            _ if env_off => UpdatePolicy { disabled: true, beta_disabled: false, source: Some(PolicySource::Environment) },
+            _ => UpdatePolicy::default(),
+        }
+    }
+
+    /// `/etc/nook/policy.json`: `{"disableUpdates": true, "disableBetaChannel": true}` (both optional). None when
+    /// absent, `Err` when it is not that.
+    pub fn parse_json(text: Option<&str>) -> Result<Option<(bool, bool)>, ()> {
+        let Some(text) = text else { return Ok(None) };
+        let value: serde_json::Value = serde_json::from_str(text).map_err(|_| ())?;
+        let object = value.as_object().ok_or(())?;
+        let flag = |key: &str| match object.get(key) {
+            None => Ok(false),
+            Some(serde_json::Value::Bool(b)) => Ok(*b),
+            Some(_) => Err(()),
+        };
+        Ok(Some((flag("disableUpdates")?, flag("disableBetaChannel")?)))
+    }
+
+    /// One DWORD from `reg query <key> /v <name>` (`    DisableUpdates    REG_DWORD    0x1`); None when the value is not there.
+    pub fn parse_reg_query(output: &str, name: &str) -> Option<bool> {
+        output.lines().find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            match parts.as_slice() {
+                [n, "REG_DWORD", value] if n.eq_ignore_ascii_case(name) => {
+                    u32::from_str_radix(value.trim_start_matches("0x"), 16).ok().map(|v| v != 0)
+                }
+                _ => None,
+            }
+        })
+    }
+
+    /// The channel a build may follow under this policy.
+    pub fn channel(&self, wanted: UpdateChannel) -> UpdateChannel {
+        if self.beta_disabled {
+            UpdateChannel::Stable
+        } else {
+            wanted
+        }
+    }
 }
 
 // MARK: Steps and receipt
