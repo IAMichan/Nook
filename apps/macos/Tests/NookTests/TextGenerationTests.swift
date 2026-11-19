@@ -66,6 +66,13 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9"))
         XCTAssertFalse(TextGenerationRunner.isScratchFolder("/Users/me/Code/nook"))
         XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9/"), "a trailing slash")
+        // The brain's conversations (kept for --resume) are Nook's, never earlier sessions of the user's.
+        let temp = "/var/folders/x/T/"
+        XCTAssertTrue(NookPaths.isOwnScratch("/private/var/folders/x/T/nook-brain", temporaryDirectory: temp))
+        XCTAssertTrue(NookPaths.isOwnScratch("/var/folders/x/T/nook-brain/run-937351B9", temporaryDirectory: temp))
+        XCTAssertTrue(NookPaths.isOwnScratch("/private/var/folders/x/T/nook-models/", temporaryDirectory: temp))
+        XCTAssertFalse(NookPaths.isOwnScratch("/Users/me/Code/nook-brain", temporaryDirectory: temp))
+        XCTAssertFalse(NookPaths.isOwnScratch("/var/folders/x/T/nook-brainstorm", temporaryDirectory: temp))
         let codex = TextGeneration.codexArguments(schemaPath: "/t/s.json", outputPath: "/t/a.txt")
         XCTAssertEqual(codex.first, "exec")
         XCTAssertTrue(codex.contains("--ignore-user-config"))
