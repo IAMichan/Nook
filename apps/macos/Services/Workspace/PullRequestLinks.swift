@@ -288,6 +288,15 @@ enum PullRequestToolCall {
             + #"az\s+repos\s+pr\s+update\b[^;&|\n]*--status[\s=]+["']?(?:completed|abandoned))\b"#,
         options: [.caseInsensitive])
 
+    /// A push, directly or through a stack tool, that can start checks on a linked pull request or precede one opened
+    /// on the forge's page (as t3code's `PUSH_COMMAND`): `git push`, `gh stack push|submit`, `cafe stack submit`,
+    /// `jj git push`.
+    private static let push = try? NSRegularExpression(
+        pattern: start + #"(?:git(?:\s+-[cC]\s+\S+)*\s+push|gh\s+stack\s+(?:push|submit)|cafe\s+stack\s+submit|jj\s+git\s+push)(?=$|[\s;&|)"'])"#,
+        options: [.caseInsensitive])
+
+    static func pushes(command parts: [String?]) -> Bool { matches(push, parts) }
+
     static func showsPullRequest(tool: String?, command parts: [String?]) -> Bool {
         if let tool = tool?.lowercased(),
            ["pull_request", "pullrequest", "merge_request", "mergerequest"].contains(where: tool.contains) { return true }
@@ -586,6 +595,9 @@ enum PullRequestSettlement {
         }
     }
 
+    /// After this long without an update an open request is quiet: asked every 5 minutes instead of every 30 seconds.
+    static let quietAfter: TimeInterval = 30 * 60
+
     /// After this long a merged or closed request, or a session without any, has settled.
     static let settledAfter: TimeInterval = 24 * 60 * 60
 
@@ -594,10 +606,21 @@ enum PullRequestSettlement {
     /// quiet for a day is asked far less often: a branch without a request (`quietSince`: when its session last did
     /// anything) as often as a merged one, and a request closed long ago in a quiet session four times a day, for the odd
     /// one reopened.
-    static func syncInterval(links: [PullRequestLink], quietSince: Date? = nil, now: Date = Date()) -> TimeInterval {
-        if anyOpen(links: links) { return 30 }
+    ///
+    /// As t3code's sync: an open request nobody has updated for half an hour (`quietAfter`) is asked every 5 minutes
+    /// instead of every 30 seconds (a badge in view still follows it closely, `PullRequestStatusStore.follow`). And with
+    /// `seesCreation` (a session whose tool calls Nook reads, so `gh pr create` and pushes ask at once,
+    /// `noticeCreatedPullRequest` and `PullRequestSync.pushed`) a branch without a request is asked every 15 minutes, for
+    /// one opened elsewhere, instead of every minute.
+    static func syncInterval(links: [PullRequestLink], quietSince: Date? = nil, now: Date = Date(),
+                             seesCreation: Bool = false) -> TimeInterval {
+        if anyOpen(links: links) {
+            let open = links.filter { $0.state.isOpen }
+            let quiet = open.allSatisfy { link in link.updatedAt.map { now.timeIntervalSince($0) >= quietAfter } ?? false }
+            return quiet ? 300 : 30
+        }
         func settled(_ date: Date?) -> Bool { date.map { now.timeIntervalSince($0) >= settledAfter } ?? false }
-        if links.isEmpty { return settled(quietSince) ? 900 : 60 }
+        if links.isEmpty { return settled(quietSince) || seesCreation ? 900 : 60 }
         // Also a session at work: a merged branch that is used again can get a new request.
         return settled((links.compactMap(\.updatedAt) + [quietSince].compactMap { $0 }).max()) ? 6 * 60 * 60 : 900
     }

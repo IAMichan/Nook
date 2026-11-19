@@ -1,28 +1,66 @@
 import Foundation
 
-/// A pull request's state, checks, reviews and comments in one GraphQL request, where the REST read
-/// (`GitHubPullRequests.snapshot`) takes five. GraphQL has an hourly limit of its own, so once REST runs low the badges
-/// and watched pull requests keep going on this one (`ForgeRateBudget.prefersGraphQL`), as t3code reads its pull
-/// requests. Foundation only, so tests can use it.
+/// A pull request's state, checks, reviews and comments through GraphQL, where the REST read
+/// (`GitHubPullRequests.snapshot`) takes five requests, and several pull requests in one request
+/// (`GitHubSnapshotBatcher`), as t3code reads its pull requests. GraphQL has an hourly limit of its own
+/// (`ForgeRateBudget.prefersGraphQL`). Foundation only, so tests can use it.
 enum GitHubPullRequestSnapshotQuery {
-    static let query = """
-    query NookPullRequestSnapshot($owner: String!, $name: String!, $number: Int!) {
-      repository(owner: $owner, name: $name) {
-        pullRequest(number: $number) {
-          title state merged isDraft mergeable mergeStateStatus baseRefName
-          autoMergeRequest { enabledAt }
-          commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-            __typename
-            ... on CheckRun { name status conclusion }
-            ... on StatusContext { context state }
-          } } } } } }
-          reviews(last: 100) { nodes { state body author { __typename login } } }
-          comments(last: 100) { nodes { body createdAt author { __typename login } } }
-          reviewThreads(last: 50) { nodes { path comments(last: 20) { nodes { body createdAt author { __typename login } } } } }
-        }
-      }
+    /// What one pull request's snapshot reads, shared by the single query and the batched one.
+    static let fragment = """
+    fragment nookSnapshot on PullRequest {
+      title state merged isDraft mergeable mergeStateStatus baseRefName
+      autoMergeRequest { enabledAt }
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+        __typename
+        ... on CheckRun { name status conclusion }
+        ... on StatusContext { context state }
+      } } } } } }
+      reviews(last: 100) { nodes { state body author { __typename login } } }
+      comments(last: 100) { nodes { body createdAt author { __typename login } } }
+      reviewThreads(last: 50) { nodes { path comments(last: 20) { nodes { body createdAt author { __typename login } } } } }
     }
     """
+
+    static let query = """
+    query NookPullRequestSnapshot($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) { pullRequest(number: $number) { ...nookSnapshot } }
+    }
+    """ + "\n" + fragment
+
+    /// At most this many pull requests in one request: GitHub charges a batch by the connections it reads (about half a
+    /// point per pull request here), and one slow repository should not hold up a long list.
+    static let batchLimit = 20
+
+    /// One request for several pull requests (`owner/repo`, number): each under its own alias (`p0`, `p1` …) with its own
+    /// variables, so a missing or hidden one fails only its own slice, as t3code batches its pull request reads. Nil
+    /// when none of them names an owner.
+    static func batchBody(_ items: [(repo: String, number: Int)]) -> Data? {
+        var declarations: [String] = []
+        var fields: [String] = []
+        var variables: [String: Any] = [:]
+        for (index, item) in items.enumerated() {
+            let parts = item.repo.split(separator: "/", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            declarations.append("$o\(index): String!, $n\(index): String!, $k\(index): Int!")
+            fields.append("  p\(index): repository(owner: $o\(index), name: $n\(index)) { pullRequest(number: $k\(index)) { ...nookSnapshot } }")
+            variables["o\(index)"] = parts[0]
+            variables["n\(index)"] = parts[1]
+            variables["k\(index)"] = item.number
+        }
+        guard !fields.isEmpty else { return nil }
+        let text = "query NookPullRequestSnapshots(\(declarations.joined(separator: ", "))) {\n\(fields.joined(separator: "\n"))\n}\n" + fragment
+        return try? JSONSerialization.data(withJSONObject: ["query": text, "variables": variables])
+    }
+
+    /// Each batched pull request's snapshot by its place in the batch; nil where GitHub had none (missing, or hidden from
+    /// this account), so another account can try that one.
+    static func parseBatch(_ root: [String: Any], count: Int) -> [PullRequestSnapshot?] {
+        let data = root["data"] as? [String: Any]
+        return (0..<count).map { index in
+            guard let pull = (data?["p\(index)"] as? [String: Any])?["pullRequest"] as? [String: Any] else { return nil }
+            return parse(pull: pull)
+        }
+    }
 
     /// The request body for `owner/repo` and the pull request's number; nil for a repository name without an owner.
     static func body(repo: String, number: Int) -> Data? {
@@ -32,11 +70,15 @@ enum GitHubPullRequestSnapshotQuery {
         return try? JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
     }
 
-    /// The snapshot in the same words the REST read gives, so a watch sees no news when the way in changes. Nil when
-    /// GitHub did not answer with the pull request.
+    /// The single query's answer.
     static func parse(_ root: [String: Any]) -> PullRequestSnapshot? {
         guard let data = root["data"] as? [String: Any],
               let pull = (data["repository"] as? [String: Any])?["pullRequest"] as? [String: Any] else { return nil }
+        return parse(pull: pull)
+    }
+
+    /// The snapshot in the same words the REST read gives, so a watch sees no news when the way in changes.
+    static func parse(pull: [String: Any]) -> PullRequestSnapshot {
         let merged = (pull["merged"] as? Bool) ?? false
         let state = merged ? "merged" : ((pull["state"] as? String) == "OPEN" ? "open" : "closed")
 

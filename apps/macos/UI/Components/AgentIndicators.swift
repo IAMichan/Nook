@@ -232,7 +232,8 @@ extension PullRequestStatusStore {
                 // Woken early: read even when another place read a few seconds ago, unless that was just now.
                 await shared.refresh(url, maxAge: early ? 3 : min(interval, 20 * plan.slowdown))
             }
-            early = await wait(interval, gate: gate)
+            // On the clock's ten-second beat, so the badges shown read together in one request.
+            early = await wait(aligned(interval, now: Date()), gate: gate)
         }
     }
 

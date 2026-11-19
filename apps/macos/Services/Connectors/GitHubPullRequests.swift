@@ -68,10 +68,14 @@ enum GitHubPullRequests {
         guard isAvailable, let target = parse(url) else { return nil }
         let repo = target.repo, number = target.number
         for token in tokens {
-            // REST (five conditional reads, free while nothing changed) while it has room; GraphQL (one query on a limit
-            // of its own) once REST runs low or is used up, as t3code reads pull requests.
-            if ForgeRateBudget.shared.prefersGraphQL(), let snapshot = await graphQLSnapshot(repo: repo, number: number, token: token) {
-                return snapshot
+            // GraphQL first, batched with the other pull requests read in the same moment (one request for up to 20, on
+            // a limit of its own), as t3code reads them; the five REST reads when GraphQL failed or runs low.
+            if ForgeRateBudget.shared.prefersGraphQL() {
+                switch await batcher.snapshot(repo: repo, number: number, token: token) {
+                case .snapshot(let snapshot): return snapshot
+                case .missing: continue
+                case .failed: break
+                }
             }
             let auth = ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
             let base = "https://api.github.com/repos/\(repo)"
@@ -82,7 +86,7 @@ enum GitHubPullRequests {
             guard let pull = await get("/pulls/\(number)") as? [String: Any] else {
                 // REST refused because its limit is used up: the same read through GraphQL.
                 if let rest = URL(string: base), ForgeRateBudget.shared.pausedUntil(rest) != nil,
-                   let snapshot = await graphQLSnapshot(repo: repo, number: number, token: token) { return snapshot }
+                   case .snapshot(let snapshot) = await batcher.snapshot(repo: repo, number: number, token: token) { return snapshot }
                 continue
             }
             let merged = (pull["merged"] as? Bool) ?? false
@@ -126,13 +130,12 @@ enum GitHubPullRequests {
         return nil
     }
 
-    /// `snapshot` through GraphQL: one request on GraphQL's own limit. Nil when it failed or the account cannot see it.
-    private static func graphQLSnapshot(repo: String, number: Int, token: String) async -> PullRequestSnapshot? {
-        guard let body = GitHubPullRequestSnapshotQuery.body(repo: repo, number: number),
-              let url = URL(string: "https://api.github.com/graphql"),
-              let raw = try? await ConnectorHTTP.json(url, headers: ["Authorization": "Bearer \(token)"], method: "POST", body: body),
-              let root = raw as? [String: Any] else { return nil }
-        return GitHubPullRequestSnapshotQuery.parse(root)
+    /// The GraphQL reads of `snapshot`, gathered per account into one request (`GitHubSnapshotBatcher`).
+    static let batcher = GitHubSnapshotBatcher { body, token in
+        guard let url = URL(string: "https://api.github.com/graphql"),
+              let raw = try? await ConnectorHTTP.json(url, headers: ["Authorization": "Bearer \(token)"], method: "POST", body: body)
+        else { return nil }
+        return raw as? [String: Any]
     }
 
     /// Tries the accounts in order: the first one with access to the repository opens the pull request.
