@@ -28,6 +28,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   markup and text are on your clipboard, ready to paste in an agent's prompt. Shift-click takes several. In a PDF the
   click takes the spot and copies a picture of it with the spot marked; the crosshair then shows a PDF page, so you
   see which of the two it selects. On browser pages where it cannot select, it is greyed out.
+- Nook Chat now looks things up on the web when you ask what an abbreviation, term or word means ("Wat betekent PGO?",
+  "What does SLA stand for?", in all five languages), instead of answering from the model's memory, and says where it
+  found the answer. With **Search the web when needed** off, nothing changes.
 
 ### Fixed
 

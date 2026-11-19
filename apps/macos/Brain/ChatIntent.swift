@@ -171,7 +171,7 @@ struct ChatIntent: Equatable {
         if has(#"\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b"#) { kinds.append(.network) }
         if Self.schedules(text) { kinds.append(.schedule) }
         if has(#"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert"#) { kinds.append(.clipboard) }
-        if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) { kinds.append(.web) }
+        if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) || Self.asksMeaning(raw) { kinds.append(.web) }
         // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
         // the meeting" is a mail, "remind me of the call" is a reminder.
         intent.kinds = kinds.sorted { (Self.priority.firstIndex(of: $0) ?? 99) < (Self.priority.firstIndex(of: $1) ?? 99) }
@@ -472,6 +472,23 @@ struct ChatIntent: Equatable {
         .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
         .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember", .takeover: "take_over"
     ]
+
+    /// "Wat betekent PGO?", "waar staat KvK voor", "what does SLA stand for", "was bedeutet DSGVO", "que veut dire RGPD": the
+    /// meaning of an abbreviation, term or word. The web knows it better than the model's memory, so Nook looks it up
+    /// there. A question about what someone meant in a mail or message ("wat bedoelt Lisa in haar mail"), or about what
+    /// something means for the user ("wat betekent dit voor mijn planning"), is not one.
+    static func asksMeaning(_ raw: String) -> Bool {
+        let original = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = original.lowercased()
+        guard !text.isEmpty else { return false }
+        func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        if has(#"\b(voor|for|für|pour|para) (mij|mijn|me|my|ons|onze|our|us|jou|jouw|je|u|you|your|mich|mein\w*|uns|unser\w*|dich|moi|mon|ma|mes|nous|notre|toi|mí|mi|mis|nosotros|nuestr\w*|ti)\b|\b(e-?mail|mail|mailtje|bericht\w*|messages?|nachricht\w*|courriel|mensaje|correo|chat|appje|zei|zegt|said|says|schreef|wrote|bedoelt|bedoelde|meant)\b"#) { return false }
+        let meaning = #"\bwat (betekent|betekend|is de betekenis van|houdt\b[^.?!]{0,40}\bin\b)|\bwaar staat\b[^.?!]{0,40}\bvoor\b|\bafkorting\w*|\bbetekenis\b|\bdefinitie\b|\bwhat does\b[^.?!]{0,40}\b(mean|stand for)\b|\bwhat is the meaning of\b|\bmeaning of\b|\babbreviat\w*|\bacronyms?\b|\bdefinition\b|\bdefine\b|\bwas (bedeutet|heißt|heisst)\b|\bwofür steht\b|\babkürzung\w*|\bbedeutung\b|\bque (signifie|veut dire)\b|\bqu'est-ce que\b[^.?!]{0,40}\bveut dire\b|\bveut dire quoi\b|\babréviation\w*|\bsigle\b|\bsignification\b|\bqu[ée] significa\b|\bqu[ée] quiere decir\b|\babreviatura\w*|\bsiglas?\b|\bsignificado\b"#
+        if has(meaning) { return true }
+        // "Wat is PGO?", "what's an SLA", "was ist ein KPI": a short question about a word in capitals is an abbreviation.
+        return original.range(of: #"^(?i:wat is|what is|what's|whats|was ist|qu'est-ce qu'(un|une)|c'est quoi|qu[ée] es)(?i: (een|de|het|an?|the|ein|eine|le|la|l'|un|une|el|una))? ?[A-Z][A-Z0-9&.-]{1,9}s?\s*\??$"#,
+                                  options: .regularExpression) != nil
+    }
 
     /// "Check elke ochtend mijn mail", "every weekday at 8", "maak een automatisering", "täglich um 7": a task Nook runs by
     /// itself on a schedule. It only adds the scheduling tools; a recurring meeting stays an event ("plan elke maandag

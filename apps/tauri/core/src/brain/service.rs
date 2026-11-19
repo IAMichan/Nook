@@ -52,14 +52,15 @@ pub fn needs_tools(text: &str) -> bool {
     )
 }
 
-/// Vragen over actuele zaken buiten de computer: nieuws, weer, uitslagen, koersen, of expliciet "zoek".
+/// Questions about current affairs outside the computer (news, weather, scores, prices), an explicit "search", or the
+/// meaning of an abbreviation or term.
 pub fn wants_web(text: &str) -> bool {
     super::matches(
         rx!(
             r"(?i)\bzoek\b|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|regen|temperatuur|uitslag|wedstrijd|wie won|gewonnen|stand van|actueel|vandaag in het|laatste versie|release|koers|prijs van|hoeveel kost|wat is er gebeurd|wikipedia|openingstijden|recensie|review van|search|news|weather|who won|latest|price of"
         ),
         text,
-    )
+    ) || super::intent::asks_meaning(text)
 }
 
 /// Waar Nook draait, voor de systeemprompt.
@@ -252,6 +253,9 @@ pub fn local_system_prompt(
     .into_iter()
     .filter(|n| has(n))
     .collect();
+    if has("search_web") {
+        lines.push("For what an abbreviation stands for, what a term means, or another fact you are not sure of, search the web with search_web instead of guessing, and say where you found it.".into());
+    }
     if researched {
         lines.push("Nook already searched the user's sources for this request: what it found is in the context under \"Looked up for this question\", with the best matches read in full. Answer from those documents first, and say which note, mail or file the answer comes from. If nothing there is relevant and the question is general knowledge, simply answer it.".into());
     }
@@ -300,7 +304,7 @@ Capabilities (use tools; never claim inability if a tool exists for it):
 - Every connected source brings its own tools: calendar, reminders, notes, mail, files, contacts, chats, GitHub, Notion and others. Use the tool of the source that holds the answer. More sources can be unlocked with use_source when it is offered.
 - Mail: use compose_mail to put a complete draft in the chat (with invite to include a real calendar invitation .ics they accept or decline in their calendar); the user sends it with one click. Never claim a mail was sent.
 - Charts: use show_chart to render native charts (bar, line, area, pie, point). Fetch real numbers first. Never output raw code or JSON for charts.
-- Web: search_web and read_webpage for current information outside the {device_name}; get_weather for any weather question.
+- Web: search_web and read_webpage for current information outside the {device_name}; get_weather for any weather question. Do the same for facts you are not sure of: what an abbreviation stands for, what a term or word means, who or what a name is. Look it up instead of guessing, and say where you found it. An abbreviation can mean several things: give the meaning that fits the user's context first. When it looks like a term of the user's own work, also search their sources.
 - Browser: use read_browser_tab to read the open webpage in the user's browser (Chrome, Edge, Brave, Arc, Firefox, Vivaldi, Opera, Zen); pass tab with part of the site's name or title when the user names it. Never claim an open page is not there before checking with read_browser_tab.
 - Acting in any app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.
 - Browser: use read_browser_tab to read the open webpage in the user's browser (Chrome, Edge, Brave, Arc, Firefox, Vivaldi, Opera, Zen); pass tab with part of the site's name or title when the user names it. Never claim an open page is not there before checking with read_browser_tab.

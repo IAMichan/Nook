@@ -689,6 +689,9 @@ final class BrainService {
         if !readers.isEmpty {
             lines.append("If a search result looks relevant but you only see its start or its title, open it in full first (\(readers.joined(separator: ", "))) with the id, path or link from the result, then answer from its text.")
         }
+        if names.contains("search_web") {
+            lines.append("For what an abbreviation stands for, what a term means, or another fact you are not sure of, search the web with search_web instead of guessing, and say where you found it.")
+        }
         if !searchers.isEmpty {
             lines.append("If nothing relevant was found, search again yourself (\(searchers.joined(separator: ", "))) with one or two other keywords: a synonym, a name, a single word. Never search with the whole question. Only say you could not find it after that, and say where you looked.")
         }
@@ -777,7 +780,7 @@ final class BrainService {
         - Never fabricate times, email addresses, names, or metrics. If critical details are missing, ask concisely.
         - Ground every statement in a source that is about the question. Do not answer from a note, mail, message or page about another topic, person or date just because it was found; say what you could not find instead.
         - Supply dates and times as ISO 8601 with timezone offset, in the user's local timezone.
-        - For real-time information outside the Mac, search the web yourself (web_search) and fetch pages with read_webpage if needed.
+        - For real-time information outside the Mac, search the web yourself (web_search) and fetch pages with read_webpage if needed. Do the same for facts you are not sure of: what an abbreviation stands for, what a term or word means, who or what a name is. Look it up instead of guessing, and say where you found it. An abbreviation can mean several things: give the meaning that fits the user's context (their work, the screen, the conversation) first. When it looks like a term of the user's own work, also search their sources (mail, notes, files, chats).
 
         Calendar & Availability:
         - Upcoming calendar events are under "Calendar". For other dates, use list_events or check_availability.
@@ -824,10 +827,11 @@ final class BrainService {
         }
     }
 
-    /// Queries about external current events: news, weather, scores, stock prices, or explicit "search".
+    /// Queries about external current events (news, weather, scores, stock prices), an explicit "search", or the meaning
+    /// of an abbreviation or term.
     static func wantsWeb(_ text: String) -> Bool {
         let pattern = #"\bzoek\b|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|regen|temperatuur|uitslag|wedstrijd|wie won|gewonnen|stand van|actueel|vandaag in het|laatste versie|release|koers|prijs van|hoeveel kost|wat is er gebeurd|wikipedia|openingstijden|recensie|review van|search|news|weather|who won|latest|price of"#
-        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil || ChatIntent.asksMeaning(text)
     }
 
     static func webSearchTool(for model: String) -> [String: Any] {

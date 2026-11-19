@@ -166,6 +166,15 @@ pub async fn research(input: &ResearchInput<'_>) -> Findings {
         }
     };
     calls.dedup_by(|a, b| a.tool == b.tool && a.input == b.input);
+    // "Wat betekent PGO?", "what does SLA stand for": the meaning of an abbreviation or term is looked up on the web,
+    // next to the user's own sources, so the answer does not rest on the model's memory alone.
+    if super::intent::asks_meaning(input.text)
+        && input.tools.iter().any(|t| t.name == "search_web")
+        && !calls.iter().any(|c| c.tool == "search_web")
+    {
+        let query: String = input.text.trim().chars().take(160).collect();
+        calls.insert(0, prefetch::Call { tool: "search_web".into(), input: serde_json::json!({ "query": query }) });
+    }
 
     // Alleen wat over de vraag gaat, bereikt het model.
     let search_limit = if profile.is_small {

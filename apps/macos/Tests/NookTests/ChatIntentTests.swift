@@ -23,6 +23,24 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(action("Erinnere mich morgen an den Zahnarzt"), "create_reminder")
     }
 
+    func testMeaningOfAnAbbreviationOrTermIsLookedUpOnTheWeb() {
+        let questions = [
+            "Wat betekent PGO?", "waar staat KvK voor", "Wat is de afkorting van Kamer van Koophandel?", "Wat is PGO?",
+            "What does SLA stand for?", "what's an SLA", "What is the meaning of serendipity?",
+            "Was bedeutet DSGVO?", "Wofür steht KPI?", "Que veut dire RGPD ?", "¿Qué significa IVA?"
+        ]
+        for question in questions {
+            XCTAssertTrue(ChatIntent.asksMeaning(question), question)
+            XCTAssertTrue(ChatIntent.detect(question).kinds.contains(.web), question)
+            XCTAssertNil(action(question), "a question about a meaning asks for no action: \(question)")
+        }
+        // What someone meant in a mail or message, or what something means for the user, is not a question for the web.
+        for question in ["Wat bedoelt Lisa in haar mail?", "Wat betekent dit voor mijn planning?", "What does this mean for me?",
+                         "Wat is er gebeurd?", "Wat is morgen?", "Herinner me morgen aan de tandarts"] {
+            XCTAssertFalse(ChatIntent.asksMeaning(question), question)
+        }
+    }
+
     func testWhatToMakeWinsOverWhatItIsAbout() {
         XCTAssertEqual(action("Maak een grafiek van mijn afspraken per dag"), "show_chart")
         XCTAssertEqual(action("Stuur Lisa een mail over de meeting van vrijdag"), "compose_mail")

@@ -76,7 +76,11 @@
     copiedTimer = setTimeout(() => (copiedKey = null), 1200);
   }
 
-  const lastNook = $derived(messages.findLastIndex((message) => message.fromNook));
+  // The index of Nook's last answer. Written out: `findLastIndex` is ES2023, and the interface targets ES2021.
+  const lastNook = $derived.by(() => {
+    for (let index = messages.length - 1; index >= 0; index--) if (messages[index].fromNook) return index;
+    return -1;
+  });
 
   // Which answers' sources are open, by message; an answer's line is closed until you open it, as on the Mac.
   let opened = $state<Record<string, boolean>>({});
