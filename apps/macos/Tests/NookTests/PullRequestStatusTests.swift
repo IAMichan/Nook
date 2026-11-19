@@ -161,4 +161,90 @@ final class PullRequestStatusTests: XCTestCase {
         store.wakeFollowers()
         XCTAssertNotEqual(store.wakeCount, before)
     }
+
+    func testKeyIgnoresWwwPrefix() {
+        let plain = PullRequestStatusStore.key(URL(string: "https://github.com/acme/app/pull/12")!)
+        let www = PullRequestStatusStore.key(URL(string: "https://www.github.com/acme/app/pull/12")!)
+        XCTAssertEqual(plain, "github.com/acme/app/pull/12")
+        XCTAssertEqual(www, plain)
+    }
+
+    func testRenamedRepositoryRedirectUnifiesStatusesAndCanonicalURL() {
+        let store = PullRequestStatusStore()
+        var aliasCallbacks = 0
+        store.onAliasRecorded = { aliasCallbacks += 1 }
+        let oldURL = URL(string: "https://github.com/InfarisHQ/pulse/pull/4655")!
+        let newURL = URL(string: "https://github.com/InfarisHQ/monorepo/pull/4655")!
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        let ready = PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [],
+                                        merge: PullRequestMergeFacts(state: "clean"))
+        store.record(url: oldURL, snapshot: ready, at: t0)
+        XCTAssertEqual(store.status(oldURL)?.mergeStatus, .ready)
+
+        var merged = PullRequestSnapshot(state: "merged", checks: "success", failedChecks: [], reviews: [], comments: [])
+        merged.url = newURL
+        store.record(url: oldURL, snapshot: merged, at: t0.addingTimeInterval(10))
+
+        XCTAssertEqual(aliasCallbacks, 1)
+        XCTAssertEqual(store.repoAliases["github/infarishq/pulse"], "github/infarishq/monorepo")
+        XCTAssertEqual(store.canonicalRepository(host: .github, repository: "InfarisHQ/pulse"), "InfarisHQ/monorepo")
+        XCTAssertEqual(store.canonicalURL(oldURL), newURL)
+        XCTAssertEqual(store.status(oldURL)?.glyph, .merged)
+        XCTAssertEqual(store.status(newURL)?.glyph, .merged)
+        XCTAssertEqual(store.statuses.count, 1)
+
+        // Repeating or reversing the alias neither duplicates callbacks nor creates a cycle.
+        store.recordAlias(from: oldURL, to: newURL)
+        store.recordAlias(from: newURL, to: oldURL)
+        XCTAssertEqual(aliasCallbacks, 1)
+        XCTAssertEqual(store.canonicalURL(oldURL), newURL)
+        XCTAssertEqual(store.canonicalURL(newURL), newURL)
+    }
+
+    func testRenamedRepositoryLearnedFromBranchLinksMigratesExistingStatuses() {
+        let store = PullRequestStatusStore()
+        let oldURL = URL(string: "https://github.com/InfarisHQ/pulse/pull/4655")!
+        let newURL = URL(string: "https://github.com/InfarisHQ/monorepo/pull/4655")!
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        // Two statuses recorded before the rename was known, disagreeing on state.
+        store.record(url: oldURL,
+                     snapshot: PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [],
+                                                   merge: PullRequestMergeFacts(state: "clean")),
+                     at: t0)
+        store.record(url: newURL,
+                     snapshot: PullRequestSnapshot(state: "merged", checks: "success", failedChecks: [], reviews: [], comments: []),
+                     at: t0.addingTimeInterval(5))
+        XCTAssertEqual(store.statuses.count, 2)
+
+        // Branch sync delivers a link whose remote repository has the old name and whose URL has the canonical name.
+        let link = PullRequestLink(host: .github, repository: "InfarisHQ/pulse", number: 4655,
+                                   url: newURL.absoluteString, state: .merged)
+        store.record([link], at: t0.addingTimeInterval(6))
+
+        XCTAssertEqual(store.statuses.count, 1)
+        XCTAssertEqual(store.status(oldURL)?.glyph, .merged)
+        XCTAssertEqual(store.status(newURL)?.glyph, .merged)
+    }
+
+    func testAliasMigrationKeepsNewerStatusFromOldKey() {
+        let store = PullRequestStatusStore()
+        let oldURL = URL(string: "https://github.com/InfarisHQ/pulse/pull/4655")!
+        let newURL = URL(string: "https://github.com/InfarisHQ/monorepo/pull/4655")!
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        store.record(url: newURL,
+                     snapshot: PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [],
+                                                   merge: PullRequestMergeFacts(state: "clean")),
+                     at: t0)
+        store.record(url: oldURL,
+                     snapshot: PullRequestSnapshot(state: "merged", checks: "success", failedChecks: [], reviews: [], comments: []),
+                     at: t0.addingTimeInterval(10))
+        store.recordAlias(from: oldURL, to: newURL)
+
+        XCTAssertEqual(store.statuses.count, 1)
+        XCTAssertEqual(store.status(oldURL)?.glyph, .merged)
+        XCTAssertEqual(store.status(newURL)?.glyph, .merged)
+    }
 }

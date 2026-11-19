@@ -13,9 +13,11 @@ struct RunBranchTray: View {
     @Binding var showsOlderBranches: Bool
 
     var body: some View {
+        let aliases = PullRequestStatusStore.shared.repoAliases
         let folded = SessionBranches.folded(rows, open: showsOlderBranches)
         let titles = Dictionary(((pullRequestSync.earlier[runID] ?? []) + (pullRequestSync.links[runID] ?? []))
-            .compactMap { link in link.title.map { (link.url, $0) } }, uniquingKeysWith: { _, newer in newer })
+            .compactMap { link in link.title.map { (SessionBranches.place(link.url, aliases: aliases), $0) } },
+            uniquingKeysWith: { _, newer in newer })
         if folded.hidden > 0 || showsOlderBranches && rows.count > SessionBranches.shownWhenFolded {
             Button {
                 withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
@@ -34,7 +36,10 @@ struct RunBranchTray: View {
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
         ForEach(folded.shown) { row in
-            branchRow(row, watch: row.pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches) }, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
+            branchRow(row,
+                      watch: row.pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches, aliases: aliases) },
+                      title: row.pullRequest.flatMap { titles[SessionBranches.place($0.absoluteString, aliases: aliases)] },
+                      canWatchCurrent: canWatchCurrent)
         }
     }
 

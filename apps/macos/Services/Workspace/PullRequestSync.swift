@@ -76,7 +76,8 @@ final class PullRequestSync: ObservableObject {
         let current = run.flatMap { links[$0] } ?? branch.flatMap { folderLinks[Self.folderKey(path: directory, branch: $0)] } ?? []
         let store = PullRequestStatusStore.shared
         return LinkedPullRequests.lines(branch: store.current(current), earlier: store.current(run.flatMap { earlier[$0] } ?? []),
-                                        yours: store.current(added[key] ?? []), dismissed: dismissed[key] ?? [])
+                                        yours: store.current(added[key] ?? []), dismissed: dismissed[key] ?? [],
+                                        aliases: store.repoAliases)
     }
 
     /// When the list of a session was last compared with its forge.
@@ -87,15 +88,21 @@ final class PullRequestSync: ObservableObject {
 
     /// Links a pull request to a session by hand; one you took off before comes back.
     func add(_ link: PullRequestLink, session key: String) {
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        let target = link.placeID(aliases: aliases)
         dismissed[key]?.remove(link.id)
-        added[key] = (added[key] ?? []).filter { $0.id != link.id } + [link]
+        dismissed[key]?.remove(target)
+        added[key] = (added[key] ?? []).filter { $0.id != link.id && $0.placeID(aliases: aliases) != target } + [link]
         save()
     }
 
     /// Links a pull request the session works on (`PullRequestMentions`): unlike `add`, one you took off stays off,
     /// and one already linked keeps its place.
     func mention(_ link: PullRequestLink, session key: String) {
-        guard dismissed[key]?.contains(link.id) != true, !(added[key] ?? []).contains(where: { $0.id == link.id }) else { return }
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        let target = link.placeID(aliases: aliases)
+        guard dismissed[key]?.contains(link.id) != true, dismissed[key]?.contains(target) != true,
+              !(added[key] ?? []).contains(where: { $0.id == link.id || $0.placeID(aliases: aliases) == target }) else { return }
         added[key] = (added[key] ?? []) + [link]
         PullRequestStatusStore.shared.seed([(link.url, PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted))])
         save()
@@ -106,21 +113,75 @@ final class PullRequestSync: ObservableObject {
     func others(run: UUID) -> [PullRequestLink] {
         let key = run.uuidString
         let gone = dismissed[key] ?? []
-        return PullRequestStatusStore.shared.current(added[key] ?? []).filter { !gone.contains($0.id) }
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        return PullRequestStatusStore.shared.current(added[key] ?? [])
+            .filter { !gone.contains($0.id) && !gone.contains($0.placeID(aliases: aliases)) }
     }
 
     /// Whether a session's list already has a pull request, or you took it off: then it is not looked up again.
     func knows(_ id: String, session key: String) -> Bool {
-        dismissed[key]?.contains(id) == true || (added[key] ?? []).contains { $0.id == id }
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        return dismissed[key]?.contains(id) == true
+            || (added[key] ?? []).contains { $0.id == id || $0.placeID(aliases: aliases) == id }
+    }
+
+    /// Same check with a `PullRequestLink`, matching across repository renames as well as `id`.
+    func knows(_ link: PullRequestLink, session key: String) -> Bool {
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        let target = link.placeID(aliases: aliases)
+        return dismissed[key]?.contains(link.id) == true || dismissed[key]?.contains(target) == true
+            || (added[key] ?? []).contains { $0.id == link.id || $0.placeID(aliases: aliases) == target }
     }
 
     /// Takes a pull request off a session's list: one you linked goes, one a branch found stays away.
     func remove(_ link: PullRequestLink, session key: String) {
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        let target = link.placeID(aliases: aliases)
         let yours = added[key] ?? []
-        if yours.contains(where: { $0.id == link.id }) {
-            added[key] = yours.filter { $0.id != link.id }
+        if yours.contains(where: { $0.id == link.id || $0.placeID(aliases: aliases) == target }) {
+            added[key] = yours.filter { $0.id != link.id && $0.placeID(aliases: aliases) != target }
         }
         dismissed[key, default: []].insert(link.id)
+        dismissed[key, default: []].insert(target)
+        save()
+    }
+
+    /// Rewrites stored linked and earlier pull requests to canonical URLs and drops duplicates after a rename is learned.
+    func deduplicateStored() {
+        let store = PullRequestStatusStore.shared
+        let aliases = store.repoAliases
+        guard !aliases.isEmpty else { return }
+        func clean(_ list: [PullRequestLink]) -> [PullRequestLink] {
+            var result: [PullRequestLink] = []
+            var indexByPlace: [String: Int] = [:]
+            for var link in list {
+                if let url = URL(string: link.url) {
+                    let canonical = store.canonicalURL(url)
+                    if canonical.absoluteString != link.url {
+                        link.url = canonical.absoluteString
+                        if let repo = PullRequestRef.parse(canonical.absoluteString)?.repository { link.repository = repo }
+                    }
+                }
+                let place = link.placeID(aliases: aliases)
+                if let index = indexByPlace[place] {
+                    // Prefer a settled or newer link over an older open copy.
+                    let existing = result[index]
+                    if (!link.state.isOpen && existing.state.isOpen)
+                        || ((link.updatedAt ?? .distantPast) > (existing.updatedAt ?? .distantPast)) {
+                        result[index] = link
+                    }
+                } else {
+                    indexByPlace[place] = result.count
+                    result.append(link)
+                }
+            }
+            return result
+        }
+        let nextAdded = added.mapValues(clean)
+        let nextEarlier = earlier.mapValues(clean)
+        guard nextAdded != added || nextEarlier != earlier else { return }
+        added = nextAdded
+        earlier = nextEarlier
         save()
     }
 
@@ -141,11 +202,14 @@ final class PullRequestSync: ObservableObject {
     /// Hands the states kept across restarts, and those of the sessions' `watches`, to the shared status, so a pull request
     /// shows the state it had from the first frame after a launch instead of "open" until its first read.
     func seedStatuses(watches: [PullRequestWatch]) {
-        let kept = Array(links.values.joined()) + folderLinks.values.joined() + earlier.values.joined()
+        let kept = Array(links.values.joined()) + folderLinks.values.joined() + earlier.values.joined() + added.values.joined()
+        let store = PullRequestStatusStore.shared
+        // Learn repository renames before seeding so old and new URLs land in the same status slot.
+        store.recordAliases(from: kept)
         let watched = watches.compactMap { watch in
             PullRequestState(rawValue: watch.state).map { (url: watch.url, glyph: PullRequestStatus.glyph(state: $0, conflicted: watch.conflicted ?? false)) }
         }
-        PullRequestStatusStore.shared.seed(kept.map { ($0.url, PullRequestStatus.glyph(state: $0.state, conflicted: $0.conflicted)) } + watched)
+        store.seed(kept.map { ($0.url, PullRequestStatus.glyph(state: $0.state, conflicted: $0.conflicted)) } + watched)
     }
 
     nonisolated static func folderKey(path: String, branch: String) -> String { path + "\n" + branch }
@@ -186,22 +250,25 @@ final class PullRequestSync: ObservableObject {
 
     /// GitHub said what a pull request is now, in its answer to an action from Nook: the badges follow at once.
     func mark(repository: String, number: Int, state: PullRequestState) {
+        let store = PullRequestStatusStore.shared
+        let aliases = store.repoAliases
+        let targetPlace = PullRequestLink(host: .github, repository: repository, number: number).placeID(aliases: aliases)
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in
                 guard link.host == .github, link.state != .merged, link.state != state,
-                      link.isRequest(repository: repository, number: number) else { return link }
+                      link.isRequest(repository: repository, number: number) || link.placeID(aliases: aliases) == targetPlace else { return link }
                 var link = link
                 link.state = state
                 return link
             }
         }
-        let next = (links.mapValues(settle), folderLinks.mapValues(settle), earlier.mapValues(settle))
-        let changed = next.0 != links || next.1 != folderLinks || next.2 != earlier
-        if changed { (links, folderLinks, earlier) = next }
+        let next = (links.mapValues(settle), folderLinks.mapValues(settle), earlier.mapValues(settle), added.mapValues(settle))
+        let changed = next.0 != links || next.1 != folderLinks || next.2 != earlier || next.3 != added
+        if changed { (links, folderLinks, earlier, added) = next }
         // An open pull request that conflicts still does: an edit's answer says nothing about that.
         let key = PullRequestStatusStore.key(repo: repository, number: number)
-        let conflicted = state.isOpen && PullRequestStatusStore.shared.statuses[key]?.glyph == .conflict
-        PullRequestStatusStore.shared.record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: conflicted), checks: nil)
+        let conflicted = state.isOpen && URL(string: "https://github.com/\(repository)/pull/\(number)").flatMap { store.status($0)?.glyph } == .conflict
+        store.record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: conflicted), checks: nil)
         if changed { save() }
     }
 
@@ -229,11 +296,15 @@ final class PullRequestSync: ObservableObject {
     /// soon as it merges (it only remembers open ones), so a pull request merged right away showed on no row at all.
     /// Expected as well, so a list from GitHub that does not have it yet is asked again in the next round.
     func opened(_ id: UUID, url: URL, branch: String?, now: Date = Date()) {
-        guard var link = PullRequestLink(url: url) else { return }
+        let store = PullRequestStatusStore.shared
+        let canonical = store.canonicalURL(url)
+        guard var link = PullRequestLink(url: canonical) else { return }
         if link.headBranch == nil { link.headBranch = branch }
         expected[id.uuidString] = now.addingTimeInterval(Self.expectFor)
         checked[id] = nil
-        if !(links[id] ?? []).contains(where: { $0.id == link.id }) {
+        let aliases = store.repoAliases
+        let target = link.placeID(aliases: aliases)
+        if !(links[id] ?? []).contains(where: { $0.id == link.id || $0.placeID(aliases: aliases) == target }) {
             links[id] = (links[id] ?? []) + [link]
             save()
         }
@@ -475,7 +546,7 @@ final class PullRequestSync: ObservableObject {
 
     @discardableResult
     private func retire(_ id: UUID, _ left: [PullRequestLink]) -> Bool {
-        let next = SessionBranches.keeping(left, in: earlier[id] ?? [])
+        let next = SessionBranches.keeping(left, in: earlier[id] ?? [], aliases: PullRequestStatusStore.shared.repoAliases)
         guard next != earlier[id] ?? [] else { return false }
         earlier[id] = next
         return true

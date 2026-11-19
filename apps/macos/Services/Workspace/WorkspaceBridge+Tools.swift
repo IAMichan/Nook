@@ -264,33 +264,57 @@ extension WorkspaceBridge {
         }.value
         switch target {
         case .ref(let ref):
-            if let url = ref.url { return url }
-            if let repository = ref.repository {
+            let resolved: URL
+            if let url = ref.url {
+                resolved = url
+            } else if let repository = ref.repository {
                 // Same forge as the folder; without a remote, github.com.
                 if var repo = facts.remote {
                     repo.path = repository
-                    if let url = repo.pullRequestURL(number: ref.number) { return url }
+                    if let url = repo.pullRequestURL(number: ref.number) {
+                        resolved = url
+                    } else if let url = URL(string: "https://github.com/\(repository)/pull/\(ref.number)") {
+                        resolved = url
+                    } else {
+                        throw NookError("Invalid repository.")
+                    }
+                } else if let url = URL(string: "https://github.com/\(repository)/pull/\(ref.number)") {
+                    resolved = url
+                } else {
+                    throw NookError("Invalid repository.")
                 }
-                guard let url = URL(string: "https://github.com/\(repository)/pull/\(ref.number)") else { throw NookError("Invalid repository.") }
-                return url
+            } else {
+                guard let repo = facts.remote, let url = repo.pullRequestURL(number: ref.number) else {
+                    throw NookError("This folder has no remote Nook recognises; pass url, or number with repository.")
+                }
+                resolved = url
             }
-            guard let repo = facts.remote, let url = repo.pullRequestURL(number: ref.number) else {
-                throw NookError("This folder has no remote Nook recognises; pass url, or number with repository.")
+            let store = PullRequestStatusStore.shared
+            // Prefer the canonical URL if this session already synced or watched this PR under the repository's new name.
+            if let id = runID(caller), let repoPath = ref.repository ?? facts.remote?.path {
+                let sync = PullRequestSync.shared
+                let known = (sync.links[id] ?? []) + (sync.earlier[id] ?? []) + (sync.added[id.uuidString] ?? [])
+                if let match = known.first(where: { $0.isRequest(repository: repoPath, number: ref.number) }),
+                   let canonical = URL(string: match.url) {
+                    return store.canonicalURL(canonical)
+                }
             }
-            return url
+            return store.canonicalURL(resolved)
         case .current:
             if let id = runID(caller) {
-                if let url = app?.workspace.openPullRequests[id] { return url }
-                if let link = PullRequestSync.shared.links[id]?.first(where: { $0.state.isOpen }), let url = URL(string: link.url) { return url }
+                if let url = app?.workspace.openPullRequests[id] { return PullRequestStatusStore.shared.canonicalURL(url) }
+                if let link = PullRequestSync.shared.links[id]?.first(where: { $0.state.isOpen }), let url = URL(string: link.url) {
+                    return PullRequestStatusStore.shared.canonicalURL(url)
+                }
             }
             guard let branch = facts.branch else { throw NookError("Your folder is not on a branch; pass url or number.") }
             if let link = PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: directory, branch: branch)]?
                 .first(where: { $0.state.isOpen }), let url = URL(string: link.url) {
-                return url
+                return PullRequestStatusStore.shared.canonicalURL(url)
             }
             if let repo = facts.remote, let found = await SourceForge.requests(repo: repo, branch: branch),
                let link = found.first(where: { $0.state.isOpen }), let url = URL(string: link.url) {
-                return url
+                return PullRequestStatusStore.shared.canonicalURL(url)
             }
             throw NookError("Nook found no open pull request for \(branch). Pass url or number.")
         }
@@ -320,8 +344,10 @@ extension WorkspaceBridge {
         guard PullRequestWatch.canWatch(url) else {
             return .error("Nook watches GitHub pull requests and GitLab merge requests; \(url.absoluteString) is neither. get_pull_request_status may still read it.")
         }
-        if let watch = app.workspace.run(id)?.prWatches.first(where: { $0.url == url.absoluteString }), watch.state == "open" {
-            return BridgeRPC.ToolResult(text: "Already watching \(url.absoluteString). End your turn; Nook tells you when something needs you.")
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        if let watch = app.workspace.run(id).flatMap({ SessionBranches.watch(for: url.absoluteString, in: $0.prWatches, aliases: aliases) }),
+           watch.state == "open" {
+            return BridgeRPC.ToolResult(text: "Already watching \(watch.url). End your turn; Nook tells you when something needs you.")
         }
         // A finished watch of this same pull request makes way for the new one.
         app.workspace.stopWatchingPullRequest(id, url: url)

@@ -769,12 +769,15 @@ struct PullRequestWatch: Codable, Equatable, Sendable {
     /// A watch that ended (its pull request merged or closed) moves to a newer open pull request of the same branch: the
     /// session went on with a new pull request from that branch, which is the one to follow now. `links` are the branch's
     /// pull requests as the forge reads them. Returns the finished watch and the request to watch instead, or nil.
-    static func carried(_ watches: [PullRequestWatch], links: [PullRequestLink]) -> (from: PullRequestWatch, to: URL)? {
-        let watched = Set(watches.map(\.url))
+    static func carried(_ watches: [PullRequestWatch], links: [PullRequestLink],
+                        aliases: [String: String] = [:]) -> (from: PullRequestWatch, to: URL)? {
+        let watched = Set(watches.map { SessionBranches.place($0.url, aliases: aliases) })
         for watch in watches {
-            guard let link = links.first(where: { $0.url == watch.url }),
+            let watchPlace = SessionBranches.place(watch.url, aliases: aliases)
+            guard let link = links.first(where: { SessionBranches.place($0.url, aliases: aliases) == watchPlace }),
                   watch.state != "open" || !link.state.isOpen else { continue }
-            let next = links.filter { $0.state.isOpen && $0.number > link.number && !watched.contains($0.url)
+            let next = links.filter { $0.state.isOpen && $0.number > link.number
+                && !watched.contains(SessionBranches.place($0.url, aliases: aliases))
                 && $0.headBranch == link.headBranch && $0.repository == link.repository }
                 .min { $0.number < $1.number }
             if let next, let url = URL(string: next.url), canWatch(url) { return (watch, url) }
@@ -810,6 +813,8 @@ struct PullRequestSnapshot: Equatable, Sendable {
     var checksKnown = true
     /// Its title, so a row that only knows the link can still say what it is; nil when this read does not say.
     var title: String? = nil
+    /// Canonical web URL reported by the forge (differs from the requested URL after a repository rename).
+    var url: URL? = nil
 }
 
 /// News about a pull request that waits in the queue for the agent, line by line, so that what is no longer true can go

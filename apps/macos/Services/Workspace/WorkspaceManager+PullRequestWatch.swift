@@ -15,22 +15,25 @@ extension WorkspaceManager {
             followPullRequestFeeds()
             return
         }
-        guard !isWatching(id, url: url) else { return }
+        let target = PullRequestStatusStore.shared.canonicalURL(url)
+        guard !isWatching(id, url: target) else { return }
         update(id) { run in
-            let watch = PullRequestWatch(url: url.absoluteString, wakeAgent: wakeAgent)
+            let watch = PullRequestWatch(url: target.absoluteString, wakeAgent: wakeAgent)
             if run.prWatch == nil { run.prWatch = watch } else { run.extraPRWatches = (run.extraPRWatches ?? []) + [watch] }
         }
         checkPullRequestWatches(force: true)
     }
 
     func isWatching(_ id: UUID, url: URL) -> Bool {
-        run(id).map { SessionBranches.watch(for: url.absoluteString, in: $0.prWatches) != nil } ?? false
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        return run(id).map { SessionBranches.watch(for: url.absoluteString, in: $0.prWatches, aliases: aliases) != nil } ?? false
     }
 
     /// A watch on a pull request that merged or closed moves to the newer open one the session opened from the same branch
     /// (see `PullRequestWatch.carried`), keeping whether news wakes the agent.
     func carryFinishedWatch(_ id: UUID, links: [PullRequestLink]) {
-        guard let run = run(id), let carry = PullRequestWatch.carried(run.prWatches, links: links),
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        guard let run = run(id), let carry = PullRequestWatch.carried(run.prWatches, links: links, aliases: aliases),
               let old = URL(string: carry.from.url) else { return }
         stopWatchingPullRequest(id, url: old)
         watchPullRequest(id, url: carry.to, wakeAgent: carry.from.wakeAgent)
@@ -38,15 +41,38 @@ extension WorkspaceManager {
 
     /// Ends the watch on one pull request; the next one takes the tray's place.
     func stopWatchingPullRequest(_ id: UUID, url: URL) {
+        let aliases = PullRequestStatusStore.shared.repoAliases
         update(id) { run in
             // The same request under another spelling of its URL (a renamed repository) is the same watch.
-            let place = SessionBranches.place(url.absoluteString)
-            var rest = run.prWatches.filter { $0.url != url.absoluteString && SessionBranches.place($0.url) != place }
+            let place = SessionBranches.place(url.absoluteString, aliases: aliases)
+            var rest = run.prWatches.filter { $0.url != url.absoluteString && SessionBranches.place($0.url, aliases: aliases) != place }
             run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
             run.extraPRWatches = rest.isEmpty ? nil : rest
         }
         // Its host change feed ends with the last watch on it; the subscription is deleted.
         followPullRequestFeeds()
+    }
+
+    /// Collapses any duplicate watches in every run once a repository rename is known, rewriting old URLs to canonical ones.
+    func deduplicatePullRequestWatches() {
+        let store = PullRequestStatusStore.shared
+        let aliases = store.repoAliases
+        let canonical: (String) -> String = { raw in
+            URL(string: raw).map { store.canonicalURL($0).absoluteString } ?? raw
+        }
+        var changed = false
+        for run in runs where !run.prWatches.isEmpty {
+            var deduped = SessionBranches.deduplicatedWatches(run.prWatches, aliases: aliases, canonical: canonical)
+            guard deduped != run.prWatches else { continue }
+            changed = true
+            let first = deduped.isEmpty ? nil : deduped.removeFirst()
+            let rest = deduped.isEmpty ? nil : deduped
+            update(run.id) {
+                $0.prWatch = first
+                $0.extraPRWatches = rest
+            }
+        }
+        if changed { followPullRequestFeeds() }
     }
 
     /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
@@ -70,17 +96,22 @@ extension WorkspaceManager {
 
     /// Reads every watch on the pull request at `url` now: its host just said it changed.
     func checkPullRequestWatches(url: String) {
-        for run in runs where !run.archived && run.prWatches.contains(where: { $0.url == url }) {
-            checkPullRequestWatch(run.id, url: url, recheck: true)
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        for run in runs where !run.archived {
+            if let watch = SessionBranches.watch(for: url, in: run.prWatches, aliases: aliases) {
+                checkPullRequestWatch(run.id, url: watch.url, recheck: true)
+            }
         }
     }
 
     /// Reads one watched pull request and turns what changed into news. With `recheck` (the host reported a change), a
     /// read already under way is followed by one more, so the change is not missed; the sweep just skips it.
     func checkPullRequestWatch(_ id: UUID, url link: String, recheck: Bool) {
-        guard let fetch = pullRequestSnapshot, let watch = run(id)?.prWatches.first(where: { $0.url == link }),
-              watch.state == "open", let url = URL(string: link) else { return }
-        let key = id.uuidString + " " + link
+        let aliases = PullRequestStatusStore.shared.repoAliases
+        guard let fetch = pullRequestSnapshot,
+              let watch = run(id).flatMap({ SessionBranches.watch(for: link, in: $0.prWatches, aliases: aliases) }),
+              watch.state == "open", let url = URL(string: watch.url) else { return }
+        let key = id.uuidString + " " + watch.url
         guard !pullRequestWatcher.inFlight.contains(key) else {
             if recheck { pullRequestWatcher.rechecks.insert(key) }
             return
@@ -90,10 +121,12 @@ extension WorkspaceManager {
             let snapshot = await fetch(url)
             guard let self else { return }
             self.pullRequestWatcher.inFlight.remove(key)
-            if let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == link }) {
+            let currentAliases = PullRequestStatusStore.shared.repoAliases
+            if let snapshot,
+               let current = self.run(id).flatMap({ SessionBranches.watch(for: watch.url, in: $0.prWatches, aliases: currentAliases) }) {
                 self.pullRequestChanged(id, old: current, new: snapshot)
             }
-            if self.pullRequestWatcher.rechecks.remove(key) != nil { self.checkPullRequestWatch(id, url: link, recheck: false) }
+            if self.pullRequestWatcher.rechecks.remove(key) != nil { self.checkPullRequestWatch(id, url: watch.url, recheck: false) }
         }
     }
 
@@ -137,32 +170,44 @@ extension WorkspaceManager {
 
     func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
         let now = Date()
-        if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
+        let store = PullRequestStatusStore.shared
+        if let url = URL(string: old.url) { store.record(url: url, snapshot: new, at: now) }
+        let canonicalURL = new.url?.absoluteString ?? URL(string: old.url).map { store.canonicalURL($0).absoluteString } ?? old.url
+        let aliases = store.repoAliases
+        let targetPlace = SessionBranches.place(canonicalURL, aliases: aliases)
         // The first look only sets what counts as seen, but for a conflict that is already there.
         let first = old.checkedAt == nil
         let news = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
         let lines = news.map(\.text)
         let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
         update(id) { run in
-            let updated = PullRequestNews.updated(old, with: new, at: now)
-            if run.prWatch?.url == old.url {
-                run.prWatch = updated
-            } else {
-                run.extraPRWatches = run.extraPRWatches?.map { $0.url == old.url ? updated : $0 }
+            var updated = PullRequestNews.updated(old, with: new, at: now)
+            updated.url = canonicalURL
+            let replaced = run.prWatches.map { watch -> PullRequestWatch in
+                guard watch.url == old.url || SessionBranches.place(watch.url, aliases: aliases) == targetPlace else { return watch }
+                var next = updated
+                next.wakeAgent = updated.wakeAgent || watch.wakeAgent
+                return next
             }
+            var deduped = SessionBranches.deduplicatedWatches(replaced, aliases: aliases) { raw in
+                URL(string: raw).map { store.canonicalURL($0).absoluteString } ?? raw
+            }
+            run.prWatch = deduped.isEmpty ? nil : deduped.removeFirst()
+            run.extraPRWatches = deduped.isEmpty ? nil : deduped
         }
         settleQueuedNews(id, url: old.url, with: new)
+        if canonicalURL != old.url { settleQueuedNews(id, url: canonicalURL, with: new) }
         // A merged or closed pull request has nothing more to report: its change feed ends.
-        if new.state != "open" { followPullRequestFeeds() }
+        if new.state != "open" || canonicalURL != old.url { followPullRequestFeeds() }
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
-        let message = PullRequestNews.message(url: old.url, lines: lines)
+        let message = PullRequestNews.message(url: canonicalURL, lines: lines)
         // The news line above already shows it: the agent gets it without a bubble of yours.
         if run.canContinue && processes[id] == nil {
             sendHidden(id, text: message)
         } else {
-            enqueue(id, text: message, pullRequest: PullRequestNotice(url: old.url, lines: news))
+            enqueue(id, text: message, pullRequest: PullRequestNotice(url: canonicalURL, lines: news))
         }
     }
 
