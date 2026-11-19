@@ -101,6 +101,7 @@ final class TimelineReadingAnchorTests: XCTestCase {
         for index in 3..<10 { anchor.place("r\(index)", top: Double(index) * 100 + 60) }
         XCTAssertEqual(scrolls, [])
         // Then the scroll view: you scrolled up 40 in that same pass. Once the pass is done, the view moves along.
+        anchor.userStep(deltaY: 40, precise: true)
         anchor.moved(offset: 400, container: 300, holding: true)
         XCTAssertEqual(scrolls, [])
         queued.forEach { $0() }
@@ -125,5 +126,83 @@ final class TimelineReadingAnchorTests: XCTestCase {
         // Offset 440 under a 50-point toolbar: the view shows the content from 490 on.
         anchor.moved(offset: 440, container: 300, insetTop: 50, holding: true)
         XCTAssertEqual(anchor.held, AnyHashable("r5"))
+    }
+
+    /// Content above shrinks by more than the view stands from the end: the scroll view clamps to the new end by itself
+    /// (measured offscreen on 2026-11-18). The row goes back where you read it, not that far again from the clamp.
+    func testAViewClampedToTheEndIsNotMovedTwice() {
+        let anchor = reading()
+        var queued: [@MainActor () -> Void] = []
+        anchor.later = { queued.append($0) }
+        for index in 3..<10 { anchor.place("r\(index)", top: Double(index) * 100 - 300) }
+        anchor.moved(offset: 160, container: 300, holding: true)
+        queued.forEach { $0() }
+        XCTAssertEqual(scrolls, [140], "r5 now starts at 200, 60 under the top of the view as before")
+    }
+
+    /// The scroll view goes along with the row in a report of its own, after your step: that move is not yours.
+    func testTheViewGoingAlongAfterYourStepIsNotYours() {
+        let anchor = reading()
+        var queued: [@MainActor () -> Void] = []
+        anchor.later = { queued.append($0) }
+        // Rows above r5 measured 3000 shorter; your step up of 40 is reported first, the view going along next.
+        for index in 3..<10 { anchor.place("r\(index)", top: Double(index) * 100 - 3000) }
+        anchor.userStep(deltaY: 40, precise: true)
+        anchor.moved(offset: 400, container: 300, holding: true)
+        anchor.moved(offset: -2560, container: 300, holding: true)
+        queued.forEach { $0() }
+        // r5 at -2500, 100 under the top of the view: where your step put it.
+        XCTAssertEqual(scrolls, [-2600])
+    }
+
+    /// Steps that could not move the view (you scrolled down at the end, while following) are not counted later.
+    func testStepsTheViewCouldNotFollowAreDropped() {
+        let anchor = reading()
+        anchor.moved(offset: 700, container: 300, holding: false)
+        for _ in 0..<20 { anchor.userStep(deltaY: -200, precise: true) }
+        anchor.moved(offset: 700, container: 300, holding: false)
+        anchor.moved(offset: 700, container: 300, holding: true)
+        XCTAssertEqual(anchor.held, AnyHashable("r7"))
+        // Up 60 at the end of a step with leftover steps of the wrong way: only what the view moved counts.
+        anchor.userStep(deltaY: -500, precise: true)
+        anchor.userStep(deltaY: 560, precise: true)
+        anchor.moved(offset: 640, container: 300, holding: true)
+        anchor.place("r7", top: 700)
+        XCTAssertEqual(scrolls, [])
+    }
+
+    /// A report from before the anchor's own scroll, after it: not a move of yours that undoes it.
+    func testAReportTheViewMovedOnFromIsIgnored() {
+        let anchor = reading()
+        var at = 440.0
+        anchor.currentOffset = { at }
+        anchor.scroll = { [unowned self] in
+            at = $0
+            scrolls.append($0)
+        }
+        for index in 3..<10 { anchor.place("r\(index)", top: Double(index) * 100 + 60) }
+        XCTAssertEqual(scrolls, [500])
+        anchor.moved(offset: 440, container: 300, holding: true)
+        anchor.moved(offset: 500, container: 300, holding: true)
+        anchor.place("r5", top: 560)
+        XCTAssertEqual(scrolls, [500])
+    }
+
+    /// A correction waiting while you scroll: it waits for the scroll view to report your step instead of undoing it.
+    func testACorrectionWaitsForAStepNotYetReported() {
+        let anchor = reading()
+        var at = 440.0
+        anchor.currentOffset = { at }
+        var queued: [@MainActor () -> Void] = []
+        anchor.later = { queued.append($0) }
+        anchor.place("r5", top: 520)
+        // Your wheel step moved the view to 400 before the correction ran; the scroll view reports it after.
+        anchor.userStep(deltaY: 40, precise: true)
+        at = 400
+        queued.forEach { $0() }
+        XCTAssertEqual(scrolls, [])
+        anchor.moved(offset: 400, container: 300, holding: true)
+        queued.dropFirst().forEach { $0() }
+        XCTAssertEqual(scrolls.last, 420, "r5 at 520, 100 under the top of the view: 60 as before and your step of 40")
     }
 }

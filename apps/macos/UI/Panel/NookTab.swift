@@ -428,7 +428,8 @@ struct NookChatView: View {
                     // While an answer is being made, it never gets shorter (`HeldHeight`), also once you scroll up: a
                     // step folding away leaves room instead of bouncing the conversation down. A new message lets go.
                     ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl,
-                                     holdsHeight: chat.busy, holdKey: chat.messages.count) { message in
+                                     holdsHeight: chat.busy, holdKey: chat.messages.count,
+                                     holdsSplit: !scroll.shouldFollowEnd) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
@@ -445,7 +446,11 @@ struct NookChatView: View {
                 // A step of yours up stops following before the view moves by it, also while the answer grows on every
                 // frame (`ScrollModel.releases(wheel:)`), as in an agent's transcript.
                 .readingScroller(nil) { deltaY in
-                    if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
+                    if scroll.releases(wheel: deltaY) {
+                        scroll.userScrolled()
+                    } else if scroll.returns(wheel: deltaY) {
+                        scroll.userScrolledDown()
+                    }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xxs)
                 .readableChat(!compact)
@@ -482,7 +487,8 @@ struct NookChatView: View {
                 if movedUp || leftEnd, new.container == old.container, !new.atEnd, !scroll.isFreeAfterUserScroll {
                     scroll.userScrolled()
                 }
-                // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                // Back at the end follows again when you scrolled down to it, not when it came into view by itself
+                // (`ScrollModel.endInView`).
                 if atEnd != new.atEnd {
                     atEnd = new.atEnd
                     scroll.endInView(new.atEnd)

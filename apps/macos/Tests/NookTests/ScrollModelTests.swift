@@ -42,29 +42,61 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertFalse(model.releases(movedFrom: frame(1420), to: frame(1400)))
     }
 
-    func testLettingGoAtTheEndFollowsAgainOnlyAfterLeavingIt() {
-        // As t3code: a step up that stays within the margin is not taken back by the next frame that reports the end.
+    func testTheEndComingIntoViewByItselfDoesNotFollowAgain() {
+        // Scrolling up near the end of a long session: the lazy stack measures rows above shorter than it guessed, and
+        // the end comes into view for a frame without you scrolling down (measured offscreen on 2026-11-18). Following
+        // then pulled the view back to the end on every second step up.
         var model = ScrollModel()
         model.userScrolled()
         model.endInView(true)
-        XCTAssertFalse(model.shouldFollowEnd, "still at the end since you let go")
+        XCTAssertFalse(model.shouldFollowEnd, "a step up within the margin of the end")
         model.endInView(false)
-        XCTAssertFalse(model.shouldFollowEnd)
         model.endInView(true)
-        XCTAssertTrue(model.shouldFollowEnd, "left the end and came back")
+        XCTAssertFalse(model.shouldFollowEnd, "the end came into view by itself")
+        XCTAssertTrue(model.showsToEndPill(atEnd: false))
     }
 
-    func testLettingGoAwayFromTheEndFollowsAgainAtTheEnd() {
-        // Following, but not at the end yet (a landing that has not settled): back at the end follows again.
+    func testScrollingDownToTheEndFollowsAgain() {
         var model = ScrollModel()
         model.endInView(false)
         model.userScrolled()
+        XCTAssertTrue(model.returns(wheel: -3))
+        XCTAssertFalse(model.returns(wheel: 3), "up is no way back")
+        XCTAssertFalse(model.returns(wheel: -0.2), "a sideways step")
+        model.userScrolledDown()
+        XCTAssertFalse(model.shouldFollowEnd, "not at the end yet")
+        XCTAssertFalse(model.returns(wheel: -3), "already heading there: nothing to write")
         model.endInView(true)
         XCTAssertTrue(model.shouldFollowEnd)
+        XCTAssertFalse(model.returns(wheel: -3), "following: nothing to write")
+    }
+
+    func testAStepDownWithTheEndInViewFollowsAtOnce() {
+        // You let go within the margin of the end and scroll down again: the end never left the view.
+        var model = ScrollModel()
+        model.userScrolled()
+        model.userScrolledDown()
+        XCTAssertTrue(model.shouldFollowEnd)
+    }
+
+    func testAStepUpAfterHeadingDownLetsGoAgain() {
+        var model = ScrollModel()
+        model.endInView(false)
+        model.userScrolled()
+        model.userScrolledDown()
+        XCTAssertTrue(model.releases(wheel: 3), "heading down, then up again")
+        model.userScrolled()
+        model.endInView(true)
+        XCTAssertFalse(model.shouldFollowEnd)
+    }
+
+    func testAFindOwnsThePositionAlsoWhenYouScrollDownToTheEnd() {
+        var model = ScrollModel()
         model.endInView(false)
         model.findStarted()
+        model.userScrolledDown()
         model.endInView(true)
-        XCTAssertFalse(model.shouldFollowEnd, "a find owns the position")
+        XCTAssertFalse(model.shouldFollowEnd)
     }
 
     func testTheEndLeavesOutTheRoomAroundTheView() {

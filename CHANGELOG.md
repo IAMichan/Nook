@@ -29,6 +29,13 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   click takes the spot and copies a picture of it with the spot marked; the crosshair then shows a PDF page, so you
   see which of the two it selects. On browser pages where it cannot select, it is greyed out.
 
+### Fixed
+
+- Scrolling through an agent's conversation (and Nook chat) no longer jumps up or down by itself: scrolling up near
+  the end is no longer pulled back to the end, the text you read stays put while the agent adds new steps below it,
+  and the first step up after following the agent no longer leaps far through the conversation. The view follows the
+  agent again once you scroll down to the end yourself.
+
 ## [0.1.1] - 2026-11-18
 
 ### Added

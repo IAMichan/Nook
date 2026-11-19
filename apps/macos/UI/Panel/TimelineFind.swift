@@ -150,10 +150,16 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     /// away at the end does not bounce the conversation. `holdKey` lets go (a new turn, a block opened or closed).
     var holdsHeight = false
     var holdKey = 0
+    /// While you read back (not following the end): no row moves from the part drawn in full into the lazy part
+    /// (`HistoryWindow.heldSplit`). A row that moves is made again and its height guessed, so every move of the split
+    /// changed the height of everything above what you read, by thousands of points at once in a long session.
+    var holdsSplit = false
     @ViewBuilder let row: (Item) -> Row
+    /// The first row drawn in full while the split is held; not state any view draws from.
+    @State private var firstEager = Unobserved<Item.ID?>(nil)
 
     var body: some View {
-        let split = HistoryWindow.lazyRows(count: items.count, eager: eager)
+        let split = lazyRows()
         if split > 0 {
             LazyVStack(alignment: .leading, spacing: spacing) {
                 ForEach(items[..<split]) { row($0) }
@@ -164,6 +170,15 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
         HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey &* 31 &+ split) {
             ForEach(items[split...]) { row($0) }
         }
+    }
+
+    /// How many of the rows go into the lazy stack, held while you read back (`holdsSplit`).
+    private func lazyRows() -> Int {
+        let natural = HistoryWindow.lazyRows(count: items.count, eager: eager)
+        let held = holdsSplit ? firstEager.value.flatMap { id in items.firstIndex { $0.id == id } } : nil
+        let split = HistoryWindow.heldSplit(natural: natural, held: held)
+        firstEager.value = split < items.count ? items[split].id : nil
+        return split
     }
 }
 
@@ -512,6 +527,7 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
                 if let inner = current as? NSScrollView, Self.canScroll(inner, deltaY: deltaY) { return }
                 view = current.superview
             }
+            reading?.userStep(deltaY: deltaY, precise: event.hasPreciseScrollingDeltas)
             wheel(deltaY)
         }
 
@@ -537,6 +553,7 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
                 clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
                 scrollView.reflectScrolledClipView(clip)
             }
+            reading.currentOffset = { [weak scrollView] in scrollView.map { Double($0.contentView.bounds.origin.y) } }
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }

@@ -25,21 +25,31 @@ struct ScrollModel: Equatable, Sendable {
     private(set) var cancelQueuedScrolls = false
     /// Whether the end is in view (within `ScrollFrame.endMargin`), as the view last reported it (`endInView(_:)`).
     private(set) var endIsInView = true
-    /// Let go while the end was in view: following comes back only once the end has left the view and come back, so a
-    /// step up that stays within the margin is not taken back by the next frame (as t3code's `released(atEnd:)`).
-    private var releasedAtEnd = false
+    /// You scrolled down since you last scrolled up: reaching the end now follows it again. Only you heading down does:
+    /// the end also comes into view by itself, when the rows above it are measured shorter than the lazy stack guessed
+    /// (thousands of points at once in a long session) or fold, and following then pulled the view back down to the end
+    /// under your fingers while you scrolled up (measured offscreen on 2026-11-18: every second step up near the end).
+    private(set) var headingForEnd = false
 
     var shouldFollowEnd: Bool { mode == .following }
     /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
     /// on the rail) checks this first, so it writes its state once instead of drawing the whole conversation again for
     /// each frame, which made scrolling stutter.
-    var isFreeAfterUserScroll: Bool { mode == .free && cancelQueuedScrolls }
+    var isFreeAfterUserScroll: Bool { mode == .free && cancelQueuedScrolls && !headingForEnd }
 
     /// You moved the conversation yourself (a step up, a mark on the rail, earlier messages): following stops.
     mutating func userScrolled() {
-        if mode == .following { releasedAtEnd = endIsInView }
         mode = .free
         cancelQueuedScrolls = true
+        headingForEnd = false
+    }
+
+    /// You scrolled down (a wheel or trackpad step down): at the end, following resumes. Only a step tells: the scroll
+    /// view also moves down by itself without any size change (a lazy stack placing rows it had guessed), and taking
+    /// that for you turned following back on while you scrolled up.
+    mutating func userScrolledDown() {
+        headingForEnd = true
+        if endIsInView { reachedEnd() }
     }
 
     /// Whether a move of the view while its sizes stayed the same, up and away from the end, is you scrolling: the
@@ -56,26 +66,29 @@ struct ScrollModel: Equatable, Sendable {
 
     /// Whether a scroll-wheel or trackpad step of yours over the conversation, before the view moves by it, lets go of
     /// the end: `deltaY` as AppKit gives it (above zero toward the start). Up does, at once, also within the margin of
-    /// the end; down never does, and never follows again by itself either (`endInView(_:)` does that). While an agent
-    /// works the sizes change on nearly every frame, so the step itself is the only clear sign of you scrolling.
+    /// the end; down never does (`returns(wheel:)`). While an agent works the sizes change on nearly every frame, so
+    /// the step itself is the only clear sign of you scrolling.
     func releases(wheel deltaY: Double) -> Bool {
         deltaY > 0.5 && !isFreeAfterUserScroll
     }
 
-    /// The end came into view or left it (the view reports each change). Coming back to it follows again, unless you
-    /// let go while it was in view and it has not left since, or a find owns the position.
+    /// Whether a scroll-wheel or trackpad step down heads back to the end (`userScrolledDown`); nothing when it would
+    /// change nothing.
+    func returns(wheel deltaY: Double) -> Bool {
+        deltaY < -0.5 && mode == .free && !headingForEnd
+    }
+
+    /// The end came into view or left it (the view reports each change). Coming back to it follows again only when
+    /// you scrolled down to it (`userScrolledDown`), never when it came into view by itself, and not while a find owns
+    /// the position.
     mutating func endInView(_ inView: Bool) {
         endIsInView = inView
-        if inView {
-            reachedEnd()
-        } else if mode == .free {
-            releasedAtEnd = false
-        }
+        if inView, headingForEnd { reachedEnd() }
     }
 
     mutating func findStarted() {
-        if mode == .following { releasedAtEnd = endIsInView }
         isFinding = true
+        headingForEnd = false
         mode = .free
         cancelQueuedScrolls = true
     }
@@ -84,14 +97,15 @@ struct ScrollModel: Equatable, Sendable {
 
     mutating func jumpedToEnd() {
         mode = .following
-        releasedAtEnd = false
+        headingForEnd = false
         cancelQueuedScrolls = false
     }
 
-    /// The reader is back at the end: following resumes, except while finding (the find owns the position) and while
-    /// the end has not left the view since you let go there.
+    /// The reader is back at the end: following resumes, except while finding (the find owns the position).
     mutating func reachedEnd() {
-        if mode == .free, !isFinding, !releasedAtEnd { mode = .following }
+        guard mode == .free, !isFinding else { return }
+        mode = .following
+        headingForEnd = false
     }
 
     /// The "Scroll to end" pill shows only once you scrolled away yourself and the end is out of view; not while you are

@@ -134,7 +134,8 @@ extension AgentRunPanel {
                     // shrank the end the moment you started to scroll, and the view jumped under your fingers.
                     ConversationRows(items: shownBlocks, eager: eager,
                                      holdsHeight: active && !finding,
-                                     holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start)) { block in
+                                     holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start),
+                                     holdsSplit: !scroll.shouldFollowEnd) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
@@ -194,7 +195,11 @@ extension AgentRunPanel {
                 .coordinateSpace(name: TimelineSpace.name)
                 .readingStackTop(reading)
                 .readingScroller(reading) { deltaY in
-                    if scroll.releases(wheel: deltaY) { scroll.userScrolled() }
+                    if scroll.releases(wheel: deltaY) {
+                        scroll.userScrolled()
+                    } else if scroll.returns(wheel: deltaY) {
+                        scroll.userScrolledDown()
+                    }
                 }
                 .chatColumn()
                 .coordinateSpace(name: TimelineSpace.content)
@@ -217,7 +222,8 @@ extension AgentRunPanel {
                 ScrollFrame(geometry).nearEnd
             } action: { _, nowAtEnd in
                 atEnd = nowAtEnd
-                // Back at the end follows again, once it left the view since you let go (`ScrollModel.endInView`).
+                // Back at the end follows again when you scrolled down to it, not when it came into view by itself
+                // (`ScrollModel.endInView`).
                 scroll.endInView(nowAtEnd)
             }
             // Only a step of yours up stops following (`readingScroller`), never where the view stands: while the agent
