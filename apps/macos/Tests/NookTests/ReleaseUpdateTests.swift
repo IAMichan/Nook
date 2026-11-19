@@ -208,4 +208,22 @@ final class ReleaseUpdateTests: XCTestCase {
         XCTAssertNil(UpdateApplied.notApplied(receipt, running: "0.2.0-beta.2", now: now), "it took")
         XCTAssertNil(UpdateApplied.notApplied(receipt, running: "0.2.0-beta.1", now: now.addingTimeInterval(2 * 86_400)), "too old")
     }
+
+    func testAnAdministratorOrTheEnvironmentCanTurnUpdatesOff() {
+        XCTAssertEqual(UpdatePolicy.resolve(environment: nil, managedDisabled: nil, managedBeta: nil), UpdatePolicy())
+        XCTAssertEqual(UpdatePolicy.resolve(environment: "0", managedDisabled: false, managedBeta: false), UpdatePolicy())
+        let env = UpdatePolicy.resolve(environment: "1", managedDisabled: nil, managedBeta: nil)
+        XCTAssertTrue(env.disabled)
+        XCTAssertEqual(env.source, .environment)
+        let beta = UpdatePolicy.resolve(environment: nil, managedDisabled: nil, managedBeta: true)
+        XCTAssertFalse(beta.disabled)
+        XCTAssertEqual(beta.source, .administrator)
+        XCTAssertEqual(beta.channel(.beta), .stable)
+        XCTAssertTrue(UpdatePolicy.resolve(environment: nil, managedDisabled: true, managedBeta: nil).disabled)
+    }
+
+    func testTheFeedIsAFileOnTheLatestRelease() {
+        let build = ReleaseBuild(version: ReleaseVersion("0.1.0")!, publicKey: nil)
+        XCTAssertEqual(build.feedURL?.absoluteString, "https://github.com/IAMichan/nook/releases/latest/download/nook-releases.json")
+    }
 }

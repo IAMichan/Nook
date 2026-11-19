@@ -131,7 +131,7 @@ impl CompanionBackend for AppBackend {
             Options | Start | Timeline | Entry | History | Manage | Send | Diff | Terminals | Files | FileData => {
                 super::remote::handle(app, request, device).await
             }
-            Home | Usage | Music | RequestUpdate => super::home::handle(app, request, device).await,
+            Home | Usage | Music | RequestUpdate | InstallUpdate => super::home::handle(app, request, device).await,
             Chats | Chat | Ask | ChatStop => super::nook_chat::handle(app, request, device).await,
             Inbox | InboxChat | InboxSend | InboxMark | Avatars => super::inbox::handle(app, request, device).await,
             Pulls | Pull | PullAct | PullWork => super::pulls::handle(app, request, device).await,

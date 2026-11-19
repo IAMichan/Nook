@@ -82,6 +82,19 @@ enum HistoryWindow {
         return step > 1 ? lazy / step * step : lazy
     }
 
+    /// Rows the part drawn in full may grow by while the split is held (`heldSplit`), so a session you read back in for
+    /// hours while its agent works stays cheap to lay out.
+    static let heldMaxRows = 200
+
+    /// How many rows go into the lazy stack while you read back: as many as before (`held`, where the row that was the
+    /// first drawn in full stands now; nil when it is gone), so no row moves from one part to the other under what you
+    /// read, either way (a fold at the end shrinks `natural` as a new row grows it); `natural` again once the part drawn
+    /// in full grew by `heldMaxRows`.
+    static func heldSplit(natural: Int, held: Int?, maxGrowth: Int = heldMaxRows) -> Int {
+        guard let held, natural - held <= maxGrowth else { return natural }
+        return held
+    }
+
     /// The index of the first row drawn: every row of the turns before `start`.
     static func firstRow(rowsPerTurn: [Int], start: Int) -> Int {
         rowsPerTurn.prefix(max(0, start)).reduce(0, +)

@@ -31,6 +31,9 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     /// When you last brought it back from Settled (Reopen, or undoing a settle): until it has new activity after that, it
     /// does not settle by itself again (`AutoSettlePolicy`).
     var unsettledAt: Date? = nil
+    /// When it was settled (`FinishedSessions.settledTime`): the Settled shelf puts what you handled last on top. Nil for an
+    /// earlier session (settled by nature) and a mark from before the time was kept: those go by `lastActivity`.
+    var settledAt: Date? = nil
     /// The SSH machine it runs on (`RemoteMachine.id`), nil on this Mac: which auto-settle rules apply
     /// (`AutoSettlePolicy.Rules`).
     var machine: String? = nil
@@ -351,7 +354,12 @@ enum InboxLayout {
             let (a, b) = ($0.row.snoozedUntil ?? .distantFuture, $1.row.snoozedUntil ?? .distantFuture)
             return a != b ? a < b : $0.id < $1.id
         }
-        settled.sort(by: newestFirst)
+        // Last settled on top, not last active: an old chat's activity time can move (a hook when you close its terminal)
+        // while you handled it long ago.
+        settled.sort { a, b in
+            let (ta, tb) = (a.row.settledAt ?? a.row.lastActivity, b.row.settledAt ?? b.row.lastActivity)
+            return ta != tb ? ta > tb : newestFirst(a, b)
+        }
 
         // A session started from another one that is running or open follows it into its section, so it sits under it and
         // never also as a session of its own; one that is pinned, snoozed or settled stays where it is. One that needs you

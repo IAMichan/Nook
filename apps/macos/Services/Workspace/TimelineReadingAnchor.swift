@@ -6,12 +6,14 @@ import Foundation
 /// between the lazy and the fully drawn part of the conversation (`HistoryWindow.lazyRows`), earlier turns drawn above.
 /// Without it every such change pushed what you read up or down while the agent worked.
 ///
-/// It holds one row, the first that starts in view, and only acts when that row itself moves in the conversation: it
-/// then scrolls by exactly as much, so the row stays put. Where the view is scrolled is never undone. The chat's anchor
-/// (`TranscriptReadingAnchor`) puts the held message back at the place it remembers; in a lazy stack the content size
-/// changes on nearly every step of scrolling up (each row that comes into view is measured), and a step that also
-/// changed a size would be taken back, so scrolling up stuck. Here a step of yours always counts, also in a step that
-/// measured a row.
+/// It holds one row, the first that starts in view, and remembers where on screen you last scrolled it to: your wheel
+/// and trackpad steps (`userStep`) move that place, everything else does not. When the row ends up elsewhere (it moved
+/// in the conversation, or the scroll view moved by itself), the view scrolls to put it back. In a lazy stack the
+/// content size changes on nearly every step of scrolling up (each row that comes into view is measured), so a step of
+/// yours always counts, also in a step that measured a row. Adding up how far the row moved instead (as before
+/// 2026-11-18) went wrong whenever the scroll view also moved by itself: it goes along with a row above now and then,
+/// reports that apart from the size change, and clamps to the end when the content above shrinks by more than you are
+/// from the end; counting from there scrolled twice as far, thousands of points in a long session.
 ///
 /// What changes below the held row moves nothing you see. While the view follows the end, finds, or runs a scroll of
 /// its own (an animated jump to a mark on the rail), it holds nothing (`holding` false). Foundation only and a plain
@@ -22,21 +24,29 @@ final class TimelineReadingAnchor {
     private var tops: [AnyHashable: Double] = [:]
     /// Where the stack of rows starts in the scroll view's content.
     private var stackTop = 0.0
-    /// The row held, and where it started in the content when last seen.
+    /// The row held, and where it starts in the content now.
     private(set) var held: AnyHashable?
     private var heldTop = 0.0
+    /// Where the held row should stand in the view (its top minus the offset): where you last scrolled it to. Only
+    /// your own moves change it; a row above that changes height, or the scroll view moving by itself, does not.
+    private var heldInView = 0.0
     private var offset = 0.0
     private var container = 0.0
     private var holding = false
     /// The room above the content (a toolbar): the view shows the content from under it.
     private var insetTop = 0.0
-    /// How far the held row moved that the view has not moved along with yet (`flush`).
-    private var pending = 0.0
-    /// Where the view stood when the held row began to move (`pending`).
-    private var pendingFrom = 0.0
+    /// What your scroll-wheel or trackpad steps since the last move should move the view by (`userStep`), and whether
+    /// any came whose size is not known (a mouse wheel's lines).
+    private var steps = 0.0
+    private var unmeasuredStep = false
+    /// How far the held row moved in the content since the scroll view last moved: a move of the view right after one
+    /// is the scroll view going along with it by itself (it reports that without any change in size), not yours.
+    private var rowMoved = 0.0
     private var flushQueued = false
     /// Scrolls the conversation to this content offset (as the scroll view reports it) at once.
     var scroll: (Double) -> Void = { _ in }
+    /// Where the scroll view stands right now, before it reported it (nil: not known).
+    var currentOffset: () -> Double? = { nil }
     /// Runs the flush after this turn of the run loop; tests run it at once or never.
     var later: (@escaping @MainActor () -> Void) -> Void = { work in DispatchQueue.main.async { work() } }
 
@@ -49,19 +59,39 @@ final class TimelineReadingAnchor {
         }
         tops[id] = top
         guard id == held else { return }
-        shift(by: stackTop + top - heldTop)
+        rowMoved += stackTop + top - heldTop
+        heldTop = stackTop + top
+        queueFlush()
     }
 
     /// The stack of rows moved within the content (a row above it came or went).
     func stack(at top: Double) {
         let moved = top - stackTop
         stackTop = top
-        if held != nil { shift(by: moved) }
+        guard held != nil else { return }
+        heldTop += moved
+        rowMoved += moved
+        queueFlush()
+    }
+
+    /// A scroll-wheel or trackpad step of yours over the conversation, before the view moves by it: `deltaY` as AppKit
+    /// gives it (above zero toward the start), `precise` when it is in points (a trackpad, a Magic Mouse).
+    func userStep(deltaY: Double, precise: Bool) {
+        if precise { steps -= deltaY } else { unmeasuredStep = true }
     }
 
     /// The conversation's scroll view moved or changed size. `holding`: you read back (not following the end, not
     /// finding, no scroll of the view's own on its way).
     func moved(offset: Double, container: Double, insetTop: Double = 0, holding: Bool) {
+        // A report the view has already moved on from (the anchor's own scroll right after it, or a step of yours):
+        // taking it for a move scrolled the view back to where it was. The report of where it stands now comes next.
+        if holding, self.holding, let current = currentOffset(), abs(current - offset) > 0.5 {
+            self.container = container
+            self.insetTop = insetTop
+            return
+        }
+        let change = offset - self.offset
+        let yours = yourPart(of: change)
         self.offset = offset
         self.container = container
         self.insetTop = insetTop
@@ -69,30 +99,61 @@ final class TimelineReadingAnchor {
         self.holding = holding
         guard holding else {
             held = nil
-            pending = 0
+            clearSteps()
             return
         }
-        // The scroll view itself moved along with the row above the view that changed (it does so now and then, not
-        // always): nothing left to do. Moving it again scrolled twice as far.
-        if abs(offset - pendingFrom - pending) < 0.5 { pending = 0 }
-        // The held row left the view (you scrolled on): the first row in view now is held instead.
-        if started || held == nil || heldTop < viewTop - 0.5 || heldTop > viewTop + container { pick() }
+        guard !started, held != nil else {
+            pick(at: offset)
+            return
+        }
+        // Your move carries the held row along on screen; one the scroll view made by itself does not. It moves along
+        // with a row above the view that changed now and then, and it clamps to the end of content that got shorter
+        // above the view (a lazy stack measuring rows it had guessed): counting from where the view stood after that
+        // scrolled twice as far, thousands of points in a long session.
+        heldInView -= yours
+        // Where the view should stand: the held row where you left it.
+        let intended = heldTop - heldInView
+        // The held row left the view (you scrolled on): the first row in view there is held instead.
+        if heldInView < insetTop - 0.5 || heldInView > insetTop + container { pick(at: intended) }
+        if abs(intended - offset) > 0.5 { queueFlush() }
     }
 
-    /// Where the view starts in the content: under the room above it.
-    private var viewTop: Double { offset + insetTop }
+    /// How much of a move of `change` is yours. The scroll view moves by itself only along with the held row (up to as
+    /// far as the row moved since its last move), so yours lies between `change` and `change` less the row's move: the
+    /// wheel or trackpad steps you made, kept within that (steps the view could not follow, at the end of the content,
+    /// are not carried into a later move), or as near to none as that allows (the keyboard sends no step, and moves
+    /// only the view). Neither a change in size nor its absence tells: the scroll view reports the move it makes along
+    /// with a row above apart from the size change, and a size change in the same report as your step.
+    private func yourPart(of change: Double) -> Double {
+        guard abs(change) > 0.5 else { return 0 }
+        let yours: Double
+        if unmeasuredStep {
+            yours = change
+        } else {
+            let low = min(change, change - rowMoved)
+            let high = max(change, change - rowMoved)
+            yours = min(max(steps, low), high)
+        }
+        clearSteps()
+        // What the scroll view moved by itself went along with the row; the rest of the row's move may still come.
+        let own = change - yours
+        if rowMoved != 0, own != 0, (own < 0) == (rowMoved < 0) {
+            rowMoved = abs(own) >= abs(rowMoved) ? 0 : rowMoved - own
+        }
+        return yours
+    }
 
-    /// The held row moved by `delta` in the content: the view moves along by as much, from where it stands then. Not
-    /// at once, but once this pass of layout is done (`later`): in one pass the rows report where they stand before
-    /// the scroll view reports where it is, so a step of yours in that pass was not known yet, and scrolling from the
-    /// offset of the pass before undid it (seen offscreen: scrolling up stuck at one place); and a scroll asked for
-    /// within the pass was put back by the scroll view as the pass ended.
-    private func shift(by delta: Double) {
-        heldTop += delta
-        guard holding, abs(delta) > 0.5 else { return }
-        if pending == 0 { pendingFrom = offset }
-        pending += delta
-        guard !flushQueued else { return }
+    private func clearSteps() {
+        steps = 0
+        unmeasuredStep = false
+    }
+
+    /// Moves the view so the held row stands where you left it, once this pass of layout is done (`later`): in one
+    /// pass the rows report where they stand before the scroll view reports where it is, so a step of yours in that
+    /// pass is only known after both; and a scroll asked for within the pass was put back by the scroll view as the
+    /// pass ended.
+    private func queueFlush() {
+        guard holding, held != nil, !flushQueued else { return }
         flushQueued = true
         later { [weak self] in
             self?.flushQueued = false
@@ -100,15 +161,18 @@ final class TimelineReadingAnchor {
         }
     }
 
-    /// Moves the view along with the held row, by what it moved since the last time.
     private func flush() {
-        guard holding, abs(pending) > 0.5 else {
-            pending = 0
-            return
-        }
-        offset += pending
-        pending = 0
-        scroll(offset)
+        guard holding, held != nil else { return }
+        // The view moved since it last reported (a wheel step of yours, handled before this ran): scrolling from the
+        // old place would take that step back. Its report comes next and settles where the held row should be.
+        if let current = currentOffset(), abs(current - offset) > 0.5 { return }
+        let target = heldTop - heldInView
+        // The view did not move since: steps that moved nothing (at the top already) are not carried to a later move.
+        rowMoved = 0
+        clearSteps()
+        guard abs(target - offset) > 0.5 else { return }
+        offset = target
+        scroll(target)
     }
 
     /// The held row is no longer drawn: it went into a fold (a finished turn folds its steps under its first one) or
@@ -117,12 +181,12 @@ final class TimelineReadingAnchor {
         let above = tops.map { (id: $0.key, top: stackTop + $0.value) }
             .filter { $0.top <= heldTop + 0.5 }
             .max { $0.top < $1.top }
-        held = above?.id
-        heldTop = above?.top ?? 0
+        hold(above, at: heldTop - heldInView)
     }
 
-    /// Holds the first row that starts in view (else none: the view stands inside one tall row).
-    private func pick() {
+    /// Holds the first row that starts in view with the view at `base` (else none: the view stands inside one tall row).
+    private func pick(at base: Double) {
+        let viewTop = base + insetTop
         let first = tops.map { (id: $0.key, top: stackTop + $0.value) }
             .filter { $0.top >= viewTop - 0.5 && $0.top <= viewTop + container }
             .min { $0.top < $1.top }
@@ -130,7 +194,14 @@ final class TimelineReadingAnchor {
         let through = first ?? tops.map { (id: $0.key, top: stackTop + $0.value) }
             .filter { $0.top < viewTop }
             .max { $0.top < $1.top }
-        held = through?.id
-        heldTop = through?.top ?? 0
+        hold(through, at: base)
+    }
+
+    /// Holds `row` where it stands in the view with the view at `base`.
+    private func hold(_ row: (id: AnyHashable, top: Double)?, at base: Double) {
+        held = row?.id
+        heldTop = row?.top ?? 0
+        heldInView = heldTop - base
+        rowMoved = 0
     }
 }

@@ -611,6 +611,34 @@
         }
       }
     },
+    "%lld changes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Änderungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cambios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld changements"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld wijzigingen"
+          }
+        }
+      }
+    },
     "%lld comments" : {
       "localizations" : {
         "nl" : {
@@ -1727,6 +1755,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agents"
+          }
+        }
+      }
+    },
+    "Agents on your Mac are still working. Tap Restart now to stop them and finish the update." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf deinem Mac arbeiten noch Agenten. Tippe auf Jetzt neu starten, um sie zu stoppen und das Update abzuschließen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía hay agentes trabajando en tu Mac. Toca Reiniciar ahora para detenerlos y terminar la actualización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Des agents travaillent encore sur ton Mac. Touche Redémarrer maintenant pour les arrêter et terminer la mise à jour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er werken nog agents op je Mac. Tik op Nu herstarten om ze te stoppen en de update af te maken."
           }
         }
       }
@@ -5926,6 +5982,34 @@
         }
       }
     },
+    "Downloading %lld%%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lädt %lld%%"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando %lld%%"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement %lld%%"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaden %lld%%"
+          }
+        }
+      }
+    },
     "Draft" : {
       "localizations" : {
         "nl" : {
@@ -7366,6 +7450,90 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In een aparte worktree"
+          }
+        }
+      }
+    },
+    "Install" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installeren"
+          }
+        }
+      }
+    },
+    "Installing…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird installiert…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installation…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installeren…"
+          }
+        }
+      }
+    },
+    "Installs the update on your Mac. Nook there restarts by itself." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installiert das Update auf deinem Mac. Nook startet dort von selbst neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instala la actualización en tu Mac. Nook se reinicia allí solo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installe la mise à jour sur ton Mac. Nook y redémarre tout seul."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installeert de update op je Mac. Nook start daar vanzelf opnieuw."
           }
         }
       }
@@ -10082,6 +10250,34 @@
         }
       }
     },
+    "Nook %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook %@"
+          }
+        }
+      }
+    },
     "Nook can only read this chat. Answer it in %@." : {
       "localizations" : {
         "de" : {
@@ -10507,6 +10703,62 @@
         }
       }
     },
+    "Nook on your Mac is installing the update. It starts again by itself." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac installiert das Update und startet danach von selbst neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac está instalando la actualización y luego se vuelve a abrir solo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur ton Mac installe la mise à jour, puis redémarre tout seul."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac installeert de update en start daarna vanzelf weer."
+          }
+        }
+      }
+    },
+    "Nook on your Mac is restarting into the new version." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac startet mit der neuen Version neu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac se está reiniciando con la nueva versión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur ton Mac redémarre avec la nouvelle version."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac herstart in de nieuwe versie."
+          }
+        }
+      }
+    },
     "Nook on your Mac is too old to take files." : {
       "localizations" : {
         "nl" : {
@@ -10531,6 +10783,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nook en tu Mac es demasiado antiguo para recibir archivos."
+          }
+        }
+      }
+    },
+    "Nook update" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook-Update"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualización de Nook"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mise à jour de Nook"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook-update"
           }
         }
       }
@@ -14126,6 +14406,34 @@
         }
       }
     },
+    "Restart now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt neu starten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reiniciar ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redémarrer maintenant"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu herstarten"
+          }
+        }
+      }
+    },
     "Retry" : {
       "localizations" : {
         "nl" : {
@@ -17459,6 +17767,34 @@
         }
       }
     },
+    "This update needs a choice on your Mac. Nook opened it there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für dieses Update musst du auf deinem Mac etwas auswählen. Nook hat es dort geöffnet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta actualización necesita que elijas algo en tu Mac. Nook la ha abierto allí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette mise à jour demande un choix sur ton Mac. Nook l'a ouverte là-bas."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voor deze update moet je op je Mac iets kiezen. Nook heeft hem daar geopend."
+          }
+        }
+      }
+    },
     "This week" : {
       "localizations" : {
         "nl" : {
@@ -18864,6 +19200,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wacht een minuut; Nook Companion probeert het vanzelf opnieuw."
+          }
+        }
+      }
+    },
+    "Waiting for agents" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf Agenten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a los agentes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attend les agents"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht op agents"
           }
         }
       }

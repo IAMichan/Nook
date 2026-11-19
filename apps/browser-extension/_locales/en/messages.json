@@ -227,6 +227,9 @@
   "pickTitle": {
     "message": "Select an element to copy for your agent (Alt+Shift+E)"
   },
+  "pickPdfTitle": {
+    "message": "Select a spot in the PDF to copy for your agent (Alt+Shift+E)"
+  },
   "pickStarted": {
     "message": "Click an element on the page (or a spot in a PDF). Esc stops."
   },

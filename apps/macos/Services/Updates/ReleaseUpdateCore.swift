@@ -105,6 +105,13 @@ struct ReleaseBuild: Equatable, Sendable {
     /// GitHub's list of releases, newest first.
     var releasesURL: URL? { URL(string: "https://api.github.com/repos/\(repository)/releases?per_page=20") }
 
+    /// The update feed: the same list as a file on the latest release, refreshed by the release workflow with every
+    /// release (betas too). A static download, so it does not count against GitHub's API rate limit; `releasesURL` is
+    /// the fallback while it is not there.
+    var feedURL: URL? { URL(string: "https://github.com/\(repository)/releases/latest/download/\(Self.feedName)") }
+
+    static let feedName = "nook-releases.json"
+
     static func isRepository(_ text: String) -> Bool {
         let parts = text.split(separator: "/", omittingEmptySubsequences: false)
         return parts.count == 2 && parts.allSatisfy { part in
@@ -333,4 +340,33 @@ enum UpdateApplied {
         guard receipt.from == build, receipt.to != build, now.timeIntervalSince(receipt.installedAt) < 24 * 3600 else { return nil }
         return receipt.to
     }
+}
+
+/// What an administrator allows (docs/UPDATES.md, "Turning updates off"), the same keys as on Windows and Linux:
+/// `DisableUpdates` stops checking and installing, `DisableBetaChannel` keeps Nook on Stable. On the Mac they come from
+/// a configuration profile for `nl.imdigital.nook` (forced preferences); `NOOK_DISABLE_UPDATES=1` turns updates off for
+/// one machine or one launch.
+struct UpdatePolicy: Equatable, Sendable {
+    enum Source: Equatable, Sendable { case environment, administrator }
+
+    var disabled = false
+    var betaDisabled = false
+    var source: Source?
+
+    static let disableKey = "DisableUpdates"
+    static let disableBetaKey = "DisableBetaChannel"
+    static let environmentKey = "NOOK_DISABLE_UPDATES"
+
+    /// `managedDisabled`/`managedBeta`: the forced values, nil when no profile sets them.
+    static func resolve(environment: String?, managedDisabled: Bool?, managedBeta: Bool?) -> UpdatePolicy {
+        let envOff = ["1", "true", "yes", "on"].contains(environment?.trimmingCharacters(in: .whitespaces).lowercased() ?? "")
+        if managedDisabled == true || managedBeta == true {
+            return UpdatePolicy(disabled: managedDisabled == true || envOff, betaDisabled: managedBeta == true, source: .administrator)
+        }
+        if envOff { return UpdatePolicy(disabled: true, source: .environment) }
+        return UpdatePolicy()
+    }
+
+    /// The channel a build may follow under this policy.
+    func channel(_ wanted: UpdateChannel) -> UpdateChannel { betaDisabled ? .stable : wanted }
 }

@@ -9,7 +9,13 @@ struct UpdateSettingsSection: View {
 
     var body: some View {
         Section {
-            if let source = updater.source {
+            if updater.policy.disabled {
+                StatusRow(title: tr("update.policy.offTitle"),
+                          detail: tr(updater.policy.source == .environment ? "update.policy.offEnvironment" : "update.policy.offAdmin"),
+                          state: .todo) {
+                    EmptyView()
+                }
+            } else if let source = updater.source {
                 StatusRow(title: status.title, detail: status.detail, state: status.state) { actions }
                 LabeledContent(tr("update.settings.build")) {
                     Text(verbatim: [source.shortCommit, source.branch, source.configuration].compactMap { $0 }.joined(separator: " · "))
@@ -33,8 +39,8 @@ struct UpdateSettingsSection: View {
                     SettingInfoLabel(info: tr("update.channel.detail")) { SettingText("update.channel.title") }
                 }
                 .pickerStyle(.segmented)
-                .disabled(installing)
-                SettingNote(channelNote(for: release))
+                .disabled(installing || updater.policy.betaDisabled)
+                SettingNote(updater.policy.betaDisabled ? tr("update.policy.betaOff") : channelNote(for: release))
                 if let manual = updater.manualRelease {
                     StatusRow(title: tr("update.release.manual.title", manual.version.description),
                               detail: tr(release.publicKey == nil ? "update.release.noKey" : "update.release.unsigned"), state: .warning) {

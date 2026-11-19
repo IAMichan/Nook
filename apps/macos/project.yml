@@ -418,6 +418,7 @@ targets:
       - path: Services/Attention/ChatNoticePriority.swift
       - path: Services/ThinkAlongBackoff.swift
       - path: Core/DecayedCounter.swift
+      - path: Core/SessionPanelWidths.swift
       - path: Services/Attention/AttentionFeedback.swift
       - path: Services/Attention/AttentionContext.swift
       - path: Services/Attention/AppCatalog.swift

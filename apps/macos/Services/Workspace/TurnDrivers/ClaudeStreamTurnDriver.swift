@@ -256,6 +256,8 @@ extension WorkspaceManager {
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { compactionFinished(id) }
+        case .compacted(let after):
+            compactionFinished(id, contextAfter: after)
         case .compaction(let phase):
             // Claude Code reports a compaction it gave up for your Stop as failed: that is stopped, not an error.
             if case .failed = phase, turns[id]?.stopping == true {

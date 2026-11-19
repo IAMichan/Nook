@@ -1,5 +1,5 @@
 //! The companion's `home` area on Windows and Linux: what the Mac's `CompanionServer+Home.swift` answers for `home`,
-//! `usage`, `music` and `requestUpdate`, from this app's own state. The shapes and rules are in
+//! `usage`, `music`, `requestUpdate` and `installUpdate`, from this app's own state. The shapes and rules are in
 //! `nook_core::companion::home_digest`; this file only reads the app.
 
 use std::time::Duration;
@@ -19,10 +19,12 @@ use crate::services::Services;
 use crate::state::AppState;
 use crate::workspace::WorkspaceState;
 
-/// The `feature` names this area can answer. `requestUpdate` is left out: this build has no updater of its own (the
-/// newest version is on the releases page), so the phone would only ever hear "unavailable".
-pub fn features(_app: &AppHandle) -> Vec<&'static str> {
+/// The `feature` names this area can answer. `requestUpdate` and `installUpdate` only when this copy updates itself.
+pub fn features(app: &AppHandle) -> Vec<&'static str> {
     let mut list = vec![feature::HOME, feature::USAGE];
+    if crate::updates::companion_can_install(app) {
+        list.extend([feature::REQUEST_UPDATE, feature::INSTALL_UPDATE]);
+    }
     if crate::platform::capabilities().media {
         list.push(feature::MUSIC);
     }
@@ -35,9 +37,14 @@ pub async fn handle(app: &AppHandle, request: &CompanionRequest, _device: &str) 
         CompanionOp::Home => Some(home(app, &request.id).await),
         CompanionOp::Usage => Some(usage(app, request).await),
         CompanionOp::Music => Some(music(app, request).await),
-        // As the Mac answers when it cannot look for updates: nothing is shown, nothing is installed.
         CompanionOp::RequestUpdate => {
-            Some(CompanionResponse { message: Some("unavailable".into()), ..CompanionResponse::success(&request.id) })
+            let message = crate::updates::companion_show(app);
+            Some(CompanionResponse { message: Some(message.into()), ..CompanionResponse::success(&request.id) })
+        }
+        CompanionOp::InstallUpdate => {
+            let message = crate::updates::companion_install(app);
+            let home = home(app, &request.id).await;
+            Some(CompanionResponse { message: Some(message.into()), ..home })
         }
         _ => None,
     }
@@ -74,7 +81,8 @@ async fn home(app: &AppHandle, id: &str) -> CompanionResponse {
         }
         let track = app.try_state::<Services>().and_then(|s| s.platform.media.now_playing()).map(|n| digest::track(&n));
         let suggestions = digest::suggestions(&crate::commands::brain::start_suggestions(app.clone()));
-        HomeDigest { lines: digest::rank_lines(lines), events: digest::events(&upcoming), suggestions, track, accounts: vec![] }
+        let update = crate::updates::companion_offer(app);
+        HomeDigest { lines: digest::rank_lines(lines), events: digest::events(&upcoming), suggestions, track, accounts: vec![], update }
     })
     .await
     .unwrap_or_default();

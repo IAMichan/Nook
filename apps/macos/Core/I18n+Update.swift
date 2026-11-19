@@ -4,6 +4,10 @@ import Foundation
 
 let updateTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "update.policy.offTitle": "Updates staan uit",
+        "update.policy.offAdmin": "Je beheerder heeft updates op deze Mac uitgezet.",
+        "update.policy.offEnvironment": "Updates staan uit door NOOK_DISABLE_UPDATES.",
+        "update.policy.betaOff": "Je beheerder houdt Nook op het stabiele kanaal.",
         "update.button": "Update",
         "update.button.help": "Nook bijwerken: %ld nieuw op main sinds deze build",
         "update.button.installing": "Bijwerken…",
@@ -94,6 +98,10 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.blocked.diverged": "Je %@ heeft commits die niet op GitHub staan (%ld). Push of verplaats ze eerst: Nook werkt alleen bij met een fast-forward.",
     ],
     .en: [
+        "update.policy.offTitle": "Updates are off",
+        "update.policy.offAdmin": "Your administrator turned updates off on this Mac.",
+        "update.policy.offEnvironment": "Updates are turned off by NOOK_DISABLE_UPDATES.",
+        "update.policy.betaOff": "Your administrator keeps Nook on the Stable channel.",
         "update.button": "Update",
         "update.button.help": "Update Nook: %ld new on main since this build",
         "update.button.installing": "Updating…",
@@ -184,6 +192,10 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.blocked.diverged": "Your %@ has commits that are not on GitHub (%ld). Push or move them first: Nook only fast-forwards.",
     ],
     .de: [
+        "update.policy.offTitle": "Updates sind aus",
+        "update.policy.offAdmin": "Dein Administrator hat Updates auf diesem Mac ausgeschaltet.",
+        "update.policy.offEnvironment": "Updates sind durch NOOK_DISABLE_UPDATES ausgeschaltet.",
+        "update.policy.betaOff": "Dein Administrator hält Nook auf dem stabilen Kanal.",
         "update.button": "Update",
         "update.button.help": "Nook aktualisieren: %ld neu auf main seit diesem Build",
         "update.button.installing": "Wird aktualisiert…",
@@ -274,6 +286,10 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.blocked.diverged": "Dein %@ hat Commits, die nicht auf GitHub sind (%ld). Pushe oder verschiebe sie zuerst: Nook aktualisiert nur per Fast-Forward.",
     ],
     .fr: [
+        "update.policy.offTitle": "Les mises à jour sont désactivées",
+        "update.policy.offAdmin": "Ton administrateur a désactivé les mises à jour sur ce Mac.",
+        "update.policy.offEnvironment": "Les mises à jour sont désactivées par NOOK_DISABLE_UPDATES.",
+        "update.policy.betaOff": "Ton administrateur garde Nook sur le canal stable.",
         "update.button": "Mettre à jour",
         "update.button.help": "Mettre à jour Nook : %ld nouveautés sur main depuis ce build",
         "update.button.installing": "Mise à jour…",
@@ -364,6 +380,10 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.blocked.diverged": "Votre %@ a des commits absents de GitHub (%ld). Poussez-les ou déplacez-les d'abord : Nook ne fait que des fast-forward.",
     ],
     .es: [
+        "update.policy.offTitle": "Las actualizaciones están desactivadas",
+        "update.policy.offAdmin": "Tu administrador ha desactivado las actualizaciones en este Mac.",
+        "update.policy.offEnvironment": "Las actualizaciones están desactivadas por NOOK_DISABLE_UPDATES.",
+        "update.policy.betaOff": "Tu administrador mantiene Nook en el canal estable.",
         "update.button": "Actualizar",
         "update.button.help": "Actualizar Nook: %ld novedades en main desde esta compilación",
         "update.button.installing": "Actualizando…",

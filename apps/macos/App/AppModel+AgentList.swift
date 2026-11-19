@@ -349,6 +349,7 @@ extension InboxRow {
             unread: item.unseen,
             parentID: item.parentID,
             unsettledAt: finished.kept[item.finishKey],
+            settledAt: settled ? finished.settledTime(item.finishKey) : nil,
             machine: item.machineID
         )
     }

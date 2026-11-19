@@ -148,6 +148,11 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// Opens Nook's update panel on the Mac (`CompanionFeature.requestUpdate`), so the update waits there for a click.
     /// It never installs anything; `message` in the answer is "available", "none" or "unavailable".
     case requestUpdate
+    /// Installs the update `HomeDigest.update` offers, or restarts into one that waits for working agents
+    /// (`CompanionFeature.installUpdate`). `message` in the answer: "installing", "waiting" (agents still work; send it
+    /// again to restart now), "restarting", "none", "blocked" (the checkout needs the Mac) or "unavailable"; `home`
+    /// comes along.
+    case installUpdate
     /// Pull requests (`CompanionFeature.pullRequests`): the Mac's list, or a session's linked ones with `session` (`pulls`
     /// in the answer); one pull request in full by its address (`item`; `pull` in the answer); an action on it
     /// (`item`, `pullAction`); and a new session that works on it (`pullWork`; `created` in the answer).
@@ -247,6 +252,8 @@ enum CompanionFeature {
     static let relay = "relay"
     /// The Mac takes `requestUpdate`: it opens its update panel when the phone asks.
     static let requestUpdate = "requestUpdate"
+    /// The Mac takes `installUpdate` and says in `HomeDigest.update` when there is one.
+    static let installUpdate = "installUpdate"
     /// A message to a working session can steer its turn instead of waiting for it (`CompanionRequest.steer`).
     static let steer = "steer"
     /// The Mac takes `watch` and sends the open session's conversation as it changes (`TimelineDelta`).
@@ -318,7 +325,7 @@ enum CompanionFeature {
     /// mode and model (`SessionDigest.controls`), the messages in line (`SessionDigest.queued`), and effort, access,
     /// base branch and files for a new session (`LaunchOptions`, `LaunchRequest`).
     static let agentsTab = "agentsTab"
-    static let all = [agentsTab, workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
+    static let all = [agentsTab, workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate, installUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
                       compression, filePreview, liveChats, avatars, fullTranscript, appIcons, liveConversation, deviceKey, chatActions, nookChats, pullActions, notifySettings,
                       nookComposer, actionSuggestions]
@@ -951,6 +958,19 @@ struct HomeDigest: Codable, Equatable, Sendable {
     var suggestions: [String]
     var track: Track?
     var accounts: [UsageDigest.Account]
+    /// A new version of Nook the Mac can install (`CompanionFeature.installUpdate`); nil when there is none.
+    var update: UpdateOffer? = nil
+}
+
+/// A Nook update on the Mac, as the phone's home shows it.
+struct UpdateOffer: Codable, Equatable, Sendable {
+    var version: String
+    /// "available", "installing", "readyToRestart" (waits for agents) or "failed".
+    var state: String
+    /// How many changes it brings (pull requests or commits); 0 when unknown.
+    var changes: Int
+    /// How far the download is (0…1), while it downloads.
+    var progress: Double? = nil
 }
 
 /// What Settings › Usage shows: the limits of every account, then what Nook's sessions used.
