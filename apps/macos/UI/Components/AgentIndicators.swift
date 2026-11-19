@@ -226,8 +226,9 @@ extension PullRequestStatusStore {
         while !Task.isCancelled {
             await gate?.waitUntilSeen()
             let plan = EnergyMonitor.shared.plan
-            let interval = followInterval(shared.status(url), plan: plan)
-            if !EnergyMonitor.shared.signals.idle {
+            // As the forge's hourly limit runs low the badge reads less often, and under the reserve not at all.
+            let interval = followInterval(shared.status(url), plan: plan) * ForgeRateBudget.shared.slowdown(forPage: url, orGraphQL: true)
+            if !EnergyMonitor.shared.signals.idle, ForgeRateBudget.shared.allowsBackground(forPage: url, orGraphQL: true) {
                 // Woken early: read even when another place read a few seconds ago, unless that was just now.
                 await shared.refresh(url, maxAge: early ? 3 : min(interval, 20 * plan.slowdown))
             }

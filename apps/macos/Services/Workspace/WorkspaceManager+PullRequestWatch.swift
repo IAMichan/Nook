@@ -86,8 +86,12 @@ extension WorkspaceManager {
         for run in runs {
             guard !run.archived else { continue }
             for watch in run.prWatches {
+                // The forge's hourly limit: less often as it runs low, not at all under the reserve.
+                let page = URL(string: watch.url)
+                let watchGap = gap * ForgeRateBudget.shared.slowdown(forPage: page, orGraphQL: true)
+                guard force || ForgeRateBudget.shared.allowsBackground(forPage: page, orGraphQL: true) else { continue }
                 guard force || watch.wakeAgent || !energy.signals.idle,
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true else { continue }
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= watchGap || $0 > now }) ?? true else { continue }
                 checkPullRequestWatch(run.id, url: watch.url, recheck: false)
             }
         }

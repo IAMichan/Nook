@@ -68,13 +68,23 @@ enum GitHubPullRequests {
         guard isAvailable, let target = parse(url) else { return nil }
         let repo = target.repo, number = target.number
         for token in tokens {
+            // REST (five conditional reads, free while nothing changed) while it has room; GraphQL (one query on a limit
+            // of its own) once REST runs low or is used up, as t3code reads pull requests.
+            if ForgeRateBudget.shared.prefersGraphQL(), let snapshot = await graphQLSnapshot(repo: repo, number: number, token: token) {
+                return snapshot
+            }
             let auth = ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
             let base = "https://api.github.com/repos/\(repo)"
             func get(_ path: String) async -> Any? {
                 guard let url = URL(string: base + path) else { return nil }
                 return try? await ConnectorHTTP.json(url, headers: auth, conditional: true)
             }
-            guard let pull = await get("/pulls/\(number)") as? [String: Any] else { continue }
+            guard let pull = await get("/pulls/\(number)") as? [String: Any] else {
+                // REST refused because its limit is used up: the same read through GraphQL.
+                if let rest = URL(string: base), ForgeRateBudget.shared.pausedUntil(rest) != nil,
+                   let snapshot = await graphQLSnapshot(repo: repo, number: number, token: token) { return snapshot }
+                continue
+            }
             let merged = (pull["merged"] as? Bool) ?? false
             let state = merged ? "merged" : ((pull["state"] as? String) == "open" ? "open" : "closed")
             var checks = ""
@@ -114,6 +124,15 @@ enum GitHubPullRequests {
                                        url: (pull["html_url"] as? String).flatMap(URL.init(string:)))
         }
         return nil
+    }
+
+    /// `snapshot` through GraphQL: one request on GraphQL's own limit. Nil when it failed or the account cannot see it.
+    private static func graphQLSnapshot(repo: String, number: Int, token: String) async -> PullRequestSnapshot? {
+        guard let body = GitHubPullRequestSnapshotQuery.body(repo: repo, number: number),
+              let url = URL(string: "https://api.github.com/graphql"),
+              let raw = try? await ConnectorHTTP.json(url, headers: ["Authorization": "Bearer \(token)"], method: "POST", body: body),
+              let root = raw as? [String: Any] else { return nil }
+        return GitHubPullRequestSnapshotQuery.parse(root)
     }
 
     /// Tries the accounts in order: the first one with access to the repository opens the pull request.
@@ -216,7 +235,8 @@ enum GitHubPullRequests {
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
             request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-            guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+            // Polled for every session's branch: with the last answer's ETag an unchanged list costs GitHub's limit nothing.
+            guard let (data, response) = try? await ConditionalFetch.data(for: request, session: ConnectorHTTP.session),
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { continue }
             return list.compactMap { item in

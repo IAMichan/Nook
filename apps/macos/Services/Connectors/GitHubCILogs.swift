@@ -81,7 +81,8 @@ enum GitHubCILogs {
         let auth = ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
         return { path in
             guard let url = URL(string: "https://api.github.com/repos/\(repo)" + path) else { throw NookError("Invalid GitHub address.") }
-            return try await ConnectorHTTP.json(url, headers: auth)
+            // Followed every few seconds while a check runs: an unchanged answer (304) does not count against the limit.
+            return try await ConnectorHTTP.json(url, headers: auth, conditional: true)
         }
     }
 

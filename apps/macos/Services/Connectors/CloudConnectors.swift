@@ -122,9 +122,10 @@ enum CloudHelp {
     }
 
     /// Fetches JSON, returning nil on any error; used for optional metadata.
-    static func optionalObject(_ url: URL?, headers: [String: String]) async -> [String: Any]? {
+    /// `conditional`: for a read that polls, send the last answer's ETag (`ConditionalFetch`).
+    static func optionalObject(_ url: URL?, headers: [String: String], conditional: Bool = false) async -> [String: Any]? {
         guard let url = url else { return nil }
-        guard let raw = try? await ConnectorHTTP.json(url, headers: headers) else { return nil }
+        guard let raw = try? await ConnectorHTTP.json(url, headers: headers, conditional: conditional) else { return nil }
         return raw as? [String: Any]
     }
 

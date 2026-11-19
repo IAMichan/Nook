@@ -82,6 +82,8 @@ protocol ContextSource: AnyObject {
     var tools: [ToolSpec] { get }
     /// The model may use the read tools even when the source is not active right now (Mail still closed: the tool opens it).
     var canLookUp: Bool { get }
+    /// The API host whose hourly limit the timed refresh spends (`ForgeRateBudget`); nil for a source without one.
+    var rateLimitHost: String? { get }
 }
 
 extension ContextSource {
@@ -89,6 +91,7 @@ extension ContextSource {
     var iconDomain: String? { SourceBrand.domain(for: id) }
     var refreshInterval: TimeInterval { 300 }
     var tools: [ToolSpec] { [] }
+    var rateLimitHost: String? { nil }
 }
 
 /// Toggle state per integration, separate from configuration. Enabled by default once configured.
@@ -143,6 +146,8 @@ enum ConnectorHTTP {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        // A forge whose limit is used up is not asked again until it resets (`ForgeRateBudget`).
+        configuration.protocolClasses = [ForgeRateGate.self] + (configuration.protocolClasses ?? [])
         return configuration
     }
 

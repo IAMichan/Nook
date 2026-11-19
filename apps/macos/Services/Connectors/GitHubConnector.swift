@@ -8,6 +8,7 @@ final class GitHubConnector: CloudConnectorConfig {
     let symbol = "chevron.left.forwardslash.chevron.right"
     let accent = Color(hex: 0xA5B4FC)
     let refreshInterval: TimeInterval = 180
+    let rateLimitHost: String? = "api.github.com"
     @Published private(set) var status = ConnectorStatus()
 
     nonisolated static let tokenAccount = "connector.github.token"
@@ -179,10 +180,74 @@ final class GitHubConnector: CloudConnectorConfig {
         ]
     }
 
+    /// Everything the card shows in one GraphQL request (your login, both lists and each pull request's rolled-up CI),
+    /// as t3code reads it: about 1 point of GraphQL's own hourly limit instead of some 20 REST requests every few
+    /// minutes. The REST reads stay as the way back when GraphQL fails.
     private func fetch(token: String) async throws -> Snapshot {
+        do {
+            return try await fetchGraphQL(token: token)
+        } catch let error as NookError where error.kind == .auth {
+            throw error
+        } catch {
+            return try await fetchREST(token: token)
+        }
+    }
+
+    static let cardQuery = """
+    query NookGitHubCard($mine: String!, $reviews: String!) {
+      viewer { login }
+      mine: search(query: $mine, type: ISSUE, first: 20) { issueCount nodes { ...card } }
+      reviews: search(query: $reviews, type: ISSUE, first: 20) { issueCount nodes { ...card } }
+    }
+    fragment card on PullRequest {
+      number title url isDraft updatedAt repository { nameWithOwner }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    }
+    """
+
+    private func fetchGraphQL(token: String) async throws -> Snapshot {
+        let url = try CloudHelp.url("https://api.github.com/graphql")
+        let variables = ["mine": "is:pr is:open archived:false author:@me sort:updated-desc",
+                         "reviews": "is:pr is:open archived:false review-requested:@me sort:updated-desc"]
+        let body = try JSONSerialization.data(withJSONObject: ["query": Self.cardQuery, "variables": variables])
+        let raw = try await ConnectorHTTP.json(url, headers: ["Authorization": "Bearer \(token)"], method: "POST", body: body)
+        let root = CloudHelp.object(raw)
+        guard let data = root["data"] as? [String: Any],
+              let login = CloudHelp.object(data["viewer"])["login"] as? String, !login.isEmpty else {
+            throw PullRequestGraphQL.failure(root)
+        }
+        func list(_ field: String) -> (items: [PullRequest], total: Int) {
+            let search = CloudHelp.object(data[field])
+            let items = CloudHelp.list(search["nodes"]).compactMap { node -> PullRequest? in
+                guard let number = CloudHelp.int(node["number"]),
+                      let repo = CloudHelp.object(node["repository"])["nameWithOwner"] as? String else { return nil }
+                let commit = CloudHelp.object(CloudHelp.list(CloudHelp.object(node["commits"])["nodes"]).first?["commit"])
+                var item = PullRequest(repo: repo, number: number, title: (node["title"] as? String) ?? "Untitled",
+                                       url: CloudHelp.link(node["url"] as? String), draft: (node["isDraft"] as? Bool) ?? false,
+                                       updated: CloudHelp.date(node["updatedAt"]))
+                item.ci = Self.ci(rollup: CloudHelp.object(commit["statusCheckRollup"])["state"] as? String)
+                return item
+            }
+            return (items, CloudHelp.int(search["issueCount"]) ?? items.count)
+        }
+        let mine = list("mine"), reviews = list("reviews")
+        return Snapshot(login: login, mine: mine.items, mineTotal: mine.total, reviews: reviews.items, reviewTotal: reviews.total)
+    }
+
+    /// GitHub's rolled-up state of a commit's checks and statuses.
+    nonisolated static func ci(rollup: String?) -> CI {
+        switch rollup?.uppercased() {
+        case "SUCCESS": return .passing
+        case "FAILURE", "ERROR": return .failing
+        case "PENDING", "EXPECTED": return .pending
+        default: return .unknown
+        }
+    }
+
+    private func fetchREST(token: String) async throws -> Snapshot {
         let auth = headers(token)
         let userURL = try CloudHelp.url("https://api.github.com/user")
-        let userRaw = try await ConnectorHTTP.json(userURL, headers: auth)
+        let userRaw = try await ConnectorHTTP.json(userURL, headers: auth, conditional: true)
         guard let login = CloudHelp.object(userRaw)["login"] as? String, !login.isEmpty else {
             throw NookError("GitHub returned no username.")
         }
@@ -202,7 +267,7 @@ final class GitHubConnector: CloudConnectorConfig {
         let url = try CloudHelp.url("https://api.github.com", "/search/issues", query: [
             ("q", query), ("sort", "updated"), ("order", "desc"), ("per_page", "20")
         ])
-        let raw = try await ConnectorHTTP.json(url, headers: auth)
+        let raw = try await ConnectorHTTP.json(url, headers: auth, conditional: true)
         let root = CloudHelp.object(raw)
         let items = CloudHelp.list(root["items"]).compactMap { parsePullRequest($0) }
         return (items, CloudHelp.int(root["total_count"]) ?? items.count)
@@ -226,7 +291,7 @@ final class GitHubConnector: CloudConnectorConfig {
     /// Check runs and legacy commit statuses for the latest commit of a PR.
     func ciState(repo: String, number: Int, auth: [String: String]) async -> CI {
         let base = "https://api.github.com/repos/\(repo)"
-        guard let pull = await CloudHelp.optionalObject(URL(string: "\(base)/pulls/\(number)"), headers: auth),
+        guard let pull = await CloudHelp.optionalObject(URL(string: "\(base)/pulls/\(number)"), headers: auth, conditional: true),
               let sha = CloudHelp.object(pull["head"])["sha"] as? String else { return .unknown }
 
         var seen = false
@@ -234,7 +299,7 @@ final class GitHubConnector: CloudConnectorConfig {
         var failing = false
         let bad: Set<String> = ["failure", "timed_out", "action_required", "startup_failure"]
 
-        if let runs = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/check-runs?per_page=50"), headers: auth) {
+        if let runs = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/check-runs?per_page=50"), headers: auth, conditional: true) {
             // The newest run of each check: a cancelled or re-run workflow leaves its old failures behind.
             for run in PullRequestDetailParser.latestRuns(CloudHelp.list(runs["check_runs"])) {
                 seen = true
@@ -245,7 +310,7 @@ final class GitHubConnector: CloudConnectorConfig {
                 }
             }
         }
-        if let combined = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/status"), headers: auth),
+        if let combined = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/status"), headers: auth, conditional: true),
            (CloudHelp.int(combined["total_count"]) ?? 0) > 0 {
             seen = true
             switch (combined["state"] as? String) ?? "" {

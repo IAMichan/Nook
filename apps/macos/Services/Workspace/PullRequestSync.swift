@@ -399,11 +399,16 @@ final class PullRequestSync: ObservableObject {
         guard let workspace else { return }
         typealias Due = PullRequestRound.Due<Job>
         var due: [Due] = []
+        // The forge's hourly limit: a branch is asked less often as it runs low (`ForgeRateBudget`).
+        func stretched(_ interval: TimeInterval, _ lane: String) -> TimeInterval {
+            interval * ForgeRateBudget.shared.slowdown(forPage: URL(string: "https://" + lane))
+        }
         for run in workspace.runs where !run.archived {
             guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { continue }
             let known = links[run.id] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now,
-                                                  interval: interval(run.id.uuidString, known, now: now, quietSince: run.updatedAt)) else { continue }
+                                                  interval: stretched(interval(run.id.uuidString, known, now: now, quietSince: run.updatedAt),
+                                                                      lane(run.workingDirectory))) else { continue }
             due.append(Due(lane: lane(run.workingDirectory), job: .run(run.id, branch: branch),
                            open: PullRequestSettlement.anyOpen(links: known), last: checked[run.id] ?? .distantPast))
         }
@@ -411,22 +416,27 @@ final class PullRequestSync: ObservableObject {
             let known = Set((earlier[run.id] ?? []).compactMap(\.headBranch))
             for branch in run.earlierBranches ?? [] where !known.contains(branch) && branch != run.branch {
                 let key = Self.folderKey(path: run.id.uuidString, branch: branch)
-                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now,
+                                                      interval: stretched(Self.earlierInterval, lane(run.workingDirectory))) else { continue }
                 due.append(Due(lane: lane(run.workingDirectory), job: .earlier(run.id, branch: branch), open: false,
                                last: earlierChecked[key] ?? .distantPast))
             }
             for link in earlier[run.id] ?? [] where link.state.isOpen {
                 let key = Self.folderKey(path: run.id.uuidString, branch: link.id)
-                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
-                due.append(Due(lane: URL(string: link.url)?.host?.lowercased() ?? "", job: .earlierLink(run.id, link), open: false,
+                let host = URL(string: link.url)?.host?.lowercased() ?? ""
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now,
+                                                      interval: stretched(Self.earlierInterval, host)) else { continue }
+                due.append(Due(lane: host, job: .earlierLink(run.id, link), open: false,
                                last: earlierChecked[key] ?? .distantPast))
             }
         }
         for (session, list) in added {
             for link in list where link.state.isOpen {
                 let key = Self.folderKey(path: session, branch: link.id)
-                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
-                due.append(Due(lane: URL(string: link.url)?.host?.lowercased() ?? "", job: .addedLink(session, link), open: false,
+                let host = URL(string: link.url)?.host?.lowercased() ?? ""
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now,
+                                                      interval: stretched(Self.earlierInterval, host)) else { continue }
+                due.append(Due(lane: host, job: .addedLink(session, link), open: false,
                                last: earlierChecked[key] ?? .distantPast))
             }
         }
@@ -438,11 +448,14 @@ final class PullRequestSync: ObservableObject {
             let known = folderLinks[key] ?? []
             let quietSince = folder.busy ? now : folder.quietSince
             guard PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now,
-                                                  interval: interval(key, known, now: now, quietSince: quietSince)) else { continue }
+                                                  interval: stretched(interval(key, known, now: now, quietSince: quietSince),
+                                                                      lane(folder.path))) else { continue }
             due.append(Due(lane: lane(folder.path), job: .folder(key: key, path: folder.path, branch: folder.branch),
                            open: folder.busy || PullRequestSettlement.anyOpen(links: known),
                            last: folderChecked[key] ?? .distantPast))
         }
+        // Under the reserve a forge is not asked in the background at all: the rest is for what you do yourself.
+        due.removeAll { !ForgeRateBudget.shared.allowsBackground(forPage: URL(string: "https://" + $0.lane)) }
         for (lane, jobs) in PullRequestRound.plan(due, busy: busyLanes, perRound: Self.perRound) {
             busyLanes.insert(lane)
             Task {

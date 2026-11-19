@@ -12,6 +12,14 @@ final class RedirectCredentials: NSObject, URLSessionTaskDelegate, @unchecked Se
         completionHandler(Self.follow(task.originalRequest, to: request))
     }
 
+    /// Every answer passes here, also those of `data(for:)`, whose completion never reaches the session's delegate: the
+    /// place where `ForgeRateBudget` learns how much of each forge's limit is left. An answer `ForgeRateGate` gave
+    /// itself has no transaction and so changes nothing.
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let response = metrics.transactionMetrics.last(where: { $0.response != nil })?.response as? HTTPURLResponse else { return }
+        ForgeRateBudget.shared.record(response)
+    }
+
     /// The redirected request, with the original `Authorization` when it stays on the same scheme, host and port.
     static func follow(_ original: URLRequest?, to request: URLRequest) -> URLRequest {
         guard let original, let auth = original.value(forHTTPHeaderField: "Authorization"),
