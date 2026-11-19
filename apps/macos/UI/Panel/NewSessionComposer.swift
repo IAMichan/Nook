@@ -85,7 +85,7 @@ struct NewSessionComposer: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink(); applyRequestedProject() }
+        .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink(); applyRequestedProject(); applyNewProjectRequest() }
         .onChange(of: draftKey) { _, key in ComposerDraftStore.shared.openNewSession = key }
         .onReceive(ComposerDraftStore.shared.$unsentNewSessions) { _ in dropIfDiscarded() }
         .composerFocusOnAppear($focused)
@@ -93,6 +93,7 @@ struct NewSessionComposer: View {
         .onDisappear(perform: keepDraft)
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
+        .onChange(of: promptLinks.pendingNewProject) { _, _ in applyNewProjectRequest() }
         // Only when a clone ends, not on its progress: the box does not watch the clone itself.
         .onReceive(CloneCenter.shared.$finished.removeDuplicates()) { finished in adoptClone(finished) }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }

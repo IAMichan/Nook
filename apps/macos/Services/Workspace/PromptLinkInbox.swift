@@ -12,6 +12,9 @@ final class PromptLinkInbox: ObservableObject {
     /// Every composer on screen takes it (the notch and the main window can both show one), so none clears it on its
     /// own: it goes once the composers that show now, or appear for it, have had it (`requestProject`).
     @Published private(set) var pendingProject: ProjectRequest?
+    /// "New project…" from the command palette: the first composer that sees it takes it (`claimNewProject`) and asks
+    /// where the new folder goes, so two composers on screen never open two save panels.
+    @Published private(set) var pendingNewProject: UUID?
 
     struct ProjectRequest: Equatable {
         let id = UUID()
@@ -32,5 +35,22 @@ final class PromptLinkInbox: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             if self?.pendingProject == request { self?.pendingProject = nil }
         }
+    }
+
+    /// Asks a composer to run "New project…" (a new folder with a repository, then the offer to publish it).
+    func requestNewProject() {
+        let request = UUID()
+        pendingNewProject = request
+        // Like `requestProject`: long enough for a composer that opens for it to appear, no longer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            if self?.pendingNewProject == request { self?.pendingNewProject = nil }
+        }
+    }
+
+    /// True for the one composer that takes the pending "New project…".
+    func claimNewProject() -> Bool {
+        guard pendingNewProject != nil else { return false }
+        pendingNewProject = nil
+        return true
     }
 }
