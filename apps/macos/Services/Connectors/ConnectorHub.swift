@@ -97,7 +97,13 @@ final class ConnectorHub: ObservableObject {
             let scripted = Self.followsYou.contains(source.id)
             if scripted && (away || scripting) { continue }
             let last = lastRefresh[source.id] ?? .distantPast
-            if now.timeIntervalSince(last) >= source.refreshInterval * slowdown {
+            // A source on a forge's hourly limit refreshes less often as it runs low and waits under the reserve.
+            var limit: Double = 1
+            if let host = source.rateLimitHost {
+                guard ForgeRateBudget.shared.allowsBackground(host: host, now: now) else { continue }
+                limit = ForgeRateBudget.shared.slowdown(host: host, now: now)
+            }
+            if now.timeIntervalSince(last) >= source.refreshInterval * slowdown * limit {
                 refresh(source)
                 started += 1
                 if scripted { scripting = true }

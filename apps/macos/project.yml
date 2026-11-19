@@ -442,6 +442,8 @@ targets:
       - path: Services/Connectors/ConditionalCache.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/RedirectCredentials.swift
+      - path: Services/Connectors/ForgeRateBudget.swift
+      - path: Services/Connectors/GitHubPullRequestSnapshotQuery.swift
       - path: Services/Connectors/PullRequestDetail.swift
       - path: Services/Connectors/AgentCredits.swift
       - path: Services/Connectors/PullRequestReadiness.swift
