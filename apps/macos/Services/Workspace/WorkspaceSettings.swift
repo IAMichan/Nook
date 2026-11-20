@@ -217,7 +217,7 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentInstructions: String {
         didSet { defaults.set(agentInstructions, forKey: "ws.agentInstructions") }
     }
-    /// A session stopped by a usage limit goes on by itself once the limit resets.
+    /// A session stopped by a usage limit goes on by itself once the limit resets. On by default.
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
     }
@@ -339,7 +339,7 @@ final class WorkspaceSettings: ObservableObject {
         maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
-        autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
+        autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? true
         idleCompaction = defaults.object(forKey: IdleCompaction.settingKey) as? Bool ?? true
         autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
         keepSessionsRunning = defaults.bool(forKey: "ws.keepSessionsRunning")
