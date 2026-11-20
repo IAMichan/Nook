@@ -271,6 +271,7 @@ extension AgentHub {
             record.status = .running
             record.turnStarted = Date()
             record.diff = []
+            record.turnByYou = AgentWake.startedByYou(prompt: event["prompt"] as? String)
             // What the agent injects itself (a finished background task …) is not your last prompt.
             if let prompt = (event["prompt"] as? String).flatMap(InjectedPrompt.prompt) {
                 record.lastPrompt = prompt
@@ -332,7 +333,10 @@ extension AgentHub {
             }
             Self.complete(&record, as: .done)
             Self.push(&record, .done, "done")
-            attention = true
+            // A turn the agent woke up for by itself (a background command or subagent ended) is no work of yours done.
+            attention = AgentWake.announces(.done, byYou: record.turnByYou)
+            // A next turn without a prompt first is such a wake.
+            if record.turnByYou != nil { record.turnByYou = false }
             recap?.turnEnded(session: key)
         case "StopFailure":
             record.status = .failed
@@ -344,6 +348,7 @@ extension AgentHub {
             Self.complete(&record, as: .failed)
             Self.push(&record, .failed, Self.shorten(failure.line, 70))
             attention = true
+            if record.turnByYou != nil { record.turnByYou = false }
             recap?.turnEnded(session: key)
         case "SubagentStart":
             let type = (event["agent_type"] as? String) ?? (event["subagent_type"] as? String) ?? ""
@@ -355,6 +360,7 @@ extension AgentHub {
             record.turnStarted = nil
             Self.complete(&record, as: .failed)
             Self.push(&record, .failed, "interrupted")
+            if record.turnByYou != nil { record.turnByYou = false }
             recap?.turnEnded(session: key)
         default:
             break
